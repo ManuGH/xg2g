@@ -378,7 +378,7 @@ func isRecognizedAPIRoute(method string, pattern string) bool {
 	switch pattern {
 	case "/healthz", "/readyz", "/index.html", "/",
 		"/internal/system/config/reload", "/internal/setup/validate",
-		"/Items/{itemId}/PlaybackInfo", "/ui", "/ui/*":
+		"/ui", "/ui/*":
 		return true
 	}
 

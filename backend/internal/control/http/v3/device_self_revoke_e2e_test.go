@@ -94,10 +94,10 @@ func TestDeviceSelfRevoke_IgnoresADeviceIDInTheBody(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	attackerEnrolled, status := e.pairAndExchange(attacker)
 	require.Equal(t, http.StatusOK, status)
-	require.NotEqual(t, victimEnrolled.DeviceID, attackerEnrolled.DeviceID)
+	require.NotEqual(t, victimEnrolled.DeviceId, attackerEnrolled.DeviceId)
 
 	resp := e.asDevice(attacker, http.MethodPost, revokePath, attackerEnrolled.AccessToken,
-		map[string]any{"deviceId": victimEnrolled.DeviceID})
+		map[string]any{"deviceId": victimEnrolled.DeviceId})
 	_ = resp.Body.Close()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 

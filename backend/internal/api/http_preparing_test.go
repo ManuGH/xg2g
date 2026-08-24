@@ -36,7 +36,8 @@ func (m *MockPreparingServer) DeleteHouseholdProfile(w http.ResponseWriter, r *h
 func (m *MockPreparingServer) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params v3.PutHouseholdProfileParams) {
 }
 func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
-func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
+func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request, _ v3.PostLivePlaybackInfoParams) {
+}
 
 func (m *MockPreparingServer) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request, params v3.GetLogsParams) {
@@ -54,7 +55,7 @@ func (m *MockPreparingServer) GetRecordingThumbnail(w http.ResponseWriter, r *ht
 }
 func (m *MockPreparingServer) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
-func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, _ v3.GetRecordingPlaybackInfoParams) {
 }
 func (m *MockPreparingServer) StartPairing(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairingId string) {
@@ -129,7 +130,7 @@ func (m *MockPreparingServer) PreviewConflicts(w http.ResponseWriter, r *http.Re
 func (m *MockPreparingServer) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
 func (m *MockPreparingServer) GetTimer(w http.ResponseWriter, r *http.Request, timerId string)    {}
 func (m *MockPreparingServer) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
-func (m *MockPreparingServer) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+func (m *MockPreparingServer) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, _ v3.PostRecordingPlaybackInfoParams) {
 }
 
 // Optional Extensions (if needed by router)

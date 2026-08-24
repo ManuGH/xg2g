@@ -165,7 +165,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			r.Header.Set("Content-Type", "application/json")
 			r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-4way-test"))
 
-			s.PostLivePlaybackInfo(w, r)
+			s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 			require.Equal(t, http.StatusOK, w.Code)
 
 			var info PlaybackInfo

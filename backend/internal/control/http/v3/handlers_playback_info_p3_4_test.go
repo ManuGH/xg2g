@@ -90,7 +90,7 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 		ctx := log.ContextWithRequestID(r.Context(), "req-test-123")
 		r = r.WithContext(ctx)
 
-		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -125,7 +125,7 @@ seg1.ts`
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -162,7 +162,7 @@ seg2.ts`
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -200,7 +200,7 @@ seg2.ts
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -243,7 +243,7 @@ seg2.ts`
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-		s_srv.GetRecordingPlaybackInfo(w, r, recordingID)
+		s_srv.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO

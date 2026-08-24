@@ -25,10 +25,6 @@ import (
 
 const recordingRenameBodyLimit = 4096
 
-type renameRecordingRequest struct {
-	Title string `json:"title"`
-}
-
 type recordingRenameOp struct {
 	oldPath string
 	newPath string
@@ -136,7 +132,7 @@ func (s *Server) requireManagedRecordingOperation(w http.ResponseWriter, r *http
 	return serviceRef, true
 }
 
-func decodeRenameRecordingRequest(r *http.Request) (renameRecordingRequest, error) {
+func decodeRenameRecordingRequest(r *http.Request) (PostRecordingRenameJSONRequestBody, error) {
 	defer func() {
 		_ = r.Body.Close()
 	}()
@@ -144,12 +140,12 @@ func decodeRenameRecordingRequest(r *http.Request) (renameRecordingRequest, erro
 	decoder := json.NewDecoder(io.LimitReader(r.Body, recordingRenameBodyLimit))
 	decoder.DisallowUnknownFields()
 
-	var req renameRecordingRequest
+	var req PostRecordingRenameJSONRequestBody
 	if err := decoder.Decode(&req); err != nil {
-		return renameRecordingRequest{}, fmt.Errorf("invalid rename body")
+		return PostRecordingRenameJSONRequestBody{}, fmt.Errorf("invalid rename body")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return renameRecordingRequest{}, fmt.Errorf("invalid rename body")
+		return PostRecordingRenameJSONRequestBody{}, fmt.Errorf("invalid rename body")
 	}
 
 	return req, nil

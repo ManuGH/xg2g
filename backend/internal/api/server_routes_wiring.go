@@ -154,11 +154,6 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	if err := v3.RegisterCompatibilityRoutesWithRegistrars(readAdapter, writeAdapter, s.v3Handler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register compatibility routes: %w", err)
 	}
-	if err := readAdapter.Register(http.MethodPost, "/Items/{itemId}/PlaybackInfo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.v3Handler.PostItemsPlaybackInfo(w, r, chi.URLParam(r, "itemId"))
-	})); err != nil {
-		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register playback-info compatibility route: %w", err)
-	}
 
 	// Experimental TS Burst-Smoothing Proxy route for lab & client A/B testing
 	smootherHandler := smoother.NewHandler(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())

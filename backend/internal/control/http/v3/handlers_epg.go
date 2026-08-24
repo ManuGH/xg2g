@@ -25,35 +25,9 @@ import (
 // Responsibility: Handles EPG data retrieval and serving.
 // Non-goals: EPG Parsing logic (see internal/epg).
 
-type nowNextRequest struct {
-	Services []string `json:"services"`
-}
-
-type epgEntry struct {
-	Title           string           `json:"title,omitempty"`
-	Desc            string           `json:"desc,omitempty"`  // short programme synopsis
-	Start           int64            `json:"start,omitempty"` // unix seconds
-	End             int64            `json:"end,omitempty"`   // unix seconds
-	StartXMLTV      string           `json:"startXmltv,omitempty"`
-	EndXMLTV        string           `json:"endXmltv,omitempty"`
-	AgeRating       *epg.AgeRating   `json:"ageRating,omitempty"`
-	EpisodeInfo     *epg.EpisodeInfo `json:"episodeInfo,omitempty"`
-	Genre           string           `json:"genre,omitempty"`
-	GenreSource     string           `json:"genreSource,omitempty"`
-	RatingScore     *epg.RatingScore `json:"ratingScore,omitempty"`
-	PosterURL       string           `json:"posterUrl,omitempty"`
-	ProviderSummary string           `json:"providerSummary,omitempty"`
-}
-
-type nowNextItem struct {
-	ServiceRef string    `json:"serviceRef"`
-	Now        *epgEntry `json:"now,omitempty"`
-	Next       *epgEntry `json:"next,omitempty"`
-}
-
 // handleNowNextEPG returns now/next EPG for a list of service references.
 func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
-	var req nowNextRequest
+	var req NowNextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Services) == 0 {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Request body must contain non-empty services list", nil)
 		return
@@ -94,30 +68,30 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	writeNowNextResponse(w, buildNowNextItems(req.Services, programs, time.Now()))
 }
 
-func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
+	// The envelope used to be an inline map, which is the same drift risk as a
+	// hand-written struct with none of the visibility: a map cannot be checked
+	// against the contract by the compiler or by a reviewer.
+	writeJSON(w, http.StatusOK, NowNextResponse{Items: items})
 }
 
-func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []nowNextItem {
+func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {
 		canonicalRef := read.CanonicalServiceRef(program.Channel)
 		progMap[canonicalRef] = append(progMap[canonicalRef], program)
 	}
 
-	items := make([]nowNextItem, 0, len(serviceRefs))
+	items := make([]NowNextItem, 0, len(serviceRefs))
 	for _, serviceRef := range serviceRefs {
 		progs := progMap[read.CanonicalServiceRef(serviceRef)]
 		if len(progs) == 0 {
-			items = append(items, nowNextItem{ServiceRef: serviceRef})
+			items = append(items, NowNextItem{ServiceRef: serviceRef})
 			continue
 		}
 
-		var current *epgEntry
-		var next *epgEntry
+		var current *NowNextEntry
+		var next *NowNextEntry
 
 		for _, program := range progs {
 			start, serr := time.Parse(xmltvTimeFormat, program.Start)
@@ -126,36 +100,40 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 				continue
 			}
 
-			entry := &epgEntry{
+			// title, start and end are required by the contract. The
+			// hand-written entry carried omitempty on all three, so a
+			// programme with an empty title published a response missing a
+			// field the schema declares — the generated type cannot.
+			entry := &NowNextEntry{
 				Title:      cleanEPGText(program.Title.Text),
-				Start:      start.Unix(),
-				End:        stop.Unix(),
-				StartXMLTV: program.Start,
-				EndXMLTV:   program.Stop,
+				Start:      int(start.Unix()),
+				End:        int(stop.Unix()),
+				StartXmltv: optionalStringPtr(program.Start),
+				EndXmltv:   optionalStringPtr(program.Stop),
 			}
 			if program.Desc != nil {
-				entry.Desc = cleanEPGText(program.Desc.Text)
+				entry.Desc = optionalStringPtr(cleanEPGText(program.Desc.Text))
 			}
 			if program.Canonical != nil {
-				entry.AgeRating = program.Canonical.AgeRating
-				entry.EpisodeInfo = program.Canonical.EpisodeInfo
-				entry.Genre = program.Canonical.Genre
-				entry.GenreSource = program.Canonical.GenreSource
-				entry.RatingScore = program.Canonical.RatingScore
-				entry.PosterURL = program.Canonical.PosterURL
-				entry.ProviderSummary = program.Canonical.ProviderSummary
+				entry.AgeRating = mapEpgAgeRating(program.Canonical.AgeRating)
+				entry.EpisodeInfo = mapEpgEpisodeInfo(program.Canonical.EpisodeInfo)
+				entry.Genre = optionalStringPtr(program.Canonical.Genre)
+				entry.GenreSource = optionalStringPtr(program.Canonical.GenreSource)
+				entry.RatingScore = mapEpgRatingScore(program.Canonical.RatingScore)
+				entry.PosterUrl = optionalStringPtr(program.Canonical.PosterURL)
+				entry.ProviderSummary = optionalStringPtr(program.Canonical.ProviderSummary)
 			}
 
 			if now.After(start) && now.Before(stop) {
 				current = entry
 			} else if start.After(now) {
-				if next == nil || start.Before(time.Unix(next.Start, 0)) {
+				if next == nil || start.Before(time.Unix(int64(next.Start), 0)) {
 					next = entry
 				}
 			}
 		}
 
-		items = append(items, nowNextItem{
+		items = append(items, NowNextItem{
 			ServiceRef: serviceRef,
 			Now:        current,
 			Next:       next,
@@ -163,6 +141,47 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 	}
 
 	return items
+}
+
+// The enrichment mappers below are the explicit domain-to-wire boundary for
+// now/next. The internal epg types are persistence and ingest models, so they
+// are translated into the generated contract types rather than serialised
+// directly: an ingest-side field rename must not silently change the wire.
+
+func mapEpgAgeRating(in *epg.AgeRating) *EpgAgeRating {
+	if in == nil {
+		return nil
+	}
+	return &EpgAgeRating{
+		Value:      in.Value,
+		Scheme:     in.Scheme,
+		Country:    in.Country,
+		Source:     EpgRatingSource(in.Source),
+		Confidence: EpgRatingConfidence(in.Confidence),
+	}
+}
+
+func mapEpgEpisodeInfo(in *epg.EpisodeInfo) *EpgEpisodeInfo {
+	if in == nil {
+		return nil
+	}
+	return &EpgEpisodeInfo{
+		SeasonNumber:  optionalIntPtr(in.SeasonNumber),
+		EpisodeNumber: optionalIntPtr(in.EpisodeNumber),
+		EpisodeTitle:  optionalStringPtr(in.EpisodeTitle),
+		SourcePattern: optionalStringPtr(in.SourcePattern),
+	}
+}
+
+func mapEpgRatingScore(in *epg.RatingScore) *EpgRatingScore {
+	if in == nil {
+		return nil
+	}
+	return &EpgRatingScore{
+		Score:  in.Score,
+		Scale:  in.Scale,
+		Source: in.Source,
+	}
 }
 
 func cleanEPGText(s string) string {

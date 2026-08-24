@@ -46,6 +46,40 @@ components:
       schema:
         type: string
 
+    PlaybackStartOffsetMs:
+      name: start_ms
+      in: query
+      required: false
+      description: |
+        Canonical playback start offset in milliseconds. This is the only accepted
+        seek-anchor input on the playback-info surface; the resolved anchor is echoed
+        back as `PlaybackInfo.anchorStartMs` and `PlaybackInfo.anchorStartSec`.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+
+    PlaybackRequestProfileQuery:
+      name: profile
+      in: query
+      required: false
+      description: |
+        Explicit playback request profile. Overrides the `X-XG2G-Profile` header when both
+        are present. The backend owns profile interpretation; clients only forward the
+        profile identifier they were handed.
+      schema:
+        type: string
+
+    PlaybackRequestProfileHeader:
+      name: X-XG2G-Profile
+      in: header
+      required: false
+      description: |
+        Playback request profile carried as a header. Equivalent to the `profile` query
+        parameter, which takes precedence when both are supplied.
+      schema:
+        type: string
+
   schemas:
     DeviceBindingState:
       type: string
@@ -445,6 +479,7 @@ components:
           type: string
         expiresIn:
           type: integer
+          format: int32
           description: Access-token lifetime in seconds, from the moment of the response.
           example: 900
         refreshToken:
@@ -864,69 +899,111 @@ components:
 
     SystemInfoData:
       type: object
+      description: |
+        Receiver and host facts for the system view.
+
+        The seven sections are named schemas rather than inline objects: an
+        inline object generates an anonymous nested struct that no handler can
+        name or reasonably construct, which is why this response used to be
+        served from a hand-written copy instead of the generated type.
+
+        Required-ness mirrors what the server actually sends. A field the
+        handler omits when empty is optional here; one it always writes is
+        required — which is every section, so a client never has to guard a
+        whole block away.
+      required: [hardware, software, tuners, network, storage, runtime, resource]
       properties:
         hardware:
-          type: object
-          properties:
-            brand: { type: string }
-            model: { type: string }
-            boxtype: { type: string }
-            chipset: { type: string }
-            chipsetDescription: { type: string }
+          $ref: "#/components/schemas/HardwareInfo"
         software:
-          type: object
-          properties:
-            oeVersion: { type: string }
-            imageDistro: { type: string }
-            imageVersion: { type: string }
-            enigmaVersion: { type: string }
-            kernelVersion: { type: string }
-            driverDate: { type: string }
-            webifVersion: { type: string }
+          $ref: "#/components/schemas/SoftwareInfo"
         tuners:
           type: array
           items:
-            type: object
-            properties:
-              name: { type: string }
-              type: { type: string }
-              status: { type: string }
+            $ref: "#/components/schemas/TunerInfo"
         network:
-          type: object
-          properties:
-            interfaces:
-              type: array
-              items:
-                type: object
-                properties:
-                  name: { type: string }
-                  type: { type: string }
-                  speed: { type: string }
-                  mac: { type: string }
-                  ip: { type: string }
-                  ipv6: { type: string }
-                  dhcp: { type: boolean }
+          $ref: "#/components/schemas/NetworkInfo"
         storage:
-          type: object
-          properties:
-            devices:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
-            locations:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
+          $ref: "#/components/schemas/StorageInfo"
         runtime:
-          type: object
-          properties:
-            uptime: { type: string }
+          $ref: "#/components/schemas/RuntimeInfo"
         resource:
-          type: object
-          properties:
-            memoryTotal: { type: string }
-            memoryAvailable: { type: string }
-            memoryUsed: { type: string }
+          $ref: "#/components/schemas/ResourceInfo"
+
+    HardwareInfo:
+      type: object
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        boxtype: { type: string }
+        chipset: { type: string }
+        chipsetDescription: { type: string }
+
+    SoftwareInfo:
+      type: object
+      properties:
+        oeVersion: { type: string }
+        imageDistro: { type: string }
+        imageVersion: { type: string }
+        enigmaVersion: { type: string }
+        kernelVersion: { type: string }
+        driverDate: { type: string }
+        webifVersion: { type: string }
+
+    TunerInfo:
+      type: object
+      required: [name, type, status]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        status: { type: string }
+
+    NetworkInfo:
+      type: object
+      required: [interfaces]
+      properties:
+        interfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkInterfaceInfo"
+
+    NetworkInterfaceInfo:
+      type: object
+      required: [name, type, speed, mac, ip, ipv6, dhcp]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        speed: { type: string }
+        mac: { type: string }
+        ip: { type: string }
+        ipv6: { type: string }
+        dhcp: { type: boolean }
+
+    StorageInfo:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+
+    RuntimeInfo:
+      type: object
+      required: [uptime]
+      properties:
+        uptime: { type: string }
+
+    ResourceInfo:
+      type: object
+      required: [memoryTotal, memoryAvailable, memoryUsed]
+      properties:
+        memoryTotal: { type: string }
+        memoryAvailable: { type: string }
+        memoryUsed: { type: string }
 
     StorageItem:
       type: object
@@ -1568,6 +1645,90 @@ components:
         endXmltv:
           type: string
           description: Original XMLTV end timestamp including offset
+        ageRating:
+          $ref: "#/components/schemas/EpgAgeRating"
+        episodeInfo:
+          $ref: "#/components/schemas/EpgEpisodeInfo"
+        genre:
+          type: string
+          description: Canonical genre as observed on ingest.
+        genreSource:
+          type: string
+          description: Where the genre was observed, e.g. dvb_descriptor, dvb_category, dvb_text.
+        ratingScore:
+          $ref: "#/components/schemas/EpgRatingScore"
+        posterUrl:
+          type: string
+          description: External provider poster URL. Never overwrites observed DVB metadata.
+        providerSummary:
+          type: string
+          description: External provider synopsis. Never overwrites the observed DVB description.
+
+    EpgAgeRating:
+      type: object
+      description: |
+        Age certification with explicit scheme and provenance. `confidence` states how the
+        value was obtained; it is not a legal broadcast guarantee.
+      required: [value, scheme, country, source, confidence]
+      additionalProperties: false
+      properties:
+        value:
+          type: integer
+          description: Age in years, e.g. 0, 6, 12, 16, 18.
+        scheme:
+          type: string
+          description: Rating scheme, e.g. FSK when explicitly stated, otherwise broadcaster_age.
+        country:
+          type: string
+          description: Country the scheme belongs to, or `unknown` for generic broadcaster text.
+        source:
+          $ref: "#/components/schemas/EpgRatingSource"
+        confidence:
+          $ref: "#/components/schemas/EpgRatingConfidence"
+
+    EpgRatingSource:
+      type: string
+      description: Where an age rating was extracted or retrieved from.
+      enum: [dvb_text, dvb_descriptor, provider, override]
+
+    EpgRatingConfidence:
+      type: string
+      description: |
+        Certainty of the extraction. `observed` was read directly from source text or
+        descriptors, `matched` came from a high-confidence provider match, `inferred` was
+        derived heuristically.
+      enum: [observed, matched, inferred]
+
+    EpgEpisodeInfo:
+      type: object
+      description: Season and episode numbering extracted with high precision.
+      additionalProperties: false
+      properties:
+        seasonNumber:
+          type: integer
+        episodeNumber:
+          type: integer
+        episodeTitle:
+          type: string
+        sourcePattern:
+          type: string
+          description: The pattern the numbering was recognised by.
+
+    EpgRatingScore:
+      type: object
+      description: External provider rating, kept separate from observed DVB metadata.
+      required: [score, scale, source]
+      additionalProperties: false
+      properties:
+        score:
+          type: number
+          format: double
+        scale:
+          type: number
+          format: double
+        source:
+          type: string
+          description: Provider the score came from, e.g. tvmaze, tmdb, imdb.
 
     NowNextItem:
       type: object
@@ -1823,6 +1984,20 @@ components:
           type: integer
           format: int64
           description: wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
+        anchorStartMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Timeline anchor in milliseconds that the returned media URL was built against.
+            Present when the request carried a `start_ms` offset.
+        anchorStartSec:
+          type: number
+          format: double
+          minimum: 0
+          description: |
+            Timeline anchor in seconds. Redundant convenience mirror of `anchorStartMs`
+            for players that operate on a seconds timeline.
         durationSeconds:
           type: integer
           format: int64
@@ -3239,6 +3414,26 @@ components:
 security:
   - BearerAuth: [v3:read]
 
+x-xg2g-native-contract:
+  # The subset of the contract the native iOS and Android clients decode
+  # directly. gen-native-contract emits their wire model layer from exactly
+  # these schemas, and verify-native-contract-fresh locks the result against
+  # drift.
+  #
+  # Listing a schema here is what makes it part of the native contract. Only
+  # roots are listed: everything a root references is pulled in transitively,
+  # so adding a $ref to a listed schema never needs a second edit here.
+  roots:
+    - ApprovePairingRequest
+    - ApprovePairingResponse
+    - ECPublicKeyJWK
+    - ExchangePairingResponse
+    - PairingSecretRequest
+    - PairingStatusResponse
+    - PublishedEndpoint
+    - StartPairingRequest
+    - StartPairingResponse
+
 x-xg2g-operation-policies:
   AddTimer:
     class: write
@@ -4388,6 +4583,10 @@ paths:
       tags: [streams]
       security:
         - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       requestBody:
         description: Client capabilities and service reference for decision making
         required: true
@@ -4817,6 +5016,9 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       responses:
         "200":
           description: Playback strategy info
@@ -4852,6 +5054,9 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       requestBody:
         description: Client capabilities for decision making
         required: true

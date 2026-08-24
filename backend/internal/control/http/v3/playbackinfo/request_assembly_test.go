@@ -71,7 +71,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		VideoCodecs:       []string{"h264"},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v3/streams/live?profile=safari", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/streams/live", nil)
 	req.Header.Add("X-Test", "first")
 	req.Header.Add("X-Test", "second")
 	req.Header.Set("X-XG2G-Playback-Info-Context", "player_start")
@@ -79,7 +79,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	req = req.WithContext(log.ContextWithRequestID(req.Context(), "req-123"))
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "alice", nil)))
 
-	got := BuildPlaybackInfoServiceRequest(req, "1:0:1:2:3:4:5:6:7:8:9", caps, "v3.1", "live")
+	got := BuildPlaybackInfoServiceRequest(req, "1:0:1:2:3:4:5:6:7:8:9", caps, "v3.1", "live", NewWireParams(nil, strPtr("safari"), nil))
 
 	require.NotNil(t, got.Capabilities)
 	assert.Equal(t, "1:0:1:2:3:4:5:6:7:8:9", got.SubjectID)
@@ -144,7 +144,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 
-	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact", WireParams{})
 
 	assert.Equal(t, "rec1", got.SubjectID)
 	assert.Equal(t, v3recordings.PlaybackSubjectRecording, got.SubjectKind)
@@ -159,9 +159,9 @@ func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 }
 
 func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfile(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile=android_native", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 
-	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact", NewWireParams(nil, strPtr("android_native"), nil))
 
 	assert.Equal(t, "android_native", got.RequestedProfile)
 	assert.Equal(t, "android_native", got.ClientProfile)
@@ -169,9 +169,8 @@ func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfil
 
 func TestBuildPlaybackInfoServiceRequest_FallsBackToProfileHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
-	req.Header.Set("X-XG2G-Profile", "repair")
 
-	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact", NewWireParams(nil, nil, strPtr("repair")))
 
 	assert.Equal(t, "repair", got.RequestedProfile)
 	assert.Equal(t, "repair", got.ClientProfile)

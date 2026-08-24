@@ -45,7 +45,7 @@ func TestGetSystemConnectivity_ReturnsEffectiveContractAndRequestTruth(t *testin
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
-	var resp connectivityContractResponse
+	var resp ConnectivityContract
 	decodeJSONResponse(t, w.Result(), &resp)
 	if resp.Profile != "reverse_proxy" {
 		t.Fatalf("expected reverse_proxy profile, got %q", resp.Profile)
@@ -53,7 +53,7 @@ func TestGetSystemConnectivity_ReturnsEffectiveContractAndRequestTruth(t *testin
 	if resp.Status != "ok" {
 		t.Fatalf("expected ok status, got %q", resp.Status)
 	}
-	if !resp.Request.EffectiveHTTPS {
+	if !resp.Request.EffectiveHttps {
 		t.Fatal("expected effective https for trusted forwarded proto")
 	}
 	if !resp.Request.TrustedProxyMatch {
@@ -62,7 +62,7 @@ func TestGetSystemConnectivity_ReturnsEffectiveContractAndRequestTruth(t *testin
 	if resp.Request.SchemeSource != "trusted_x_forwarded_proto" {
 		t.Fatalf("expected trusted_x_forwarded_proto scheme source, got %q", resp.Request.SchemeSource)
 	}
-	if resp.Selections.WebPublic.Endpoint == nil || resp.Selections.WebPublic.Endpoint.URL != "https://public.example" {
+	if resp.Selections.WebPublic.Endpoint == nil || resp.Selections.WebPublic.Endpoint.Url != "https://public.example" {
 		t.Fatalf("expected selected public web endpoint, got %#v", resp.Selections.WebPublic)
 	}
 }

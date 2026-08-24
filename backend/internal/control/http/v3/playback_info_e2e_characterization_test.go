@@ -93,9 +93,9 @@ func runHTTPCharacterizationTest(t *testing.T, tc httpCharacterizationTest) {
 	w := httptest.NewRecorder()
 
 	if tc.mode == "live" {
-		s.PostLivePlaybackInfo(w, req)
+		s.PostLivePlaybackInfo(w, req, PostLivePlaybackInfoParams{})
 	} else {
-		s.PostRecordingPlaybackInfo(w, req, recordingID)
+		s.PostRecordingPlaybackInfo(w, req, recordingID, PostRecordingPlaybackInfoParams{})
 	}
 
 	require.Equal(t, http.StatusOK, w.Code, "expected 200 OK, got body: %s", w.Body.String())
@@ -274,7 +274,7 @@ func TestHTTPBoundary_EpgBadgeIsPassiveAndCannotAuthorizeStart(t *testing.T) {
 	req.Header.Set(v3recordings.PlaybackInfoContextHeader, v3recordings.PlaybackInfoContextEpgBadge)
 	w := httptest.NewRecorder()
 
-	s.PostLivePlaybackInfo(w, req)
+	s.PostLivePlaybackInfo(w, req, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var raw map[string]any

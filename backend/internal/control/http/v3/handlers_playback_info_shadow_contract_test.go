@@ -54,8 +54,8 @@ func TestContract_PlaybackInfo_ShadowOnVsOff_ExactHTTPContractEquality(t *testin
 	wOffGet := httptest.NewRecorder()
 	wOnGet := httptest.NewRecorder()
 
-	srvOff.GetRecordingPlaybackInfo(wOffGet, reqGet, validRecordingID)
-	srvOn.GetRecordingPlaybackInfo(wOnGet, reqGet, validRecordingID)
+	srvOff.GetRecordingPlaybackInfo(wOffGet, reqGet, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
+	srvOn.GetRecordingPlaybackInfo(wOnGet, reqGet, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	require.Equal(t, wOffGet.Code, wOnGet.Code)
 	assert.Equal(t, wOffGet.Header().Get("Content-Type"), wOnGet.Header().Get("Content-Type"))
@@ -68,8 +68,8 @@ func TestContract_PlaybackInfo_ShadowOnVsOff_ExactHTTPContractEquality(t *testin
 	wOffPost := httptest.NewRecorder()
 	wOnPost := httptest.NewRecorder()
 
-	srvOff.PostLivePlaybackInfo(wOffPost, reqPostOff)
-	srvOn.PostLivePlaybackInfo(wOnPost, reqPostOn)
+	srvOff.PostLivePlaybackInfo(wOffPost, reqPostOff, v3.PostLivePlaybackInfoParams{})
+	srvOn.PostLivePlaybackInfo(wOnPost, reqPostOn, v3.PostLivePlaybackInfoParams{})
 
 	require.Equal(t, wOffPost.Code, wOnPost.Code)
 	assert.Equal(t, wOffPost.Header().Get("Content-Type"), wOnPost.Header().Get("Content-Type"))

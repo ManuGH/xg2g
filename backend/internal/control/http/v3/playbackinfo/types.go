@@ -47,24 +47,16 @@ type PlaybackDeviceContext struct {
 
 type PlaybackNetworkContext struct {
 	DownlinkKbps      *int    `json:"downlinkKbps,omitempty"`
-	EffectiveType     *string `json:"effectiveType,omitempty"`
 	InternetValidated *bool   `json:"internetValidated,omitempty"`
 	Kind              *string `json:"kind,omitempty"`
-	LinkSpeedMbps     *int    `json:"linkSpeedMbps,omitempty"`
 	Metered           *bool   `json:"metered,omitempty"`
-	SignalDbm         *int    `json:"signalDbm,omitempty"`
 }
 
 type PlaybackVideoCodecSignal struct {
-	Codec             string `json:"codec"`
-	DecodeError       *bool  `json:"decodeError,omitempty"`
-	DecodeErrorStreak *int   `json:"decodeErrorStreak,omitempty"`
-	IsSupported       bool   `json:"isSupported"`
-	PowerEfficient    *bool  `json:"powerEfficient,omitempty"`
-	ProbeSource       string `json:"probeSource"`
-	Smooth            *bool  `json:"smooth,omitempty"`
-	SuccessStreak     *int   `json:"successStreak,omitempty"`
-	Supported         bool   `json:"supported"`
+	Codec          string `json:"codec"`
+	PowerEfficient *bool  `json:"powerEfficient,omitempty"`
+	Smooth         *bool  `json:"smooth,omitempty"`
+	Supported      bool   `json:"supported"`
 }
 
 type PlaybackInfoMode string
@@ -93,7 +85,6 @@ type ResumeSummary struct {
 	DurationSeconds *int64     `json:"durationSeconds,omitempty"`
 	Finished        *bool      `json:"finished,omitempty"`
 	PosSeconds      int64      `json:"posSeconds"`
-	PositionMs      *int64     `json:"positionMs,omitempty"`
 	UpdatedAt       *time.Time `json:"updatedAt,omitempty"`
 }
 

@@ -152,7 +152,7 @@ func TestPostServicesNowNext_FallsBackToEpgSourceWhenCacheMissing(t *testing.T) 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload struct {
-		Items []nowNextItem `json:"items"`
+		Items []NowNextItem `json:"items"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&payload)
 	assert.NoError(t, err)
@@ -210,8 +210,8 @@ func TestBuildNowNextItems_PreservesXmltvOffsets(t *testing.T) {
 
 	assert.Len(t, items, 1)
 	if assert.NotNil(t, items[0].Now) {
-		assert.Equal(t, "20260329013000 +0100", items[0].Now.StartXMLTV)
-		assert.Equal(t, "20260329033000 +0200", items[0].Now.EndXMLTV)
+		assert.Equal(t, "20260329013000 +0100", stringValue(items[0].Now.StartXmltv))
+		assert.Equal(t, "20260329033000 +0200", stringValue(items[0].Now.EndXmltv))
 	}
 }
 
@@ -248,7 +248,7 @@ func TestPostServicesNowNext_CanonicalMetadataInResponse(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload struct {
-		Items []nowNextItem `json:"items"`
+		Items []NowNextItem `json:"items"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&payload)
 	require.NoError(t, err)
@@ -257,20 +257,22 @@ func TestPostServicesNowNext_CanonicalMetadataInResponse(t *testing.T) {
 	nowItem := payload.Items[0].Now
 	require.NotNil(t, nowItem)
 	assert.Equal(t, "Babylon Berlin S03E05", nowItem.Title)
-	assert.Equal(t, "series", nowItem.Genre)
-	assert.Equal(t, "dvb_category", nowItem.GenreSource)
+	assert.Equal(t, "series", stringValue(nowItem.Genre))
+	assert.Equal(t, "dvb_category", stringValue(nowItem.GenreSource))
 
 	require.NotNil(t, nowItem.AgeRating)
 	assert.Equal(t, 16, nowItem.AgeRating.Value)
 	assert.Equal(t, "FSK", nowItem.AgeRating.Scheme)
 	assert.Equal(t, "DE", nowItem.AgeRating.Country)
-	assert.Equal(t, epg.RatingSourceDVBText, nowItem.AgeRating.Source)
-	assert.Equal(t, epg.RatingConfidenceObserved, nowItem.AgeRating.Confidence)
+	assert.Equal(t, EpgRatingSource(epg.RatingSourceDVBText), nowItem.AgeRating.Source)
+	assert.Equal(t, EpgRatingConfidence(epg.RatingConfidenceObserved), nowItem.AgeRating.Confidence)
 
 	require.NotNil(t, nowItem.EpisodeInfo)
-	assert.Equal(t, 3, nowItem.EpisodeInfo.SeasonNumber)
-	assert.Equal(t, 5, nowItem.EpisodeInfo.EpisodeNumber)
-	assert.Equal(t, "SxxExx", nowItem.EpisodeInfo.SourcePattern)
+	require.NotNil(t, nowItem.EpisodeInfo.SeasonNumber)
+	require.NotNil(t, nowItem.EpisodeInfo.EpisodeNumber)
+	assert.Equal(t, 3, *nowItem.EpisodeInfo.SeasonNumber)
+	assert.Equal(t, 5, *nowItem.EpisodeInfo.EpisodeNumber)
+	assert.Equal(t, "SxxExx", stringValue(nowItem.EpisodeInfo.SourcePattern))
 }
 
 func TestPostServicesNowNext_ReadOnlyDoesNotEnrichUncanonicalProgramme(t *testing.T) {
@@ -306,7 +308,7 @@ func TestPostServicesNowNext_ReadOnlyDoesNotEnrichUncanonicalProgramme(t *testin
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload struct {
-		Items []nowNextItem `json:"items"`
+		Items []NowNextItem `json:"items"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&payload)
 	require.NoError(t, err)
@@ -363,7 +365,7 @@ func TestPostServicesNowNext_ProgrammesFromEPGIntegration(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload struct {
-		Items []nowNextItem `json:"items"`
+		Items []NowNextItem `json:"items"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&payload)
 	require.NoError(t, err)
@@ -372,20 +374,22 @@ func TestPostServicesNowNext_ProgrammesFromEPGIntegration(t *testing.T) {
 	nowItem := payload.Items[0].Now
 	require.NotNil(t, nowItem)
 	assert.Equal(t, "Tatort: Das Team S02E04", nowItem.Title)
-	assert.Equal(t, "series", nowItem.Genre)
-	assert.Equal(t, "dvb_category", nowItem.GenreSource)
+	assert.Equal(t, "series", stringValue(nowItem.Genre))
+	assert.Equal(t, "dvb_category", stringValue(nowItem.GenreSource))
 
 	require.NotNil(t, nowItem.AgeRating)
 	assert.Equal(t, 12, nowItem.AgeRating.Value)
 	assert.Equal(t, "FSK", nowItem.AgeRating.Scheme)
 	assert.Equal(t, "DE", nowItem.AgeRating.Country)
-	assert.Equal(t, epg.RatingSourceDVBText, nowItem.AgeRating.Source)
-	assert.Equal(t, epg.RatingConfidenceObserved, nowItem.AgeRating.Confidence)
+	assert.Equal(t, EpgRatingSource(epg.RatingSourceDVBText), nowItem.AgeRating.Source)
+	assert.Equal(t, EpgRatingConfidence(epg.RatingConfidenceObserved), nowItem.AgeRating.Confidence)
 
 	require.NotNil(t, nowItem.EpisodeInfo)
-	assert.Equal(t, 2, nowItem.EpisodeInfo.SeasonNumber)
-	assert.Equal(t, 4, nowItem.EpisodeInfo.EpisodeNumber)
-	assert.Equal(t, "SxxExx", nowItem.EpisodeInfo.SourcePattern)
+	require.NotNil(t, nowItem.EpisodeInfo.SeasonNumber)
+	require.NotNil(t, nowItem.EpisodeInfo.EpisodeNumber)
+	assert.Equal(t, 2, *nowItem.EpisodeInfo.SeasonNumber)
+	assert.Equal(t, 4, *nowItem.EpisodeInfo.EpisodeNumber)
+	assert.Equal(t, "SxxExx", stringValue(nowItem.EpisodeInfo.SourcePattern))
 }
 
 func TestPostServicesNowNext_StructuralIsolationFromExternalProviders(t *testing.T) {

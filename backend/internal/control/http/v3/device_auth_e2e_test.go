@@ -258,7 +258,7 @@ func decodeInto(t *testing.T, resp *http.Response, out any) {
 }
 
 // pairAndExchange runs the full enrollment for a key and returns the response.
-func (e *deviceAuthE2E) pairAndExchange(key deviceKey) (exchangePairingResponse, int) {
+func (e *deviceAuthE2E) pairAndExchange(key deviceKey) (ExchangePairingResponse, int) {
 	e.t.Helper()
 
 	startResp := e.do(http.MethodPost, "/api/v3/pairing/start", map[string]any{
@@ -267,21 +267,21 @@ func (e *deviceAuthE2E) pairAndExchange(key deviceKey) (exchangePairingResponse,
 		"requestedPolicyProfile": "tv-default",
 	}, nil)
 	require.Equal(e.t, http.StatusCreated, startResp.StatusCode)
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeInto(e.t, startResp, &started)
 
-	approveResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{
+	approveResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{
 		"approvedPolicyProfile": "tv-default",
 	}, nil)
 	require.Equal(e.t, http.StatusOK, approveResp.StatusCode)
 
-	exchangeResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     key.jwk(),
 	}, nil)
 
 	status := exchangeResp.StatusCode
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	if status == http.StatusOK {
 		decodeInto(e.t, exchangeResp, &exchanged)
 	} else {
@@ -299,7 +299,7 @@ func TestDeviceAuthE2E_EnrollmentBindsGrantToTheDeviceKey(t *testing.T) {
 	enrolled, status := e.pairAndExchange(keyA)
 	require.Equal(t, http.StatusOK, status)
 
-	require.NotEmpty(t, enrolled.DeviceID)
+	require.NotEmpty(t, enrolled.DeviceId)
 	require.NotEmpty(t, enrolled.AccessToken)
 	require.NotEmpty(t, enrolled.RefreshToken)
 	require.Equal(t, "DPoP", enrolled.TokenType, "the access token must be DPoP-bound, not bearer")
@@ -309,10 +309,10 @@ func TestDeviceAuthE2E_EnrollmentBindsGrantToTheDeviceKey(t *testing.T) {
 	device, err := e.identity.Store().GetDeviceByThumbprint(t.Context(), keyA.thumbprint(t))
 	require.NoError(t, err)
 	require.NotNil(t, device, "the enrolled device must exist in identity")
-	require.Equal(t, enrolled.DeviceID, device.ID)
+	require.Equal(t, enrolled.DeviceId, device.ID)
 
 	// The ownership boundary: deviceauth keeps only the consumed bootstrap.
-	assertDeviceAuthHoldsNoDurableState(t, e.srv, enrolled.DeviceID)
+	assertDeviceAuthHoldsNoDurableState(t, e.srv, enrolled.DeviceId)
 }
 
 func TestDeviceAuthE2E_RefreshRotatesAndRebinds(t *testing.T) {
@@ -417,10 +417,10 @@ func TestDeviceAuthE2E_MalformedDeviceKeyIsRejectedBeforeConsumingThePairing(t *
 		"deviceName": "E2E Device", "deviceType": "android_tv",
 	}, nil)
 	require.Equal(t, http.StatusCreated, startResp.StatusCode)
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeInto(t, startResp, &started)
 
-	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{}, nil)
+	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{}, nil)
 	require.Equal(t, http.StatusOK, approve.StatusCode)
 	_ = approve.Body.Close()
 
@@ -429,7 +429,7 @@ func TestDeviceAuthE2E_MalformedDeviceKeyIsRejectedBeforeConsumingThePairing(t *
 	bad := key.jwk()
 	bad.X = base64.RawURLEncoding.EncodeToString(make([]byte, 31))
 
-	badResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	badResp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     bad,
 	}, nil)
@@ -438,7 +438,7 @@ func TestDeviceAuthE2E_MalformedDeviceKeyIsRejectedBeforeConsumingThePairing(t *
 
 	// The pairing must still be usable: a client-side formatting mistake may
 	// not cost the user their enrollment.
-	good := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	good := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     key.jwk(),
 	}, nil)
@@ -453,19 +453,19 @@ func TestDeviceAuthE2E_ConsumedPairingCannotBeExchangedTwice(t *testing.T) {
 	startResp := e.do(http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceName": "E2E Device", "deviceType": "android_tv",
 	}, nil)
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeInto(t, startResp, &started)
-	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{}, nil)
+	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{}, nil)
 	_ = approve.Body.Close()
 
 	key := newDeviceKey(t)
 	body := map[string]any{"pairingSecret": started.PairingSecret, "deviceJwk": key.jwk()}
 
-	first := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", body, nil)
+	first := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", body, nil)
 	require.Equal(t, http.StatusOK, first.StatusCode)
 	_ = first.Body.Close()
 
-	second := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", body, nil)
+	second := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", body, nil)
 	require.Equal(t, http.StatusGone, second.StatusCode,
 		"a consumed pairing must report a defined terminal state, not mint a second grant")
 	_ = second.Body.Close()
@@ -479,9 +479,9 @@ func TestDeviceAuthE2E_ParallelExchangeYieldsExactlyOneWinner(t *testing.T) {
 	startResp := e.do(http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceName": "E2E Device", "deviceType": "android_tv",
 	}, nil)
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeInto(t, startResp, &started)
-	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{}, nil)
+	approve := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{}, nil)
 	_ = approve.Body.Close()
 
 	key := newDeviceKey(t)
@@ -495,7 +495,7 @@ func TestDeviceAuthE2E_ParallelExchangeYieldsExactlyOneWinner(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			<-start
-			resp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", body, nil)
+			resp := e.do(http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", body, nil)
 			statuses[idx] = resp.StatusCode
 			_ = resp.Body.Close()
 		}(i)
