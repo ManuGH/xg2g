@@ -31,6 +31,7 @@ public struct TestTSPlayerScreen: View {
     @State private var viewPreset: VideoViewPreset = .standard
     @State private var showControls: Bool = true
     @State private var showLandscapeZapBar: Bool = false
+    @State private var showPortraitDrawer: Bool = false
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
@@ -204,6 +205,10 @@ public struct TestTSPlayerScreen: View {
                 Color.black.ignoresSafeArea()
 
                 VStack(spacing: 0) {
+                    if !isLandscape && !showPortraitDrawer {
+                        Spacer()
+                    }
+
                     // MARK: - Video Stage Container
                     ZStack(alignment: .topLeading) {
                         // 1. Native Metal 1080p50 Hardware Stage
@@ -352,9 +357,15 @@ public struct TestTSPlayerScreen: View {
 
                     // MARK: - Portrait Interactive Channel & Control Drawer
                     if !isLandscape {
-                        portraitControlsDrawer
+                        if showPortraitDrawer {
+                            portraitControlsDrawer
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else {
+                            Spacer()
+                        }
                     }
                 }
+                .animation(.easeInOut(duration: 0.28), value: showPortraitDrawer)
             }
             // Real fullscreen, not merely an edge-to-edge video frame.
             .statusBarHidden(isLandscape)
@@ -491,6 +502,31 @@ public struct TestTSPlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
+
+                    if !isLandscape {
+                        // 3b. Senderliste Drawer Button (Portrait direct access, 44pt hit target)
+                        Button {
+                            Haptics.shared.impact(.light)
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                showPortraitDrawer.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: showPortraitDrawer ? "chevron.down" : "list.bullet")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("Sender")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(showPortraitDrawer ? Theme.Colors.accentLive.opacity(0.35) : Color.white.opacity(0.12), in: Capsule())
+                            .overlay(Capsule().strokeBorder(showPortraitDrawer ? Theme.Colors.accentLive : Theme.Colors.borderSubtle, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
 
                     if isLandscape {
                         // 4. Picture in Picture Button (Landscape direct access, 44x44 hitbox)
@@ -744,8 +780,38 @@ public struct TestTSPlayerScreen: View {
     // MARK: - Portrait Bottom Drawer (Quick Zap & Stats)
 
     private var portraitControlsDrawer: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 0) {
+            // Header Bar
+            HStack {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Theme.Colors.accentLive)
+                        .frame(width: 6, height: 6)
+                    Text("SENDERLISTE")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+
+                Spacer()
+
+                Button {
+                    Haptics.shared.impact(.light)
+                    withAnimation(.easeInOut(duration: 0.28)) {
+                        showPortraitDrawer = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
                 // Channel Info Card
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
@@ -886,9 +952,11 @@ public struct TestTSPlayerScreen: View {
                 .background(.ultraThinMaterial)
                 .cornerRadius(14)
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                }
+                .padding(12)
             }
-            .padding(12)
         }
+        .background(Color.black.opacity(0.85))
     }
 
     private func badgeItem(icon: String, label: String, color: Color) -> some View {

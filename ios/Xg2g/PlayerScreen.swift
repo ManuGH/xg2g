@@ -725,79 +725,119 @@ struct LandscapeQuickZapBar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
-                Text("SCHNELL-ZAPPING")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.textTertiary)
+            // Header Bar
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Theme.Colors.accentLive)
+                        .frame(width: 6, height: 6)
+                    Text("SCHNELL-ZAPPING")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
 
                 Spacer()
 
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 8)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                // Lazy: `channels` is the full filtered channel list, and every row
-                // carries a `ChannelLogo` that starts its own request on appear.
-                // An eager HStack built all of them — and fired all those requests —
-                // the moment the zap bar opened.
-                LazyHStack(spacing: 10) {
-                    ForEach(channels) { ch in
-                        let isCurrent = ch.id == currentChannel.id
-                        Button {
-                            onSelect(ch)
-                        } label: {
-                            HStack(spacing: 8) {
-                                ChannelLogo(url: ch.logoURL, name: ch.name, size: 36)
+            // Horizontal Channel Cards Carousel
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(channels) { ch in
+                            let isCurrent = ch.id == currentChannel.id
+                            let nowEntry = schedule[ch.serviceRef]?.now
+                            let progress = nowEntry?.progress(at: Date())
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 4) {
-                                        if let num = ch.number {
-                                            Text(num)
-                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                                .foregroundStyle(Theme.Colors.accentAction)
+                            Button {
+                                onSelect(ch)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    ChannelLogo(url: ch.logoURL, name: ch.name, size: 38)
+                                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 5) {
+                                            if let num = ch.number {
+                                                Text(num)
+                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
+                                            }
+                                            Text(ch.name)
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(isCurrent ? .white : Theme.Colors.textPrimary)
+                                                .lineLimit(1)
+
+                                            if isCurrent {
+                                                Text("LIVE")
+                                                    .font(.system(size: 8, weight: .black, design: .monospaced))
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(Theme.Colors.accentLive, in: Capsule())
+                                            }
                                         }
-                                        Text(ch.name)
-                                            .font(.caption.weight(.bold))
-                                            .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
-                                            .lineLimit(1)
-                                    }
 
-                                    if let title = schedule[ch.serviceRef]?.now?.title {
-                                        Text(title)
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(Theme.Colors.textSecondary)
-                                            .lineLimit(1)
+                                        if let title = nowEntry?.title {
+                                            Text(title)
+                                                .font(.system(size: 11, weight: .medium))
+                                                .foregroundStyle(isCurrent ? Color.white.opacity(0.9) : Theme.Colors.textSecondary)
+                                                .lineLimit(1)
+                                        }
+
+                                        if let p = progress {
+                                            GeometryReader { barGeo in
+                                                ZStack(alignment: .leading) {
+                                                    Capsule()
+                                                        .fill(Color.white.opacity(0.15))
+                                                        .frame(height: 2.5)
+
+                                                    Capsule()
+                                                        .fill(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
+                                                        .frame(width: max(0, barGeo.size.width * CGFloat(p)), height: 2.5)
+                                                }
+                                            }
+                                            .frame(height: 2.5)
+                                        }
                                     }
                                 }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .frame(width: 220, alignment: .leading)
+                                .background(
+                                    isCurrent ? Theme.Colors.accentAction.opacity(0.3) : Color.white.opacity(0.06),
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(isCurrent ? Theme.Colors.accentLive : Theme.Colors.borderSubtle, lineWidth: isCurrent ? 1.5 : 0.8)
+                                )
+                                .shadow(color: isCurrent ? Theme.Colors.accentLive.opacity(0.3) : Color.clear, radius: 8)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                isCurrent ? Theme.Colors.accentAction.opacity(0.25) : Theme.Colors.surfaceElevated,
-                                in: RoundedRectangle(cornerRadius: 10)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .strokeBorder(isCurrent ? Theme.Colors.accentLive : Theme.Colors.borderSubtle, lineWidth: 1)
-                            )
+                            .buttonStyle(.plain)
+                            .id(ch.id)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
                 }
-                .padding(.horizontal, 4)
+                .fadingHorizontalEdges(fadeWidth: 16)
+                .onAppear {
+                    proxy.scrollTo(currentChannel.id, anchor: .center)
+                }
             }
-            .fadingHorizontalEdges(fadeWidth: 16)
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
-        .shadow(color: Color.black.opacity(0.4), radius: 12, y: 6)
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.5), radius: 16, y: 6)
     }
 }
 
