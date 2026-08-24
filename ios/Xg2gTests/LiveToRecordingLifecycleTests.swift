@@ -274,13 +274,17 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(channel: channelA, mode: .fullscreen)
         #expect(manager.currentChannel == channelA)
 
-        // 2. Launch Live -> Recording and immediately supersede with Live B
-        async let recordingTask: Void = manager.play(recording: testRecording, startPosition: 10.0)
-        async let liveBTask: Void = manager.play(channel: channelB, mode: .fullscreen)
+        // 2. Launch Live -> Recording and supersede with Live B
+        let recordingTask = Task { @MainActor in
+            await manager.play(recording: testRecording, startPosition: 10.0)
+        }
+        await Task.yield()
 
-        _ = await (recordingTask, liveBTask)
+        // 3. Immediately launch Live B to supersede Recording
+        await manager.play(channel: channelB, mode: .fullscreen)
+        _ = await recordingTask.value
 
-        // 3. Assert Live B won exclusively and recording state was never committed
+        // 4. Assert Live B won exclusively and recording state was never committed
         #expect(manager.state == .live(channelB, mode: .fullscreen))
         #expect(manager.currentChannel == channelB)
         #expect(manager.activeRecordingItem == nil)
@@ -297,13 +301,17 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(channel: channelA, mode: .fullscreen)
         #expect(manager.currentChannel == channelA)
 
-        // 2. Launch Live -> Offline and immediately supersede with Recording
-        async let offlineTask: Void = manager.play(offline: testOffline)
-        async let recordingTask: Void = manager.play(recording: testRecording, startPosition: 55.0)
+        // 2. Launch Live -> Offline and supersede with Recording
+        let offlineTask = Task { @MainActor in
+            await manager.play(offline: testOffline)
+        }
+        await Task.yield()
 
-        _ = await (offlineTask, recordingTask)
+        // 3. Immediately launch Recording to supersede Offline
+        await manager.play(recording: testRecording, startPosition: 55.0)
+        _ = await offlineTask.value
 
-        // 3. Assert Recording won exclusively and offline was discarded
+        // 4. Assert Recording won exclusively and offline was discarded
         #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0)))
         #expect(manager.activeRecordingItem != nil)
         #expect(manager.activeOfflineRecording == nil)
