@@ -125,18 +125,12 @@ struct RecordingsView: View {
 
     @State private var selectedFilter: CategoryFilter = .all
     @State private var searchText = ""
-    @State private var activePlaybackItem: PlayingRecordingItem?
     @State private var promptResumeRecording: Recording?
     @State private var selectedDetailRecording: Recording?
-    @State private var playingOffline: OfflineRecording?
     @State private var recordingToDelete: Recording?
 
     private func play(recording: Recording, startPosition: Double) {
-        activePlaybackItem = PlayingRecordingItem(
-            id: recording.id,
-            recording: recording,
-            initialPosition: startPosition
-        )
+        model.playbackManager.play(recording: recording, startPosition: startPosition)
     }
 
     private func handlePlayAction(for recording: Recording) {
@@ -226,26 +220,6 @@ struct RecordingsView: View {
             .navigationTitle("Aufnahmen")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
-            .fullScreenCover(item: $activePlaybackItem) { item in
-                RecordingPlayerScreen(
-                    recording: item.recording,
-                    serverAddress: model.serverURLString,
-                    initialPosition: item.initialPosition,
-                    model: model,
-                    onProgressUpdate: { current, total in
-                        model.updateRecordingProgress(
-                            id: item.recording.id,
-                            currentTime: current,
-                            totalDuration: total,
-                            title: item.recording.title
-                        )
-                    }
-                )
-                .ignoresSafeArea(.all)
-            }
-            .fullScreenCover(item: $playingOffline) { offline in
-                OfflinePlayerScreen(offlineRecording: offline)
-            }
             .sheet(item: $selectedDetailRecording) { rec in
                 RecordingDetailSheet(
                     recording: rec,
@@ -490,7 +464,7 @@ struct RecordingsView: View {
                     ) {
                         ForEach(downloadManager.offlineRecordings) { offline in
                             Button {
-                                playingOffline = offline
+                                model.playbackManager.play(offline: offline)
                             } label: {
                                 OfflineRecordingRow(offline: offline)
                             }
@@ -953,12 +927,6 @@ struct RecordingMediaCard: View {
         )
         .shadow(color: Color.black.opacity(0.3), radius: 8, y: 3)
     }
-}
-
-struct PlayingRecordingItem: Identifiable, Sendable {
-    let id: String
-    let recording: Recording
-    let initialPosition: Double
 }
 
 // MARK: - Infuse-Style Rich Recording Detail Sheet

@@ -22,23 +22,43 @@ public enum BackgroundPlaybackState: String, Sendable, Equatable {
     case backgroundAudio
 }
 
-/// Central controller for live TV playback sessions and presentation modes.
+struct PlayingRecordingItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let recording: Recording
+    let initialPosition: Double
+
+    init(id: String, recording: Recording, initialPosition: Double) {
+        self.id = id
+        self.recording = recording
+        self.initialPosition = initialPosition
+    }
+}
+
+enum PlaybackState: Equatable, Sendable {
+    case idle
+    case live(Channel, mode: PlaybackPresentationMode)
+    case recording(PlayingRecordingItem)
+    case offline(OfflineRecording)
+}
+
+/// Central controller for all active screen playback sessions and presentation modes.
 ///
 /// Decoupled from `AppModel` and individual screen lifecycles:
-/// neither FullscreenPlayer nor MiniPlayer owns the stream; both are
-/// presentation modes onto the persistent `ZapCoordinator` session.
+/// Acts as the single source of truth and state machine for active visible playback.
+///
+/// Note: DVR Timers and background RecordingJobs are intentionally completely independent
+/// of this controller and run independently on the backend.
 @MainActor
 final class PlaybackManager: ObservableObject {
 
-    @Published private(set) var presentationMode: PlaybackPresentationMode = .hidden
+    @Published private(set) var state: PlaybackState = .idle
     @Published private(set) var pipState: PiPState = .inactive
     @Published private(set) var backgroundState: BackgroundPlaybackState = .foreground
-    @Published private(set) var currentChannel: Channel?
-    @Published private(set) var isStreaming: Bool = false
 
     let coordinator: ZapCoordinator
     private let streamURLProvider: @MainActor (String) -> URL?
     private var cancellables = Set<AnyCancellable>()
+    private var recordingCleanupHook: (@MainActor () -> Void)?
 
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
@@ -57,8 +77,39 @@ final class PlaybackManager: ObservableObject {
             .store(in: &cancellables)
     }
 
+    // MARK: - Derived Canonical Properties (No Duplicate Published States)
+
+    var currentChannel: Channel? {
+        if case .live(let channel, _) = state { return channel }
+        return nil
+    }
+
+    var presentationMode: PlaybackPresentationMode {
+        if case .live(_, let mode) = state { return mode }
+        return .hidden
+    }
+
+    var activeRecordingItem: PlayingRecordingItem? {
+        if case .recording(let item) = state { return item }
+        return nil
+    }
+
+    var activeOfflineRecording: OfflineRecording? {
+        if case .offline(let rec) = state { return rec }
+        return nil
+    }
+
+    var isStreaming: Bool {
+        if case .live = state { return true }
+        return false
+    }
+
     var isPlaying: Bool {
-        presentationMode != .hidden && coordinator.playing != nil
+        switch state {
+        case .idle: return false
+        case .live(_, let mode): return mode != .hidden && coordinator.playing != nil
+        case .recording, .offline: return true
+        }
     }
 
     var displayedPlan: SessionRuntimePlan? {
@@ -69,11 +120,30 @@ final class PlaybackManager: ObservableObject {
         coordinator.displayedServiceRef ?? coordinator.presentedServiceRef ?? currentChannel?.serviceRef
     }
 
-    func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) {
-        self.currentChannel = channel
-        self.presentationMode = mode
-        self.isStreaming = true
+    // MARK: - Lifecycle Hooks
 
+    /// Registers a deterministic cleanup callback for the active recording player (e.g. AVPlayer teardown).
+    func registerRecordingCleanup(_ hook: @escaping @MainActor () -> Void) {
+        self.recordingCleanupHook = hook
+    }
+
+    func unregisterRecordingCleanup() {
+        self.recordingCleanupHook = nil
+    }
+
+    // MARK: - Handover & Transitions
+
+    func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) {
+        // 1. Teardown active recording if transitioning away from recording
+        if case .recording = state {
+            recordingCleanupHook?()
+            recordingCleanupHook = nil
+        }
+
+        // 2. Commit canonical Live state
+        self.state = .live(channel, mode: mode)
+
+        // 3. Drive Live Zap Transaction
         let serviceRef = channel.serviceRef
         if coordinator.canPrepare {
             Task { @MainActor in
@@ -87,32 +157,70 @@ final class PlaybackManager: ObservableObject {
     }
 
     func zap(to channel: Channel) {
-        self.currentChannel = channel
-        if presentationMode == .hidden {
-            self.presentationMode = .fullscreen
-        }
+        let targetMode = (presentationMode == .hidden) ? .fullscreen : presentationMode
+        self.state = .live(channel, mode: targetMode)
         let serviceRef = channel.serviceRef
         Task { @MainActor in
             await coordinator.zap(to: serviceRef)
         }
     }
 
+    func play(recording: Recording, startPosition: Double) {
+        // 1. Teardown active Live TV session before switching ownership
+        if case .live = state {
+            Task { @MainActor in
+                await coordinator.stop()
+            }
+        }
+
+        // 2. Teardown existing recording cleanup if switching between recordings
+        if case .recording = state {
+            recordingCleanupHook?()
+            recordingCleanupHook = nil
+        }
+
+        // 3. Set canonical Recording state
+        let item = PlayingRecordingItem(id: recording.id, recording: recording, initialPosition: startPosition)
+        self.state = .recording(item)
+    }
+
+    func play(offline: OfflineRecording) {
+        // 1. Teardown active Live TV session
+        if case .live = state {
+            Task { @MainActor in
+                await coordinator.stop()
+            }
+        }
+
+        // 2. Teardown existing recording if any
+        if case .recording = state {
+            recordingCleanupHook?()
+            recordingCleanupHook = nil
+        }
+
+        // 3. Set canonical Offline state
+        self.state = .offline(offline)
+    }
+
     func minimize() {
-        guard presentationMode == .fullscreen else { return }
-        self.presentationMode = .miniplayer
+        guard case .live(let channel, .fullscreen) = state else { return }
+        self.state = .live(channel, mode: .miniplayer)
     }
 
     func expand() {
-        guard presentationMode == .miniplayer else { return }
-        self.presentationMode = .fullscreen
+        guard case .live(let channel, .miniplayer) = state else { return }
+        self.state = .live(channel, mode: .fullscreen)
     }
 
     func stop() {
-        self.presentationMode = .hidden
-        self.isStreaming = false
-        self.currentChannel = nil
-        Task { @MainActor in
-            await coordinator.stop()
+        if case .live = state {
+            Task { @MainActor in
+                await coordinator.stop()
+            }
+        } else if case .recording = state {
+            recordingCleanupHook?()
+            recordingCleanupHook = nil
         }
+        self.state = .idle
     }
 }

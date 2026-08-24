@@ -46,6 +46,7 @@ struct RecordingPlayerScreen: View {
                         showsPlaybackControls: true,
                         onDismiss: {
                             cleanup()
+                            model?.playbackManager.stop()
                             dismiss()
                         }
                     )
@@ -66,9 +67,13 @@ struct RecordingPlayerScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all)
         .onAppear {
+            model?.playbackManager.registerRecordingCleanup {
+                self.cleanup()
+            }
             setupPlayer()
         }
         .onDisappear {
+            model?.playbackManager.unregisterRecordingCleanup()
             cleanup()
         }
     }
@@ -191,6 +196,7 @@ struct RecordingPlayerScreen: View {
 
             Button("Schließen") {
                 cleanup()
+                model?.playbackManager.stop()
                 dismiss()
             }
             .padding(.horizontal, 20)

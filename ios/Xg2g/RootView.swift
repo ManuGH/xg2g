@@ -89,6 +89,32 @@ struct RootContentView: View {
                 TestTSPlayerScreen(model: model, playbackManager: playbackManager, channel: channel)
             }
         }
+        .fullScreenCover(item: Binding(
+            get: { playbackManager.activeRecordingItem },
+            set: { if $0 == nil { playbackManager.stop() } }
+        )) { item in
+            RecordingPlayerScreen(
+                recording: item.recording,
+                serverAddress: model.serverURLString,
+                initialPosition: item.initialPosition,
+                model: model,
+                onProgressUpdate: { current, total in
+                    model.updateRecordingProgress(
+                        id: item.recording.id,
+                        currentTime: current,
+                        totalDuration: total,
+                        title: item.recording.title
+                    )
+                }
+            )
+            .ignoresSafeArea(.all)
+        }
+        .fullScreenCover(item: Binding(
+            get: { playbackManager.activeOfflineRecording },
+            set: { if $0 == nil { playbackManager.stop() } }
+        )) { offline in
+            OfflinePlayerScreen(offlineRecording: offline)
+        }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.presentationMode)
     }
 }
