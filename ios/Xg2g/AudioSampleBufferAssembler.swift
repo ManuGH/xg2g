@@ -31,11 +31,29 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
 
     // MARK: - AC3FrameParserDelegate
 
+    private func isAC3FormatChanged(_ info: AC3FrameInfo) -> Bool {
+        guard let current = currentAC3FrameInfo else { return true }
+        return current.isEnhanced != info.isEnhanced ||
+               current.sampleRate != info.sampleRate ||
+               current.channelCount != info.channelCount ||
+               current.isLFEOn != info.isLFEOn ||
+               current.acmod != info.acmod
+    }
+
+    private func isAACFormatChanged(_ info: AACFrameInfo) -> Bool {
+        guard let current = currentAACFrameInfo else { return true }
+        return current.profile != info.profile ||
+               current.sampleRate != info.sampleRate ||
+               current.channelCount != info.channelCount ||
+               current.channelConfig != info.channelConfig ||
+               current.audioSpecificConfig != info.audioSpecificConfig
+    }
+
     public func ac3FrameParser(_ parser: AC3FrameParser, didEmitFrame frame: ParsedAudioFrame) {
         let info = frame.info
 
         // Update format description if audio properties changed
-        if currentFormatDescription == nil || currentAC3FrameInfo != info {
+        if currentFormatDescription == nil || isAC3FormatChanged(info) {
             if let newFormat = createAC3FormatDescription(for: info) {
                 self.currentFormatDescription = newFormat
                 self.currentAC3FrameInfo = info
@@ -62,7 +80,7 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
     public func aacFrameParser(_ parser: AACADTSFrameParser, didEmitFrame frame: ParsedAACFrame) {
         let info = frame.info
 
-        if currentFormatDescription == nil || currentAACFrameInfo != info {
+        if currentFormatDescription == nil || isAACFormatChanged(info) {
             if let newFormat = createAACFormatDescription(for: info) {
                 self.currentFormatDescription = newFormat
                 self.currentAACFrameInfo = info
