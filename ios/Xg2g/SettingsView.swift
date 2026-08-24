@@ -266,33 +266,6 @@ struct SettingsView: View {
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
-#if DEBUG
-                    // MARK: - Labor
-                    Section {
-                        NavigationLink {
-                            TestTSPlayerScreen(model: model)
-                        } label: {
-                            HStack(spacing: 12) {
-                                SettingsIconBadge(systemName: "sparkles.tv", backgroundColor: Color.orange)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("1080i50 Metal Player (Labor)")
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Native VideoToolbox & Metal 50p Benchmark")
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("Experimentell & Labor")
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    } footer: {
-                        Text("Direkter 1080i50 TS-Stream Hardware-Decode mit Echtzeit-GPU-Deinterlacing und Telemetrie-HUD.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .listRowBackground(Theme.Colors.surfaceElevated)
-#endif
 
                     // MARK: - Sitzung
                     Section {
