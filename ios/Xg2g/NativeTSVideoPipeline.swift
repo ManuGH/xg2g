@@ -1724,8 +1724,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             completeRecoveryIfNeeded()
 
             let buffered = pts.seconds - anchorPTS.seconds
-            if !requiresCushion || buffered >= effectiveAudioPreRoll {
-                let zapId = currentZapId
+            let minRequiredAudioLead = Self.enableEarlyMotionExperiment ? min(effectiveAudioPreRoll, 0.25) : 0.35
+            guard buffered >= minRequiredAudioLead else {
+                noteAnchorRejected(
+                    reason: "only \(String(format: "%.0f", buffered * 1000))ms of audio ahead of anchor (\(String(format: "%.0f", minRequiredAudioLead * 1000))ms required)",
+                    anchorSeconds: anchorPTS.seconds,
+                    firstAudio: firstPTS.seconds,
+                    cushion: effectiveAudioPreRoll
+                )
+                return
+            }
+
+            let zapId = currentZapId
                 if Self.enableEarlyMotionExperiment {
                     let pruneResult = self.audioRenderer.pruneBuffersBefore(time: anchorPTS)
                     let lastPrunedStr = pruneResult.lastPrunedPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
@@ -1795,7 +1805,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     removeFirstPictureObserver()
                     recordFirstPictureVisible()
                 }
-            }
         }
     }
 
