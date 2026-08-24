@@ -1619,7 +1619,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let firstPTS = firstAudioPTS else { return }
             if preRollStartTime == 0 { preRollStartTime = CACurrentMediaTime() }
 
-            var requiresCushion = true
             var cushionSource = "audio"
 
             let anchorPTS: CMTime
@@ -1692,7 +1691,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 } else {
                     anchorSource = "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
                 }
-                requiresCushion = false
             } else if tsParser.videoPID == nil {
                 anchorPTS = firstPTS
                 anchorSource = "audio only, no video service"
