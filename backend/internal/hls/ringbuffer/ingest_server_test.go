@@ -92,22 +92,46 @@ func TestIngestServer_DVRIsolation(t *testing.T) {
 		t.Fatalf("rec put failed: %v, status: %v", err, resp)
 	}
 
-	// Wait briefly for async worker to write
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the write the worker is supposed to make, rather than sleeping a
+	// guessed interval. 100ms was enough on a developer machine and not on a
+	// loaded CI runner, which made this the flakiest test in the package.
+	//
+	// The order matters: waiting for the recording file first also gives the
+	// worker every chance to write the live file it must not write, so the
+	// negative assertion below is stronger than it was under a fixed sleep.
+	recFile := filepath.Join(ports.SessionHLSDir(tmpDir, "rec_sess"), "seg_000001.ts")
+	data := waitForFile(t, recFile)
+	if string(data) != "rec_data" {
+		t.Fatalf("expected rec_data on disk, got %s", string(data))
+	}
 
 	// Check live session on disk (should not exist)
 	liveFile := filepath.Join(ports.SessionHLSDir(tmpDir, "live_sess"), "seg_000001.ts")
 	if _, err := os.Stat(liveFile); !os.IsNotExist(err) {
 		t.Fatalf("live session file should NOT exist on disk, but found: %v", err)
 	}
+}
 
-	// Check rec session on disk (should exist with content "rec_data")
-	recFile := filepath.Join(ports.SessionHLSDir(tmpDir, "rec_sess"), "seg_000001.ts")
-	data, err := os.ReadFile(recFile)
-	if err != nil {
-		t.Fatalf("rec session file should exist on disk, got err: %v", err)
-	}
-	if string(data) != "rec_data" {
-		t.Fatalf("expected rec_data on disk, got %s", string(data))
+// waitForFile returns a file's contents once the writer has produced it, or
+// fails the test at the deadline.
+//
+// The deadline is an upper bound and not a delay: the loop returns as soon as
+// the file is readable, so a healthy run costs one iteration.
+func waitForFile(t *testing.T, path string) []byte {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(path) // #nosec G304 -- test-owned temp path
+		if err == nil {
+			return data
+		}
+		if !os.IsNotExist(err) {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("file never appeared within 5s: %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
