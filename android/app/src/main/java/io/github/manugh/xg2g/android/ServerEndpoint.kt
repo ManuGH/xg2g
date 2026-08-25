@@ -2,7 +2,7 @@ package io.github.manugh.xg2g.android
 
 import io.github.manugh.xg2g.android.transport.ServerTargetResolver
 
-internal data class PublishedEndpoint(
+internal data class ServerEndpoint(
     val url: String,
     val kind: String,
     val priority: Int,
@@ -15,7 +15,7 @@ internal data class PublishedEndpoint(
     val source: String
 )
 
-internal fun normalizePublishedEndpoints(values: List<PublishedEndpoint>): List<PublishedEndpoint> {
+internal fun normalizePublishedEndpoints(values: List<ServerEndpoint>): List<ServerEndpoint> {
     if (values.isEmpty()) {
         return emptyList()
     }
@@ -31,14 +31,14 @@ internal fun normalizePublishedEndpoints(values: List<PublishedEndpoint>): List<
             )
         }
         .filter { it.url.isNotEmpty() }
-        .sortedWith(compareBy<PublishedEndpoint> { it.priority }.thenBy { it.url })
+        .sortedWith(compareBy<ServerEndpoint> { it.priority }.thenBy { it.url })
         .distinctBy { it.url }
         .toList()
 }
 
 internal fun preferredNativeServerUrl(
     currentServerUrl: String?,
-    endpoints: List<PublishedEndpoint>
+    endpoints: List<ServerEndpoint>
 ): String? {
     val normalizedCurrent = currentServerUrl?.let(ServerTargetResolver::normalizeServerUrl)
     val candidates = endpoints
@@ -54,7 +54,7 @@ internal fun preferredNativeServerUrl(
     return candidates.firstOrNull()
 }
 
-internal fun matchesPublishedEndpointServerUrl(baseUrl: String, endpoints: List<PublishedEndpoint>): Boolean {
+internal fun matchesPublishedEndpointServerUrl(baseUrl: String, endpoints: List<ServerEndpoint>): Boolean {
     return endpoints
         .asSequence()
         .mapNotNull { ServerTargetResolver.normalizeServerUrl(it.url) }

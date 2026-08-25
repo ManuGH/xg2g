@@ -5,12 +5,15 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.recordings.Breadcrumb
-import io.github.manugh.xg2g.android.recordings.DirectoryItem
-import io.github.manugh.xg2g.android.recordings.RecordingItem
-import io.github.manugh.xg2g.android.recordings.RecordingRoot
-import io.github.manugh.xg2g.android.recordings.RecordingsResponse
-import io.github.manugh.xg2g.android.recordings.ResumeSummary
+import io.github.manugh.xg2g.android.contract.Breadcrumb
+import io.github.manugh.xg2g.android.contract.DirectoryItem
+import io.github.manugh.xg2g.android.contract.RecordingItem
+import io.github.manugh.xg2g.android.contract.RecordingItem as WireRecordingItem
+import io.github.manugh.xg2g.android.contract.RecordingResponse as WireRecordingResponse
+import io.github.manugh.xg2g.android.contract.RecordingRoot
+import io.github.manugh.xg2g.android.contract.ResumeSummary
+import io.github.manugh.xg2g.android.recordings.RecordingListItem
+import io.github.manugh.xg2g.android.recordings.RecordingsPage
 import io.github.manugh.xg2g.android.transport.apiV3Url
 import io.github.manugh.xg2g.android.transport.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.transport.guide.GuideAuthRequiredException
@@ -59,9 +62,9 @@ internal class RecordingsApiClient(
         authToken: String?,
         root: String? = null,
         path: String? = null
-    ): RecordingsResponse = withContext(Dispatchers.IO) {
+    ): RecordingsPage = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
-            return@withContext RecordingsResponse()
+            return@withContext RecordingsPage()
         }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrl("recordings").newBuilder()
@@ -85,60 +88,14 @@ internal class RecordingsApiClient(
         }
 
         val json = JSONTokener(responseBody).nextValue() as? JSONObject
-            ?: return@withContext RecordingsResponse()
+            ?: return@withContext RecordingsPage()
 
-        val reqId = json.optString("requestId").takeIf { it.isNotBlank() }
-        val curRoot = json.optString("currentRoot").takeIf { it.isNotBlank() }
-        val curPath = json.optString("currentPath").takeIf { it.isNotBlank() }
-
-        val rootsList = mutableListOf<RecordingRoot>()
-        val rootsArr = json.optJSONArray("roots")
-        if (rootsArr != null) {
-            for (i in 0 until rootsArr.length()) {
-                val obj = rootsArr.optJSONObject(i) ?: continue
-                val id = obj.optString("id").takeIf { it.isNotBlank() } ?: continue
-                val name = obj.optString("name").takeIf { it.isNotBlank() } ?: id
-                rootsList.add(RecordingRoot(id = id, name = name))
-            }
-        }
-
-        val dirsList = mutableListOf<DirectoryItem>()
-        val dirsArr = json.optJSONArray("directories")
-        if (dirsArr != null) {
-            for (i in 0 until dirsArr.length()) {
-                val obj = dirsArr.optJSONObject(i) ?: continue
-                val name = obj.optString("name").takeIf { it.isNotBlank() } ?: continue
-                val dirPath = obj.optString("path").takeIf { it.isNotBlank() } ?: ""
-                dirsList.add(DirectoryItem(name = name, path = dirPath))
-            }
-        }
-
-        val crumbsList = mutableListOf<Breadcrumb>()
-        val crumbsArr = json.optJSONArray("breadcrumbs")
-        if (crumbsArr != null) {
-            for (i in 0 until crumbsArr.length()) {
-                val obj = crumbsArr.optJSONObject(i) ?: continue
-                val name = obj.optString("name").takeIf { it.isNotBlank() } ?: continue
-                val crumbPath = obj.optString("path").takeIf { it.isNotBlank() } ?: ""
-                crumbsList.add(Breadcrumb(name = name, path = crumbPath))
-            }
-        }
-
-        val itemsArr = json.optJSONArray("recordings") ?: JSONArray()
-        val recordingItems = parseRecordingItems(itemsArr)
-
-        RecordingsResponse(
-            requestId = reqId,
-            currentRoot = curRoot,
-            currentPath = curPath,
-            roots = rootsList,
-            directories = dirsList,
-            breadcrumbs = crumbsList,
-            recordings = recordingItems
-        )
+        // Decoding is the generated contract's job; this client only maps the
+        // result into what the recordings screen works with.
+        WireRecordingResponse.fromJson(json).toDomain()
     }
 
-    suspend fun fetchContinueWatching(authToken: String?, limit: Int = 12): List<RecordingItem> = withContext(Dispatchers.IO) {
+    suspend fun fetchContinueWatching(authToken: String?, limit: Int = 12): List<RecordingListItem> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext emptyList()
         }
@@ -165,41 +122,11 @@ internal class RecordingsApiClient(
     fun buildThumbnailUrl(recordingId: String): String =
         recordingThumbnailUrl(requireBaseUrl(), recordingId).toString()
 
-    private fun parseRecordingItems(arr: JSONArray): List<RecordingItem> {
-        val list = mutableListOf<RecordingItem>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val recId = obj.optString("recordingId").takeIf { it.isNotBlank() }
-                ?: obj.optString("id").takeIf { it.isNotBlank() }
-                ?: continue
-
-            val resumeObj = obj.optJSONObject("resume")
-            val resume = resumeObj?.let { r ->
-                ResumeSummary(
-                    posSeconds = r.optLong("posSeconds", 0L),
-                    durationSeconds = if (r.has("durationSeconds") && !r.isNull("durationSeconds")) r.optLong("durationSeconds") else null,
-                    finished = if (r.has("finished") && !r.isNull("finished")) r.optBoolean("finished") else null,
-                    updatedAt = r.optString("updatedAt").takeIf { it.isNotBlank() }
-                )
-            }
-
-            val item = RecordingItem(
-                recordingId = recId,
-                serviceRef = obj.optString("serviceRef").takeIf { it.isNotBlank() },
-                title = obj.optString("title").takeIf { it.isNotBlank() } ?: "Aufnahme",
-                description = obj.optString("description").takeIf { it.isNotBlank() },
-                beginUnixSeconds = if (obj.has("beginUnixSeconds") && !obj.isNull("beginUnixSeconds")) obj.optLong("beginUnixSeconds") else null,
-                length = obj.optString("length").takeIf { it.isNotBlank() },
-                durationSeconds = if (obj.has("durationSeconds") && !obj.isNull("durationSeconds")) obj.optLong("durationSeconds") else null,
-                filename = obj.optString("filename").takeIf { it.isNotBlank() },
-                status = obj.optString("status").takeIf { it.isNotBlank() },
-                localWritable = if (obj.has("localWritable") && !obj.isNull("localWritable")) obj.optBoolean("localWritable") else null,
-                resume = resume
-            )
-            list.add(item)
+    private fun parseRecordingItems(arr: JSONArray): List<RecordingListItem> =
+        (0 until arr.length()).mapNotNull { index ->
+            val obj = arr.optJSONObject(index) ?: return@mapNotNull null
+            runCatching { WireRecordingItem.fromJson(obj).toDomain() }.getOrNull()
         }
-        return list
-    }
 
     private suspend fun ensureAuthSession(authToken: String?) {
         // Native REST API requests manage authentication per request

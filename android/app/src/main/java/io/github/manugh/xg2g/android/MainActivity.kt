@@ -31,6 +31,7 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import io.github.manugh.xg2g.android.playback.net.NativePlaybackCapabilities
 import io.github.manugh.xg2g.android.playback.net.PlaybackApiJsonCodec
+import io.github.manugh.xg2g.android.recordings.RecordingListItem
 import io.github.manugh.xg2g.android.transport.ServerTargetResolver
 import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthRepository
 import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthTransport

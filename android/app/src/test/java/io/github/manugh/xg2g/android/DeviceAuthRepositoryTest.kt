@@ -40,7 +40,7 @@ class DeviceAuthRepositoryTest {
                 accessTokenExpiresAtEpochMs = 120_000L,
                 policyVersion = "device-auth-v1",
                 endpoints = listOf(
-                    PublishedEndpoint(
+                    ServerEndpoint(
                         url = "https://public.example",
                         kind = "public_https",
                         priority = 10,
@@ -146,7 +146,7 @@ class DeviceAuthRepositoryTest {
                 deviceGrantId = "dgr-1",
                 deviceGrant = "grant-secret",
                 publishedEndpoints = listOf(
-                    PublishedEndpoint(
+                    ServerEndpoint(
                         url = "https://edge.example",
                         kind = "public_https",
                         priority = 10,

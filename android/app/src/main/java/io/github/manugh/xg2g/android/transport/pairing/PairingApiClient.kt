@@ -1,7 +1,9 @@
 package io.github.manugh.xg2g.android.transport.pairing
 
-import io.github.manugh.xg2g.android.PublishedEndpoint
+import io.github.manugh.xg2g.android.ServerEndpoint
+import io.github.manugh.xg2g.android.contract.PublishedEndpoint
 import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.parseServerEndpoints
 import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -41,7 +43,7 @@ internal data class ExchangePairingResult(
     val accessToken: String,
     val accessTokenExpiresAtEpochMs: Long,
     val policyVersion: String?,
-    val endpoints: List<PublishedEndpoint>
+    val endpoints: List<ServerEndpoint>
 )
 
 internal class PairingApiClient(
@@ -150,28 +152,8 @@ internal class PairingApiClient(
         )
     }
 
-    private fun parseEndpoints(array: JSONArray?): List<PublishedEndpoint> {
-        if (array == null) return emptyList()
-        return buildList {
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
-                add(
-                    PublishedEndpoint(
-                        url = item.optString("url"),
-                        kind = item.optString("kind"),
-                        priority = item.optInt("priority"),
-                        tlsMode = item.optString("tlsMode"),
-                        allowPairing = item.optBoolean("allowPairing"),
-                        allowStreaming = item.optBoolean("allowStreaming"),
-                        allowWeb = item.optBoolean("allowWeb"),
-                        allowNative = item.optBoolean("allowNative"),
-                        advertiseReason = item.optString("advertiseReason"),
-                        source = item.optString("source", "config")
-                    )
-                )
-            }
-        }
-    }
+    private fun parseEndpoints(array: JSONArray?): List<ServerEndpoint> =
+        parseServerEndpoints(array)
 
     private fun parseHttpInstant(value: String?): Long? {
         val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null

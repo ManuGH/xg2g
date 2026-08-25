@@ -3,7 +3,7 @@ package io.github.manugh.xg2g.android.recordings
 import androidx.compose.runtime.Immutable
 
 @Immutable
-data class ResumeSummary(
+data class RecordingResumeState(
     val posSeconds: Long = 0L,
     val durationSeconds: Long? = null,
     val finished: Boolean? = null,
@@ -11,25 +11,25 @@ data class ResumeSummary(
 )
 
 @Immutable
-data class RecordingRoot(
+data class RecordingLibraryRoot(
     val id: String,
     val name: String
 )
 
 @Immutable
-data class DirectoryItem(
+data class RecordingFolder(
     val name: String,
     val path: String
 )
 
 @Immutable
-data class Breadcrumb(
+data class RecordingCrumb(
     val name: String,
     val path: String
 )
 
 @Immutable
-data class RecordingItem(
+data class RecordingListItem(
     val recordingId: String,
     val serviceRef: String? = null,
     val title: String? = null,
@@ -40,16 +40,16 @@ data class RecordingItem(
     val filename: String? = null,
     val status: String? = null,
     val localWritable: Boolean? = null,
-    val resume: ResumeSummary? = null
+    val resume: RecordingResumeState? = null
 )
 
 @Immutable
-data class RecordingsResponse(
+data class RecordingsPage(
     val requestId: String? = null,
     val currentRoot: String? = null,
     val currentPath: String? = null,
-    val roots: List<RecordingRoot> = emptyList(),
-    val directories: List<DirectoryItem> = emptyList(),
-    val breadcrumbs: List<Breadcrumb> = emptyList(),
-    val recordings: List<RecordingItem> = emptyList()
+    val roots: List<RecordingLibraryRoot> = emptyList(),
+    val directories: List<RecordingFolder> = emptyList(),
+    val breadcrumbs: List<RecordingCrumb> = emptyList(),
+    val recordings: List<RecordingListItem> = emptyList()
 )
