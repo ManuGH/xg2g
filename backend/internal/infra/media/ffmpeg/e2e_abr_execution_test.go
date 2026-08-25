@@ -25,6 +25,12 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
+	// The short-mode guard above is why the PR gate never hit this; the Phase D
+	// suite runs the same package without -short and does. Generating the input
+	// file shells out to ffmpeg, and CI does not install it.
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available; skipping ABR execution E2E")
+	}
 
 	tempDir := t.TempDir()
 

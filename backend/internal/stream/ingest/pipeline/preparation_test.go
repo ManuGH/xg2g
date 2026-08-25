@@ -91,6 +91,19 @@ func presentableBroadcast(t *testing.T) []byte {
 	return data
 }
 
+// teardownBudget bounds the waits for a session to leave the manager.
+//
+// It is derived, not guessed: a session being torn down can still be waiting on
+// the connect timeout below (2s) and then on the warm hold (200ms) before it is
+// removed, so the worst case is ~2.2s. The previous bounds were 3s — under a
+// second of headroom — which held on a developer machine and failed on a loaded
+// CI runner, where `TestPrepare_CancelReleasesImmediately` reported "condition
+// never became true" for a teardown that was merely slow.
+//
+// waitFor polls every 10ms and returns the moment the condition holds, so this
+// is an upper bound and costs a healthy run nothing.
+const teardownBudget = 15 * time.Second
+
 func newPrepManager(t *testing.T, recv *fakeReceiver, cfg PreparationConfig) (*PreparationManager, *session.Manager) {
 	t.Helper()
 	connectorCfg := DefaultConnectorConfig("", 8001)
@@ -316,7 +329,7 @@ func TestPrepare_NewerZapSupersedesAndReleasesTheOlderOne(t *testing.T) {
 	prepB, _ := pm.Prepare(PrepareRequest{ClientID: "sterling-1", ZapID: "zap-b", Key: keyFor(refB)})
 
 	// Let B actually take its lease before superseding it, so the release is real.
-	waitFor(t, time.Second, func() bool { return mgr.ActiveCount() >= 1 })
+	waitFor(t, teardownBudget, func() bool { return mgr.ActiveCount() >= 1 })
 
 	prepC, _ := pm.Prepare(PrepareRequest{ClientID: "sterling-1", ZapID: "zap-c", Key: keyFor(refC)})
 
@@ -331,7 +344,7 @@ func TestPrepare_NewerZapSupersedesAndReleasesTheOlderOne(t *testing.T) {
 	}
 
 	// B's ingest must be gone once the warm hold lapses; only C's remains.
-	waitFor(t, 3*time.Second, func() bool { return mgr.ActiveCount() == 1 })
+	waitFor(t, teardownBudget, func() bool { return mgr.ActiveCount() == 1 })
 
 	if _, ok := pm.ActiveForClient("sterling-1"); !ok {
 		t.Fatal("the client should still own its newest preparation")
@@ -357,7 +370,7 @@ func TestPrepare_UncommittedPreparationExpiresAndReleasesItsTuner(t *testing.T) 
 	if st := prep.Status(); st.State != PreparationCancelled {
 		t.Fatalf("an uncommitted preparation must expire, got %q", st.State)
 	}
-	waitFor(t, 3*time.Second, func() bool { return mgr.ActiveCount() == 0 })
+	waitFor(t, teardownBudget, func() bool { return mgr.ActiveCount() == 0 })
 }
 
 // Explicit cancellation releases the tuner immediately — this is what a client
@@ -368,7 +381,7 @@ func TestPrepare_CancelReleasesImmediately(t *testing.T) {
 	pm, mgr := newPrepManager(t, recv, DefaultPreparationConfig())
 
 	prep, _ := pm.Prepare(PrepareRequest{ClientID: "sterling-1", ZapID: "zap-6", Key: keyFor(refB)})
-	waitFor(t, 2*time.Second, func() bool { return mgr.ActiveCount() >= 1 })
+	waitFor(t, teardownBudget, func() bool { return mgr.ActiveCount() >= 1 })
 
 	if !pm.Cancel(prep.ID(), "client went away") {
 		t.Fatal("cancel should report that it acted")
@@ -376,7 +389,7 @@ func TestPrepare_CancelReleasesImmediately(t *testing.T) {
 	if st := prep.Status(); st.State != PreparationCancelled {
 		t.Fatalf("expected cancelled, got %q", st.State)
 	}
-	waitFor(t, 3*time.Second, func() bool { return mgr.ActiveCount() == 0 })
+	waitFor(t, teardownBudget, func() bool { return mgr.ActiveCount() == 0 })
 
 	if pm.Cancel(prep.ID(), "again") {
 		t.Fatal("cancelling twice must not act twice")
@@ -404,7 +417,7 @@ func TestPrepare_UpstreamEOFBeforeReadinessIsNamed(t *testing.T) {
 	waitAttachable(t, pipeA, 5*time.Second)
 
 	prep, _ := pm.Prepare(PrepareRequest{ClientID: "sterling-1", ZapID: "zap-7", Key: keyFor(refB)})
-	waitFor(t, 2*time.Second, func() bool { return recv.dialCount() >= 2 })
+	waitFor(t, teardownBudget, func() bool { return recv.dialCount() >= 2 })
 	recv.endBroadcast(refB)
 
 	st := awaitTerminalOrReady(t, prep, 5*time.Second)
