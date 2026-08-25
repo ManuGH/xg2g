@@ -4,21 +4,19 @@ import android.content.Context
 import android.util.Log
 import androidx.media3.common.Player
 import io.github.manugh.xg2g.android.DeviceAuthStore
-import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackState
 import io.github.manugh.xg2g.android.playback.model.SessionMode
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionState
-import io.github.manugh.xg2g.android.playback.net.PlaybackApiClient
-import io.github.manugh.xg2g.android.playback.player.Media3SessionBinder
-import io.github.manugh.xg2g.android.playback.player.PlaybackSessionBinding
+import io.github.manugh.xg2g.android.transport.playback.PlaybackApiClient
+import io.github.manugh.xg2g.android.transport.playback.PlaybackSessionBinding
 import io.github.manugh.xg2g.android.playback.player.PlayerEventForwarder
 import io.github.manugh.xg2g.android.playback.player.PlayerHolder
 import io.github.manugh.xg2g.android.playback.session.HeartbeatManager
 import io.github.manugh.xg2g.android.playback.session.LiveSessionCoordinator
-import io.github.manugh.xg2g.android.playback.session.PlaybackErrorMapper
+import io.github.manugh.xg2g.android.transport.playback.PlaybackErrorMapper
 import io.github.manugh.xg2g.android.playback.session.ReadinessPoller
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,11 +31,8 @@ internal class PlaybackRuntime(
     private val stateStore: PlaybackStateStore
 ) : PlaybackSession {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val dpopProvider = AndroidKeystoreDPoPProvider()
     private val playbackApi = PlaybackApiClient(context.applicationContext)
-    private val playerHolder = PlayerHolder(context.applicationContext, playbackApi.okHttpClient).apply {
-        sessionBinder = Media3SessionBinder(dpopProvider)
-    }
+    private val playerHolder = PlayerHolder(context.applicationContext, playbackApi.playerMediaTransport)
     private val heartbeatManager = HeartbeatManager(playbackApi, scope)
     private val readinessPoller = ReadinessPoller(playbackApi, PlaybackErrorMapper())
     private val liveSessionCoordinator = LiveSessionCoordinator(

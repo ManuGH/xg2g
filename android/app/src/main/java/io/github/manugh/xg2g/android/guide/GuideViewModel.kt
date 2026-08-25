@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.guide
 
+
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -10,7 +11,8 @@ import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-
+import io.github.manugh.xg2g.android.transport.guide.GuideApiClient
+import io.github.manugh.xg2g.android.transport.guide.GuideAuthRequiredException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow

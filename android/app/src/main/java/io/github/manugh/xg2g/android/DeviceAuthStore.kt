@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import io.github.manugh.xg2g.android.transport.ServerTargetResolver
 import org.json.JSONArray
 import org.json.JSONObject
 

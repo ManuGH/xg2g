@@ -7,11 +7,12 @@ import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionState
 import io.github.manugh.xg2g.android.playback.net.NativeRecordingPlaybackInfo
 import io.github.manugh.xg2g.android.playback.net.PlaybackApi
+import io.github.manugh.xg2g.android.transport.playback.PlaybackHttpException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

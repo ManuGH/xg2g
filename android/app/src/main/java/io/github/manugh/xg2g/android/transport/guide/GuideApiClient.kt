@@ -1,13 +1,20 @@
-package io.github.manugh.xg2g.android.guide
+package io.github.manugh.xg2g.android.transport.guide
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import io.github.manugh.xg2g.android.apiV3UrlBuilder
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
+import io.github.manugh.xg2g.android.guide.GuideBouquet
+import io.github.manugh.xg2g.android.guide.GuideChannel
+import io.github.manugh.xg2g.android.guide.GuideHealthStatus
+import io.github.manugh.xg2g.android.guide.GuideProgram
+import io.github.manugh.xg2g.android.guide.GuideTimelineWindow
+import io.github.manugh.xg2g.android.guide.canonicalGuideServiceRef
+import io.github.manugh.xg2g.android.transport.apiV3UrlBuilder
+import io.github.manugh.xg2g.android.transport.auth.createNativeAuthenticatedOkHttpClient
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
+import java.time.OffsetDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -19,7 +26,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
-import java.time.OffsetDateTime
 
 
 

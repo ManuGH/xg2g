@@ -1,6 +1,8 @@
-package io.github.manugh.xg2g.android.auth
+package io.github.manugh.xg2g.android.transport.auth
 
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response

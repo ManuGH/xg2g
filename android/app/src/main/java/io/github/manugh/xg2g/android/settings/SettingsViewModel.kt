@@ -1,14 +1,15 @@
 package io.github.manugh.xg2g.android.settings
 
+
 import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-
 import io.github.manugh.xg2g.android.ServerSettingsStore
-import io.github.manugh.xg2g.android.dashboard.DashboardApiClient
-import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
+import io.github.manugh.xg2g.android.transport.dashboard.DashboardApiClient
+import io.github.manugh.xg2g.android.transport.dashboard.NativeHouseholdProfile
+import io.github.manugh.xg2g.android.transport.pairing.PairingApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +56,7 @@ internal data class SettingsUiState(
 internal class SettingsViewModel(
     private val serverSettingsStore: ServerSettingsStore,
     private val dashboardApiClient: DashboardApiClient,
-    private val pairingApiClient: io.github.manugh.xg2g.android.pairing.PairingApiClient? = null
+    private val pairingApiClient: io.github.manugh.xg2g.android.transport.pairing.PairingApiClient? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -80,7 +81,7 @@ internal class SettingsViewModel(
     }
 
     fun startPairing() {
-        val client = pairingApiClient ?: io.github.manugh.xg2g.android.pairing.PairingApiClient(serverSettingsStore.getServerUrl().orEmpty())
+        val client = pairingApiClient ?: io.github.manugh.xg2g.android.transport.pairing.PairingApiClient(serverSettingsStore.getServerUrl().orEmpty())
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isPairingActive = true,
@@ -108,7 +109,7 @@ internal class SettingsViewModel(
     }
 
     private fun pollPairing(
-        client: io.github.manugh.xg2g.android.pairing.PairingApiClient,
+        client: io.github.manugh.xg2g.android.transport.pairing.PairingApiClient,
         pairingId: String,
         pairingSecret: String
     ) {
@@ -349,7 +350,7 @@ internal class SettingsViewModel(
                 stateStore = deviceAuthStore,
                 dpopProvider = dpopProvider
             )
-            val pairingClient = io.github.manugh.xg2g.android.pairing.PairingApiClient(serverUrl)
+            val pairingClient = io.github.manugh.xg2g.android.transport.pairing.PairingApiClient(serverUrl)
             return SettingsViewModel(
                 serverSettingsStore = store,
                 dashboardApiClient = client,

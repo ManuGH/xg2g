@@ -2,7 +2,7 @@ package io.github.manugh.xg2g.android.profile
 
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
+import io.github.manugh.xg2g.android.transport.dashboard.NativeHouseholdProfile
 import java.util.concurrent.atomic.AtomicReference
 
 internal interface ProfileSelectionStore {
@@ -43,7 +43,7 @@ internal class ProfileManager(
 
         // ENFORCE SECURITY INVARIANT
         check(preDPoPThumbprint == postDPoPThumbprint) {
-            "SECURITY VIOLATION: Profile switch mutated DPoP key thumbprint!"
+            "SECURITY VIOLATION: Profile switch mutated the sender-bound key thumbprint!"
         }
         check(preDeviceState?.deviceGrantId == postDeviceState?.deviceGrantId) {
             "SECURITY VIOLATION: Profile switch mutated device grant ID!"

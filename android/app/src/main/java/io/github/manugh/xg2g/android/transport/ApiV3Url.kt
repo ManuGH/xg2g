@@ -1,4 +1,4 @@
-package io.github.manugh.xg2g.android
+package io.github.manugh.xg2g.android.transport
 
 import okhttp3.HttpUrl
 

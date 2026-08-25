@@ -1,6 +1,13 @@
 package io.github.manugh.xg2g.android
 
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
+import io.github.manugh.xg2g.android.transport.DeviceAuthHttpException
+import io.github.manugh.xg2g.android.transport.DeviceAuthReenrollRequiredException
+import io.github.manugh.xg2g.android.transport.DeviceAuthRepository
+import io.github.manugh.xg2g.android.transport.DeviceAuthTelemetry
+import io.github.manugh.xg2g.android.transport.DeviceAuthTelemetryEvent
+import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
+import io.github.manugh.xg2g.android.transport.RefreshedDeviceSession
+import io.github.manugh.xg2g.android.transport.playback.AuthCookieSession
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.Request

@@ -2,6 +2,10 @@ package io.github.manugh.xg2g.android.auth
 
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.transport.auth.NativeDPoPInterceptor
+import java.io.IOException
+import java.security.KeyPair
+import java.security.KeyPairGenerator
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -10,9 +14,6 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.io.IOException
-import java.security.KeyPair
-import java.security.KeyPairGenerator
 
 class NativeDPoPInterceptorTest {
 

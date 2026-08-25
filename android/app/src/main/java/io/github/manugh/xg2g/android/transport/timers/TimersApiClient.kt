@@ -1,13 +1,14 @@
-package io.github.manugh.xg2g.android.timers
+package io.github.manugh.xg2g.android.transport.timers
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
-import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
+import io.github.manugh.xg2g.android.timers.TimerItem
+import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.auth.createNativeAuthenticatedOkHttpClient
+import io.github.manugh.xg2g.android.transport.guide.GuideAuthRequiredException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl

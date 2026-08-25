@@ -3,8 +3,8 @@ package io.github.manugh.xg2g.android.playback
 import io.github.manugh.xg2g.android.auth.SoftwareDPoPProvider
 import io.github.manugh.xg2g.android.playback.player.AudioOutputMode
 import io.github.manugh.xg2g.android.playback.player.AudioPassthroughConfig
-import io.github.manugh.xg2g.android.playback.player.Media3SessionBinder
-import io.github.manugh.xg2g.android.playback.player.PlaybackSessionBinding
+import io.github.manugh.xg2g.android.transport.playback.Media3SessionBinder
+import io.github.manugh.xg2g.android.transport.playback.PlaybackSessionBinding
 import io.github.manugh.xg2g.android.playback.session.PlaybackPreemptionHandler
 import io.github.manugh.xg2g.android.playback.session.PreemptionOutcome
 import okhttp3.Interceptor

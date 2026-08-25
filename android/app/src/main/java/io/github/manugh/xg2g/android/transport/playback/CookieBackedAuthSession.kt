@@ -1,4 +1,4 @@
-package io.github.manugh.xg2g.android.playback.net
+package io.github.manugh.xg2g.android.transport.playback
 
 import android.util.Log
 import android.webkit.CookieManager

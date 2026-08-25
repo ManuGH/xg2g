@@ -1,8 +1,7 @@
 package io.github.manugh.xg2g.android.recordings
 
+
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.webkit.CookieManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,16 +45,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,13 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.manugh.xg2g.android.R
 import io.github.manugh.xg2g.android.dashboard.ModuleState
-
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import io.github.manugh.xg2g.android.transport.recordings.loadRecordingThumbnail
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -782,42 +775,8 @@ private fun RecordingThumbnailImage(
     var hasError by remember(recordingId) { mutableStateOf(false) }
 
     LaunchedEffect(recordingId, baseUrl) {
-        val appContext = context.applicationContext
-        withContext(Dispatchers.IO) {
-            try {
-                val store = io.github.manugh.xg2g.android.DeviceAuthStore(appContext)
-                val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
-                val client = io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient(store, dpopProvider)
-                val parsedBaseUrl = baseUrl.toHttpUrlOrNull()
-                if (parsedBaseUrl == null) {
-                    hasError = true
-                    return@withContext
-                }
-                val httpUrl = recordingThumbnailUrl(parsedBaseUrl, recordingId)
-
-                val request = Request.Builder()
-                    .url(httpUrl)
-                    .get()
-                    .build()
-                    .withSameOriginHeaders(httpUrl)
-
-                val response = client.newCall(request).execute()
-                response.use { res ->
-                    if (res.isSuccessful) {
-                        val bytes = res.body?.bytes()
-                        if (bytes != null && bytes.isNotEmpty()) {
-                            bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        } else {
-                            hasError = true
-                        }
-                    } else {
-                        hasError = true
-                    }
-                }
-            } catch (_: Exception) {
-                hasError = true
-            }
-        }
+        bitmap = loadRecordingThumbnail(context.applicationContext, baseUrl, recordingId)
+        hasError = bitmap == null
     }
 
     if (bitmap != null) {

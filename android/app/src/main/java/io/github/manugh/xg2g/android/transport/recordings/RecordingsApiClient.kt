@@ -1,14 +1,20 @@
-package io.github.manugh.xg2g.android.recordings
+package io.github.manugh.xg2g.android.transport.recordings
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
-import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
+import io.github.manugh.xg2g.android.recordings.Breadcrumb
+import io.github.manugh.xg2g.android.recordings.DirectoryItem
+import io.github.manugh.xg2g.android.recordings.RecordingItem
+import io.github.manugh.xg2g.android.recordings.RecordingRoot
+import io.github.manugh.xg2g.android.recordings.RecordingsResponse
+import io.github.manugh.xg2g.android.recordings.ResumeSummary
+import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.auth.createNativeAuthenticatedOkHttpClient
+import io.github.manugh.xg2g.android.transport.guide.GuideAuthRequiredException
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl

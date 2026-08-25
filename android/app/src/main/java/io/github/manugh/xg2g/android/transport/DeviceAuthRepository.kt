@@ -1,11 +1,21 @@
-package io.github.manugh.xg2g.android
+package io.github.manugh.xg2g.android.transport
 
 import android.content.Context
 import android.util.Log
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
-import io.github.manugh.xg2g.android.playback.net.resolveAgainst
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
+import io.github.manugh.xg2g.android.DeviceAuthLaunchCredentials
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthState
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.PublishedEndpoint
+import io.github.manugh.xg2g.android.normalizePublishedEndpoints
+import io.github.manugh.xg2g.android.preferredNativeServerUrl
+import io.github.manugh.xg2g.android.transport.playback.AuthCookieSession
+import io.github.manugh.xg2g.android.transport.playback.CookieBackedAuthSession
+import io.github.manugh.xg2g.android.transport.playback.resolveAgainst
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
+import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
@@ -17,9 +27,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.Instant
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 
 internal class DeviceAuthRepository(
     private val stateStore: PersistedDeviceAuthStateStore,

@@ -1,11 +1,13 @@
-package io.github.manugh.xg2g.android.auth
+package io.github.manugh.xg2g.android.transport.auth
 
 import android.util.Log
-import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PublishedEndpoint
-import io.github.manugh.xg2g.android.RefreshedDeviceSession
-import io.github.manugh.xg2g.android.apiV3Url
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
+import io.github.manugh.xg2g.android.transport.RefreshedDeviceSession
+import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -14,7 +16,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.IOException
 
 internal class NativeDeviceAuthTransport(
     private val dpopProvider: DPoPProvider,

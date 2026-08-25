@@ -1,8 +1,6 @@
 package io.github.manugh.xg2g.android.guide
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.webkit.CookieManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -60,12 +58,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.manugh.xg2g.android.R
-import java.net.HttpURLConnection
-import java.net.URL
+import io.github.manugh.xg2g.android.transport.guide.loadGuideBitmap
+import io.github.manugh.xg2g.android.transport.guide.resolveGuideLogoUrl
 import java.time.ZoneId
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Composable
 internal fun ChannelListView(
@@ -491,24 +486,3 @@ internal fun channelLogoFallback(channel: GuideChannel): String {
     return initials.ifBlank { "TV" }
 }
 
-internal fun resolveGuideLogoUrl(baseUrl: String, logoUrl: String?): String? {
-    val normalized = logoUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
-        return normalized
-    }
-    val base = baseUrl.toHttpUrlOrNull() ?: return null
-    return base.resolve(normalized)?.toString()
-}
-
-internal suspend fun loadGuideBitmap(url: String): Bitmap? = withContext(Dispatchers.IO) {
-    runCatching {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        val cookies = CookieManager.getInstance().getCookie(url)
-        if (!cookies.isNullOrBlank()) {
-            connection.setRequestProperty("Cookie", cookies)
-        }
-        connection.connectTimeout = 4_000
-        connection.readTimeout = 4_000
-        connection.inputStream.use(BitmapFactory::decodeStream)
-    }.getOrNull()
-}

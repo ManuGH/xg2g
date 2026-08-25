@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android
 
+import io.github.manugh.xg2g.android.transport.ServerTargetResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

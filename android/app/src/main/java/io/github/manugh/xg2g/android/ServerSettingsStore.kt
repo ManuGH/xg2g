@@ -1,10 +1,11 @@
 package io.github.manugh.xg2g.android
 
+
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-
 import io.github.manugh.xg2g.android.profile.ProfileSelectionStore
+import io.github.manugh.xg2g.android.transport.ServerTargetResolver
 
 internal class ServerSettingsStore(
     context: Context,

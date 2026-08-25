@@ -1,5 +1,7 @@
 package io.github.manugh.xg2g.android
 
+import io.github.manugh.xg2g.android.transport.ServerTargetResolver
+
 internal data class PublishedEndpoint(
     val url: String,
     val kind: String,

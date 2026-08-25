@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.manugh.xg2g.android.R
 import io.github.manugh.xg2g.android.guide.GuideHealthStatus
+import io.github.manugh.xg2g.android.transport.dashboard.DashboardRecordingItem
+import io.github.manugh.xg2g.android.transport.dashboard.DashboardTimerItem
 
 @Composable
 internal fun DashboardScreen(

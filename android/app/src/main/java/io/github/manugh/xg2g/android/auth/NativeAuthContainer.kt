@@ -3,8 +3,10 @@ package io.github.manugh.xg2g.android.auth
 import android.content.Context
 import android.content.res.Configuration
 import io.github.manugh.xg2g.android.DeviceAuthStore
-import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthRepository
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthTransport
 
 internal class NativeAuthContainer private constructor(
     context: Context,

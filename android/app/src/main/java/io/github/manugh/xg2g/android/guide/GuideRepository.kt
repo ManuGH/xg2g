@@ -1,8 +1,9 @@
 package io.github.manugh.xg2g.android.guide
 
+import io.github.manugh.xg2g.android.transport.guide.GuideApiClient
+import java.time.Instant
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import java.time.Instant
 
 internal interface GuideDataSource {
     suspend fun loadInitial(): GuideContent

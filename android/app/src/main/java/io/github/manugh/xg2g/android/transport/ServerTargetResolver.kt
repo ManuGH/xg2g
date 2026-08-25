@@ -1,5 +1,6 @@
-package io.github.manugh.xg2g.android
+package io.github.manugh.xg2g.android.transport
 
+import io.github.manugh.xg2g.android.DeviceAuthLaunchCredentials
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
