@@ -12,10 +12,26 @@ import (
 // SubscriberReader provides an independent read cursor over a MasterRing buffer.
 // Synchronization is governed exclusively by the MasterRing mutex, completely eliminating deadlocks.
 type SubscriberReader struct {
-	ring         *MasterRing
-	readOffset   int64
-	droppedBytes int64
-	isClosed     bool
+	ring       *MasterRing
+	readOffset int64
+	isClosed   bool
+
+	// droppedBytes counts only what the ring discarded before this subscriber
+	// read it. resyncSkippedBytes counts what recovery then chose to skip on top
+	// of that, to reach a decodable boundary. Keeping them apart matters: the
+	// first is pressure on the ring, the second is a deliberate correction, and
+	// summing them would make every overrun look worse than it was.
+	droppedBytes       int64
+	resyncSkippedBytes int64
+
+	// pendingPrefix holds PAT/PMT packets that must reach the consumer before any
+	// further ring data, so a decoder re-entering after an overrun is told the
+	// topology before it is handed pictures.
+	pendingPrefix []byte
+
+	// awaitingRandomAccess marks a subscriber that was overtaken and has not found
+	// a decodable re-entry point yet. It stays set across wake-ups until one exists.
+	awaitingRandomAccess bool
 }
 
 var ErrNoKeyframeAvailable = errors.New("no valid keyframe available in ring")
@@ -61,21 +77,13 @@ func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader
 		return PrimedAttachPoint{}, nil, ErrNoKeyframeAvailable
 	}
 
-	latestKf := r.keyframeOffsets[len(r.keyframeOffsets)-1]
-	if latestKf < r.tail {
+	latestKf, ok := r.latestKeyframeOffsetLocked()
+	if !ok {
 		return PrimedAttachPoint{}, nil, ErrNoKeyframeAvailable
 	}
 
-	var preamble []byte
-	for _, pkt := range r.rawPATPackets {
-		preamble = append(preamble, pkt...)
-	}
-	for _, pkt := range r.rawPMTPackets {
-		preamble = append(preamble, pkt...)
-	}
-
 	attach := PrimedAttachPoint{
-		Preamble:       preamble,
+		Preamble:       r.patpmtPreambleLocked(),
 		KeyframeOffset: latestKf,
 		Generation:     r.generation,
 		HasKeyframe:    true,
@@ -105,14 +113,54 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 
+		// A queued preamble is delivered ahead of any ring data, and it is never
+		// interleaved with it. A caller with a small buffer receives it across
+		// several reads; ring bytes only resume once the last of it is gone.
+		if len(s.pendingPrefix) > 0 {
+			n := copy(p[:maxRead], s.pendingPrefix)
+			s.pendingPrefix = s.pendingPrefix[n:]
+			if len(s.pendingPrefix) == 0 {
+				s.pendingPrefix = nil
+			}
+			return n, nil
+		}
+
 		if s.ring.isClosed && s.readOffset >= s.ring.head {
 			return 0, io.EOF
 		}
 
-		// Check if slow subscriber was overtaken by ring write head
+		// Overtaken by the write head: the ring discarded bytes this subscriber had
+		// not read yet. Resuming at the tail would put a decoder at whatever offset
+		// the eviction happened to leave behind, which is mid-GOP in all but the
+		// luckiest case. Recovery re-enters at a random access point instead, with
+		// the active topology restated in front of it.
 		if s.readOffset < s.ring.tail {
-			s.droppedBytes += (s.ring.tail - s.readOffset)
+			s.droppedBytes += s.ring.tail - s.readOffset
 			s.readOffset = s.ring.tail
+
+			// Whether the tail is an acceptable place to resume depends on whether
+			// this stream has random access points at all. A ring that has seen no
+			// PMT, or whose PMT names no video, will never index a keyframe, and
+			// for it the tail is the only entry point there is - a legal one, since
+			// there is no decoder state to corrupt. A stream that does carry video
+			// must wait, because for that one a keyframe is genuinely still ahead.
+			s.awaitingRandomAccess = s.ring.videoPID != 0
+		}
+
+		// The wait is a state, not a single pass. Without it the next push would
+		// wake this reader with readOffset already equal to the tail, the overrun
+		// branch above would not fire again, and the ring bytes at the tail - the
+		// mid-GOP bytes this whole path exists to refuse - would be delivered.
+		if s.awaitingRandomAccess {
+			if s.resyncToRandomAccessLocked() {
+				s.awaitingRandomAccess = false
+				continue
+			}
+			if s.ring.isClosed {
+				return 0, io.EOF
+			}
+			s.ring.notEmpty.Wait()
+			continue
 		}
 
 		available := int(s.ring.head - s.readOffset)
@@ -140,6 +188,27 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 	}
 }
 
+// resyncToRandomAccessLocked moves the read cursor to the newest random access point
+// the ring still holds and queues the active PAT/PMT ahead of it. It reports false
+// when there is no such point right now, which is a transient state rather than an
+// error: the next GOP boundary, or the first one of a new generation, is still ahead.
+//
+// Bytes skipped between the tail and the chosen keyframe are accounted separately
+// from the overrun itself. They were available; recovery chose not to deliver them.
+func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
+	latest, ok := s.ring.latestKeyframeOffsetLocked()
+	if !ok {
+		return false
+	}
+
+	if latest > s.readOffset {
+		s.resyncSkippedBytes += latest - s.readOffset
+	}
+	s.readOffset = latest
+	s.pendingPrefix = s.ring.patpmtPreambleLocked()
+	return true
+}
+
 // SeekToLatestKeyframe moves the subscriber read cursor to the latest decodable keyframe.
 func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 	s.ring.mu.Lock()
@@ -149,11 +218,8 @@ func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 		return 0, io.EOF
 	}
 
-	if len(s.ring.keyframeOffsets) == 0 {
-		return 0, ErrNoKeyframeFound
-	}
-	latest := s.ring.keyframeOffsets[len(s.ring.keyframeOffsets)-1]
-	if latest < s.ring.tail {
+	latest, ok := s.ring.latestKeyframeOffsetLocked()
+	if !ok {
 		return 0, ErrNoKeyframeFound
 	}
 
@@ -161,11 +227,21 @@ func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 	return latest, nil
 }
 
-// DroppedBytes returns the number of bytes dropped due to ring buffer overrun.
+// DroppedBytes returns the bytes the ring discarded before this subscriber read
+// them. It does not include bytes recovery deliberately skipped to reach a random
+// access point - those are reported by ResyncSkippedBytes.
 func (s *SubscriberReader) DroppedBytes() int64 {
 	s.ring.mu.Lock()
 	defer s.ring.mu.Unlock()
 	return s.droppedBytes
+}
+
+// ResyncSkippedBytes returns the bytes that were still held by the ring but were
+// skipped to re-enter at a random access point after an overrun.
+func (s *SubscriberReader) ResyncSkippedBytes() int64 {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+	return s.resyncSkippedBytes
 }
 
 // Offset returns the current absolute read position.
