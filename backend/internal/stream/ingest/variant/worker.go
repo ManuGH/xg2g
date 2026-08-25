@@ -21,6 +21,56 @@ var (
 	ErrWorkerClosed = errors.New("audio variant worker closed")
 )
 
+const (
+	// masterAttachTimeout bounds the wait for the upstream ring to offer a random
+	// access point. A GOP boundary on DVB is well under a second; a stream that has
+	// produced none by now is not one this worker should keep a process open for.
+	masterAttachTimeout = 5 * time.Second
+
+	// attachPollInterval is how often a pending attach re-checks the ring.
+	attachPollInterval = 10 * time.Millisecond
+)
+
+// attachPrimedMaster waits for an atomic attach point on the upstream ring.
+//
+// A primed attach is the only legal entry into TS data: preamble, keyframe offset,
+// generation and reader all come from one snapshot taken under a single ring lock,
+// so no interleaved PMT version bump can pair the topology of one generation with
+// the bytes of another.
+//
+// ErrNoKeyframeAvailable is transient - the next GOP boundary is still ahead, and
+// it is also the expected state for a few hundred milliseconds after every PMT
+// change, because the invalidation drops the keyframe index. It is retried. A
+// scrambled or closed ring cannot improve by waiting and is returned immediately.
+//
+// There is deliberately no fallback to the ring tail. The tail is the oldest byte
+// still held, not a point a decoder can start on, and handing it to an encoder is
+// what this function exists to prevent.
+func attachPrimedMaster(ctx context.Context, r *ring.MasterRing, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
+	ticker := time.NewTicker(attachPollInterval)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		attach, reader, err := r.NewPrimedSubscriber()
+		if err == nil {
+			return attach, reader, nil
+		}
+		if errors.Is(err, ring.ErrRingClosed) || errors.Is(err, ring.ErrScrambledStream) {
+			return ring.PrimedAttachPoint{}, nil, err
+		}
+
+		select {
+		case <-ctx.Done():
+			return ring.PrimedAttachPoint{}, nil, ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return ring.PrimedAttachPoint{}, nil, fmt.Errorf("timed out waiting for primed attach on master ring: %w", err)
+			}
+		}
+	}
+}
+
 // AudioVariantWorker manages an FFmpeg audio-transcoding subprocess that consumes
 // the master MPEG-TS stream from MasterRing, copies video elementary streams bit-exact,
 // transcodes the specified audio PID to AAC-LC, and publishes the resulting MPEG-TS into a VariantRing.
@@ -227,6 +277,21 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		"-f", "mpegts", "pipe:1",
 	)
 
+	// The input attach happens before FFmpeg exists. A scrambled or closed upstream
+	// then fails the worker without leaving a process behind, and the reason reaches
+	// Err() instead of being swallowed by a stdin pipe that simply closes.
+	attach, masterReader, err := attachPrimedMaster(ctx, w.masterRing, masterAttachTimeout)
+	if err != nil {
+		return fmt.Errorf("attach variant input: %w", err)
+	}
+	defer func() { _ = masterReader.Close() }()
+
+	logger.Info().
+		Int64("keyframe_offset", attach.KeyframeOffset).
+		Uint64("generation", attach.Generation).
+		Int("preamble_bytes", len(attach.Preamble)).
+		Msg("variant input attached at primed random access point")
+
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	stdin, err := cmd.StdinPipe()
@@ -275,23 +340,19 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		defer wg.Done()
 		defer func() { _ = stdin.Close() }()
 
-		preamble := w.masterRing.PATPMTPreamble()
-		if len(preamble) > 0 {
-			if _, werr := stdin.Write(preamble); werr != nil {
+		// Preamble and reader come from the same PrimedAttachPoint. Reading them
+		// separately would let a PMT version bump land between the two calls, and
+		// FFmpeg would be told the topology of one generation while being fed the
+		// bytes of another.
+		if len(attach.Preamble) > 0 {
+			if _, werr := stdin.Write(attach.Preamble); werr != nil {
 				return
 			}
 		}
 
-		startOffset := int64(-1)
-		if kfOffset, ok := w.masterRing.LatestKeyframeOffset(); ok {
-			startOffset = kfOffset
-		}
-		reader := w.masterRing.NewSubscriberReader(startOffset)
-		defer func() { _ = reader.Close() }()
-
 		go func() {
 			<-ctx.Done()
-			_ = reader.Close()
+			_ = masterReader.Close()
 		}()
 
 		buf := make([]byte, 32*1024)
@@ -299,7 +360,7 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			n, rerr := reader.Read(buf)
+			n, rerr := masterReader.Read(buf)
 			if n > 0 {
 				if _, werr := stdin.Write(buf[:n]); werr != nil {
 					return
