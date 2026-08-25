@@ -1154,6 +1154,16 @@ func (r *MasterRing) patpmtPreambleLocked() []byte {
 	return preamble
 }
 
+// Generation returns the ring's current topology epoch. It advances whenever the
+// video state is invalidated, which a PMT version bump and a program number change
+// both do, so a consumer that captured a generation at attach can tell whether the
+// stream it is reading is still the one it was configured for.
+func (r *MasterRing) Generation() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.generation
+}
+
 // VideoDetails returns authoritative video PID and Codec discovered from PMT.
 func (r *MasterRing) VideoDetails() (uint16, VideoCodec) {
 	r.mu.Lock()

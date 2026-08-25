@@ -6,9 +6,11 @@ package variant
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
 
@@ -42,8 +44,27 @@ func (m *AudioVariantManager) GetOrCreateWorker(ctx context.Context, key AudioVa
 
 	keyStr := key.String()
 	if worker, exists := m.workers[keyStr]; exists {
-		worker.AddSubscriber()
-		return worker, nil
+		if !worker.Terminated() {
+			worker.AddSubscriber()
+			return worker, nil
+		}
+
+		// A worker serves exactly one upstream generation. Once it has ended, the
+		// cached entry is a closed VariantRing and a dead process, so it is
+		// replaced rather than handed out. Which of the two reasons it was is worth
+		// keeping apart: a topology change is the system working as designed, a
+		// failure is not, and a PMT bump must not read as a crash.
+		reason := worker.Err()
+		event := log.L().Warn()
+		if errors.Is(reason, ErrUpstreamGenerationChanged) {
+			event = log.L().Info()
+		}
+		event.Err(reason).
+			Str("variant", keyStr).
+			Msg("replacing terminated variant worker")
+
+		worker.Stop()
+		delete(m.workers, keyStr)
 	}
 
 	worker := NewAudioVariantWorker(key, m.masterRing, 8*1024*1024)
