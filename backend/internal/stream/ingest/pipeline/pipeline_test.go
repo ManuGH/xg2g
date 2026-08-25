@@ -570,6 +570,7 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 
 // 7. End-to-End HTTP Real Broadcast Streaming with FFmpeg Proof across 3 Concurrent Clients
 func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
 

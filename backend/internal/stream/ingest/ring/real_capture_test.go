@@ -58,6 +58,7 @@ func countDecodedVideoFrames(t *testing.T, data []byte) int {
 }
 
 func TestMasterRing_RealCapture_H264_DecodingVerification(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
 
@@ -148,6 +149,7 @@ func TestMasterRing_RealCapture_H264_DecodingVerification(t *testing.T) {
 }
 
 func TestMasterRing_RemuxedHEVC_TS_DecodingVerification(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "test_hevc_stream.ts")
 

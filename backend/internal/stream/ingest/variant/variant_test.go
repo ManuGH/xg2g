@@ -182,6 +182,7 @@ func TestAudioVariantManager_DistinctTrackWorkers(t *testing.T) {
 }
 
 func TestAudioVariantWorker_RealCapture_TranscodeAndAttach(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	capturePath := "../../../../testdata/segments/verify_final_v3.ts"
 	data, err := os.ReadFile(capturePath)
 	if err != nil {

@@ -549,6 +549,7 @@ func TestNormalizer_ConcurrentFeed_ThreadSafety(t *testing.T) {
 
 // 11. Real Broadcast Stream End-to-End: Normalizer -> MasterRing -> FFmpeg Decoding Proof
 func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
 
