@@ -26,8 +26,11 @@ type SubscriberReader struct {
 
 	// pendingPrefix holds PAT/PMT packets that must reach the consumer before any
 	// further ring data, so a decoder re-entering after an overrun is told the
-	// topology before it is handed pictures.
-	pendingPrefix []byte
+	// topology before it is handed pictures. pendingPrefixGeneration is the ring
+	// generation it describes: delivery can span several reads, and a preamble that
+	// outlives its generation must be dropped rather than finished.
+	pendingPrefix           []byte
+	pendingPrefixGeneration uint64
 
 	// awaitingRandomAccess marks a subscriber that was overtaken and has not found
 	// a decodable re-entry point yet. It stays set across wake-ups until one exists.
@@ -116,7 +119,20 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// A queued preamble is delivered ahead of any ring data, and it is never
 		// interleaved with it. A caller with a small buffer receives it across
 		// several reads; ring bytes only resume once the last of it is gone.
+		//
+		// Delivery spans several reads, so the preamble can go stale midway: a PMT
+		// bump between two of them would otherwise let the tail of one generation's
+		// topology reach a consumer the ring has already moved past. Atomic attach
+		// is not only about how the pair is captured but about how it is handed
+		// over, so a generation change discards what is left and starts recovery
+		// again from the new one.
 		if len(s.pendingPrefix) > 0 {
+			if s.pendingPrefixGeneration != s.ring.generation {
+				s.pendingPrefix = nil
+				s.awaitingRandomAccess = true
+				continue
+			}
+
 			n := copy(p[:maxRead], s.pendingPrefix)
 			s.pendingPrefix = s.pendingPrefix[n:]
 			if len(s.pendingPrefix) == 0 {
@@ -138,13 +154,21 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 			s.droppedBytes += s.ring.tail - s.readOffset
 			s.readOffset = s.ring.tail
 
-			// Whether the tail is an acceptable place to resume depends on whether
-			// this stream has random access points at all. A ring that has seen no
-			// PMT, or whose PMT names no video, will never index a keyframe, and
-			// for it the tail is the only entry point there is - a legal one, since
-			// there is no decoder state to corrupt. A stream that does carry video
-			// must wait, because for that one a keyframe is genuinely still ahead.
-			s.awaitingRandomAccess = s.ring.videoPID != 0
+			// Whether the tail is an acceptable place to resume has three answers,
+			// and collapsing the first two is how a video service gets a mid-GOP
+			// entry during startup:
+			//
+			//	topology unknown       - no complete PMT parsed yet. Nothing is known
+			//	                         about this stream, so nothing licenses the
+			//	                         tail. Wait; a service that turns out to
+			//	                         carry video must not already have been given
+			//	                         bytes from the middle of a picture.
+			//	topology known, audio  - the PMT names no decodable video. There are
+			//	                         no random access points to wait for and no
+			//	                         decoder state to corrupt, so the tail is the
+			//	                         only entry point there is, and a legal one.
+			//	topology known, video  - only a random access point will do.
+			s.awaitingRandomAccess = !s.ring.hasPMTVersion || s.ring.videoPID != 0
 		}
 
 		// The wait is a state, not a single pass. Without it the next push would
@@ -206,6 +230,7 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	}
 	s.readOffset = latest
 	s.pendingPrefix = s.ring.patpmtPreambleLocked()
+	s.pendingPrefixGeneration = s.ring.generation
 	return true
 }
 

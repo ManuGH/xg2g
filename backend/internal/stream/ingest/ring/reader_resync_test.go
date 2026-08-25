@@ -463,20 +463,30 @@ func mpeg2PMTPacket(t *testing.T, pmtPID, videoPID uint16) []byte {
 	return pkt
 }
 
-// A stream the ring holds no video for has no random access points to wait for.
-// The tail stays a legal entry point there, and recovery must not block.
-func TestSubscriberReader_NoVideoStreamResumesAtTailWithoutWaiting(t *testing.T) {
+// A service whose PMT names no video has no random access points to wait for. The
+// tail stays a legal entry point there, and recovery must not block.
+func TestSubscriberReader_AudioOnlyServiceResumesAtTailWithoutWaiting(t *testing.T) {
 	r := NewMasterRing(10 * TSPacketSize)
 	defer r.Close()
+
+	for _, pkt := range createMultiPacketPAT(100) {
+		if _, err := r.Push(pkt); err != nil {
+			t.Fatalf("push PAT: %v", err)
+		}
+	}
+	for _, pkt := range createMultiPacketPMTWithVersion(100, 0, false, false, 0, 1) {
+		if _, err := r.Push(pkt); err != nil {
+			t.Fatalf("push audio-only PMT: %v", err)
+		}
+	}
+	if r.videoPID != 0 {
+		t.Fatalf("test setup: expected no video PID, got %d", r.videoPID)
+	}
 
 	reader := r.NewSubscriberReader(0)
 	defer func() { _ = reader.Close() }()
 
-	for i := 0; i < 30; i++ {
-		if _, err := r.Push(createBasicPacket(256, false, uint8(i%16))); err != nil {
-			t.Fatalf("push %d: %v", i, err)
-		}
-	}
+	pushFiller(t, r, 30)
 
 	done := make(chan int, 1)
 	go func() {
@@ -495,13 +505,142 @@ func TestSubscriberReader_NoVideoStreamResumesAtTailWithoutWaiting(t *testing.T)
 			t.Fatalf("read returned %d, want one TS packet from the tail", n)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("read blocked on a stream that can never produce a random access point")
+		t.Fatal("read blocked on a service that can never produce a random access point")
 	}
 
 	if got := reader.ResyncSkippedBytes(); got != 0 {
-		t.Fatalf("ResyncSkippedBytes = %d on a stream with no keyframes, want 0", got)
+		t.Fatalf("ResyncSkippedBytes = %d on a service with no keyframes, want 0", got)
 	}
-	if got := reader.DroppedBytes(); got != 20*TSPacketSize {
-		t.Fatalf("DroppedBytes = %d, want %d", got, 20*TSPacketSize)
+}
+
+// "No video PID yet" is not the same fact as "no video". A ring that has parsed no
+// complete PMT knows nothing about the stream, and nothing licenses handing out the
+// tail: the service may well turn out to carry video, and by then a decoder would
+// already have been started mid-picture. Waiting is the fail-closed answer, and the
+// consumer bounds it - here by closing the reader.
+func TestSubscriberReader_UnknownTopologyWaitsRatherThanResumingAtTail(t *testing.T) {
+	r := NewMasterRing(10 * TSPacketSize)
+	defer r.Close()
+
+	reader := r.NewSubscriberReader(0)
+
+	// No PAT, no PMT: nothing here says what this stream is.
+	for i := 0; i < 30; i++ {
+		if _, err := r.Push(createBasicPacket(256, false, uint8(i%16))); err != nil {
+			t.Fatalf("push %d: %v", i, err)
+		}
+	}
+	if r.ReadinessFacts().HasPMT {
+		t.Fatal("test setup: ring reports a PMT it was never given")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, TSPacketSize)
+		_, err := reader.Read(buf)
+		done <- err
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("read resumed at the tail with no topology known; a video service would have started mid-picture")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	_ = reader.Close()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the reader did not release the wait")
+	}
+}
+
+// The preamble is handed over across several reads when the consumer's buffer is
+// small, which opens a second staleness window after the one atomic attach closes:
+// a PMT bump between two of those reads must not let the tail of the old
+// generation's topology through. The partial preamble is dropped and recovery
+// starts again against the new generation.
+func TestSubscriberReader_PartialPreambleIsDiscardedOnGenerationChange(t *testing.T) {
+	r, reader := newH264Ring(t, 40)
+
+	pushFiller(t, r, 60)
+	pushKeyframe(t, r, 256, h264IDRPayload, 0)
+	pushFiller(t, r, 3)
+
+	stalePreamble := r.PATPMTPreamble()
+	if len(stalePreamble) <= TSPacketSize {
+		t.Fatalf("test setup: preamble is %d bytes, too small to be delivered in parts", len(stalePreamble))
+	}
+
+	// One packet only: the rest of this generation's preamble stays queued.
+	buf := make([]byte, TSPacketSize)
+	n, err := reader.Read(buf)
+	if err != nil {
+		t.Fatalf("first preamble read: %v", err)
+	}
+	if n != TSPacketSize || !bytes.Equal(buf[:n], stalePreamble[:n]) {
+		t.Fatalf("first read did not deliver the head of the current preamble")
+	}
+
+	// The stream moves on while the rest is still queued.
+	for _, pkt := range createMultiPacketPMTWithVersion(100, 512, true, true, 1, 1) {
+		if _, err := r.Push(pkt); err != nil {
+			t.Fatalf("push PMT v1: %v", err)
+		}
+	}
+	if pid, codec := r.VideoDetails(); pid != 512 || codec != CodecH265 {
+		t.Fatalf("test setup: expected PID 512/HEVC, got %d/%v", pid, codec)
+	}
+
+	// The remainder of the old preamble must never appear.
+	staleRemainder := stalePreamble[n:]
+	done := make(chan []byte, 1)
+	go func() {
+		b := make([]byte, TSPacketSize)
+		count, rerr := reader.Read(b)
+		if rerr != nil {
+			done <- nil
+			return
+		}
+		done <- append([]byte(nil), b[:count]...)
+	}()
+
+	select {
+	case got := <-done:
+		t.Fatalf("read returned %d bytes during a generation change; the stale remainder starts %x", len(got), staleRemainder[:8])
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	// Once the new generation is decodable, its own topology is delivered whole.
+	keyframe := pushKeyframe(t, r, 512, hevcIRAPPayload, 0)
+	freshPreamble := r.PATPMTPreamble()
+
+	select {
+	case got := <-done:
+		if got == nil {
+			t.Fatal("read failed after the new generation became decodable")
+		}
+		if !bytes.Equal(got, freshPreamble[:len(got)]) {
+			t.Fatal("read did not resume with the new generation's preamble")
+		}
+		if bytes.Equal(got, staleRemainder[:len(got)]) {
+			t.Fatal("read delivered the remainder of the previous generation's preamble")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("read did not recover after the new generation produced a keyframe")
+	}
+
+	// Drain the rest of the fresh preamble, then confirm the cursor is on the RAP.
+	delivered := TSPacketSize
+	for delivered < len(freshPreamble) {
+		count, rerr := reader.Read(buf)
+		if rerr != nil {
+			t.Fatalf("draining the fresh preamble: %v", rerr)
+		}
+		delivered += count
+	}
+	if got := reader.Offset(); got != keyframe {
+		t.Fatalf("cursor at %d after recovery, want the new generation's keyframe at %d", got, keyframe)
 	}
 }
