@@ -207,12 +207,16 @@ func (p *SessionPipeline) AttachAudioVariantWithTimeout(ctx context.Context, key
 
 	attach, reader, err := worker.PrimedAttachWithTimeout(ctx, timeout)
 	if err != nil {
-		p.variantMgr.ReleaseWorker(key)
+		p.variantMgr.ReleaseWorkerInstance(worker)
 		return ring.PrimedAttachPoint{}, nil, nil, err
 	}
 
+	// Released against the instance, not the key. A subscriber can outlive the
+	// worker it attached to - a topology cut ends that worker while its clients are
+	// still draining - and by the time this runs the key may already point at the
+	// replacement.
 	releaseFunc := func() {
-		p.variantMgr.ReleaseWorker(key)
+		p.variantMgr.ReleaseWorkerInstance(worker)
 	}
 
 	return attach, reader, releaseFunc, nil

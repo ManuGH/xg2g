@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"testing"
@@ -226,6 +227,201 @@ func TestAudioVariantWorker_AudioCodecChange_EndsWithGenerationCut(t *testing.T)
 	err := runGenerationCut(t, "verify_final_v3.ts", "verify_seg.ts", key)
 	if !errors.Is(err, ErrUpstreamGenerationChanged) {
 		t.Fatalf("worker ended with %v, want ErrUpstreamGenerationChanged", err)
+	}
+}
+
+// The whole cut, from a client's point of view: attached to worker N, the topology
+// changes, the client's read ends cleanly rather than degrading, and the next
+// attach lands on worker N+1 primed on the new generation.
+//
+// This is what makes ending the worker a correct policy rather than just a safe
+// one. A cut the consumer cannot recover from would only move the breakage.
+func TestAudioVariant_GenerationCut_ClientReattachesToNewWorker(t *testing.T) {
+	requireFFmpeg(t)
+
+	first := loadCapture(t, "verify_final_v3.ts")
+	second := bumpPMTVersion(t, loadCapture(t, "test_hevc_stream.ts"), 1)
+
+	masterRing := ring.NewMasterRing(16 * 1024 * 1024)
+	defer masterRing.Close()
+
+	push := func(data []byte) {
+		for i := 0; i < len(data); i += 64 * ring.TSPacketSize {
+			end := i + 64*ring.TSPacketSize
+			if end > len(data) {
+				end = len(data)
+			}
+			if _, err := masterRing.Push(data[i:end]); err != nil {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	push(first[:len(first)/2])
+	if _, ok := masterRing.LatestKeyframeOffset(); !ok {
+		t.Skip("skipping: first capture produced no random access point")
+	}
+
+	mgr := NewAudioVariantManager(masterRing)
+	defer mgr.Close()
+
+	key := AudioVariantKey{
+		ProgramNumber:     1,
+		SourceVideoCodec:  "h264",
+		TargetVideoCodec:  "copy",
+		AudioPID:          257,
+		TargetAudioCodec:  "aac",
+		Language:          "deu",
+		StreamFingerprint: "generation-cut-reattach",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	workerN, err := mgr.GetOrCreateWorker(ctx, key)
+	if err != nil {
+		t.Fatalf("initial GetOrCreateWorker: %v", err)
+	}
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		push(first[len(first)/2:])
+	}()
+
+	masterGenerationN := masterRing.Generation()
+
+	_, readerN, err := workerN.PrimedAttachWithTimeout(ctx, 15*time.Second)
+	if err != nil {
+		t.Skipf("skipping: never became primed on the first capture: %v", err)
+	}
+
+	buf := make([]byte, 32*1024)
+	if _, rerr := readerN.Read(buf); rerr != nil {
+		t.Fatalf("no output on the first generation: %v", rerr)
+	}
+
+	<-firstDone
+
+	// Generation N+1 keeps arriving for the rest of the test. A live stream does not
+	// stop while a client reconnects, and the reattach below needs input to produce
+	// the output it waits on. The capture repeats at the same PMT version, so it
+	// stays one generation.
+	secondCtx, stopSecond := context.WithCancel(ctx)
+	defer stopSecond()
+	go func() {
+		for secondCtx.Err() == nil {
+			push(second)
+		}
+	}()
+
+	// The client's read must end, and end cleanly. A reader that kept returning
+	// bytes here would be delivering the new topology through a process configured
+	// for the old one - exactly what the cut exists to prevent.
+	deadline := time.After(25 * time.Second)
+	var readErr error
+	for readErr == nil {
+		select {
+		case <-deadline:
+			t.Fatal("client read never ended after the topology changed")
+		default:
+		}
+		_, readErr = readerN.Read(buf)
+	}
+	if !errors.Is(readErr, io.EOF) {
+		t.Fatalf("client read ended with %v, want a clean io.EOF", readErr)
+	}
+	_ = readerN.Close()
+	mgr.ReleaseWorkerInstance(workerN)
+
+	if err := workerN.Err(); !errors.Is(err, ErrUpstreamGenerationChanged) {
+		t.Fatalf("worker N ended with %v, want ErrUpstreamGenerationChanged", err)
+	}
+
+	// The next attach must reach a different worker, primed on the new generation.
+	workerNext, err := mgr.GetOrCreateWorker(ctx, key)
+	if err != nil {
+		t.Fatalf("reattach GetOrCreateWorker: %v", err)
+	}
+	defer mgr.ReleaseWorkerInstance(workerNext)
+
+	if workerNext == workerN {
+		t.Fatal("reattach returned the worker that was cut")
+	}
+
+	attachNext, readerNext, err := workerNext.PrimedAttachWithTimeout(ctx, 20*time.Second)
+	if err != nil {
+		t.Fatalf("reattach never became primed on the new generation: %v", err)
+	}
+	defer func() { _ = readerNext.Close() }()
+
+	if len(attachNext.Preamble) == 0 {
+		t.Fatal("reattach carried no PAT/PMT preamble")
+	}
+	// Deliberately not comparing attachNext.Generation with the first attach's.
+	// That number is the VariantRing's own epoch, and each worker builds a fresh
+	// VariantRing, so two of them count from zero along the same path and would
+	// match by construction. What matters is the upstream generation the new worker
+	// is serving.
+	if masterRing.Generation() == masterGenerationN {
+		t.Fatalf("upstream is still at generation %d; the cut was never real", masterGenerationN)
+	}
+	if n, rerr := readerNext.Read(buf); rerr != nil || n == 0 {
+		t.Fatalf("no output on the new generation: n=%d err=%v", n, rerr)
+	}
+	if workerNext.Terminated() {
+		t.Fatalf("replacement was cut immediately: %v", workerNext.Err())
+	}
+}
+
+// Releasing must credit the worker the caller attached to, not whichever one holds
+// the key now. After a cut those differ, and releasing by key alone would push the
+// live replacement toward idle on behalf of subscribers that never used it.
+func TestAudioVariantManager_ReleaseCreditsTheAttachedInstance(t *testing.T) {
+	masterRing := ring.NewMasterRing(1024 * 1024)
+	defer masterRing.Close()
+
+	mgr := NewAudioVariantManager(masterRing)
+	defer mgr.Close()
+
+	key := AudioVariantKey{
+		ProgramNumber:     1,
+		SourceVideoCodec:  "h264",
+		TargetVideoCodec:  "copy",
+		AudioPID:          257,
+		TargetAudioCodec:  "aac",
+		StreamFingerprint: "release-credit",
+	}
+
+	ctx := context.Background()
+	old, err := mgr.GetOrCreateWorker(ctx, key)
+	if err != nil {
+		t.Fatalf("first GetOrCreateWorker: %v", err)
+	}
+
+	select {
+	case <-old.Done():
+	case <-time.After(15 * time.Second):
+		t.Fatal("worker did not end without a decodable upstream")
+	}
+
+	replacement, err := mgr.GetOrCreateWorker(ctx, key)
+	if err != nil {
+		t.Fatalf("replacement GetOrCreateWorker: %v", err)
+	}
+	if got := replacement.SubscriberCount(); got != 1 {
+		t.Fatalf("replacement starts with %d subscribers, want 1", got)
+	}
+
+	// The old worker's client disconnects only now.
+	mgr.ReleaseWorkerInstance(old)
+
+	if got := replacement.SubscriberCount(); got != 1 {
+		t.Fatalf("releasing the cut worker changed the replacement's count to %d", got)
+	}
+	if got := replacement.IdleDuration(); got != 0 {
+		t.Fatalf("replacement was marked idle after %s while still subscribed", got)
 	}
 }
 
