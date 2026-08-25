@@ -1,0 +1,130 @@
+name: Architecture Convergence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-boundary:
+    name: Generated Contract and Client Boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: apps/webui/package-lock.json
+
+      - name: Install WebUI generator and test dependencies
+        run: npm --prefix apps/webui ci
+
+      - name: Reject generated drift and client shadow paths
+        run: make verify-openapi-hard-mode verify-client-transport-boundary
+
+      # The whole generated-artifact bundle, not a hand-picked subset.
+      #
+      # Four defects on this branch were committed generated files that had not
+      # been regenerated: the WebUI dist embedded in the daemon binary, a
+      # contract mirror contradicting the schema, the rendered README, and the
+      # config surface index. Each was caught by a different member of this
+      # bundle, and each time the reflex was to add that one target here — which
+      # is how the next one gets missed. Running the bundle removes the guessing.
+      #
+      # None of these is visible to a test run: the tests exercise sources,
+      # while these files are what the binary and the docs actually ship.
+      - name: Reject stale generated artifacts and contract mirrors
+        run: make verify-generated-artifacts verify-no-adhoc-wire-structs
+
+      - name: Verify typed WebUI consumption
+        run: |
+          set -euo pipefail
+          npm --prefix apps/webui run type-check
+          npm --prefix apps/webui test -- --run
+
+  android-client:
+    name: Android and Android TV Contract Consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Verify Java runtime
+        run: java -version
+
+      - name: Compile shared Android and Android TV application
+        working-directory: android
+        run: ./gradlew --no-daemon :app:compileDevDebugKotlin :app:testDevDebugUnitTest
+
+  ios-client:
+    name: iOS Generated Contract and Backend Round Trip
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: auto
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - name: Compile iOS application
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Xg2g.xcodeproj \
+            -scheme Xg2g \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Exercise generated iOS contracts against the Go router
+        run: ./ios/scripts/run-contract-tests.sh 'iPhone 16 Pro'
+
+  merge-gate:
+    name: Architecture Convergence / Merge Gate
+    if: always()
+    needs: [contract-boundary, android-client, ios-client]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every architecture line
+        env:
+          CONTRACT_RESULT: ${{ needs.contract-boundary.result }}
+          ANDROID_RESULT: ${{ needs.android-client.result }}
+          IOS_RESULT: ${{ needs.ios-client.result }}
+        run: |
+          set -euo pipefail
+          test "$CONTRACT_RESULT" = success
+          test "$ANDROID_RESULT" = success
+          test "$IOS_RESULT" = success
