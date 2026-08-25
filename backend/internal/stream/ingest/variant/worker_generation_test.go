@@ -7,10 +7,12 @@ package variant
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ingeststats"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/tsfixture"
 )
@@ -371,5 +373,29 @@ func TestAudioVariantManager_ReplacesTerminatedWorker(t *testing.T) {
 	}
 	if mgr.ActiveWorkerCount() != 1 {
 		t.Fatalf("manager holds %d workers, want exactly the replacement", mgr.ActiveWorkerCount())
+	}
+}
+
+// The reason a worker ended is what the operator sees. A topology cut and a broken
+// transcoder both end a worker, and only one of them is worth paging anyone about.
+func TestWorkerStopReason_DoesNotCountAGenerationCutAsAFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"generation cut", ErrUpstreamGenerationChanged, ingeststats.WorkerStopGenerationChange},
+		{"wrapped generation cut", fmt.Errorf("ending worker: %w", ErrUpstreamGenerationChanged), ingeststats.WorkerStopGenerationChange},
+		{"clean end", nil, ingeststats.WorkerStopShutdown},
+		{"cancelled", context.Canceled, ingeststats.WorkerStopShutdown},
+		{"transcoder failure", errors.New("start ffmpeg: exec format error"), ingeststats.WorkerStopError},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := workerStopReason(tc.err); got != tc.want {
+				t.Fatalf("workerStopReason(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
 	}
 }
