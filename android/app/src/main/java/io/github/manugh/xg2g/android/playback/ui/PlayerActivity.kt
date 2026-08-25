@@ -1,13 +1,11 @@
 package io.github.manugh.xg2g.android.playback.ui
 
 import android.content.res.Configuration
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
-import android.webkit.CookieManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
@@ -25,12 +23,11 @@ import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackState
+import io.github.manugh.xg2g.android.transport.playback.loadPlaybackLogoBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 
 @OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : AppCompatActivity() {
@@ -208,28 +205,13 @@ class PlayerActivity : AppCompatActivity() {
         if (logoLoaded) return
         if (url.isNullOrBlank()) return
 
-        val absoluteUrl = if (url.startsWith("/")) {
-            val base = ServerSettingsStore(this).getServerUrl()?.trimEnd('/') ?: return
-            "$base$url"
-        } else {
-            url
-        }
-
         logoLoaded = true
         logoJob?.cancel()
         logoJob = lifecycleScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                runCatching {
-                    val conn = URL(absoluteUrl).openConnection() as HttpURLConnection
-                    val cookies = CookieManager.getInstance().getCookie(absoluteUrl)
-                    if (!cookies.isNullOrBlank()) {
-                        conn.setRequestProperty("Cookie", cookies)
-                    }
-                    conn.connectTimeout = 5_000
-                    conn.readTimeout = 5_000
-                    conn.inputStream.use { BitmapFactory.decodeStream(it) }
-                }.getOrNull()
-            }
+            val bitmap = loadPlaybackLogoBitmap(
+                ServerSettingsStore(this@PlayerActivity).getServerUrl(),
+                url
+            )
             if (bitmap != null && !loadingDismissed) {
                 loadingLogo.setImageBitmap(bitmap)
                 loadingLogo.alpha = 1f

@@ -1,8 +1,10 @@
-package io.github.manugh.xg2g.android.pairing
+package io.github.manugh.xg2g.android.transport.pairing
 
 import io.github.manugh.xg2g.android.PublishedEndpoint
-import io.github.manugh.xg2g.android.apiV3Url
-import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
+import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -13,8 +15,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.Instant
-import java.time.format.DateTimeFormatter
 
 internal data class StartPairingResult(
     val pairingId: String,

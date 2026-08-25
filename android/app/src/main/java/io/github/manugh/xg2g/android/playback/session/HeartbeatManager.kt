@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android.playback.session
 
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.net.PlaybackApi
+import io.github.manugh.xg2g.android.transport.playback.PlaybackHttpException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope

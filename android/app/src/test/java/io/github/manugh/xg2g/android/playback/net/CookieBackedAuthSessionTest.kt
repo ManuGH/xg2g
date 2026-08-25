@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.playback.net
 
+import io.github.manugh.xg2g.android.transport.playback.sessionCookieDeletionPaths
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

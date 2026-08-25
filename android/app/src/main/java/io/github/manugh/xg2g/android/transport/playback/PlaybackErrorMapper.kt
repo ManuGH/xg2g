@@ -1,4 +1,4 @@
-package io.github.manugh.xg2g.android.playback.session
+package io.github.manugh.xg2g.android.transport.playback
 
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import okhttp3.Response

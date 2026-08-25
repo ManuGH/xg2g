@@ -5,6 +5,7 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.AuthState
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.transport.pairing.PairingApiClient
 import kotlinx.coroutines.delay
 
 internal class TvPairingCoordinator(

@@ -5,6 +5,7 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.SessionMode
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionState
+import io.github.manugh.xg2g.android.transport.playback.PlaybackErrorMapper
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

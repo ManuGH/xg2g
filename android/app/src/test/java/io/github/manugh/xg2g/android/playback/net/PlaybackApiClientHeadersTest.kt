@@ -1,8 +1,15 @@
 package io.github.manugh.xg2g.android.playback.net
 
 import androidx.media3.common.MimeTypes
-import okhttp3.Request
+import io.github.manugh.xg2g.android.transport.playback.normalizeRecordingPlaybackUrl
+import io.github.manugh.xg2g.android.transport.playback.originHeaderValue
+import io.github.manugh.xg2g.android.transport.playback.playbackRequestHeaders
+import io.github.manugh.xg2g.android.transport.playback.recordingPlaylistHttpUrl
+import io.github.manugh.xg2g.android.transport.playback.resolveAgainst
+import io.github.manugh.xg2g.android.transport.playback.withPlaybackProfile
+import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Test

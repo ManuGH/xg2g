@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.fcm
 import io.github.manugh.xg2g.android.auth.AuthState
 import io.github.manugh.xg2g.android.auth.AuthStateKind
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.transport.fcm.FcmTokenManager
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType

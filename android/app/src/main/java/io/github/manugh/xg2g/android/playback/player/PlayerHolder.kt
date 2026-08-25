@@ -17,14 +17,13 @@ import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.datasource.okhttp.OkHttpDataSource
-import okhttp3.OkHttpClient
+import io.github.manugh.xg2g.android.transport.playback.PlaybackSessionBinding
+import io.github.manugh.xg2g.android.transport.playback.PlayerMediaTransport
 
 @OptIn(markerClass = [UnstableApi::class])
 internal class PlayerHolder(
     context: Context,
-    private val okHttpClient: OkHttpClient
+    private val mediaTransport: PlayerMediaTransport
 ) {
     private companion object {
         const val TAG = "PlayerHolder"
@@ -85,7 +84,6 @@ internal class PlayerHolder(
     private var requestGeneration = 0L
     private var audioDisabled = false
     private var watchdogEnabled = false
-    var sessionBinder: Media3SessionBinder? = null
     var sessionBinding: PlaybackSessionBinding? = null
 
     /**
@@ -493,19 +491,7 @@ internal class PlayerHolder(
         }
 
         val mediaItem = mediaItemBuilder.build()
-        val currentBinder = sessionBinder
-        val currentBinding = sessionBinding
-        val boundOkHttpClient = if (currentBinder != null && currentBinding != null) {
-            currentBinder.createBoundOkHttpClient(okHttpClient, currentBinding)
-        } else {
-            okHttpClient
-        }
-        val dataSourceFactory = OkHttpDataSource.Factory(boundOkHttpClient)
-        if (requestHeaders.isNotEmpty()) {
-            dataSourceFactory.setDefaultRequestProperties(requestHeaders)
-        }
-        val mediaSource = DefaultMediaSourceFactory(dataSourceFactory)
-            .createMediaSource(mediaItem)
+        val mediaSource = mediaTransport.createMediaSource(mediaItem, sessionBinding, requestHeaders)
 
         // C.TIME_UNSET starts at the window's default position, i.e. the live edge.
         player.setMediaSource(mediaSource, if (isLive && startPositionMs == 0L) C.TIME_UNSET else startPositionMs)

@@ -4,7 +4,7 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.auth.SoftwareDPoPProvider
-import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
+import io.github.manugh.xg2g.android.transport.dashboard.NativeHouseholdProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

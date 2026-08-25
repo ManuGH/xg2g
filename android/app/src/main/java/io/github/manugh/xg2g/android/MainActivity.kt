@@ -7,16 +7,13 @@ import android.content.pm.ResolveInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.compose.setContent
-import kotlinx.coroutines.flow.MutableStateFlow
-import androidx.activity.viewModels
-import io.github.manugh.xg2g.android.guide.GuideViewModel
-import io.github.manugh.xg2g.android.dashboard.DashboardViewModel
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.URLUtil
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
@@ -25,19 +22,22 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
-import io.github.manugh.xg2g.android.auth.NativeDeviceAuthRepository
-import io.github.manugh.xg2g.android.auth.NativeDeviceAuthTransport
+import io.github.manugh.xg2g.android.dashboard.DashboardViewModel
 import io.github.manugh.xg2g.android.guide.GuideActivity
+import io.github.manugh.xg2g.android.guide.GuideViewModel
 import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
-import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
+import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import io.github.manugh.xg2g.android.playback.net.NativePlaybackCapabilities
 import io.github.manugh.xg2g.android.playback.net.PlaybackApiJsonCodec
-import io.github.manugh.xg2g.android.recordings.recordingThumbnailUrl
+import io.github.manugh.xg2g.android.transport.ServerTargetResolver
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthRepository
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthTransport
+import io.github.manugh.xg2g.android.transport.recordings.recordingThumbnailUrl
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -157,8 +157,7 @@ class MainActivity : AppCompatActivity() {
                     } else 0L
 
                     val thumbnailUrl = serverSettingsStore.getServerUrl()
-                        ?.toHttpUrlOrNull()
-                        ?.let { base -> recordingThumbnailUrl(base, item.recordingId).toString() }
+                        ?.let { base -> recordingThumbnailUrl(base, item.recordingId) }
 
                     nativePlaybackBridge.start(
                         NativePlaybackRequest.Recording(

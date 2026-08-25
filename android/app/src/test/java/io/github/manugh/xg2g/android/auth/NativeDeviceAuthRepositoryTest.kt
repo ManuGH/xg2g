@@ -1,16 +1,17 @@
 package io.github.manugh.xg2g.android.auth
 
-import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import io.github.manugh.xg2g.android.RefreshedDeviceSession
+import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
+import io.github.manugh.xg2g.android.transport.RefreshedDeviceSession
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthRepository
+import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.IOException
 
 class NativeDeviceAuthRepositoryTest {
 

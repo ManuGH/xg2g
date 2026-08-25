@@ -1,34 +1,39 @@
-package io.github.manugh.xg2g.android.playback.net
+package io.github.manugh.xg2g.android.transport.playback
+
 
 import android.content.Context
-import android.util.Log
-import android.util.Base64
 import android.os.Build
-
+import android.util.Base64
+import android.util.Log
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
-import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.DPoPProvider
-import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
-import io.github.manugh.xg2g.android.playback.model.PlaybackMode
 import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
+import io.github.manugh.xg2g.android.playback.model.PlaybackMode
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
-import io.github.manugh.xg2g.android.playback.session.PlaybackErrorMapper
+import io.github.manugh.xg2g.android.playback.net.NativeLiveDecision
+import io.github.manugh.xg2g.android.playback.net.NativePlaybackCapabilities
+import io.github.manugh.xg2g.android.playback.net.NativeRecordingPlaybackInfo
+import io.github.manugh.xg2g.android.playback.net.PlaybackApi
+import io.github.manugh.xg2g.android.playback.net.PlaybackApiJsonCodec
+import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.auth.createNativeAuthenticatedOkHttpClient
+import io.github.manugh.xg2g.android.transport.playback.PlaybackErrorMapper
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
-import java.nio.charset.StandardCharsets
 
 internal class PlaybackApiClient(
     context: Context,
@@ -45,6 +50,15 @@ internal class PlaybackApiClient(
         profileIdProvider = { serverSettingsStore.getSelectedProfileId() }
     )
 ) : PlaybackApi {
+
+    /**
+     * The media transport the player uses.
+     *
+     * Built here because it needs the same authenticated client and DPoP
+     * provider as every other request; handing the player an OkHttp client and
+     * letting it assemble its own was what put network wiring in the player.
+     */
+    val playerMediaTransport: PlayerMediaTransport = Media3PlayerTransport(okHttpClient, dpopProvider)
 
     override suspend fun ensureAuthSession(authToken: String?) {
         // Native API requests manage authentication directly via DPoP header per request

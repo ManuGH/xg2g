@@ -1,6 +1,6 @@
 package io.github.manugh.xg2g.android.profile
 
-import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
+import io.github.manugh.xg2g.android.transport.dashboard.NativeHouseholdProfile
 
 internal sealed interface FskDecision {
     object Permitted : FskDecision

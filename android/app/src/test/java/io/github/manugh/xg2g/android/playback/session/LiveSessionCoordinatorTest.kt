@@ -2,23 +2,24 @@ package io.github.manugh.xg2g.android.playback.session
 
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
-import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionMode
+import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionState
 import io.github.manugh.xg2g.android.playback.net.PlaybackApi
+import io.github.manugh.xg2g.android.transport.playback.PlaybackErrorMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)

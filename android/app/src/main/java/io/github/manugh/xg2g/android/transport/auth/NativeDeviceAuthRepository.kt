@@ -1,11 +1,14 @@
-package io.github.manugh.xg2g.android.auth
+package io.github.manugh.xg2g.android.transport.auth
 
 import io.github.manugh.xg2g.android.DeviceAuthLaunchCredentials
-import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import io.github.manugh.xg2g.android.auth.AuthState
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
 import java.io.IOException
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal class NativeDeviceAuthRepository(
     val stateStore: PersistedDeviceAuthStateStore,

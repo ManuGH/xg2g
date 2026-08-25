@@ -4,16 +4,17 @@ import android.content.Context
 import android.content.ContextWrapper
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.transport.auth.NativeDeviceAuthRepository
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
-import java.security.KeyPair
-import java.security.KeyPairGenerator
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 
 class NativeAuthContainerTest {
 

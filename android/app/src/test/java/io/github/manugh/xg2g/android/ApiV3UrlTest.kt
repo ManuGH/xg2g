@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android
 
+import io.github.manugh.xg2g.android.transport.apiV3Url
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Test

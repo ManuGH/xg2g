@@ -1,10 +1,11 @@
 package io.github.manugh.xg2g.android.auth
 
+import io.github.manugh.xg2g.android.transport.auth.buildNativeDeviceSessionRequest
+import java.security.KeyPair
+import java.security.KeyPairGenerator
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.security.KeyPair
-import java.security.KeyPairGenerator
 
 class NativeDeviceAuthTransportTest {
     private class CapturingDPoPProvider : DPoPProvider {
