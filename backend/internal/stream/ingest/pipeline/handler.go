@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ingeststats"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
@@ -339,6 +340,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = reader.Close() }()
 
+	// Which ring this client ended up on decides how its lag has to be read: on the
+	// master it is the receiver's input backing up, on a variant ring it is the
+	// transcoder's output. The two share no series.
+	subscriberRole := ingeststats.RoleNativeClient
+	if releaseVariant != nil {
+		subscriberRole = ingeststats.RoleVariantClient
+	}
+	sampler := ingeststats.NewSubscriberSampler(subscriberRole, reader)
+	defer sampler.Flush()
+
 	// Runtime Plan Transparency Headers
 	videoMode := "direct"
 	effectiveVideoCodec := srcVideoCodec
@@ -403,6 +414,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		n, err := reader.Read(chunk)
+		sampler.Sample()
 		if n > 0 {
 			if _, writeErr := w.Write(chunk[:n]); writeErr != nil {
 				return

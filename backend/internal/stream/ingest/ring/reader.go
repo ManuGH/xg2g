@@ -24,6 +24,11 @@ type SubscriberReader struct {
 	droppedBytes       int64
 	resyncSkippedBytes int64
 
+	// overruns counts how often the ring overtook this subscriber. It is the event
+	// count behind droppedBytes: one long stall and many short ones can discard the
+	// same number of bytes and are not the same fault.
+	overruns int64
+
 	// pendingPrefix holds PAT/PMT packets that must reach the consumer before any
 	// further ring data, so a decoder re-entering after an overrun is told the
 	// topology before it is handed pictures. pendingPrefixGeneration is the ring
@@ -152,6 +157,7 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// the active topology restated in front of it.
 		if s.readOffset < s.ring.tail {
 			s.droppedBytes += s.ring.tail - s.readOffset
+			s.overruns++
 			s.readOffset = s.ring.tail
 
 			// Whether the tail is an acceptable place to resume has three answers,
@@ -250,6 +256,42 @@ func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 
 	s.readOffset = latest
 	return latest, nil
+}
+
+// SubscriberStats is one consistent snapshot of a subscriber's ring accounting,
+// taken under a single ring lock. The fields only mean something together: LagBytes
+// is what this subscriber has not read yet, and the two byte counters are what it
+// will never read at all, for two unrelated reasons.
+type SubscriberStats struct {
+	// Overruns is how often the ring overtook this subscriber.
+	Overruns int64
+	// DroppedBytes is what the ring discarded before this subscriber read it.
+	DroppedBytes int64
+	// ResyncSkippedBytes is what recovery skipped on top of that to reach a random
+	// access point. It is never added to DroppedBytes: one is pressure on the ring,
+	// the other is a deliberate correction.
+	ResyncSkippedBytes int64
+	// LagBytes is how far behind the write head this subscriber currently is.
+	LagBytes int64
+}
+
+// Stats returns a snapshot of this subscriber's accounting. Reading the individual
+// accessors instead would take the lock once per value and could pair a lag with
+// byte counters from a different moment.
+func (s *SubscriberReader) Stats() SubscriberStats {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	lag := s.ring.head - s.readOffset
+	if lag < 0 {
+		lag = 0
+	}
+	return SubscriberStats{
+		Overruns:           s.overruns,
+		DroppedBytes:       s.droppedBytes,
+		ResyncSkippedBytes: s.resyncSkippedBytes,
+		LagBytes:           lag,
+	}
 }
 
 // DroppedBytes returns the bytes the ring discarded before this subscriber read
