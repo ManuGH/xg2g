@@ -19,6 +19,22 @@ import (
 
 var (
 	ErrWorkerClosed = errors.New("audio variant worker closed")
+
+	// ErrUpstreamGenerationChanged reports that the upstream ring changed topology
+	// epoch while this worker was running: a PMT version bump, or a different
+	// program. It is an expected cut, not a failure.
+	//
+	// FFmpeg binds its decoders when it probes the input and keeps them for the
+	// life of the process. Measured against two spliced captures on identical PIDs,
+	// a running process fed H.264 and then HEVC decoded 77 of the 1578 available
+	// frames and labelled the whole output h264; the milder case, AAC replaced by
+	// MP2 with the video untouched, broke the audio branch from the change onward.
+	// Restating PAT/PMT does not help and cannot: a transport stream repeats its
+	// PSI continuously anyway, so the process has always already seen it.
+	//
+	// A worker therefore serves exactly one generation. The manager builds the next
+	// one, and its subscribers re-attach primed on the new topology.
+	ErrUpstreamGenerationChanged = errors.New("upstream topology generation changed")
 )
 
 const (
@@ -87,6 +103,11 @@ type AudioVariantWorker struct {
 	subscriberCount atomic.Int64
 	lastIdleTime    time.Time
 	idleMu          sync.Mutex
+
+	// staleGeneration records the upstream epoch that ended this worker, or zero
+	// if it ended for any other reason. Generations only ever advance, so a cut is
+	// always non-zero and the sentinel is unambiguous.
+	staleGeneration atomic.Uint64
 }
 
 // NewAudioVariantWorker initializes a worker for the given key and upstream MasterRing.
@@ -361,6 +382,16 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 				return
 			}
 			n, rerr := masterReader.Read(buf)
+
+			// Checked between the read and the write, not before the read: the read
+			// can block for a whole GOP while waiting to recover, and the topology
+			// may change during that wait. Testing afterwards is what guarantees
+			// that no byte of a newer generation ever reaches this process.
+			if gen := w.masterRing.Generation(); gen != attach.Generation {
+				w.staleGeneration.Store(gen)
+				return
+			}
+
 			if n > 0 {
 				if _, werr := stdin.Write(buf[:n]); werr != nil {
 					return
@@ -411,10 +442,42 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 	waitErr := cmd.Wait()
 	wg.Wait()
 
+	// A topology cut outranks whatever FFmpeg exited with. Closing stdin makes it
+	// exit on its own, and the exit code that produces says nothing about why the
+	// worker ended - reporting it would make an ordinary PMT change look like a
+	// crash in logs and metrics.
+	if newGen := w.staleGeneration.Load(); newGen != 0 {
+		logger.Info().
+			Uint64("attached_generation", attach.Generation).
+			Uint64("upstream_generation", newGen).
+			Msg("upstream topology generation changed; ending variant worker for a clean rebuild")
+		return fmt.Errorf("%w: attached at generation %d, upstream is at %d",
+			ErrUpstreamGenerationChanged, attach.Generation, newGen)
+	}
+
 	if ctx.Err() != nil {
 		return nil
 	}
 	return waitErr
+}
+
+// Terminated reports whether this worker's run loop has finished. A finished
+// worker is never revived: its VariantRing is closed, and its FFmpeg is bound to
+// a topology that may no longer apply.
+func (w *AudioVariantWorker) Terminated() bool {
+	select {
+	case <-w.doneCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// Done returns a channel closed once the worker's run loop has finished. Err then
+// reports why, and ErrUpstreamGenerationChanged distinguishes an expected topology
+// cut from a failure.
+func (w *AudioVariantWorker) Done() <-chan struct{} {
+	return w.doneCh
 }
 
 // PrimedAttachWithTimeout waits up to timeout for the VariantRing to contain a valid keyframe and preamble.
