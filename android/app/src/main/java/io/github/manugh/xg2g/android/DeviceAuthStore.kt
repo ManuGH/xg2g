@@ -17,7 +17,7 @@ internal data class PersistedDeviceAuthState(
     val accessToken: String? = null,
     val accessTokenExpiresAtEpochMs: Long? = null,
     val policyVersion: String? = null,
-    val publishedEndpoints: List<PublishedEndpoint> = emptyList()
+    val publishedEndpoints: List<ServerEndpoint> = emptyList()
 ) {
     fun hasUsableAccessToken(nowEpochMs: Long): Boolean {
         val token = accessToken?.trim().takeIf { !it.isNullOrEmpty() } ?: return false
@@ -288,7 +288,7 @@ internal class DeviceAuthStore(
             return encryptedPrefs
         }
 
-        fun encodePublishedEndpoints(values: List<PublishedEndpoint>): String {
+        fun encodePublishedEndpoints(values: List<ServerEndpoint>): String {
             val normalized = normalizePublishedEndpoints(values)
             val array = JSONArray()
             normalized.forEach { endpoint ->
@@ -309,7 +309,7 @@ internal class DeviceAuthStore(
             return array.toString()
         }
 
-        fun decodePublishedEndpoints(raw: String?): List<PublishedEndpoint> {
+        fun decodePublishedEndpoints(raw: String?): List<ServerEndpoint> {
             val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
             return runCatching {
                 val array = JSONArray(trimmed)
@@ -317,7 +317,7 @@ internal class DeviceAuthStore(
                     for (index in 0 until array.length()) {
                         val item = array.optJSONObject(index) ?: continue
                         add(
-                            PublishedEndpoint(
+                            ServerEndpoint(
                                 url = item.optString("url"),
                                 kind = item.optString("kind"),
                                 priority = item.optInt("priority"),

@@ -1,11 +1,12 @@
 package io.github.manugh.xg2g.android.transport.auth
 
 import android.util.Log
-import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.contract.PublishedEndpoint
 import io.github.manugh.xg2g.android.transport.DeviceAuthTransport
 import io.github.manugh.xg2g.android.transport.RefreshedDeviceSession
 import io.github.manugh.xg2g.android.transport.apiV3Url
+import io.github.manugh.xg2g.android.transport.parseServerEndpoints
 import io.github.manugh.xg2g.android.transport.playback.withSameOriginHeaders
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -41,27 +42,7 @@ internal class NativeDeviceAuthTransport(
             val expiresSec = json.optLong("expiresInSeconds", 86400L)
             val nowMs = System.currentTimeMillis()
 
-            val endpoints = mutableListOf<PublishedEndpoint>()
-            val epArray = json.optJSONArray("publishedEndpoints")
-            if (epArray != null) {
-                for (i in 0 until epArray.length()) {
-                    val item = epArray.optJSONObject(i) ?: continue
-                    endpoints.add(
-                        PublishedEndpoint(
-                            url = item.optString("url"),
-                            kind = item.optString("kind"),
-                            priority = item.optInt("priority"),
-                            tlsMode = item.optString("tlsMode"),
-                            allowPairing = item.optBoolean("allowPairing"),
-                            allowStreaming = item.optBoolean("allowStreaming"),
-                            allowWeb = item.optBoolean("allowWeb"),
-                            allowNative = item.optBoolean("allowNative"),
-                            advertiseReason = item.optString("advertiseReason"),
-                            source = item.optString("source", "config")
-                        )
-                    )
-                }
-            }
+            val endpoints = parseServerEndpoints(json.optJSONArray("publishedEndpoints"))
 
             RefreshedDeviceSession(
                 accessSessionId = json.optString("accessSessionId", ""),

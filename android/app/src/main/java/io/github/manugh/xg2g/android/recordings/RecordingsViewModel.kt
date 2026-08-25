@@ -15,13 +15,13 @@ import kotlinx.coroutines.launch
 
 @Immutable
 internal data class RecordingsUiState(
-    val recordingsState: ModuleState<List<RecordingItem>> = ModuleState.Loading,
-    val continueWatchingState: ModuleState<List<RecordingItem>> = ModuleState.Empty,
+    val recordingsState: ModuleState<List<RecordingListItem>> = ModuleState.Loading,
+    val continueWatchingState: ModuleState<List<RecordingListItem>> = ModuleState.Empty,
     val selectedRoot: String? = null,
     val currentPath: String = "",
-    val roots: List<RecordingRoot> = emptyList(),
-    val directories: List<DirectoryItem> = emptyList(),
-    val breadcrumbs: List<Breadcrumb> = emptyList(),
+    val roots: List<RecordingLibraryRoot> = emptyList(),
+    val directories: List<RecordingFolder> = emptyList(),
+    val breadcrumbs: List<RecordingCrumb> = emptyList(),
     val baseUrl: String = "",
     val serverLabel: String = ""
 )

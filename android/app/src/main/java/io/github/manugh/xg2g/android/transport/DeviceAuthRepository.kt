@@ -6,7 +6,8 @@ import io.github.manugh.xg2g.android.DeviceAuthLaunchCredentials
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
-import io.github.manugh.xg2g.android.PublishedEndpoint
+import io.github.manugh.xg2g.android.ServerEndpoint
+import io.github.manugh.xg2g.android.contract.PublishedEndpoint
 import io.github.manugh.xg2g.android.normalizePublishedEndpoints
 import io.github.manugh.xg2g.android.preferredNativeServerUrl
 import io.github.manugh.xg2g.android.transport.playback.AuthCookieSession
@@ -423,9 +424,9 @@ internal class DeviceAuthRepository(
     }
 
     private fun mergePublishedEndpoints(
-        current: List<PublishedEndpoint>,
-        refreshed: List<PublishedEndpoint>
-    ): List<PublishedEndpoint> {
+        current: List<ServerEndpoint>,
+        refreshed: List<ServerEndpoint>
+    ): List<ServerEndpoint> {
         if (refreshed.isNotEmpty()) {
             return normalizePublishedEndpoints(refreshed)
         }
@@ -445,7 +446,7 @@ internal data class RefreshedDeviceSession(
     val accessToken: String,
     val accessTokenExpiresAtEpochMs: Long,
     val policyVersion: String? = null,
-    val endpoints: List<PublishedEndpoint> = emptyList()
+    val endpoints: List<ServerEndpoint> = emptyList()
 )
 
 internal class DeviceAuthHttpException(
@@ -598,30 +599,8 @@ internal class OkHttpDeviceAuthTransport(
             .toInstant()
             .toEpochMilli()
 
-    private fun parsePublishedEndpoints(array: JSONArray?): List<PublishedEndpoint> {
-        if (array == null) {
-            return emptyList()
-        }
-        return buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                add(
-                    PublishedEndpoint(
-                        url = item.optString("url"),
-                        kind = item.optString("kind"),
-                        priority = item.optInt("priority"),
-                        tlsMode = item.optString("tlsMode"),
-                        allowPairing = item.optBoolean("allowPairing"),
-                        allowStreaming = item.optBoolean("allowStreaming"),
-                        allowWeb = item.optBoolean("allowWeb"),
-                        allowNative = item.optBoolean("allowNative"),
-                        advertiseReason = item.optString("advertiseReason"),
-                        source = item.optString("source", "config")
-                    )
-                )
-            }
-        }.let(::normalizePublishedEndpoints)
-    }
+    private fun parsePublishedEndpoints(array: JSONArray?): List<ServerEndpoint> =
+        normalizePublishedEndpoints(parseServerEndpoints(array))
 
     private fun okhttp3.Response.asDeviceAuthHttpException(body: String): DeviceAuthHttpException {
         val problemType = runCatching {

@@ -1,25 +1,25 @@
 package io.github.manugh.xg2g.android
 
+
 import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import io.github.manugh.xg2g.android.contract.RecordingItem
 import io.github.manugh.xg2g.android.dashboard.DashboardScreen
 import io.github.manugh.xg2g.android.dashboard.DashboardViewModel
 import io.github.manugh.xg2g.android.guide.GuideScreen
 import io.github.manugh.xg2g.android.guide.GuideViewModel
+import io.github.manugh.xg2g.android.recordings.RecordingListItem
+import io.github.manugh.xg2g.android.recordings.RecordingsScreen
+import io.github.manugh.xg2g.android.recordings.RecordingsViewModel
+import io.github.manugh.xg2g.android.settings.SettingsScreen
+import io.github.manugh.xg2g.android.settings.SettingsViewModel
+import io.github.manugh.xg2g.android.timers.TimersScreen
+import io.github.manugh.xg2g.android.timers.TimersViewModel
 import io.github.manugh.xg2g.android.ui.navigation.BroadcastApp
 import io.github.manugh.xg2g.android.ui.theme.GuideTheme
 import kotlinx.coroutines.flow.StateFlow
-
-import io.github.manugh.xg2g.android.recordings.RecordingItem
-import io.github.manugh.xg2g.android.recordings.RecordingsScreen
-import io.github.manugh.xg2g.android.recordings.RecordingsViewModel
-import io.github.manugh.xg2g.android.timers.TimersScreen
-import io.github.manugh.xg2g.android.timers.TimersViewModel
-
-import io.github.manugh.xg2g.android.settings.SettingsScreen
-import io.github.manugh.xg2g.android.settings.SettingsViewModel
 
 @Composable
 internal fun MainActivityContent(
@@ -32,7 +32,7 @@ internal fun MainActivityContent(
     settingsViewModel: SettingsViewModel,
     assetBaseUrl: String,
     onPlayChannel: (io.github.manugh.xg2g.android.guide.GuideChannel) -> Unit,
-    onPlayRecording: (RecordingItem) -> Unit,
+    onPlayRecording: (RecordingListItem) -> Unit,
     onOpenSetup: (() -> Unit)?,
     onExitGuide: () -> Unit
 ) {

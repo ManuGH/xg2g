@@ -71,7 +71,7 @@ import java.util.Locale
 @Composable
 internal fun RecordingsScreen(
     viewModel: RecordingsViewModel,
-    onPlayRecording: (RecordingItem) -> Unit,
+    onPlayRecording: (RecordingListItem) -> Unit,
     onOpenSetup: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -285,9 +285,9 @@ internal fun RecordingsScreen(
 
 @Composable
 private fun PathNavigationBar(
-    roots: List<RecordingRoot>,
+    roots: List<RecordingLibraryRoot>,
     selectedRoot: String?,
-    breadcrumbs: List<Breadcrumb>,
+    breadcrumbs: List<RecordingCrumb>,
     currentPath: String,
     onSelectRoot: (String) -> Unit,
     onNavigateBreadcrumb: (String) -> Unit,
@@ -380,7 +380,7 @@ private fun PathNavigationBar(
 
 @Composable
 private fun DirectoryGridSection(
-    directories: List<DirectoryItem>,
+    directories: List<RecordingFolder>,
     onSelectDirectory: (String) -> Unit
 ) {
     Column {
@@ -409,7 +409,7 @@ private fun DirectoryGridSection(
 
 @Composable
 private fun DirectoryCard(
-    item: DirectoryItem,
+    item: RecordingFolder,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -631,7 +631,7 @@ private fun RecordingsErrorView(
 
 @Composable
 private fun RecordingCard(
-    item: RecordingItem,
+    item: RecordingListItem,
     baseUrl: String,
     onClick: () -> Unit,
     onFocused: (() -> Unit)? = null,
@@ -845,7 +845,7 @@ private fun TvActionButton(
     }
 }
 
-private fun getResumeProgressFraction(item: RecordingItem): Float? {
+private fun getResumeProgressFraction(item: RecordingListItem): Float? {
     val r = item.resume ?: return null
     val dur = r.durationSeconds ?: item.durationSeconds ?: return null
     if (dur <= 0L || r.posSeconds <= 0L) return null

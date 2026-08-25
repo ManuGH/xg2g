@@ -92,11 +92,12 @@ var platforms = []platform{
 		lineComment: "//",
 	},
 	{
-		// Not enforced yet: the Android client has no transport module, so its
-		// networking, URL building and wire decoding are still spread across
-		// feature packages. Introducing the module is what flips this.
+		// Enforced: the Android client reaches the network only through
+		// android/transport, and decodes the wire only through the generated
+		// contract. Both were true once before and were lost in a branch
+		// rewrite, which is the argument for the gate rather than against it.
 		name:           "android",
-		enforced:       false,
+		enforced:       true,
 		roots:          []string{"../android/app/src"},
 		exts:           []string{".kt"},
 		transportZones: []string{"android/app/src/main/java/io/github/manugh/xg2g/android/transport/"},
