@@ -200,19 +200,6 @@ func epgCachePrograms(cache *epg.TV) []epg.Programme {
 
 const xmltvTimeFormat = "20060102150405 -0700"
 
-// EpgItem defines the JSON response structure for an EPG program
-type EpgItem struct {
-	Id         *string `json:"id,omitempty"`
-	ServiceRef string  `json:"serviceRef,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	Desc       *string `json:"desc,omitempty"`
-	Start      int     `json:"start,omitempty"`
-	End        int     `json:"end,omitempty"`
-	Duration   *int    `json:"duration,omitempty"`
-	StartXMLTV *string `json:"startXmltv,omitempty"`
-	EndXMLTV   *string `json:"endXmltv,omitempty"`
-}
-
 // Helper to parse XMLTV dates "20080715003000 +0200"
 //
 //nolint:unused
@@ -398,22 +385,22 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 		sRef := e.ServiceRef
 		title := e.Title
 		desc := e.Desc
-		start := int(e.Start)
-		end := int(e.End)
-		dur := int(e.Duration)
+		start := int64(e.Start)
+		end := int64(e.End)
+		dur := int64(e.Duration)
 		startXMLTV := stringPtrOrNil(strings.TrimSpace(e.StartXMLTV))
 		endXMLTV := stringPtrOrNil(strings.TrimSpace(e.EndXMLTV))
 
 		resp = append(resp, EpgItem{
 			Id:         &id,
-			ServiceRef: sRef,
-			Title:      title,
+			ServiceRef: &sRef,
+			Title:      &title,
 			Desc:       &desc,
-			Start:      start,
-			End:        end,
+			Start:      &start,
+			End:        &end,
 			Duration:   &dur,
-			StartXMLTV: startXMLTV,
-			EndXMLTV:   endXMLTV,
+			StartXmltv: startXMLTV,
+			EndXmltv:   endXMLTV,
 		})
 	}
 

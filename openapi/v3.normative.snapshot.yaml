@@ -541,6 +541,19 @@ components:
           items:
             $ref: "#/components/schemas/PublishedEndpoint"
 
+    AuthSessionResponse:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+        cookie:
+          type: string
+        path:
+          type: string
+        expiresIn:
+          type: integer
+
     IntentRequest:
       type: object
       additionalProperties: false
@@ -1795,6 +1808,20 @@ components:
           items:
             $ref: "#/components/schemas/NowNextItem"
 
+    EpgItem:
+      type: object
+      properties:
+        id: { type: string }
+        serviceRef: { type: string }
+        title: { type: string }
+        desc: { type: string }
+        start: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        duration: { type: integer, format: int64 }
+        startXmltv: { type: string }
+        endXmltv: { type: string }
+        genre: { type: string }
+
     ProblemCode:
       type: string
       description: Registry-backed public machine-readable short code for RFC7807 responses.
@@ -1986,9 +2013,6 @@ components:
         state:
           type: string
           enum: [scheduled, recording, completed, disabled, unknown]
-        receiverState:
-          type: object
-          additionalProperties: true
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -2092,7 +2116,96 @@ components:
         - unknown
       description: Reason for the playback decision.
 
+    LiveStreamInfoRequest:
+      type: object
+      required: [serviceRef, capabilities]
+      properties:
+        serviceRef:
+          type: string
+          description: The Enigma2 service reference
+        capabilities:
+          $ref: "#/components/schemas/PlaybackCapabilities"
+
+    LiveStreamInfoResponse:
+      type: object
+      properties:
+        playbackDecisionToken:
+          type: string
+        sessionId:
+          type: string
+        mode:
+          $ref: "#/components/schemas/PlaybackInfoMode"
+        decisionReason:
+          type: string
+        url:
+          type: string
+        isSeekable:
+          type: boolean
+        dvrWindowSeconds:
+          type: integer
+          format: int64
+
+    PlaybackTicketResponse:
+      type: object
+      required: [sessionId, ticket, cookie, path, expiresIn]
+      properties:
+        sessionId:
+          type: string
+        ticket:
+          type: string
+        cookie:
+          type: string
+        path:
+          type: string
+        expiresIn:
+          type: integer
+
+    ZapPreparationResponse:
+      type: object
+      required: [preparationId, state]
+      properties:
+        preparationId:
+          type: string
+        zapId:
+          type: string
+        serviceRef:
+          type: string
+        state:
+          $ref: "#/components/schemas/ZapPreparationState"
+        outcome:
+          type: string
+        generation:
+          type: integer
+          format: int64
+        readyAfterMs:
+          type: integer
+          format: int64
+        pending:
+          type: object
+          additionalProperties:
+            type: string
+        detail:
+          type: string
+
+    ZapPreparationState:
+      type: string
+      enum: [pending, ready, failed, cancelled, committed]
+
     # ==================== P4-1: Decision Engine Schemas ====================
+
+    PlaybackMaxVideo:
+      type: object
+      description: Optional resolution/FPS constraints
+      properties:
+        width:
+          type: integer
+          example: 1920
+        height:
+          type: integer
+          example: 1080
+        fps:
+          type: integer
+          example: 60
 
     PlaybackCapabilities:
       type: object
@@ -2128,18 +2241,7 @@ components:
           description: Supported audio codecs
           example: ["aac", "ac3"]
         maxVideo:
-          type: object
-          description: Optional resolution/FPS constraints
-          properties:
-            width:
-              type: integer
-              example: 1920
-            height:
-              type: integer
-              example: 1080
-            fps:
-              type: integer
-              example: 60
+          $ref: "#/components/schemas/PlaybackMaxVideo"
         deviceContext:
           $ref: "#/components/schemas/PlaybackDeviceContext"
         networkContext:
@@ -3479,6 +3581,28 @@ components:
         finished: { type: boolean }
         updatedAt: { type: string, format: date-time }
 
+    RecordingResumeRequest:
+      type: object
+      required: [position]
+      properties:
+        position:
+          type: number
+          format: double
+          description: Playback position in seconds.
+        total:
+          type: number
+          format: double
+          description: Total duration in seconds.
+        finished:
+          type: boolean
+          description: Whether the user finished watching the recording.
+        title:
+          type: string
+          description: Optional display title snapshot.
+        channel:
+          type: string
+          description: Optional display channel snapshot.
+
     RecordingResponse:
       type: object
       required: [requestId]
@@ -3516,17 +3640,75 @@ x-xg2g-native-contract:
   roots:
     - ApprovePairingRequest
     - ApprovePairingResponse
+    - AuthSessionResponse
+    - Bouquet
     - DeviceGrantResponse
     - DeviceRefreshRequest
     - ECPublicKeyJWK
+    - EpgItem
     - ExchangePairingResponse
+    - IntentAcceptedResponse
+    - IntentRequest
+    - LiveStreamInfoRequest
+    - LiveStreamInfoResponse
+    - NowNextRequest
+    - NowNextResponse
     - PairingSecretRequest
     - PairingStatusResponse
+    - PlaybackTicketResponse
     - PublishedEndpoint
+    - RecordingResponse
+    - RecordingResumeRequest
+    - Service
     - StartPairingRequest
     - StartPairingResponse
+    - TimerCreateRequest
+    - TimerList
+    - ZapPreparationResponse
 
 x-xg2g-operation-policies:
+  PostSessionPlaybackTicket:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  StartStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetStreamPrepareStatus:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  CommitStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  CancelStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PutRecordingResume:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
   AddTimer:
     class: write
     auth: bearer_scope
@@ -4581,29 +4763,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: false
-                  properties:
-                    id:
-                      type: string
-                    serviceRef:
-                      type: string
-                    title:
-                      type: string
-                    desc:
-                      type: string
-                    start:
-                      type: integer
-                    end:
-                      type: integer
-                    duration:
-                      type: integer
-                    startXmltv:
-                      type: string
-                      description: Original XMLTV start timestamp including offset
-                    endXmltv:
-                      type: string
-                      description: Original XMLTV end timestamp including offset
+                  $ref: "#/components/schemas/EpgItem"
 
   /services:
     get:
@@ -4692,21 +4852,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [serviceRef, capabilities]
-              properties:
-                serviceRef:
-                  type: string
-                  description: The Enigma2 service reference
-                capabilities:
-                  $ref: "#/components/schemas/PlaybackCapabilities"
+              $ref: "#/components/schemas/LiveStreamInfoRequest"
       responses:
         "200":
           description: Playback decision and info
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlaybackInfo"
+                $ref: "#/components/schemas/LiveStreamInfoResponse"
         "400":
           description: Invalid capabilities or service reference
           content:
@@ -5073,6 +5226,52 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
         "500":
           description: Thumbnail cache unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /recordings/{recordingId}/resume:
+    put:
+      summary: Save playback resume point for a recording
+      operationId: putRecordingResume
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingResumeRequest"
+      responses:
+        "204":
+          description: Resume point saved successfully
+        "400":
+          description: Invalid input or recording ID
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: Internal error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Resume store unavailable
           content:
             application/problem+json:
               schema:
@@ -5573,6 +5772,10 @@ paths:
       responses:
         "200":
           description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
         "400":
           description: HTTPS required for session exchange
         "401":
@@ -6043,6 +6246,119 @@ paths:
           description: Feedback accepted
         "404":
           description: Session not found
+
+  /sessions/{sessionId}/playback-ticket:
+    post:
+      summary: Issue a playback ticket for a media session
+      operationId: postSessionPlaybackTicket
+      tags: [streams]
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      responses:
+        "201":
+          description: Playback ticket issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackTicketResponse"
+        "400":
+          description: Invalid input
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal error
+
+  /stream/prepare:
+    post:
+      summary: Start warming a channel stream
+      operationId: startStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: sref
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation started or updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+
+  /stream/prepare/{preparationId}:
+    get:
+      summary: Check status of stream preparation
+      operationId: getStreamPrepareStatus
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+    delete:
+      summary: Cancel stream preparation
+      operationId: cancelStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+
+  /stream/prepare/{preparationId}/commit:
+    post:
+      summary: Commit stream preparation
+      operationId: commitStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: generation
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Preparation committed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+        "409":
+          description: Generation mismatch
 
   /logs:
     get:

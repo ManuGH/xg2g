@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "a29bf65d6647907b185f9777e9f822700008fca1edb79ff0068e8f2d9ea16cd5"
+    "sha256": "a92b6d35054b808ba0205b718246661368da3fd34b8647983415b4530d2a51c9"
   },
   "paths": [
     "/auth/device/refresh",
@@ -29,6 +29,7 @@
     "/recordings/{recordingId}/delete",
     "/recordings/{recordingId}/playlist.m3u8",
     "/recordings/{recordingId}/rename",
+    "/recordings/{recordingId}/resume",
     "/recordings/{recordingId}/scrub.jpg",
     "/recordings/{recordingId}/status",
     "/recordings/{recordingId}/stream-info",
@@ -51,6 +52,10 @@
     "/sessions/{sessionID}/hls/{filename}",
     "/sessions/{sessionID}/hls/{variant}/{filename}",
     "/sessions/{sessionId}/feedback",
+    "/sessions/{sessionId}/playback-ticket",
+    "/stream/prepare",
+    "/stream/prepare/{preparationId}",
+    "/stream/prepare/{preparationId}/commit",
     "/streams",
     "/streams/{id}",
     "/system/config",
@@ -137,7 +142,10 @@
       "parameters": [],
       "responses": [
         {
-          "status": "200"
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
         },
         {
           "status": "400"
@@ -988,6 +996,55 @@
         },
         {
           "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "putRecordingResume",
+      "method": "PUT",
+      "path": "/recordings/{recordingId}/resume",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
           "contentTypes": [
             "application/problem+json"
           ]
@@ -1927,6 +1984,132 @@
       ]
     },
     {
+      "operationId": "postSessionPlaybackTicket",
+      "method": "POST",
+      "path": "/sessions/{sessionId}/playback-ticket",
+      "parameters": [
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "401"
+        },
+        {
+          "status": "500"
+        }
+      ]
+    },
+    {
+      "operationId": "startStreamPrepare",
+      "method": "POST",
+      "path": "/stream/prepare",
+      "parameters": [
+        {
+          "name": "sref",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "cancelStreamPrepare",
+      "method": "DELETE",
+      "path": "/stream/prepare/{preparationId}",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getStreamPrepareStatus",
+      "method": "GET",
+      "path": "/stream/prepare/{preparationId}",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "commitStreamPrepare",
+      "method": "POST",
+      "path": "/stream/prepare/{preparationId}/commit",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "generation",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
       "operationId": "getStreams",
       "method": "GET",
       "path": "/streams",
@@ -2380,6 +2563,7 @@
     "AppConfig",
     "ApprovePairingRequest",
     "ApprovePairingResponse",
+    "AuthSessionResponse",
     "Bouquet",
     "Breadcrumb",
     "ComponentStatus",
@@ -2408,6 +2592,7 @@
     "EntitlementStatus",
     "EpgAgeRating",
     "EpgEpisodeInfo",
+    "EpgItem",
     "EpgRatingConfidence",
     "EpgRatingScore",
     "EpgRatingSource",
@@ -2426,6 +2611,8 @@
     "IntentAcceptedResponse",
     "IntentRequest",
     "LivePlaybackTruthProblem",
+    "LiveStreamInfoRequest",
+    "LiveStreamInfoResponse",
     "LogEntry",
     "MonetizationStatus",
     "NetworkInfo",
@@ -2454,6 +2641,7 @@
     "PlaybackInfoDurationSource",
     "PlaybackInfoMode",
     "PlaybackInfoReason",
+    "PlaybackMaxVideo",
     "PlaybackNetworkContext",
     "PlaybackOutput",
     "PlaybackOutputFile",
@@ -2463,6 +2651,7 @@
     "PlaybackTargetHls",
     "PlaybackTargetProfile",
     "PlaybackTargetVideo",
+    "PlaybackTicketResponse",
     "PlaybackTrace",
     "PlaybackTraceFfmpegPlan",
     "PlaybackTraceHlsDebug",
@@ -2490,6 +2679,7 @@
     "RecordingBuildStatus",
     "RecordingItem",
     "RecordingResponse",
+    "RecordingResumeRequest",
     "RecordingRoot",
     "RecordingStatus",
     "ResourceInfo",
@@ -2526,39 +2716,97 @@
     "TimerList",
     "TimerPatchRequest",
     "TunerInfo",
-    "VerificationConfig"
+    "VerificationConfig",
+    "ZapPreparationResponse",
+    "ZapPreparationState"
   ],
   "nativeContract": {
     "roots": [
       "ApprovePairingRequest",
       "ApprovePairingResponse",
+      "AuthSessionResponse",
+      "Bouquet",
       "DeviceGrantResponse",
       "DeviceRefreshRequest",
       "ECPublicKeyJWK",
+      "EpgItem",
       "ExchangePairingResponse",
+      "IntentAcceptedResponse",
+      "IntentRequest",
+      "LiveStreamInfoRequest",
+      "LiveStreamInfoResponse",
+      "NowNextRequest",
+      "NowNextResponse",
       "PairingSecretRequest",
       "PairingStatusResponse",
+      "PlaybackTicketResponse",
       "PublishedEndpoint",
+      "RecordingResponse",
+      "RecordingResumeRequest",
+      "Service",
       "StartPairingRequest",
-      "StartPairingResponse"
+      "StartPairingResponse",
+      "TimerCreateRequest",
+      "TimerList",
+      "ZapPreparationResponse"
     ],
     "closure": [
       "ApprovePairingRequest",
       "ApprovePairingResponse",
+      "AuthSessionResponse",
+      "Bouquet",
+      "Breadcrumb",
       "DeviceAuthDeviceType",
       "DeviceGrantResponse",
       "DeviceRefreshRequest",
+      "DirectoryItem",
       "ECPublicKeyJWK",
+      "EpgAgeRating",
+      "EpgEpisodeInfo",
+      "EpgItem",
+      "EpgRatingConfidence",
+      "EpgRatingScore",
+      "EpgRatingSource",
       "ExchangePairingResponse",
+      "IntentAcceptedResponse",
+      "IntentRequest",
+      "LiveStreamInfoRequest",
+      "LiveStreamInfoResponse",
+      "NowNextEntry",
+      "NowNextItem",
+      "NowNextRequest",
+      "NowNextResponse",
       "PairingSecretRequest",
       "PairingStatus",
       "PairingStatusResponse",
+      "PlaybackBrowserEngine",
+      "PlaybackCapabilities",
+      "PlaybackClientIdentity",
+      "PlaybackClientPlatform",
+      "PlaybackClientSurface",
+      "PlaybackDeviceContext",
+      "PlaybackInfoMode",
+      "PlaybackMaxVideo",
+      "PlaybackNetworkContext",
+      "PlaybackTicketResponse",
+      "PlaybackVideoCodecSignal",
       "PublishedEndpoint",
       "PublishedEndpointKind",
       "PublishedEndpointSource",
       "PublishedEndpointTLSMode",
+      "RecordingItem",
+      "RecordingResponse",
+      "RecordingResumeRequest",
+      "RecordingRoot",
+      "ResumeSummary",
+      "Service",
       "StartPairingRequest",
-      "StartPairingResponse"
+      "StartPairingResponse",
+      "Timer",
+      "TimerCreateRequest",
+      "TimerList",
+      "ZapPreparationResponse",
+      "ZapPreparationState"
     ]
   },
   "artifacts": [
@@ -2566,7 +2814,7 @@
       "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
       "language": "kotlin",
       "generator": "gen-native-contract",
-      "sha256": "940ebeb35e55bd16b1c18affe7aa228d30c74ea8ec07ceb3291a911bf5e86662"
+      "sha256": "81a86e1eb273ba489bd0ffc41b4880192ae31b18b5adcc8904a9083801d6f453"
     },
     {
       "path": "apps/webui/src/client-ts/client.gen.ts",
@@ -2578,19 +2826,19 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "1a2af6f7e61ee9555671eed6416dc1d6dd8f4d7bf9f9115e98f3746fdb1f2809"
+      "sha256": "e846139676c386217d988f9cb1028217bc4e1ee97c7135f549f76ff1826fa3e5"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "afeeea294eb2ea7d1e11f458a2a4ea30ad8a581e38823d986e95c1b71c1865a4"
+      "sha256": "b7c680aaec3253ad09331b7819cfc0b420a21db77cc3b3dd1cd0aba3ec02d5d5"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "8ba9c523157451d6d3cabea8aedf1b6cef7d6f3197620b74dd6a311ad13eca01"
+      "sha256": "5ca486dac039041459ef7e4ca1a3fef3e0cb6bddf82828bb8a791339508cb09c"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2602,37 +2850,37 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "d838f991535ac0b86ce498bcef4f1daa3355e65441b86cfc33ff697917817374"
+      "sha256": "855200780f0df8606159039578efe406fbb80b0395a80a1a4a8037c885a1aeda"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "c1ebdad614fa6a4d9ce1d6bd81e686556685c1cf031c40363b0393189462fe4e"
+      "sha256": "7d404a53c6e222e7ef3c57a7b62df15f0204cda24803851c29bc15b7bde41946"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "3a8c875ffb2a14f658c40af9b8ae09e2ce0bb3c4f6ca0bf7a2e2d16339ab9a00"
+      "sha256": "100366bcf28f41e366fa2728d71186258ef5a7262d19f80dec85290f9a61f488"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "241e478305b6622f898a1945286b52aa25c64be0eb73e3edaa3ea189ee4b5288"
+      "sha256": "37e8bf0937a32acebbd5668bc7338a09d19d11c5d83255e3aedb44b6f691566b"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
       "language": "swift",
       "generator": "gen-native-contract",
-      "sha256": "f360047ba972f411c452edf2fcad655dbe23bd8fe692da01520673e66f877045"
+      "sha256": "051411f367d52884c3938bd8539f49a8a30f7bf2332eb5102e4a0491f9dac666"
     },
     {
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "bae802ae54085fe974b5f4a755d6a24eb7e6bd0a86f5f87eb9ddfe1bceca4f7f"
+      "sha256": "aee4637a44b4ae1297f74faf11a072772ef912a4fee1a67ec17ceff0035b757f"
     }
   ]
 }

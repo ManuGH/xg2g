@@ -56,7 +56,7 @@ struct ChannelListView: View {
                                         if isFav {
                                             await model.selectBouquet(nil)
                                         } else {
-                                            await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
+                                            await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
                                         }
                                     }
                                 } label: {
@@ -376,7 +376,7 @@ struct ChannelListView: View {
                         if !model.favoriteChannelIDs.isEmpty {
                             Button {
                                 triggerHaptic(.light)
-                                Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                                Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
                             } label: {
                                 HStack {
                                     Text("Favoriten (\(model.favoriteChannelIDs.count))")

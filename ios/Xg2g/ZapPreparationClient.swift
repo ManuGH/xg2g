@@ -10,7 +10,7 @@ import Foundation
 /// including the ones only a failure uses: a preparation that never became ready has to
 /// be able to say which condition it was still waiting on, or the client can only report
 /// that something did not work.
-struct ZapPreparation: Decodable, Sendable {
+struct ZapPreparation: Sendable {
     let preparationId: String
     let zapId: String?
     let serviceRef: String?
@@ -55,6 +55,22 @@ struct ZapPreparation: Decodable, Sendable {
     }
 }
 
+extension Xg2gContract.ZapPreparationResponse {
+    func toDomain() -> ZapPreparation {
+        ZapPreparation(
+            preparationId: preparationId,
+            zapId: zapId,
+            serviceRef: serviceRef,
+            state: state.rawValue,
+            outcome: outcome,
+            generation: generation.map { UInt64($0) },
+            readyAfterMs: readyAfterMs.map { Int($0) },
+            pending: pending,
+            detail: detail
+        )
+    }
+}
+
 /// Talks to the backend's preparation endpoints.
 ///
 /// Four operations and no state of its own: start a preparation, ask what became of it,
@@ -76,41 +92,45 @@ struct ZapPreparationClient: Sendable {
 
     /// Asks the backend to warm a channel beside the one playing.
     func start(serviceRef: String, zapID: String) async throws -> ZapPreparation {
-        try await api.send(APIRequest<ZapPreparation>(
+        let response: Xg2gContract.ZapPreparationResponse = try await api.send(APIRequest(
             method: .post,
             path: Self.basePath,
             query: [URLQueryItem(name: "sref", value: serviceRef)],
             headers: headers(zapID: zapID)
         ))
+        return response.toDomain()
     }
 
     /// Asks what became of one.
     func status(_ preparationID: String, zapID: String) async throws -> ZapPreparation {
-        try await api.send(APIRequest<ZapPreparation>(
+        let response: Xg2gContract.ZapPreparationResponse = try await api.send(APIRequest(
             method: .get,
             path: "\(Self.basePath)/\(preparationID)",
             headers: headers(zapID: zapID)
         ))
+        return response.toDomain()
     }
 
     /// Takes it, naming the generation that was proven ready.
     func commit(_ preparationID: String, generation: UInt64, zapID: String) async throws -> ZapPreparation {
-        try await api.send(APIRequest<ZapPreparation>(
+        let response: Xg2gContract.ZapPreparationResponse = try await api.send(APIRequest(
             method: .post,
             path: "\(Self.basePath)/\(preparationID)/commit",
             query: [URLQueryItem(name: "generation", value: String(generation))],
             headers: headers(zapID: zapID)
         ))
+        return response.toDomain()
     }
 
     /// Abandons it. Idempotent on the server, so a client cleaning up never has to care
     /// whether it won the race.
     func cancel(_ preparationID: String, zapID: String) async {
-        _ = try? await api.send(APIRequest<ZapPreparation>(
+        let response: Xg2gContract.ZapPreparationResponse? = try? await api.send(APIRequest(
             method: .delete,
             path: "\(Self.basePath)/\(preparationID)",
             headers: headers(zapID: zapID)
         ))
+        _ = response
     }
 
     private func headers(zapID: String) -> [String: String] {

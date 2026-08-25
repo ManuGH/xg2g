@@ -63,7 +63,7 @@ final class StubURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
-private struct Bouquet: Decodable, Equatable, Sendable {
+private struct SampleResource: Decodable, Equatable, Sendable {
     let id: String
     let name: String
 }
@@ -102,7 +102,7 @@ struct APIClientTests {
         let client = try makeClient()
         respond(body: #"{"id":"1","name":"Favourites"}"#)
 
-        _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+        _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
 
         #expect(StubURLProtocol.lastRequest?.url?.absoluteString == "https://tv.example/api/v3/services/bouquets")
     }
@@ -111,7 +111,7 @@ struct APIClientTests {
         let client = try makeClient(root: "https://tv.example/xg2g/")
         respond(body: #"{"id":"1","name":"Favourites"}"#)
 
-        _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+        _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
 
         #expect(
             StubURLProtocol.lastRequest?.url?.absoluteString
@@ -124,7 +124,7 @@ struct APIClientTests {
         respond(body: #"{"id":"1","name":"x"}"#)
 
         _ = try await client.send(
-            APIRequest<Bouquet>(path: "epg", query: [URLQueryItem(name: "limit", value: "5")])
+            APIRequest<SampleResource>(path: "epg", query: [URLQueryItem(name: "limit", value: "5")])
         )
 
         #expect(StubURLProtocol.lastRequest?.url?.query == "limit=5")
@@ -183,7 +183,7 @@ struct APIClientTests {
         let client = try makeClient()
 
         await #expect(throws: APIError.invalidEndpoint(path: "/api/v3/services")) {
-            _ = try await client.send(APIRequest<Bouquet>(path: "/api/v3/services"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "/api/v3/services"))
         }
     }
 
@@ -193,7 +193,7 @@ struct APIClientTests {
         let client = try makeClient(root: "https://tv.example/xg2g/")
 
         await #expect(throws: APIError.invalidEndpoint(path: "../../admin")) {
-            _ = try await client.send(APIRequest<Bouquet>(path: "../../admin"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "../../admin"))
         }
     }
 
@@ -203,9 +203,9 @@ struct APIClientTests {
         let client = try makeClient()
         respond(body: #"{"id":"42","name":"Favourites"}"#)
 
-        let bouquet = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+        let bouquet = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
 
-        #expect(bouquet == Bouquet(id: "42", name: "Favourites"))
+        #expect(bouquet == SampleResource(id: "42", name: "Favourites"))
     }
 
     /// Go's `time.Time` emits RFC 3339 **Nano**: fractional seconds appear only
@@ -241,7 +241,7 @@ struct APIClientTests {
         respond(contentType: "text/html; charset=utf-8", body: "<!doctype html><html><body>xg2g</body></html>")
 
         do {
-            _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
             Issue.record("expected a failure")
         } catch let error as APIError {
             guard case .unexpectedPayload(let payload) = error else {
@@ -251,7 +251,7 @@ struct APIClientTests {
             #expect(payload.status == 200)
             #expect(payload.contentType == "text/html; charset=utf-8")
             #expect(payload.bodyPreview.contains("<!doctype html>"))
-            #expect(payload.expected == "Bouquet")
+            #expect(payload.expected == "SampleResource")
             #expect(!error.isRetryable, "a wrong body will be just as wrong next time")
         }
     }
@@ -268,7 +268,7 @@ struct APIClientTests {
         )
 
         do {
-            _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
             Issue.record("expected a failure")
         } catch let error as APIError {
             guard case .problem(let problem) = error else {
@@ -289,7 +289,7 @@ struct APIClientTests {
         respond(status: 502, contentType: "text/html", body: "<html>bad gateway</html>")
 
         do {
-            _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
             Issue.record("expected a failure")
         } catch let error as APIError {
             guard case .http(let status, let contentType, let preview) = error else {
@@ -312,7 +312,7 @@ struct APIClientTests {
         )
 
         do {
-            _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+            _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
             Issue.record("expected a failure")
         } catch let error as APIError {
             #expect(error.isRetryable)
@@ -337,7 +337,7 @@ struct APIClientTests {
             StubURLProtocol.stub = stub
 
             await #expect(throws: APIError.transport(expected)) {
-                _ = try await client.send(APIRequest<Bouquet>(path: "services/bouquets"))
+                _ = try await client.send(APIRequest<SampleResource>(path: "services/bouquets"))
             }
         }
     }

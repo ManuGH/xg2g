@@ -183,6 +183,8 @@ func swiftType(t fieldType) string {
 		return t.name
 	case kindArray:
 		return "[" + swiftType(*t.elem) + "]"
+	case kindMap:
+		return "[String: " + swiftType(*t.elem) + "]"
 	default:
 		panic(fmt.Sprintf("unhandled field kind %d", t.kind))
 	}

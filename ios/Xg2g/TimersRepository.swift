@@ -40,7 +40,7 @@ actor TimersRepository {
     }
 
     func timers() async throws -> [DVRTimer] {
-        let response: TimerWire.ListResponse = try await api.send(
+        let response: Xg2gContract.TimerList = try await api.send(
             APIRequest(method: .get, path: "timers")
         )
 
@@ -48,13 +48,14 @@ actor TimersRepository {
             .compactMap { $0.toDomain() }
             .sorted { $0.beginDate < $1.beginDate }
     }
+
     func createTimer(serviceRef: String, name: String, description: String? = nil, begin: Date, end: Date) async throws {
-        let body = TimerWire.CreateRequest(
-            serviceRef: serviceRef,
-            name: name,
-            description: description,
+        let body = Xg2gContract.TimerCreateRequest(
             begin: Int64(begin.timeIntervalSince1970),
-            end: Int64(end.timeIntervalSince1970)
+            end: Int64(end.timeIntervalSince1970),
+            name: name,
+            serviceRef: serviceRef,
+            description: description
         )
         let data = try JSONEncoder().encode(body)
         let _: EmptyResponse = try await api.send(
@@ -69,51 +70,24 @@ actor TimersRepository {
     }
 }
 
-// MARK: - Wire
+// MARK: - Contract Domain Mapping
 
-enum TimerWire {
+extension Xg2gContract.Timer {
+    func toDomain() -> DVRTimer? {
+        let id = timerId.trimmingCharacters(in: .whitespaces)
+        let name = name.trimmingCharacters(in: .whitespaces)
+        let serviceRef = serviceRef.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty, !name.isEmpty, !serviceRef.isEmpty else { return nil }
 
-    struct ListResponse: Decodable, Sendable {
-        let items: [Item]
-    }
-
-    struct CreateRequest: Encodable, Sendable {
-        let serviceRef: String
-        let name: String
-        let description: String?
-        let begin: Int64
-        let end: Int64
-    }
-
-    struct Item: Decodable, Sendable {
-        let timerId: String?
-        let name: String?
-        let description: String?
-        let serviceRef: String?
-        let serviceName: String?
-        let begin: Int64?
-        let end: Int64?
-        let state: String?
-
-        func toDomain() -> DVRTimer? {
-            guard let id = timerId?.trimmingCharacters(in: .whitespaces), !id.isEmpty,
-                  let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
-                  let serviceRef = serviceRef?.trimmingCharacters(in: .whitespaces), !serviceRef.isEmpty
-            else { return nil }
-
-            let startSeconds = begin ?? 0
-            let endSeconds = end ?? (startSeconds + 3600)
-
-            return DVRTimer(
-                id: id,
-                name: name,
-                description: description?.trimmingCharacters(in: .whitespaces).isEmpty == false ? description : nil,
-                serviceRef: serviceRef,
-                serviceName: serviceName?.trimmingCharacters(in: .whitespaces).isEmpty == false ? serviceName : nil,
-                beginDate: Date(timeIntervalSince1970: TimeInterval(startSeconds)),
-                endDate: Date(timeIntervalSince1970: TimeInterval(endSeconds)),
-                state: state ?? "waiting"
-            )
-        }
+        return DVRTimer(
+            id: id,
+            name: name,
+            description: description?.trimmingCharacters(in: .whitespaces).isEmpty == false ? description : nil,
+            serviceRef: serviceRef,
+            serviceName: serviceName?.trimmingCharacters(in: .whitespaces).isEmpty == false ? serviceName : nil,
+            beginDate: Date(timeIntervalSince1970: TimeInterval(begin)),
+            endDate: Date(timeIntervalSince1970: TimeInterval(end)),
+            state: state.rawValue
+        )
     }
 }

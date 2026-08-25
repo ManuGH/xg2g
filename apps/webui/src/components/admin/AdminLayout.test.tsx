@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { AdminLayout } from './AdminLayout';
 
@@ -19,11 +19,13 @@ describe('AdminLayout Component', () => {
     expect(screen.getAllByText('Benachrichtigungen & Audit').length).toBeGreaterThan(0);
   });
 
-  it('switches active section when clicked', () => {
+  it('switches active section when clicked', async () => {
     render(<AdminLayout initialSection="account" />);
 
     const familyButton = screen.getByText('Familie');
-    fireEvent.click(familyButton);
+    await act(async () => {
+      fireEvent.click(familyButton);
+    });
 
     expect(screen.getAllByText(/Familienmitglieder/).length).toBeGreaterThan(0);
   });

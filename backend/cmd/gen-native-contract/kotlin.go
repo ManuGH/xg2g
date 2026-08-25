@@ -188,6 +188,8 @@ func kotlinEncode(t fieldType, expr string) string {
 		return expr + ".toJson()"
 	case kindArray:
 		return fmt.Sprintf("JSONArray(%s.map { element -> %s })", expr, kotlinEncode(*t.elem, "element"))
+	case kindMap:
+		return fmt.Sprintf("JSONObject(%s.mapValues { (_, value) -> %s })", expr, kotlinEncode(*t.elem, "value"))
 	default:
 		panic(fmt.Sprintf("unhandled field kind %d", t.kind))
 	}
@@ -227,6 +229,11 @@ func kotlinConvert(t fieldType, expr, name string) string {
 		return fmt.Sprintf(
 			"requireArray(%s, owner, %s).let { array -> (0 until array.length()).map { index -> %s } }",
 			expr, name, element)
+	case kindMap:
+		element := kotlinConvert(*t.elem, "obj.get(key)", name)
+		return fmt.Sprintf(
+			"requireObject(%s, owner, %s).let { obj -> obj.keys().asSequence().associateWith { key -> %s } }",
+			expr, name, element)
 	default:
 		panic(fmt.Sprintf("unhandled field kind %d", t.kind))
 	}
@@ -250,6 +257,8 @@ func kotlinType(t fieldType) string {
 		return t.name
 	case kindArray:
 		return "List<" + kotlinType(*t.elem) + ">"
+	case kindMap:
+		return "Map<String, " + kotlinType(*t.elem) + ">"
 	default:
 		panic(fmt.Sprintf("unhandled field kind %d", t.kind))
 	}

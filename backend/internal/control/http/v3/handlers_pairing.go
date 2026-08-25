@@ -256,7 +256,6 @@ func utcOrNil(value *time.Time) *time.Time {
 	return &utc
 }
 
-
 func v3pairingDeviceType(value string) deviceauthmodel.DeviceType {
 	return deviceauthmodel.DeviceType(value)
 }

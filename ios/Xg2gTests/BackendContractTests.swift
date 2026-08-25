@@ -332,20 +332,12 @@ struct BackendContractTests {
         let device = try await makeDevice()
         _ = try await enroll(device)
 
-        struct SessionResponse: Decodable, Sendable {
-            let sessionId: String?
-            let session_id: String?
-            let cookie: String?
-            let path: String?
-        }
-
-        let request = APIRequest<SessionResponse>(
+        let request = APIRequest<Xg2gContract.AuthSessionResponse>(
             method: .post,
             path: "auth/session"
         )
         let response = try await device.authorized.send(request)
-        let cookieID = response.sessionId ?? response.session_id
-        #expect(cookieID != nil && !cookieID!.isEmpty, "POST /api/v3/auth/session must return valid session ID for native client")
+        #expect(!response.sessionId.isEmpty, "POST /api/v3/auth/session must return valid session ID for native client")
         #expect(response.cookie == "xg2g_session")
         #expect(response.path == "/api/v3/")
     }

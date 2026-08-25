@@ -71,7 +71,7 @@ struct ZapPreparationClientTests {
         {"preparationId":"p1","state":"failed","outcome":"timeout",
          "pending":{"random_access":"no entry point yet","descrambled":"no clear access unit"}}
         """#.utf8)
-        let decoded = try JSONDecoder().decode(ZapPreparation.self, from: json)
+        let decoded = try JSONDecoder().decode(Xg2gContract.ZapPreparationResponse.self, from: json).toDomain()
 
         #expect(decoded.isSettled)
         #expect(decoded.parsedState == .failed)
@@ -82,7 +82,7 @@ struct ZapPreparationClientTests {
 
     @Test func aPendingPreparationIsNotSettled() throws {
         let json = Data(#"{"preparationId":"p1","state":"pending"}"#.utf8)
-        let decoded = try JSONDecoder().decode(ZapPreparation.self, from: json)
+        let decoded = try JSONDecoder().decode(Xg2gContract.ZapPreparationResponse.self, from: json).toDomain()
         #expect(!decoded.isSettled)
         #expect(decoded.generation == nil)
     }

@@ -552,7 +552,7 @@ enum EpgViewMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// A bouquet / channel group (e.g. "Favorites", "HD", "Sports").
-struct Bouquet: Identifiable, Hashable, Equatable, Sendable {
+struct ChannelBouquet: Identifiable, Hashable, Equatable, Sendable {
     let id: String
     let name: String
     let servicesCount: Int
@@ -564,132 +564,92 @@ struct Bouquet: Identifiable, Hashable, Equatable, Sendable {
     }
 }
 
-// MARK: - Wire
+// MARK: - Contract Domain Mapping
 
-enum ChannelWire {
-
-    struct BouquetItem: Decodable, Sendable {
-        let name: String?
-        let services: Int?
-
-        func toDomain() -> Bouquet? {
-            guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
-            return Bouquet(name: name, servicesCount: services ?? 0)
-        }
+extension Xg2gContract.Bouquet {
+    func toDomain() -> ChannelBouquet? {
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
+        return ChannelBouquet(name: name, servicesCount: services ?? 0)
     }
+}
 
-    struct EpgItem: Decodable, Sendable {
-        let serviceRef: String?
-        let title: String?
-        let desc: String?
-        let start: Int?
-        let end: Int?
-
-        func toDomain() -> (String, NowNext.Entry)? {
-            guard let serviceRef, let title, let start, let end else { return nil }
-            let sanitizedDesc: String? = {
-                guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
-                    return nil
-                }
-                var text = raw
-                    .replacingOccurrences(of: "\\n", with: "\n")
-                    .replacingOccurrences(of: "\\r", with: "")
-                    .replacingOccurrences(of: "\\t", with: "\t")
-                while text.contains("\n\n\n") {
-                    text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-                }
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
-            }()
-
-            let entry = NowNext.Entry(
-                title: title.replacingOccurrences(of: "\\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines),
-                description: sanitizedDesc,
-                start: Date(timeIntervalSince1970: TimeInterval(start)),
-                end: Date(timeIntervalSince1970: TimeInterval(end))
-            )
-            return (serviceRef, entry)
-        }
-    }
-
-    /// The server sends every field as optional. A channel without a name or a
-    /// service reference cannot be displayed or played, so it is dropped at the
-    /// boundary rather than carried inward as a half-value.
-    struct Service: Decodable, Sendable {
-        let id: String?
-        let name: String?
-        let number: String?
-        let serviceRef: String?
-        let logoUrl: String?
-
-        func toDomain(baseURL: URL? = nil) -> Channel? {
-            guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
-                  let serviceRef = serviceRef?.trimmingCharacters(in: .whitespaces), !serviceRef.isEmpty
-            else { return nil }
-
-            let resolvedLogo = MediaEndpoints.logoURL(raw: logoUrl, serviceRef: serviceRef, baseURL: baseURL)
-
-            return Channel(
-                id: id?.isEmpty == false ? id! : serviceRef,
-                name: name,
-                number: number?.isEmpty == false ? number : nil,
-                serviceRef: serviceRef,
-                logoURL: resolvedLogo
-            )
-        }
-    }
-
-    struct NowNextRequest: Encodable, Sendable {
-        let services: [String]
-    }
-
-    struct NowNextResponse: Decodable, Sendable {
-        let items: [Item]
-
-        struct Item: Decodable, Sendable {
-            let serviceRef: String
-            let now: Entry?
-            let next: Entry?
-        }
-
-        struct Entry: Decodable, Sendable {
-            let title: String
-            let desc: String?
-            let start: Int
-            let end: Int
-
-            func toDomain() -> NowNext.Entry {
-                let sanitizedDesc: String? = {
-                    guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
-                        return nil
-                    }
-                    var text = raw
-                        .replacingOccurrences(of: "\\n", with: "\n")
-                        .replacingOccurrences(of: "\\r", with: "")
-                        .replacingOccurrences(of: "\\t", with: "\t")
-                    while text.contains("\n\n\n") {
-                        text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-                    }
-                    return text.trimmingCharacters(in: .whitespacesAndNewlines)
-                }()
-
-                let sanitizedTitle = title
-                    .replacingOccurrences(of: "\\n", with: " ")
-                    .replacingOccurrences(of: "\\r", with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                return NowNext.Entry(
-                    title: sanitizedTitle,
-                    description: sanitizedDesc,
-                    start: Date(timeIntervalSince1970: TimeInterval(start)),
-                    end: Date(timeIntervalSince1970: TimeInterval(end))
-                )
+extension Xg2gContract.EpgItem {
+    func toDomain() -> (String, NowNext.Entry)? {
+        guard let serviceRef, let title, let start, let end else { return nil }
+        let sanitizedDesc: String? = {
+            guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return nil
             }
-        }
+            var text = raw
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\r", with: "")
+                .replacingOccurrences(of: "\\t", with: "\t")
+            while text.contains("\n\n\n") {
+                text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+
+        let entry = NowNext.Entry(
+            title: title.replacingOccurrences(of: "\\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines),
+            description: sanitizedDesc,
+            start: Date(timeIntervalSince1970: TimeInterval(start)),
+            end: Date(timeIntervalSince1970: TimeInterval(end))
+        )
+        return (serviceRef, entry)
+    }
+}
+
+extension Xg2gContract.Service {
+    func toDomain(baseURL: URL? = nil) -> Channel? {
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+              let serviceRef = serviceRef?.trimmingCharacters(in: .whitespaces), !serviceRef.isEmpty
+        else { return nil }
+
+        let resolvedLogo = MediaEndpoints.logoURL(raw: logoUrl, serviceRef: serviceRef, baseURL: baseURL)
+
+        return Channel(
+            id: id?.isEmpty == false ? id! : serviceRef,
+            name: name,
+            number: number?.isEmpty == false ? number : nil,
+            serviceRef: serviceRef,
+            logoURL: resolvedLogo
+        )
+    }
+}
+
+extension Xg2gContract.NowNextEntry {
+    func toDomain() -> NowNext.Entry {
+        let sanitizedDesc: String? = {
+            guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return nil
+            }
+            var text = raw
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\r", with: "")
+                .replacingOccurrences(of: "\\t", with: "\t")
+            while text.contains("\n\n\n") {
+                text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+
+        let sanitizedTitle = title
+            .replacingOccurrences(of: "\\n", with: " ")
+            .replacingOccurrences(of: "\\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return NowNext.Entry(
+            title: sanitizedTitle,
+            description: sanitizedDesc,
+            start: Date(timeIntervalSince1970: TimeInterval(start)),
+            end: Date(timeIntervalSince1970: TimeInterval(end))
+        )
     }
 }
 
 extension NowNext {
-    init(item: ChannelWire.NowNextResponse.Item) {
+    init(item: Xg2gContract.NowNextItem) {
         self.init(
             serviceRef: item.serviceRef,
             now: item.now?.toDomain(),

@@ -4,10 +4,10 @@
 <div align="center">
 
 [![CI Status](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
-[![Coverage Gate](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/coverage.yml?branch=main&style=flat-square&label=coverage%20gate%20%E2%89%A570%25)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Coverage](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/coverage.yml?branch=main&style=flat-square&label=coverage)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
 [![Release](https://img.shields.io/github/v/release/ManuGH/xg2g?style=flat-square&color=0066CC)](https://github.com/ManuGH/xg2g/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.26.5-00ADD8?style=flat-square&logo=go)](backend/go.mod)
-[![FFmpeg Pinned](https://img.shields.io/badge/FFmpeg-8.1.2-0078D7?style=flat-square&logo=ffmpeg)](infra/docker/Dockerfile.release)
+[![FFmpeg Pinned](https://img.shields.io/badge/FFmpeg-8.1.2-0078D7?style=flat-square&logo=ffmpeg)](docs/arch/CODEC_MATRIX.md)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-6C5CE7?style=flat-square)](LICENSE)
 
 <br />

@@ -56,10 +56,6 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		// device.
 		{http.MethodPost, "/auth/device/revoke", svc.DeviceSelfRevoke, true},
 
-		// Playback tickets: minted with the caller's ordinary API credential,
-		// spendable only on that session's media routes.
-		{http.MethodPost, "/sessions/{sessionID}/playback-ticket", svc.IssuePlaybackTicket, true},
-
 		// Invitations
 		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false},
 		{http.MethodPost, "/auth/invitations", svc.CreateInvitation, true},

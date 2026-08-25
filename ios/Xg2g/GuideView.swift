@@ -188,7 +188,7 @@ struct GuideView: View {
                     triggerHaptic(.light)
                     Task {
                         await model.selectBouquet(
-                            Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")
+                            ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")
                         )
                     }
                 } label: {

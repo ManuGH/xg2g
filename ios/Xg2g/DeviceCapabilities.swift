@@ -12,22 +12,6 @@ import UIKit
 /// (e.g. AV1 on A17 Pro / M3 / M4, HEVC on A10+), preventing unsupported codec crashes.
 enum DeviceCapabilities {
 
-    struct VideoCodecSignal: Encodable, Sendable {
-        let codec: String
-        let supported: Bool
-        let smooth: Bool
-        let powerEfficient: Bool
-    }
-
-    struct DeviceContext: Encodable, Sendable {
-        let brand: String = "Apple"
-        let manufacturer: String = "Apple"
-        let platform: String = "darwin"
-        let model: String
-        let osName: String = "ios"
-        let osVersion: String
-    }
-
     /// Detects whether the current device hardware supports native AV1 video decoding.
     ///
     /// Supported natively by Apple on:
@@ -64,15 +48,15 @@ enum DeviceCapabilities {
     }
 
     /// Returns structured codec capability signals for backend planner runtime validation.
-    static var codecSignals: [VideoCodecSignal] {
-        var signals: [VideoCodecSignal] = []
+    static var codecSignals: [Xg2gContract.PlaybackVideoCodecSignal] {
+        var signals: [Xg2gContract.PlaybackVideoCodecSignal] = []
         if supportsAV1 {
-            signals.append(VideoCodecSignal(codec: "av1", supported: true, smooth: true, powerEfficient: true))
+            signals.append(Xg2gContract.PlaybackVideoCodecSignal(codec: "av1", supported: true, powerEfficient: true, smooth: true))
         }
         if supportsHEVC {
-            signals.append(VideoCodecSignal(codec: "hevc", supported: true, smooth: true, powerEfficient: true))
+            signals.append(Xg2gContract.PlaybackVideoCodecSignal(codec: "hevc", supported: true, powerEfficient: true, smooth: true))
         }
-        signals.append(VideoCodecSignal(codec: "h264", supported: true, smooth: true, powerEfficient: true))
+        signals.append(Xg2gContract.PlaybackVideoCodecSignal(codec: "h264", supported: true, powerEfficient: true, smooth: true))
         return signals
     }
 
@@ -85,14 +69,18 @@ enum DeviceCapabilities {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
-    static var deviceContext: DeviceContext {
+    static var deviceContext: Xg2gContract.PlaybackDeviceContext {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         let osVersion = version.patchVersion > 0
             ? "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
             : "\(version.majorVersion).\(version.minorVersion)"
-        return DeviceContext(
+        return Xg2gContract.PlaybackDeviceContext(
+            brand: "Apple",
+            manufacturer: "Apple",
             model: machineIdentifier,
-            osVersion: osVersion
+            osName: "ios",
+            osVersion: osVersion,
+            platform: "darwin"
         )
     }
 

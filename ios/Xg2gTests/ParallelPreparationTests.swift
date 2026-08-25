@@ -65,9 +65,8 @@ struct ParallelPreparationTests {
     /// pictures that follow it before it emits anything; one pass leaves the last
     /// access unit unterminated.
     private func feedCapture(_ pipeline: NativeTSVideoPipeline, passes: Int = 3) {
-        let task = URLSession.shared.dataTask(with: URL(string: "http://127.0.0.1:1/feed")!)
         for _ in 0..<passes {
-            pipeline.urlSession(URLSession.shared, dataTask: task, didReceive: PULS24CaptureFixture.data)
+            pipeline.feedData(PULS24CaptureFixture.data)
         }
     }
 

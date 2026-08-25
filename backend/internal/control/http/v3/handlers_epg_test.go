@@ -87,11 +87,11 @@ func TestGetEpg_ResponseShape(t *testing.T) {
 	err := json.NewDecoder(resp.Body).Decode(&items)
 	assert.NoError(t, err, "Response should be a bare JSON array")
 	assert.Len(t, items, 1)
-	assert.Equal(t, "Test Show", items[0].Title)
-	assert.NotNil(t, items[0].StartXMLTV)
-	assert.NotNil(t, items[0].EndXMLTV)
-	assert.Equal(t, progs[0].Start, *items[0].StartXMLTV)
-	assert.Equal(t, progs[0].Stop, *items[0].EndXMLTV)
+	assert.Equal(t, "Test Show", *items[0].Title)
+	assert.NotNil(t, items[0].StartXmltv)
+	assert.NotNil(t, items[0].EndXmltv)
+	assert.Equal(t, progs[0].Start, *items[0].StartXmltv)
+	assert.Equal(t, progs[0].Stop, *items[0].EndXmltv)
 }
 
 func TestGetEpg_EmptyResponseIsArray(t *testing.T) {

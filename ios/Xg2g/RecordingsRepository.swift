@@ -52,7 +52,7 @@ actor RecordingsRepository {
         if let root { query.append(URLQueryItem(name: "root", value: root)) }
         if let path { query.append(URLQueryItem(name: "path", value: path)) }
 
-        let response: RecordingWire.Response = try await api.send(
+        let response: Xg2gContract.RecordingResponse = try await api.send(
             APIRequest(method: .get, path: "recordings", query: query)
         )
 
@@ -68,20 +68,12 @@ actor RecordingsRepository {
     }
 
     func saveResume(id: String, position: Double, total: Double, finished: Bool, title: String, channel: String) async throws {
-        struct ResumeRequest: Encodable {
-            let position: Double
-            let total: Double
-            let finished: Bool
-            let title: String
-            let channel: String
-        }
-
-        let body = try JSONEncoder().encode(ResumeRequest(
+        let body = try JSONEncoder().encode(Xg2gContract.RecordingResumeRequest(
             position: position,
-            total: total,
+            channel: channel,
             finished: finished,
             title: title,
-            channel: channel
+            total: total
         ))
 
         let _: EmptyResponse = try await api.send(
@@ -145,78 +137,32 @@ actor RecordingsRepository {
     }
 }
 
-// MARK: - Wire
+// MARK: - Contract Domain Mapping
 
-enum RecordingWire {
+extension Xg2gContract.RecordingItem {
+    func toDomain() -> Recording? {
+        guard let title = title?.trimmingCharacters(in: .whitespaces), !title.isEmpty,
+              let id = (recordingId ?? filename)?.trimmingCharacters(in: .whitespaces), !id.isEmpty
+        else { return nil }
 
-    struct Response: Decodable, Sendable {
-        let requestId: String
-        let currentRoot: String?
-        let currentPath: String?
-        let recordings: [Item]?
-        let directories: [DirectoryItem]?
-        let roots: [RootItem]?
-        let breadcrumbs: [BreadcrumbItem]?
-    }
+        let startSeconds = beginUnixSeconds ?? 0
+        let duration = Int(durationSeconds ?? 0)
 
-    struct DirectoryItem: Decodable, Sendable {
-        let name: String?
-        let path: String?
-    }
-
-    struct RootItem: Decodable, Sendable {
-        let id: String?
-        let name: String?
-    }
-
-    struct BreadcrumbItem: Decodable, Sendable {
-        let name: String?
-        let path: String?
-    }
-
-    struct ResumeInfo: Decodable, Sendable {
-        let posSeconds: Int64?
-        let durationSeconds: Int64?
-        let finished: Bool?
-        let updatedAt: String?
-    }
-
-    struct Item: Decodable, Sendable {
-        let recordingId: String?
-        let title: String?
-        let description: String?
-        let beginUnixSeconds: Int64?
-        let durationSeconds: Int64?
-        let length: String?
-        let filename: String?
-        let serviceRef: String?
-        let status: String?
-        let resume: ResumeInfo?
-
-        func toDomain() -> Recording? {
-            guard let title = title?.trimmingCharacters(in: .whitespaces), !title.isEmpty,
-                  let id = (recordingId ?? filename)?.trimmingCharacters(in: .whitespaces), !id.isEmpty
-            else { return nil }
-
-            let startSeconds = beginUnixSeconds ?? 0
-            let duration = Int(durationSeconds ?? 0)
-
-            var serverResume: Double? = nil
-            if let r = resume, let pos = r.posSeconds, pos > 0, !(r.finished ?? false) {
-                serverResume = Double(pos)
-            }
-
-            return Recording(
-                id: id,
-                title: title,
-                description: description?.trimmingCharacters(in: .whitespaces).isEmpty == false ? description : nil,
-                beginDate: Date(timeIntervalSince1970: TimeInterval(startSeconds)),
-                durationSeconds: duration,
-                serviceRef: serviceRef,
-                filename: filename,
-                status: status ?? "completed",
-                serverResumePos: serverResume
-            )
+        var serverResume: Double? = nil
+        if let r = resume, r.posSeconds > 0, !(r.finished ?? false) {
+            serverResume = Double(r.posSeconds)
         }
+
+        return Recording(
+            id: id,
+            title: title,
+            description: description?.trimmingCharacters(in: .whitespaces).isEmpty == false ? description : nil,
+            beginDate: Date(timeIntervalSince1970: TimeInterval(startSeconds)),
+            durationSeconds: duration,
+            serviceRef: serviceRef,
+            filename: filename,
+            status: status.rawValue,
+            serverResumePos: serverResume
+        )
     }
 }

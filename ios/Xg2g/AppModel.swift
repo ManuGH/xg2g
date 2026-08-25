@@ -102,8 +102,8 @@ final class AppModel {
 
     // MARK: - Live TV State
     private(set) var channels: [Channel] = [] { didSet { contentRevision &+= 1 } }
-    private(set) var bouquets: [Bouquet] = []
-    var selectedBouquet: Bouquet?
+    private(set) var bouquets: [ChannelBouquet] = []
+    var selectedBouquet: ChannelBouquet?
     var searchQuery: String = ""
     private(set) var schedule: [String: NowNext] = [:] { didSet { contentRevision &+= 1 } }
     private(set) var fullEpg: [String: [NowNext.Entry]] = [:] { didSet { contentRevision &+= 1 } }
@@ -1040,7 +1040,7 @@ final class AppModel {
 
     @ObservationIgnored private var bouquetChannelsCache: [String: [Channel]] = [:]
 
-    func selectBouquet(_ bouquet: Bouquet?) async {
+    func selectBouquet(_ bouquet: ChannelBouquet?) async {
         selectedBouquet = bouquet
         guard let bouquet, bouquet.id != Self.favoritesBouquetID else {
             // "Alle Sender" (nil) or "Favoriten" filter locally in memory in 0ms
@@ -1420,25 +1420,17 @@ final class AppModel {
 
     /// Obtains a short-lived, media-scoped session cookie for background downloads.
     func mediaSessionCookie() async throws -> String {
-        struct SessionResponse: Decodable, Sendable {
-            let sessionId: String?
-            let session_id: String?
-
-            var effectiveID: String? {
-                sessionId ?? session_id
-            }
-        }
-
         guard let api else {
             throw APIError.transport(.other(code: 401))
         }
 
-        let request = APIRequest<SessionResponse>(
+        let request = APIRequest<Xg2gContract.AuthSessionResponse>(
             method: .post,
             path: "auth/session"
         )
         let response = try await api.send(request)
-        guard let id = response.effectiveID, !id.isEmpty else {
+        let id = response.sessionId.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else {
             throw APIError.transport(.other(code: 500))
         }
         return id

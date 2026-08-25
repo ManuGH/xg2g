@@ -3,7 +3,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTimerData, AddTimerErrors, AddTimerResponses, ApprovePairingData, ApprovePairingErrors, ApprovePairingResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteHouseholdProfileData, DeleteHouseholdProfileErrors, DeleteHouseholdProfileResponses, DeleteHouseholdUnlockData, DeleteHouseholdUnlockResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteSystemEntitlementOverrideData, DeleteSystemEntitlementOverrideErrors, DeleteSystemEntitlementOverrideResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, DeviceRefreshData, DeviceRefreshErrors, DeviceRefreshResponses, ExchangePairingData, ExchangePairingErrors, ExchangePairingResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetErrorsData, GetErrorsResponses, GetHouseholdProfilesData, GetHouseholdProfilesResponses, GetHouseholdUnlockData, GetHouseholdUnlockResponses, GetLogsData, GetLogsResponses, GetPairingStatusData, GetPairingStatusErrors, GetPairingStatusResponses, GetReceiverCurrentData, GetReceiverCurrentErrors, GetReceiverCurrentResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentHeadData, GetRecordingHlsCustomSegmentHeadErrors, GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistHeadData, GetRecordingHlsPlaylistHeadErrors, GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftHeadData, GetRecordingHlsTimeshiftHeadErrors, GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingScrubFrameData, GetRecordingScrubFrameErrors, GetRecordingScrubFrameResponses, GetRecordingsData, GetRecordingsRecordingIdStatusData, GetRecordingsRecordingIdStatusErrors, GetRecordingsRecordingIdStatusResponses, GetRecordingsResponses, GetRecordingThumbnailData, GetRecordingThumbnailErrors, GetRecordingThumbnailResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionEventsData, GetSessionEventsErrors, GetSessionEventsResponse, GetSessionEventsResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemConnectivityData, GetSystemConnectivityResponses, GetSystemEntitlementsData, GetSystemEntitlementsResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemInfoData, GetSystemInfoResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostHouseholdProfilesData, PostHouseholdProfilesErrors, PostHouseholdProfilesResponses, PostHouseholdUnlockData, PostHouseholdUnlockErrors, PostHouseholdUnlockResponses, PostLivePlaybackInfoData, PostLivePlaybackInfoErrors, PostLivePlaybackInfoResponses, PostLivePlaybackSummaryData, PostLivePlaybackSummaryErrors, PostLivePlaybackSummaryResponses, PostRecordingDeleteData, PostRecordingDeleteErrors, PostRecordingDeleteResponses, PostRecordingPlaybackInfoData, PostRecordingPlaybackInfoErrors, PostRecordingPlaybackInfoResponses, PostRecordingRenameData, PostRecordingRenameErrors, PostRecordingRenameResponses, PostServicesIdToggleData, PostServicesIdToggleErrors, PostServicesIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSessionHeartbeatData, PostSessionHeartbeatErrors, PostSessionHeartbeatResponses, PostSystemEntitlementOverrideData, PostSystemEntitlementOverrideErrors, PostSystemEntitlementOverrideResponses, PostSystemEntitlementReceiptData, PostSystemEntitlementReceiptErrors, PostSystemEntitlementReceiptResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, ProbeRecordingMp4Data, ProbeRecordingMp4Errors, ProbeRecordingMp4Responses, PutHouseholdProfileData, PutHouseholdProfileErrors, PutHouseholdProfileResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsHeadData, ServeHlsHeadErrors, ServeHlsHeadResponses, ServeHlsResponses, ServeHlsVariantData, ServeHlsVariantErrors, ServeHlsVariantHeadData, ServeHlsVariantHeadErrors, ServeHlsVariantHeadResponses, ServeHlsVariantResponses, StartPairingData, StartPairingErrors, StartPairingResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
+import type { AddTimerData, AddTimerErrors, AddTimerResponses, ApprovePairingData, ApprovePairingErrors, ApprovePairingResponses, CancelStreamPrepareData, CancelStreamPrepareErrors, CancelStreamPrepareResponses, CommitStreamPrepareData, CommitStreamPrepareErrors, CommitStreamPrepareResponses, CreateIntentData, CreateIntentErrors, CreateIntentResponses, CreateSeriesRuleData, CreateSeriesRuleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DeleteHouseholdProfileData, DeleteHouseholdProfileErrors, DeleteHouseholdProfileResponses, DeleteHouseholdUnlockData, DeleteHouseholdUnlockResponses, DeleteRecordingData, DeleteRecordingErrors, DeleteRecordingResponses, DeleteSeriesRuleData, DeleteSeriesRuleErrors, DeleteSeriesRuleResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteStreamsIdData, DeleteStreamsIdErrors, DeleteStreamsIdResponses, DeleteSystemEntitlementOverrideData, DeleteSystemEntitlementOverrideErrors, DeleteSystemEntitlementOverrideResponses, DeleteTimerData, DeleteTimerErrors, DeleteTimerResponses, DeviceRefreshData, DeviceRefreshErrors, DeviceRefreshResponses, ExchangePairingData, ExchangePairingErrors, ExchangePairingResponses, GetDvrCapabilitiesData, GetDvrCapabilitiesResponses, GetDvrStatusData, GetDvrStatusResponses, GetEpgData, GetEpgResponses, GetErrorsData, GetErrorsResponses, GetHouseholdProfilesData, GetHouseholdProfilesResponses, GetHouseholdUnlockData, GetHouseholdUnlockResponses, GetLogsData, GetLogsResponses, GetPairingStatusData, GetPairingStatusErrors, GetPairingStatusResponses, GetReceiverCurrentData, GetReceiverCurrentErrors, GetReceiverCurrentResponses, GetRecordingHlsCustomSegmentData, GetRecordingHlsCustomSegmentErrors, GetRecordingHlsCustomSegmentHeadData, GetRecordingHlsCustomSegmentHeadErrors, GetRecordingHlsCustomSegmentHeadResponses, GetRecordingHlsCustomSegmentResponses, GetRecordingHlsPlaylistData, GetRecordingHlsPlaylistErrors, GetRecordingHlsPlaylistHeadData, GetRecordingHlsPlaylistHeadErrors, GetRecordingHlsPlaylistHeadResponses, GetRecordingHlsPlaylistResponses, GetRecordingHlsTimeshiftData, GetRecordingHlsTimeshiftErrors, GetRecordingHlsTimeshiftHeadData, GetRecordingHlsTimeshiftHeadErrors, GetRecordingHlsTimeshiftHeadResponses, GetRecordingHlsTimeshiftResponses, GetRecordingPlaybackInfoData, GetRecordingPlaybackInfoErrors, GetRecordingPlaybackInfoResponses, GetRecordingScrubFrameData, GetRecordingScrubFrameErrors, GetRecordingScrubFrameResponses, GetRecordingsData, GetRecordingsRecordingIdStatusData, GetRecordingsRecordingIdStatusErrors, GetRecordingsRecordingIdStatusResponses, GetRecordingsResponses, GetRecordingThumbnailData, GetRecordingThumbnailErrors, GetRecordingThumbnailResponses, GetSeriesRulesData, GetSeriesRulesResponses, GetServicesBouquetsData, GetServicesBouquetsResponses, GetServicesData, GetServicesResponses, GetSessionEventsData, GetSessionEventsErrors, GetSessionEventsResponse, GetSessionEventsResponses, GetSessionStateData, GetSessionStateErrors, GetSessionStateResponses, GetStreamPrepareStatusData, GetStreamPrepareStatusErrors, GetStreamPrepareStatusResponses, GetStreamsData, GetStreamsResponses, GetSystemConfigData, GetSystemConfigResponses, GetSystemConnectivityData, GetSystemConnectivityResponses, GetSystemEntitlementsData, GetSystemEntitlementsResponses, GetSystemHealthData, GetSystemHealthResponses, GetSystemHealthzData, GetSystemHealthzResponses, GetSystemInfoData, GetSystemInfoResponses, GetSystemScanStatusData, GetSystemScanStatusErrors, GetSystemScanStatusResponses, GetTimerData, GetTimerErrors, GetTimerResponses, GetTimersData, GetTimersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, PostHouseholdProfilesData, PostHouseholdProfilesErrors, PostHouseholdProfilesResponses, PostHouseholdUnlockData, PostHouseholdUnlockErrors, PostHouseholdUnlockResponses, PostLivePlaybackInfoData, PostLivePlaybackInfoErrors, PostLivePlaybackInfoResponses, PostLivePlaybackSummaryData, PostLivePlaybackSummaryErrors, PostLivePlaybackSummaryResponses, PostRecordingDeleteData, PostRecordingDeleteErrors, PostRecordingDeleteResponses, PostRecordingPlaybackInfoData, PostRecordingPlaybackInfoErrors, PostRecordingPlaybackInfoResponses, PostRecordingRenameData, PostRecordingRenameErrors, PostRecordingRenameResponses, PostServicesIdToggleData, PostServicesIdToggleErrors, PostServicesIdToggleResponses, PostServicesNowNextData, PostServicesNowNextErrors, PostServicesNowNextResponses, PostSessionHeartbeatData, PostSessionHeartbeatErrors, PostSessionHeartbeatResponses, PostSessionPlaybackTicketData, PostSessionPlaybackTicketErrors, PostSessionPlaybackTicketResponses, PostSystemEntitlementOverrideData, PostSystemEntitlementOverrideErrors, PostSystemEntitlementOverrideResponses, PostSystemEntitlementReceiptData, PostSystemEntitlementReceiptErrors, PostSystemEntitlementReceiptResponses, PostSystemRefreshData, PostSystemRefreshErrors, PostSystemRefreshResponses, PreviewConflictsData, PreviewConflictsResponses, ProbeRecordingMp4Data, ProbeRecordingMp4Errors, ProbeRecordingMp4Responses, PutHouseholdProfileData, PutHouseholdProfileErrors, PutHouseholdProfileResponses, PutRecordingResumeData, PutRecordingResumeErrors, PutRecordingResumeResponses, PutSystemConfigData, PutSystemConfigErrors, PutSystemConfigResponses, ReportPlaybackFeedbackData, ReportPlaybackFeedbackErrors, ReportPlaybackFeedbackResponses, RunAllSeriesRulesData, RunAllSeriesRulesResponses, RunSeriesRuleData, RunSeriesRuleErrors, RunSeriesRuleResponses, ServeHlsData, ServeHlsErrors, ServeHlsHeadData, ServeHlsHeadErrors, ServeHlsHeadResponses, ServeHlsResponses, ServeHlsVariantData, ServeHlsVariantErrors, ServeHlsVariantHeadData, ServeHlsVariantHeadErrors, ServeHlsVariantHeadResponses, ServeHlsVariantResponses, StartPairingData, StartPairingErrors, StartPairingResponses, StartStreamPrepareData, StartStreamPrepareResponses, StreamRecordingDirectData, StreamRecordingDirectErrors, StreamRecordingDirectResponses, TriggerSystemScanData, TriggerSystemScanErrors, TriggerSystemScanResponses, UpdateSeriesRuleData, UpdateSeriesRuleErrors, UpdateSeriesRuleResponses, UpdateTimerData, UpdateTimerErrors, UpdateTimerResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -386,6 +386,19 @@ export const getRecordingThumbnail = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Save playback resume point for a recording
+ */
+export const putRecordingResume = <ThrowOnError extends boolean = false>(options: Options<PutRecordingResumeData, ThrowOnError>): RequestResult<PutRecordingResumeResponses, PutRecordingResumeErrors, ThrowOnError> => (options.client ?? client).put<PutRecordingResumeResponses, PutRecordingResumeErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/recordings/{recordingId}/resume',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Get recording build status
  */
 export const getRecordingsRecordingIdStatus = <ThrowOnError extends boolean = false>(options: Options<GetRecordingsRecordingIdStatusData, ThrowOnError>): RequestResult<GetRecordingsRecordingIdStatusResponses, GetRecordingsRecordingIdStatusErrors, ThrowOnError> => (options.client ?? client).get<GetRecordingsRecordingIdStatusResponses, GetRecordingsRecordingIdStatusErrors, ThrowOnError>({
@@ -681,6 +694,51 @@ export const reportPlaybackFeedback = <ThrowOnError extends boolean = false>(opt
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * Issue a playback ticket for a media session
+ */
+export const postSessionPlaybackTicket = <ThrowOnError extends boolean = false>(options: Options<PostSessionPlaybackTicketData, ThrowOnError>): RequestResult<PostSessionPlaybackTicketResponses, PostSessionPlaybackTicketErrors, ThrowOnError> => (options.client ?? client).post<PostSessionPlaybackTicketResponses, PostSessionPlaybackTicketErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/sessions/{sessionId}/playback-ticket',
+    ...options
+});
+
+/**
+ * Start warming a channel stream
+ */
+export const startStreamPrepare = <ThrowOnError extends boolean = false>(options: Options<StartStreamPrepareData, ThrowOnError>): RequestResult<StartStreamPrepareResponses, unknown, ThrowOnError> => (options.client ?? client).post<StartStreamPrepareResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/stream/prepare',
+    ...options
+});
+
+/**
+ * Cancel stream preparation
+ */
+export const cancelStreamPrepare = <ThrowOnError extends boolean = false>(options: Options<CancelStreamPrepareData, ThrowOnError>): RequestResult<CancelStreamPrepareResponses, CancelStreamPrepareErrors, ThrowOnError> => (options.client ?? client).delete<CancelStreamPrepareResponses, CancelStreamPrepareErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/stream/prepare/{preparationId}',
+    ...options
+});
+
+/**
+ * Check status of stream preparation
+ */
+export const getStreamPrepareStatus = <ThrowOnError extends boolean = false>(options: Options<GetStreamPrepareStatusData, ThrowOnError>): RequestResult<GetStreamPrepareStatusResponses, GetStreamPrepareStatusErrors, ThrowOnError> => (options.client ?? client).get<GetStreamPrepareStatusResponses, GetStreamPrepareStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/stream/prepare/{preparationId}',
+    ...options
+});
+
+/**
+ * Commit stream preparation
+ */
+export const commitStreamPrepare = <ThrowOnError extends boolean = false>(options: Options<CommitStreamPrepareData, ThrowOnError>): RequestResult<CommitStreamPrepareResponses, CommitStreamPrepareErrors, ThrowOnError> => (options.client ?? client).post<CommitStreamPrepareResponses, CommitStreamPrepareErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/stream/prepare/{preparationId}/commit',
+    ...options
 });
 
 /**

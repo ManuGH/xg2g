@@ -40,6 +40,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         // Vite 8 / Rolldown requires manualChunks as a function, not an object.

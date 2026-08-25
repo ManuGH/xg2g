@@ -1466,9 +1466,9 @@ struct LiveScrubberBar: View {
 struct PortraitBouquetFilterBar: View {
     let channelsCount: Int
     let favoriteCount: Int
-    let bouquets: [Bouquet]
-    let selectedBouquet: Bouquet?
-    let onSelectBouquet: (Bouquet?) -> Void
+    let bouquets: [ChannelBouquet]
+    let selectedBouquet: ChannelBouquet?
+    let onSelectBouquet: (ChannelBouquet?) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -1490,7 +1490,7 @@ struct PortraitBouquetFilterBar: View {
                 if favoriteCount > 0 {
                     let isFav = selectedBouquet?.id == AppModel.favoritesBouquetID
                     Button {
-                        onSelectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
+                        onSelectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")

@@ -303,7 +303,11 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite)
 
 	// Zero JavaScript Exposure Invariant: response body must NOT contain session ID / token!
-	var authSessResp v3.AuthSessionResponse
+	var authSessResp struct {
+		User struct {
+			Username string `json:"username"`
+		} `json:"user"`
+	}
 	require.NoError(t, json.Unmarshal(wLoginFinish.Body.Bytes(), &authSessResp))
 	assert.Equal(t, "admin", authSessResp.User.Username)
 	assert.NotContains(t, wLoginFinish.Body.String(), sessionCookie.Value, "Raw response JSON body must NEVER leak the session cookie token")

@@ -5,6 +5,8 @@ package v3
 var operationRoutes = map[string]operationRoute{
 	"AddTimer":                         {Method: "POST", Path: "/timers"},
 	"ApprovePairing":                   {Method: "POST", Path: "/pairing/{pairingId}/approve"},
+	"CancelStreamPrepare":              {Method: "DELETE", Path: "/stream/prepare/{preparationId}"},
+	"CommitStreamPrepare":              {Method: "POST", Path: "/stream/prepare/{preparationId}/commit"},
 	"CreateIntent":                     {Method: "POST", Path: "/intents"},
 	"CreateSeriesRule":                 {Method: "POST", Path: "/series-rules"},
 	"CreateSession":                    {Method: "POST", Path: "/auth/session"},
@@ -43,6 +45,7 @@ var operationRoutes = map[string]operationRoute{
 	"GetServicesBouquets":              {Method: "GET", Path: "/services/bouquets"},
 	"GetSessionEvents":                 {Method: "GET", Path: "/sessions/{sessionID}/events"},
 	"GetSessionState":                  {Method: "GET", Path: "/sessions/{sessionID}"},
+	"GetStreamPrepareStatus":           {Method: "GET", Path: "/stream/prepare/{preparationId}"},
 	"GetStreams":                       {Method: "GET", Path: "/streams"},
 	"GetSystemConfig":                  {Method: "GET", Path: "/system/config"},
 	"GetSystemConnectivity":            {Method: "GET", Path: "/system/connectivity"},
@@ -64,12 +67,14 @@ var operationRoutes = map[string]operationRoute{
 	"PostServicesIdToggle":             {Method: "POST", Path: "/services/{id}/toggle"},
 	"PostServicesNowNext":              {Method: "POST", Path: "/services/now-next"},
 	"PostSessionHeartbeat":             {Method: "POST", Path: "/sessions/{sessionID}/heartbeat"},
+	"PostSessionPlaybackTicket":        {Method: "POST", Path: "/sessions/{sessionId}/playback-ticket"},
 	"PostSystemEntitlementOverride":    {Method: "POST", Path: "/system/entitlements/overrides"},
 	"PostSystemEntitlementReceipt":     {Method: "POST", Path: "/system/entitlements/receipts"},
 	"PostSystemRefresh":                {Method: "POST", Path: "/system/refresh"},
 	"PreviewConflicts":                 {Method: "POST", Path: "/timers/conflicts:preview"},
 	"ProbeRecordingMp4":                {Method: "HEAD", Path: "/recordings/{recordingId}/stream.mp4"},
 	"PutHouseholdProfile":              {Method: "PUT", Path: "/household/profiles/{profileId}"},
+	"PutRecordingResume":               {Method: "PUT", Path: "/recordings/{recordingId}/resume"},
 	"PutSystemConfig":                  {Method: "PUT", Path: "/system/config"},
 	"ReportPlaybackFeedback":           {Method: "POST", Path: "/sessions/{sessionId}/feedback"},
 	"RunAllSeriesRules":                {Method: "POST", Path: "/series-rules/run"},
@@ -79,6 +84,7 @@ var operationRoutes = map[string]operationRoute{
 	"ServeHLSVariant":                  {Method: "GET", Path: "/sessions/{sessionID}/hls/{variant}/{filename}"},
 	"ServeHLSVariantHead":              {Method: "HEAD", Path: "/sessions/{sessionID}/hls/{variant}/{filename}"},
 	"StartPairing":                     {Method: "POST", Path: "/pairing/start"},
+	"StartStreamPrepare":               {Method: "POST", Path: "/stream/prepare"},
 	"StreamRecordingDirect":            {Method: "GET", Path: "/recordings/{recordingId}/stream.mp4"},
 	"TriggerSystemScan":                {Method: "POST", Path: "/system/scan"},
 	"UpdateSeriesRule":                 {Method: "PUT", Path: "/series-rules/{id}"},
@@ -88,6 +94,8 @@ var operationRoutes = map[string]operationRoute{
 func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWrapper) {
 	register.add("AddTimer", handler.AddTimer)
 	register.add("ApprovePairing", handler.ApprovePairing)
+	register.add("CancelStreamPrepare", handler.CancelStreamPrepare)
+	register.add("CommitStreamPrepare", handler.CommitStreamPrepare)
 	register.add("CreateIntent", handler.CreateIntent)
 	register.add("CreateSeriesRule", handler.CreateSeriesRule)
 	register.add("CreateSession", handler.CreateSession)
@@ -126,6 +134,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("GetServicesBouquets", handler.GetServicesBouquets)
 	register.add("GetSessionEvents", handler.GetSessionEvents)
 	register.add("GetSessionState", handler.GetSessionState)
+	register.add("GetStreamPrepareStatus", handler.GetStreamPrepareStatus)
 	register.add("GetStreams", handler.GetStreams)
 	register.add("GetSystemConfig", handler.GetSystemConfig)
 	register.add("GetSystemConnectivity", handler.GetSystemConnectivity)
@@ -147,12 +156,14 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("PostServicesIdToggle", handler.PostServicesIdToggle)
 	register.add("PostServicesNowNext", handler.PostServicesNowNext)
 	register.add("PostSessionHeartbeat", handler.PostSessionHeartbeat)
+	register.add("PostSessionPlaybackTicket", handler.PostSessionPlaybackTicket)
 	register.add("PostSystemEntitlementOverride", handler.PostSystemEntitlementOverride)
 	register.add("PostSystemEntitlementReceipt", handler.PostSystemEntitlementReceipt)
 	register.add("PostSystemRefresh", handler.PostSystemRefresh)
 	register.add("PreviewConflicts", handler.PreviewConflicts)
 	register.add("ProbeRecordingMp4", handler.ProbeRecordingMp4)
 	register.add("PutHouseholdProfile", handler.PutHouseholdProfile)
+	register.add("PutRecordingResume", handler.PutRecordingResume)
 	register.add("PutSystemConfig", handler.PutSystemConfig)
 	register.add("ReportPlaybackFeedback", handler.ReportPlaybackFeedback)
 	register.add("RunAllSeriesRules", handler.RunAllSeriesRules)
@@ -162,6 +173,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("ServeHLSVariant", handler.ServeHLSVariant)
 	register.add("ServeHLSVariantHead", handler.ServeHLSVariantHead)
 	register.add("StartPairing", handler.StartPairing)
+	register.add("StartStreamPrepare", handler.StartStreamPrepare)
 	register.add("StreamRecordingDirect", handler.StreamRecordingDirect)
 	register.add("TriggerSystemScan", handler.TriggerSystemScan)
 	register.add("UpdateSeriesRule", handler.UpdateSeriesRule)

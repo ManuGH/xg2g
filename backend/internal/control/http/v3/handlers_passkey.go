@@ -226,7 +226,7 @@ type LoginFinishRequest struct {
 	Response webauthn.AssertionResponse `json:"response"`
 }
 
-type AuthSessionResponse struct {
+type passkeyLoginResponse struct {
 	User      identity.User `json:"user"`
 	ExpiresAt time.Time     `json:"expiresAt"`
 }
@@ -254,8 +254,8 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 
 	webSess, user, err := svc.FinishPasskeyLogin(r.Context(), req.Response, userAgent, ipStr)
 	if err != nil {
-		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey assertion failed")
-		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/login_failed", "Authentication Failed", problemcode.CodeUnauthorized, err.Error(), nil)
+		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey login failed")
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/passkey_failed", "Authentication Failed", problemcode.CodeUnauthorized, "Passkey authentication failed", nil)
 		return
 	}
 
@@ -268,7 +268,7 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		Msg("passkey login successful")
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
+	_ = json.NewEncoder(w).Encode(passkeyLoginResponse{
 		User:      *user,
 		ExpiresAt: webSess.ExpiresAt,
 	})
@@ -321,7 +321,7 @@ func (s *Server) RecoveryLogin(w http.ResponseWriter, r *http.Request) {
 		Msg("recovery code authenticated and consumed")
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
+	_ = json.NewEncoder(w).Encode(passkeyLoginResponse{
 		User:      *user,
 		ExpiresAt: webSess.ExpiresAt,
 	})

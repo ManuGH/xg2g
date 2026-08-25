@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotificationCenter } from './NotificationCenter';
 
@@ -37,13 +37,15 @@ describe('NotificationCenter Component', () => {
     );
   });
 
-  it('renders notification bell icon', () => {
+  it('renders notification bell icon', async () => {
     render(<NotificationCenter />);
     expect(screen.getByTitle('Benachrichtigungen')).toBeInTheDocument();
+    expect(await screen.findByText('1')).toBeInTheDocument();
   });
 
   it('opens notification popover menu on click', async () => {
     render(<NotificationCenter />);
+    expect(await screen.findByText('1')).toBeInTheDocument();
     const bellBtn = screen.getByTitle('Benachrichtigungen');
     fireEvent.click(bellBtn);
 
@@ -55,14 +57,18 @@ describe('NotificationCenter Component', () => {
 
   it('triggers inline approval action when Erlauben clicked', async () => {
     render(<NotificationCenter />);
+    expect(await screen.findByText('1')).toBeInTheDocument();
     const bellBtn = screen.getByTitle('Benachrichtigungen');
     fireEvent.click(bellBtn);
 
     const approveBtn = await screen.findByText('Erlauben');
-    fireEvent.click(approveBtn);
+    await act(async () => {
+      fireEvent.click(approveBtn);
+    });
 
     expect(fetch).toHaveBeenCalledWith('/api/v3/household/approvals/appr_1001/approve', {
       method: 'POST',
     });
+    expect(await screen.findByText('Freigabe erfolgreich erteilt.')).toBeInTheDocument();
   });
 });

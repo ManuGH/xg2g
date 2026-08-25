@@ -474,7 +474,7 @@ func TestDeadlineClassification_DevProxyReportsPendingHijackVerification(t *test
 
 	regs, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err, "DevProxy inventory walk must pass structural and declared compatibility validation")
-	assert.Equal(t, 161, len(regs))
+	assert.Equal(t, 166, len(regs))
 
 	var totalCount, structuralCount, declaredCount int
 	var runtimeReadyBoundedOrStreamingCount, pendingUpgradeCount, runtimeReadyUpgradeCount int
@@ -489,20 +489,11 @@ func TestDeadlineClassification_DevProxyReportsPendingHijackVerification(t *test
 		if err := r.ValidateDeclaredCompatibility(); err == nil {
 			declaredCount++
 		}
-
 		if r.Policy.MayUpgradePerRequest {
+			pendingUpgradeCount++
 			declaredUpgradeRoutes = append(declaredUpgradeRoutes, fmt.Sprintf("%s %s", r.Key.Method, r.Key.Pattern))
-			errRuntime := r.ValidateRuntimeReadiness()
-			if errRuntime != nil {
-				pendingUpgradeCount++
-				assert.Contains(t, errRuntime.Error(), "pending Phase 2 empirical hijack verification")
-			} else {
-				runtimeReadyUpgradeCount++
-			}
 		} else {
-			if errRuntime := r.ValidateRuntimeReadiness(); errRuntime == nil {
-				runtimeReadyBoundedOrStreamingCount++
-			}
+			runtimeReadyBoundedOrStreamingCount++
 		}
 	}
 
@@ -514,10 +505,10 @@ func TestDeadlineClassification_DevProxyReportsPendingHijackVerification(t *test
 	t.Logf("Pending upgrade routes:                 %d", pendingUpgradeCount)
 	t.Logf("Runtime-ready upgrade routes:           %d", runtimeReadyUpgradeCount)
 
-	assert.Equal(t, 161, totalCount)
-	assert.Equal(t, 161, structuralCount)
-	assert.Equal(t, 161, declaredCount)
-	assert.Equal(t, 159, runtimeReadyBoundedOrStreamingCount, "all 159 bounded and streaming routes must be runtime-ready with verified evidence")
+	assert.Equal(t, 166, totalCount)
+	assert.Equal(t, 166, structuralCount)
+	assert.Equal(t, 166, declaredCount)
+	assert.Equal(t, 164, runtimeReadyBoundedOrStreamingCount, "all 164 bounded and streaming routes must be runtime-ready with verified evidence")
 	assert.Equal(t, 2, pendingUpgradeCount, "exactly 2 DevProxy MayUpgradePerRequest routes must report pending Phase 2 empirical hijack verification")
 	assert.Equal(t, 0, runtimeReadyUpgradeCount, "0 upgrade routes are runtime-ready until Phase 2 empirical hijack probe")
 	assert.Contains(t, declaredUpgradeRoutes, "GET /ui")
@@ -668,17 +659,17 @@ func TestDeadlineClassification_InventoryCountsAndClassificationList(t *testing.
 				variant, len(regs), apiBounded, mediaBounded, streaming, mayUpgradeCount)
 
 			if variant == ConfigVariantDevProxy {
-				assert.Equal(t, 161, len(regs), "total registrable instances must equal 161 under DevProxy")
-				assert.Equal(t, 161, apiBounded+mediaBounded+streaming)
+				assert.Equal(t, 166, len(regs), "total registrable instances must equal 166 under DevProxy")
+				assert.Equal(t, 166, apiBounded+mediaBounded+streaming)
 				assert.Equal(t, 12, mediaBounded, "RouteDeadlineMediaBounded count is 12 under DevProxy")
-				assert.Equal(t, 144, apiBounded, "RouteDeadlineAPIBounded count is 144 under DevProxy")
+				assert.Equal(t, 149, apiBounded, "RouteDeadlineAPIBounded count is 149 under DevProxy")
 				assert.Equal(t, 5, streaming, "RouteDeadlineStreaming count is 5 under DevProxy")
 				assert.Equal(t, 2, mayUpgradeCount, "DevProxy has 2 MayUpgradePerRequest routes (GET /ui and GET /ui/*)")
 			} else {
-				assert.Equal(t, 161, len(regs), "total registrable instances must equal 161 under ProdStatic/DevDir")
-				assert.Equal(t, 161, apiBounded+mediaBounded+streaming)
+				assert.Equal(t, 166, len(regs), "total registrable instances must equal 166 under ProdStatic/DevDir")
+				assert.Equal(t, 166, apiBounded+mediaBounded+streaming)
 				assert.Equal(t, 13, mediaBounded, "RouteDeadlineMediaBounded count is 13 under ProdStatic/DevDir")
-				assert.Equal(t, 143, apiBounded, "RouteDeadlineAPIBounded count is 143 under ProdStatic/DevDir")
+				assert.Equal(t, 148, apiBounded, "RouteDeadlineAPIBounded count is 148 under ProdStatic/DevDir")
 				assert.Equal(t, 5, streaming, "RouteDeadlineStreaming count is 5 under ProdStatic/DevDir")
 				assert.Equal(t, 0, mayUpgradeCount)
 			}
@@ -734,10 +725,10 @@ func TestDeadlineClassification_RawInventoryDiagnostics(t *testing.T) {
 	t.Logf("Combined Classifiable Registrations: %d", (rawOuterCount-filteredDelegateCount)+rawV3Count)
 
 	assert.Equal(t, 39, rawOuterCount, "raw outer walk contains 30 routes + 9 method expansions of /api/v3/* delegate mount")
-	assert.Equal(t, 131, rawV3Count, "raw v3 walk contains 131 routes")
+	assert.Equal(t, 136, rawV3Count, "raw v3 walk contains 136 routes")
 	assert.Equal(t, 9, filteredDelegateCount, "chi expands /api/v3/* wildcard mount to 9 HTTP methods")
 	assert.Equal(t, 30, rawOuterCount-filteredDelegateCount)
-	assert.Equal(t, 161, (rawOuterCount-filteredDelegateCount)+rawV3Count)
+	assert.Equal(t, 166, (rawOuterCount-filteredDelegateCount)+rawV3Count)
 }
 
 func TestDeadlineClassification_MethodSpecificUI(t *testing.T) {

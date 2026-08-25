@@ -95,6 +95,79 @@ enum class ECPublicKeyJWKKty(val wireValue: String) {
     }
 }
 
+/**
+ * Certainty of the extraction. `observed` was read directly from source text or
+ * descriptors, `matched` came from a high-confidence provider match, `inferred` was
+ * derived heuristically.
+ */
+enum class EpgRatingConfidence(val wireValue: String) {
+    OBSERVED("observed"),
+    MATCHED("matched"),
+    INFERRED("inferred");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "EpgRatingConfidence"): EpgRatingConfidence =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known EpgRatingConfidence")
+    }
+}
+
+/**
+ * Where an age rating was extracted or retrieved from.
+ */
+enum class EpgRatingSource(val wireValue: String) {
+    DVB_TEXT("dvb_text"),
+    DVB_DESCRIPTOR("dvb_descriptor"),
+    PROVIDER("provider"),
+    OVERRIDE("override");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "EpgRatingSource"): EpgRatingSource =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known EpgRatingSource")
+    }
+}
+
+enum class IntentAcceptedResponseStatus(val wireValue: String) {
+    ACCEPTED("accepted"),
+    IDEMPOTENT_REPLAY("idempotent_replay");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "IntentAcceptedResponseStatus"): IntentAcceptedResponseStatus =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known IntentAcceptedResponseStatus")
+    }
+}
+
+/**
+ * Hardware acceleration override (v3.1+).
+ * - auto: Server decides based on GPU availability
+ * - force: Force GPU encoding (fails if no GPU)
+ * - off: Force CPU encoding
+ */
+enum class IntentRequestHwaccel(val wireValue: String) {
+    AUTO("auto"),
+    FORCE("force"),
+    OFF("off");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "IntentRequestHwaccel"): IntentRequestHwaccel =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known IntentRequestHwaccel")
+    }
+}
+
+enum class IntentRequestType(val wireValue: String) {
+    STREAM_START("stream.start"),
+    STREAM_STOP("stream.stop");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "IntentRequestType"): IntentRequestType =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known IntentRequestType")
+    }
+}
+
 enum class PairingStatus(val wireValue: String) {
     PENDING("pending"),
     APPROVED("approved"),
@@ -106,6 +179,78 @@ enum class PairingStatus(val wireValue: String) {
         fun fromWire(value: String, owner: String = "PairingStatus"): PairingStatus =
             entries.firstOrNull { it.wireValue == value }
                 ?: throw Xg2gContractException("$owner: '$value' is not a known PairingStatus")
+    }
+}
+
+/**
+ * Rendering engine, for `surface: browser` only. A native client omits
+ * it; sending one is not an error but carries no meaning.
+ */
+enum class PlaybackBrowserEngine(val wireValue: String) {
+    WEBKIT("webkit"),
+    BLINK("blink"),
+    GECKO("gecko"),
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackBrowserEngine"): PlaybackBrowserEngine =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackBrowserEngine")
+    }
+}
+
+/**
+ * The operating system the client runs on. `unknown` is a legitimate
+ * answer and is treated as the most conservative case rather than as an
+ * error.
+ */
+enum class PlaybackClientPlatform(val wireValue: String) {
+    IOS("ios"),
+    IPADOS("ipados"),
+    MACOS("macos"),
+    TVOS("tvos"),
+    ANDROID("android"),
+    ANDROID_TV("android_tv"),
+    WINDOWS("windows"),
+    LINUX("linux"),
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackClientPlatform"): PlaybackClientPlatform =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackClientPlatform")
+    }
+}
+
+/**
+ * Whether the client is a native application or a page in a browser. The
+ * distinction the old identifiers could not express, and the one that
+ * decides whether capability claims are decoder truth or a browser's
+ * best guess.
+ */
+enum class PlaybackClientSurface(val wireValue: String) {
+    NATIVE_APP("native_app"),
+    BROWSER("browser");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackClientSurface"): PlaybackClientSurface =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackClientSurface")
+    }
+}
+
+/**
+ * Selected playback strategy output mode.
+ */
+enum class PlaybackInfoMode(val wireValue: String) {
+    HLS("hls"),
+    DIRECT_MP4("direct_mp4"),
+    DENY("deny");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackInfoMode"): PlaybackInfoMode =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackInfoMode")
     }
 }
 
@@ -141,6 +286,64 @@ enum class PublishedEndpointTLSMode(val wireValue: String) {
         fun fromWire(value: String, owner: String = "PublishedEndpointTLSMode"): PublishedEndpointTLSMode =
             entries.firstOrNull { it.wireValue == value }
                 ?: throw Xg2gContractException("$owner: '$value' is not a known PublishedEndpointTLSMode")
+    }
+}
+
+/**
+ * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
+ */
+enum class RecordingItemStatus(val wireValue: String) {
+    SCHEDULED("scheduled"),
+    RECORDING("recording"),
+    COMPLETED("completed"),
+    FAILED("failed"),
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "RecordingItemStatus"): RecordingItemStatus =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known RecordingItemStatus")
+    }
+}
+
+enum class TimerCreateRequestAfterEvent(val wireValue: String) {
+    DEFAULT("default"),
+    STANDBY("standby"),
+    DEEPSTANDBY("deepstandby"),
+    NOTHING("nothing");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "TimerCreateRequestAfterEvent"): TimerCreateRequestAfterEvent =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known TimerCreateRequestAfterEvent")
+    }
+}
+
+enum class TimerState(val wireValue: String) {
+    SCHEDULED("scheduled"),
+    RECORDING("recording"),
+    COMPLETED("completed"),
+    DISABLED("disabled"),
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "TimerState"): TimerState =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known TimerState")
+    }
+}
+
+enum class ZapPreparationState(val wireValue: String) {
+    PENDING("pending"),
+    READY("ready"),
+    FAILED("failed"),
+    CANCELLED("cancelled"),
+    COMMITTED("committed");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "ZapPreparationState"): ZapPreparationState =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known ZapPreparationState")
     }
 }
 
@@ -187,6 +390,63 @@ data class ApprovePairingResponse(
         put("ownerId", ownerId)
         put("pairingId", pairingId)
         put("status", status.wireValue)
+    }
+}
+
+data class AuthSessionResponse(
+    val cookie: String? = null,
+    val expiresIn: Int? = null,
+    val path: String? = null,
+    val sessionId: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "AuthSessionResponse"): AuthSessionResponse = AuthSessionResponse(
+            cookie = json.optionalField("cookie")?.let { requireString(it, owner, "cookie") },
+            expiresIn = json.optionalField("expiresIn")?.let { requireInt(it, owner, "expiresIn") },
+            path = json.optionalField("path")?.let { requireString(it, owner, "path") },
+            sessionId = requireString(json.requireField("sessionId", owner), owner, "sessionId")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        cookie?.let { put("cookie", it) }
+        expiresIn?.let { put("expiresIn", it) }
+        path?.let { put("path", it) }
+        put("sessionId", sessionId)
+    }
+}
+
+data class Bouquet(
+    val name: String? = null,
+    val services: Int? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "Bouquet"): Bouquet = Bouquet(
+            name = json.optionalField("name")?.let { requireString(it, owner, "name") },
+            services = json.optionalField("services")?.let { requireInt(it, owner, "services") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        name?.let { put("name", it) }
+        services?.let { put("services", it) }
+    }
+}
+
+data class Breadcrumb(
+    val name: String? = null,
+    val path: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "Breadcrumb"): Breadcrumb = Breadcrumb(
+            name = json.optionalField("name")?.let { requireString(it, owner, "name") },
+            path = json.optionalField("path")?.let { requireString(it, owner, "path") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        name?.let { put("name", it) }
+        path?.let { put("path", it) }
     }
 }
 
@@ -253,6 +513,23 @@ data class DeviceRefreshRequest(
     }
 }
 
+data class DirectoryItem(
+    val name: String? = null,
+    val path: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "DirectoryItem"): DirectoryItem = DirectoryItem(
+            name = json.optionalField("name")?.let { requireString(it, owner, "name") },
+            path = json.optionalField("path")?.let { requireString(it, owner, "path") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        name?.let { put("name", it) }
+        path?.let { put("path", it) }
+    }
+}
+
 /**
  * P-256 public key in JWK form. The server computes the RFC 7638
  * thumbprint itself; a client-supplied thumbprint is never trusted.
@@ -286,6 +563,149 @@ data class ECPublicKeyJWK(
         put("kty", kty.wireValue)
         put("x", x)
         put("y", y)
+    }
+}
+
+/**
+ * Age certification with explicit scheme and provenance. `confidence` states how the
+ * value was obtained; it is not a legal broadcast guarantee.
+ */
+data class EpgAgeRating(
+    /**
+     * Certainty of the extraction. `observed` was read directly from source text or
+     * descriptors, `matched` came from a high-confidence provider match, `inferred` was
+     * derived heuristically.
+     */
+    val confidence: EpgRatingConfidence,
+    /**
+     * Country the scheme belongs to, or `unknown` for generic broadcaster text.
+     */
+    val country: String,
+    /**
+     * Rating scheme, e.g. FSK when explicitly stated, otherwise broadcaster_age.
+     */
+    val scheme: String,
+    /**
+     * Where an age rating was extracted or retrieved from.
+     */
+    val source: EpgRatingSource,
+    /**
+     * Age in years, e.g. 0, 6, 12, 16, 18.
+     */
+    val value: Int
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "EpgAgeRating"): EpgAgeRating = EpgAgeRating(
+            confidence = EpgRatingConfidence.fromWire(requireString(json.requireField("confidence", owner), owner, "confidence"), owner),
+            country = requireString(json.requireField("country", owner), owner, "country"),
+            scheme = requireString(json.requireField("scheme", owner), owner, "scheme"),
+            source = EpgRatingSource.fromWire(requireString(json.requireField("source", owner), owner, "source"), owner),
+            value = requireInt(json.requireField("value", owner), owner, "value")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("confidence", confidence.wireValue)
+        put("country", country)
+        put("scheme", scheme)
+        put("source", source.wireValue)
+        put("value", value)
+    }
+}
+
+/**
+ * Season and episode numbering extracted with high precision.
+ */
+data class EpgEpisodeInfo(
+    val episodeNumber: Int? = null,
+    val episodeTitle: String? = null,
+    val seasonNumber: Int? = null,
+    /**
+     * The pattern the numbering was recognised by.
+     */
+    val sourcePattern: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "EpgEpisodeInfo"): EpgEpisodeInfo = EpgEpisodeInfo(
+            episodeNumber = json.optionalField("episodeNumber")?.let { requireInt(it, owner, "episodeNumber") },
+            episodeTitle = json.optionalField("episodeTitle")?.let { requireString(it, owner, "episodeTitle") },
+            seasonNumber = json.optionalField("seasonNumber")?.let { requireInt(it, owner, "seasonNumber") },
+            sourcePattern = json.optionalField("sourcePattern")?.let { requireString(it, owner, "sourcePattern") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        episodeNumber?.let { put("episodeNumber", it) }
+        episodeTitle?.let { put("episodeTitle", it) }
+        seasonNumber?.let { put("seasonNumber", it) }
+        sourcePattern?.let { put("sourcePattern", it) }
+    }
+}
+
+data class EpgItem(
+    val desc: String? = null,
+    val duration: Long? = null,
+    val end: Long? = null,
+    val endXmltv: String? = null,
+    val genre: String? = null,
+    val id: String? = null,
+    val serviceRef: String? = null,
+    val start: Long? = null,
+    val startXmltv: String? = null,
+    val title: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "EpgItem"): EpgItem = EpgItem(
+            desc = json.optionalField("desc")?.let { requireString(it, owner, "desc") },
+            duration = json.optionalField("duration")?.let { requireLong(it, owner, "duration") },
+            end = json.optionalField("end")?.let { requireLong(it, owner, "end") },
+            endXmltv = json.optionalField("endXmltv")?.let { requireString(it, owner, "endXmltv") },
+            genre = json.optionalField("genre")?.let { requireString(it, owner, "genre") },
+            id = json.optionalField("id")?.let { requireString(it, owner, "id") },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") },
+            start = json.optionalField("start")?.let { requireLong(it, owner, "start") },
+            startXmltv = json.optionalField("startXmltv")?.let { requireString(it, owner, "startXmltv") },
+            title = json.optionalField("title")?.let { requireString(it, owner, "title") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        desc?.let { put("desc", it) }
+        duration?.let { put("duration", it) }
+        end?.let { put("end", it) }
+        endXmltv?.let { put("endXmltv", it) }
+        genre?.let { put("genre", it) }
+        id?.let { put("id", it) }
+        serviceRef?.let { put("serviceRef", it) }
+        start?.let { put("start", it) }
+        startXmltv?.let { put("startXmltv", it) }
+        title?.let { put("title", it) }
+    }
+}
+
+/**
+ * External provider rating, kept separate from observed DVB metadata.
+ */
+data class EpgRatingScore(
+    val scale: Double,
+    val score: Double,
+    /**
+     * Provider the score came from, e.g. tvmaze, tmdb, imdb.
+     */
+    val source: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "EpgRatingScore"): EpgRatingScore = EpgRatingScore(
+            scale = requireDouble(json.requireField("scale", owner), owner, "scale"),
+            score = requireDouble(json.requireField("score", owner), owner, "score"),
+            source = requireString(json.requireField("source", owner), owner, "source")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("scale", scale)
+        put("score", score)
+        put("source", source)
     }
 }
 
@@ -333,6 +753,296 @@ data class ExchangePairingResponse(
         put("refreshToken", refreshToken)
         put("scope", scope)
         put("tokenType", tokenType)
+    }
+}
+
+data class IntentAcceptedResponse(
+    val correlationId: String? = null,
+    /**
+     * Request ID for debugging/tracing.
+     */
+    val requestId: String,
+    val sessionId: String,
+    val status: IntentAcceptedResponseStatus
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "IntentAcceptedResponse"): IntentAcceptedResponse = IntentAcceptedResponse(
+            correlationId = json.optionalField("correlationId")?.let { requireString(it, owner, "correlationId") },
+            requestId = requireString(json.requireField("requestId", owner), owner, "requestId"),
+            sessionId = requireString(json.requireField("sessionId", owner), owner, "sessionId"),
+            status = IntentAcceptedResponseStatus.fromWire(requireString(json.requireField("status", owner), owner, "status"), owner)
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        correlationId?.let { put("correlationId", it) }
+        put("requestId", requestId)
+        put("sessionId", sessionId)
+        put("status", status.wireValue)
+    }
+}
+
+data class IntentRequest(
+    /**
+     * Client capabilities for playback decision (P4-1)
+     */
+    val client: PlaybackCapabilities? = null,
+    /**
+     * Optional correlation ID for end-to-end tracing
+     */
+    val correlationId: String? = null,
+    /**
+     * Hardware acceleration override (v3.1+).
+     * - auto: Server decides based on GPU availability
+     * - force: Force GPU encoding (fails if no GPU)
+     * - off: Force CPU encoding
+     */
+    val hwaccel: IntentRequestHwaccel? = null,
+    /**
+     * Optional idempotency key for at-most-once semantics
+     */
+    val idempotencyKey: String? = null,
+    /**
+     * Additional parameters
+     */
+    val params: Map<String, String>? = null,
+    /**
+     * Required for stream.start. A secure cryptographically bound JWT token verifying the backend decision policy.
+     */
+    val playbackDecisionToken: String? = null,
+    /**
+     * Required for stream.start. Enigma2 service reference (live playback only).
+     */
+    val serviceRef: String? = null,
+    /**
+     * Required for stream.stop intent
+     */
+    val sessionId: String? = null,
+    /**
+     * Optional live playback start offset in milliseconds.
+     */
+    val startMs: Long? = null,
+    val type: IntentRequestType? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "IntentRequest"): IntentRequest = IntentRequest(
+            client = json.optionalField("client")?.let { PlaybackCapabilities.fromJson(requireObject(it, owner, "client"), owner) },
+            correlationId = json.optionalField("correlationId")?.let { requireString(it, owner, "correlationId") },
+            hwaccel = json.optionalField("hwaccel")?.let { IntentRequestHwaccel.fromWire(requireString(it, owner, "hwaccel"), owner) },
+            idempotencyKey = json.optionalField("idempotencyKey")?.let { requireString(it, owner, "idempotencyKey") },
+            params = json.optionalField("params")?.let { requireObject(it, owner, "params").let { obj -> obj.keys().asSequence().associateWith { key -> requireString(obj.get(key), owner, "params") } } },
+            playbackDecisionToken = json.optionalField("playbackDecisionToken")?.let { requireString(it, owner, "playbackDecisionToken") },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") },
+            sessionId = json.optionalField("sessionId")?.let { requireString(it, owner, "sessionId") },
+            startMs = json.optionalField("startMs")?.let { requireLong(it, owner, "startMs") },
+            type = json.optionalField("type")?.let { IntentRequestType.fromWire(requireString(it, owner, "type"), owner) }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        client?.let { put("client", it.toJson()) }
+        correlationId?.let { put("correlationId", it) }
+        hwaccel?.let { put("hwaccel", it.wireValue) }
+        idempotencyKey?.let { put("idempotencyKey", it) }
+        params?.let { put("params", JSONObject(it.mapValues { (_, value) -> value })) }
+        playbackDecisionToken?.let { put("playbackDecisionToken", it) }
+        serviceRef?.let { put("serviceRef", it) }
+        sessionId?.let { put("sessionId", it) }
+        startMs?.let { put("startMs", it) }
+        type?.let { put("type", it.wireValue) }
+    }
+}
+
+data class LiveStreamInfoRequest(
+    /**
+     * Client capabilities for playback decision (P4-1)
+     */
+    val capabilities: PlaybackCapabilities,
+    /**
+     * The Enigma2 service reference
+     */
+    val serviceRef: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "LiveStreamInfoRequest"): LiveStreamInfoRequest = LiveStreamInfoRequest(
+            capabilities = PlaybackCapabilities.fromJson(requireObject(json.requireField("capabilities", owner), owner, "capabilities"), owner),
+            serviceRef = requireString(json.requireField("serviceRef", owner), owner, "serviceRef")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("capabilities", capabilities.toJson())
+        put("serviceRef", serviceRef)
+    }
+}
+
+data class LiveStreamInfoResponse(
+    val decisionReason: String? = null,
+    val dvrWindowSeconds: Long? = null,
+    val isSeekable: Boolean? = null,
+    /**
+     * Selected playback strategy output mode.
+     */
+    val mode: PlaybackInfoMode? = null,
+    val playbackDecisionToken: String? = null,
+    val sessionId: String? = null,
+    val url: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "LiveStreamInfoResponse"): LiveStreamInfoResponse = LiveStreamInfoResponse(
+            decisionReason = json.optionalField("decisionReason")?.let { requireString(it, owner, "decisionReason") },
+            dvrWindowSeconds = json.optionalField("dvrWindowSeconds")?.let { requireLong(it, owner, "dvrWindowSeconds") },
+            isSeekable = json.optionalField("isSeekable")?.let { requireBoolean(it, owner, "isSeekable") },
+            mode = json.optionalField("mode")?.let { PlaybackInfoMode.fromWire(requireString(it, owner, "mode"), owner) },
+            playbackDecisionToken = json.optionalField("playbackDecisionToken")?.let { requireString(it, owner, "playbackDecisionToken") },
+            sessionId = json.optionalField("sessionId")?.let { requireString(it, owner, "sessionId") },
+            url = json.optionalField("url")?.let { requireString(it, owner, "url") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        decisionReason?.let { put("decisionReason", it) }
+        dvrWindowSeconds?.let { put("dvrWindowSeconds", it) }
+        isSeekable?.let { put("isSeekable", it) }
+        mode?.let { put("mode", it.wireValue) }
+        playbackDecisionToken?.let { put("playbackDecisionToken", it) }
+        sessionId?.let { put("sessionId", it) }
+        url?.let { put("url", it) }
+    }
+}
+
+data class NowNextEntry(
+    /**
+     * Age certification with explicit scheme and provenance. `confidence` states how the
+     * value was obtained; it is not a legal broadcast guarantee.
+     */
+    val ageRating: EpgAgeRating? = null,
+    /**
+     * Short programme synopsis (one or two sentences)
+     */
+    val desc: String? = null,
+    /**
+     * Unix timestamp (seconds)
+     */
+    val end: Int,
+    /**
+     * Original XMLTV end timestamp including offset
+     */
+    val endXmltv: String? = null,
+    /**
+     * Season and episode numbering extracted with high precision.
+     */
+    val episodeInfo: EpgEpisodeInfo? = null,
+    /**
+     * Canonical genre as observed on ingest.
+     */
+    val genre: String? = null,
+    /**
+     * Where the genre was observed, e.g. dvb_descriptor, dvb_category, dvb_text.
+     */
+    val genreSource: String? = null,
+    /**
+     * External provider poster URL. Never overwrites observed DVB metadata.
+     */
+    val posterUrl: String? = null,
+    /**
+     * External provider synopsis. Never overwrites the observed DVB description.
+     */
+    val providerSummary: String? = null,
+    /**
+     * External provider rating, kept separate from observed DVB metadata.
+     */
+    val ratingScore: EpgRatingScore? = null,
+    /**
+     * Unix timestamp (seconds)
+     */
+    val start: Int,
+    /**
+     * Original XMLTV start timestamp including offset
+     */
+    val startXmltv: String? = null,
+    val title: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "NowNextEntry"): NowNextEntry = NowNextEntry(
+            ageRating = json.optionalField("ageRating")?.let { EpgAgeRating.fromJson(requireObject(it, owner, "ageRating"), owner) },
+            desc = json.optionalField("desc")?.let { requireString(it, owner, "desc") },
+            end = requireInt(json.requireField("end", owner), owner, "end"),
+            endXmltv = json.optionalField("endXmltv")?.let { requireString(it, owner, "endXmltv") },
+            episodeInfo = json.optionalField("episodeInfo")?.let { EpgEpisodeInfo.fromJson(requireObject(it, owner, "episodeInfo"), owner) },
+            genre = json.optionalField("genre")?.let { requireString(it, owner, "genre") },
+            genreSource = json.optionalField("genreSource")?.let { requireString(it, owner, "genreSource") },
+            posterUrl = json.optionalField("posterUrl")?.let { requireString(it, owner, "posterUrl") },
+            providerSummary = json.optionalField("providerSummary")?.let { requireString(it, owner, "providerSummary") },
+            ratingScore = json.optionalField("ratingScore")?.let { EpgRatingScore.fromJson(requireObject(it, owner, "ratingScore"), owner) },
+            start = requireInt(json.requireField("start", owner), owner, "start"),
+            startXmltv = json.optionalField("startXmltv")?.let { requireString(it, owner, "startXmltv") },
+            title = requireString(json.requireField("title", owner), owner, "title")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        ageRating?.let { put("ageRating", it.toJson()) }
+        desc?.let { put("desc", it) }
+        put("end", end)
+        endXmltv?.let { put("endXmltv", it) }
+        episodeInfo?.let { put("episodeInfo", it.toJson()) }
+        genre?.let { put("genre", it) }
+        genreSource?.let { put("genreSource", it) }
+        posterUrl?.let { put("posterUrl", it) }
+        providerSummary?.let { put("providerSummary", it) }
+        ratingScore?.let { put("ratingScore", it.toJson()) }
+        put("start", start)
+        startXmltv?.let { put("startXmltv", it) }
+        put("title", title)
+    }
+}
+
+data class NowNextItem(
+    val next: NowNextEntry? = null,
+    val now: NowNextEntry? = null,
+    val serviceRef: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "NowNextItem"): NowNextItem = NowNextItem(
+            next = json.optionalField("next")?.let { NowNextEntry.fromJson(requireObject(it, owner, "next"), owner) },
+            now = json.optionalField("now")?.let { NowNextEntry.fromJson(requireObject(it, owner, "now"), owner) },
+            serviceRef = requireString(json.requireField("serviceRef", owner), owner, "serviceRef")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        next?.let { put("next", it.toJson()) }
+        now?.let { put("now", it.toJson()) }
+        put("serviceRef", serviceRef)
+    }
+}
+
+data class NowNextRequest(
+    val services: List<String>
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "NowNextRequest"): NowNextRequest = NowNextRequest(
+            services = requireArray(json.requireField("services", owner), owner, "services").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "services") } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("services", JSONArray(services.map { element -> element }))
+    }
+}
+
+data class NowNextResponse(
+    val items: List<NowNextItem>
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "NowNextResponse"): NowNextResponse = NowNextResponse(
+            items = requireArray(json.requireField("items", owner), owner, "items").let { array -> (0 until array.length()).map { index -> NowNextItem.fromJson(requireObject(array.get(index), owner, "items"), owner) } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("items", JSONArray(items.map { element -> element.toJson() }))
     }
 }
 
@@ -401,6 +1111,319 @@ data class PairingStatusResponse(
     }
 }
 
+/**
+ * Client capabilities for playback decision (P4-1)
+ */
+data class PlaybackCapabilities(
+    /**
+     * Whether client allows transcoding (force bypass)
+     */
+    val allowTranscode: Boolean? = null,
+    /**
+     * Supported audio codecs
+     */
+    val audioCodecs: List<String>,
+    /**
+     * Capabilities contract version (current: 3)
+     */
+    val capabilitiesVersion: Int,
+    /**
+     * What the client *is*. Platform and surface are facts about the running
+     * client; the family it belongs to, the capability defaults that follow
+     * from it, and the playback policy applied to it are all the server's to
+     * decide.
+     *
+     * This replaces `clientFamilyFallback` and `deviceType`, which asked the
+     * client to classify itself. It could not: the native iOS app called
+     * itself `ios_safari_native` — the identifier for Safari on iOS — so the
+     * backend applied browser policy to an app that ships its own transport
+     * stream demuxer, and no browser and no app could be told apart.
+     */
+    val clientIdentity: PlaybackClientIdentity,
+    /**
+     * Supported container formats
+     */
+    val container: List<String>,
+    val deviceContext: PlaybackDeviceContext? = null,
+    /**
+     * Supported HLS playback engines (e.g. native, hlsjs)
+     */
+    val hlsEngines: List<String>? = null,
+    /**
+     * Optional resolution/FPS constraints
+     */
+    val maxVideo: PlaybackMaxVideo? = null,
+    val networkContext: PlaybackNetworkContext? = null,
+    /**
+     * Preferred HLS playback engine for this client (e.g. native, hlsjs)
+     */
+    val preferredHlsEngine: String? = null,
+    /**
+     * Whether the capability snapshot was gathered from runtime browser probes
+     */
+    val runtimeProbeUsed: Boolean? = null,
+    /**
+     * Version of the runtime playback probe contract
+     */
+    val runtimeProbeVersion: Int? = null,
+    /**
+     * Whether client supports HLS playlists
+     */
+    val supportsHls: Boolean? = null,
+    /**
+     * Whether client supports HTTP range requests
+     */
+    val supportsRange: Boolean? = null,
+    /**
+     * Runtime decode signals per video codec from MediaCapabilities and fallback browser probes
+     */
+    val videoCodecSignals: List<PlaybackVideoCodecSignal>? = null,
+    /**
+     * Supported video codecs
+     */
+    val videoCodecs: List<String>
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackCapabilities"): PlaybackCapabilities = PlaybackCapabilities(
+            allowTranscode = json.optionalField("allowTranscode")?.let { requireBoolean(it, owner, "allowTranscode") },
+            audioCodecs = requireArray(json.requireField("audioCodecs", owner), owner, "audioCodecs").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "audioCodecs") } },
+            capabilitiesVersion = requireInt(json.requireField("capabilitiesVersion", owner), owner, "capabilitiesVersion"),
+            clientIdentity = PlaybackClientIdentity.fromJson(requireObject(json.requireField("clientIdentity", owner), owner, "clientIdentity"), owner),
+            container = requireArray(json.requireField("container", owner), owner, "container").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "container") } },
+            deviceContext = json.optionalField("deviceContext")?.let { PlaybackDeviceContext.fromJson(requireObject(it, owner, "deviceContext"), owner) },
+            hlsEngines = json.optionalField("hlsEngines")?.let { requireArray(it, owner, "hlsEngines").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "hlsEngines") } } },
+            maxVideo = json.optionalField("maxVideo")?.let { PlaybackMaxVideo.fromJson(requireObject(it, owner, "maxVideo"), owner) },
+            networkContext = json.optionalField("networkContext")?.let { PlaybackNetworkContext.fromJson(requireObject(it, owner, "networkContext"), owner) },
+            preferredHlsEngine = json.optionalField("preferredHlsEngine")?.let { requireString(it, owner, "preferredHlsEngine") },
+            runtimeProbeUsed = json.optionalField("runtimeProbeUsed")?.let { requireBoolean(it, owner, "runtimeProbeUsed") },
+            runtimeProbeVersion = json.optionalField("runtimeProbeVersion")?.let { requireInt(it, owner, "runtimeProbeVersion") },
+            supportsHls = json.optionalField("supportsHls")?.let { requireBoolean(it, owner, "supportsHls") },
+            supportsRange = json.optionalField("supportsRange")?.let { requireBoolean(it, owner, "supportsRange") },
+            videoCodecSignals = json.optionalField("videoCodecSignals")?.let { requireArray(it, owner, "videoCodecSignals").let { array -> (0 until array.length()).map { index -> PlaybackVideoCodecSignal.fromJson(requireObject(array.get(index), owner, "videoCodecSignals"), owner) } } },
+            videoCodecs = requireArray(json.requireField("videoCodecs", owner), owner, "videoCodecs").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "videoCodecs") } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        allowTranscode?.let { put("allowTranscode", it) }
+        put("audioCodecs", JSONArray(audioCodecs.map { element -> element }))
+        put("capabilitiesVersion", capabilitiesVersion)
+        put("clientIdentity", clientIdentity.toJson())
+        put("container", JSONArray(container.map { element -> element }))
+        deviceContext?.let { put("deviceContext", it.toJson()) }
+        hlsEngines?.let { put("hlsEngines", JSONArray(it.map { element -> element })) }
+        maxVideo?.let { put("maxVideo", it.toJson()) }
+        networkContext?.let { put("networkContext", it.toJson()) }
+        preferredHlsEngine?.let { put("preferredHlsEngine", it) }
+        runtimeProbeUsed?.let { put("runtimeProbeUsed", it) }
+        runtimeProbeVersion?.let { put("runtimeProbeVersion", it) }
+        supportsHls?.let { put("supportsHls", it) }
+        supportsRange?.let { put("supportsRange", it) }
+        videoCodecSignals?.let { put("videoCodecSignals", JSONArray(it.map { element -> element.toJson() })) }
+        put("videoCodecs", JSONArray(videoCodecs.map { element -> element }))
+    }
+}
+
+/**
+ * What the client *is*. Platform and surface are facts about the running
+ * client; the family it belongs to, the capability defaults that follow
+ * from it, and the playback policy applied to it are all the server's to
+ * decide.
+ *
+ * This replaces `clientFamilyFallback` and `deviceType`, which asked the
+ * client to classify itself. It could not: the native iOS app called
+ * itself `ios_safari_native` — the identifier for Safari on iOS — so the
+ * backend applied browser policy to an app that ships its own transport
+ * stream demuxer, and no browser and no app could be told apart.
+ */
+data class PlaybackClientIdentity(
+    /**
+     * Version of the native client, when there is one. Diagnostic only:
+     * no policy is keyed on it, because a policy that were would make
+     * every client release a server change.
+     */
+    val appVersion: String? = null,
+    /**
+     * Rendering engine, for `surface: browser` only. A native client omits
+     * it; sending one is not an error but carries no meaning.
+     */
+    val browserEngine: PlaybackBrowserEngine? = null,
+    /**
+     * The operating system the client runs on. `unknown` is a legitimate
+     * answer and is treated as the most conservative case rather than as an
+     * error.
+     */
+    val platform: PlaybackClientPlatform,
+    /**
+     * Whether the client is a native application or a page in a browser. The
+     * distinction the old identifiers could not express, and the one that
+     * decides whether capability claims are decoder truth or a browser's
+     * best guess.
+     */
+    val surface: PlaybackClientSurface
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackClientIdentity"): PlaybackClientIdentity = PlaybackClientIdentity(
+            appVersion = json.optionalField("appVersion")?.let { requireString(it, owner, "appVersion") },
+            browserEngine = json.optionalField("browserEngine")?.let { PlaybackBrowserEngine.fromWire(requireString(it, owner, "browserEngine"), owner) },
+            platform = PlaybackClientPlatform.fromWire(requireString(json.requireField("platform", owner), owner, "platform"), owner),
+            surface = PlaybackClientSurface.fromWire(requireString(json.requireField("surface", owner), owner, "surface"), owner)
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        appVersion?.let { put("appVersion", it) }
+        browserEngine?.let { put("browserEngine", it.wireValue) }
+        put("platform", platform.wireValue)
+        put("surface", surface.wireValue)
+    }
+}
+
+data class PlaybackDeviceContext(
+    val brand: String? = null,
+    val device: String? = null,
+    val manufacturer: String? = null,
+    val model: String? = null,
+    val osName: String? = null,
+    val osVersion: String? = null,
+    val platform: String? = null,
+    val product: String? = null,
+    val sdkInt: Int? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackDeviceContext"): PlaybackDeviceContext = PlaybackDeviceContext(
+            brand = json.optionalField("brand")?.let { requireString(it, owner, "brand") },
+            device = json.optionalField("device")?.let { requireString(it, owner, "device") },
+            manufacturer = json.optionalField("manufacturer")?.let { requireString(it, owner, "manufacturer") },
+            model = json.optionalField("model")?.let { requireString(it, owner, "model") },
+            osName = json.optionalField("osName")?.let { requireString(it, owner, "osName") },
+            osVersion = json.optionalField("osVersion")?.let { requireString(it, owner, "osVersion") },
+            platform = json.optionalField("platform")?.let { requireString(it, owner, "platform") },
+            product = json.optionalField("product")?.let { requireString(it, owner, "product") },
+            sdkInt = json.optionalField("sdkInt")?.let { requireInt(it, owner, "sdkInt") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        brand?.let { put("brand", it) }
+        device?.let { put("device", it) }
+        manufacturer?.let { put("manufacturer", it) }
+        model?.let { put("model", it) }
+        osName?.let { put("osName", it) }
+        osVersion?.let { put("osVersion", it) }
+        platform?.let { put("platform", it) }
+        product?.let { put("product", it) }
+        sdkInt?.let { put("sdkInt", it) }
+    }
+}
+
+/**
+ * Optional resolution/FPS constraints
+ */
+data class PlaybackMaxVideo(
+    val fps: Int? = null,
+    val height: Int? = null,
+    val width: Int? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackMaxVideo"): PlaybackMaxVideo = PlaybackMaxVideo(
+            fps = json.optionalField("fps")?.let { requireInt(it, owner, "fps") },
+            height = json.optionalField("height")?.let { requireInt(it, owner, "height") },
+            width = json.optionalField("width")?.let { requireInt(it, owner, "width") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        fps?.let { put("fps", it) }
+        height?.let { put("height", it) }
+        width?.let { put("width", it) }
+    }
+}
+
+data class PlaybackNetworkContext(
+    val downlinkKbps: Int? = null,
+    val internetValidated: Boolean? = null,
+    val kind: String? = null,
+    val metered: Boolean? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackNetworkContext"): PlaybackNetworkContext = PlaybackNetworkContext(
+            downlinkKbps = json.optionalField("downlinkKbps")?.let { requireInt(it, owner, "downlinkKbps") },
+            internetValidated = json.optionalField("internetValidated")?.let { requireBoolean(it, owner, "internetValidated") },
+            kind = json.optionalField("kind")?.let { requireString(it, owner, "kind") },
+            metered = json.optionalField("metered")?.let { requireBoolean(it, owner, "metered") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        downlinkKbps?.let { put("downlinkKbps", it) }
+        internetValidated?.let { put("internetValidated", it) }
+        kind?.let { put("kind", it) }
+        metered?.let { put("metered", it) }
+    }
+}
+
+data class PlaybackTicketResponse(
+    val cookie: String,
+    val expiresIn: Int,
+    val path: String,
+    val sessionId: String,
+    val ticket: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackTicketResponse"): PlaybackTicketResponse = PlaybackTicketResponse(
+            cookie = requireString(json.requireField("cookie", owner), owner, "cookie"),
+            expiresIn = requireInt(json.requireField("expiresIn", owner), owner, "expiresIn"),
+            path = requireString(json.requireField("path", owner), owner, "path"),
+            sessionId = requireString(json.requireField("sessionId", owner), owner, "sessionId"),
+            ticket = requireString(json.requireField("ticket", owner), owner, "ticket")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("cookie", cookie)
+        put("expiresIn", expiresIn)
+        put("path", path)
+        put("sessionId", sessionId)
+        put("ticket", ticket)
+    }
+}
+
+data class PlaybackVideoCodecSignal(
+    /**
+     * Video codec identifier
+     */
+    val codec: String,
+    /**
+     * Whether the browser reported hardware-efficient decode for this codec
+     */
+    val powerEfficient: Boolean? = null,
+    /**
+     * Whether the browser reported smooth playback for this codec
+     */
+    val smooth: Boolean? = null,
+    /**
+     * Whether the browser can decode this codec at all
+     */
+    val supported: Boolean
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackVideoCodecSignal"): PlaybackVideoCodecSignal = PlaybackVideoCodecSignal(
+            codec = requireString(json.requireField("codec", owner), owner, "codec"),
+            powerEfficient = json.optionalField("powerEfficient")?.let { requireBoolean(it, owner, "powerEfficient") },
+            smooth = json.optionalField("smooth")?.let { requireBoolean(it, owner, "smooth") },
+            supported = requireBoolean(json.requireField("supported", owner), owner, "supported")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("codec", codec)
+        powerEfficient?.let { put("powerEfficient", it) }
+        smooth?.let { put("smooth", it) }
+        put("supported", supported)
+    }
+}
+
 data class PublishedEndpoint(
     val advertiseReason: String,
     val allowNative: Boolean,
@@ -439,6 +1462,234 @@ data class PublishedEndpoint(
         put("source", source.wireValue)
         put("tlsMode", tlsMode.wireValue)
         put("url", url)
+    }
+}
+
+data class RecordingItem(
+    /**
+     * Recording start time as UNIX seconds.
+     */
+    val beginUnixSeconds: Long? = null,
+    val description: String? = null,
+    /**
+     * Recording duration in seconds, if known.
+     */
+    val durationSeconds: Long? = null,
+    val filename: String? = null,
+    /**
+     * Human-readable duration string for display only.
+     */
+    val length: String? = null,
+    /**
+     * Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+     */
+    val localWritable: Boolean? = null,
+    /**
+     * Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+     */
+    val recordingId: String? = null,
+    val resume: ResumeSummary? = null,
+    /**
+     * Legacy receiver service reference (read-only).
+     */
+    val serviceRef: String? = null,
+    /**
+     * Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
+     */
+    val status: RecordingItemStatus,
+    val title: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "RecordingItem"): RecordingItem = RecordingItem(
+            beginUnixSeconds = json.optionalField("beginUnixSeconds")?.let { requireLong(it, owner, "beginUnixSeconds") },
+            description = json.optionalField("description")?.let { requireString(it, owner, "description") },
+            durationSeconds = json.optionalField("durationSeconds")?.let { requireLong(it, owner, "durationSeconds") },
+            filename = json.optionalField("filename")?.let { requireString(it, owner, "filename") },
+            length = json.optionalField("length")?.let { requireString(it, owner, "length") },
+            localWritable = json.optionalField("localWritable")?.let { requireBoolean(it, owner, "localWritable") },
+            recordingId = json.optionalField("recordingId")?.let { requireString(it, owner, "recordingId") },
+            resume = json.optionalField("resume")?.let { ResumeSummary.fromJson(requireObject(it, owner, "resume"), owner) },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") },
+            status = RecordingItemStatus.fromWire(requireString(json.requireField("status", owner), owner, "status"), owner),
+            title = json.optionalField("title")?.let { requireString(it, owner, "title") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        beginUnixSeconds?.let { put("beginUnixSeconds", it) }
+        description?.let { put("description", it) }
+        durationSeconds?.let { put("durationSeconds", it) }
+        filename?.let { put("filename", it) }
+        length?.let { put("length", it) }
+        localWritable?.let { put("localWritable", it) }
+        recordingId?.let { put("recordingId", it) }
+        resume?.let { put("resume", it.toJson()) }
+        serviceRef?.let { put("serviceRef", it) }
+        put("status", status.wireValue)
+        title?.let { put("title", it) }
+    }
+}
+
+data class RecordingResponse(
+    val breadcrumbs: List<Breadcrumb>? = null,
+    val currentPath: String? = null,
+    val currentRoot: String? = null,
+    val directories: List<DirectoryItem>? = null,
+    val recordings: List<RecordingItem>? = null,
+    /**
+     * Correlation ID for the request.
+     */
+    val requestId: String,
+    val roots: List<RecordingRoot>? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "RecordingResponse"): RecordingResponse = RecordingResponse(
+            breadcrumbs = json.optionalField("breadcrumbs")?.let { requireArray(it, owner, "breadcrumbs").let { array -> (0 until array.length()).map { index -> Breadcrumb.fromJson(requireObject(array.get(index), owner, "breadcrumbs"), owner) } } },
+            currentPath = json.optionalField("currentPath")?.let { requireString(it, owner, "currentPath") },
+            currentRoot = json.optionalField("currentRoot")?.let { requireString(it, owner, "currentRoot") },
+            directories = json.optionalField("directories")?.let { requireArray(it, owner, "directories").let { array -> (0 until array.length()).map { index -> DirectoryItem.fromJson(requireObject(array.get(index), owner, "directories"), owner) } } },
+            recordings = json.optionalField("recordings")?.let { requireArray(it, owner, "recordings").let { array -> (0 until array.length()).map { index -> RecordingItem.fromJson(requireObject(array.get(index), owner, "recordings"), owner) } } },
+            requestId = requireString(json.requireField("requestId", owner), owner, "requestId"),
+            roots = json.optionalField("roots")?.let { requireArray(it, owner, "roots").let { array -> (0 until array.length()).map { index -> RecordingRoot.fromJson(requireObject(array.get(index), owner, "roots"), owner) } } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        breadcrumbs?.let { put("breadcrumbs", JSONArray(it.map { element -> element.toJson() })) }
+        currentPath?.let { put("currentPath", it) }
+        currentRoot?.let { put("currentRoot", it) }
+        directories?.let { put("directories", JSONArray(it.map { element -> element.toJson() })) }
+        recordings?.let { put("recordings", JSONArray(it.map { element -> element.toJson() })) }
+        put("requestId", requestId)
+        roots?.let { put("roots", JSONArray(it.map { element -> element.toJson() })) }
+    }
+}
+
+data class RecordingResumeRequest(
+    /**
+     * Optional display channel snapshot.
+     */
+    val channel: String? = null,
+    /**
+     * Whether the user finished watching the recording.
+     */
+    val finished: Boolean? = null,
+    /**
+     * Playback position in seconds.
+     */
+    val position: Double,
+    /**
+     * Optional display title snapshot.
+     */
+    val title: String? = null,
+    /**
+     * Total duration in seconds.
+     */
+    val total: Double? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "RecordingResumeRequest"): RecordingResumeRequest = RecordingResumeRequest(
+            channel = json.optionalField("channel")?.let { requireString(it, owner, "channel") },
+            finished = json.optionalField("finished")?.let { requireBoolean(it, owner, "finished") },
+            position = requireDouble(json.requireField("position", owner), owner, "position"),
+            title = json.optionalField("title")?.let { requireString(it, owner, "title") },
+            total = json.optionalField("total")?.let { requireDouble(it, owner, "total") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        channel?.let { put("channel", it) }
+        finished?.let { put("finished", it) }
+        put("position", position)
+        title?.let { put("title", it) }
+        total?.let { put("total", it) }
+    }
+}
+
+data class RecordingRoot(
+    val id: String? = null,
+    val name: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "RecordingRoot"): RecordingRoot = RecordingRoot(
+            id = json.optionalField("id")?.let { requireString(it, owner, "id") },
+            name = json.optionalField("name")?.let { requireString(it, owner, "name") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        id?.let { put("id", it) }
+        name?.let { put("name", it) }
+    }
+}
+
+data class ResumeSummary(
+    val durationSeconds: Long? = null,
+    val finished: Boolean? = null,
+    val posSeconds: Long,
+    val updatedAt: Instant? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "ResumeSummary"): ResumeSummary = ResumeSummary(
+            durationSeconds = json.optionalField("durationSeconds")?.let { requireLong(it, owner, "durationSeconds") },
+            finished = json.optionalField("finished")?.let { requireBoolean(it, owner, "finished") },
+            posSeconds = requireLong(json.requireField("posSeconds", owner), owner, "posSeconds"),
+            updatedAt = json.optionalField("updatedAt")?.let { requireInstant(it, owner, "updatedAt") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        durationSeconds?.let { put("durationSeconds", it) }
+        finished?.let { put("finished", it) }
+        put("posSeconds", posSeconds)
+        updatedAt?.let { put("updatedAt", it.toString()) }
+    }
+}
+
+data class Service(
+    /**
+     * Video codec (e.g. h264)
+     */
+    val codec: String? = null,
+    val enabled: Boolean? = null,
+    val group: String? = null,
+    val id: String? = null,
+    val logoUrl: String? = null,
+    val name: String? = null,
+    val number: String? = null,
+    /**
+     * Video resolution (e.g. 1920x1080)
+     */
+    val resolution: String? = null,
+    /**
+     * Service reference for streaming (extracted from M3U URL)
+     */
+    val serviceRef: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "Service"): Service = Service(
+            codec = json.optionalField("codec")?.let { requireString(it, owner, "codec") },
+            enabled = json.optionalField("enabled")?.let { requireBoolean(it, owner, "enabled") },
+            group = json.optionalField("group")?.let { requireString(it, owner, "group") },
+            id = json.optionalField("id")?.let { requireString(it, owner, "id") },
+            logoUrl = json.optionalField("logoUrl")?.let { requireString(it, owner, "logoUrl") },
+            name = json.optionalField("name")?.let { requireString(it, owner, "name") },
+            number = json.optionalField("number")?.let { requireString(it, owner, "number") },
+            resolution = json.optionalField("resolution")?.let { requireString(it, owner, "resolution") },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        codec?.let { put("codec", it) }
+        enabled?.let { put("enabled", it) }
+        group?.let { put("group", it) }
+        id?.let { put("id", it) }
+        logoUrl?.let { put("logoUrl", it) }
+        name?.let { put("name", it) }
+        number?.let { put("number", it) }
+        resolution?.let { put("resolution", it) }
+        serviceRef?.let { put("serviceRef", it) }
     }
 }
 
@@ -485,6 +1736,143 @@ data class StartPairingResponse(
         put("pairingSecret", pairingSecret)
         put("qrPayload", qrPayload)
         put("userCode", userCode)
+    }
+}
+
+data class Timer(
+    val begin: Long,
+    val createdAt: Instant? = null,
+    val description: String? = null,
+    val end: Long,
+    val name: String,
+    val serviceName: String? = null,
+    val serviceRef: String,
+    val state: TimerState,
+    val timerId: String,
+    val updatedAt: Instant? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "Timer"): Timer = Timer(
+            begin = requireLong(json.requireField("begin", owner), owner, "begin"),
+            createdAt = json.optionalField("createdAt")?.let { requireInstant(it, owner, "createdAt") },
+            description = json.optionalField("description")?.let { requireString(it, owner, "description") },
+            end = requireLong(json.requireField("end", owner), owner, "end"),
+            name = requireString(json.requireField("name", owner), owner, "name"),
+            serviceName = json.optionalField("serviceName")?.let { requireString(it, owner, "serviceName") },
+            serviceRef = requireString(json.requireField("serviceRef", owner), owner, "serviceRef"),
+            state = TimerState.fromWire(requireString(json.requireField("state", owner), owner, "state"), owner),
+            timerId = requireString(json.requireField("timerId", owner), owner, "timerId"),
+            updatedAt = json.optionalField("updatedAt")?.let { requireInstant(it, owner, "updatedAt") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("begin", begin)
+        createdAt?.let { put("createdAt", it.toString()) }
+        description?.let { put("description", it) }
+        put("end", end)
+        put("name", name)
+        serviceName?.let { put("serviceName", it) }
+        put("serviceRef", serviceRef)
+        put("state", state.wireValue)
+        put("timerId", timerId)
+        updatedAt?.let { put("updatedAt", it.toString()) }
+    }
+}
+
+data class TimerCreateRequest(
+    val afterEvent: TimerCreateRequestAfterEvent? = null,
+    val begin: Long,
+    val description: String? = null,
+    val enabled: Boolean? = null,
+    val end: Long,
+    val idempotencyKey: String? = null,
+    val justPlay: Boolean? = null,
+    val name: String,
+    val paddingAfterSec: Int? = null,
+    val paddingBeforeSec: Int? = null,
+    val serviceRef: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "TimerCreateRequest"): TimerCreateRequest = TimerCreateRequest(
+            afterEvent = json.optionalField("afterEvent")?.let { TimerCreateRequestAfterEvent.fromWire(requireString(it, owner, "afterEvent"), owner) },
+            begin = requireLong(json.requireField("begin", owner), owner, "begin"),
+            description = json.optionalField("description")?.let { requireString(it, owner, "description") },
+            enabled = json.optionalField("enabled")?.let { requireBoolean(it, owner, "enabled") },
+            end = requireLong(json.requireField("end", owner), owner, "end"),
+            idempotencyKey = json.optionalField("idempotencyKey")?.let { requireString(it, owner, "idempotencyKey") },
+            justPlay = json.optionalField("justPlay")?.let { requireBoolean(it, owner, "justPlay") },
+            name = requireString(json.requireField("name", owner), owner, "name"),
+            paddingAfterSec = json.optionalField("paddingAfterSec")?.let { requireInt(it, owner, "paddingAfterSec") },
+            paddingBeforeSec = json.optionalField("paddingBeforeSec")?.let { requireInt(it, owner, "paddingBeforeSec") },
+            serviceRef = requireString(json.requireField("serviceRef", owner), owner, "serviceRef")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        afterEvent?.let { put("afterEvent", it.wireValue) }
+        put("begin", begin)
+        description?.let { put("description", it) }
+        enabled?.let { put("enabled", it) }
+        put("end", end)
+        idempotencyKey?.let { put("idempotencyKey", it) }
+        justPlay?.let { put("justPlay", it) }
+        put("name", name)
+        paddingAfterSec?.let { put("paddingAfterSec", it) }
+        paddingBeforeSec?.let { put("paddingBeforeSec", it) }
+        put("serviceRef", serviceRef)
+    }
+}
+
+data class TimerList(
+    val items: List<Timer>
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "TimerList"): TimerList = TimerList(
+            items = requireArray(json.requireField("items", owner), owner, "items").let { array -> (0 until array.length()).map { index -> Timer.fromJson(requireObject(array.get(index), owner, "items"), owner) } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("items", JSONArray(items.map { element -> element.toJson() }))
+    }
+}
+
+data class ZapPreparationResponse(
+    val detail: String? = null,
+    val generation: Long? = null,
+    val outcome: String? = null,
+    val pending: Map<String, String>? = null,
+    val preparationId: String,
+    val readyAfterMs: Long? = null,
+    val serviceRef: String? = null,
+    val state: ZapPreparationState,
+    val zapId: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "ZapPreparationResponse"): ZapPreparationResponse = ZapPreparationResponse(
+            detail = json.optionalField("detail")?.let { requireString(it, owner, "detail") },
+            generation = json.optionalField("generation")?.let { requireLong(it, owner, "generation") },
+            outcome = json.optionalField("outcome")?.let { requireString(it, owner, "outcome") },
+            pending = json.optionalField("pending")?.let { requireObject(it, owner, "pending").let { obj -> obj.keys().asSequence().associateWith { key -> requireString(obj.get(key), owner, "pending") } } },
+            preparationId = requireString(json.requireField("preparationId", owner), owner, "preparationId"),
+            readyAfterMs = json.optionalField("readyAfterMs")?.let { requireLong(it, owner, "readyAfterMs") },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") },
+            state = ZapPreparationState.fromWire(requireString(json.requireField("state", owner), owner, "state"), owner),
+            zapId = json.optionalField("zapId")?.let { requireString(it, owner, "zapId") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        detail?.let { put("detail", it) }
+        generation?.let { put("generation", it) }
+        outcome?.let { put("outcome", it) }
+        pending?.let { put("pending", JSONObject(it.mapValues { (_, value) -> value })) }
+        put("preparationId", preparationId)
+        readyAfterMs?.let { put("readyAfterMs", it) }
+        serviceRef?.let { put("serviceRef", it) }
+        put("state", state.wireValue)
+        zapId?.let { put("zapId", it) }
     }
 }
 

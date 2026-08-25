@@ -240,7 +240,7 @@ struct iPadSidebar: View {
                         let isFavSelected = model.selectedBouquet?.id == AppModel.favoritesBouquetID
                         Button {
                             triggerHaptic(.light)
-                            Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                            Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "star.circle.fill")

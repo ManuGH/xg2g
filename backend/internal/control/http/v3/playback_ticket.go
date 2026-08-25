@@ -163,7 +163,10 @@ func (s *Server) IssuePlaybackTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := strings.TrimSpace(chi.URLParam(r, "sessionID"))
+	sessionID := strings.TrimSpace(chi.URLParam(r, "sessionId"))
+	if sessionID == "" {
+		sessionID = strings.TrimSpace(chi.URLParam(r, "sessionID"))
+	}
 	if sessionID == "" {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Session", problemcode.CodeInvalidInput, "A session id is required", nil)
 		return
@@ -198,8 +201,8 @@ func (s *Server) IssuePlaybackTicket(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
-	writeJSON(w, http.StatusCreated, playbackTicketResponse{
-		SessionID: sessionID,
+	writeJSON(w, http.StatusCreated, PlaybackTicketResponse{
+		SessionId: sessionID,
 		Ticket:    id,
 		Cookie:    playbackTicketCookieName,
 		Path:      playbackTicketPath(sessionID),
@@ -207,16 +210,9 @@ func (s *Server) IssuePlaybackTicket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// The body repeats what the Set-Cookie header carries because a native client
-// does not have a cookie jar in the browser sense: iOS hands the value straight
-// to AVURLAsset, and reading it out of a Set-Cookie header would mean parsing
-// one just to put it back.
-type playbackTicketResponse struct {
-	SessionID string `json:"sessionId"`
-	Ticket    string `json:"ticket"`
-	Cookie    string `json:"cookie"`
-	Path      string `json:"path"`
-	ExpiresIn int    `json:"expiresIn"`
+// PostSessionPlaybackTicket implements ServerInterface
+func (s *Server) PostSessionPlaybackTicket(w http.ResponseWriter, r *http.Request, sessionId string) {
+	s.IssuePlaybackTicket(w, r)
 }
 
 func playbackTicketPath(sessionID string) string {

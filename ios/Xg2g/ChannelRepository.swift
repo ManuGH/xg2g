@@ -21,8 +21,8 @@ actor ChannelRepository {
     }
 
     /// Fetches all available channel bouquets / groups.
-    func bouquets() async throws -> [Bouquet] {
-        let items: [ChannelWire.BouquetItem] = try await api.send(
+    func bouquets() async throws -> [ChannelBouquet] {
+        let items: [Xg2gContract.Bouquet] = try await api.send(
             APIRequest(method: .get, path: "services/bouquets")
         )
         return items.compactMap { $0.toDomain() }
@@ -34,7 +34,7 @@ actor ChannelRepository {
     /// dropped here rather than rendered as blank rows.
     func channels(bouquet: String? = nil) async throws -> [Channel] {
         let query = bouquet.map { [URLQueryItem(name: "bouquet", value: $0)] } ?? []
-        let services: [ChannelWire.Service] = try await api.send(
+        let services: [Xg2gContract.Service] = try await api.send(
             APIRequest(method: .get, path: "services", query: query)
         )
 
@@ -64,11 +64,11 @@ actor ChannelRepository {
     func nowNext(for serviceRefs: [String]) async throws -> [String: NowNext] {
         guard !serviceRefs.isEmpty else { return [:] }
 
-        let response: ChannelWire.NowNextResponse = try await api.send(
+        let response: Xg2gContract.NowNextResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "services/now-next",
-                body: try JSONEncoder().encode(ChannelWire.NowNextRequest(services: serviceRefs)),
+                body: try JSONEncoder().encode(Xg2gContract.NowNextRequest(services: serviceRefs)),
                 contentType: "application/json"
             )
         )
@@ -85,7 +85,7 @@ actor ChannelRepository {
     /// Fetches the full EPG schedule for all channels or a specific bouquet.
     func epgSchedule(bouquet: String? = nil) async throws -> [String: [NowNext.Entry]] {
         let query = bouquet.map { [URLQueryItem(name: "bouquet", value: $0)] } ?? []
-        let items: [ChannelWire.EpgItem] = try await api.send(
+        let items: [Xg2gContract.EpgItem] = try await api.send(
             APIRequest(method: .get, path: "epg", query: query)
         )
 

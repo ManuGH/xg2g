@@ -36,12 +36,89 @@ enum Xg2gContract {
         case ec = "EC"
     }
 
+    /// Certainty of the extraction. `observed` was read directly from source text or
+    /// descriptors, `matched` came from a high-confidence provider match, `inferred` was
+    /// derived heuristically.
+    enum EpgRatingConfidence: String, Codable, Sendable, CaseIterable, Equatable {
+        case observed
+        case matched
+        case inferred
+    }
+
+    /// Where an age rating was extracted or retrieved from.
+    enum EpgRatingSource: String, Codable, Sendable, CaseIterable, Equatable {
+        case dvbText = "dvb_text"
+        case dvbDescriptor = "dvb_descriptor"
+        case provider
+        case override
+    }
+
+    enum IntentAcceptedResponseStatus: String, Codable, Sendable, CaseIterable, Equatable {
+        case accepted
+        case idempotentReplay = "idempotent_replay"
+    }
+
+    /// Hardware acceleration override (v3.1+).
+    /// - auto: Server decides based on GPU availability
+    /// - force: Force GPU encoding (fails if no GPU)
+    /// - off: Force CPU encoding
+    enum IntentRequestHwaccel: String, Codable, Sendable, CaseIterable, Equatable {
+        case auto
+        case force
+        case off
+    }
+
+    enum IntentRequestType: String, Codable, Sendable, CaseIterable, Equatable {
+        case streamStart = "stream.start"
+        case streamStop = "stream.stop"
+    }
+
     enum PairingStatus: String, Codable, Sendable, CaseIterable, Equatable {
         case pending
         case approved
         case expired
         case consumed
         case revoked
+    }
+
+    /// Rendering engine, for `surface: browser` only. A native client omits
+    /// it; sending one is not an error but carries no meaning.
+    enum PlaybackBrowserEngine: String, Codable, Sendable, CaseIterable, Equatable {
+        case webkit
+        case blink
+        case gecko
+        case unknown
+    }
+
+    /// The operating system the client runs on. `unknown` is a legitimate
+    /// answer and is treated as the most conservative case rather than as an
+    /// error.
+    enum PlaybackClientPlatform: String, Codable, Sendable, CaseIterable, Equatable {
+        case ios
+        case ipados
+        case macos
+        case tvos
+        case android
+        case androidTv = "android_tv"
+        case windows
+        case linux
+        case unknown
+    }
+
+    /// Whether the client is a native application or a page in a browser. The
+    /// distinction the old identifiers could not express, and the one that
+    /// decides whether capability claims are decoder truth or a browser's
+    /// best guess.
+    enum PlaybackClientSurface: String, Codable, Sendable, CaseIterable, Equatable {
+        case nativeApp = "native_app"
+        case browser
+    }
+
+    /// Selected playback strategy output mode.
+    enum PlaybackInfoMode: String, Codable, Sendable, CaseIterable, Equatable {
+        case hls
+        case directMp4 = "direct_mp4"
+        case deny
     }
 
     enum PublishedEndpointKind: String, Codable, Sendable, CaseIterable, Equatable {
@@ -59,6 +136,38 @@ enum Xg2gContract {
     enum PublishedEndpointTLSMode: String, Codable, Sendable, CaseIterable, Equatable {
         case required
         case prohibited
+    }
+
+    /// Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
+    enum RecordingItemStatus: String, Codable, Sendable, CaseIterable, Equatable {
+        case scheduled
+        case recording
+        case completed
+        case failed
+        case unknown
+    }
+
+    enum TimerCreateRequestAfterEvent: String, Codable, Sendable, CaseIterable, Equatable {
+        case `default` = "default"
+        case standby
+        case deepstandby
+        case nothing
+    }
+
+    enum TimerState: String, Codable, Sendable, CaseIterable, Equatable {
+        case scheduled
+        case recording
+        case completed
+        case disabled
+        case unknown
+    }
+
+    enum ZapPreparationState: String, Codable, Sendable, CaseIterable, Equatable {
+        case pending
+        case ready
+        case failed
+        case cancelled
+        case committed
     }
 
     struct ApprovePairingRequest: Codable, Sendable, Equatable {
@@ -96,6 +205,51 @@ enum Xg2gContract {
             self.ownerId = ownerId
             self.pairingId = pairingId
             self.status = status
+        }
+    }
+
+    struct AuthSessionResponse: Codable, Sendable, Equatable {
+        let cookie: String?
+        let expiresIn: Int?
+        let path: String?
+        let sessionId: String
+
+        init(
+            sessionId: String,
+            cookie: String? = nil,
+            expiresIn: Int? = nil,
+            path: String? = nil
+        ) {
+            self.cookie = cookie
+            self.expiresIn = expiresIn
+            self.path = path
+            self.sessionId = sessionId
+        }
+    }
+
+    struct Bouquet: Codable, Sendable, Equatable {
+        let name: String?
+        let services: Int?
+
+        init(
+            name: String? = nil,
+            services: Int? = nil
+        ) {
+            self.name = name
+            self.services = services
+        }
+    }
+
+    struct Breadcrumb: Codable, Sendable, Equatable {
+        let name: String?
+        let path: String?
+
+        init(
+            name: String? = nil,
+            path: String? = nil
+        ) {
+            self.name = name
+            self.path = path
         }
     }
 
@@ -157,6 +311,19 @@ enum Xg2gContract {
         }
     }
 
+    struct DirectoryItem: Codable, Sendable, Equatable {
+        let name: String?
+        let path: String?
+
+        init(
+            name: String? = nil,
+            path: String? = nil
+        ) {
+            self.name = name
+            self.path = path
+        }
+    }
+
     /// P-256 public key in JWK form. The server computes the RFC 7638
     /// thumbprint itself; a client-supplied thumbprint is never trusted.
     ///
@@ -180,6 +347,113 @@ enum Xg2gContract {
             self.kty = kty
             self.x = x
             self.y = y
+        }
+    }
+
+    /// Age certification with explicit scheme and provenance. `confidence` states how the
+    /// value was obtained; it is not a legal broadcast guarantee.
+    struct EpgAgeRating: Codable, Sendable, Equatable {
+        /// Certainty of the extraction. `observed` was read directly from source text or
+        /// descriptors, `matched` came from a high-confidence provider match, `inferred` was
+        /// derived heuristically.
+        let confidence: EpgRatingConfidence
+        /// Country the scheme belongs to, or `unknown` for generic broadcaster text.
+        let country: String
+        /// Rating scheme, e.g. FSK when explicitly stated, otherwise broadcaster_age.
+        let scheme: String
+        /// Where an age rating was extracted or retrieved from.
+        let source: EpgRatingSource
+        /// Age in years, e.g. 0, 6, 12, 16, 18.
+        let value: Int
+
+        init(
+            confidence: EpgRatingConfidence,
+            country: String,
+            scheme: String,
+            source: EpgRatingSource,
+            value: Int
+        ) {
+            self.confidence = confidence
+            self.country = country
+            self.scheme = scheme
+            self.source = source
+            self.value = value
+        }
+    }
+
+    /// Season and episode numbering extracted with high precision.
+    struct EpgEpisodeInfo: Codable, Sendable, Equatable {
+        let episodeNumber: Int?
+        let episodeTitle: String?
+        let seasonNumber: Int?
+        /// The pattern the numbering was recognised by.
+        let sourcePattern: String?
+
+        init(
+            episodeNumber: Int? = nil,
+            episodeTitle: String? = nil,
+            seasonNumber: Int? = nil,
+            sourcePattern: String? = nil
+        ) {
+            self.episodeNumber = episodeNumber
+            self.episodeTitle = episodeTitle
+            self.seasonNumber = seasonNumber
+            self.sourcePattern = sourcePattern
+        }
+    }
+
+    struct EpgItem: Codable, Sendable, Equatable {
+        let desc: String?
+        let duration: Int64?
+        let end: Int64?
+        let endXmltv: String?
+        let genre: String?
+        let id: String?
+        let serviceRef: String?
+        let start: Int64?
+        let startXmltv: String?
+        let title: String?
+
+        init(
+            desc: String? = nil,
+            duration: Int64? = nil,
+            end: Int64? = nil,
+            endXmltv: String? = nil,
+            genre: String? = nil,
+            id: String? = nil,
+            serviceRef: String? = nil,
+            start: Int64? = nil,
+            startXmltv: String? = nil,
+            title: String? = nil
+        ) {
+            self.desc = desc
+            self.duration = duration
+            self.end = end
+            self.endXmltv = endXmltv
+            self.genre = genre
+            self.id = id
+            self.serviceRef = serviceRef
+            self.start = start
+            self.startXmltv = startXmltv
+            self.title = title
+        }
+    }
+
+    /// External provider rating, kept separate from observed DVB metadata.
+    struct EpgRatingScore: Codable, Sendable, Equatable {
+        let scale: Double
+        let score: Double
+        /// Provider the score came from, e.g. tvmaze, tmdb, imdb.
+        let source: String
+
+        init(
+            scale: Double,
+            score: Double,
+            source: String
+        ) {
+            self.scale = scale
+            self.score = score
+            self.source = source
         }
     }
 
@@ -217,6 +491,214 @@ enum Xg2gContract {
             self.refreshToken = refreshToken
             self.scope = scope
             self.tokenType = tokenType
+        }
+    }
+
+    struct IntentAcceptedResponse: Codable, Sendable, Equatable {
+        let correlationId: String?
+        /// Request ID for debugging/tracing.
+        let requestId: String
+        let sessionId: String
+        let status: IntentAcceptedResponseStatus
+
+        init(
+            requestId: String,
+            sessionId: String,
+            status: IntentAcceptedResponseStatus,
+            correlationId: String? = nil
+        ) {
+            self.correlationId = correlationId
+            self.requestId = requestId
+            self.sessionId = sessionId
+            self.status = status
+        }
+    }
+
+    struct IntentRequest: Codable, Sendable, Equatable {
+        /// Client capabilities for playback decision (P4-1)
+        let client: PlaybackCapabilities?
+        /// Optional correlation ID for end-to-end tracing
+        let correlationId: String?
+        /// Hardware acceleration override (v3.1+).
+        /// - auto: Server decides based on GPU availability
+        /// - force: Force GPU encoding (fails if no GPU)
+        /// - off: Force CPU encoding
+        let hwaccel: IntentRequestHwaccel?
+        /// Optional idempotency key for at-most-once semantics
+        let idempotencyKey: String?
+        /// Additional parameters
+        let params: [String: String]?
+        /// Required for stream.start. A secure cryptographically bound JWT token verifying the backend decision policy.
+        let playbackDecisionToken: String?
+        /// Required for stream.start. Enigma2 service reference (live playback only).
+        let serviceRef: String?
+        /// Required for stream.stop intent
+        let sessionId: String?
+        /// Optional live playback start offset in milliseconds.
+        let startMs: Int64?
+        let type: IntentRequestType?
+
+        init(
+            client: PlaybackCapabilities? = nil,
+            correlationId: String? = nil,
+            hwaccel: IntentRequestHwaccel? = nil,
+            idempotencyKey: String? = nil,
+            params: [String: String]? = nil,
+            playbackDecisionToken: String? = nil,
+            serviceRef: String? = nil,
+            sessionId: String? = nil,
+            startMs: Int64? = nil,
+            type: IntentRequestType? = nil
+        ) {
+            self.client = client
+            self.correlationId = correlationId
+            self.hwaccel = hwaccel
+            self.idempotencyKey = idempotencyKey
+            self.params = params
+            self.playbackDecisionToken = playbackDecisionToken
+            self.serviceRef = serviceRef
+            self.sessionId = sessionId
+            self.startMs = startMs
+            self.type = type
+        }
+    }
+
+    struct LiveStreamInfoRequest: Codable, Sendable, Equatable {
+        /// Client capabilities for playback decision (P4-1)
+        let capabilities: PlaybackCapabilities
+        /// The Enigma2 service reference
+        let serviceRef: String
+
+        init(
+            capabilities: PlaybackCapabilities,
+            serviceRef: String
+        ) {
+            self.capabilities = capabilities
+            self.serviceRef = serviceRef
+        }
+    }
+
+    struct LiveStreamInfoResponse: Codable, Sendable, Equatable {
+        let decisionReason: String?
+        let dvrWindowSeconds: Int64?
+        let isSeekable: Bool?
+        /// Selected playback strategy output mode.
+        let mode: PlaybackInfoMode?
+        let playbackDecisionToken: String?
+        let sessionId: String?
+        let url: String?
+
+        init(
+            decisionReason: String? = nil,
+            dvrWindowSeconds: Int64? = nil,
+            isSeekable: Bool? = nil,
+            mode: PlaybackInfoMode? = nil,
+            playbackDecisionToken: String? = nil,
+            sessionId: String? = nil,
+            url: String? = nil
+        ) {
+            self.decisionReason = decisionReason
+            self.dvrWindowSeconds = dvrWindowSeconds
+            self.isSeekable = isSeekable
+            self.mode = mode
+            self.playbackDecisionToken = playbackDecisionToken
+            self.sessionId = sessionId
+            self.url = url
+        }
+    }
+
+    struct NowNextEntry: Codable, Sendable, Equatable {
+        /// Age certification with explicit scheme and provenance. `confidence` states how the
+        /// value was obtained; it is not a legal broadcast guarantee.
+        let ageRating: EpgAgeRating?
+        /// Short programme synopsis (one or two sentences)
+        let desc: String?
+        /// Unix timestamp (seconds)
+        let end: Int
+        /// Original XMLTV end timestamp including offset
+        let endXmltv: String?
+        /// Season and episode numbering extracted with high precision.
+        let episodeInfo: EpgEpisodeInfo?
+        /// Canonical genre as observed on ingest.
+        let genre: String?
+        /// Where the genre was observed, e.g. dvb_descriptor, dvb_category, dvb_text.
+        let genreSource: String?
+        /// External provider poster URL. Never overwrites observed DVB metadata.
+        let posterUrl: String?
+        /// External provider synopsis. Never overwrites the observed DVB description.
+        let providerSummary: String?
+        /// External provider rating, kept separate from observed DVB metadata.
+        let ratingScore: EpgRatingScore?
+        /// Unix timestamp (seconds)
+        let start: Int
+        /// Original XMLTV start timestamp including offset
+        let startXmltv: String?
+        let title: String
+
+        init(
+            end: Int,
+            start: Int,
+            title: String,
+            ageRating: EpgAgeRating? = nil,
+            desc: String? = nil,
+            endXmltv: String? = nil,
+            episodeInfo: EpgEpisodeInfo? = nil,
+            genre: String? = nil,
+            genreSource: String? = nil,
+            posterUrl: String? = nil,
+            providerSummary: String? = nil,
+            ratingScore: EpgRatingScore? = nil,
+            startXmltv: String? = nil
+        ) {
+            self.ageRating = ageRating
+            self.desc = desc
+            self.end = end
+            self.endXmltv = endXmltv
+            self.episodeInfo = episodeInfo
+            self.genre = genre
+            self.genreSource = genreSource
+            self.posterUrl = posterUrl
+            self.providerSummary = providerSummary
+            self.ratingScore = ratingScore
+            self.start = start
+            self.startXmltv = startXmltv
+            self.title = title
+        }
+    }
+
+    struct NowNextItem: Codable, Sendable, Equatable {
+        let next: NowNextEntry?
+        let now: NowNextEntry?
+        let serviceRef: String
+
+        init(
+            serviceRef: String,
+            next: NowNextEntry? = nil,
+            now: NowNextEntry? = nil
+        ) {
+            self.next = next
+            self.now = now
+            self.serviceRef = serviceRef
+        }
+    }
+
+    struct NowNextRequest: Codable, Sendable, Equatable {
+        let services: [String]
+
+        init(
+            services: [String]
+        ) {
+            self.services = services
+        }
+    }
+
+    struct NowNextResponse: Codable, Sendable, Equatable {
+        let items: [NowNextItem]
+
+        init(
+            items: [NowNextItem]
+        ) {
+            self.items = items
         }
     }
 
@@ -275,6 +757,241 @@ enum Xg2gContract {
         }
     }
 
+    /// Client capabilities for playback decision (P4-1)
+    struct PlaybackCapabilities: Codable, Sendable, Equatable {
+        /// Whether client allows transcoding (force bypass)
+        let allowTranscode: Bool?
+        /// Supported audio codecs
+        let audioCodecs: [String]
+        /// Capabilities contract version (current: 3)
+        let capabilitiesVersion: Int
+        /// What the client *is*. Platform and surface are facts about the running
+        /// client; the family it belongs to, the capability defaults that follow
+        /// from it, and the playback policy applied to it are all the server's to
+        /// decide.
+        ///
+        /// This replaces `clientFamilyFallback` and `deviceType`, which asked the
+        /// client to classify itself. It could not: the native iOS app called
+        /// itself `ios_safari_native` — the identifier for Safari on iOS — so the
+        /// backend applied browser policy to an app that ships its own transport
+        /// stream demuxer, and no browser and no app could be told apart.
+        let clientIdentity: PlaybackClientIdentity
+        /// Supported container formats
+        let container: [String]
+        let deviceContext: PlaybackDeviceContext?
+        /// Supported HLS playback engines (e.g. native, hlsjs)
+        let hlsEngines: [String]?
+        /// Optional resolution/FPS constraints
+        let maxVideo: PlaybackMaxVideo?
+        let networkContext: PlaybackNetworkContext?
+        /// Preferred HLS playback engine for this client (e.g. native, hlsjs)
+        let preferredHlsEngine: String?
+        /// Whether the capability snapshot was gathered from runtime browser probes
+        let runtimeProbeUsed: Bool?
+        /// Version of the runtime playback probe contract
+        let runtimeProbeVersion: Int?
+        /// Whether client supports HLS playlists
+        let supportsHls: Bool?
+        /// Whether client supports HTTP range requests
+        let supportsRange: Bool?
+        /// Runtime decode signals per video codec from MediaCapabilities and fallback browser probes
+        let videoCodecSignals: [PlaybackVideoCodecSignal]?
+        /// Supported video codecs
+        let videoCodecs: [String]
+
+        init(
+            audioCodecs: [String],
+            capabilitiesVersion: Int,
+            clientIdentity: PlaybackClientIdentity,
+            container: [String],
+            videoCodecs: [String],
+            allowTranscode: Bool? = nil,
+            deviceContext: PlaybackDeviceContext? = nil,
+            hlsEngines: [String]? = nil,
+            maxVideo: PlaybackMaxVideo? = nil,
+            networkContext: PlaybackNetworkContext? = nil,
+            preferredHlsEngine: String? = nil,
+            runtimeProbeUsed: Bool? = nil,
+            runtimeProbeVersion: Int? = nil,
+            supportsHls: Bool? = nil,
+            supportsRange: Bool? = nil,
+            videoCodecSignals: [PlaybackVideoCodecSignal]? = nil
+        ) {
+            self.allowTranscode = allowTranscode
+            self.audioCodecs = audioCodecs
+            self.capabilitiesVersion = capabilitiesVersion
+            self.clientIdentity = clientIdentity
+            self.container = container
+            self.deviceContext = deviceContext
+            self.hlsEngines = hlsEngines
+            self.maxVideo = maxVideo
+            self.networkContext = networkContext
+            self.preferredHlsEngine = preferredHlsEngine
+            self.runtimeProbeUsed = runtimeProbeUsed
+            self.runtimeProbeVersion = runtimeProbeVersion
+            self.supportsHls = supportsHls
+            self.supportsRange = supportsRange
+            self.videoCodecSignals = videoCodecSignals
+            self.videoCodecs = videoCodecs
+        }
+    }
+
+    /// What the client *is*. Platform and surface are facts about the running
+    /// client; the family it belongs to, the capability defaults that follow
+    /// from it, and the playback policy applied to it are all the server's to
+    /// decide.
+    ///
+    /// This replaces `clientFamilyFallback` and `deviceType`, which asked the
+    /// client to classify itself. It could not: the native iOS app called
+    /// itself `ios_safari_native` — the identifier for Safari on iOS — so the
+    /// backend applied browser policy to an app that ships its own transport
+    /// stream demuxer, and no browser and no app could be told apart.
+    struct PlaybackClientIdentity: Codable, Sendable, Equatable {
+        /// Version of the native client, when there is one. Diagnostic only:
+        /// no policy is keyed on it, because a policy that were would make
+        /// every client release a server change.
+        let appVersion: String?
+        /// Rendering engine, for `surface: browser` only. A native client omits
+        /// it; sending one is not an error but carries no meaning.
+        let browserEngine: PlaybackBrowserEngine?
+        /// The operating system the client runs on. `unknown` is a legitimate
+        /// answer and is treated as the most conservative case rather than as an
+        /// error.
+        let platform: PlaybackClientPlatform
+        /// Whether the client is a native application or a page in a browser. The
+        /// distinction the old identifiers could not express, and the one that
+        /// decides whether capability claims are decoder truth or a browser's
+        /// best guess.
+        let surface: PlaybackClientSurface
+
+        init(
+            platform: PlaybackClientPlatform,
+            surface: PlaybackClientSurface,
+            appVersion: String? = nil,
+            browserEngine: PlaybackBrowserEngine? = nil
+        ) {
+            self.appVersion = appVersion
+            self.browserEngine = browserEngine
+            self.platform = platform
+            self.surface = surface
+        }
+    }
+
+    struct PlaybackDeviceContext: Codable, Sendable, Equatable {
+        let brand: String?
+        let device: String?
+        let manufacturer: String?
+        let model: String?
+        let osName: String?
+        let osVersion: String?
+        let platform: String?
+        let product: String?
+        let sdkInt: Int?
+
+        init(
+            brand: String? = nil,
+            device: String? = nil,
+            manufacturer: String? = nil,
+            model: String? = nil,
+            osName: String? = nil,
+            osVersion: String? = nil,
+            platform: String? = nil,
+            product: String? = nil,
+            sdkInt: Int? = nil
+        ) {
+            self.brand = brand
+            self.device = device
+            self.manufacturer = manufacturer
+            self.model = model
+            self.osName = osName
+            self.osVersion = osVersion
+            self.platform = platform
+            self.product = product
+            self.sdkInt = sdkInt
+        }
+    }
+
+    /// Optional resolution/FPS constraints
+    struct PlaybackMaxVideo: Codable, Sendable, Equatable {
+        let fps: Int?
+        let height: Int?
+        let width: Int?
+
+        init(
+            fps: Int? = nil,
+            height: Int? = nil,
+            width: Int? = nil
+        ) {
+            self.fps = fps
+            self.height = height
+            self.width = width
+        }
+    }
+
+    struct PlaybackNetworkContext: Codable, Sendable, Equatable {
+        let downlinkKbps: Int?
+        let internetValidated: Bool?
+        let kind: String?
+        let metered: Bool?
+
+        init(
+            downlinkKbps: Int? = nil,
+            internetValidated: Bool? = nil,
+            kind: String? = nil,
+            metered: Bool? = nil
+        ) {
+            self.downlinkKbps = downlinkKbps
+            self.internetValidated = internetValidated
+            self.kind = kind
+            self.metered = metered
+        }
+    }
+
+    struct PlaybackTicketResponse: Codable, Sendable, Equatable {
+        let cookie: String
+        let expiresIn: Int
+        let path: String
+        let sessionId: String
+        let ticket: String
+
+        init(
+            cookie: String,
+            expiresIn: Int,
+            path: String,
+            sessionId: String,
+            ticket: String
+        ) {
+            self.cookie = cookie
+            self.expiresIn = expiresIn
+            self.path = path
+            self.sessionId = sessionId
+            self.ticket = ticket
+        }
+    }
+
+    struct PlaybackVideoCodecSignal: Codable, Sendable, Equatable {
+        /// Video codec identifier
+        let codec: String
+        /// Whether the browser reported hardware-efficient decode for this codec
+        let powerEfficient: Bool?
+        /// Whether the browser reported smooth playback for this codec
+        let smooth: Bool?
+        /// Whether the browser can decode this codec at all
+        let supported: Bool
+
+        init(
+            codec: String,
+            supported: Bool,
+            powerEfficient: Bool? = nil,
+            smooth: Bool? = nil
+        ) {
+            self.codec = codec
+            self.powerEfficient = powerEfficient
+            self.smooth = smooth
+            self.supported = supported
+        }
+    }
+
     struct PublishedEndpoint: Codable, Sendable, Equatable {
         let advertiseReason: String
         let allowNative: Bool
@@ -309,6 +1026,178 @@ enum Xg2gContract {
             self.source = source
             self.tlsMode = tlsMode
             self.url = url
+        }
+    }
+
+    struct RecordingItem: Codable, Sendable, Equatable {
+        /// Recording start time as UNIX seconds.
+        let beginUnixSeconds: Int64?
+        let description: String?
+        /// Recording duration in seconds, if known.
+        let durationSeconds: Int64?
+        let filename: String?
+        /// Human-readable duration string for display only.
+        let length: String?
+        /// Whether the current runtime can rename this recording via a writable locally mapped filesystem path. Clients MUST fail closed when this field is absent or false.
+        let localWritable: Bool?
+        /// Base64url-encoded recording ID (RFC 4648, unpadded) to use for /recordings/{recordingId}.
+        let recordingId: String?
+        let resume: ResumeSummary?
+        /// Legacy receiver service reference (read-only).
+        let serviceRef: String?
+        /// Authoritative coarse-grained recording truth from the backend domain model. `unknown` means there is currently no confirmed recording truth; clients may react to that truth gap, but MUST NOT infer sub-causes from it.
+        let status: RecordingItemStatus
+        let title: String?
+
+        init(
+            status: RecordingItemStatus,
+            beginUnixSeconds: Int64? = nil,
+            description: String? = nil,
+            durationSeconds: Int64? = nil,
+            filename: String? = nil,
+            length: String? = nil,
+            localWritable: Bool? = nil,
+            recordingId: String? = nil,
+            resume: ResumeSummary? = nil,
+            serviceRef: String? = nil,
+            title: String? = nil
+        ) {
+            self.beginUnixSeconds = beginUnixSeconds
+            self.description = description
+            self.durationSeconds = durationSeconds
+            self.filename = filename
+            self.length = length
+            self.localWritable = localWritable
+            self.recordingId = recordingId
+            self.resume = resume
+            self.serviceRef = serviceRef
+            self.status = status
+            self.title = title
+        }
+    }
+
+    struct RecordingResponse: Codable, Sendable, Equatable {
+        let breadcrumbs: [Breadcrumb]?
+        let currentPath: String?
+        let currentRoot: String?
+        let directories: [DirectoryItem]?
+        let recordings: [RecordingItem]?
+        /// Correlation ID for the request.
+        let requestId: String
+        let roots: [RecordingRoot]?
+
+        init(
+            requestId: String,
+            breadcrumbs: [Breadcrumb]? = nil,
+            currentPath: String? = nil,
+            currentRoot: String? = nil,
+            directories: [DirectoryItem]? = nil,
+            recordings: [RecordingItem]? = nil,
+            roots: [RecordingRoot]? = nil
+        ) {
+            self.breadcrumbs = breadcrumbs
+            self.currentPath = currentPath
+            self.currentRoot = currentRoot
+            self.directories = directories
+            self.recordings = recordings
+            self.requestId = requestId
+            self.roots = roots
+        }
+    }
+
+    struct RecordingResumeRequest: Codable, Sendable, Equatable {
+        /// Optional display channel snapshot.
+        let channel: String?
+        /// Whether the user finished watching the recording.
+        let finished: Bool?
+        /// Playback position in seconds.
+        let position: Double
+        /// Optional display title snapshot.
+        let title: String?
+        /// Total duration in seconds.
+        let total: Double?
+
+        init(
+            position: Double,
+            channel: String? = nil,
+            finished: Bool? = nil,
+            title: String? = nil,
+            total: Double? = nil
+        ) {
+            self.channel = channel
+            self.finished = finished
+            self.position = position
+            self.title = title
+            self.total = total
+        }
+    }
+
+    struct RecordingRoot: Codable, Sendable, Equatable {
+        let id: String?
+        let name: String?
+
+        init(
+            id: String? = nil,
+            name: String? = nil
+        ) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    struct ResumeSummary: Codable, Sendable, Equatable {
+        let durationSeconds: Int64?
+        let finished: Bool?
+        let posSeconds: Int64
+        let updatedAt: Date?
+
+        init(
+            posSeconds: Int64,
+            durationSeconds: Int64? = nil,
+            finished: Bool? = nil,
+            updatedAt: Date? = nil
+        ) {
+            self.durationSeconds = durationSeconds
+            self.finished = finished
+            self.posSeconds = posSeconds
+            self.updatedAt = updatedAt
+        }
+    }
+
+    struct Service: Codable, Sendable, Equatable {
+        /// Video codec (e.g. h264)
+        let codec: String?
+        let enabled: Bool?
+        let group: String?
+        let id: String?
+        let logoUrl: String?
+        let name: String?
+        let number: String?
+        /// Video resolution (e.g. 1920x1080)
+        let resolution: String?
+        /// Service reference for streaming (extracted from M3U URL)
+        let serviceRef: String?
+
+        init(
+            codec: String? = nil,
+            enabled: Bool? = nil,
+            group: String? = nil,
+            id: String? = nil,
+            logoUrl: String? = nil,
+            name: String? = nil,
+            number: String? = nil,
+            resolution: String? = nil,
+            serviceRef: String? = nil
+        ) {
+            self.codec = codec
+            self.enabled = enabled
+            self.group = group
+            self.id = id
+            self.logoUrl = logoUrl
+            self.name = name
+            self.number = number
+            self.resolution = resolution
+            self.serviceRef = serviceRef
         }
     }
 
@@ -347,6 +1236,127 @@ enum Xg2gContract {
             self.pairingSecret = pairingSecret
             self.qrPayload = qrPayload
             self.userCode = userCode
+        }
+    }
+
+    struct Timer: Codable, Sendable, Equatable {
+        let begin: Int64
+        let createdAt: Date?
+        let description: String?
+        let end: Int64
+        let name: String
+        let serviceName: String?
+        let serviceRef: String
+        let state: TimerState
+        let timerId: String
+        let updatedAt: Date?
+
+        init(
+            begin: Int64,
+            end: Int64,
+            name: String,
+            serviceRef: String,
+            state: TimerState,
+            timerId: String,
+            createdAt: Date? = nil,
+            description: String? = nil,
+            serviceName: String? = nil,
+            updatedAt: Date? = nil
+        ) {
+            self.begin = begin
+            self.createdAt = createdAt
+            self.description = description
+            self.end = end
+            self.name = name
+            self.serviceName = serviceName
+            self.serviceRef = serviceRef
+            self.state = state
+            self.timerId = timerId
+            self.updatedAt = updatedAt
+        }
+    }
+
+    struct TimerCreateRequest: Codable, Sendable, Equatable {
+        let afterEvent: TimerCreateRequestAfterEvent?
+        let begin: Int64
+        let description: String?
+        let enabled: Bool?
+        let end: Int64
+        let idempotencyKey: String?
+        let justPlay: Bool?
+        let name: String
+        let paddingAfterSec: Int?
+        let paddingBeforeSec: Int?
+        let serviceRef: String
+
+        init(
+            begin: Int64,
+            end: Int64,
+            name: String,
+            serviceRef: String,
+            afterEvent: TimerCreateRequestAfterEvent? = nil,
+            description: String? = nil,
+            enabled: Bool? = nil,
+            idempotencyKey: String? = nil,
+            justPlay: Bool? = nil,
+            paddingAfterSec: Int? = nil,
+            paddingBeforeSec: Int? = nil
+        ) {
+            self.afterEvent = afterEvent
+            self.begin = begin
+            self.description = description
+            self.enabled = enabled
+            self.end = end
+            self.idempotencyKey = idempotencyKey
+            self.justPlay = justPlay
+            self.name = name
+            self.paddingAfterSec = paddingAfterSec
+            self.paddingBeforeSec = paddingBeforeSec
+            self.serviceRef = serviceRef
+        }
+    }
+
+    struct TimerList: Codable, Sendable, Equatable {
+        let items: [Timer]
+
+        init(
+            items: [Timer]
+        ) {
+            self.items = items
+        }
+    }
+
+    struct ZapPreparationResponse: Codable, Sendable, Equatable {
+        let detail: String?
+        let generation: Int64?
+        let outcome: String?
+        let pending: [String: String]?
+        let preparationId: String
+        let readyAfterMs: Int64?
+        let serviceRef: String?
+        let state: ZapPreparationState
+        let zapId: String?
+
+        init(
+            preparationId: String,
+            state: ZapPreparationState,
+            detail: String? = nil,
+            generation: Int64? = nil,
+            outcome: String? = nil,
+            pending: [String: String]? = nil,
+            readyAfterMs: Int64? = nil,
+            serviceRef: String? = nil,
+            zapId: String? = nil
+        ) {
+            self.detail = detail
+            self.generation = generation
+            self.outcome = outcome
+            self.pending = pending
+            self.preparationId = preparationId
+            self.readyAfterMs = readyAfterMs
+            self.serviceRef = serviceRef
+            self.state = state
+            self.zapId = zapId
         }
     }
 

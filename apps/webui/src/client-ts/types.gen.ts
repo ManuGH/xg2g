@@ -245,6 +245,13 @@ export type ExchangePairingResponse = {
     endpoints: Array<PublishedEndpoint>;
 };
 
+export type AuthSessionResponse = {
+    sessionId: string;
+    cookie?: string;
+    path?: string;
+    expiresIn?: number;
+};
+
 export type IntentRequest = {
     type?: 'stream.start' | 'stream.stop';
     /**
@@ -1115,6 +1122,19 @@ export type NowNextResponse = {
     items: Array<NowNextItem>;
 };
 
+export type EpgItem = {
+    id?: string;
+    serviceRef?: string;
+    title?: string;
+    desc?: string;
+    start?: number;
+    end?: number;
+    duration?: number;
+    startXmltv?: string;
+    endXmltv?: string;
+    genre?: string;
+};
+
 /**
  * Registry-backed public machine-readable short code for RFC7807 responses.
  */
@@ -1184,9 +1204,6 @@ export type Timer = {
     description?: string;
     serviceName?: string;
     state: 'scheduled' | 'recording' | 'completed' | 'disabled' | 'unknown';
-    receiverState?: {
-        [key: string]: unknown;
-    };
     createdAt?: string;
     updatedAt?: string;
 };
@@ -1285,6 +1302,57 @@ export type PlaybackInfoDurationSource = 'store' | 'cache' | 'probe';
  */
 export type PlaybackInfoReason = 'directplay_match' | 'transcode_audio' | 'transcode_video' | 'transcode_all' | 'container_mismatch' | 'unknown';
 
+export type LiveStreamInfoRequest = {
+    /**
+     * The Enigma2 service reference
+     */
+    serviceRef: string;
+    capabilities: PlaybackCapabilities;
+};
+
+export type LiveStreamInfoResponse = {
+    playbackDecisionToken?: string;
+    sessionId?: string;
+    mode?: PlaybackInfoMode;
+    decisionReason?: string;
+    url?: string;
+    isSeekable?: boolean;
+    dvrWindowSeconds?: number;
+};
+
+export type PlaybackTicketResponse = {
+    sessionId: string;
+    ticket: string;
+    cookie: string;
+    path: string;
+    expiresIn: number;
+};
+
+export type ZapPreparationResponse = {
+    preparationId: string;
+    zapId?: string;
+    serviceRef?: string;
+    state: ZapPreparationState;
+    outcome?: string;
+    generation?: number;
+    readyAfterMs?: number;
+    pending?: {
+        [key: string]: string;
+    };
+    detail?: string;
+};
+
+export type ZapPreparationState = 'pending' | 'ready' | 'failed' | 'cancelled' | 'committed';
+
+/**
+ * Optional resolution/FPS constraints
+ */
+export type PlaybackMaxVideo = {
+    width?: number;
+    height?: number;
+    fps?: number;
+};
+
 /**
  * Client capabilities for playback decision (P4-1)
  */
@@ -1309,14 +1377,7 @@ export type PlaybackCapabilities = {
      * Supported audio codecs
      */
     audioCodecs: Array<string>;
-    /**
-     * Optional resolution/FPS constraints
-     */
-    maxVideo?: {
-        width?: number;
-        height?: number;
-        fps?: number;
-    };
+    maxVideo?: PlaybackMaxVideo;
     deviceContext?: PlaybackDeviceContext;
     networkContext?: PlaybackNetworkContext;
     /**
@@ -2071,6 +2132,29 @@ export type ResumeSummary = {
     updatedAt?: string;
 };
 
+export type RecordingResumeRequest = {
+    /**
+     * Playback position in seconds.
+     */
+    position: number;
+    /**
+     * Total duration in seconds.
+     */
+    total?: number;
+    /**
+     * Whether the user finished watching the recording.
+     */
+    finished?: boolean;
+    /**
+     * Optional display title snapshot.
+     */
+    title?: string;
+    /**
+     * Optional display channel snapshot.
+     */
+    channel?: string;
+};
+
 export type RecordingResponse = {
     /**
      * Correlation ID for the request.
@@ -2723,23 +2807,7 @@ export type GetEpgResponses = {
     /**
      * EPG data
      */
-    200: Array<{
-        id?: string;
-        serviceRef?: string;
-        title?: string;
-        desc?: string;
-        start?: number;
-        end?: number;
-        duration?: number;
-        /**
-         * Original XMLTV start timestamp including offset
-         */
-        startXmltv?: string;
-        /**
-         * Original XMLTV end timestamp including offset
-         */
-        endXmltv?: string;
-    }>;
+    200: Array<EpgItem>;
 };
 
 export type GetEpgResponse = GetEpgResponses[keyof GetEpgResponses];
@@ -2818,13 +2886,7 @@ export type PostLivePlaybackInfoData = {
     /**
      * Client capabilities and service reference for decision making
      */
-    body: {
-        /**
-         * The Enigma2 service reference
-         */
-        serviceRef: string;
-        capabilities: PlaybackCapabilities;
-    };
+    body: LiveStreamInfoRequest;
     headers?: {
         /**
          * Playback request profile carried as a header. Equivalent to the `profile` query
@@ -2878,7 +2940,7 @@ export type PostLivePlaybackInfoResponses = {
     /**
      * Playback decision and info
      */
-    200: PlaybackInfo;
+    200: LiveStreamInfoResponse;
 };
 
 export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof PostLivePlaybackInfoResponses];
@@ -3177,6 +3239,53 @@ export type GetRecordingThumbnailResponses = {
 };
 
 export type GetRecordingThumbnailResponse = GetRecordingThumbnailResponses[keyof GetRecordingThumbnailResponses];
+
+export type PutRecordingResumeData = {
+    body: RecordingResumeRequest;
+    headers?: {
+        /**
+         * Optional active household profile id. If omitted, the backend resolves the unrestricted
+         * default household profile for backward compatibility.
+         *
+         */
+        'X-Household-Profile'?: string;
+    };
+    path: {
+        recordingId: string;
+    };
+    query?: never;
+    url: '/recordings/{recordingId}/resume';
+};
+
+export type PutRecordingResumeErrors = {
+    /**
+     * Invalid input or recording ID
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Internal error
+     */
+    500: ProblemDetails;
+    /**
+     * Resume store unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type PutRecordingResumeError = PutRecordingResumeErrors[keyof PutRecordingResumeErrors];
+
+export type PutRecordingResumeResponses = {
+    /**
+     * Resume point saved successfully
+     */
+    204: void;
+};
+
+export type PutRecordingResumeResponse = PutRecordingResumeResponses[keyof PutRecordingResumeResponses];
 
 export type GetRecordingsRecordingIdStatusData = {
     body?: never;
@@ -3661,8 +3770,10 @@ export type CreateSessionResponses = {
     /**
      * Session created
      */
-    200: unknown;
+    200: AuthSessionResponse;
 };
+
+export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionResponses];
 
 export type StartPairingData = {
     body?: StartPairingRequest;
@@ -4066,6 +4177,138 @@ export type ReportPlaybackFeedbackResponses = {
      */
     202: unknown;
 };
+
+export type PostSessionPlaybackTicketData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionId}/playback-ticket';
+};
+
+export type PostSessionPlaybackTicketErrors = {
+    /**
+     * Invalid input
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal error
+     */
+    500: unknown;
+};
+
+export type PostSessionPlaybackTicketResponses = {
+    /**
+     * Playback ticket issued
+     */
+    201: PlaybackTicketResponse;
+};
+
+export type PostSessionPlaybackTicketResponse = PostSessionPlaybackTicketResponses[keyof PostSessionPlaybackTicketResponses];
+
+export type StartStreamPrepareData = {
+    body?: never;
+    path?: never;
+    query: {
+        sref: string;
+    };
+    url: '/stream/prepare';
+};
+
+export type StartStreamPrepareResponses = {
+    /**
+     * Preparation started or updated
+     */
+    200: ZapPreparationResponse;
+};
+
+export type StartStreamPrepareResponse = StartStreamPrepareResponses[keyof StartStreamPrepareResponses];
+
+export type CancelStreamPrepareData = {
+    body?: never;
+    path: {
+        preparationId: string;
+    };
+    query?: never;
+    url: '/stream/prepare/{preparationId}';
+};
+
+export type CancelStreamPrepareErrors = {
+    /**
+     * Preparation not found
+     */
+    404: unknown;
+};
+
+export type CancelStreamPrepareResponses = {
+    /**
+     * Preparation cancelled
+     */
+    200: ZapPreparationResponse;
+};
+
+export type CancelStreamPrepareResponse = CancelStreamPrepareResponses[keyof CancelStreamPrepareResponses];
+
+export type GetStreamPrepareStatusData = {
+    body?: never;
+    path: {
+        preparationId: string;
+    };
+    query?: never;
+    url: '/stream/prepare/{preparationId}';
+};
+
+export type GetStreamPrepareStatusErrors = {
+    /**
+     * Preparation not found
+     */
+    404: unknown;
+};
+
+export type GetStreamPrepareStatusResponses = {
+    /**
+     * Preparation status
+     */
+    200: ZapPreparationResponse;
+};
+
+export type GetStreamPrepareStatusResponse = GetStreamPrepareStatusResponses[keyof GetStreamPrepareStatusResponses];
+
+export type CommitStreamPrepareData = {
+    body?: never;
+    path: {
+        preparationId: string;
+    };
+    query: {
+        generation: number;
+    };
+    url: '/stream/prepare/{preparationId}/commit';
+};
+
+export type CommitStreamPrepareErrors = {
+    /**
+     * Preparation not found
+     */
+    404: unknown;
+    /**
+     * Generation mismatch
+     */
+    409: unknown;
+};
+
+export type CommitStreamPrepareResponses = {
+    /**
+     * Preparation committed
+     */
+    200: ZapPreparationResponse;
+};
+
+export type CommitStreamPrepareResponse = CommitStreamPrepareResponses[keyof CommitStreamPrepareResponses];
 
 export type GetLogsData = {
     body?: never;

@@ -28,13 +28,14 @@ const (
 	kindNamedEnum
 	kindNamedObject
 	kindArray
+	kindMap
 )
 
 type fieldType struct {
 	kind kind
 	// name is the referenced component for kindNamedEnum and kindNamedObject.
 	name string
-	// elem is the element type for kindArray.
+	// elem is the element type for kindArray, or value type for kindMap.
 	elem *fieldType
 }
 
@@ -254,6 +255,13 @@ func (e *extractor) fieldType(owner, wire string, ref *openapi3.SchemaRef) (fiel
 	case schema.Type.Is("boolean"):
 		return fieldType{kind: kindBool}, nil
 
+	case schema.Type.Is("object") && schema.AdditionalProperties.Schema != nil:
+		elem, err := e.fieldType(owner, wire+"{}", schema.AdditionalProperties.Schema)
+		if err != nil {
+			return fieldType{}, err
+		}
+		return fieldType{kind: kindMap, elem: &elem}, nil
+
 	case schema.Type.Is("object"):
 		return fieldType{}, fmt.Errorf(
 			"schema %q: property %q is an inline object; promote it to a named component schema so both clients get the same type name",
@@ -322,9 +330,6 @@ func rejectUnsupported(where string, schema *openapi3.Schema) error {
 
 	if schema.Type.Is("object") && schema.AdditionalProperties.Has != nil && *schema.AdditionalProperties.Has {
 		return fmt.Errorf("schema %q: free-form objects (additionalProperties: true) are not supported by the native contract generator", where)
-	}
-	if schema.Type.Is("object") && schema.AdditionalProperties.Schema != nil {
-		return fmt.Errorf("schema %q: typed additionalProperties are not supported by the native contract generator", where)
 	}
 	return nil
 }

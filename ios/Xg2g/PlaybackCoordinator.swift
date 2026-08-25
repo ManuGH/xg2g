@@ -107,18 +107,38 @@ actor PlaybackCoordinator {
         // Probe capabilities and obtain playbackDecisionToken from planner
         var playbackDecisionToken: String?
         do {
-            let infoResponse: PlaybackWire.StreamInfoResponse = try await api.send(
+            let capabilities = Xg2gContract.PlaybackCapabilities(
+                audioCodecs: ["aac", "ac3", "mp3"],
+                capabilitiesVersion: 3,
+                clientIdentity: Xg2gContract.PlaybackClientIdentity(
+                    platform: .ios,
+                    surface: .nativeApp,
+                    appVersion: DeviceCapabilities.appVersion
+                ),
+                container: ["mp4", "ts", "fmp4"],
+                videoCodecs: DeviceCapabilities.supportedCodecsList,
+                allowTranscode: allowTranscode,
+                deviceContext: DeviceCapabilities.deviceContext,
+                hlsEngines: ["native"],
+                networkContext: Xg2gContract.PlaybackNetworkContext(
+                    kind: NetworkMonitor.shared.currentType.rawValue,
+                    metered: NetworkMonitor.shared.isExpensive
+                ),
+                preferredHlsEngine: "native",
+                runtimeProbeUsed: true,
+                runtimeProbeVersion: 3,
+                supportsHls: true,
+                videoCodecSignals: DeviceCapabilities.codecSignals
+            )
+            let infoRequest = Xg2gContract.LiveStreamInfoRequest(
+                capabilities: capabilities,
+                serviceRef: serviceRef
+            )
+            let infoResponse: Xg2gContract.LiveStreamInfoResponse = try await api.send(
                 APIRequest(
                     method: .post,
                     path: "live/stream-info",
-                    body: try Self.encode(
-                        PlaybackWire.StreamInfoRequest(
-                            serviceRef: serviceRef,
-                            networkType: NetworkMonitor.shared.currentType.rawValue,
-                            isMetered: NetworkMonitor.shared.isExpensive,
-                            allowTranscode: allowTranscode
-                        )
-                    ),
+                    body: try Self.encode(infoRequest),
                     contentType: "application/json"
                 )
             )
@@ -142,23 +162,23 @@ actor PlaybackCoordinator {
             params["playback_mode"] = "native_hls"
         }
 
-        let intent: PlaybackWire.IntentAcceptedResponse = try await api.send(
+        let intent: Xg2gContract.IntentAcceptedResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "intents",
                 body: try Self.encode(
-                    PlaybackWire.IntentRequest(
-                        type: "stream.start",
-                        serviceRef: serviceRef,
+                    Xg2gContract.IntentRequest(
+                        params: params,
                         playbackDecisionToken: playbackDecisionToken,
-                        params: params
+                        serviceRef: serviceRef,
+                        type: .streamStart
                     )
                 ),
                 contentType: "application/json"
             )
         )
 
-        let sessionID = intent.sessionID.trimmingCharacters(in: .whitespaces)
+        let sessionID = intent.sessionId.trimmingCharacters(in: .whitespaces)
         guard !sessionID.isEmpty else { throw Failure.noSessionCreated }
 
         let ticket = try await mintTicket(for: sessionID)
@@ -206,7 +226,7 @@ actor PlaybackCoordinator {
             APIRequest<EmptyResponse>(
                 method: .post,
                 path: "intents",
-                body: try? Self.encode(PlaybackWire.IntentRequest(type: "stream.stop", sessionID: sessionID)),
+                body: try? Self.encode(Xg2gContract.IntentRequest(sessionId: sessionID, type: .streamStop)),
                 contentType: "application/json"
             )
         )
@@ -222,7 +242,7 @@ actor PlaybackCoordinator {
     // MARK: - Internals
 
     private func mintTicket(for sessionID: String) async throws -> PlaybackTicket {
-        let response: PlaybackWire.TicketResponse
+        let response: Xg2gContract.PlaybackTicketResponse
         do {
             response = try await api.send(
                 APIRequest(method: .post, path: "sessions/\(sessionID)/playback-ticket")
@@ -249,115 +269,5 @@ actor PlaybackCoordinator {
 
     private static func encode<T: Encodable>(_ value: T) throws -> Data {
         try JSONEncoder().encode(value)
-    }
-}
-
-// MARK: - Wire
-
-enum PlaybackWire {
-
-    struct StreamInfoRequest: Encodable, Sendable {
-        struct NetworkContext: Encodable, Sendable {
-            let kind: String
-            let metered: Bool
-        }
-
-        /// What this client is. Two facts, no conclusions.
-        ///
-        /// It used to send `clientFamilyFallback: "ios_safari_native"` and
-        /// `deviceType: "apple_native"` — the app declaring both which policy
-        /// family applied to it and what kind of device it was, using the
-        /// identifier for Safari on iOS. The backend believed it, and handed a
-        /// native player browser policy. Now the app says what it is and the
-        /// server decides what that makes it.
-        struct ClientIdentity: Encodable, Sendable {
-            let platform = "ios"
-            let surface = "native_app"
-            let appVersion: String
-        }
-
-        struct Capabilities: Encodable, Sendable {
-            let capabilitiesVersion = 3
-            let clientIdentity: ClientIdentity
-            let container = ["mp4", "ts", "fmp4"]
-            let videoCodecs = DeviceCapabilities.supportedCodecsList
-            let videoCodecSignals = DeviceCapabilities.codecSignals
-            let audioCodecs = ["aac", "ac3", "mp3"]
-            let supportsHls = true
-            let preferredHlsEngine = "native"
-            let hlsEngines = ["native"]
-            let runtimeProbeUsed = true
-            let runtimeProbeVersion = 3
-            let allowTranscode: Bool
-            let deviceContext = DeviceCapabilities.deviceContext
-            let networkContext: NetworkContext
-        }
-
-        let serviceRef: String
-        let capabilities: Capabilities
-
-        init(serviceRef: String, networkType: String = "wifi", isMetered: Bool = false, allowTranscode: Bool = true) {
-            self.serviceRef = serviceRef
-            self.capabilities = Capabilities(
-                clientIdentity: ClientIdentity(appVersion: DeviceCapabilities.appVersion),
-                allowTranscode: allowTranscode,
-                networkContext: NetworkContext(kind: networkType, metered: isMetered)
-            )
-        }
-    }
-
-    struct StreamInfoResponse: Decodable, Sendable {
-        let playbackDecisionToken: String?
-
-        enum CodingKeys: String, CodingKey {
-            case playbackDecisionToken
-            case playbackDecisionTokenSnake = "playback_decision_token"
-        }
-
-        init(playbackDecisionToken: String? = nil) {
-            self.playbackDecisionToken = playbackDecisionToken
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try? decoder.container(keyedBy: CodingKeys.self)
-            self.playbackDecisionToken = (try? container?.decodeIfPresent(String.self, forKey: .playbackDecisionToken)) ??
-                (try? container?.decodeIfPresent(String.self, forKey: .playbackDecisionTokenSnake)) ?? nil
-        }
-    }
-
-    struct IntentRequest: Encodable, Sendable {
-        let type: String
-        var serviceRef: String?
-        var sessionID: String?
-        var playbackDecisionToken: String?
-        var params: [String: String]?
-
-        private enum CodingKeys: String, CodingKey {
-            case type, serviceRef, playbackDecisionToken, params
-            case sessionID = "sessionId"
-        }
-    }
-
-    struct IntentAcceptedResponse: Decodable, Sendable {
-        let sessionID: String
-        let status: String
-
-        private enum CodingKeys: String, CodingKey {
-            case sessionID = "sessionId"
-            case status
-        }
-    }
-
-    struct TicketResponse: Decodable, Sendable {
-        let sessionID: String
-        let ticket: String
-        let cookie: String
-        let path: String
-        let expiresIn: Int
-
-        private enum CodingKeys: String, CodingKey {
-            case sessionID = "sessionId"
-            case ticket, cookie, path, expiresIn
-        }
     }
 }

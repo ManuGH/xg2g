@@ -582,9 +582,9 @@ func TestDeviceAuthE2E_PlaybackTicketFullLifecycle(t *testing.T) {
 	ticketResp := e.asDevice(key, http.MethodPost, "/api/v3/sessions/"+sessionID+"/playback-ticket", enrolled.AccessToken, nil)
 	require.Equal(t, http.StatusCreated, ticketResp.StatusCode)
 
-	var ticket playbackTicketResponse
+	var ticket PlaybackTicketResponse
 	decodeInto(t, ticketResp, &ticket)
-	require.Equal(t, sessionID, ticket.SessionID)
+	require.Equal(t, sessionID, ticket.SessionId)
 	require.NotEmpty(t, ticket.Ticket)
 	require.Equal(t, "xg2g_playback", ticket.Cookie)
 	require.Equal(t, "/api/v3/sessions/"+sessionID+"/hls/", ticket.Path)

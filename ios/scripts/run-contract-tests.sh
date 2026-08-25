@@ -77,6 +77,10 @@ if [[ -z "${READY:-}" ]]; then
   exit 1
 fi
 
+# Guarantee that the entire test target compiles cleanly before running.
+# -only-testing must never hide compilation errors in other test suites.
+"${REPO_ROOT}/ios/scripts/verify-ios-build.sh" "${SIMULATOR}"
+
 echo "==> running iOS contract suite against ${BASE_URL}"
 cd "${REPO_ROOT}/ios"
 

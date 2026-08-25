@@ -57,7 +57,7 @@ struct NativeRenderPathTests {
     private func run(
         until settled: @MainActor (NativeTSVideoPipeline, SystemVideoPresenter) -> Bool
     ) async -> Harness? {
-        guard MTLCreateSystemDefaultDevice() != nil else { return nil }
+        guard MTLCreateSystemDefaultDevice() != nil, let streamURL = Self.streamURL else { return nil }
 
         let pipeline = NativeTSVideoPipeline()
         let presenter = SystemVideoPresenter()
@@ -72,7 +72,7 @@ struct NativeRenderPathTests {
         let context = giveOwnSurface(to: pipeline, presenter: presenter, renderView: view)
         defer { _ = context }
 
-        pipeline.startStreaming(url: Self.streamURL)
+        pipeline.startStreaming(url: streamURL)
 
         // Up to 25 s. Generous on purpose: the wait for parameter sets on this
         // source is the dominant startup cost and swings hard — 1.4 s on one

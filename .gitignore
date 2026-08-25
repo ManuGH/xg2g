@@ -5,7 +5,8 @@
 /artifacts/
 /build/
 tmp/
-var/diagnostics/
+/var/
+*.m3u8
 logs/
 .runtime-bin/
 !logs/.gitkeep

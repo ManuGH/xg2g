@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TFunction } from 'i18next';
 import type { V3SessionStatusResponse, VideoElementRef } from '../../types/v3-player';
@@ -77,9 +77,11 @@ describe('waitForSessionReady when the SSE stream ends without a terminal event'
     const result = renderController();
 
     // A 2s budget, so a regression here fails by timing out.
-    await expect(result.current.waitForSessionReady('sid-1', 2_000)).rejects.toThrow(
-      'player.sessionFailed: player.reason.R_UPSTREAM_SCRAMBLED',
-    );
+    await act(async () => {
+      await expect(result.current.waitForSessionReady('sid-1', 2_000)).rejects.toThrow(
+        'player.sessionFailed: player.reason.R_UPSTREAM_SCRAMBLED',
+      );
+    });
   });
 
   // A dropped stream must not doom a session that is still on its way: the poll
@@ -99,9 +101,11 @@ describe('waitForSessionReady when the SSE stream ends without a terminal event'
 
     const result = renderController();
 
-    await expect(result.current.waitForSessionReady('sid-1', 2_000)).resolves.toMatchObject({
-      state: 'READY',
-      playbackUrl: ready.playbackUrl,
+    await act(async () => {
+      await expect(result.current.waitForSessionReady('sid-1', 2_000)).resolves.toMatchObject({
+        state: 'READY',
+        playbackUrl: ready.playbackUrl,
+      });
     });
   });
 
@@ -112,8 +116,10 @@ describe('waitForSessionReady when the SSE stream ends without a terminal event'
 
     const result = renderController();
 
-    await expect(result.current.waitForSessionReady('sid-1', 2_000)).rejects.toThrow(
-      'player.sessionNotReadyInTime',
-    );
+    await act(async () => {
+      await expect(result.current.waitForSessionReady('sid-1', 2_000)).rejects.toThrow(
+        'player.sessionNotReadyInTime',
+      );
+    });
   });
 });

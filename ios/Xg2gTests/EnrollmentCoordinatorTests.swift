@@ -380,7 +380,7 @@ struct EnrollmentCoordinatorTests {
     // MARK: - Status
 
     @Test func everyPairingStatusDecodes() async throws {
-        for status in PairingStatus.allCases {
+        for status in Xg2gContract.PairingStatus.allCases {
             let api = ScriptedAPI()
             api.stub("pairing/start", json: startJSON)
             api.stub(
