@@ -198,7 +198,7 @@ func TestPickNativeHLSProfileForCodecs_PrefersAV1HWOnSafariNative(t *testing.T) 
 		hardware.SetVAAPIEncoderCapabilities(nil)
 	})
 
-	got := autocodec.PickNativeHLSProfileForCodecs("av1,hevc,h264", "ios_safari_native", profiles.HWAccelAuto)
+	got := autocodec.PickNativeHLSProfileForCodecs("av1,hevc,h264", "ios_safari", profiles.HWAccelAuto)
 	if got != profiles.ProfileAV1HW {
 		t.Fatalf("pickNativeHLSProfileForCodecs() = %q, want %q", got, profiles.ProfileAV1HW)
 	}
@@ -221,7 +221,7 @@ func TestPickProfileForCodecsForClient_IOSSafariNativeHEVCSelectionStaysOnHWProf
 		hardware.SetVAAPIEncoderCapabilities(nil)
 	})
 
-	got := autocodec.PickProfileForCodecsForClient("hevc,h264", playbackprofile.ClientIOSSafariNative, profiles.HWAccelAuto)
+	got := autocodec.PickProfileForCodecsForClient("hevc,h264", playbackprofile.ClientIOSSafari, profiles.HWAccelAuto)
 	if got != profiles.ProfileSafariHEVCHW {
 		t.Fatalf("PickProfileForCodecsForClient() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
@@ -294,7 +294,7 @@ func TestPickProfileForCodecsForClient_IOSSafariNativeHEVCSelectionStillPrefersH
 		hardware.SetVAAPIEncoderCapabilities(nil)
 	})
 
-	got := autocodec.PickProfileForCodecsForClient("hevc,h264", playbackprofile.ClientIOSSafariNative, profiles.HWAccelAuto)
+	got := autocodec.PickProfileForCodecsForClient("hevc,h264", playbackprofile.ClientIOSSafari, profiles.HWAccelAuto)
 	if got != profiles.ProfileH264FMP4 {
 		t.Fatalf("PickProfileForCodecsForClient() = %q, want %q", got, profiles.ProfileH264FMP4)
 	}
@@ -322,13 +322,13 @@ func TestPickProfileForCapabilitiesForClient_IOSSafariNativeHEVCSelectionStaysOn
 	h264Smooth := true
 	h264Efficient := true
 	got := autocodec.PickProfileForCapabilitiesForClient(capabilities.PlaybackCapabilities{
-		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+		ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 		VideoCodecs:          []string{"hevc", "h264"},
 		VideoCodecSignals: []capabilities.VideoCodecSignal{
 			{Codec: "hevc", Supported: true, Smooth: &hevcSmooth, PowerEfficient: &hevcEfficient},
 			{Codec: "h264", Supported: true, Smooth: &h264Smooth, PowerEfficient: &h264Efficient},
 		},
-	}, playbackprofile.ClientIOSSafariNative, profiles.HWAccelAuto)
+	}, playbackprofile.ClientIOSSafari, profiles.HWAccelAuto)
 	if got != profiles.ProfileSafariHEVCHW {
 		t.Fatalf("PickProfileForCapabilitiesForClient() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
@@ -361,7 +361,7 @@ func TestPickNativeHLSProfileForCapabilities_RuntimeAV1UsesFMP4WithoutTSContaine
 		},
 	}
 
-	got := autocodec.PickNativeHLSProfileForCapabilities("ios_safari_native", caps, profiles.HWAccelAuto)
+	got := autocodec.PickNativeHLSProfileForCapabilities("ios_safari", caps, profiles.HWAccelAuto)
 	if got != profiles.ProfileAV1HW {
 		t.Fatalf("pickNativeHLSProfileForCapabilities() = %q, want %q", got, profiles.ProfileAV1HW)
 	}
@@ -391,7 +391,7 @@ func TestPickNativeHLSProfileForCapabilities_RuntimeHEVCPrefersHEVCOverH264(t *t
 		VideoCodecs:      []string{"hevc", "h264"},
 	}
 
-	got := autocodec.PickNativeHLSProfileForCapabilities("ios_safari_native", caps, profiles.HWAccelAuto)
+	got := autocodec.PickNativeHLSProfileForCapabilities("ios_safari", caps, profiles.HWAccelAuto)
 	if got != profiles.ProfileSafariHEVCHW {
 		t.Fatalf("pickNativeHLSProfileForCapabilities() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
@@ -409,9 +409,9 @@ func TestPickNativeHLSProfileForCapabilitiesAndHost_DemotesAV1ToHEVCOnMediumHost
 	})
 
 	got := autocodec.PickNativeHLSProfileForCapabilitiesAndHost(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		&capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
 		},
@@ -443,7 +443,7 @@ func TestPickNativeHLSProfileForCodecs_IOSSafariNativeHEVCSelectionStaysOnHWProf
 		hardware.SetVAAPIEncoderCapabilities(nil)
 	})
 
-	got := autocodec.PickNativeHLSProfileForCodecs("hevc,h264", "ios_safari_native", profiles.HWAccelAuto)
+	got := autocodec.PickNativeHLSProfileForCodecs("hevc,h264", "ios_safari", profiles.HWAccelAuto)
 	if got != profiles.ProfileSafariHEVCHW {
 		t.Fatalf("pickNativeHLSProfileForCodecs() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
@@ -451,7 +451,7 @@ func TestPickNativeHLSProfileForCodecs_IOSSafariNativeHEVCSelectionStaysOnHWProf
 
 func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCDemotesToEncodeOnly(t *testing.T) {
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		profiles.ProfileSafariHEVCHW,
 		model.ProfileSpec{
 			Name:       profiles.ProfileSafariHEVCHW,
@@ -476,7 +476,7 @@ func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCKeepsFullVAAPIWhenCon
 	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "full")
 
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		profiles.ProfileSafariHEVCHW,
 		model.ProfileSpec{
 			Name:       profiles.ProfileSafariHEVCHW,
@@ -501,7 +501,7 @@ func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCFallsBackToCPUWhenCon
 	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "cpu")
 
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		profiles.ProfileSafariHEVCHW,
 		model.ProfileSpec{
 			Name:       profiles.ProfileSafariHEVCHW,
@@ -548,7 +548,7 @@ func TestPickNativeHLSProfile_RuntimeH264OnlyDoesNotAssumeHEVC(t *testing.T) {
 		VideoCodecs:      []string{"h264"},
 	}
 
-	got := autocodec.PickNativeHLSProfile("h264", "ios_safari_native", caps, profiles.HWAccelAuto)
+	got := autocodec.PickNativeHLSProfile("h264", "ios_safari", caps, profiles.HWAccelAuto)
 	if got != "" {
 		t.Fatalf("pickNativeHLSProfile() = %q, want empty result", got)
 	}
@@ -584,7 +584,7 @@ func TestResolveRequestedStartProfile_IOSHlsJsClampsToH264(t *testing.T) {
 		Params: map[string]string{
 			"playback_mode":             "hlsjs",
 			"codecs":                    "av1,hevc,h264",
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "hlsjs",
 		},
 	}, profiles.HWAccelAuto, nil)
@@ -631,11 +631,11 @@ func TestResolveRequestedStartProfile_IOSHlsJsAllowsAV1WithRuntimeManagedAV1Caps
 		Params: map[string]string{
 			"playback_mode":             "hlsjs",
 			"codecs":                    "av1,hevc,h264",
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "hlsjs",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -740,11 +740,11 @@ func TestResolveRequestedStartProfile_IOSSafariNativeRuntimeAV1HEVCProgressiveH2
 		PlaybackDecisionToken: "decision-token",
 		Params: map[string]string{
 			"playback_mode":             "native_hls",
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "native",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -937,11 +937,11 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1H264SourceKeepsUniver
 
 	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
 		Params: map[string]string{
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "native",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -1007,11 +1007,11 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathPicksA
 
 	profileID, playbackMode, err := svc.resolveRequestedStartProfile(context.Background(), Intent{
 		Params: map[string]string{
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "native",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -1262,11 +1262,11 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathClamps
 		ServiceRef:    serviceRef,
 		DecisionTrace: decisionTrace,
 		Params: map[string]string{
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "native",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -1331,11 +1331,11 @@ func TestResolveRequestedStartProfile_AutoModeIOSRuntimeAV1WithoutCopyPathClamps
 		ServiceRef:    serviceRef,
 		DecisionTrace: decisionTrace,
 		Params: map[string]string{
-			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily:    playbackprofile.ClientIOSSafari,
 			model.CtxKeyPreferredEngine: "native",
 		},
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},

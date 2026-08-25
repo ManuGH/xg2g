@@ -72,16 +72,15 @@ describe('playerRuntimeTraceFormat', () => {
   it('formats client path and request profile aliases', () => {
     const snapshot: CapabilitySnapshot = {
       capabilitiesVersion: 3,
+      clientIdentity: { platform: "linux", surface: "browser", browserEngine: "blink" },
       container: ['ts'],
       videoCodecs: ['h264'],
       audioCodecs: ['aac'],
-      deviceType: 'desktop',
       supportsHls: true,
       supportsRange: true,
       allowTranscode: true,
       runtimeProbeUsed: false,
       runtimeProbeVersion: 1,
-      clientFamilyFallback: 'none',
       videoCodecSignals: [],
       hlsEngines: ['native', 'hlsjs'],
       preferredHlsEngine: 'native',
@@ -107,6 +106,7 @@ describe('playerRuntimeTraceFormat', () => {
         clientFamily: 'android_tv_browser',
         clientCapsSource: 'runtime_plus_family',
         preferredHlsEngine: 'hlsjs',
+        // Reported by the server, which is the only place that decides it.
         deviceType: 'android_tv',
         deviceContext: {
           manufacturer: 'Amazon',

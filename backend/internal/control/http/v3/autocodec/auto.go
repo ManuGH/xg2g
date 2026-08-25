@@ -54,7 +54,13 @@ func ResolveAutoTranscodeCodecsWithPolicy(caps capabilities.PlaybackCapabilities
 		return nil
 	}
 
-	if av1 := signalFor("av1"); av1 != nil && av1.Supported && ClientAV1PlaybackAllowedWithPolicy(caps, caps.ClientFamilyFallback, clientAV1Disabled) {
+	av1Allowed := false
+	if av1 := signalFor("av1"); av1 != nil {
+		av1Allowed = av1.Supported
+	} else if containsCodec(caps.VideoCodecs, "av1") {
+		av1Allowed = true
+	}
+	if av1Allowed && ClientAV1PlaybackAllowedWithPolicy(caps, caps.ClientFamilyFallback, clientAV1Disabled) {
 		out = append(out, "av1")
 	}
 
@@ -141,7 +147,7 @@ func PickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profile
 
 func PickNativeHLSProfileForCodecsAndHost(raw, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
 	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 	default:
 		return ""
 	}
@@ -172,7 +178,7 @@ func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, c
 		family = normalize.Token(clientCaps.ClientFamilyFallback)
 	}
 	switch family {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 	default:
 		return ""
 	}
@@ -239,7 +245,7 @@ func ApplyClientCompatibilityProfileID(clientFamily, effectiveProfileID string) 
 }
 
 func ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, iosNativeHEVCHWMode string) string {
-	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsIOSFamily(normalize.Token(clientFamily)) {
 		return effectiveProfileID
 	}
 
@@ -273,7 +279,7 @@ func ApplyClientCompatibilityPolicyWithPolicy(
 		return compatibleProfileID, resolveProfileSpec(compatibleProfileID)
 	}
 
-	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsIOSFamily(normalize.Token(clientFamily)) {
 		return effectiveProfileID, profileSpec
 	}
 

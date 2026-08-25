@@ -76,7 +76,7 @@ func TestRunStorageDecisionSweep_UsesExecutorAndWritesJSON(t *testing.T) {
 		"--data-dir", "/tmp/data",
 		"--playlist", "playlist.m3u8",
 		"--bouquet", "Premium",
-		"--client-family", "ios_safari_native,chromium_hlsjs",
+		"--client-family", "ios_native,ios_safari,chromium_hlsjs",
 		"--skip-scan",
 		"--requested-profile", "quality",
 		"--format", "json",
@@ -86,7 +86,7 @@ func TestRunStorageDecisionSweep_UsesExecutorAndWritesJSON(t *testing.T) {
 	assert.Equal(t, "/tmp/config.yaml", gotOpts.ConfigPath)
 	assert.Equal(t, "/tmp/data", gotOpts.DataDir)
 	assert.Equal(t, "Premium", gotOpts.Bouquet)
-	assert.Equal(t, "ios_safari_native,chromium_hlsjs", gotOpts.ClientFamiliesCSV)
+	assert.Equal(t, "ios_native,ios_safari,chromium_hlsjs", gotOpts.ClientFamiliesCSV)
 	assert.True(t, gotOpts.SkipScan)
 
 	raw, err := os.ReadFile(outPath)
@@ -125,7 +125,7 @@ func TestRunStorageDecisionSweep_ReturnsOneWhenRelevantDiffDetected(t *testing.T
 }
 
 func TestStorageDecisionSweepFamilyCaps_UsesSSOTFixtureFallback(t *testing.T) {
-	caps := storageDecisionSweepFamilyCaps("ios_safari_native")
+	caps := storageDecisionSweepFamilyCaps("ios_safari")
 
 	assert.Equal(t, recordingcaps.ClientCapsSourceFamilyFallback, caps.ClientCapsSource)
 	assert.False(t, caps.RuntimeProbeUsed)
@@ -146,8 +146,8 @@ func TestSummarizeStorageDecisionSweep_CountsSuccessesAndErrors(t *testing.T) {
 		},
 		Decisions: []storageDecisionSweepDecision{
 			{ServiceRef: "svc-1", ClientFamily: "chromium_hlsjs", Mode: "direct_play"},
-			{ServiceRef: "svc-1", ClientFamily: "ios_safari_native", Mode: "transcode"},
-			{ServiceRef: "svc-2", ClientFamily: "ios_safari_native", Error: "fallback failed"},
+			{ServiceRef: "svc-1", ClientFamily: "ios_safari", Mode: "transcode"},
+			{ServiceRef: "svc-2", ClientFamily: "ios_safari", Error: "fallback failed"},
 		},
 	})
 
@@ -219,7 +219,7 @@ func TestDiffStorageDecisionSweep_DetectsModeTruthAndCoverageChanges(t *testing.
 		},
 		Decisions: []storageDecisionSweepDecision{
 			{ServiceRef: "svc-alpha", ChannelName: "Alpha HD", ClientFamily: "chromium_hlsjs", ModeCode: "transcode", Mode: "transcode"},
-			{ServiceRef: "svc-gamma", ChannelName: "Gamma News", ClientFamily: "ios_safari_native", ModeCode: "transcode", Mode: "transcode"},
+			{ServiceRef: "svc-gamma", ChannelName: "Gamma News", ClientFamily: "ios_safari", ModeCode: "transcode", Mode: "transcode"},
 		},
 	}
 	finalizeStorageDecisionSweepCoverage(&current)

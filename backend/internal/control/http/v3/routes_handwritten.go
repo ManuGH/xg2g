@@ -48,7 +48,13 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		// Android / native device grant (RFC 9449 sender-constrained enrollment)
 		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false},
 		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false},
-		{http.MethodPost, "/auth/device/refresh", svc.DeviceRefresh, false},
+		// /auth/device/refresh is not listed here: it is declared in
+		// api/openapi.yaml and registered from the generated route catalog.
+
+		// Authenticated, unlike the two above: a device proves who it is with
+		// its live DPoP credential, and the handler revokes exactly that
+		// device.
+		{http.MethodPost, "/auth/device/revoke", svc.DeviceSelfRevoke, true},
 
 		// Invitations
 		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false},
@@ -66,6 +72,7 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodGet, "/profiles", svc.ListProfiles, true},
 		{http.MethodPost, "/profiles", svc.CreateProfile, true},
 		{http.MethodGet, "/profiles/{id}", svc.GetProfile, true},
+		{http.MethodPut, "/profiles/{id}", svc.UpdateProfile, true},
 		{http.MethodDelete, "/profiles/{id}", svc.DeleteProfile, true},
 
 		// Household policies and approvals
@@ -78,6 +85,16 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodPost, "/household/approvals/{id}/deny", svc.DenyApprovalRequest, true},
 		{http.MethodGet, "/household/resource-policy", svc.GetHouseholdResourcePolicy, true},
 		{http.MethodPut, "/household/resource-policy", svc.PutHouseholdResourcePolicy, true},
+		{http.MethodGet, "/household/devices", svc.ListHouseholdDevices, true},
+		{http.MethodPost, "/household/devices/{id}/revoke", svc.RevokeHouseholdDevice, true},
+		{http.MethodGet, "/household/members", svc.ListHouseholdMembers, true},
+		{http.MethodPost, "/household/members/invite", svc.CreateInvitation, true},
+		{http.MethodDelete, "/household/members/{id}", svc.RemoveHouseholdMember, true},
+		{http.MethodGet, "/household/profiles", svc.ListProfiles, true},
+		{http.MethodPost, "/household/profiles", svc.CreateProfile, true},
+		{http.MethodGet, "/household/profiles/{id}", svc.GetProfile, true},
+		{http.MethodPut, "/household/profiles/{id}", svc.UpdateProfile, true},
+		{http.MethodDelete, "/household/profiles/{id}", svc.DeleteProfile, true},
 
 		// Notifications
 		{http.MethodGet, "/notifications", svc.ListNotifications, true},

@@ -151,3 +151,55 @@ func TestLeaseExpiryWorker_NilConfigDoesNotPanic(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	})
 }
+
+func TestLeaseExpiryWorker_ReapsDrainingAndStoppingSessions_Idempotent(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	now := time.Now()
+	bus := &recordedStopEventBus{}
+
+	drainingSess := &model.SessionRecord{
+		SessionID:          "sess-draining-expired",
+		State:              model.SessionDraining,
+		ServiceRef:         "1:0:1:1:1:1:C00000:0:0:0:",
+		CorrelationID:      "corr-draining",
+		CreatedAtUnix:      now.Add(-5 * time.Minute).Unix(),
+		UpdatedAtUnix:      now.Add(-2 * time.Minute).Unix(),
+		LeaseExpiresAtUnix: now.Add(-1 * time.Minute).Unix(),
+	}
+
+	stoppingSess := &model.SessionRecord{
+		SessionID:          "sess-stopping-expired",
+		State:              model.SessionStopping,
+		ServiceRef:         "1:0:1:2:2:2:C00000:0:0:0:",
+		CorrelationID:      "corr-stopping",
+		CreatedAtUnix:      now.Add(-5 * time.Minute).Unix(),
+		UpdatedAtUnix:      now.Add(-2 * time.Minute).Unix(),
+		LeaseExpiresAtUnix: now.Add(-1 * time.Minute).Unix(),
+	}
+
+	require.NoError(t, st.PutSession(ctx, drainingSess))
+	require.NoError(t, st.PutSession(ctx, stoppingSess))
+
+	worker := &LeaseExpiryWorker{
+		Store:  st,
+		Bus:    bus,
+		Config: &config.AppConfig{},
+	}
+
+	// 1st run: Should transition draining session to stopping and publish stop event
+	worker.expireStaleSessions(ctx)
+
+	gotDraining, err := st.GetSession(ctx, drainingSess.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, model.SessionStopping, gotDraining.State)
+	assert.Equal(t, model.RLeaseExpired, gotDraining.Reason)
+
+	// Exactly 1 stop event published (for draining session)
+	require.Len(t, bus.events, 1)
+	assert.Equal(t, drainingSess.SessionID, bus.events[0].SessionID)
+
+	// 2nd run: Idempotency check -> Must NOT publish duplicate stop events
+	worker.expireStaleSessions(ctx)
+	assert.Len(t, bus.events, 1, "second reaper run must not emit duplicate stop events")
+}

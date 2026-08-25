@@ -153,6 +153,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
 		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
 		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
+		AnchorStartMs:             req.StartOffsetMs,
 		PlannerEvaluation:         plannerEval,
 	}, nil
 }
@@ -474,7 +475,7 @@ func (s *Service) recordDecisionAudit(ctx context.Context, hostContext requestHo
 }
 
 func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, profileResolver profiles.Resolver, clientAV1Disabled bool, iosNativeHEVCHWMode string, dec *decision.Decision) {
-	if req.Capabilities == nil || dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
+	if dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
 		return
 	}
 
@@ -489,7 +490,9 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 	// snapshot falls through to its interlaced/unknown branch (TranscodeVideo=true)
 	// and would clobber the copy. Just skip the auto-codec; it still applies below
 	// when the video itself needs transcoding (video.Mode == transcode).
-	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy {
+	sourceContainer := strings.ToLower(strings.TrimSpace(dec.Selected.Container))
+	sourceIsTS := sourceContainer == "ts" || sourceContainer == "mpegts"
+	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy && !sourceIsTS {
 		// Surface the audio transcode the target already specifies
 		// (buildTargetProfile forces Audio -> transcode/AAC when the video stays
 		// copy) so the selected formats match the executed stream. Leave the
@@ -858,7 +861,7 @@ func plannerAutoTranscodeVideoCodecs(req PlaybackInfoRequest, resolvedCaps capab
 
 	codecs := autocodec.ResolveAutoTranscodeCodecsWithPolicy(resolvedCaps, clientAV1Disabled)
 	family := strings.ToLower(strings.TrimSpace(resolvedCaps.ClientFamilyFallback))
-	if family != playbackprofile.ClientSafariNative && family != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsAppleFamily(family) {
 		return codecs
 	}
 	if !stringSliceContainsFold(resolvedCaps.VideoCodecs, "hevc") || stringSliceContainsFold(codecs, "hevc") {

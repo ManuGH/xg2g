@@ -1,8 +1,22 @@
 # ADR-032: Device Identity Convergence
 
-**Status:** Accepted 2026-08-14. Phase 0 is cleared to start; no schema change yet.
-**Date:** 2026-08-14
+**Status:** Accepted 2026-08-14. Phases 0–2 implemented. Phase 3 superseded by a
+hard cutover (see *The cutoff never happened*). Phase 4 outstanding — it is the
+only remaining work.
+**Date:** 2026-08-14. Revised 2026-08-25 against the implemented state.
 **Trigger:** Building the native iOS client's device auth (Phase 2B) surfaced that the pairing product path issues credentials with no cryptographic device binding at all.
+
+## How to read this document
+
+The **Context** below is a finding dated 2026-08-14, not a description of the
+system today. It is kept verbatim because the decision only makes sense against
+the state that provoked it; *What changed since* corrects each claim that has
+since stopped being true.
+
+The **Decision** and its target invariant still hold and are largely reached.
+The **Migration Plan** does not: its phased cutoff was replaced by a hard
+cutover once Phase 0 reported what the affected fleet actually was. Every phase
+and sub-decision carries its status inline.
 
 ## Context
 
@@ -27,6 +41,33 @@ client actually use, and it is unbound end to end:
 
 DPoP binding exists **only** in the passkey family, where
 `DeviceGrantFinishRequest` carries `DeviceJWK` explicitly.
+
+### What changed since
+
+Each of the three findings above has been fixed, and the text is left standing
+because a reader who meets the code first needs to know it once read otherwise.
+
+- **The exchange is bound.** `PairingSecretRequest` declares `deviceJwk` as
+  required with `additionalProperties: false`, and `ExchangePairing` passes it
+  into the service
+  (`internal/control/http/v3/handlers_pairing.go`). The server derives the
+  thumbprint itself through `identity.ValidateEnrollmentJWK`
+  (`internal/control/http/v3/pairing/service.go`); a client-supplied thumbprint
+  is still never read.
+- **`CreateDeviceSession` is gone**, along with `handlers_deviceauth.go` and
+  `/auth/device/session`. Refresh runs only through `/auth/device/refresh`,
+  which the contract declares with a required `DPoP` header, so its presence is
+  enforced by the generated wrapper rather than by the handler remembering to
+  check.
+- **`jkt` is now central to the pairing path**, which is the whole point: it is
+  what makes the grant the exchange issues the same kind of grant the passkey
+  family issues.
+
+What has *not* changed is the shape of the fall-through in `rbac.go`: a failed
+`ValidateProof` still drops through to the remaining mechanisms. It no longer
+lands anywhere unbound, because the credential class it used to land on —
+`deviceauth` access sessions — is no longer issued by any production path. The
+tables are read and counted, never written.
 
 Two facts make this invisible in operation rather than loud:
 
@@ -134,6 +175,50 @@ So: **no rows are transformed.** Devices re-pair to obtain a bound identity.
 That is what makes this migration non-destructive, and it is why rollback below
 is a configuration flip rather than a data restore.
 
+## The cutoff never happened
+
+Phases 1–3 below were written around a migration window: a contract-version
+gate, a warning state, deadline headers, a configurable cutoff, and a legacy
+path kept reachable until it expired. None of that shipped, and its absence is
+a decision rather than an omission.
+
+Phase 0 is what changed the answer. It was built to make the legacy fleet
+visible before anything was touched, and what it reported was that the fleet
+was **stale**: no active grants, last use months old. A transition period
+protects the devices that are still in use. There were none. What it would have
+cost was real and permanent-until-removed: a cutoff policy with reload
+monotonicity rules, a third `allow_with_repair_warning` outcome threaded
+through the domain, deadline headers in the contract, client state machines for
+`repairRecommended` versus `repairRequired`, and later the work of taking all
+of it out again.
+
+So the cutover is hard. A credential is bound to a device key or it is not, and
+an unbound one is refused. This is stated once, in the package that owns the
+decision (`internal/domain/devicebinding`), and the rest follows from it:
+
+- `Evaluate(state)` yields **two** outcomes — `allow` and
+  `deny_repair_required`. It takes no policy and no clock, because with no
+  cutoff there is nothing for either to decide. The three-outcome table further
+  down is superseded.
+- `device_reauth_required` was never registered as a problem code and no status
+  code was chosen for it. Both were Phase 1 work items *for the warning path*,
+  and there is no warning path.
+- `XG2G-Device-State` shipped anyway, and is worth keeping: it reports `bound`
+  or `legacy_unbound` as state metadata on successful responses, produced once
+  in the auth middleware, so a client can show "this device is paired" without
+  reading it out of a status code. Its deadline companion header does not
+  exist — there is no deadline to report.
+
+The Phase 0 census stays in place. It is now a regression detector rather than a
+countdown: a number that should be zero and stay zero.
+
+**Still open in the contract.** `DeviceBindingState` and the `Xg2gDeviceState`
+header component are declared in `api/openapi.yaml`, but no operation
+references the header in its responses. It is implemented and emitted; it is
+not yet specified where a client would look for it. That is the one part of the
+Phase 1 contract scope that remains genuinely unfinished rather than
+superseded.
+
 ## Migration Plan
 
 Each phase is separately releasable and separately revertible.
@@ -182,7 +267,13 @@ endpoint exists at all** — per-device visibility needs one built first.
 - **No behaviour change.** The gate for proceeding is knowing how many real
   devices are affected before anything is touched.
 
-### Phase 1 — bound exchange, additive only
+### Phase 1 — bound exchange — **implemented, without the gate**
+
+Shipped as the contract's only shape rather than behind a version gate: with the
+fleet stale there was no client below the gate to keep serving. `deviceJwk` is
+required, the owner is resolved against `identity.users(id)`, and the exchange
+terminates in an `identity` device, grant, refresh family and DPoP access
+token. The bullets below describe the gated variant that was planned.
 
 - `ApprovePairing` validates that `ownerId` resolves to an existing
   `identity.users(id)` and rejects an unknown owner instead of creating an
@@ -273,20 +364,29 @@ internal problem code. The typed outcome exists precisely so this information
 survives the HTTP boundary; mapping every non-success back onto 401 would throw
 it away again at the last step.
 
-### Phase 2 — bound refresh
+### Phase 2 — bound refresh — **implemented**
 
 - `/auth/device/session` requires a DPoP proof whose thumbprint matches the
   grant's `bound_jkt`.
 - Unbound refresh continues to work until the cutoff, marked `legacy_unbound`
   and logged on every use.
 
-### Phase 3 — enforcement
+### Phase 3 — enforcement — **superseded**
+
+There is no cutoff to enforce at. Unbound credentials are refused from the
+moment the bound path shipped, which is what the hard cutover means.
 
 - At the cutoff, unbound exchange and unbound refresh return a problem document
   (`auth/device_binding_required`) rather than degrading.
 - Legacy rows stay readable for audit but issue nothing.
 
-### Phase 4 — removal
+### Phase 4 — removal — **outstanding**
+
+The only remaining work in this ADR. `deviceauth` still creates `devices`,
+`device_grants` and `access_sessions`, and the code path that reads them is
+still compiled in. Nothing writes them: the production writers are gone, and
+what is left are readers and the census. Removing them is a destructive step
+and ships on its own, as described below.
 
 Only after the bound chain is proven end to end on both clients: remove the
 `deviceauth` device/grant/session tables and their code path. `deviceauth.sqlite`
@@ -294,17 +394,20 @@ keeps `pairings` and `web_bootstraps`.
 
 ## Rollback And Recovery
 
-- **Phases 1–3 rewrite no existing rows.** Rollback is flipping the contract
-  gate off; there is nothing to restore. Identity rows written by phases 1–2 are
-  inert while the gate is off, because the legacy path does not consult them.
+- **Phases 1–2 rewrite no existing rows.** They only add rows in `identity`.
+  ~~Rollback is flipping the contract gate off~~ — there is no gate; with the
+  hard cutover, rollback is reverting the release. Nothing has to be restored
+  either way, because nothing was overwritten.
 - **Phase 4 is the only destructive step** and ships as its own release, never
-  bundled with 1–3. It is preceded by a backup of both SQLite files with
-  recorded checksums and a rehearsed restore procedure.
-- **User-visible recovery** from any failure in phases 1–3 is *re-pair* — the
-  same action as the normal migration path. That is a direct argument for making
-  the pairing UX good *before* the cutoff, not after.
+  bundled with 1–2. It is preceded by a backup of both SQLite files with
+  recorded checksums and a rehearsed restore procedure. It has not shipped.
+- **User-visible recovery** from any failure is *re-pair* — the same action as
+  the normal migration path. Without a cutoff window this is no longer an
+  argument for fixing the pairing UX *first*; it is the only recovery there is,
+  which is a stronger reason to keep it good.
 - Each phase carries its own health finding, so a partially rolled-out fleet is
-  observable rather than inferred.
+  observable rather than inferred. With the fleet at zero, the Phase 0 census is
+  the finding that matters: it should read zero and keep reading zero.
 
 ## Operational Visibility
 
@@ -316,6 +419,46 @@ indefinitely by being invisible. It must appear in:
 - the diagnostics snapshot,
 - a log line on every legacy grant use.
 
+## Device Self-Revocation
+
+A device ends its own enrollment through `POST /api/v3/auth/device/revoke`,
+authenticated by its live DPoP-bound credential.
+
+**The endpoint accepts no device identifier.** The calling device is read from
+the authenticated principal, where it arrives via the binding
+`ValidateDPoPAccessToken` enforces (the access token's `bound_jkt` must equal
+the proof's thumbprint). A body field would be a request to trust the caller
+about who it is; removing the field is a stronger guarantee than validating one,
+because there is then nothing left to get wrong.
+
+The device identity travels on `auth.Principal.DeviceID`, set only for
+device-bound credentials. A handler cannot re-derive it by validating the proof
+a second time: `jti` is replay-cached, so the second validation is
+indistinguishable from an attack and is refused.
+
+Revocation retires every credential the device holds — access tokens, refresh
+token families, device grants — in one transaction. A partial revocation is the
+worst available outcome, because it reports success to a client that is about to
+destroy the only key that could have revoked it. The `devices` row survives, so
+the revocation stays auditable and the enrolled public key cannot be silently
+reused by a new grant.
+
+Removing *another* device remains a household operation with a different
+authority. This endpoint cannot express it.
+
+### Client ordering
+
+Remote first, local second — the same rule that keeps `CredentialStore` from
+offering a local `revoke`:
+
+1. call the endpoint with the live credential,
+2. wait for 204, or for 401 meaning the server has already forgotten this device,
+3. only then clear credentials and destroy the device key.
+
+Anything else — a transport failure, a 5xx — destroys nothing and is safe to
+retry. Destroying the key first would leave a grant that is valid on the server
+and no longer revocable from that device, curable only by an admin.
+
 ## Consequences
 
 - The iOS client can be built against the bound contract from the start; its
@@ -323,12 +466,20 @@ indefinitely by being invisible. It must appear in:
 - Android must ship its DER→raw signature fix before it can pair under the new
   contract. Until it does, its devices remain legacy and must re-pair with a
   fixed build. Its DPoP interceptor becomes meaningful for the first time.
+  **Shipped** — `auth/ES256Signature.kt` converts the DER `SEQUENCE { r, s }`
+  the Keystore emits into the raw 64-byte `R‖S` a spec-compliant verifier
+  requires.
 - `storageinventory.go` currently describes `deviceauth.sqlite` as holding
   "device binding state", which is not true today. After phase 4 it will be.
 
 ## Decisions
 
-### Cutoff window: 14 days, shortenable to 7
+### Cutoff window: 14 days, shortenable to 7 — **superseded**
+
+The reasoning anticipated its own end: *"If Phase 0 shows the affected fleet is
+only a handful of the maintainer's own devices, the window shortens to 7 days."*
+Phase 0 showed less than that — a fleet with no active grants at all — and the
+window shortened to zero. No cutoff is configured because none is needed.
 
 Fourteen days from the release in which bound pairing becomes available. During
 that window existing `legacy_unbound` devices keep working visibly, and every
@@ -351,14 +502,23 @@ called a migration.
 4. Finish iOS 2B against the new bound path.
 5. Move Android onto the same identity/DPoP path.
 6. Activate the gate: no new unbound grants from this point.
-7. Start the cutoff clock (14 days, or 7 per Phase 0).
-8. Disable the legacy path.
+7. ~~Start the cutoff clock (14 days, or 7 per Phase 0).~~ — not run; Phase 0
+   found nothing to wait for.
+8. ~~Disable the legacy path.~~ — folded into step 6: with no window, activating
+   the bound path *is* disabling the unbound one.
 9. Destructive removal of the old tables and code — separate, later release.
+   **This is Phase 4 and is still outstanding.**
 
 iOS development continues in parallel throughout; only the parts that depend on
 the final exchange contract wait for step 3.
 
-### `device_reauth_required` semantics — decided centrally
+### `device_reauth_required` semantics — decided centrally — **revised**
+
+The placement holds and is implemented: the decision lives in
+`internal/domain/devicebinding`, transports map it and do not make it. The
+outcome set does not hold — there are two, not three, because the middle one
+existed only for the cutoff window. `Evaluate` also takes neither policy nor
+clock. The table below is the superseded version.
 
 The decision lives in `internal/domain/devicebinding`, a pure domain package
 with no HTTP, no store and no clock of its own. It is **one** decision, not a
@@ -398,7 +558,14 @@ structured pre-cutoff warning field. Inventing an ad-hoc response header for the
 warning is explicitly rejected — the warning belongs in the contract as an
 explicit device-state field.
 
-### Legacy clients must be told, not silently cut off
+### Legacy clients must be told, not silently cut off — **superseded**
+
+This argued that an expiry surfacing as an anonymous `401` is indistinguishable
+from a login defect. That is still true, and it is why `XG2G-Device-State`
+shipped: a client can see `legacy_unbound` on a successful response and say so
+plainly, rather than inferring it from a failure. What did not ship is the
+advance warning with a deadline, because there was no window during which a
+legacy device kept working — Phase 0 found none still in use to warn.
 
 A device that will stop working has to learn that **before** the cutoff, through
 an explicit `reauth_required` / `repair_required` signal on a legacy path — not

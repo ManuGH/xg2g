@@ -24,4 +24,7 @@ fi
 echo "Generating TypeScript client from OpenAPI..."
 npm --prefix apps/webui run generate-client
 
+echo "Generating contract manifest index..."
+"${MAKE:-make}" --no-print-directory -C "$REPO_ROOT" generate-contract-manifest
+
 echo "✅ OpenAPI hard-mode generation complete"

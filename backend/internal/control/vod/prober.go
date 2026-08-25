@@ -47,7 +47,7 @@ func (m *Manager) StartProberPool(ctx context.Context) {
 	}
 
 	m.mu.Lock()
-	if m.started {
+	if m.started && m.ctx != nil && m.ctx.Err() == nil {
 		m.mu.Unlock()
 		return
 	}

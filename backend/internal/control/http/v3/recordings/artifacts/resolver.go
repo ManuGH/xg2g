@@ -348,12 +348,12 @@ func (r *DefaultResolver) recordingTarget(profile, variant string, intent *ports
 		}
 	}
 	canonical := playbackprofile.CanonicalizeTarget(intent.Target)
-	resolvedVariant := canonical.Hash()
+	intent.Target = canonical
+	resolvedVariant := intent.Hash()
 	if variant != "" && resolvedVariant != variant {
 		return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback variant mismatch"}
 	}
 
-	intent.Target = canonical
 	return intent, resolvedVariant, nil
 }
 

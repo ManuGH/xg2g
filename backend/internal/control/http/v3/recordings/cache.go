@@ -57,7 +57,7 @@ func EncodeTargetProfileQuery(intent *ports.BuildIntent, signingKey string) (str
 	intentCopy := *intent
 	intentCopy.Target = playbackprofile.CanonicalizeTarget(intentCopy.Target)
 	if intentCopy.IntentHash == "" {
-		intentCopy.IntentHash = TargetVariantHash(&intentCopy.Target)
+		intentCopy.IntentHash = intentCopy.Hash()
 	}
 	// Do NOT canonicalize the SourceProfile, we pass it exactly as probed.
 
@@ -120,8 +120,9 @@ func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetR
 		return nil, fmt.Errorf("decode target profile: %w", err)
 	}
 	var intent struct {
-		Target      *playbackprofile.TargetPlaybackProfile `json:"target"`
-		SourceTruth *ports.SourceProfile                   `json:"sourceTruth"`
+		Target        *playbackprofile.TargetPlaybackProfile `json:"target"`
+		SourceTruth   *ports.SourceProfile                   `json:"sourceTruth"`
+		StartOffsetMs int64                                  `json:"startOffsetMs"`
 	}
 
 	if err := json.Unmarshal(b, &intent); err == nil && intent.Target != nil {
@@ -130,11 +131,13 @@ func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetR
 		if intent.SourceTruth != nil {
 			source = *intent.SourceTruth
 		}
-		return &ports.BuildIntent{
-			IntentHash:  TargetVariantHash(&canonical),
-			SourceTruth: source,
-			Target:      canonical,
-		}, nil
+		buildIntent := &ports.BuildIntent{
+			SourceTruth:   source,
+			Target:        canonical,
+			StartOffsetMs: intent.StartOffsetMs,
+		}
+		buildIntent.IntentHash = buildIntent.Hash()
+		return buildIntent, nil
 	}
 
 	// TODO(SPEC_MODERNIZATION_2026 §R0): Remove legacy bare TargetPlaybackProfile fallback after a full deploy cycle.
@@ -173,7 +176,7 @@ func RecordingPlaylistURL(recordingID, profile string, intent *ports.BuildIntent
 		params = append(params, "profile="+p)
 	}
 	if intent != nil {
-		variant := TargetVariantHash(&intent.Target)
+		variant := intent.Hash()
 		if variant != "" {
 			params = append(params, "variant="+variant)
 			if encoded, err := EncodeTargetProfileQuery(intent, signingKey); err == nil && encoded != "" {

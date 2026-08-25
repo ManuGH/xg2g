@@ -25,6 +25,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
@@ -64,6 +65,7 @@ type Orchestrator struct {
 	ReceiverID           string
 	UsagePolicy          receiverusage.ReceiverUsagePolicy
 	UsageEvaluator       receiverusage.Evaluator
+	TopologyService      *receivertopology.Service
 	RestrictedAccessCtrl *receiverusage.RestrictedAccessController
 
 	PipelineStopTimeout time.Duration
@@ -329,6 +331,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		Msg("session startup started")
 
 	sessionCtx := &sessionContext{
+		SessionID:  e.SessionID,
 		Mode:       model.ModeLive,
 		ServiceRef: e.ServiceRef,
 		IsVOD:      false,
@@ -689,6 +692,19 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 						Msg("failed to release tuner lease during cleanup")
 				}
 			}
+		}
+	}
+
+	if o.TopologyService != nil {
+		genToken := ""
+		if s != nil && s.ContextData != nil {
+			genToken = s.ContextData[model.CtxKeyGenerationToken]
+		}
+		if genToken != "" {
+			_ = o.TopologyService.ReleaseClaimSetAtomic(ctx, o.Store, sid, genToken)
+		} else {
+			_ = o.Store.ForceAdminReleaseClaimSet(ctx, sid)
+			o.TopologyService.ReleaseStream(sid)
 		}
 	}
 }

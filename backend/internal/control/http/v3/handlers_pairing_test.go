@@ -50,25 +50,25 @@ func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 	if startResp.StatusCode != http.StatusCreated {
 		t.Fatalf("expected start pairing 201, got %d", startResp.StatusCode)
 	}
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeJSONResponse(t, startResp, &started)
-	if started.PairingID == "" || started.PairingSecret == "" {
+	if started.PairingId == "" || started.PairingSecret == "" {
 		t.Fatalf("expected pairing credentials, got %#v", started)
 	}
 
-	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/status", map[string]any{
+	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/status", map[string]any{
 		"pairingSecret": started.PairingSecret,
 	})
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected pairing status 200, got %d", statusResp.StatusCode)
 	}
-	var pending pairingStatusResponse
+	var pending PairingStatusResponse
 	decodeJSONResponse(t, statusResp, &pending)
 	if pending.Status != "pending" {
 		t.Fatalf("expected pending pairing status, got %q", pending.Status)
 	}
 
-	approveWithoutAuth := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{
+	approveWithoutAuth := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{
 		"approvedPolicyProfile": "tv-approved",
 	})
 	assertProblemDetails(t, approveWithoutAuth, http.StatusUnauthorized, "error/unauthorized")
@@ -79,40 +79,40 @@ func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 		t.Fatalf("build authed handler: %v", err)
 	}
 
-	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{
+	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{
 		"approvedPolicyProfile": "tv-approved",
 	})
 	if approveResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
 	}
-	var approved approvePairingResponse
+	var approved ApprovePairingResponse
 	decodeJSONResponse(t, approveResp, &approved)
 	if approved.Status != "approved" {
 		t.Fatalf("expected approved pairing status, got %q", approved.Status)
 	}
-	if approved.OwnerID == "" {
+	if approved.OwnerId == "" {
 		t.Fatal("expected owner id from authenticated principal")
 	}
 
-	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
 	if exchangeResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 	// ADR-032 ownership boundary: after a successful exchange the pairing store
 	// holds only the consumed bootstrap. A device, grant or session surviving
 	// here would mean the old auth model is still being written to.
-	assertDeviceAuthHoldsNoDurableState(t, srv, exchanged.DeviceID)
+	assertDeviceAuthHoldsNoDurableState(t, srv, exchanged.DeviceId)
 
-	if exchanged.DeviceID == "" || exchanged.AccessToken == "" {
+	if exchanged.DeviceId == "" || exchanged.AccessToken == "" {
 		t.Fatalf("expected exchange credentials, got %#v", exchanged)
 	}
 
-	repeatExchange := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	repeatExchange := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
@@ -143,7 +143,7 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 	startResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceType": "android_tv",
 	})
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
@@ -151,20 +151,20 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build authed handler: %v", err)
 	}
-	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	if approveResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
 	}
 
 	currentNow = currentNow.Add(2 * time.Minute)
 
-	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/status", map[string]any{
+	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/status", map[string]any{
 		"pairingSecret": started.PairingSecret,
 	})
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected expired status lookup 200, got %d", statusResp.StatusCode)
 	}
-	var status pairingStatusResponse
+	var status PairingStatusResponse
 	decodeJSONResponse(t, statusResp, &status)
 	if status.Status != "expired" {
 		t.Fatalf("expected expired status, got %q", status.Status)
@@ -175,7 +175,7 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rebuild handler: %v", err)
 	}
-	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
@@ -194,15 +194,15 @@ func TestPairingRoutes_SecretMismatchIsForbidden(t *testing.T) {
 	startResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceType": "android_phone",
 	})
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
-	approveResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	if approveResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
 	}
 
-	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/status", map[string]any{
+	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/status", map[string]any{
 		"pairingSecret": "WRONGSECRET",
 	})
 	assertProblemDetails(t, statusResp, http.StatusForbidden, "pairing/secret_mismatch")
@@ -221,7 +221,7 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 	startResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceType": "android_tablet",
 	})
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
@@ -229,7 +229,7 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 	if err != nil {
 		t.Fatalf("build authed handler: %v", err)
 	}
-	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	if approveResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
 	}
@@ -239,7 +239,7 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 	if err != nil {
 		t.Fatalf("rebuild handler: %v", err)
 	}
-	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
@@ -248,7 +248,7 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 		decodeJSONResponse(t, exchangeResp, &body)
 		t.Fatalf("expected exchange pairing 200, got %d: %v", exchangeResp.StatusCode, body)
 	}
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:read", "v3:write"})
@@ -308,7 +308,7 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 	startResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/start", map[string]any{
 		"deviceType": "android_tablet",
 	})
-	var started startPairingResponse
+	var started StartPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
@@ -316,7 +316,7 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build authed handler: %v", err)
 	}
-	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	if approveResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
 	}
@@ -326,7 +326,7 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rebuild handler: %v", err)
 	}
-	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
@@ -334,13 +334,13 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
 
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 	if len(exchanged.Endpoints) != 1 {
 		t.Fatalf("expected exactly one published endpoint, got %#v", exchanged.Endpoints)
 	}
-	if exchanged.Endpoints[0].URL != "https://public.example" {
-		t.Fatalf("expected published endpoint url https://public.example, got %q", exchanged.Endpoints[0].URL)
+	if exchanged.Endpoints[0].Url != "https://public.example" {
+		t.Fatalf("expected published endpoint url https://public.example, got %q", exchanged.Endpoints[0].Url)
 	}
 }
 

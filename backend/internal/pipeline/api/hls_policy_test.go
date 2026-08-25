@@ -43,7 +43,7 @@ seg_9.ts
 	assert.Equal(t, []string{"client_family_native"}, policy.Reasons)
 }
 
-func TestDeriveHLSStartupPolicy_AndroidNativeCopyKeepsReadyWindowHeadroom(t *testing.T) {
+func TestDeriveHLSStartupPolicy_NativeCopyKeepsReadyWindowHeadroom(t *testing.T) {
 	playlist := []byte(`#EXTM3U
 #EXT-X-TARGETDURATION:4
 #EXTINF:1.28,
@@ -60,6 +60,14 @@ seg_2.m4s
 	copyPolicy := deriveHLSStartupPolicy(nativeCopy, playlist)
 	assert.Equal(t, 5, copyPolicy.StartupHeadroomSec)
 	assert.Contains(t, copyPolicy.Reasons, "available_media_clamp")
+
+	iosNativeCopy := &model.SessionRecord{
+		ContextData: map[string]string{model.CtxKeyClientFamily: "ios_safari"},
+		Profile:     model.ProfileSpec{TranscodeVideo: false},
+	}
+	iosCopyPolicy := deriveHLSStartupPolicy(iosNativeCopy, playlist)
+	assert.Equal(t, 5, iosCopyPolicy.StartupHeadroomSec)
+	assert.Contains(t, iosCopyPolicy.Reasons, "available_media_clamp")
 
 	nativeTranscode := &model.SessionRecord{
 		ContextData: map[string]string{model.CtxKeyClientFamily: "android_tv_native"},

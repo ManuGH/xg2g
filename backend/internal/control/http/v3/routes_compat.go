@@ -14,11 +14,9 @@ import (
 // CompatibilityHandler captures the subset of v3 handlers that are mounted as
 // compatibility/manual routes outside of generated OpenAPI routing.
 type CompatibilityHandler interface {
-	GetRecordingPlaybackInfo(http.ResponseWriter, *http.Request, string)
 	StreamRecordingDirect(http.ResponseWriter, *http.Request, string)
 	HandleRecordingResume(http.ResponseWriter, *http.Request)
 	HandleRecordingsContinue(http.ResponseWriter, *http.Request)
-	PostItemsPlaybackInfo(http.ResponseWriter, *http.Request, string)
 	HandleV3HLS(http.ResponseWriter, *http.Request)
 }
 
@@ -32,11 +30,6 @@ func RegisterCompatibilityRoutes(rRead, rWrite chi.Router, handler Compatibility
 	rRead.Get(V3BaseURL+"/sessions/{sessionID}/hls/*", handler.HandleV3HLS)
 	rRead.Head(V3BaseURL+"/sessions/{sessionID}/hls/*", handler.HandleV3HLS)
 
-	rRead.Get(V3BaseURL+"/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
-		recordingID := chi.URLParam(r, "recordingId")
-		handler.GetRecordingPlaybackInfo(w, r, recordingID)
-	})
-
 	rRead.Head(V3BaseURL+"/recordings/{recordingId}/stream.mp4", func(w http.ResponseWriter, r *http.Request) {
 		recordingID := chi.URLParam(r, "recordingId")
 		handler.StreamRecordingDirect(w, r, recordingID)
@@ -47,15 +40,9 @@ func RegisterCompatibilityRoutes(rRead, rWrite chi.Router, handler Compatibility
 	// Chi prefers static segments over {recordingId}, so /recordings/continue
 	// cannot collide with the parameterized recording routes.
 	rRead.Get(V3BaseURL+"/recordings/continue", handler.HandleRecordingsContinue)
-
-	// Supports DirectPlay decision logic without backend coupling.
-	rRead.Post("/Items/{itemId}/PlaybackInfo", func(w http.ResponseWriter, r *http.Request) {
-		itemID := chi.URLParam(r, "itemId")
-		handler.PostItemsPlaybackInfo(w, r, itemID)
-	})
 }
 
-// RegisterCompatibilityRoutesWithRegistrars registers the four /api/v3
+// RegisterCompatibilityRoutesWithRegistrars registers the remaining /api/v3
 // compatibility routes exactly once while preserving their read/write stacks.
 func RegisterCompatibilityRoutesWithRegistrars(
 	readRegistrar, writeRegistrar RouteRegistrar,
@@ -68,11 +55,6 @@ func RegisterCompatibilityRoutesWithRegistrars(
 		return fmt.Errorf("compatibility route handler cannot be nil")
 	}
 
-	if err := readRegistrar.Register(http.MethodGet, V3BaseURL+"/vod/{recordingId}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.GetRecordingPlaybackInfo(w, r, chi.URLParam(r, "recordingId"))
-	})); err != nil {
-		return err
-	}
 	if err := readRegistrar.Register(http.MethodHead, V3BaseURL+"/recordings/{recordingId}/stream.mp4", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.StreamRecordingDirect(w, r, chi.URLParam(r, "recordingId"))
 	})); err != nil {

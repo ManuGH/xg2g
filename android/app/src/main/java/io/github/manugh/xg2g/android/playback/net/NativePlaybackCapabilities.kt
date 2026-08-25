@@ -17,12 +17,11 @@ internal data class NativePlaybackCapabilities(
     val maxVideo: NativePlaybackMaxVideo? = null,
     val supportsHls: Boolean,
     val supportsRange: Boolean,
-    val deviceType: String,
+    val clientIdentity: NativePlaybackClientIdentity,
     val hlsEngines: List<String>,
     val preferredHlsEngine: String,
     val runtimeProbeUsed: Boolean,
     val runtimeProbeVersion: Int,
-    val clientFamilyFallback: String,
     val allowTranscode: Boolean,
     val deviceContext: NativePlaybackDeviceContext? = null,
     val networkContext: NativePlaybackNetworkContext? = null,
@@ -56,6 +55,29 @@ internal data class NativePlaybackCapabilities(
         }
 
         internal fun runtimeProbeVersion(): Int = RUNTIME_PROBE_VERSION
+    }
+}
+
+/**
+ * What this client is: the platform it runs on and the surface it presents.
+ *
+ * It replaces `clientFamilyFallback` and `deviceType`, which had this app
+ * declaring both the policy family applied to it and its own device category.
+ * The server derives both now, from these two facts.
+ */
+internal data class NativePlaybackClientIdentity(
+    val platform: String,
+    val surface: String = SURFACE_NATIVE_APP,
+) {
+    companion object {
+        const val SURFACE_NATIVE_APP = "native_app"
+        const val PLATFORM_ANDROID = "android"
+        const val PLATFORM_ANDROID_TV = "android_tv"
+
+        fun forDevice(isTv: Boolean): NativePlaybackClientIdentity =
+            NativePlaybackClientIdentity(
+                platform = if (isTv) PLATFORM_ANDROID_TV else PLATFORM_ANDROID,
+            )
     }
 }
 
@@ -112,9 +134,6 @@ private data class ProbedVideoLimit(
 )
 
 private object NativePlaybackCapabilityProbe {
-    private const val DEVICE_ANDROID = "android"
-    private const val DEVICE_ANDROID_TV = "android_tv"
-
     private val videoTargets = listOf(
         CodecTarget("av1", listOf("video/av01")),
         CodecTarget("hevc", listOf("video/hevc")),
@@ -200,12 +219,11 @@ private object NativePlaybackCapabilityProbe {
             maxVideo = maxVideo,
             supportsHls = true,
             supportsRange = true,
-            deviceType = if (isTv) DEVICE_ANDROID_TV else DEVICE_ANDROID,
+            clientIdentity = NativePlaybackClientIdentity.forDevice(isTv),
             hlsEngines = listOf("native"),
             preferredHlsEngine = "native",
             runtimeProbeUsed = true,
             runtimeProbeVersion = NativePlaybackCapabilities.runtimeProbeVersion(),
-            clientFamilyFallback = if (isTv) "android_tv_native" else "android_native",
             allowTranscode = true,
             deviceContext = deviceContext,
             networkContext = networkContext,

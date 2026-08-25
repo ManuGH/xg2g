@@ -27,12 +27,11 @@ class PlaybackApiJsonCodecTest {
                 audioCodecs = listOf("aac", "ac3"),
                 supportsHls = true,
                 supportsRange = true,
-                deviceType = "android_tv",
+                clientIdentity = NativePlaybackClientIdentity.forDevice(isTv = true),
                 hlsEngines = listOf("native"),
                 preferredHlsEngine = "native",
                 runtimeProbeUsed = false,
                 runtimeProbeVersion = 1,
-                clientFamilyFallback = "android_tv_native",
                 allowTranscode = true,
                 deviceContext = NativePlaybackDeviceContext(
                     brand = "google",

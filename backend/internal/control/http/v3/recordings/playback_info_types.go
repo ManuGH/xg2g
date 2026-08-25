@@ -58,6 +58,7 @@ type PlaybackInfoRequest struct {
 	ClientProfile    string
 	Headers          map[string]string
 	Capabilities     *capabilities.PlaybackCapabilities
+	StartOffsetMs    int64
 }
 
 // PlannerEvaluation holds the paired evidence snapshot and resulting plan.
@@ -83,6 +84,7 @@ type PlaybackInfoResult struct {
 	RuntimePolicyConstraints  []string
 	RuntimeProbeSuccessStreak int
 	RuntimeProbeFailureStreak int
+	AnchorStartMs             int64
 	// PlannerEvaluation holds the immutable evidence and plan evaluated by the new planner.
 	PlannerEvaluation *PlannerEvaluation
 }

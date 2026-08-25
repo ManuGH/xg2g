@@ -37,8 +37,8 @@ internal object PlaybackApiJsonCodec {
             put("playback_mode", decision.playbackMode.wireValue)
             put("playback_decision_token", decision.playbackDecisionToken)
             putIfAbsent("preferred_hls_engine", capabilities.preferredHlsEngine)
-            putIfAbsent("device_type", capabilities.deviceType)
-            putIfAbsent("client_family", capabilities.clientFamilyFallback)
+            // No client_family or device_type: the server derives both from the
+            // identity the capabilities carry, and discards anything sent here.
             decision.capHash?.let { put("capHash", it) }
         }
 
@@ -202,12 +202,16 @@ internal object PlaybackApiJsonCodec {
         .put("audioCodecs", JSONArray(capabilities.audioCodecs))
         .put("supportsHls", capabilities.supportsHls)
         .put("supportsRange", capabilities.supportsRange)
-        .put("deviceType", capabilities.deviceType)
+        .put(
+            "clientIdentity",
+            JSONObject()
+                .put("platform", capabilities.clientIdentity.platform)
+                .put("surface", capabilities.clientIdentity.surface)
+        )
         .put("hlsEngines", JSONArray(capabilities.hlsEngines))
         .put("preferredHlsEngine", capabilities.preferredHlsEngine)
         .put("runtimeProbeUsed", capabilities.runtimeProbeUsed)
         .put("runtimeProbeVersion", capabilities.runtimeProbeVersion)
-        .put("clientFamilyFallback", capabilities.clientFamilyFallback)
         .put("allowTranscode", capabilities.allowTranscode)
 }
 

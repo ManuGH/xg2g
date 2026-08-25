@@ -77,6 +77,10 @@ struct CredentialStoreTests {
         DeviceGrant(id: id, secret: "secret", expiresAt: Date(timeIntervalSince1970: 2_000_000_000))
     }
 
+    private func credentials(grantID: String = "dgr-1", token: String = "token") -> EnrolledCredentials {
+        EnrolledCredentials(grant: grant(id: grantID), session: session(token: token))
+    }
+
     private func session(token: String = "token") -> AccessSession {
         AccessSession(
             sessionID: "sess-1",
@@ -143,7 +147,7 @@ struct CredentialStoreTests {
         let (store, _) = makeStore()
 
         await #expect(throws: CredentialStoreError.notPrepared) {
-            try await store.store(grant(), for: try identity("https://tv.example/"))
+            try await store.commit(credentials(), for: try identity("https://tv.example/"))
         }
     }
 
@@ -154,8 +158,7 @@ struct CredentialStoreTests {
         try await store.prepareForLaunch()
         let server = try identity("https://tv.example/")
 
-        try await store.store(grant(), for: server)
-        try await store.store(session(), for: server)
+        try await store.commit(credentials(), for: server)
 
         #expect(try await store.deviceGrant(for: server) == grant())
         #expect(try await store.accessSession(for: server) == session())
@@ -174,8 +177,8 @@ struct CredentialStoreTests {
         let home = try identity("https://example.com/home/")
         let lab = try identity("https://example.com/lab/")
 
-        try await store.store(grant(id: "home-grant"), for: home)
-        try await store.store(grant(id: "lab-grant"), for: lab)
+        try await store.commit(credentials(grantID: "home-grant"), for: home)
+        try await store.commit(credentials(grantID: "lab-grant"), for: lab)
 
         #expect(try await store.deviceGrant(for: home)?.id == "home-grant")
         #expect(try await store.deviceGrant(for: lab)?.id == "lab-grant")
@@ -188,8 +191,7 @@ struct CredentialStoreTests {
         let (store, _) = makeStore()
         try await store.prepareForLaunch()
         let server = try identity("https://tv.example/")
-        try await store.store(grant(), for: server)
-        try await store.store(session(), for: server)
+        try await store.commit(credentials(), for: server)
 
         try await store.endSession(for: server)
 
@@ -203,9 +205,8 @@ struct CredentialStoreTests {
         try await store.prepareForLaunch()
         let gone = try identity("https://gone.example/")
         let kept = try identity("https://kept.example/")
-        try await store.store(grant(), for: gone)
-        try await store.store(session(), for: gone)
-        try await store.store(grant(id: "kept"), for: kept)
+        try await store.commit(credentials(), for: gone)
+        try await store.commit(credentials(grantID: "kept"), for: kept)
 
         try await store.forgetServer(gone)
 
@@ -217,8 +218,8 @@ struct CredentialStoreTests {
     @Test func purgeEverythingClearsAllIdentities() async throws {
         let (store, backend) = makeStore()
         try await store.prepareForLaunch()
-        try await store.store(grant(), for: try identity("https://a.example/"))
-        try await store.store(grant(), for: try identity("https://b.example/"))
+        try await store.commit(credentials(), for: try identity("https://a.example/"))
+        try await store.commit(credentials(), for: try identity("https://b.example/"))
 
         try await store.purgeEverything()
 
@@ -233,8 +234,7 @@ struct CredentialStoreTests {
         let addressBound = try identity("https://tv.example/")
         let instanceBound = ServerIdentity.instance(try InstanceID("instance-aaaa"))
 
-        try await store.store(grant(), for: addressBound)
-        try await store.store(session(), for: addressBound)
+        try await store.commit(credentials(), for: addressBound)
 
         try await store.migrate(from: addressBound, to: instanceBound)
 
@@ -248,7 +248,7 @@ struct CredentialStoreTests {
         let (store, _) = makeStore()
         try await store.prepareForLaunch()
         let server = try identity("https://tv.example/")
-        try await store.store(grant(), for: server)
+        try await store.commit(credentials(), for: server)
 
         try await store.migrate(from: server, to: server)
 

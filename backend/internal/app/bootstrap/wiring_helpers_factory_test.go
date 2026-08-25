@@ -13,7 +13,7 @@ import (
 )
 
 func TestBuildV3OrchestratorFactory_ConfiguresHeartbeatSource(t *testing.T) {
-	factory := buildV3OrchestratorFactory(nil)
+	factory := buildV3OrchestratorFactory(nil, nil)
 	cfg := config.AppConfig{
 		Engine: config.EngineConfig{
 			IdleTimeout: time.Minute,
@@ -37,6 +37,9 @@ func TestBuildV3OrchestratorFactory_ConfiguresHeartbeatSource(t *testing.T) {
 	orch, ok := orchPort.(*worker.Orchestrator)
 	if !ok {
 		t.Fatalf("Build() returned %T, want *worker.Orchestrator", orchPort)
+	}
+	if orch.UsageEvaluator == nil {
+		t.Fatalf("UsageEvaluator should be wired by factory, got nil")
 	}
 	hb, ok := orch.HeartbeatSource.(*worker.FSWatcherHeartbeatSource)
 	if !ok {

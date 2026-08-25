@@ -53,7 +53,7 @@ func requestedCodecsFromClientCapsWithPolicy(intent Intent, requestedPlaybackMod
 func clampRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMode, requestedCodecs string, clientAV1Disabled bool) string {
 	allowedCodecs := allowedRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, clientAV1Disabled)
 	clientFamily := clientFamilyForIntent(intent)
-	if clientFamily == playbackprofile.ClientIOSSafariNative &&
+	if clientFamily == playbackprofile.ClientIOSSafari &&
 		startPlaybackPath(intent, requestedPlaybackMode) == "hlsjs" &&
 		!iosSafariManagedAV1Allowed(intent.ClientCaps) {
 		allowedCodecs = []string{"h264"}
@@ -94,7 +94,8 @@ func matrixFallbackVideoCodecs(intent Intent, requestedPlaybackMode string) []st
 	case "hlsjs":
 		switch clientFamily {
 		case playbackprofile.ClientSafariNative,
-			playbackprofile.ClientIOSSafariNative,
+			playbackprofile.ClientIOSSafari,
+			playbackprofile.ClientIOSNative,
 			playbackprofile.ClientFirefoxHLSJS,
 			playbackprofile.ClientAndroidTVBrowser,
 			playbackprofile.ClientChromiumHLSJS:
@@ -109,7 +110,7 @@ func matrixFallbackVideoCodecs(intent Intent, requestedPlaybackMode string) []st
 	}
 
 	switch clientFamily {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return []string{"hevc", "h264"}
 	case playbackprofile.ClientFirefoxHLSJS, playbackprofile.ClientAndroidTVBrowser, playbackprofile.ClientChromiumHLSJS:
 		return []string{"h264"}

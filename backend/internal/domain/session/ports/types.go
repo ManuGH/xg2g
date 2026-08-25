@@ -2,6 +2,8 @@ package ports
 
 import (
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // StreamMode defines the intent of the stream.
@@ -105,15 +107,16 @@ type StreamSpec struct {
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
 type ProfileSpec struct {
-	Name                   string            `json:"name"`
-	PolicyModeHint         RuntimeMode       `json:"policyModeHint,omitempty"`
-	EffectiveRuntimeMode   RuntimeMode       `json:"effectiveRuntimeMode,omitempty"`
-	EffectiveModeSource    RuntimeModeSource `json:"effectiveModeSource,omitempty"`
-	LLHLS                  bool              `json:"llhls"`
-	DVRWindowSec           int               `json:"dvrWindowSec"`
-	VOD                    bool              `json:"vod,omitempty"`
-	DisableSafariForceCopy bool              `json:"disableSafariForceCopy,omitempty"`
-	ForceSafariHQ25        bool              `json:"forceSafariHq25,omitempty"`
+	Name                   string                         `json:"name"`
+	Intent                 playbackprofile.PlaybackIntent `json:"intent,omitempty"`
+	PolicyModeHint         RuntimeMode                    `json:"policyModeHint,omitempty"`
+	EffectiveRuntimeMode   RuntimeMode                    `json:"effectiveRuntimeMode,omitempty"`
+	EffectiveModeSource    RuntimeModeSource              `json:"effectiveModeSource,omitempty"`
+	LLHLS                  bool                           `json:"llhls"`
+	DVRWindowSec           int                            `json:"dvrWindowSec"`
+	VOD                    bool                           `json:"vod,omitempty"`
+	DisableSafariForceCopy bool                           `json:"disableSafariForceCopy,omitempty"`
+	ForceSafariHQ25        bool                           `json:"forceSafariHq25,omitempty"`
 	// PlannerBound marks profiles materialized from a verified immutable
 	// PlaybackPlan. Execution may translate them into encoder arguments but must
 	// not run legacy profile-selection or runtime-hardening policy again.

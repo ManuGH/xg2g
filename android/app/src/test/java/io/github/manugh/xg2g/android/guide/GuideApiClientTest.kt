@@ -4,11 +4,9 @@ import io.github.manugh.xg2g.android.DeviceAuthRepository
 import io.github.manugh.xg2g.android.DeviceAuthTelemetry
 import io.github.manugh.xg2g.android.DeviceAuthTelemetryEvent
 import io.github.manugh.xg2g.android.DeviceAuthTransport
-import io.github.manugh.xg2g.android.CompletedWebBootstrap
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
-import io.github.manugh.xg2g.android.StartedWebBootstrap
 import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
 import kotlinx.coroutines.runBlocking
@@ -246,20 +244,4 @@ private class RecordingDeviceAuthTransport : DeviceAuthTransport {
     override suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String) {
         createCookieSessionCalls += 1
     }
-
-    override suspend fun startWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        accessToken: String,
-        targetPath: String
-    ): StartedWebBootstrap = error("unexpected startWebBootstrap")
-
-    override suspend fun completeWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        completePath: String,
-        bootstrapToken: String
-    ): CompletedWebBootstrap = error("unexpected completeWebBootstrap")
-}
-
-private class NoopTelemetry : DeviceAuthTelemetry {
-    override fun record(event: DeviceAuthTelemetryEvent) = Unit
 }

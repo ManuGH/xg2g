@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	sqliteSchemaVersion = 8
+	sqliteSchemaVersion = 9
 	SQLiteSchemaVersion = sqliteSchemaVersion
 )
 
@@ -76,6 +76,9 @@ func (s *SqliteStore) migrate() error {
 		}
 	}
 	if err := ensureSchemaV8Columns(tx); err != nil {
+		return err
+	}
+	if err := migrateClientFamiliesToV9(tx); err != nil {
 		return err
 	}
 

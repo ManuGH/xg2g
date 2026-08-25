@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -277,7 +278,7 @@ func (o *Orchestrator) liveReadySegments() int {
 	if o.LiveReadySegments > 0 {
 		return o.LiveReadySegments
 	}
-	return 3
+	return config.DefaultHLSReadySegments
 }
 
 func playlistSegments(content []byte) []string {

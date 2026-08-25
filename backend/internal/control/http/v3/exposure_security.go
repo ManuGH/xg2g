@@ -139,8 +139,7 @@ func exposureLimit(class authz.ExposureRateLimitClass, cfg config.AppConfig) int
 	case authz.ExposureRateLimitAuth,
 		authz.ExposureRateLimitPairingStart,
 		authz.ExposureRateLimitPairingSecret,
-		authz.ExposureRateLimitDeviceGrant,
-		authz.ExposureRateLimitBootstrap:
+		authz.ExposureRateLimitDeviceGrant:
 		return authLimit
 	default:
 		return 0

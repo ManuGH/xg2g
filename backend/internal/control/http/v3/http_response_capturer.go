@@ -60,7 +60,6 @@ func (b *baseResponseWriter) Write(p []byte) (n int, err error) {
 	defer func() {
 		b.bytes.Add(int64(n))
 	}()
-	// codeql[go/reflected-xss] Wrapper does not dictate content-type, upstream handlers do
 	return b.ResponseWriter.Write(p)
 }
 

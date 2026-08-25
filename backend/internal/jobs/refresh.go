@@ -20,6 +20,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -57,7 +58,9 @@ type Status struct {
 type RefreshOption func(*refreshOptions)
 
 type refreshOptions struct {
-	piconPool *PiconPool
+	piconPool       *PiconPool
+	enrichmentStore store.EnrichmentStore
+	enrichmentQueue *epg.EnrichmentQueue
 }
 
 type resolvedBouquet struct {
@@ -68,6 +71,25 @@ type resolvedBouquet struct {
 func WithPiconPool(pool *PiconPool) RefreshOption {
 	return func(opts *refreshOptions) {
 		opts.piconPool = pool
+	}
+}
+
+func WithEnrichment(store store.EnrichmentStore, queue *epg.EnrichmentQueue) RefreshOption {
+	return func(opts *refreshOptions) {
+		opts.enrichmentStore = store
+		opts.enrichmentQueue = queue
+	}
+}
+
+func WithEnrichmentStore(store store.EnrichmentStore) RefreshOption {
+	return func(opts *refreshOptions) {
+		opts.enrichmentStore = store
+	}
+}
+
+func WithEnrichmentQueue(queue *epg.EnrichmentQueue) RefreshOption {
+	return func(opts *refreshOptions) {
+		opts.enrichmentQueue = queue
 	}
 }
 
@@ -147,7 +169,7 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 		return nil, err
 	}
 
-	epgProgrammesCount, err := writeRefreshXMLTV(ctx, cfg, rt, client, items)
+	epgProgrammesCount, err := writeRefreshXMLTV(ctx, cfg, rt, client, items, refreshOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +463,7 @@ func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.R
 	return nil
 }
 
-func writeRefreshXMLTV(ctx context.Context, cfg config.AppConfig, rt config.RuntimeSnapshot, client epgFetchClient, items []playlist.Item) (int, error) {
+func writeRefreshXMLTV(ctx context.Context, cfg config.AppConfig, rt config.RuntimeSnapshot, client epgFetchClient, items []playlist.Item, opts refreshOptions) (int, error) {
 	logger := xglog.WithComponentFromContext(ctx, "jobs")
 
 	if cfg.XMLTVPath == "" {
@@ -452,7 +474,7 @@ func writeRefreshXMLTV(ctx context.Context, cfg config.AppConfig, rt config.Runt
 
 	xmlCh := buildXMLTVChannels(ctx, items, rt.PublicURL)
 	xmltvFullPath := filepath.Join(cfg.DataDir, cfg.XMLTVPath)
-	allProgrammes := collectRefreshEPGProgrammes(ctx, cfg, client, items)
+	allProgrammes := collectRefreshEPGProgrammes(ctx, cfg, client, items, opts)
 
 	var programmesForXMLTV []epg.Programme
 	if cfg.EPGEnabled && len(allProgrammes) > 0 {
@@ -507,7 +529,7 @@ func buildXMLTVChannels(ctx context.Context, items []playlist.Item, publicURL st
 	return xmlCh
 }
 
-func collectRefreshEPGProgrammes(ctx context.Context, cfg config.AppConfig, client epgFetchClient, items []playlist.Item) []epg.Programme {
+func collectRefreshEPGProgrammes(ctx context.Context, cfg config.AppConfig, client epgFetchClient, items []playlist.Item, opts refreshOptions) []epg.Programme {
 	if !cfg.EPGEnabled {
 		return nil
 	}
@@ -520,7 +542,7 @@ func collectRefreshEPGProgrammes(ctx context.Context, cfg config.AppConfig, clie
 		Msg("starting EPG collection")
 
 	epgStartTime := time.Now()
-	allProgrammes := collectEPGProgrammes(ctx, client, items, cfg)
+	allProgrammes := collectEPGProgrammes(ctx, client, items, cfg, opts.enrichmentStore, opts.enrichmentQueue)
 	epgDuration := time.Since(epgStartTime).Seconds()
 
 	if len(allProgrammes) == 0 {

@@ -6,24 +6,36 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 )
 
 const defaultLiveAudioMap = "0:a:0?"
 
+type liveAudioDisposition struct {
+	Default         int `json:"default"`
+	VisualImpaired  int `json:"visual_impaired"`
+	HearingImpaired int `json:"hearing_impaired"`
+	CleanEffects    int `json:"clean_effects"`
+	Descriptions    int `json:"descriptions"`
+}
+
 type liveAudioStream struct {
-	Index         int               `json:"index"`
-	CodecType     string            `json:"codec_type"`
-	CodecName     string            `json:"codec_name"`
-	Channels      int               `json:"channels"`
-	ChannelLayout string            `json:"channel_layout"`
-	Tags          map[string]string `json:"tags"`
+	Index         int                  `json:"index"`
+	ID            string               `json:"id"`
+	CodecType     string               `json:"codec_type"`
+	CodecName     string               `json:"codec_name"`
+	Channels      int                  `json:"channels"`
+	ChannelLayout string               `json:"channel_layout"`
+	Tags          map[string]string    `json:"tags"`
+	Disposition   liveAudioDisposition `json:"disposition"`
 }
 
 type liveAudioSelection struct {
@@ -31,6 +43,32 @@ type liveAudioSelection struct {
 	AudioArgs    []string
 	IsMultiAudio bool
 	VarStreamMap string
+}
+
+// syntheticStreamPID stands in for a PID ffprobe did not report.
+//
+// Derived from the stream's ordinal so the map still has a distinct key per
+// stream. A negative or absurd index is not a stream this code can address, and
+// returns the same 0 the caller already treats as unknown.
+func syntheticStreamPID(index int) uint16 {
+	if index < 0 || index >= math.MaxUint16 {
+		return 0
+	}
+	return uint16(index + 1) // #nosec G115 -- bounded by the check above
+}
+
+// parsedStreamPID narrows a PID parsed out of ffprobe's stream id.
+//
+// A transport-stream PID is 13 bits, so anything that does not fit a uint16 did
+// not come from a PID and is reported as 0 — the same "unknown" the caller
+// already handles — rather than being truncated into a valid-looking PID that
+// belongs to a different stream. ffprobe's `id` is free text, so this is input
+// validation, not a formality.
+func parsedStreamPID(value uint64) uint16 {
+	if value > math.MaxUint16 {
+		return 0
+	}
+	return uint16(value)
 }
 
 func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string) liveAudioSelection {
@@ -46,9 +84,6 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		return defaultSel
 	}
 	if isAndroidTVNativeSpec(spec) {
-		// The native TV client requests the broadcaster's primary audio track and
-		// always receives AAC. It therefore does not need the Safari/HLS.js
-		// language/rendition compatibility probe that delays pipeline startup.
 		a.Logger.Info().
 			Str("session_id", spec.SessionID).
 			Str("startup_phase", "live_audio_probe_skipped_android_tv_native").
@@ -78,58 +113,215 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	if len(audioStreams) == 0 {
 		return defaultSel
 	}
-	if len(audioStreams) == 1 {
-		selected := audioStreams[0]
-		mapArg := fmt.Sprintf("0:%d?", selected.Index)
-		codecName := strings.ToLower(strings.TrimSpace(selected.CodecName))
-		audioArgs := appendLiveAudioArgs(nil, spec, selected.Channels)
 
-		a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "live_audio_stream_selected").
-			Str("audio_map", mapArg).
-			Str("audio_action", "transcode_aac").
-			Int("input_stream_index", selected.Index).
-			Int("input_audio_channels", selected.Channels).
-			Str("input_audio_layout", strings.TrimSpace(selected.ChannelLayout)).
-			Str("input_audio_codec", codecName).
-			Msg("selected single live audio stream for synchronized AAC transcode")
+	// Build ProbeTrackObservations for audiotopology domain
+	probeObs := make([]audiotopology.ProbeTrackObservation, len(audioStreams))
+	streamByPID := make(map[uint16]liveAudioStream, len(audioStreams))
 
-		return liveAudioSelection{
-			Maps:      []string{mapArg},
-			AudioArgs: audioArgs,
+	for i, s := range audioStreams {
+		var pid uint16
+		if s.ID != "" {
+			var p uint64
+			if strings.HasPrefix(strings.ToLower(s.ID), "0x") {
+				if _, err := fmt.Sscanf(s.ID, "0x%x", &p); err == nil {
+					pid = parsedStreamPID(p)
+				}
+			} else {
+				if _, err := fmt.Sscanf(s.ID, "%d", &p); err == nil {
+					pid = parsedStreamPID(p)
+				}
+			}
+		}
+		if pid == 0 {
+			pid = syntheticStreamPID(s.Index)
+		}
+		streamByPID[pid] = s
+
+		probeObs[i] = audiotopology.ProbeTrackObservation{
+			StreamIndex:                 s.Index,
+			PID:                         pid,
+			Codec:                       s.CodecName,
+			Channels:                    s.Channels,
+			ChannelLayout:               s.ChannelLayout,
+			Language:                    s.Tags["language"],
+			DispositionVisualImpaired:   s.Disposition.VisualImpaired > 0,
+			DispositionHearingImpaired:  s.Disposition.HearingImpaired > 0,
+			DispositionCleanEffects:     s.Disposition.CleanEffects > 0,
+			DispositionDescriptions:     s.Disposition.Descriptions > 0,
+			DispositionBroadcastDefault: s.Disposition.Default > 0,
 		}
 	}
 
-	// FFmpeg 8 cannot emit AUTOSELECT=YES for HLS audio renditions. Safari/HLS.js
-	// consequently leaves the external audio group unloaded. Keep live playback
-	// audible by muxing ONE track into the A/V playlist until the master-playlist
-	// writer can produce a standards-compliant rendition group.
-	//
-	// Which one is a language question, not a channel-count question. Picking the
-	// first 2-channel stream looked like a compatibility measure but was not one:
-	// appendLiveAudioArgs pins -ac 2 unconditionally, so a 5.1 source is
-	// downmixed either way. All that rule did was skip the broadcaster's primary
-	// track whenever it carried surround - a German channel with deu 5.1 plus eng
-	// stereo played out in English.
-	selected := audioStreams[0]
-	if preferred, ok := preferredAudioStream(audioStreams, a.Config.LiveAudioLanguages); ok {
-		selected = preferred
+	clientCaps := audiotopology.ClientAudioCapabilities{
+		SupportsAAC: true,
 	}
-	mapArg := fmt.Sprintf("0:%d?", selected.Index)
-	audioArgs := appendLiveAudioArgs(nil, spec, selected.Channels)
-	a.Logger.Warn().
+	if len(a.Config.LiveAudioLanguages) > 0 {
+		for _, l := range a.Config.LiveAudioLanguages {
+			norm := audiotopology.NormalizeLanguage(l)
+			if norm.ISO639_2 != "" && !norm.IsUndefined {
+				clientCaps.PreferredLanguage = norm.ISO639_2
+				break
+			}
+		}
+	}
+	clientFam := strings.ToLower(spec.ClientFamily)
+	if !spec.Profile.TranscodesAudio() && (strings.Contains(clientFam, "ios") || strings.Contains(clientFam, "safari") || strings.Contains(clientFam, "apple")) {
+		clientCaps.SupportsAC3 = true
+		clientCaps.SupportsEAC3 = true
+		clientCaps.SupportsSpatial51 = true
+		clientCaps.PrefersPassthrough = true
+	}
+
+	topo := audiotopology.BuildTopology(spec.Source.ID, nil, probeObs, nil, time.Now())
+	multiPlan := audiotopology.PlanMultiAudioOutput(topo, clientCaps)
+
+	a.Logger.Info().
 		Str("session_id", spec.SessionID).
-		Str("startup_phase", "live_multi_audio_compatibility_fallback").
-		Int("source_audio_track_count", len(audioStreams)).
-		Int("selected_input_stream_index", selected.Index).
+		Str("startup_phase", "audio_topology_resolved").
+		Uint64("structural_revision", multiPlan.StructuralRevision).
+		Uint64("metadata_revision", topo.MetadataRevision).
+		Str("presence", string(multiPlan.Presence)).
+		Int("tracks_count", len(multiPlan.Tracks)).
+		Msg("evaluated audio topology and output policy")
+
+	if len(multiPlan.Tracks) > 1 {
+		var maps []string
+		var audioArgs []string
+
+		for i, tp := range multiPlan.Tracks {
+			matchedStream, ok := streamByPID[tp.PID]
+			if !ok {
+				matchedStream = audioStreams[0]
+			}
+			mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
+			maps = append(maps, mapArg)
+
+			if tp.Strategy == audiotopology.CodecStrategyPassthrough && !spec.Profile.TranscodesAudio() {
+				audioArgs = append(audioArgs, fmt.Sprintf("-c:a:%d", i), "copy")
+			} else {
+				encoderCodec := tp.EncoderCodec
+				if encoderCodec == "" || encoderCodec == "copy" {
+					encoderCodec = spec.Profile.ResolvedAudioCodec()
+				}
+				bitrateKbps := tp.BitrateKbps
+				if bitrateKbps <= 0 {
+					bitrateKbps = spec.Profile.AudioBitrateK
+				}
+				if bitrateKbps <= 0 {
+					bitrateKbps = 192
+				}
+				channels := tp.Channels
+				if channels <= 0 {
+					channels = 2
+				}
+				audioArgs = append(audioArgs,
+					fmt.Sprintf("-c:a:%d", i), encoderCodec,
+					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
+					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", channels),
+					fmt.Sprintf("-ar:a:%d", i), "48000",
+				)
+			}
+
+			a.Logger.Info().
+				Str("session_id", spec.SessionID).
+				Str("startup_phase", "live_multi_audio_track_planned").
+				Int("audio_index", i).
+				Str("audio_map", mapArg).
+				Str("audio_strategy", string(tp.Strategy)).
+				Uint16("pid", tp.PID).
+				Str("encoder_codec", tp.EncoderCodec).
+				Str("hls_codec", tp.HLSCodec).
+				Int("channels", tp.Channels).
+				Int("bitrate_kbps", tp.BitrateKbps).
+				Str("track_name", tp.Name).
+				Bool("is_default", tp.IsDefault).
+				Msg("configured multi-audio rendition")
+		}
+		audioArgs = append(audioArgs, "-sn")
+
+		vsm := multiPlan.BuildVarStreamMap()
+		return liveAudioSelection{
+			Maps:         maps,
+			AudioArgs:    audioArgs,
+			IsMultiAudio: true,
+			VarStreamMap: vsm,
+		}
+	}
+
+	var selectedPlan audiotopology.TrackPlan
+	if len(multiPlan.Tracks) > 0 {
+		selectedPlan = multiPlan.Tracks[0]
+	}
+
+	matchedStream, ok := streamByPID[selectedPlan.PID]
+	if !ok {
+		matchedStream = audioStreams[0]
+	}
+	mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
+
+	if selectedPlan.Strategy == audiotopology.CodecStrategyUnsupported {
+		a.Logger.Warn().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "live_audio_strategy_unsupported").
+			Uint16("pid", selectedPlan.PID).
+			Str("input_codec", string(selectedPlan.InputCodec)).
+			Msg("track plan strategy unsupported by client capabilities; applying safe stereo transcode fallback")
+		selectedPlan.Strategy = audiotopology.CodecStrategyTranscode
+		selectedPlan.EncoderCodec = "aac"
+		selectedPlan.Channels = 2
+		selectedPlan.BitrateKbps = 192
+	}
+
+	audioArgs := appendPlannedAudioArgs(nil, spec, selectedPlan)
+
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "live_audio_stream_selected").
 		Str("audio_map", mapArg).
-		Msg("muxing one AAC track into live HLS playlist because external audio renditions are not Safari-compatible")
+		Str("audio_strategy", string(selectedPlan.Strategy)).
+		Uint16("pid", selectedPlan.PID).
+		Str("encoder_codec", selectedPlan.EncoderCodec).
+		Str("hls_codec", selectedPlan.HLSCodec).
+		Int("channels", selectedPlan.Channels).
+		Int("bitrate_kbps", selectedPlan.BitrateKbps).
+		Str("track_name", selectedPlan.Name).
+		Msg("selected live audio stream for playback pipeline")
 
 	return liveAudioSelection{
 		Maps:      []string{mapArg},
 		AudioArgs: audioArgs,
 	}
+}
+
+func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan) []string {
+	if (plan.Strategy == audiotopology.CodecStrategyPassthrough || plan.Strategy == "") && !spec.Profile.TranscodesAudio() {
+		return append(args, "-c:a", "copy", "-sn")
+	}
+
+	encoderCodec := plan.EncoderCodec
+	if encoderCodec == "" || encoderCodec == "copy" {
+		encoderCodec = spec.Profile.ResolvedAudioCodec()
+	}
+
+	bitrateKbps := plan.BitrateKbps
+	if spec.Profile.AudioBitrateK > 0 {
+		bitrateKbps = spec.Profile.AudioBitrateK
+	} else if bitrateKbps <= 0 {
+		bitrateKbps = 192
+	}
+
+	channels := plan.Channels
+	if channels <= 0 {
+		channels = 2
+	}
+
+	return append(args,
+		"-c:a", encoderCodec,
+		"-b:a", fmt.Sprintf("%dk", bitrateKbps),
+		"-ac", fmt.Sprintf("%d", channels),
+		"-ar", "48000",
+		"-sn",
+	)
 }
 
 func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]liveAudioStream, error) {
@@ -155,13 +347,23 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
+	filterAudio := func(raw []liveAudioStream) []liveAudioStream {
+		var filtered []liveAudioStream
+		for _, s := range raw {
+			if s.CodecType == "audio" || (s.CodecType == "" && s.Channels > 0) {
+				filtered = append(filtered, s)
+			}
+		}
+		return filtered
+	}
+
 	if err != nil {
 		var parsed struct {
 			Streams []liveAudioStream `json:"streams"`
 		}
 		if len(out) > 0 && json.Unmarshal(out, &parsed) == nil && len(parsed.Streams) > 0 {
 			a.Logger.Warn().Err(err).Msg("probeLiveAudioStreams exited non-zero but returned valid streams json")
-			return parsed.Streams, nil
+			return filterAudio(parsed.Streams), nil
 		}
 		return nil, decorateProbeError(err, stderr.String())
 	}
@@ -172,7 +374,7 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 	if err := json.Unmarshal(out, &parsed); err != nil {
 		return nil, err
 	}
-	return parsed.Streams, nil
+	return filterAudio(parsed.Streams), nil
 }
 
 func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL string) []string {
@@ -222,28 +424,68 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		args = append(args, "-probesize", probeSize)
 	}
 	return append(args,
-		"-select_streams", "a",
-		"-show_entries", "stream=index,codec_type,codec_name,channels,channel_layout,tags",
+		"-show_entries", "stream=index,id,codec_type,codec_name,channels,channel_layout:stream_tags=language,title:stream_disposition=default,visual_impaired,hearing_impaired,clean_effects,descriptions",
 		"-of", "json",
 		inputURL,
 	)
 }
 
-// preferredAudioStream picks the first stream whose language tag matches the
-// operator's preference list, in preference order. Without a configured
-// preference the caller keeps the broadcaster's first track, which is the
-// primary language by DVB convention.
-func preferredAudioStream(streams []liveAudioStream, languages []string) (liveAudioStream, bool) {
-	for _, want := range languages {
-		want = strings.ToLower(strings.TrimSpace(want))
-		if want == "" {
-			continue
-		}
-		for _, stream := range streams {
-			if strings.ToLower(strings.TrimSpace(stream.Tags["language"])) == want {
-				return stream, true
-			}
+// ProbeAudioTopology dynamically inspects the live input stream and returns its current AudioTopology.
+func (a *LocalAdapter) ProbeAudioTopology(ctx context.Context, sessionID, serviceRef, inputURL string) (audiotopology.AudioTopology, error) {
+	if inputURL == "" && a.E2 != nil && serviceRef != "" {
+		resolved, err := a.E2.ResolveStreamURL(ctx, serviceRef)
+		if err == nil {
+			inputURL = a.injectCredentialsIfAllowed(resolved)
 		}
 	}
-	return liveAudioStream{}, false
+	if inputURL == "" {
+		return audiotopology.AudioTopology{}, fmt.Errorf("no input URL for audio topology probe")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: sessionID,
+		Source: ports.StreamSource{
+			ID: serviceRef,
+		},
+	}
+	streams, err := a.probeLiveAudioStreams(ctx, spec, inputURL)
+	if err != nil {
+		return audiotopology.AudioTopology{}, err
+	}
+
+	var probeObs []audiotopology.ProbeTrackObservation
+	for _, s := range streams {
+		var pid uint16
+		if s.ID != "" {
+			var p uint64
+			if strings.HasPrefix(strings.ToLower(s.ID), "0x") {
+				if _, err := fmt.Sscanf(s.ID, "0x%x", &p); err == nil {
+					pid = parsedStreamPID(p)
+				}
+			} else {
+				if _, err := fmt.Sscanf(s.ID, "%d", &p); err == nil {
+					pid = parsedStreamPID(p)
+				}
+			}
+		}
+		if pid == 0 {
+			pid = syntheticStreamPID(s.Index)
+		}
+
+		probeObs = append(probeObs, audiotopology.ProbeTrackObservation{
+			StreamIndex:                 s.Index,
+			PID:                         pid,
+			Codec:                       s.CodecName,
+			Channels:                    s.Channels,
+			ChannelLayout:               s.ChannelLayout,
+			Language:                    s.Tags["language"],
+			DispositionVisualImpaired:   s.Disposition.VisualImpaired > 0,
+			DispositionHearingImpaired:  s.Disposition.HearingImpaired > 0,
+			DispositionCleanEffects:     s.Disposition.CleanEffects > 0,
+			DispositionDescriptions:     s.Disposition.Descriptions > 0,
+			DispositionBroadcastDefault: s.Disposition.Default > 0,
+		})
+	}
+
+	return audiotopology.BuildTopology(serviceRef, nil, probeObs, nil, time.Now()), nil
 }

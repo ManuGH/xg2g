@@ -14,6 +14,9 @@ const (
 	DeviceTypeAndroidPhone  DeviceType = "android_phone"
 	DeviceTypeAndroidTablet DeviceType = "android_tablet"
 	DeviceTypeAndroidTV     DeviceType = "android_tv"
+	DeviceTypeIOSPhone      DeviceType = "ios_phone"
+	DeviceTypeIOSTablet     DeviceType = "ios_tablet"
+	DeviceTypeAppleTV       DeviceType = "apple_tv"
 	DeviceTypeBrowser       DeviceType = "browser"
 	DeviceTypeUnknown       DeviceType = "unknown"
 )
@@ -38,6 +41,12 @@ func NormalizeDeviceType(value DeviceType) DeviceType {
 		return DeviceTypeAndroidTablet
 	case string(DeviceTypeAndroidTV):
 		return DeviceTypeAndroidTV
+	case string(DeviceTypeIOSPhone):
+		return DeviceTypeIOSPhone
+	case string(DeviceTypeIOSTablet):
+		return DeviceTypeIOSTablet
+	case string(DeviceTypeAppleTV):
+		return DeviceTypeAppleTV
 	case string(DeviceTypeBrowser):
 		return DeviceTypeBrowser
 	default:

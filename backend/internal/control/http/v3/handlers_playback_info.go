@@ -24,15 +24,16 @@ import (
 // Non-goals: Actual serving of media (see handlers_hls.go).
 
 // GetRecordingPlaybackInfo implements ServerInterface (Legacy GET)
-func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+func (s *Server) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, params GetRecordingPlaybackInfoParams) {
 	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
 		return
 	}
-	s.handlePlaybackInfo(w, r, recordingId, nil, "v3", "legacy")
+	wire := v3playbackinfo.NewWireParams(params.StartMs, params.Profile, params.XXG2GProfile)
+	s.handlePlaybackInfo(w, r, recordingId, nil, "v3", "legacy", wire)
 }
 
 // PostRecordingPlaybackInfo implements ServerInterface (v3.1 POST)
-func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
+func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, params PostRecordingPlaybackInfoParams) {
 	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
 		return
 	}
@@ -41,11 +42,12 @@ func (s *Server) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Reques
 		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, problem)
 		return
 	}
-	s.handlePlaybackInfo(w, r, recordingId, caps, "v3.1", "compact")
+	wire := v3playbackinfo.NewWireParams(params.StartMs, params.Profile, params.XXG2GProfile)
+	s.handlePlaybackInfo(w, r, recordingId, caps, "v3.1", "compact", wire)
 }
 
 // PostLivePlaybackInfo implements ServerInterface (Live Stream Info)
-func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request, params PostLivePlaybackInfoParams) {
 	input, problem := v3playbackinfo.ParseLivePlaybackPostInput(r)
 	if problem != nil {
 		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, problem)
@@ -66,12 +68,13 @@ func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 
 	// For live playback we pass the normalized serviceRef through the shared decision path.
 	// The frontend uses the returned PlaybackInfo to check mode and obtain playbackDecisionToken.
-	s.handlePlaybackInfo(w, r, input.ServiceRef, input.Capabilities, "v3.1", "live")
+	wire := v3playbackinfo.NewWireParams(params.StartMs, params.Profile, params.XXG2GProfile)
+	s.handlePlaybackInfo(w, r, input.ServiceRef, input.Capabilities, "v3.1", "live", wire)
 }
 
-func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *v3playbackinfo.PlaybackCapabilities, apiVersion string, schemaType string) {
+func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *v3playbackinfo.PlaybackCapabilities, apiVersion string, schemaType string, wire v3playbackinfo.WireParams) {
 	deps := s.recordingsModuleDeps()
-	serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, recordingId, caps, apiVersion, schemaType)
+	serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, recordingId, caps, apiVersion, schemaType, wire)
 	dto, err := s.buildPlaybackInfoHTTPResponse(r.Context(), deps, recordingId, caps, schemaType, serviceRequest)
 	if err != nil {
 		v3playbackinfo.WritePlaybackInfoServiceError(w, r, recordingId, schemaType, err)
@@ -142,6 +145,7 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		playbackInfo.RuntimeProbeSuccessStreak,
 		playbackInfo.RuntimeProbeFailureStreak,
 		plannerReceipt,
+		serviceRequest.StartOffsetMs,
 	)
 	if v3recordings.PlaybackInfoRequestContext(serviceRequest) == v3recordings.PlaybackInfoContextEpgBadge {
 		response.PlaybackDecisionToken = nil

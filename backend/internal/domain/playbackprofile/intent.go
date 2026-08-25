@@ -13,6 +13,8 @@ const (
 	IntentDirect     PlaybackIntent = "direct"
 	IntentCompatible PlaybackIntent = "compatible"
 	IntentQuality    PlaybackIntent = "quality"
+	IntentCinema     PlaybackIntent = "cinema"
+	IntentNormalize  PlaybackIntent = "normalize"
 	IntentRepair     PlaybackIntent = "repair"
 )
 
@@ -40,6 +42,10 @@ func NormalizeRequestedIntent(raw string) PlaybackIntent {
 		return IntentCompatible
 	case "quality":
 		return IntentQuality
+	case "normalize", "qsv_normalize", "qsv":
+		return IntentNormalize
+	case "cinema":
+		return IntentCinema
 	case "repair":
 		return IntentRepair
 	default:
@@ -55,6 +61,10 @@ func PublicIntentName(intent PlaybackIntent) string {
 		return string(IntentCompatible)
 	case IntentQuality:
 		return string(IntentQuality)
+	case IntentNormalize:
+		return string(IntentNormalize)
+	case IntentCinema:
+		return string(IntentCinema)
 	case IntentRepair:
 		return string(IntentRepair)
 	default:
@@ -110,21 +120,21 @@ func ClampIntentToMaxQualityRung(intent PlaybackIntent, maxRung QualityRung) Pla
 	switch NormalizeQualityRung(string(maxRung)) {
 	case RungRepairAudioAAC192Stereo, RungRepairH264AAC:
 		switch intent {
-		case IntentQuality, IntentCompatible:
+		case IntentCinema, IntentQuality, IntentCompatible:
 			return IntentRepair
 		default:
 			return intent
 		}
 	case RungCompatibleAudioAAC256Stereo, RungCompatibleVideoH264CRF23, RungCompatibleHLSTS, RungCompatibleHLSFMP4:
 		switch intent {
-		case IntentQuality:
+		case IntentCinema, IntentQuality:
 			return IntentCompatible
 		default:
 			return intent
 		}
 	case RungRepairVideoH264CRF28:
 		switch intent {
-		case IntentQuality, IntentCompatible:
+		case IntentCinema, IntentQuality, IntentCompatible:
 			return IntentRepair
 		default:
 			return intent
@@ -162,7 +172,7 @@ func VideoPresetForRung(rung QualityRung) string {
 
 func VideoRungForIntent(intent PlaybackIntent) QualityRung {
 	switch intent {
-	case IntentQuality:
+	case IntentCinema, IntentQuality:
 		return RungQualityVideoH264CRF20
 	case IntentRepair:
 		return RungRepairVideoH264CRF28

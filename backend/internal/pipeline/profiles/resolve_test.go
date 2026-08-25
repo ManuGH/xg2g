@@ -28,16 +28,16 @@ func TestResolve_AutoSafari(t *testing.T) {
 func TestResolve_SmartScan(t *testing.T) {
 	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-	// 1. Progressive -> Copy (Direct Remux)
-	// Even if GPU is available, progressive should use Copy for efficiency/quality
+	// 1. Progressive + GPU -> QSV Normalization (Closed-GOP fMP4 for Apple clients)
 	progCap := &scan.Capability{Interlaced: false}
 	specProg := Resolve("auto", safariUA, 0, progCap, GPUBackendVAAPI, HWAccelAuto)
-	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
+	assert.Equal(t, true, specProg.TranscodeVideo, "Progressive on Apple clients uses Closed-GOP normalization")
+	assert.Equal(t, false, specProg.Deinterlace, "Progressive does not need deinterlace")
 	assert.Equal(t, "mpegts", specProg.Container)
 	assert.Equal(t, 320, specProg.AudioBitrateK, "Audio should be normalized for Safari")
-	assert.Equal(t, ports.RuntimeModeCopy, specProg.PolicyModeHint)
+	assert.Equal(t, ports.RuntimeModeHQ50, specProg.PolicyModeHint)
 
-	// 2. Interlaced + GPU -> Transcode VAAPI
+	// 2. Interlaced + GPU -> Transcode VAAPI + Deinterlace
 	interCap := &scan.Capability{Interlaced: true}
 	specGPU := Resolve("auto", safariUA, 0, interCap, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, true, specGPU.TranscodeVideo, "Interlaced should force transcode")
@@ -46,7 +46,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
 	assert.Equal(t, "h264", specGPU.VideoCodec)
 	assert.Equal(t, 20, specGPU.VideoQP)
-	assert.Equal(t, ports.RuntimeModeHQ25, specGPU.PolicyModeHint)
+	assert.Equal(t, ports.RuntimeModeHQ50, specGPU.PolicyModeHint)
 
 	// 3. Interlaced + No GPU -> Transcode CPU
 	specCPU := Resolve("auto", safariUA, 0, interCap, GPUBackendNone, HWAccelAuto)
@@ -57,13 +57,13 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, "libx264", specCPU.VideoCodec)
 	assert.Equal(t, "veryfast", specCPU.Preset)
 	assert.Equal(t, 20, specCPU.VideoCRF)
-	assert.Equal(t, ports.RuntimeModeHQ25, specCPU.PolicyModeHint)
+	assert.Equal(t, ports.RuntimeModeHQ50, specCPU.PolicyModeHint)
 }
 
 func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *testing.T) {
 	spec := Resolve("safari", "", 0, &scan.Capability{Interlaced: false}, GPUBackendNone, HWAccelAuto)
 
-	assert.False(t, spec.TranscodeVideo)
+	assert.True(t, spec.TranscodeVideo)
 	assert.Equal(t, "fmp4", spec.Container)
 	assert.Equal(t, 320, spec.AudioBitrateK)
 }

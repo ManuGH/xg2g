@@ -2,9 +2,9 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-monitoring-contract verify-quality-evidence-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-native-contract-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-adhoc-wire-structs verify-client-transport-boundary verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-monitoring-contract verify-quality-evidence-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix verify-ios-build gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
 
-verify: verify-generated-artifacts verify-webui-router-security verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-monitoring-contract verify-quality-evidence-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle ## Run all hermetic repository governance gates
+verify: verify-generated-artifacts verify-webui-router-security verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-adhoc-wire-structs verify-client-transport-boundary verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-monitoring-contract verify-quality-evidence-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-ios-build ## Run all hermetic repository governance gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -43,10 +43,13 @@ verify-embedded-webui-dist: ## Verify embedded WebUI dist is up-to-date
 verify-client-ts-fresh: ## Verify generated TS API client is up-to-date with openapi.yaml
 	@MAKE="$(MAKE)" ./$(BACKEND_DIR)/scripts/verify-client-ts-fresh.sh
 
+verify-native-contract-fresh: ## Verify generated iOS/Android contract models are up-to-date with openapi.yaml
+	@MAKE="$(MAKE)" ./$(BACKEND_DIR)/scripts/verify-native-contract-fresh.sh
+
 verify-webui-router-security: ## Pin the fixed React Router and keep the WebUI on its reviewed declarative surface
 	@./$(BACKEND_DIR)/scripts/verify-webui-router-security.sh
 
-verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
+verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-native-contract-fresh verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
 	@echo "✅ Generated artifact governance passed"
 
 verify-release-output-contract: ## Verify the normative release/package output contract
@@ -105,6 +108,12 @@ verify-no-adhoc-terminal-mapping: ## Verify terminal-state mapping ownership
 
 verify-no-adhoc-session-mapping: ## Verify session-state mapping ownership
 	@cd $(BACKEND_DIR) && ./scripts/verify-no-adhoc-session-mapping.sh
+
+verify-no-adhoc-wire-structs: ## Verify no hand-written struct duplicates a generated contract type
+	@cd $(BACKEND_DIR) && ./scripts/verify-no-adhoc-wire-structs.sh
+
+verify-client-transport-boundary: ## Verify client feature code reaches the network only through its transport module
+	@cd $(BACKEND_DIR) && ./scripts/verify-client-transport-boundary.sh
 
 verify-digest-lock: ## Verify release image digest governance
 	@./$(BACKEND_DIR)/scripts/verify-digest-lock.sh
@@ -184,3 +193,6 @@ verify-capacity-autocodec-demotion: ## Verify deterministic auto-codec capacity/
 
 verify-codec-path-matrix: ## Verify x264/x265/AV1 codec-path matrix and iOS codec-path policy
 	@./$(BACKEND_DIR)/scripts/verify-codec-path-matrix.sh
+
+verify-ios-build: ## Verify that the iOS app and test targets compile cleanly
+	@./ios/scripts/verify-ios-build.sh

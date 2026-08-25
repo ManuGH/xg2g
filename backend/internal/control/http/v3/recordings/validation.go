@@ -128,7 +128,7 @@ func ShouldEscapeRefChar(c byte) bool {
 // IsAllowedVideoSegment provides a single canonical allowlist for recordings HLS artifact serving.
 //
 // Allowed artifacts (by base name):
-// - init.mp4 (fMP4/CMAF init segment)
+// - init.mp4 or init_<digits>.mp4 (fMP4/CMAF init segments, including multi-variant)
 // - seg_*.ts (MPEG-TS segments)
 // - seg_*.m4s (fMP4/CMAF media segments)
 // - seg_*.cmfv (CMAF video segments; alternative extension used by some toolchains)
@@ -138,8 +138,8 @@ func IsAllowedVideoSegment(path string) bool {
 	parts := strings.Split(path, "/")
 	base := parts[len(parts)-1]
 
-	// Allow init.mp4 for fMP4
-	if base == "init.mp4" {
+	// Allow init.mp4 or init_<numeric_variant>.mp4 for fMP4 (e.g. init_0.mp4, init_1.mp4)
+	if isAllowedInitSegment(base) {
 		return true
 	}
 	// Enforce prefix to prevent arbitrary file exposure
@@ -154,4 +154,23 @@ func IsAllowedVideoSegment(path string) bool {
 		}
 	}
 	return false
+}
+
+func isAllowedInitSegment(base string) bool {
+	if base == "init.mp4" {
+		return true
+	}
+	if !strings.HasPrefix(base, "init_") || !strings.HasSuffix(base, ".mp4") {
+		return false
+	}
+	variantIndex := base[len("init_") : len(base)-len(".mp4")]
+	if len(variantIndex) == 0 {
+		return false
+	}
+	for i := 0; i < len(variantIndex); i++ {
+		if variantIndex[i] < '0' || variantIndex[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

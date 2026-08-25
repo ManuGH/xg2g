@@ -154,7 +154,7 @@ func TestResolvePlannerStartProfileAppliesIOSSafariNativeHEVCExecutionPolicy(t *
 				WithIOSNativeHEVCHWMode(tc.mode),
 			)
 			evidence, plan, receipt := plannerStartFixture(t)
-			evidence.ClientEvidence.Family = "ios_safari_native"
+			evidence.ClientEvidence.Family = "ios_safari"
 			plan.Mode = "transcode"
 			plan.Video = playbackplanner.TrackPlan{Mode: "transcode", Codec: "hevc"}
 			plan.Audio = playbackplanner.TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}

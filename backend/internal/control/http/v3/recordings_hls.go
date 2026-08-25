@@ -51,7 +51,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	}
 
 	if intent != nil {
-		expectedVariant := v3recordings.TargetVariantHash(&intent.Target)
+		expectedVariant := intent.Hash()
 		if expectedVariant != "" && expectedVariant != variant {
 			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "target profile variant hash mismatch")
 			return

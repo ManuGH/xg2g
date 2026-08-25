@@ -141,7 +141,7 @@ func feedbackCompatibleStartProfile(requestedPlaybackMode, clientFamily string) 
 	}
 
 	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return profiles.ProfileSafari
 	default:
 		return profiles.ProfileHigh
@@ -157,7 +157,7 @@ func feedbackRepairStartProfile(requestedPlaybackMode, clientFamily string) stri
 	}
 
 	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return profiles.ProfileSafariDirty
 	default:
 		return profiles.ProfileH264FMP4

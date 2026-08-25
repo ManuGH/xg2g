@@ -112,7 +112,8 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 		go func(job refJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, job.resolved, caps, "v3.1", "live")
+			// Badge batch: passive display only, so no seek anchor and no profile override.
+			serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, job.resolved, caps, "v3.1", "live", v3playbackinfo.WireParams{})
 			dto, err := s.buildPlaybackInfoHTTPResponse(r.Context(), deps, job.resolved, caps, "live", serviceRequest)
 			if err != nil {
 				return // omitted from the batch by design

@@ -82,6 +82,18 @@ func applyImpliedScopes(set scopeSet) {
 	if _, ok := set[ScopeV3Write]; ok {
 		set[ScopeV3Read] = struct{}{}
 	}
+	if _, ok := set["api"]; ok {
+		set[ScopeV3Write] = struct{}{}
+		set[ScopeV3Read] = struct{}{}
+	}
+	if _, ok := set["playback"]; ok {
+		set[ScopeV3Read] = struct{}{}
+	}
+	if _, ok := set["admin"]; ok {
+		set[ScopeV3Admin] = struct{}{}
+		set[ScopeV3Write] = struct{}{}
+		set[ScopeV3Read] = struct{}{}
+	}
 }
 
 func (s scopeSet) allows(required []Scope) bool {
@@ -116,7 +128,14 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 	cfgTokenScopes := cfg.APITokenScopes
 	cfgTokens := cfg.APITokens
 
-	// 0. Check persistent Identity Web Sessions (WebAuthn / Passkeys / Recovery)
+	// 0. Check in-memory auth session store for exchanged session tokens/cookies
+	if s.authSessionStore != nil {
+		if principal, ok := s.authSessionStore.ResolveSessionPrincipal(token); ok && principal != nil {
+			return auth.Authenticated(s.projectTokenPrincipal(ctx, principal, cfg))
+		}
+	}
+
+	// 0a. Check persistent Identity Web Sessions (WebAuthn / Passkeys / Recovery)
 	if idSvc := s.getIdentityService(); idSvc != nil {
 		if sess, user, err := idSvc.ValidateWebSession(ctx, token, "", ""); err == nil && sess != nil && user != nil {
 			var scopes []string
@@ -153,6 +172,12 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 								scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
 							}
 							principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
+							// The one credential class that names a device. The
+							// binding was just enforced by
+							// ValidateDPoPAccessToken, which refuses a token
+							// whose bound_jkt is not the proof's thumbprint —
+							// so this device ID is proven, not asserted.
+							principal.DeviceID = dpopToken.DeviceID
 							principal = s.projectTokenPrincipal(ctx, principal, cfg)
 							if principal != nil {
 								return auth.Authenticated(principal)

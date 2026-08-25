@@ -1,0 +1,2886 @@
+{
+  "$comment": "GENERATED FILE - DO NOT EDIT. Source: backend/api/openapi.yaml. Regenerate with: make generate-contract-manifest",
+  "manifestVersion": 1,
+  "spec": {
+    "path": "backend/api/openapi.yaml",
+    "sha256": "a92b6d35054b808ba0205b718246661368da3fd34b8647983415b4530d2a51c9"
+  },
+  "paths": [
+    "/auth/device/refresh",
+    "/auth/session",
+    "/dvr/capabilities",
+    "/dvr/status",
+    "/epg",
+    "/errors",
+    "/household/profiles",
+    "/household/profiles/{profileId}",
+    "/household/unlock",
+    "/intents",
+    "/live/playback-summary",
+    "/live/stream-info",
+    "/logs",
+    "/pairing/start",
+    "/pairing/{pairingId}/approve",
+    "/pairing/{pairingId}/exchange",
+    "/pairing/{pairingId}/status",
+    "/receiver/current",
+    "/recordings",
+    "/recordings/{recordingId}",
+    "/recordings/{recordingId}/delete",
+    "/recordings/{recordingId}/playlist.m3u8",
+    "/recordings/{recordingId}/rename",
+    "/recordings/{recordingId}/resume",
+    "/recordings/{recordingId}/scrub.jpg",
+    "/recordings/{recordingId}/status",
+    "/recordings/{recordingId}/stream-info",
+    "/recordings/{recordingId}/stream.mp4",
+    "/recordings/{recordingId}/thumbnail.jpg",
+    "/recordings/{recordingId}/timeshift.m3u8",
+    "/recordings/{recordingId}/{segment}",
+    "/series-rules",
+    "/series-rules/run",
+    "/series-rules/{id}",
+    "/series-rules/{id}/run",
+    "/services",
+    "/services/bouquets",
+    "/services/now-next",
+    "/services/{id}/toggle",
+    "/sessions",
+    "/sessions/{sessionID}",
+    "/sessions/{sessionID}/events",
+    "/sessions/{sessionID}/heartbeat",
+    "/sessions/{sessionID}/hls/{filename}",
+    "/sessions/{sessionID}/hls/{variant}/{filename}",
+    "/sessions/{sessionId}/feedback",
+    "/sessions/{sessionId}/playback-ticket",
+    "/stream/prepare",
+    "/stream/prepare/{preparationId}",
+    "/stream/prepare/{preparationId}/commit",
+    "/streams",
+    "/streams/{id}",
+    "/system/config",
+    "/system/connectivity",
+    "/system/entitlements",
+    "/system/entitlements/overrides",
+    "/system/entitlements/overrides/{principalId}/{scope}",
+    "/system/entitlements/receipts",
+    "/system/health",
+    "/system/healthz",
+    "/system/info",
+    "/system/refresh",
+    "/system/scan",
+    "/timers",
+    "/timers/conflicts:preview",
+    "/timers/{timerId}"
+  ],
+  "operations": [
+    {
+      "operationId": "DeviceRefresh",
+      "method": "POST",
+      "path": "/auth/device/refresh",
+      "parameters": [
+        {
+          "name": "DPoP",
+          "in": "header",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "deleteSession",
+      "method": "DELETE",
+      "path": "/auth/session",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "403"
+        }
+      ]
+    },
+    {
+      "operationId": "createSession",
+      "method": "POST",
+      "path": "/auth/session",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "401"
+        }
+      ]
+    },
+    {
+      "operationId": "getDvrCapabilities",
+      "method": "GET",
+      "path": "/dvr/capabilities",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getDvrStatus",
+      "method": "GET",
+      "path": "/dvr/status",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getEpg",
+      "method": "GET",
+      "path": "/epg",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "bouquet",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "from",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "q",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getErrors",
+      "method": "GET",
+      "path": "/errors",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getHouseholdProfiles",
+      "method": "GET",
+      "path": "/household/profiles",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postHouseholdProfiles",
+      "method": "POST",
+      "path": "/household/profiles",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
+      "operationId": "deleteHouseholdProfile",
+      "method": "DELETE",
+      "path": "/household/profiles/{profileId}",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "profileId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
+      "operationId": "putHouseholdProfile",
+      "method": "PUT",
+      "path": "/household/profiles/{profileId}",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "profileId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "deleteHouseholdUnlock",
+      "method": "DELETE",
+      "path": "/household/unlock",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        }
+      ]
+    },
+    {
+      "operationId": "getHouseholdUnlock",
+      "method": "GET",
+      "path": "/household/unlock",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postHouseholdUnlock",
+      "method": "POST",
+      "path": "/household/unlock",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
+      "operationId": "createIntent",
+      "method": "POST",
+      "path": "/intents",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "202",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postLivePlaybackSummary",
+      "method": "POST",
+      "path": "/live/playback-summary",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401"
+        },
+        {
+          "status": "403"
+        }
+      ]
+    },
+    {
+      "operationId": "postLivePlaybackInfo",
+      "method": "POST",
+      "path": "/live/stream-info",
+      "parameters": [
+        {
+          "name": "X-XG2G-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "profile",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "start_ms",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getLogs",
+      "method": "GET",
+      "path": "/logs",
+      "parameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "StartPairing",
+      "method": "POST",
+      "path": "/pairing/start",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "ApprovePairing",
+      "method": "POST",
+      "path": "/pairing/{pairingId}/approve",
+      "parameters": [
+        {
+          "name": "pairingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "409",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "ExchangePairing",
+      "method": "POST",
+      "path": "/pairing/{pairingId}/exchange",
+      "parameters": [
+        {
+          "name": "pairingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "409",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "GetPairingStatus",
+      "method": "POST",
+      "path": "/pairing/{pairingId}/status",
+      "parameters": [
+        {
+          "name": "pairingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getReceiverCurrent",
+      "method": "GET",
+      "path": "/receiver/current",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "502",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordings",
+      "method": "GET",
+      "path": "/recordings",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "path",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "root",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "deleteRecording",
+      "method": "DELETE",
+      "path": "/recordings/{recordingId}",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "500"
+        }
+      ]
+    },
+    {
+      "operationId": "postRecordingDelete",
+      "method": "POST",
+      "path": "/recordings/{recordingId}/delete",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSPlaylist",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/playlist.m3u8",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/vnd.apple.mpegurl",
+            "application/x-mpegURL"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSPlaylistHead",
+      "method": "HEAD",
+      "path": "/recordings/{recordingId}/playlist.m3u8",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "postRecordingRename",
+      "method": "POST",
+      "path": "/recordings/{recordingId}/rename",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "422",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "putRecordingResume",
+      "method": "PUT",
+      "path": "/recordings/{recordingId}/resume",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingScrubFrame",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/scrub.jpg",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "t",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "image/jpeg"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingsRecordingIdStatus",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/status",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingPlaybackInfo",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/stream-info",
+      "parameters": [
+        {
+          "name": "X-XG2G-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "profile",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "start_ms",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postRecordingPlaybackInfo",
+      "method": "POST",
+      "path": "/recordings/{recordingId}/stream-info",
+      "parameters": [
+        {
+          "name": "X-XG2G-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "profile",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "start_ms",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "412",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "422",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "streamRecordingDirect",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/stream.mp4",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "video/mp4"
+          ]
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "probeRecordingMp4",
+      "method": "HEAD",
+      "path": "/recordings/{recordingId}/stream.mp4",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingThumbnail",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/thumbnail.jpg",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "image/jpeg"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "403",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSTimeshift",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/timeshift.m3u8",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/vnd.apple.mpegurl",
+            "application/x-mpegURL"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSTimeshiftHead",
+      "method": "HEAD",
+      "path": "/recordings/{recordingId}/timeshift.m3u8",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSCustomSegment",
+      "method": "GET",
+      "path": "/recordings/{recordingId}/{segment}",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "segment",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/octet-stream",
+            "video/MP2T",
+            "video/iso.segment",
+            "video/mp2t",
+            "video/mp4"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "409",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getRecordingHLSCustomSegmentHead",
+      "method": "HEAD",
+      "path": "/recordings/{recordingId}/{segment}",
+      "parameters": [
+        {
+          "name": "recordingId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "segment",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getSeriesRules",
+      "method": "GET",
+      "path": "/series-rules",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "createSeriesRule",
+      "method": "POST",
+      "path": "/series-rules",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "runAllSeriesRules",
+      "method": "POST",
+      "path": "/series-rules/run",
+      "parameters": [
+        {
+          "name": "trigger",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "deleteSeriesRule",
+      "method": "DELETE",
+      "path": "/series-rules/{id}",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "updateSeriesRule",
+      "method": "PUT",
+      "path": "/series-rules/{id}",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "runSeriesRule",
+      "method": "POST",
+      "path": "/series-rules/{id}/run",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "trigger",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getServices",
+      "method": "GET",
+      "path": "/services",
+      "parameters": [
+        {
+          "name": "X-Household-Profile",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "bouquet",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getServicesBouquets",
+      "method": "GET",
+      "path": "/services/bouquets",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postServicesNowNext",
+      "method": "POST",
+      "path": "/services/now-next",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        }
+      ]
+    },
+    {
+      "operationId": "postServicesIdToggle",
+      "method": "POST",
+      "path": "/services/{id}/toggle",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "listSessions",
+      "method": "GET",
+      "path": "/sessions",
+      "parameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getSessionState",
+      "method": "GET",
+      "path": "/sessions/{sessionID}",
+      "parameters": [
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getSessionEvents",
+      "method": "GET",
+      "path": "/sessions/{sessionID}/events",
+      "parameters": [
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "text/event-stream"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postSessionHeartbeat",
+      "method": "POST",
+      "path": "/sessions/{sessionID}/heartbeat",
+      "parameters": [
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "serveHLS",
+      "method": "GET",
+      "path": "/sessions/{sessionID}/hls/{filename}",
+      "parameters": [
+        {
+          "name": "filename",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/vnd.apple.mpegurl",
+            "video/MP2T",
+            "video/iso.segment",
+            "video/mp4"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "serveHLSHead",
+      "method": "HEAD",
+      "path": "/sessions/{sessionID}/hls/{filename}",
+      "parameters": [
+        {
+          "name": "filename",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "serveHLSVariant",
+      "method": "GET",
+      "path": "/sessions/{sessionID}/hls/{variant}/{filename}",
+      "parameters": [
+        {
+          "name": "filename",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/vnd.apple.mpegurl",
+            "video/MP2T",
+            "video/iso.segment",
+            "video/mp4"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "serveHLSVariantHead",
+      "method": "HEAD",
+      "path": "/sessions/{sessionID}/hls/{variant}/{filename}",
+      "parameters": [
+        {
+          "name": "filename",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "variant",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "reportPlaybackFeedback",
+      "method": "POST",
+      "path": "/sessions/{sessionId}/feedback",
+      "parameters": [
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "202"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "postSessionPlaybackTicket",
+      "method": "POST",
+      "path": "/sessions/{sessionId}/playback-ticket",
+      "parameters": [
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "401"
+        },
+        {
+          "status": "500"
+        }
+      ]
+    },
+    {
+      "operationId": "startStreamPrepare",
+      "method": "POST",
+      "path": "/stream/prepare",
+      "parameters": [
+        {
+          "name": "sref",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "cancelStreamPrepare",
+      "method": "DELETE",
+      "path": "/stream/prepare/{preparationId}",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getStreamPrepareStatus",
+      "method": "GET",
+      "path": "/stream/prepare/{preparationId}",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "commitStreamPrepare",
+      "method": "POST",
+      "path": "/stream/prepare/{preparationId}/commit",
+      "parameters": [
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "generation",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
+      "operationId": "getStreams",
+      "method": "GET",
+      "path": "/streams",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "deleteStreamsId",
+      "method": "DELETE",
+      "path": "/streams/{id}",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemConfig",
+      "method": "GET",
+      "path": "/system/config",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "putSystemConfig",
+      "method": "PUT",
+      "path": "/system/config",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "500"
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemConnectivity",
+      "method": "GET",
+      "path": "/system/connectivity",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemEntitlements",
+      "method": "GET",
+      "path": "/system/entitlements",
+      "parameters": [
+        {
+          "name": "principalId",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postSystemEntitlementOverride",
+      "method": "POST",
+      "path": "/system/entitlements/overrides",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400"
+        }
+      ]
+    },
+    {
+      "operationId": "deleteSystemEntitlementOverride",
+      "method": "DELETE",
+      "path": "/system/entitlements/overrides/{principalId}/{scope}",
+      "parameters": [
+        {
+          "name": "principalId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "scope",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400"
+        }
+      ]
+    },
+    {
+      "operationId": "postSystemEntitlementReceipt",
+      "method": "POST",
+      "path": "/system/entitlements/receipts",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "502"
+        },
+        {
+          "status": "503"
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemHealth",
+      "method": "GET",
+      "path": "/system/health",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemHealthz",
+      "method": "GET",
+      "path": "/system/healthz",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getSystemInfo",
+      "method": "GET",
+      "path": "/system/info",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "postSystemRefresh",
+      "method": "POST",
+      "path": "/system/refresh",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "202"
+        },
+        {
+          "status": "409"
+        }
+      ]
+    },
+    {
+      "operationId": "GetSystemScanStatus",
+      "method": "GET",
+      "path": "/system/scan",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "TriggerSystemScan",
+      "method": "POST",
+      "path": "/system/scan",
+      "parameters": [],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "202",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "500",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "getTimers",
+      "method": "GET",
+      "path": "/timers",
+      "parameters": [
+        {
+          "name": "from",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "state",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "addTimer",
+      "method": "POST",
+      "path": "/timers",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "201",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "409",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "422",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "502",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "previewConflicts",
+      "method": "POST",
+      "path": "/timers/conflicts:preview",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "deleteTimer",
+      "method": "DELETE",
+      "path": "/timers/{timerId}",
+      "parameters": [
+        {
+          "name": "timerId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "getTimer",
+      "method": "GET",
+      "path": "/timers/{timerId}",
+      "parameters": [
+        {
+          "name": "timerId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        }
+      ]
+    },
+    {
+      "operationId": "updateTimer",
+      "method": "PATCH",
+      "path": "/timers/{timerId}",
+      "parameters": [
+        {
+          "name": "timerId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "422",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "502"
+        }
+      ]
+    }
+  ],
+  "schemas": [
+    "APIError",
+    "AppConfig",
+    "ApprovePairingRequest",
+    "ApprovePairingResponse",
+    "AuthSessionResponse",
+    "Bouquet",
+    "Breadcrumb",
+    "ComponentStatus",
+    "ConfigUpdate",
+    "ConnectivityConfig",
+    "ConnectivityContract",
+    "ConnectivityDeploymentProfile",
+    "ConnectivityFinding",
+    "ConnectivityRequest",
+    "ConnectivitySelection",
+    "ConnectivitySelections",
+    "CurrentServiceInfo",
+    "DeviceAuthDeviceType",
+    "DeviceBindingState",
+    "DeviceGrantResponse",
+    "DeviceRefreshRequest",
+    "DirectoryItem",
+    "DvrCapabilities",
+    "ECPublicKeyJWK",
+    "EPGConfig",
+    "EPGStatus",
+    "EntitlementGrant",
+    "EntitlementOverrideRequest",
+    "EntitlementReceiptRequest",
+    "EntitlementReceiptResponse",
+    "EntitlementStatus",
+    "EpgAgeRating",
+    "EpgEpisodeInfo",
+    "EpgItem",
+    "EpgRatingConfidence",
+    "EpgRatingScore",
+    "EpgRatingSource",
+    "Error",
+    "ErrorCatalogEntry",
+    "ErrorCatalogResponse",
+    "ErrorSeverity",
+    "ExchangePairingResponse",
+    "HardwareInfo",
+    "HouseholdConfigUpdate",
+    "HouseholdProfile",
+    "HouseholdProfilePermissions",
+    "HouseholdStatus",
+    "HouseholdUnlockRequest",
+    "HouseholdUnlockStatus",
+    "IntentAcceptedResponse",
+    "IntentRequest",
+    "LivePlaybackTruthProblem",
+    "LiveStreamInfoRequest",
+    "LiveStreamInfoResponse",
+    "LogEntry",
+    "MonetizationStatus",
+    "NetworkInfo",
+    "NetworkInterfaceInfo",
+    "NowNextEntry",
+    "NowNextItem",
+    "NowNextRequest",
+    "NowNextResponse",
+    "OpenWebIFConfig",
+    "PairingSecretRequest",
+    "PairingStatus",
+    "PairingStatusResponse",
+    "PiconsConfig",
+    "PlaybackBrowserEngine",
+    "PlaybackCapabilities",
+    "PlaybackClientIdentity",
+    "PlaybackClientPlatform",
+    "PlaybackClientSnapshot",
+    "PlaybackClientSummary",
+    "PlaybackClientSurface",
+    "PlaybackDecision",
+    "PlaybackDeviceContext",
+    "PlaybackEngineErrorContext",
+    "PlaybackFeedbackRequest",
+    "PlaybackInfo",
+    "PlaybackInfoDurationSource",
+    "PlaybackInfoMode",
+    "PlaybackInfoReason",
+    "PlaybackMaxVideo",
+    "PlaybackNetworkContext",
+    "PlaybackOutput",
+    "PlaybackOutputFile",
+    "PlaybackOutputHls",
+    "PlaybackSourceProfile",
+    "PlaybackTargetAudio",
+    "PlaybackTargetHls",
+    "PlaybackTargetProfile",
+    "PlaybackTargetVideo",
+    "PlaybackTicketResponse",
+    "PlaybackTrace",
+    "PlaybackTraceFfmpegPlan",
+    "PlaybackTraceHlsDebug",
+    "PlaybackTraceOperator",
+    "PlaybackTraceRuntimeDiagnostics",
+    "PlaybackTraceRuntimeReplay",
+    "PlaybackTraceRuntimeReplayMetadata",
+    "PlaybackTraceRuntimeReplayState",
+    "PlaybackTraceRuntimeReplayTick",
+    "PlaybackTraceRuntimeReplayTickExpected",
+    "PlaybackTraceRuntimeReplayTickInput",
+    "PlaybackTraceRuntimeReplayTickInputConfidence",
+    "PlaybackTraceRuntimeTick",
+    "PlaybackVideoCodecSignal",
+    "ProblemCapabilitiesInvalid",
+    "ProblemCapabilitiesMissing",
+    "ProblemCode",
+    "ProblemDecisionAmbiguous",
+    "ProblemDetails",
+    "PublishedEndpoint",
+    "PublishedEndpointKind",
+    "PublishedEndpointSource",
+    "PublishedEndpointTLSMode",
+    "ReceiverUsagePolicyConfig",
+    "RecordingBuildStatus",
+    "RecordingItem",
+    "RecordingResponse",
+    "RecordingResumeRequest",
+    "RecordingRoot",
+    "RecordingStatus",
+    "ResourceInfo",
+    "ResumeSummary",
+    "RuleSnapshot",
+    "RunConflict",
+    "RunDecision",
+    "RunError",
+    "RunSummary",
+    "RuntimeInfo",
+    "ScanStatus",
+    "SeriesRule",
+    "SeriesRuleRunReport",
+    "SeriesRuleUpdate",
+    "Service",
+    "SessionHeartbeatResponse",
+    "SessionRecord",
+    "SessionResponse",
+    "SessionTerminalProblem",
+    "SoftwareInfo",
+    "StartPairingRequest",
+    "StartPairingResponse",
+    "StorageInfo",
+    "StorageItem",
+    "StreamSession",
+    "StreamingConfig",
+    "SystemHealth",
+    "SystemInfoData",
+    "Timer",
+    "TimerConflict",
+    "TimerConflictPreviewRequest",
+    "TimerConflictPreviewResponse",
+    "TimerCreateRequest",
+    "TimerList",
+    "TimerPatchRequest",
+    "TunerInfo",
+    "VerificationConfig",
+    "ZapPreparationResponse",
+    "ZapPreparationState"
+  ],
+  "nativeContract": {
+    "roots": [
+      "ApprovePairingRequest",
+      "ApprovePairingResponse",
+      "AuthSessionResponse",
+      "Bouquet",
+      "DeviceGrantResponse",
+      "DeviceRefreshRequest",
+      "ECPublicKeyJWK",
+      "EpgItem",
+      "ExchangePairingResponse",
+      "IntentAcceptedResponse",
+      "IntentRequest",
+      "LiveStreamInfoRequest",
+      "LiveStreamInfoResponse",
+      "NowNextRequest",
+      "NowNextResponse",
+      "PairingSecretRequest",
+      "PairingStatusResponse",
+      "PlaybackTicketResponse",
+      "PublishedEndpoint",
+      "RecordingResponse",
+      "RecordingResumeRequest",
+      "Service",
+      "StartPairingRequest",
+      "StartPairingResponse",
+      "TimerCreateRequest",
+      "TimerList",
+      "ZapPreparationResponse"
+    ],
+    "closure": [
+      "ApprovePairingRequest",
+      "ApprovePairingResponse",
+      "AuthSessionResponse",
+      "Bouquet",
+      "Breadcrumb",
+      "DeviceAuthDeviceType",
+      "DeviceGrantResponse",
+      "DeviceRefreshRequest",
+      "DirectoryItem",
+      "ECPublicKeyJWK",
+      "EpgAgeRating",
+      "EpgEpisodeInfo",
+      "EpgItem",
+      "EpgRatingConfidence",
+      "EpgRatingScore",
+      "EpgRatingSource",
+      "ExchangePairingResponse",
+      "IntentAcceptedResponse",
+      "IntentRequest",
+      "LiveStreamInfoRequest",
+      "LiveStreamInfoResponse",
+      "NowNextEntry",
+      "NowNextItem",
+      "NowNextRequest",
+      "NowNextResponse",
+      "PairingSecretRequest",
+      "PairingStatus",
+      "PairingStatusResponse",
+      "PlaybackBrowserEngine",
+      "PlaybackCapabilities",
+      "PlaybackClientIdentity",
+      "PlaybackClientPlatform",
+      "PlaybackClientSurface",
+      "PlaybackDeviceContext",
+      "PlaybackInfoMode",
+      "PlaybackMaxVideo",
+      "PlaybackNetworkContext",
+      "PlaybackTicketResponse",
+      "PlaybackVideoCodecSignal",
+      "PublishedEndpoint",
+      "PublishedEndpointKind",
+      "PublishedEndpointSource",
+      "PublishedEndpointTLSMode",
+      "RecordingItem",
+      "RecordingResponse",
+      "RecordingResumeRequest",
+      "RecordingRoot",
+      "ResumeSummary",
+      "Service",
+      "StartPairingRequest",
+      "StartPairingResponse",
+      "Timer",
+      "TimerCreateRequest",
+      "TimerList",
+      "ZapPreparationResponse",
+      "ZapPreparationState"
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
+      "language": "kotlin",
+      "generator": "gen-native-contract",
+      "sha256": "81a86e1eb273ba489bd0ffc41b4880192ae31b18b5adcc8904a9083801d6f453"
+    },
+    {
+      "path": "apps/webui/src/client-ts/client.gen.ts",
+      "language": "typescript",
+      "generator": "@hey-api/openapi-ts",
+      "sha256": "b9dac1d270abc0f68213bdd8fcfe0216fef81b5e4ff19bc8cbd92c30c3630985"
+    },
+    {
+      "path": "apps/webui/src/client-ts/index.ts",
+      "language": "typescript",
+      "generator": "@hey-api/openapi-ts",
+      "sha256": "e846139676c386217d988f9cb1028217bc4e1ee97c7135f549f76ff1826fa3e5"
+    },
+    {
+      "path": "apps/webui/src/client-ts/sdk.gen.ts",
+      "language": "typescript",
+      "generator": "@hey-api/openapi-ts",
+      "sha256": "b7c680aaec3253ad09331b7819cfc0b420a21db77cc3b3dd1cd0aba3ec02d5d5"
+    },
+    {
+      "path": "apps/webui/src/client-ts/types.gen.ts",
+      "language": "typescript",
+      "generator": "@hey-api/openapi-ts",
+      "sha256": "5ca486dac039041459ef7e4ca1a3fef3e0cb6bddf82828bb8a791339508cb09c"
+    },
+    {
+      "path": "apps/webui/src/types/api/consumption.d.ts",
+      "language": "typescript",
+      "generator": "generate-consumption-types",
+      "sha256": "9429a0d3851b77b803564912d35a01fc5d9987344dcd84351b88738ea778c635"
+    },
+    {
+      "path": "backend/internal/api/server_gen.go",
+      "language": "go",
+      "generator": "oapi-codegen",
+      "sha256": "855200780f0df8606159039578efe406fbb80b0395a80a1a4a8037c885a1aeda"
+    },
+    {
+      "path": "backend/internal/control/authz/operation_catalog_gen.go",
+      "language": "go",
+      "generator": "gen-operation-catalog",
+      "sha256": "7d404a53c6e222e7ef3c57a7b62df15f0204cda24803851c29bc15b7bde41946"
+    },
+    {
+      "path": "backend/internal/control/http/v3/operation_routes_gen.go",
+      "language": "go",
+      "generator": "gen-operation-catalog",
+      "sha256": "100366bcf28f41e366fa2728d71186258ef5a7262d19f80dec85290f9a61f488"
+    },
+    {
+      "path": "backend/internal/control/http/v3/server_gen.go",
+      "language": "go",
+      "generator": "oapi-codegen",
+      "sha256": "37e8bf0937a32acebbd5668bc7338a09d19d11c5d83255e3aedb44b6f691566b"
+    },
+    {
+      "path": "ios/Xg2g/Generated/Xg2gContract.swift",
+      "language": "swift",
+      "generator": "gen-native-contract",
+      "sha256": "051411f367d52884c3938bd8539f49a8a30f7bf2332eb5102e4a0491f9dac666"
+    },
+    {
+      "path": "openapi/v3.normative.snapshot.yaml",
+      "language": "yaml",
+      "generator": "generate-normative-snapshot",
+      "sha256": "aee4637a44b4ae1297f74faf11a072772ef912a4fee1a67ec17ceff0035b757f"
+    }
+  ]
+}

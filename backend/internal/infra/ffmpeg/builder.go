@@ -11,7 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
-const stableTranscodeAudioFilter = "aresample=async=1:first_pts=0,asetpts=N/SR/TB"
+const stableTranscodeAudioFilter = "aresample=async=1"
 
 // mapProfileToArgs converts the high-level intent into FFmpeg flags.
 func mapProfileToArgs(spec vod.Spec) ([]string, error) {
@@ -39,10 +39,27 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-progress", "pipe:2", "-loglevel", "warning",
+	}
+
+	if spec.Intent != nil && strings.EqualFold(strings.TrimSpace(string(spec.Intent.Target.HWAccel)), "vaapi") {
+		args = append(args, "-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va")
+	}
+
+	offsetMs := spec.StartOffsetMs
+	if spec.Intent != nil && spec.Intent.StartOffsetMs > 0 {
+		offsetMs = spec.Intent.StartOffsetMs
+	}
+
+	if offsetMs > 0 {
+		offsetSecStr := strconv.FormatFloat(float64(offsetMs)/1000.0, 'f', -1, 64)
+		args = append(args, "-ss", offsetSecStr)
+	}
+
+	args = append(args,
 		"-fflags", "+genpts+discardcorrupt",
 		"-avoid_negative_ts", "make_zero",
 		"-i", inputPath,
-	}
+	)
 
 	if spec.Intent != nil {
 		targetArgs, err := mapTargetProfileToArgs(spec.Intent.Target)
@@ -95,7 +112,7 @@ func mapTargetProfileToArgs(target ports.TargetPlaybackProfile) ([]string, error
 		return nil, fmt.Errorf("vod: target profile must enable hls for recording builds")
 	}
 
-	videoArgs, err := videoTargetArgs(target.Video)
+	videoArgs, err := videoTargetArgs(target.Video, string(target.HWAccel))
 	if err != nil {
 		return nil, err
 	}
@@ -110,18 +127,39 @@ func mapTargetProfileToArgs(target ports.TargetPlaybackProfile) ([]string, error
 	return args, nil
 }
 
-func videoTargetArgs(video ports.VideoTarget) ([]string, error) {
+func videoTargetArgs(video ports.VideoTarget, hwaccel string) ([]string, error) {
 	switch video.Mode {
 	case "", ports.MediaModeCopy:
 		return []string{"-c:v", "copy"}, nil
 	case ports.MediaModeTranscode:
-		encoder, err := ffmpegVideoEncoder(video.Codec)
+		encoder, err := ffmpegVideoEncoder(video.Codec, hwaccel)
 		if err != nil {
 			return nil, err
 		}
-		args := []string{"-c:v", encoder}
+		args := []string{}
+		isVAAPI := strings.EqualFold(strings.TrimSpace(hwaccel), "vaapi")
+		isAV1 := strings.EqualFold(strings.TrimSpace(video.Codec), "av1")
+
+		if isVAAPI {
+			if isAV1 {
+				args = append(args, "-vf", "format=p010le,hwupload,scale_vaapi=format=p010:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+			} else {
+				args = append(args, "-vf", "format=nv12,hwupload,scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+			}
+		}
+
+		args = append(args, "-c:v", encoder)
+		args = append(args, "-flags", "+cgop", "-sc_threshold", "0")
+
+		if isAV1 && isVAAPI {
+			args = append(args, "-level", "5.0")
+		}
+
 		if video.BitrateKbps > 0 {
 			return append(args, "-b:v", strconv.Itoa(video.BitrateKbps)+"k"), nil
+		}
+		if isVAAPI {
+			return args, nil
 		}
 		preset := strings.ToLower(strings.TrimSpace(video.Preset))
 		if preset == "" {
@@ -165,12 +203,25 @@ func audioTargetArgs(audio ports.AudioTarget) ([]string, error) {
 	}
 }
 
-func ffmpegVideoEncoder(codec string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(codec)) {
+func ffmpegVideoEncoder(codec string, hwaccel string) (string, error) {
+	c := strings.ToLower(strings.TrimSpace(codec))
+	hw := strings.ToLower(strings.TrimSpace(hwaccel))
+	switch c {
 	case "", "h264":
+		if hw == "vaapi" {
+			return "h264_vaapi", nil
+		}
 		return "libx264", nil
 	case "hevc", "h265":
+		if hw == "vaapi" {
+			return "hevc_vaapi", nil
+		}
 		return "libx265", nil
+	case "av1":
+		if hw == "vaapi" {
+			return "av1_vaapi", nil
+		}
+		return "libsvtav1", nil
 	default:
 		return "", fmt.Errorf("vod: unsupported target video codec %q", codec)
 	}

@@ -801,7 +801,7 @@ func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, plat
 	accessHash := hashToken(rawAccessToken)
 
 	if scopes == "" {
-		scopes = "api playback"
+		scopes = "v3:read v3:write api playback"
 	}
 
 	accessTokenObj := &DPoPAccessToken{
@@ -826,6 +826,37 @@ func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, plat
 		DeviceID:     dev.ID,
 		Scope:        scopes,
 	}, nil
+}
+
+// RevokeDeviceSelf retires every credential belonging to one device.
+//
+// The caller supplies a device ID it has already authenticated as — never one
+// taken from a request body. This function performs no authorization of its
+// own precisely because there is no safe way for it to do so: it cannot tell a
+// device's own ID from a neighbour's, so the decision has to be made where the
+// authenticated identity is known.
+//
+// Revoking a device that holds no live credentials is not an error. The client
+// contract is remote-first — it destroys its local key only after the server
+// confirms — so a retry after a lost response must be able to succeed rather
+// than strand the device with material it can never clear.
+func (s *Service) RevokeDeviceSelf(ctx context.Context, deviceID string) error {
+	if strings.TrimSpace(deviceID) == "" {
+		return ErrInvalidDeviceID
+	}
+
+	device, err := s.store.GetDevice(ctx, deviceID)
+	if err != nil {
+		if errors.Is(err, ErrStoreNotFound) {
+			return ErrInvalidDeviceID
+		}
+		return err
+	}
+	if device == nil {
+		return ErrInvalidDeviceID
+	}
+
+	return s.store.RevokeDeviceCredentials(ctx, deviceID, s.now())
 }
 
 // RotateDeviceRefreshToken rotates the refresh token generation and issues a fresh DPoP Access Token.
@@ -872,7 +903,7 @@ func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken,
 		DeviceID:  dev.ID,
 		UserID:    dev.UserID,
 		BoundJKT:  dev.JWKThumbprint,
-		Scopes:    "api playback",
+		Scopes:    "v3:read v3:write api playback",
 		CreatedAt: now,
 		ExpiresAt: now.Add(15 * time.Minute),
 	}
@@ -887,7 +918,7 @@ func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken,
 		RefreshToken: newRawRefreshToken,
 		ExpiresIn:    900,
 		DeviceID:     dev.ID,
-		Scope:        "api playback",
+		Scope:        "v3:read v3:write api playback",
 	}, nil
 }
 

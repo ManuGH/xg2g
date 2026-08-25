@@ -36,7 +36,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 	}{
 		{
 			name:   "iphone a17 pro on ios 17 is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"}
@@ -45,7 +45,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone a16 stays off even when runtime reports generic av1",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "18.1", Model: "iPhone 14 Pro A16"}
@@ -54,7 +54,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone 15 non-pro stays off even on ios 17",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 A16"}
@@ -63,7 +63,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone 15 pro max hw machine identifier is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone16,2"}
@@ -72,7 +72,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone 16e is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "18.3", Model: "iPhone 16e A18"}
@@ -81,7 +81,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone air is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "26.0", Model: "iPhone Air A19 Pro"}
@@ -90,7 +90,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "iphone a17 pro below ios 17 stays off",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "iphone"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ios", OSVersion: "16.7", Model: "iPhone 15 Pro A17 Pro"}
@@ -99,7 +99,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "ipad m4 on ipados is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "ipad"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ipados", OSVersion: "18.0", Model: "iPad Pro M4"}
@@ -108,7 +108,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "ipad air 13 m3 is allowed",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "ipad"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ipados", OSVersion: "18.4", Model: "iPad Air 13-inch M3"}
@@ -117,7 +117,7 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		},
 		{
 			name:   "ipad a16 stays off",
-			family: playbackprofile.ClientIOSSafariNative,
+			family: playbackprofile.ClientIOSSafari,
 			mutate: func(c *capabilities.PlaybackCapabilities) {
 				c.DeviceType = "ipad"
 				c.DeviceContext = &capabilities.DeviceContext{OSName: "ipados", OSVersion: "18.4", Model: "iPad A16"}

@@ -26,15 +26,18 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 		wantPreset          string
 	}{
 		{
-			name:                "safari macos auto progressive stays safari-compatible copy path",
+			name:                "safari macos auto progressive uses QSV normalization for closed GOP",
 			clientFixture:       playbackprofile.ClientSafariNative,
 			requestedProfile:    "auto",
 			cap:                 &scan.Capability{Interlaced: false},
+			hasGPU:              true,
+			hwaccelMode:         HWAccelAuto,
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
-			wantTranscodeVideo:  false,
+			wantTranscodeVideo:  true,
 			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
+			wantVideoQP:         20,
 		},
 		{
 			name:                "safari macos auto interlaced stays safari-compatible transcode path",
@@ -67,14 +70,17 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 		},
 		{
 			name:                "ios safari auto uses same native safari family semantics",
-			clientFixture:       playbackprofile.ClientIOSSafariNative,
+			clientFixture:       playbackprofile.ClientIOSSafari,
 			requestedProfile:    "auto",
 			cap:                 &scan.Capability{Interlaced: false},
+			hasGPU:              true,
+			hwaccelMode:         HWAccelAuto,
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
-			wantTranscodeVideo:  false,
+			wantTranscodeVideo:  true,
 			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
+			wantVideoQP:         20,
 		},
 		{
 			name:                "firefox hlsjs auto resolves to compatible high profile",
@@ -165,7 +171,7 @@ func userAgentForClientFixture(t *testing.T, fixtureID string) string {
 	switch fixtureID {
 	case playbackprofile.ClientSafariNative:
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-	case playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientIOSSafari:
 		return "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 	case playbackprofile.ClientFirefoxHLSJS:
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:148.0) Gecko/20100101 Firefox/148.0"

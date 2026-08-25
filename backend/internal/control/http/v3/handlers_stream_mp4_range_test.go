@@ -1,6 +1,7 @@
 package v3
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -186,4 +187,120 @@ func TestStreamRecordingDirect_TsContentType(t *testing.T) {
 	assert.Equal(t, "video/mp2t", w.Header().Get("Content-Type"))
 	assert.Equal(t, "bytes", w.Header().Get("Accept-Ranges"))
 	assert.Equal(t, "0123", w.Body.String())
+}
+
+func TestStreamRecordingDirect_DownloadAuthContract(t *testing.T) {
+	tmpDir := t.TempDir()
+	content := make([]byte, 1024)
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	artifactPath := filepath.Join(tmpDir, "contract_test.mp4")
+	require.NoError(t, os.WriteFile(artifactPath, content, 0644))
+
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/contract.ts"
+	recordingID := recservice.EncodeRecordingID(serviceRef)
+
+	svc := new(MockRecordingsService)
+	svc.On("Stream", mock.Anything, recservice.StreamInput{
+		RecordingID: recordingID,
+	}).Return(recservice.StreamResult{
+		Ready:     true,
+		LocalPath: artifactPath,
+	}, nil)
+
+	s := createTestServerDTO(svc)
+	s.mu.Lock()
+	s.cfg.APIToken = "valid-secret-token"
+	s.cfg.APITokenScopes = []string{string(ScopeV3Read)}
+	s.mu.Unlock()
+
+	// Wrap direct stream endpoint with auth middleware
+	directHandler := s.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.StreamRecordingDirect(w, r, recordingID)
+	}))
+
+	// 1. Native Credential Acquisition via POST /api/v3/auth/session
+	createReq := httptest.NewRequest(http.MethodPost, "https://example.com/api/v3/auth/session", nil)
+	createReq.Header.Set("Authorization", "Bearer valid-secret-token")
+	createRec := httptest.NewRecorder()
+	s.CreateSession(createRec, createReq)
+	require.Equal(t, http.StatusOK, createRec.Code, "Session creation must return 200 OK")
+
+	var sessionResp struct {
+		SessionID string `json:"session_id"`
+		Cookie    string `json:"cookie"`
+		Path      string `json:"path"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &sessionResp))
+	require.NotEmpty(t, sessionResp.SessionID, "Session creation must return session_id in JSON payload")
+	require.Equal(t, "xg2g_session", sessionResp.Cookie)
+	sessionID := sessionResp.SessionID
+
+	// Case 1: Unauthenticated request (no header, no cookie) -> 401 Unauthorized
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "Unauthenticated download request must be rejected with 401")
+	}
+
+	// Case 2: Media Invariant - Direct Bearer access token on media route -> 401 Unauthorized
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		r.Header.Set("Authorization", "Bearer valid-secret-token")
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "Direct Bearer token on media route must be rejected with 401")
+	}
+
+	// Case 3: Valid Media Credential (xg2g_session Cookie) -> 200 OK (Full Content)
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusOK, w.Code, "Valid download auth with session cookie must return 200 OK")
+		assert.Equal(t, 1024, w.Body.Len())
+	}
+
+	// Case 4: Range Resume + Valid Media Credential -> 206 Partial Content
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
+		r.Header.Set("Range", "bytes=0-99")
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusPartialContent, w.Code, "Range request with valid auth must return 206 Partial Content")
+		assert.Equal(t, "bytes 0-99/1024", w.Header().Get("Content-Range"))
+		assert.Equal(t, 100, w.Body.Len())
+	}
+
+	// Case 5: Invalid / Expired Session Cookie -> 401 Unauthorized
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: "invalid-or-expired-session-id"})
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "Invalid/expired auth must be rejected with 401")
+	}
+
+	// Case 6: Revocation / Logout (DELETE /api/v3/auth/session) -> Subsequent download fails closed (401)
+	{
+		delReq := httptest.NewRequest(http.MethodDelete, "/api/v3/auth/session", nil)
+		delReq.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
+		delRec := httptest.NewRecorder()
+		s.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.DeleteSession(w, r, DeleteSessionParams{})
+		})).ServeHTTP(delRec, delReq)
+		assert.Equal(t, http.StatusNoContent, delRec.Code)
+
+		// Download attempt with revoked session
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recordingID+"/stream.mp4", nil)
+		r.AddCookie(&http.Cookie{Name: "xg2g_session", Value: sessionID})
+		directHandler.ServeHTTP(w, r)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "Revoked session must be rejected with 401")
+	}
 }

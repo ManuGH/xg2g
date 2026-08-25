@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 type staticAdmissionSessionStore struct {
@@ -105,5 +107,70 @@ func TestAdmissionStateResilience_CachedFallbackAndBaseline(t *testing.T) {
 	}
 	if state3.TunerSlots != 4 || state3.SessionsActive != 0 {
 		t.Fatalf("expected baseline tuners=4 active=0 on fresh failing store, got tuners=%d active=%d", state3.TunerSlots, state3.SessionsActive)
+	}
+}
+
+func TestAdmissionState_SlotIdentityUnification(t *testing.T) {
+	store := &staticAdmissionSessionStore{
+		sessions: []*model.SessionRecord{
+			{SessionID: "sess1", State: model.SessionReady, ContextData: map[string]string{"tuner_scope": "tuner:0"}},
+			{SessionID: "sess2", State: model.SessionReady, ContextData: map[string]string{"tuner_scope": "tuner:0"}}, // Historical duplicate slot
+		},
+	}
+	adm := newStoreAdmissionState(store, 2)
+	state, err := adm.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	// 2 total tuners - 1 unique occupied slot (tuner:0) = 1 available tuner
+	if state.TunerSlots != 1 {
+		t.Fatalf("expected 1 available tuner due to slot unification, got %d", state.TunerSlots)
+	}
+	if state.SessionsActive != 2 {
+		t.Fatalf("expected 2 active sessions counted, got %d", state.SessionsActive)
+	}
+}
+
+func TestAdmissionState_OverbookingGuard_ActiveLeaseStoreLease(t *testing.T) {
+	memStore := store.NewMemoryStore()
+	ctx := context.Background()
+
+	// Acquire authoritative lease for tuner:0 with 5 minute TTL
+	_, ok, err := memStore.TryAcquireLease(ctx, "tuner:0", "worker-1", 5*time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("failed to acquire lease: %v, ok=%v", err, ok)
+	}
+
+	// Store has session record with expired lease
+	now := time.Now().Unix()
+	_ = memStore.PutSession(ctx, &model.SessionRecord{
+		SessionID:          "sess-old",
+		State:              model.SessionReady,
+		ContextData:        map[string]string{"tuner_scope": "tuner:0"},
+		LeaseExpiresAtUnix: now - 60, // Expired session
+	})
+
+	adm := newStoreAdmissionState(memStore, 1)
+	state, err := adm.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+
+	// Since authoritative lease tuner:0 is still active in LeaseStore, tuner MUST remain occupied!
+	if state.TunerSlots != 0 {
+		t.Fatalf("expected 0 available tuners (overbooking guard), got %d", state.TunerSlots)
+	}
+
+	// Release authoritative lease in LeaseStore
+	_ = memStore.ReleaseLease(ctx, "tuner:0", "worker-1")
+
+	stateAfterRelease, err := adm.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after release failed: %v", err)
+	}
+
+	// Now that lease is released AND session is expired, tuner:0 is available!
+	if stateAfterRelease.TunerSlots != 1 {
+		t.Fatalf("expected 1 available tuner after lease release and expired session, got %d", stateAfterRelease.TunerSlots)
 	}
 }

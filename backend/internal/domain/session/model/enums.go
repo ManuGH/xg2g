@@ -40,6 +40,7 @@ const (
 	CtxKeyRuntimeProbeState     = "runtime_probe_state"
 	CtxKeyRuntimePolicyTimeline = "runtime_policy_timeline"
 	CtxKeyRuntimePolicyReplay   = "runtime_policy_replay"
+	CtxKeyGenerationToken       = "generation_token"
 )
 
 const (

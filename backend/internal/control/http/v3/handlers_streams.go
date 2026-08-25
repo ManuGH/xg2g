@@ -204,5 +204,11 @@ func (s *Server) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
+	// A stopped session must take its playback tickets with it. The media files
+	// disappear either way, so a surviving ticket could not stream anything —
+	// but leaving a live credential lying around for the rest of its TTL is not
+	// a state worth having.
+	s.playbackTicketStoreOrDefault().revokeSession(id)
+
 	w.WriteHeader(http.StatusNoContent)
 }

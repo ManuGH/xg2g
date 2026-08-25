@@ -162,7 +162,7 @@ func TestResolveCapabilities_FamilyFallbackKeepsIOSDistinctFromDesktopSafari(t *
 		VideoCodecs:          []string{"h264"},
 		AudioCodecs:          []string{"aac", "mp3"},
 		DeviceType:           "web",
-		ClientFamilyFallback: "ios_safari_native",
+		ClientFamilyFallback: "ios_safari",
 	}
 
 	got := ResolveCapabilities(context.Background(), "", "v3.1", "", nil, &in)

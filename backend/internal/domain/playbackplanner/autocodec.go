@@ -17,7 +17,7 @@ type autoCodecCandidate struct {
 }
 
 func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
-	if requiresPlannedTranscode(ev) || !usesAutoTranscodeProfile(ev.RequestedIntent) || len(ev.ClientEvidence.AutoTranscodeVideoCodecs) == 0 {
+	if isManualTranscodeIntent(ev) || !usesAutoTranscodeProfile(ev.RequestedIntent) || len(ev.ClientEvidence.AutoTranscodeVideoCodecs) == 0 {
 		return "", false
 	}
 
@@ -143,7 +143,20 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 
 func nativeWebKitClient(family string) bool {
 	switch strings.ToLower(strings.TrimSpace(family)) {
-	case "safari_native", "ios_safari_native":
+	case "safari_native", "ios_safari", "ios_native", "apple_tv_native":
+		return true
+	default:
+		return false
+	}
+}
+
+func isManualTranscodeIntent(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier":
 		return true
 	default:
 		return false

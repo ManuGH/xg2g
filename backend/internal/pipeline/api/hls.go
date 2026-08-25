@@ -343,13 +343,22 @@ func isStartupHLSState(state model.SessionState) bool {
 	return state == model.SessionNew || state == model.SessionStarting || state == model.SessionPriming
 }
 
-func shouldHoldAndroidTVNativeCopyPlaylist(req hlsRequest, rec *model.SessionRecord) bool {
-	return req.isPlaylist && rec != nil && isStartupHLSState(rec.State) &&
-		!rec.Profile.TranscodeVideo &&
-		strings.EqualFold(sessionPlaybackClientFamily(rec), "android_tv_native")
+func isNativePlaybackClientFamily(family string) bool {
+	switch strings.ToLower(strings.TrimSpace(family)) {
+	case "android_tv_native", "android_native", "ios_native", "ios_safari", "apple_tv_native", "safari_native":
+		return true
+	default:
+		return false
+	}
 }
 
-func awaitAndroidTVNativeCopyReady(ctx context.Context, store HLSStore, rec *model.SessionRecord, timeout time.Duration) (*model.SessionRecord, bool) {
+func shouldHoldNativeCopyPlaylist(req hlsRequest, rec *model.SessionRecord) bool {
+	return req.isPlaylist && rec != nil && isStartupHLSState(rec.State) &&
+		!rec.Profile.TranscodeVideo &&
+		isNativePlaybackClientFamily(sessionPlaybackClientFamily(rec))
+}
+
+func awaitNativeCopyReady(ctx context.Context, store HLSStore, rec *model.SessionRecord, timeout time.Duration) (*model.SessionRecord, bool) {
 	if rec == nil || !isStartupHLSState(rec.State) {
 		return rec, rec != nil && rec.State == model.SessionReady
 	}
@@ -448,7 +457,7 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, ticket string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
 	var startupPolicy *hlsStartupPolicy
@@ -483,16 +492,19 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 			raw = filteredRaw
 		}
 	}
-	if isLive {
+	if isLive && !isMaster {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
 		// absorbs playlist-poll/segment-timing jitter that otherwise shows up as
 		// immediate rebuffering after a seemingly clean start on fragile/native
 		// HLS clients.
+		// All media playlists (video & audio renditions) must receive the identical
+		// start tag to maintain strict A/V timeline synchronization. Master playlists
+		// are omitted so they do not introduce conflicting timeline offsets.
 		policy := deriveHLSStartupPolicy(rec, raw)
 		startupPolicy = &policy
 		if startupPolicy.StartupHeadroomSec > 0 {
-			insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=YES", startupPolicy.StartupHeadroomSec)
+			insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=NO", startupPolicy.StartupHeadroomSec)
 		}
 	}
 
@@ -525,9 +537,57 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 		}
 		if strings.HasPrefix(line, "#EXT-X-MAP:") {
 			hasMap = true
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if idx := strings.Index(line, "URI=\""); idx != -1 {
+					endIdx := strings.Index(line[idx+5:], "\"")
+					if endIdx != -1 {
+						uri := line[idx+5 : idx+5+endIdx]
+						var newURI string
+						if strings.Contains(uri, "?") {
+							newURI = uri + "&ticket=" + ticket
+						} else {
+							newURI = uri + "?ticket=" + ticket
+						}
+						line = line[:idx+5] + newURI + line[idx+5+endIdx:]
+					}
+				}
+			}
+		}
+		if strings.HasPrefix(line, "#EXT-X-MEDIA:") {
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if idx := strings.Index(line, "URI=\""); idx != -1 {
+					endIdx := strings.Index(line[idx+5:], "\"")
+					if endIdx != -1 {
+						uri := line[idx+5 : idx+5+endIdx]
+						var newURI string
+						if strings.Contains(uri, "?") {
+							newURI = uri + "&ticket=" + ticket
+						} else {
+							newURI = uri + "?ticket=" + ticket
+						}
+						line = line[:idx+5] + newURI + line[idx+5+endIdx:]
+					}
+				}
+			}
+			if strings.Contains(line, "DEFAULT=YES") && !strings.Contains(line, "AUTOSELECT=") {
+				line = strings.Replace(line, "DEFAULT=YES", "DEFAULT=YES,AUTOSELECT=YES", 1)
+			}
+			if strings.Contains(line, "NAME=\"audio_") {
+				line = humanizeHLSMediaTrackName(line)
+			}
 		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
 			line = normalizeProgramDateTimeLine(line)
+		}
+		if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
+			// Segment URI line
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if strings.Contains(line, "?") {
+					line = line + "&ticket=" + ticket
+				} else {
+					line = line + "?ticket=" + ticket
+				}
+			}
 		}
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -558,6 +618,113 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 	return bytes.NewReader(b.Bytes()), startupPolicy, valid, nil
 }
 
+func humanizeHLSMediaTrackName(line string) string {
+	langMatch := extractHLSAttribute(line, "LANGUAGE")
+	channelsMatch := extractHLSAttribute(line, "CHANNELS")
+
+	var langLabel string
+	switch strings.ToLower(langMatch) {
+	case "de", "deu", "ger":
+		langLabel = "Deutsch"
+	case "en", "eng":
+		langLabel = "Originalton (Englisch)"
+	case "mul":
+		langLabel = "Mehrsprachig"
+	case "fr", "fra", "fre":
+		langLabel = "Französisch"
+	case "it", "ita":
+		langLabel = "Italienisch"
+	case "es", "spa":
+		langLabel = "Spanisch"
+	case "qae":
+		langLabel = "Hauptton"
+	case "qaf":
+		langLabel = "Stadionton"
+	default:
+		if langMatch != "" && !strings.EqualFold(langMatch, "und") {
+			langLabel = strings.ToUpper(langMatch)
+		} else {
+			langLabel = "Audio"
+		}
+	}
+
+	var channelLabel string
+	switch channelsMatch {
+	case "6":
+		channelLabel = "Dolby Digital 5.1"
+	case "2":
+		channelLabel = "Stereo"
+	case "1":
+		channelLabel = "Mono"
+	}
+
+	displayName := langLabel
+	if channelLabel != "" {
+		displayName = fmt.Sprintf("%s (%s)", langLabel, channelLabel)
+	}
+
+	if idx := strings.Index(line, "NAME=\""); idx != -1 {
+		endIdx := strings.Index(line[idx+6:], "\"")
+		if endIdx != -1 {
+			return line[:idx+6] + displayName + line[idx+6+endIdx:]
+		}
+	}
+	return line
+}
+
+func extractHLSAttribute(line, attr string) string {
+	target := attr + "=\""
+	if idx := strings.Index(line, target); idx != -1 {
+		start := idx + len(target)
+		if end := strings.Index(line[start:], "\""); end != -1 {
+			return line[start : start+end]
+		}
+	}
+	return ""
+}
+
+// playbackTicketPattern is the shape of a ticket this server issues: 32 random
+// bytes, hex-encoded (see playbackTicketStore.issue). Nothing else can be a
+// live ticket, so nothing else is worth carrying.
+var playbackTicketPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// extractRequestTicket returns the playback ticket a media request carries, or
+// "" if it carries nothing that could be one.
+//
+// # Why the shape is checked here
+//
+// The ticket is echoed back into the rewritten playlist, appended to every
+// segment URI, and the result is stored in lkgPlaylists and served to later
+// requests for the same session. Taken together that means an unchecked value
+// from ?ticket=, ?t= or X-Playback-Ticket would be attacker-chosen text placed
+// into a response body handed to somebody else. A value containing a newline
+// would not even stay in the query string it was appended to: rewritePlaylist
+// writes each line followed by '\n', so an embedded newline injects a further
+// playlist line — an #EXT-X-KEY pointing at another host, for instance.
+//
+// Validating rather than escaping is what fits here: the server mints these
+// ids itself, so a value that does not have the minted shape was not minted
+// here and cannot authorise anything. Treating it as absent is both the safe
+// answer and the honest one.
+func extractRequestTicket(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if qTicket := r.URL.Query().Get("ticket"); playbackTicketPattern.MatchString(qTicket) {
+		return qTicket
+	}
+	if qTicket := r.URL.Query().Get("t"); playbackTicketPattern.MatchString(qTicket) {
+		return qTicket
+	}
+	if hTicket := r.Header.Get("X-Playback-Ticket"); playbackTicketPattern.MatchString(hTicket) {
+		return hTicket
+	}
+	if c, err := r.Cookie("xg2g_playback"); err == nil && playbackTicketPattern.MatchString(c.Value) {
+		return c.Value
+	}
+	return ""
+}
+
 func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, sessionDir string, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
@@ -581,7 +748,8 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 	}
 
 	if req.isPlaylist {
-		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, logger)
+		ticket := extractRequestTicket(r)
+		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, ticket, logger)
 		if rewriteErr != nil || !valid {
 			if errors.Is(rewriteErr, hls.ErrNoSafeSegmentAvailable) {
 				w.Header().Set("Retry-After", "1")
@@ -590,6 +758,11 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 			}
 			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
 				lkgBytes := lkgRaw.([]byte)
+				// This path writes the body directly instead of going through
+				// http.ServeContent, so nothing else would state the type and
+				// net/http would fall back to sniffing the bytes.
+				w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.Header().Set("Content-Length", strconv.Itoa(len(lkgBytes)))
 				_, _ = w.Write(lkgBytes)
 				return
@@ -699,14 +872,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 
 	// Native copy streams inherit the broadcaster's GOP cadence. Their first
 	// playlist can therefore contain only a short tune-in fragment followed by
-	// multi-second keyframe gaps. Media3 would consume that fragment immediately
-	// and repeatedly hit the live edge. Hold only this native-copy playlist until
-	// the normal READY gate has verified three complete segments. Transcodes have
-	// a fixed one-second cadence and keep their fast first-playlist path; browser
-	// clients retain their existing startup behavior.
-	if shouldHoldAndroidTVNativeCopyPlaylist(req, rec) {
+	// multi-second keyframe gaps. Native players (Media3, AVPlayer) would consume
+	// that fragment immediately and repeatedly hit the live edge. Hold only native-copy
+	// playlists until the normal READY gate has verified three complete segments.
+	// Transcodes have a fixed one-second cadence and keep their fast first-playlist path;
+	// browser clients retain their existing startup behavior.
+	if shouldHoldNativeCopyPlaylist(req, rec) {
 		var ready bool
-		rec, ready = awaitAndroidTVNativeCopyReady(r.Context(), store, rec, nativeCopyPlaylistReadyTimeout)
+		rec, ready = awaitNativeCopyReady(r.Context(), store, rec, nativeCopyPlaylistReadyTimeout)
 		if !ready {
 			w.Header().Set("Cache-Control", "no-store")
 			if rec != nil && rec.State.IsTerminal() {

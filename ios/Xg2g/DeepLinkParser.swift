@@ -15,6 +15,12 @@ struct DeviceAuthLaunchCredentials: Equatable, Sendable {
     let accessTokenExpiresAtEpochMs: Int64?
 }
 
+/// A pairing invitation: which pairing to complete, and the code the user sees.
+struct PairingInvitation: Equatable, Sendable {
+    let pairingID: String
+    let userCode: String
+}
+
 /// Reads onboarding links. Nothing else.
 ///
 /// This type deliberately owns **no** URL semantics: no normalization, no
@@ -29,6 +35,8 @@ enum DeepLinkParser {
 
     private enum QueryKey {
         static let baseURL = "base_url"
+        static let pairingID = "pairing_id"
+        static let userCode = "user_code"
         static let authToken = "auth_token"
         static let deviceGrantID = "device_grant_id"
         static let deviceGrant = "device_grant"
@@ -80,6 +88,22 @@ enum DeepLinkParser {
     /// one it got.
     private static func deploymentRoot(ofTransported address: ServerAddress) -> ServerAddress {
         address.rootCandidates.last ?? address
+    }
+
+    /// A pairing invitation minted by the server.
+    ///
+    /// `xg2g://pair?pairing_id=…&user_code=…`, produced by
+    /// `pairing/service.go`. Unlike `xg2g://connect` it carries no server
+    /// address: the code identifies a pairing on a server the user is already
+    /// pointed at, so it authorises rather than configures.
+    static func pairingInvitation(from url: URL) -> PairingInvitation? {
+        guard let components = customSchemeComponents(of: url),
+              components.host?.lowercased() == "pair",
+              let pairingID = trimmedNonEmpty(queryParameter(components.percentEncodedQuery, named: QueryKey.pairingID)),
+              let userCode = trimmedNonEmpty(queryParameter(components.percentEncodedQuery, named: QueryKey.userCode))
+        else { return nil }
+
+        return PairingInvitation(pairingID: pairingID, userCode: userCode)
     }
 
     static func authToken(from url: URL) -> String? {

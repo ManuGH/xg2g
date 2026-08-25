@@ -18,6 +18,9 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
+	"github.com/ManuGH/xg2g/internal/stream/smoother"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -151,10 +154,54 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	if err := v3.RegisterCompatibilityRoutesWithRegistrars(readAdapter, writeAdapter, s.v3Handler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register compatibility routes: %w", err)
 	}
-	if err := readAdapter.Register(http.MethodPost, "/Items/{itemId}/PlaybackInfo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.v3Handler.PostItemsPlaybackInfo(w, r, chi.URLParam(r, "itemId"))
-	})); err != nil {
-		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register playback-info compatibility route: %w", err)
+
+	// Experimental TS Burst-Smoothing Proxy route for lab & client A/B testing
+	smootherHandler := smoother.NewHandler(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())
+	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register smooth stream route: %w", err)
+	}
+
+	// Universal Live Ingest Pipeline (/api/v3/stream/live/*)
+	liveConnectorCfg := pipeline.DefaultConnectorConfig(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	liveConnectorCfg.Username = s.cfg.Enigma2.Username
+	liveConnectorCfg.Password = s.cfg.Enigma2.Password
+	liveConnectorCfg.TopologyService = s.topologyService
+	liveConnectorCfg.RequireTopology = true // Production live route is strictly FAIL-CLOSED
+	liveConnector := pipeline.NewLivePipelineConnector(liveConnectorCfg)
+	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
+	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)
+	}
+
+	// Zap preparation (/api/v3/stream/prepare*), sharing the live route's session
+	// manager. That sharing is the point: a preparation warms exactly the ingest the
+	// live route will serve, so committing to one costs no second dial and no second
+	// tuner - the client simply starts reading a stream that is already running.
+	preparations := pipeline.NewPreparationManager(liveSessionMgr, pipeline.DefaultPreparationConfig(), *log.L())
+	prepareHandler := pipeline.NewPrepareHandler(preparations, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	// Authenticated and scoped, unlike the media routes above.
+	//
+	// A preparation is not media delivery: it occupies a tuner, it can supersede
+	// another client's channel change, and it can release one. That is control
+	// plane, so it carries the control plane's policy - reading a preparation
+	// needs v3:read, starting, committing or abandoning one needs v3:write.
+	// Registered on the root router the media routes use, but through the scoped
+	// chains, so the paths stay where a client expects them while the
+	// authorisation is the one the operation deserves.
+	for _, route := range []struct {
+		method   string
+		pattern  string
+		registry *policyRegistrarAdapter
+	}{
+		{http.MethodPost, "/api/v3/stream/prepare", writeAdapter},
+		{http.MethodGet, "/api/v3/stream/prepare/*", readAdapter},
+		{http.MethodPost, "/api/v3/stream/prepare/*", writeAdapter},
+		{http.MethodDelete, "/api/v3/stream/prepare/*", writeAdapter},
+	} {
+		if err := route.registry.Register(route.method, route.pattern, prepareHandler); err != nil {
+			return nil, PolicyBindingSnapshot{}, fmt.Errorf("register zap preparation route %s %s: %w", route.method, route.pattern, err)
+		}
 	}
 
 	return r, registry.Snapshot(), nil

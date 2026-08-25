@@ -1,11 +1,9 @@
 package io.github.manugh.xg2g.android.auth
 
-import io.github.manugh.xg2g.android.CompletedWebBootstrap
 import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
-import io.github.manugh.xg2g.android.StartedWebBootstrap
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
 import okhttp3.HttpUrl
@@ -62,18 +60,6 @@ class NativeDeviceAuthRepositoryTest {
         }
 
         override suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String) {}
-
-        override suspend fun startWebBootstrap(
-            uiBaseUrl: HttpUrl,
-            accessToken: String,
-            targetPath: String
-        ): StartedWebBootstrap = StartedWebBootstrap("path", "token")
-
-        override suspend fun completeWebBootstrap(
-            uiBaseUrl: HttpUrl,
-            completePath: String,
-            bootstrapToken: String
-        ): CompletedWebBootstrap = CompletedWebBootstrap("location")
     }
 
     @Test

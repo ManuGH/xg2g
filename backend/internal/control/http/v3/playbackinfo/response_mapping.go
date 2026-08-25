@@ -28,7 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
-func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff) PlaybackInfo {
+func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff, startOffsetMs int64) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
 	var url string
@@ -48,7 +48,10 @@ func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decisio
 		} else {
 			var intent *ports.BuildIntent
 			if dec.TargetProfile != nil {
-				intent = &ports.BuildIntent{Target: *dec.TargetProfile}
+				intent = &ports.BuildIntent{
+					Target:        *dec.TargetProfile,
+					StartOffsetMs: startOffsetMs,
+				}
 			}
 			url = v3recordings.RecordingPlaylistURL(id, requestProfile, intent, s.deps.Config().RecordingTargetSigningKey)
 		}
@@ -89,6 +92,11 @@ func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decisio
 	}
 	if durSec > 0 {
 		info.DurationSeconds = &durSec
+	}
+	if startOffsetMs > 0 {
+		anchorSec := float64(startOffsetMs) / 1000.0
+		info.AnchorStartMs = &startOffsetMs
+		info.AnchorStartSec = &anchorSec
 	}
 
 	applySegmentTruth(&info, truth, attemptedTruth)

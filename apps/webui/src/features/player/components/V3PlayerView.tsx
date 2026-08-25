@@ -212,7 +212,7 @@ export function V3PlayerView({
           {viewState.showSeekControls && (
             <div className={styles.seekSliderGroup}>
               <div className={styles.seekSliderRow}>
-                <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
+                <span className={styles.vodTime}>{viewState.currentPositionDisplay}</span>
                 <DvrScrubSlider
                   value={viewState.relativePosition}
                   max={viewState.windowDuration}

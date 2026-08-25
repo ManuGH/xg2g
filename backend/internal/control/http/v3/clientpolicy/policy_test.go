@@ -9,15 +9,26 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
-func TestResolveProfileUserAgent_NativeHLSIOSSafariBypassesUA(t *testing.T) {
-	got := ResolveProfileUserAgent("native_hls", playbackprofile.ClientIOSSafariNative, "ua-string")
-	if got != "" {
-		t.Fatalf("ResolveProfileUserAgent() = %q, want empty string", got)
+// The profile user agent identifies the native iOS app, and only it. Safari on
+// iOS reported the same family before the split and was handed the app's
+// identity; both directions are pinned here so the split cannot quietly undo
+// itself.
+func TestResolveProfileUserAgent_NativeHLSIOSNativeAnnouncesItself(t *testing.T) {
+	got := ResolveProfileUserAgent("native_hls", playbackprofile.ClientIOSNative, "ua-string")
+	if got != "xg2g-ios-native" {
+		t.Fatalf("ResolveProfileUserAgent() = %q, want %q", got, "xg2g-ios-native")
+	}
+}
+
+func TestResolveProfileUserAgent_NativeHLSIOSSafariKeepsBrowserUA(t *testing.T) {
+	got := ResolveProfileUserAgent("native_hls", playbackprofile.ClientIOSSafari, "ua-string")
+	if got != "ua-string" {
+		t.Fatalf("ResolveProfileUserAgent() = %q, want %q", got, "ua-string")
 	}
 }
 
 func TestResolveProfileUserAgent_DefaultModeKeepsUA(t *testing.T) {
-	got := ResolveProfileUserAgent("", playbackprofile.ClientIOSSafariNative, "ua-string")
+	got := ResolveProfileUserAgent("", playbackprofile.ClientIOSSafari, "ua-string")
 	if got != "ua-string" {
 		t.Fatalf("ResolveProfileUserAgent() = %q, want %q", got, "ua-string")
 	}
@@ -25,7 +36,7 @@ func TestResolveProfileUserAgent_DefaultModeKeepsUA(t *testing.T) {
 
 func TestApplyStartPackagingPolicy_IOSAV1ForcesFMP4(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		profiles.ProfileAV1HW,
 		model.ProfileSpec{Container: "mpegts"},
 		"", "",
@@ -95,7 +106,7 @@ func TestApplyStartPackagingPolicy_SafariNativeHEVCCopyForcesFMP4(t *testing.T) 
 // VideoCodec=hevc so the hvc1 tag engages (else hev1 + per-keyframe flash).
 func TestApplyStartPackagingPolicy_IOSSafariNativeHEVCCopyAlreadyFMP4PinsHevc(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientIOSSafari,
 		profiles.ProfileSafari,
 		model.ProfileSpec{Name: "safari", Container: "fmp4", TranscodeVideo: false},
 		"hevc", "native",
@@ -148,7 +159,7 @@ func TestApplyStartPackagingPolicy_HEVCCopyNonSafariKeepsMpegts(t *testing.T) {
 }
 
 func TestWantsFMP4Packaging_ClientFamilyFallback(t *testing.T) {
-	if !WantsFMP4Packaging("", playbackprofile.ClientIOSSafariNative) {
+	if !WantsFMP4Packaging("", playbackprofile.ClientIOSSafari) {
 		t.Fatal("expected ios_safari_native to prefer fmp4 packaging")
 	}
 	if WantsFMP4Packaging("", "chromium_hlsjs") {
@@ -181,11 +192,26 @@ func TestAllowExperimentalNativeAV1TransportStream_DisablesNativeWebKitAV1TS(t *
 	}
 
 	if AllowExperimentalNativeAV1TransportStream(capabilities.PlaybackCapabilities{
-		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+		ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntime,
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
 		Containers:           []string{"ts", "fmp4"},
 	}, "av1", target) {
 		t.Fatal("did not expect iOS Safari to keep the AV1 TS experiment")
+	}
+}
+
+func TestApplyStartPackagingPolicy_IOSSafariNativeH264CopyForcesFMP4(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientIOSSafari,
+		"copy",
+		model.ProfileSpec{Name: "copy", Container: "mpegts", TranscodeVideo: false},
+		"h264", "native",
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+	if spec.TranscodeVideo {
+		t.Fatalf("ApplyStartPackagingPolicy() must stay a copy (TranscodeVideo=false)")
 	}
 }

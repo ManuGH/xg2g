@@ -600,20 +600,26 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 		startXMLTV := p.Start
 		endXMLTV := p.Stop
 
+		startUnix64 := int64(startUnix)
+		endUnix64 := int64(endUnix)
+		dur64 := int64(dur)
+		channel := p.Channel
+
 		items = append(items, EpgItem{
 			Id:         &id,
-			ServiceRef: p.Channel,
-			Title:      title,
+			ServiceRef: &channel,
+			Title:      &title,
 			Desc:       &desc,
-			Start:      startUnix,
-			End:        endUnix,
-			Duration:   &dur,
-			StartXMLTV: &startXMLTV,
-			EndXMLTV:   &endXMLTV,
+			Start:      &startUnix64,
+			End:        &endUnix64,
+			Duration:   &dur64,
+			StartXmltv: &startXMLTV,
+			EndXmltv:   &endXMLTV,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
 	_ = json.NewEncoder(w).Encode(items)
 }
 

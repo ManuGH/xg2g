@@ -505,6 +505,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "refreshInterval": {
+          "default": "1h",
+          "type": "string"
+        },
         "retries": {
           "default": 2,
           "description": "Number of retry attempts for failed EPG requests (0-5)",
@@ -981,6 +985,29 @@
     "readyStrict": {
       "default": false,
       "type": "boolean"
+    },
+    "receiver_topology": {
+      "properties": {
+        "demodulators": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "receiver_usage": {
       "properties": {

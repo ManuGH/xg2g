@@ -5,18 +5,28 @@ package receiverusage
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 )
 
 type Evaluator interface {
 	Evaluate(ctx context.Context, policy ReceiverUsagePolicy, req UsageRequest, snapshot SystemSnapshot) (UsageDecision, error)
 }
 
-type ReceiverUsageEvaluator struct{}
+type ReceiverUsageEvaluator struct {
+	topologyService *receivertopology.Service
+}
 
 func NewEvaluator() *ReceiverUsageEvaluator {
 	return &ReceiverUsageEvaluator{}
+}
+
+func NewEvaluatorWithTopology(topologyService *receivertopology.Service) *ReceiverUsageEvaluator {
+	return &ReceiverUsageEvaluator{
+		topologyService: topologyService,
+	}
 }
 
 func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUsagePolicy, req UsageRequest, snapshot SystemSnapshot) (UsageDecision, error) {
@@ -67,18 +77,20 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 	case AccessCapacityRestricted:
 		isRestricted = true
 	case AccessCapacityUnknown:
-		switch policy.UnknownAccessHandling {
-		case UnknownAccessCountAsRestricted:
-			isRestricted = true
-		case UnknownAccessCountAsNone:
+		switch strings.ToLower(string(policy.UnknownAccessHandling)) {
+		case "count_as_none":
 			isRestricted = false
-		case UnknownAccessReject:
+		case "reject":
 			return UsageDecision{
 				Kind:           DecisionReject,
 				Reason:         model.RReceiverUsageAccessClassificationUnknown,
 				Message:        "unknown access capacity classification rejected by policy",
 				Classification: req.Access,
 			}
+		case "count_as_restricted", "":
+			fallthrough
+		default:
+			isRestricted = true
 		}
 	}
 
@@ -165,6 +177,39 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 		}
 	}
 
+	// 5.5. Topology & RF Front-End Capacity Evaluation
+	isMultiplexReuse := false
+	if e.topologyService != nil && req.Source.ServiceReference != "" {
+		priority := receivertopology.PriorityLive
+		switch req.Intent {
+		case IntentRecording:
+			priority = receivertopology.PriorityActiveRecording
+		case IntentPictureInPicture:
+			priority = receivertopology.PriorityPiP
+		case IntentFastChannelPreview:
+			priority = receivertopology.PriorityPreview
+		}
+
+		topoDec, err := e.topologyService.CanStartStreamWithPriority(req.Source.ServiceReference, req.SessionID, priority)
+		if err != nil {
+			return UsageDecision{
+				Kind:           DecisionReject,
+				Reason:         model.RLeaseBusy,
+				Message:        "receiver topology evaluation failed: " + err.Error(),
+				Classification: req.Access,
+			}
+		}
+		if !topoDec.Allowed {
+			return UsageDecision{
+				Kind:           DecisionReject,
+				Reason:         model.RLeaseBusy,
+				Message:        topoDec.Reason,
+				Classification: req.Access,
+			}
+		}
+		isMultiplexReuse = topoDec.ReusedDemod
+	}
+
 	// 6. Build Lease Requirements Plan
 	var reqs []LeaseRequirement
 	if isRestricted {
@@ -174,11 +219,21 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 			Quantity:   1,
 		})
 	}
-	reqs = append(reqs, LeaseRequirement{
-		Kind:       ReqTunerSlot,
-		ReceiverID: req.ReceiverID,
-		Quantity:   1,
-	})
+
+	if isMultiplexReuse {
+		// Multiplex reuse consumes 0 additional physical demodulator tuner slots
+		reqs = append(reqs, LeaseRequirement{
+			Kind:       ReqReceiverMultiplex,
+			ReceiverID: req.ReceiverID,
+			Quantity:   1,
+		})
+	} else {
+		reqs = append(reqs, LeaseRequirement{
+			Kind:       ReqTunerSlot,
+			ReceiverID: req.ReceiverID,
+			Quantity:   1,
+		})
+	}
 
 	return UsageDecision{
 		Kind:           DecisionAllow,

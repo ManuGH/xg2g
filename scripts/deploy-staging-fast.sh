@@ -49,8 +49,23 @@ if [[ ! -d "${build_root}/.git" ]]; then
   git clone "${origin_url}" "${build_root}"
 fi
 
+# This script's own `make build-with-ui` regenerates the committed, content-hashed
+# WebUI bundle, so every successful deploy leaves that path modified/deleted/untracked
+# and the guard below would block the next run. Reset just the generated path back to
+# HEAD first; `ui-build` rebuilds it from scratch anyway. Every other path stays under
+# the strict guard, so real local work on the build host is still protected.
+generated_dist="backend/internal/control/http/dist"
+if [[ -d "${build_root}/${generated_dist}" ]] &&
+  [[ -n "$(git -C "${build_root}" status --porcelain=v1 -uall -- "${generated_dist}")" ]]; then
+  echo "Discarding regenerated WebUI bundle in ${generated_dist}:"
+  git -C "${build_root}" status --porcelain=v1 -uall -- "${generated_dist}"
+  git -C "${build_root}" checkout -- "${generated_dist}"
+  git -C "${build_root}" clean -fdq -- "${generated_dist}"
+fi
+
 [[ -z "$(git -C "${build_root}" status --porcelain=v1 -uall)" ]] || {
   echo "ERROR: Linux build checkout is dirty; refusing to overwrite it" >&2
+  git -C "${build_root}" status --porcelain=v1 -uall >&2
   exit 1
 }
 

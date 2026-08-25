@@ -83,7 +83,8 @@ test-race-pr: ## Race detector scoped to live concurrency-critical packages (PR 
 		./internal/pipeline/bus/... \
 		./internal/infra/media/ffmpeg/... \
 		./internal/procgroup/... \
-		./internal/openwebif/...
+		./internal/openwebif/... \
+		./internal/stream/...
 	@echo "✅ Scoped race detection (PR gate) passed"
 
 test-cover: ## Run tests with coverage reporting

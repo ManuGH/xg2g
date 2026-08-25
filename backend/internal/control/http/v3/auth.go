@@ -43,6 +43,15 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
+		// A media request may instead carry a playback ticket: the credential
+		// class a player uses, valid only here and only for the session named
+		// in this path. Checked before anything else because a ticket is not a
+		// token and must never be fed to the token pipeline.
+		if principal, ok := s.playbackTicketPrincipal(r); ok {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+			return
+		}
+
 		cfg := s.GetConfig()
 		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0 || s.hasDeviceAuthStore()
 
@@ -102,6 +111,11 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 		principal := result.Principal
+		// Recorded from the source that actually produced the token, so downstream
+		// code reads how this caller authenticated instead of guessing from headers.
+		if principal != nil {
+			principal.Credential = auth.SourceCredentialKind(authSource)
+		}
 
 		// State metadata for a successful request, set before the handler
 		// writes anything. Idempotent and not retry-relevant: a client that
@@ -114,27 +128,31 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 	})
 }
 
-// CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
+// CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer or DPoP token.
 // POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// 1. Re-extract the token that was successfully validated.
-	// Require Bearer header for this "login" exchange.
-	reqToken := extractBearerToken(r)
+	reqToken, authSource := s.extractTokenDetailedWithLegacyPolicy(r, false)
 
-	// The client MUST present a valid bearer token to exchange it for a session cookie.
-	if reqToken == "" {
-		// Fail if no token presented and auth is required
+	// The client MUST present a valid Bearer or DPoP token to exchange it for a session cookie.
+	if reqToken == "" || (authSource != auth.BearerSource && authSource != auth.DPoPSource) {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
-	} else {
-		if !s.TokenPrincipal(r.Context(), reqToken).OK() {
+	}
+	principal := auth.PrincipalFromContext(r.Context())
+	if principal == nil {
+		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		res := s.TokenPrincipal(reqCtx, reqToken)
+		if !res.OK() {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
+		principal = res.Principal
 	}
 
-	if _, err := s.issueCookieSession(w, r, reqToken, s.authSessionTTLOrDefault()); err != nil {
+	sessionID, err := s.issueCookieSession(w, r, reqToken, principal, s.authSessionTTLOrDefault())
+	if err != nil {
 		if errors.Is(err, ErrHTTPSRequired) {
 			RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
 			return
@@ -143,7 +161,14 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK) // 200 OK
+	w.Header().Set("Cache-Control", "no-store, no-cache, private")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id": sessionID,
+		"sessionId":  sessionID,
+		"cookie":     sessionCookieName,
+		"path":       "/api/v3/",
+		"expires_in": int(s.authSessionTTLOrDefault() / time.Second),
+	})
 }
 
 // DeleteSession clears the auth session cookie and any active household unlock cookie.
@@ -208,8 +233,8 @@ func (s *Server) deleteAuthSession(sessionID string) {
 	}
 }
 
-func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) (string, error) {
-	if strings.TrimSpace(token) == "" {
+func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, principal *auth.Principal, ttl time.Duration) (string, error) {
+	if strings.TrimSpace(token) == "" && principal == nil {
 		return "", auth.ErrInvalidSessionToken
 	}
 	if ttl <= 0 {
@@ -225,7 +250,7 @@ func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, toke
 		s.deleteAuthSession(existingCookie.Value)
 	}
 
-	sessionID, err := s.authSessionStoreOrDefault().CreateSession(token, ttl)
+	sessionID, err := s.authSessionStoreOrDefault().CreateSessionWithPrincipal(token, principal, ttl)
 	if err != nil {
 		return "", err
 	}
@@ -257,18 +282,35 @@ func (s *Server) requestIsHTTPS(r *http.Request) bool {
 		return false
 	}
 
+	remoteIP := requestRemoteIP(r)
+	if remoteIP == nil {
+		return false
+	}
+	if remoteIP.IsLoopback() || remoteIP.IsPrivate() {
+		return true
+	}
+
 	trustedProxies, err := middleware.ParseCIDRs(splitCSVNonEmpty(strings.TrimSpace(s.GetConfig().TrustedProxies)))
 	if err != nil {
 		log.L().Warn().Err(err).Msg("invalid trusted proxies configuration for auth session exchange")
 		return false
 	}
-	remoteIP := requestRemoteIP(r)
-	return remoteIP != nil && middleware.IsIPAllowed(remoteIP, trustedProxies)
+	return middleware.IsIPAllowed(remoteIP, trustedProxies)
 }
 
 func requestRemoteIsLoopback(r *http.Request) bool {
 	ip := requestRemoteIP(r)
 	return ip != nil && ip.IsLoopback()
+}
+
+var tailscaleSubnet = &net.IPNet{
+	IP:   net.IPv4(100, 64, 0, 0),
+	Mask: net.CIDRMask(10, 32),
+}
+
+func requestRemoteIsPrivateOrLoopback(r *http.Request) bool {
+	ip := requestRemoteIP(r)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || tailscaleSubnet.Contains(ip))
 }
 
 func requestRemoteIP(r *http.Request) net.IP {

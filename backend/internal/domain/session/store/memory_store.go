@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
@@ -29,6 +31,31 @@ type MemoryStore struct {
 
 	// idemKey -> sessionID (with expiry)
 	idem map[string]idemState
+
+	// Multi-resource claims (Phase 3 & Phase 4)
+	inputClaims map[string]*memInputClaim
+	muxClaims   map[string]*memMuxClaim
+	muxMembers  map[string]map[string]memMemberState // muxID -> (sessionID -> memMemberState)
+}
+
+type memMemberState struct {
+	generationToken string
+	exp             time.Time
+}
+
+type memInputClaim struct {
+	activePlane string
+	owners      map[string]memMemberState // sessionID -> memMemberState
+	exp         time.Time
+}
+
+type memMuxClaim struct {
+	multiplexID   string
+	inputID       string
+	demodID       string
+	requiredPlane string
+	scrSlot       *int
+	exp           time.Time
 }
 
 type leaseState struct {
@@ -43,10 +70,13 @@ type idemState struct {
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		sessions:   make(map[string]*model.SessionRecord),
-		recordings: make(map[string]*model.Recording),
-		leases:     make(map[string]leaseState),
-		idem:       make(map[string]idemState),
+		sessions:    make(map[string]*model.SessionRecord),
+		recordings:  make(map[string]*model.Recording),
+		leases:      make(map[string]leaseState),
+		idem:        make(map[string]idemState),
+		inputClaims: make(map[string]*memInputClaim),
+		muxClaims:   make(map[string]*memMuxClaim),
+		muxMembers:  make(map[string]map[string]memMemberState),
 	}
 }
 
@@ -412,4 +442,430 @@ func (m *MemoryStore) ListRecordings(ctx context.Context, _ any) ([]model.Record
 	// Sort by ID for deterministic tests
 	// (Simple bubble/api sort if needed, but for 1 item test irrelevant)
 	return list, nil
+}
+
+// --- Multi-Resource Transactional Claim Engine (Phase 3 & Phase 4) ---
+
+func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSetRequest) (model.ClaimSetResult, error) {
+	if req.SessionID == "" {
+		return model.ClaimSetResult{Success: false, ConflictType: model.ConflictCapacityExhausted, ConflictDesc: "session_id required"}, nil
+	}
+	if req.TTL <= 0 {
+		req.TTL = 30 * time.Second
+	}
+	genToken := req.GenerationToken
+	if genToken == "" {
+		genToken = uuid.New().String()
+	}
+	maxMembers := req.MaxMuxMembers
+	if maxMembers <= 0 {
+		maxMembers = 8
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	expiresAt := now.Add(req.TTL)
+
+	// 1. Multiplex-Reuse
+	if req.MultiplexID != "" {
+		if existing, ok := m.muxClaims[req.MultiplexID]; ok && existing.exp.After(now) {
+			// Invariant: verify parent hardware claims are still held
+			demodKey := model.LeaseKeyDemod(existing.demodID)
+			if demodLease, okDemod := m.leases[demodKey]; okDemod && demodLease.exp.After(now) {
+				// Count active members
+				activeCount := 0
+				if members, ok := m.muxMembers[req.MultiplexID]; ok {
+					for _, st := range members {
+						if st.exp.After(now) {
+							activeCount++
+						}
+					}
+				}
+
+				if activeCount < maxMembers {
+					// Join members
+					if m.muxMembers[req.MultiplexID] == nil {
+						m.muxMembers[req.MultiplexID] = make(map[string]memMemberState)
+					}
+					m.muxMembers[req.MultiplexID][req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+
+					// Extend expiry if needed
+					if expiresAt.After(existing.exp) {
+						existing.exp = expiresAt
+						demodLease.exp = expiresAt
+						m.leases[demodKey] = demodLease
+						if existing.inputID != "" {
+							if inClaim, okIn := m.inputClaims[existing.inputID]; okIn {
+								if expiresAt.After(inClaim.exp) {
+									inClaim.exp = expiresAt
+								}
+								if inClaim.owners != nil {
+									inClaim.owners[req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+								}
+							}
+						}
+					}
+
+					return model.ClaimSetResult{
+						Success:         true,
+						GenerationToken: genToken,
+						ReusedMux:       true,
+						DemodID:         existing.demodID,
+						InputID:         existing.inputID,
+						ExpiresAt:       expiresAt,
+					}, nil
+				}
+				// If mux is full (activeCount >= maxMembers), fall through to allocate separate demod
+			}
+		}
+	}
+
+	// 2. Compatible-Shared Input Check
+	if req.InputID != "" && req.RequiredPlane != "" {
+		if inClaim, ok := m.inputClaims[req.InputID]; ok && inClaim.exp.After(now) {
+			if inClaim.activePlane != req.RequiredPlane {
+				return model.ClaimSetResult{
+					Success:      false,
+					ConflictType: model.ConflictPlaneConflict,
+					ConflictDesc: "input " + req.InputID + " is locked to plane " + inClaim.activePlane,
+				}, nil
+			}
+			if expiresAt.After(inClaim.exp) {
+				inClaim.exp = expiresAt
+			}
+			if inClaim.owners == nil {
+				inClaim.owners = make(map[string]memMemberState)
+			}
+			inClaim.owners[req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+		} else {
+			m.inputClaims[req.InputID] = &memInputClaim{
+				activePlane: req.RequiredPlane,
+				owners:      map[string]memMemberState{req.SessionID: {generationToken: genToken, exp: expiresAt}},
+				exp:         expiresAt,
+			}
+		}
+	}
+
+	// 3. Exclusive Demod Check
+	if req.DemodID != "" {
+		demodKey := model.LeaseKeyDemod(req.DemodID)
+		if cur, ok := m.leases[demodKey]; ok && cur.exp.After(now) && cur.owner != req.SessionID {
+			return model.ClaimSetResult{
+				Success:      false,
+				ConflictType: model.ConflictDemodOccupied,
+				ConflictDesc: "demod " + req.DemodID + " is occupied by " + cur.owner,
+			}, nil
+		}
+		m.leases[demodKey] = leaseState{owner: req.SessionID, exp: expiresAt}
+	}
+
+	// 4. Exclusive SCR Check
+	if req.SCRSlot != nil && req.InputID != "" {
+		scrKey := model.LeaseKeySCR(req.InputID, *req.SCRSlot)
+		if cur, ok := m.leases[scrKey]; ok && cur.exp.After(now) && cur.owner != req.SessionID {
+			return model.ClaimSetResult{
+				Success:      false,
+				ConflictType: model.ConflictSCROccupied,
+				ConflictDesc: "scr slot on " + req.InputID + " is occupied by " + cur.owner,
+			}, nil
+		}
+		m.leases[scrKey] = leaseState{owner: req.SessionID, exp: expiresAt}
+	}
+
+	// 5. Multiplex Creation
+	if req.MultiplexID != "" {
+		m.muxClaims[req.MultiplexID] = &memMuxClaim{
+			multiplexID:   req.MultiplexID,
+			inputID:       req.InputID,
+			demodID:       req.DemodID,
+			requiredPlane: req.RequiredPlane,
+			scrSlot:       req.SCRSlot,
+			exp:           expiresAt,
+		}
+		if m.muxMembers[req.MultiplexID] == nil {
+			m.muxMembers[req.MultiplexID] = make(map[string]memMemberState)
+		}
+		m.muxMembers[req.MultiplexID][req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+	}
+
+	return model.ClaimSetResult{
+		Success:         true,
+		GenerationToken: genToken,
+		ReusedMux:       false,
+		DemodID:         req.DemodID,
+		InputID:         req.InputID,
+		ExpiresAt:       expiresAt,
+	}, nil
+}
+
+func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string, generationToken string) error {
+	if sessionID == "" {
+		return nil
+	}
+	if generationToken == "" {
+		return errors.New("generation_token is required for ReleaseClaimSet; use ForceAdminReleaseClaimSet for admin override")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+
+	// 1. Remove session from mux members matching generationToken
+	for muxID, members := range m.muxMembers {
+		if st, ok := members[sessionID]; ok && st.generationToken == generationToken {
+			delete(members, sessionID)
+		}
+		activeCount := 0
+		for _, st := range members {
+			if st.exp.After(now) {
+				activeCount++
+			}
+		}
+		if activeCount == 0 {
+			if claim, ok := m.muxClaims[muxID]; ok {
+				delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+				if claim.scrSlot != nil {
+					delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+				}
+				delete(m.muxClaims, muxID)
+			}
+			delete(m.muxMembers, muxID)
+		}
+	}
+
+	// 2. Remove session from input owners matching generationToken
+	for inputID, claim := range m.inputClaims {
+		if claim.owners != nil {
+			if st, ok := claim.owners[sessionID]; ok && st.generationToken == generationToken {
+				delete(claim.owners, sessionID)
+			}
+			activeCount := 0
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 {
+				delete(m.inputClaims, inputID)
+			}
+		}
+	}
+
+	// 3. Delete any direct standalone leases (excluding demod/scr leases held by active mux allocations)
+	for key, l := range m.leases {
+		if l.owner == sessionID {
+			isHeldByMux := false
+			for _, claim := range m.muxClaims {
+				if claim.exp.After(now) {
+					if key == model.LeaseKeyDemod(claim.demodID) {
+						isHeldByMux = true
+						break
+					}
+					if claim.scrSlot != nil && key == model.LeaseKeySCR(claim.inputID, *claim.scrSlot) {
+						isHeldByMux = true
+						break
+					}
+				}
+			}
+			if !isHeldByMux {
+				delete(m.leases, key)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (m *MemoryStore) ForceAdminReleaseClaimSet(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+
+	// 1. Remove session from mux members regardless of generation token
+	for muxID, members := range m.muxMembers {
+		delete(members, sessionID)
+		activeCount := 0
+		for _, st := range members {
+			if st.exp.After(now) {
+				activeCount++
+			}
+		}
+		if activeCount == 0 {
+			if claim, ok := m.muxClaims[muxID]; ok {
+				delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+				if claim.scrSlot != nil {
+					delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+				}
+				delete(m.muxClaims, muxID)
+			}
+			delete(m.muxMembers, muxID)
+		}
+	}
+
+	// 2. Remove session from input owners
+	for inputID, claim := range m.inputClaims {
+		if claim.owners != nil {
+			delete(claim.owners, sessionID)
+			activeCount := 0
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 {
+				delete(m.inputClaims, inputID)
+			}
+		}
+	}
+
+	// 3. Delete standalone leases
+	for key, l := range m.leases {
+		if l.owner == sessionID {
+			isHeldByMux := false
+			for _, claim := range m.muxClaims {
+				if claim.exp.After(now) {
+					if key == model.LeaseKeyDemod(claim.demodID) {
+						isHeldByMux = true
+						break
+					}
+					if claim.scrSlot != nil && key == model.LeaseKeySCR(claim.inputID, *claim.scrSlot) {
+						isHeldByMux = true
+						break
+					}
+				}
+			}
+			if !isHeldByMux {
+				delete(m.leases, key)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	reapedMembers := 0
+	reapedMuxes := 0
+
+	// 1. Clean mux members
+	for muxID, members := range m.muxMembers {
+		for sID, st := range members {
+			if !st.exp.After(now) {
+				delete(members, sID)
+				reapedMembers++
+			}
+		}
+		activeCount := 0
+		for _, st := range members {
+			if st.exp.After(now) {
+				activeCount++
+			}
+		}
+		if activeCount == 0 {
+			if claim, ok := m.muxClaims[muxID]; ok {
+				delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+				if claim.scrSlot != nil {
+					delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+				}
+				delete(m.muxClaims, muxID)
+				reapedMuxes++
+			}
+			delete(m.muxMembers, muxID)
+		}
+	}
+
+	// 2. Clean input claims
+	for inputID, claim := range m.inputClaims {
+		if claim.owners != nil {
+			for sID, st := range claim.owners {
+				if !st.exp.After(now) {
+					delete(claim.owners, sID)
+				}
+			}
+			activeCount := 0
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 || !claim.exp.After(now) {
+				delete(m.inputClaims, inputID)
+			}
+		}
+	}
+
+	return reapedMembers, reapedMuxes, nil
+}
+
+func (m *MemoryStore) ApplyReconciliationPlan(ctx context.Context, plan model.ReconciliationPlan) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+
+	// 1. Reap specific sessions
+	for _, sID := range plan.SessionsToReap {
+		for muxID, members := range m.muxMembers {
+			delete(members, sID)
+			activeCount := 0
+			for _, st := range members {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 {
+				if claim, ok := m.muxClaims[muxID]; ok {
+					delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+					if claim.scrSlot != nil {
+						delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+					}
+					delete(m.muxClaims, muxID)
+				}
+				delete(m.muxMembers, muxID)
+			}
+		}
+		for inputID, claim := range m.inputClaims {
+			if claim.owners != nil {
+				delete(claim.owners, sID)
+				activeCount := 0
+				for _, st := range claim.owners {
+					if st.exp.After(now) {
+						activeCount++
+					}
+				}
+				if activeCount == 0 {
+					delete(m.inputClaims, inputID)
+				}
+			}
+		}
+		for key, l := range m.leases {
+			if l.owner == sID {
+				delete(m.leases, key)
+			}
+		}
+	}
+
+	// 2. Reap explicitly expired muxes
+	for _, muxID := range plan.ExpiredMuxes {
+		if claim, ok := m.muxClaims[muxID]; ok {
+			delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+			if claim.scrSlot != nil {
+				delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+			}
+			delete(m.muxClaims, muxID)
+		}
+		delete(m.muxMembers, muxID)
+	}
+
+	return nil
 }

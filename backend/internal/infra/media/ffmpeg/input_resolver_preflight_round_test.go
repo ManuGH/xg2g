@@ -142,7 +142,28 @@ func TestPreflightRound_ScrambledThroughoutIsBounded(t *testing.T) {
 	if err == nil || result.OK {
 		t.Fatalf("expected scrambled failure, got OK=%v err=%v", result.OK, err)
 	}
-	if calls != preflightMaxTries {
-		t.Fatalf("expected exactly %d reads for a source scrambled throughout, got %d", preflightMaxTries, calls)
+	if calls != preflightScrambleTries {
+		t.Fatalf("expected exactly %d reads for a source scrambled throughout, got %d", preflightScrambleTries, calls)
+	}
+}
+
+func transient500Sample() (ports.PreflightResult, error) {
+	r := ports.NewPreflightResult("http_status_500", http.StatusInternalServerError, 0, 0, 8001)
+	return r, errors.New("preflight http status 500")
+}
+
+func TestPreflightRound_Transient500RetriedAndSucceeds(t *testing.T) {
+	adapter := newRoundTestAdapter(t)
+	calls := 0
+	// 1st attempt: 500 Internal Server Error (socket teardown in progress on port 8001)
+	// 2nd attempt: Clear Sample -> succeeds
+	preflight := scripted(&calls, transient500Sample, clearSample)
+
+	result, err := adapter.runPreflightWithRetry(context.Background(), "sid-zap-500", "http://127.0.0.1:8001/ref", preflight)
+	if err != nil || !result.OK {
+		t.Fatalf("expected retry after transient 500 to succeed, got OK=%v err=%v", result.OK, err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected exactly 2 attempts (1 failed 500 + 1 success), got %d", calls)
 	}
 }

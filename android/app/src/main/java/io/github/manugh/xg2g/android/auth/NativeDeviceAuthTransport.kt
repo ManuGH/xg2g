@@ -1,11 +1,9 @@
 package io.github.manugh.xg2g.android.auth
 
 import android.util.Log
-import io.github.manugh.xg2g.android.CompletedWebBootstrap
 import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
-import io.github.manugh.xg2g.android.StartedWebBootstrap
 import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
@@ -78,14 +76,6 @@ internal class NativeDeviceAuthTransport(
 
     override suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String) {
         // No-op for Native Device Auth. WebUI cookie adapter handles WebView sessions separately.
-    }
-
-    override suspend fun startWebBootstrap(uiBaseUrl: HttpUrl, accessToken: String, targetPath: String): StartedWebBootstrap {
-        return StartedWebBootstrap(completePath = targetPath, bootstrapToken = "")
-    }
-
-    override suspend fun completeWebBootstrap(uiBaseUrl: HttpUrl, completePath: String, bootstrapToken: String): CompletedWebBootstrap {
-        return CompletedWebBootstrap(locationPath = completePath)
     }
 
     private companion object {

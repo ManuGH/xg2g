@@ -12,33 +12,53 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
-func BuildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *PlaybackCapabilities, apiVersion string, schemaType string) v3recordings.PlaybackInfoRequest {
+// WireParams carries the decoded playback-info request parameters that the
+// generated OpenAPI contract binds off the wire.
+//
+// Handlers pass the generated `*Params` struct through this shape so that no
+// layer below the transport boundary re-reads `r.URL.Query()` or request
+// headers. There is exactly one accepted seek anchor (`start_ms`) and one
+// profile input precedence rule (query beats header), both owned here.
+type WireParams struct {
+	StartOffsetMs int64
+	Profile       string
+}
+
+// NewWireParams normalizes the two contract-declared profile inputs and the
+// canonical start offset into the single semantic truth used downstream.
+func NewWireParams(startMs *int64, profileQuery *string, profileHeader *string) WireParams {
+	out := WireParams{}
+	if startMs != nil && *startMs > 0 {
+		out.StartOffsetMs = *startMs
+	}
+	if profileQuery != nil {
+		out.Profile = strings.TrimSpace(*profileQuery)
+	}
+	if out.Profile == "" && profileHeader != nil {
+		out.Profile = strings.TrimSpace(*profileHeader)
+	}
+	return out
+}
+
+func BuildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *PlaybackCapabilities, apiVersion string, schemaType string, wire WireParams) v3recordings.PlaybackInfoRequest {
 	return v3recordings.PlaybackInfoRequest{
 		SubjectID:        subjectID,
 		SubjectKind:      playbackSubjectKindForSchema(schemaType),
 		APIVersion:       apiVersion,
 		SchemaType:       schemaType,
-		RequestedProfile: requestedPlaybackProfile(r),
+		RequestedProfile: wire.Profile,
 		PrincipalID:      playbackRequestPrincipalID(r),
 		RequestID:        log.RequestIDFromContext(r.Context()),
-		ClientProfile:    string(detectClientProfile(r)),
+		ClientProfile:    detectClientProfile(r, wire.Profile),
 		Headers:          playbackRequestHeaders(r.Header),
-		Capabilities:     MapV3CapsToInternal(caps),
+		Capabilities:     MapV3CapsToInternal(caps, r.UserAgent()),
+		StartOffsetMs:    wire.StartOffsetMs,
 	}
-}
-
-func requestedPlaybackProfile(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	if profile := strings.TrimSpace(r.URL.Query().Get("profile")); profile != "" {
-		return profile
-	}
-	return strings.TrimSpace(r.Header.Get("X-XG2G-Profile"))
 }
 
 func playbackSubjectKindForSchema(schemaType string) v3recordings.PlaybackSubjectKind {
@@ -65,7 +85,11 @@ func playbackRequestHeaders(headers http.Header) map[string]string {
 	return requestHeaders
 }
 
-func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
+// MapV3CapsToInternal converts the wire capabilities into the domain's own.
+//
+// `userAgent` participates only in classifying a browser that declared no
+// engine; a declared identity is never overridden by it.
+func MapV3CapsToInternal(v3 *PlaybackCapabilities, userAgent string) *capabilities.PlaybackCapabilities {
 	if v3 == nil {
 		return nil
 	}
@@ -114,9 +138,6 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	if v3.RuntimeProbeVersion != nil {
 		c.RuntimeProbeVersion = *v3.RuntimeProbeVersion
 	}
-	if v3.ClientFamilyFallback != nil {
-		c.ClientFamilyFallback = *v3.ClientFamilyFallback
-	}
 	c.SupportsRange = v3.SupportsRange
 	c.AllowTranscode = v3.AllowTranscode
 	if v3.MaxVideo != nil {
@@ -125,9 +146,6 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 			Height: derefInt(v3.MaxVideo.Height),
 			Fps:    derefInt(v3.MaxVideo.Fps),
 		}
-	}
-	if v3.DeviceType != nil {
-		c.DeviceType = *v3.DeviceType
 	}
 	if v3.DeviceContext != nil {
 		c.DeviceContext = &capabilities.DeviceContext{
@@ -156,18 +174,30 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 			c.NetworkContext.InternetValidated = &v
 		}
 	}
+	// Classification is the server's, derived from what the client declared
+	// about itself. It used to arrive as `clientFamilyFallback` and
+	// `deviceType`, which meant a client chose the policy applied to it and
+	// could name a family and a device category that contradicted each other.
+	family := playbackprofile.ClassifyClient(playbackprofile.ClientIdentity{
+		Platform:      playbackprofile.ClientPlatform(v3.ClientIdentity.Platform),
+		Surface:       playbackprofile.ClientSurface(v3.ClientIdentity.Surface),
+		BrowserEngine: playbackprofile.BrowserEngine(derefString(v3.ClientIdentity.BrowserEngine)),
+	}, userAgent)
+	c.ClientFamilyFallback = family
+	c.DeviceType = playbackprofile.DeviceTypeForFamily(family)
+
 	return &c
 }
 
-func detectClientProfile(r *http.Request) string {
+// detectClientProfile resolves the effective client profile. An explicit
+// contract-declared profile always wins; otherwise the server classifies the
+// caller itself. Client classification is server policy and stays here.
+func detectClientProfile(r *http.Request, requested string) string {
+	if requested != "" {
+		return requested
+	}
 	if r == nil {
 		return "generic"
-	}
-	if p := strings.TrimSpace(r.URL.Query().Get("profile")); p != "" {
-		return p
-	}
-	if p := strings.TrimSpace(r.Header.Get("X-XG2G-Profile")); p != "" {
-		return p
 	}
 	ua := r.UserAgent()
 	if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Android") {

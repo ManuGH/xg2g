@@ -39,6 +39,29 @@ func TestKnownLegacyIntentAdapterDivergence_DirtyDVB(t *testing.T) {
 	}
 }
 
+func TestKnownLegacyIntentAdapterDivergence_IOSSafari(t *testing.T) {
+	var fixture *testfixtures.CharacterizationTest
+	for i := range testfixtures.Cases {
+		if testfixtures.Cases[i].Name == iosSafariLegacyIntentFixture {
+			fixture = &testfixtures.Cases[i]
+			break
+		}
+	}
+	if fixture == nil {
+		t.Fatal("iOS-Safari characterization fixture is missing")
+	}
+
+	_, _, diffs := runLegacyIntentAdapterDifferential(
+		t,
+		*fixture,
+		time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC),
+	)
+	want := []string{"mode_mismatch", "video_mode_mismatch", "max_bitrate_drift"}
+	if !equalStringSets(diffs, want) {
+		t.Fatalf("legacy intent iOS safari normalization divergence changed: got %v want %v", diffs, want)
+	}
+}
+
 // TestKnownPlannerDivergence_NoTranscode explicitly tests that the Legacy Engine wrongfully allows the intent
 // while the new Planner correctly denies it (video_codec_unsupported_for_copy), halting the cutover until this
 // discrepancy is officially resolved.

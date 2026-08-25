@@ -12,7 +12,7 @@ func TestResolveLiveNativeTransportPlan_DirectPlayTSPrefersDirectStreamFMP4(t *t
 	plan := resolvePlaybackTransportPlanWithPolicy(
 		PlaybackInfoRequest{SubjectKind: PlaybackSubjectLive},
 		capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: "ios_safari_native",
+			ClientFamilyFallback: "ios_safari",
 		},
 		&decision.Decision{
 			Mode: decision.ModeDirectPlay,

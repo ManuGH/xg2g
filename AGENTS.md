@@ -1,5 +1,25 @@
 # AGENTS.md
 
+## Infrastructure & Network Architecture Truth
+
+Always use the following verified host & network topology (do not use obsolete IPs):
+
+- **Proxmox VE Host (`pve2`):** `10.10.55.182`
+  - SSH: `ssh proxmox` (or `ssh pve2`) using `~/.ssh/id_ed25519_mac_20260722`.
+  - **CRITICAL:** `10.10.55.2` has been deleted and must NEVER be addressed.
+- **LXC 110 (`xg2g-dev` / `10.10.55.14`):**
+  - **Staging:** Port `:8089` (`xg2g-staging` container in `/srv/xg2g-staging/`).
+  - **Production:** Port `:8088` (`xg2g.service` in `/srv/xg2g/`).
+  - **Build Dir:** `/srv/xg2g-build`.
+  - **Fast-Deploy:** `./scripts/fast_deploy.sh --confirm-staging`.
+- **LXC 132 (`caddy` / `10.10.55.12`):**
+  - Central reverse proxy with TLS wildcard cert `*.home.matrixcentral.de`.
+  - Routes `xg2g.home.matrixcentral.de` $\rightarrow$ `10.10.55.14:8089` (Staging).
+- **VM 100 (`OPNsense` / `10.10.55.254`):**
+  - Gateway, router, and WireGuard VPN server.
+- **Enigma2 Receiver (`10.10.55.64`):**
+  - VU+ Uno 4K receiver source (`root:rK8pN4sV6mQ2xT9`).
+
 ## Ops Triage Truth
 
 For `xg2g` start/restart incidents, do not assume checked-in docs match the live host.

@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,7 +25,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/receivertopology/topologytest"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
 
 func TestHandleSystemHealth(t *testing.T) {
@@ -646,4 +652,326 @@ func getMetrics(reg *prometheus.Registry) string {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return rr.Body.String()
+}
+
+// TestProductionLiveRoute_UsesTopologyAdmissionBeforeDial proves that requests arriving at /api/v3/stream/live/*
+// run through the server's real router, evaluate topology admission, and if rejected, execute ZERO dials to Enigma2.
+func TestProductionLiveRoute_UsesTopologyAdmissionBeforeDial(t *testing.T) {
+	// 1. Setup mock Enigma2 receiver tracking dials
+	var dialCountCh1, dialCountCh2 int32
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "132F") {
+			atomic.AddInt32(&dialCountCh1, 1)
+		} else {
+			atomic.AddInt32(&dialCountCh2, 1)
+		}
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		samplePkt := make([]byte, ring.TSPacketSize)
+		samplePkt[0] = ring.SyncByte
+		for i := 0; i < 50; i++ {
+			if _, err := w.Write(samplePkt); err != nil {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}))
+	defer mockReceiver.Close()
+
+	// 2. Setup verified single-tuner topology in ENFORCE mode
+	singleTopo := receivertopology.ReceiverTopology{
+		Model:      "Single Tuner Production Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "in_a", DeliveryType: receivertopology.DeliveryLegacyUniversal, Satellites: []receivertopology.SatellitePosition{192}},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+	topologytest.SeedService(t, topoSvc)
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+	}
+
+	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
+	handler := server.Handler()
+
+	// 3. Request Channel 1 via real router -> Must succeed and dial Enigma2
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	rr1 := httptest.NewRecorder()
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		handler.ServeHTTP(rr1, req1)
+	}()
+
+	// Wait briefly for Channel 1 to acquire tuner
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&dialCountCh1), "Channel 1 should have dialed mock receiver once")
+
+	// 4. Request Channel 2 (different transponder TSID 0x3FB) via real router -> Must fail admission
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:283D:3FB:1:C00000:0:0:0:", nil)
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+
+	// Invariant: Channel 2 is rejected by router with Service Unavailable / Bad Gateway
+	assert.True(t, rr2.Code == http.StatusServiceUnavailable || rr2.Code == http.StatusBadGateway, "expected 503/502 on admission denial, got %d", rr2.Code)
+
+	// INVARIANT: Strictly ZERO dials made to mock receiver for Channel 2!
+	assert.Equal(t, int32(0), atomic.LoadInt32(&dialCountCh2), "Channel 2 must have strictly 0 dials when topology admission fails")
+}
+
+// TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease proves that the production router
+// properly frees the topology lease back to the pool when an upstream stream ends.
+func TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease(t *testing.T) {
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		samplePkt := make([]byte, ring.TSPacketSize)
+		samplePkt[0] = ring.SyncByte
+		for {
+			if _, err := w.Write(samplePkt); err != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+
+	singleTopo := receivertopology.ReceiverTopology{
+		Model:      "Single Tuner Lifecycle Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "in_a", DeliveryType: receivertopology.DeliveryLegacyUniversal, Satellites: []receivertopology.SatellitePosition{192}},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+	topologytest.SeedService(t, topoSvc)
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+	}
+
+	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	rr := httptest.NewRecorder()
+
+	go handler.ServeHTTP(rr, req)
+
+	// 1. Verify that topology lease was acquired
+	require.Eventually(t, func() bool {
+		runtime := topoSvc.CloneRuntime()
+		for _, alloc := range runtime.ActiveMultiplexes {
+			if len(alloc.SessionIDs) > 0 {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond, "topology lease should be acquired during stream")
+
+	// 2. Simulate upstream death / EOF by closing the mock receiver
+	mockReceiver.CloseClientConnections()
+	mockReceiver.Close()
+
+	// 3. Lease must be freed in topology runtime allocation immediately upon EOF
+	require.Eventually(t, func() bool {
+		runtime := topoSvc.CloneRuntime()
+		for _, alloc := range runtime.ActiveMultiplexes {
+			if len(alloc.SessionIDs) > 0 {
+				return false
+			}
+		}
+		return true
+	}, 2*time.Second, 20*time.Millisecond, "topology lease must be released after upstream EOF")
+}
+
+// TestProductionLiveRoute_FailClosed_WhenTopologyMissing proves that if the production live route
+// is invoked without an initialized topology service (nil), it fails-closed immediately with HTTP 502/503
+// and makes ZERO dials to the receiver.
+func TestProductionLiveRoute_FailClosed_WhenTopologyMissing(t *testing.T) {
+	var dials int32
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&dials, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+	}
+
+	// Server constructed WITHOUT WithTopologyService (topologyService is nil)
+	server := mustNewServer(t, cfg, config.NewManager(""))
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Must fail closed with 502 Bad Gateway
+	assert.Equal(t, http.StatusBadGateway, rr.Code)
+	// Must make strictly ZERO dials
+	assert.Equal(t, int32(0), atomic.LoadInt32(&dials), "fail-closed live stream must make strictly 0 dials when topology service is missing")
+}
+
+// TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials proves that if
+// a topology is active in ENFORCE mode but its TransponderResolver is missing (nil), live requests
+// are rejected without making Enigma2 dials.
+func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t *testing.T) {
+	var dials int32
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&dials, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	singleTopo := receivertopology.ReceiverTopology{
+		Model:      "Single Tuner Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "in_a", DeliveryType: receivertopology.DeliveryLegacyUniversal, Satellites: []receivertopology.SatellitePosition{192}},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	// Explicitly unset the resolver
+	topoSvc.SetResolver(nil)
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+	}
+
+	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Invariant: rejected with Bad Gateway / Service Unavailable due to missing authoritative RF resolver
+	assert.True(t, rr.Code == http.StatusBadGateway || rr.Code == http.StatusServiceUnavailable)
+	// INVARIANT: Strictly 0 dials made to Enigma2
+	assert.Equal(t, int32(0), atomic.LoadInt32(&dials), "must make strictly 0 dials when authoritative resolver is missing in ENFORCE mode")
+}
+
+// TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver proves that the real
+// production bootstrap pipeline reads the receiver's own service database for physical
+// RF facts, resolving a channel it has never seen before to exact tuning parameters.
+//
+// This replaced discovery via /api/channelinfo, which does not exist on OpenWebIF 2.4.0
+// and answers 404 there, so that path could never have populated anything in production.
+func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
+	var streamDials, lamedbQueries int32
+
+	// The carrier the mock receiver claims to know: 11914 MHz vertical on Astra 19.2E,
+	// carrying transport stream 0x0888 - which is the TSID in the requested service ref.
+	const lamedb = "eDVB services /5/\n" +
+		"t:00c00000:0888:0001,s:11914000:27500000:1:2:192:2:0:1:2:0:2\n"
+
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/file" && strings.Contains(r.URL.Query().Get("file"), "lamedb") {
+			atomic.AddInt32(&lamedbQueries, 1)
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(lamedb))
+			return
+		}
+
+		atomic.AddInt32(&streamDials, 1)
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		samplePkt := make([]byte, ring.TSPacketSize)
+		samplePkt[0] = ring.SyncByte
+		for i := 0; i < 20; i++ {
+			_, _ = w.Write(samplePkt)
+		}
+	}))
+	defer mockReceiver.Close()
+
+	// 1. Initialize verified topology in ENFORCE mode
+	singleTopo := receivertopology.ReceiverTopology{
+		Model:      "Production Verified Vu+ Uno 4K",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "in_a", DeliveryType: receivertopology.DeliveryLegacyUniversal, Satellites: []receivertopology.SatellitePosition{192}},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	// 2. The registry is given the receiver as its service database source, and nothing
+	//    else: it starts with no RF facts at all.
+	registry := receivertopology.NewTransponderRegistry()
+	owiClient := openwebif.New(mockReceiver.URL)
+	registry.SetLamedbSource(owiClient)
+	topoSvc.SetResolver(registry)
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+	}
+
+	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
+	handler := server.Handler()
+
+	// 3. Request a channel the registry has never seen
+	dynamicServiceRef := "1:0:19:9999:888:1:C00000:0:0:0:"
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+dynamicServiceRef, nil)
+	rr := httptest.NewRecorder()
+
+	go handler.ServeHTTP(rr, req)
+
+	// 4. The topology lease must carry the exact RF facts the service database stated
+	require.Eventually(t, func() bool {
+		runtime := topoSvc.CloneRuntime()
+		for _, alloc := range runtime.ActiveMultiplexes {
+			mux := alloc.MultiplexID
+			if mux.TransponderKey != nil && mux.TransponderKey.FrequencyHz == 11914000000 && mux.RFPlane != nil && mux.RFPlane.Polarization == receivertopology.PolarizationVertical {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11914 MHz Vertical RF parameters from the receiver service database")
+
+	// 5. The service database was read, and Enigma2 was dialed once
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&lamedbQueries), int32(1), "receiver service database should be read for RF discovery")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&streamDials), "Enigma2 stream endpoint should be dialed once")
 }

@@ -52,7 +52,7 @@ func TestSecurityFailClosedInvariant(t *testing.T) {
 
 		// Simulate the middleware stack
 		handler := s.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			s.GetRecordingPlaybackInfo(w, r, "123")
+			s.GetRecordingPlaybackInfo(w, r, "123", GetRecordingPlaybackInfoParams{})
 		}))
 
 		handler.ServeHTTP(w, req)
@@ -77,7 +77,7 @@ func TestSecurityFailClosedInvariant(t *testing.T) {
 		finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handler.ServeHTTP(w, r)
 			if w.(*httptest.ResponseRecorder).Code == http.StatusOK {
-				s.GetRecordingPlaybackInfo(w, r, "123")
+				s.GetRecordingPlaybackInfo(w, r, "123", GetRecordingPlaybackInfoParams{})
 			}
 		})
 

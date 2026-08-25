@@ -123,6 +123,9 @@ func TestV3OrchestratorFactoryBuild_ConfiguresWorker(t *testing.T) {
 	if orch.Owner == "" {
 		t.Fatal("Owner should be generated")
 	}
+	if orch.UsageEvaluator == nil {
+		t.Fatal("expected non-nil UsageEvaluator")
+	}
 
 	cfg.Network.Outbound.Allow.Hosts[0] = "mutated.local"
 	if orch.OutboundPolicy.Allow.Hosts[0] != "receiver.local" {

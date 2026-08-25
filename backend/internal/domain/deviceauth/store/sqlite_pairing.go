@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 )
@@ -30,11 +31,17 @@ func (s *SqliteStore) GetPairing(ctx context.Context, pairingID string) (*model.
 }
 
 func (s *SqliteStore) GetPairingByUserCode(ctx context.Context, userCode string) (*model.PairingRecord, error) {
+	clean := strings.ToUpper(strings.ReplaceAll(userCode, "-", ""))
+	var hyphenated string
+	if len(clean) == 8 {
+		hyphenated = clean[:4] + "-" + clean[4:]
+	}
 	row := s.DB.QueryRowContext(ctx, `
 		SELECT pairing_id, pairing_secret_hash, user_code, qr_payload, device_name, device_type,
 			requested_policy_profile, approved_policy_profile, owner_id, status, created_at_ms,
 			expires_at_ms, approved_at_ms, consumed_at_ms, revoked_at_ms
-		FROM pairings WHERE user_code = ?`, userCode)
+		FROM pairings WHERE user_code = ? OR user_code = ? OR user_code = ? OR REPLACE(user_code, '-', '') = ?`,
+		userCode, clean, hyphenated, clean)
 	record, err := scanPairing(row)
 	if err != nil {
 		return nil, err

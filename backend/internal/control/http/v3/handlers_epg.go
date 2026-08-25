@@ -25,28 +25,9 @@ import (
 // Responsibility: Handles EPG data retrieval and serving.
 // Non-goals: EPG Parsing logic (see internal/epg).
 
-type nowNextRequest struct {
-	Services []string `json:"services"`
-}
-
-type epgEntry struct {
-	Title      string `json:"title,omitempty"`
-	Desc       string `json:"desc,omitempty"`  // short programme synopsis
-	Start      int64  `json:"start,omitempty"` // unix seconds
-	End        int64  `json:"end,omitempty"`   // unix seconds
-	StartXMLTV string `json:"startXmltv,omitempty"`
-	EndXMLTV   string `json:"endXmltv,omitempty"`
-}
-
-type nowNextItem struct {
-	ServiceRef string    `json:"serviceRef"`
-	Now        *epgEntry `json:"now,omitempty"`
-	Next       *epgEntry `json:"next,omitempty"`
-}
-
 // handleNowNextEPG returns now/next EPG for a list of service references.
 func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
-	var req nowNextRequest
+	var req NowNextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Services) == 0 {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Request body must contain non-empty services list", nil)
 		return
@@ -87,30 +68,30 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	writeNowNextResponse(w, buildNowNextItems(req.Services, programs, time.Now()))
 }
 
-func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
+	// The envelope used to be an inline map, which is the same drift risk as a
+	// hand-written struct with none of the visibility: a map cannot be checked
+	// against the contract by the compiler or by a reviewer.
+	writeJSON(w, http.StatusOK, NowNextResponse{Items: items})
 }
 
-func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []nowNextItem {
+func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {
 		canonicalRef := read.CanonicalServiceRef(program.Channel)
 		progMap[canonicalRef] = append(progMap[canonicalRef], program)
 	}
 
-	items := make([]nowNextItem, 0, len(serviceRefs))
+	items := make([]NowNextItem, 0, len(serviceRefs))
 	for _, serviceRef := range serviceRefs {
 		progs := progMap[read.CanonicalServiceRef(serviceRef)]
 		if len(progs) == 0 {
-			items = append(items, nowNextItem{ServiceRef: serviceRef})
+			items = append(items, NowNextItem{ServiceRef: serviceRef})
 			continue
 		}
 
-		var current *epgEntry
-		var next *epgEntry
+		var current *NowNextEntry
+		var next *NowNextEntry
 
 		for _, program := range progs {
 			start, serr := time.Parse(xmltvTimeFormat, program.Start)
@@ -119,27 +100,40 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 				continue
 			}
 
-			entry := &epgEntry{
-				Title:      program.Title.Text,
-				Start:      start.Unix(),
-				End:        stop.Unix(),
-				StartXMLTV: program.Start,
-				EndXMLTV:   program.Stop,
+			// title, start and end are required by the contract. The
+			// hand-written entry carried omitempty on all three, so a
+			// programme with an empty title published a response missing a
+			// field the schema declares — the generated type cannot.
+			entry := &NowNextEntry{
+				Title:      cleanEPGText(program.Title.Text),
+				Start:      int(start.Unix()),
+				End:        int(stop.Unix()),
+				StartXmltv: optionalStringPtr(program.Start),
+				EndXmltv:   optionalStringPtr(program.Stop),
 			}
 			if program.Desc != nil {
-				entry.Desc = program.Desc.Text
+				entry.Desc = optionalStringPtr(cleanEPGText(program.Desc.Text))
+			}
+			if program.Canonical != nil {
+				entry.AgeRating = mapEpgAgeRating(program.Canonical.AgeRating)
+				entry.EpisodeInfo = mapEpgEpisodeInfo(program.Canonical.EpisodeInfo)
+				entry.Genre = optionalStringPtr(program.Canonical.Genre)
+				entry.GenreSource = optionalStringPtr(program.Canonical.GenreSource)
+				entry.RatingScore = mapEpgRatingScore(program.Canonical.RatingScore)
+				entry.PosterUrl = optionalStringPtr(program.Canonical.PosterURL)
+				entry.ProviderSummary = optionalStringPtr(program.Canonical.ProviderSummary)
 			}
 
 			if now.After(start) && now.Before(stop) {
 				current = entry
 			} else if start.After(now) {
-				if next == nil || start.Before(time.Unix(next.Start, 0)) {
+				if next == nil || start.Before(time.Unix(int64(next.Start), 0)) {
 					next = entry
 				}
 			}
 		}
 
-		items = append(items, nowNextItem{
+		items = append(items, NowNextItem{
 			ServiceRef: serviceRef,
 			Now:        current,
 			Next:       next,
@@ -147,6 +141,54 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 	}
 
 	return items
+}
+
+// The enrichment mappers below are the explicit domain-to-wire boundary for
+// now/next. The internal epg types are persistence and ingest models, so they
+// are translated into the generated contract types rather than serialised
+// directly: an ingest-side field rename must not silently change the wire.
+
+func mapEpgAgeRating(in *epg.AgeRating) *EpgAgeRating {
+	if in == nil {
+		return nil
+	}
+	return &EpgAgeRating{
+		Value:      in.Value,
+		Scheme:     in.Scheme,
+		Country:    in.Country,
+		Source:     EpgRatingSource(in.Source),
+		Confidence: EpgRatingConfidence(in.Confidence),
+	}
+}
+
+func mapEpgEpisodeInfo(in *epg.EpisodeInfo) *EpgEpisodeInfo {
+	if in == nil {
+		return nil
+	}
+	return &EpgEpisodeInfo{
+		SeasonNumber:  optionalIntPtr(in.SeasonNumber),
+		EpisodeNumber: optionalIntPtr(in.EpisodeNumber),
+		EpisodeTitle:  optionalStringPtr(in.EpisodeTitle),
+		SourcePattern: optionalStringPtr(in.SourcePattern),
+	}
+}
+
+func mapEpgRatingScore(in *epg.RatingScore) *EpgRatingScore {
+	if in == nil {
+		return nil
+	}
+	return &EpgRatingScore{
+		Score:  in.Score,
+		Scale:  in.Scale,
+		Source: in.Source,
+	}
+}
+
+func cleanEPGText(s string) string {
+	s = strings.ReplaceAll(s, "\\n", "\n")
+	s = strings.ReplaceAll(s, "\\r", "")
+	s = strings.ReplaceAll(s, "\\t", " ")
+	return strings.TrimSpace(s)
 }
 
 func epgCachePrograms(cache *epg.TV) []epg.Programme {
@@ -157,19 +199,6 @@ func epgCachePrograms(cache *epg.TV) []epg.Programme {
 }
 
 const xmltvTimeFormat = "20060102150405 -0700"
-
-// EpgItem defines the JSON response structure for an EPG program
-type EpgItem struct {
-	Id         *string `json:"id,omitempty"`
-	ServiceRef string  `json:"serviceRef,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	Desc       *string `json:"desc,omitempty"`
-	Start      int     `json:"start,omitempty"`
-	End        int     `json:"end,omitempty"`
-	Duration   *int    `json:"duration,omitempty"`
-	StartXMLTV *string `json:"startXmltv,omitempty"`
-	EndXMLTV   *string `json:"endXmltv,omitempty"`
-}
 
 // Helper to parse XMLTV dates "20080715003000 +0200"
 //
@@ -301,6 +330,13 @@ func (w *epgAdapter) GetBouquetServiceRefs(ctx context.Context, bouquet string) 
 
 // GetEpg implements ServerInterface
 func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams) {
+	// A guide answer is only correct for as long as the programme it names is
+	// still running. Sent without a directive, the response falls to the
+	// client's heuristic freshness rule — URLSession keeps a fraction of the
+	// document's age — so a client could keep serving an entry that has already
+	// ended. Revalidation is cheap next to showing the wrong programme.
+	w.Header().Set("Cache-Control", "no-cache")
+
 	s.mu.RLock()
 	src := s.epgSource
 	s.mu.RUnlock()
@@ -349,22 +385,22 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 		sRef := e.ServiceRef
 		title := e.Title
 		desc := e.Desc
-		start := int(e.Start)
-		end := int(e.End)
-		dur := int(e.Duration)
+		start := int64(e.Start)
+		end := int64(e.End)
+		dur := int64(e.Duration)
 		startXMLTV := stringPtrOrNil(strings.TrimSpace(e.StartXMLTV))
 		endXMLTV := stringPtrOrNil(strings.TrimSpace(e.EndXMLTV))
 
 		resp = append(resp, EpgItem{
 			Id:         &id,
-			ServiceRef: sRef,
-			Title:      title,
+			ServiceRef: &sRef,
+			Title:      &title,
 			Desc:       &desc,
-			Start:      start,
-			End:        end,
+			Start:      &start,
+			End:        &end,
 			Duration:   &dur,
-			StartXMLTV: startXMLTV,
-			EndXMLTV:   endXMLTV,
+			StartXmltv: startXMLTV,
+			EndXmltv:   endXMLTV,
 		})
 	}
 

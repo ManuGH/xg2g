@@ -484,7 +484,21 @@ func (s *SQLiteStore) UpdateUser(ctx context.Context, id string, fn func(*identi
 }
 
 func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, _ = tx.ExecContext(ctx, `DELETE FROM household_memberships WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM passkeys WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM web_sessions WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM notifications WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM device_grants WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM devices WHERE user_id = ?`, id)
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -492,7 +506,7 @@ func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
 	if n == 0 {
 		return identity.ErrStoreNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ----------------- PasskeyStore -----------------
@@ -1256,6 +1270,36 @@ func (s *SQLiteStore) RevokeDeviceGrantFamily(ctx context.Context, familyID stri
 	return tx.Commit()
 }
 
+// RevokeDeviceCredentials retires everything one device can authenticate with.
+//
+// All three tables in one transaction: a partial revocation is the worst
+// possible outcome here, because it reports success to a client that is about
+// to destroy its local key while leaving a working credential on the server.
+//
+// Already-revoked rows are left untouched (`revoked_at IS NULL` guard) so a
+// repeated call cannot move an earlier revocation timestamp forward and rewrite
+// when the device actually lost access.
+func (s *SQLiteStore) RevokeDeviceCredentials(ctx context.Context, deviceID string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	nowUTC := now.UTC()
+	statements := []string{
+		`UPDATE access_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+		`UPDATE refresh_token_families SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+		`UPDATE device_grants SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement, nowUTC, deviceID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) PutDPoPAccessToken(ctx context.Context, token *identity.DPoPAccessToken) error {
 	query := `
 	INSERT INTO access_tokens (token_hash, device_id, user_id, bound_jkt, scopes, created_at, expires_at, revoked_at)
@@ -1517,6 +1561,12 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	hID := profile.HouseholdID
+	if strings.TrimSpace(hID) == "" {
+		hID = "default_household"
+	}
+	_, _ = tx.ExecContext(ctx, `INSERT INTO households (id, name, created_at) VALUES (?, 'Haupt-Haushalt', ?) ON CONFLICT(id) DO NOTHING`, hID, profile.CreatedAt.UTC())
+
 	dobVal := sql.NullTime{}
 	if profile.DateOfBirth != nil {
 		dobVal = sql.NullTime{Time: profile.DateOfBirth.UTC(), Valid: true}
@@ -1530,6 +1580,22 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 		unknownPol = "request_approval"
 	}
 
+	var creatorID string
+	if strings.TrimSpace(profile.CreatedByUserID) != "" {
+		var exists int
+		_ = tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = ?`, profile.CreatedByUserID).Scan(&exists)
+		if exists == 1 {
+			creatorID = profile.CreatedByUserID
+		}
+	}
+	if creatorID == "" {
+		_ = tx.QueryRowContext(ctx, `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&creatorID)
+		if creatorID == "" {
+			creatorID = "usr_admin"
+			_, _ = tx.ExecContext(ctx, `INSERT INTO users (id, username, display_name, role, created_at, updated_at) VALUES ('usr_admin', 'admin', 'Administrator', 'admin', ?, ?) ON CONFLICT(id) DO NOTHING`, profile.CreatedAt.UTC(), profile.CreatedAt.UTC())
+		}
+	}
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO profiles (id, household_id, name, avatar_url, is_child, date_of_birth, max_parental_rating, unknown_rating_policy, storage_quota_bytes, created_by_user_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1541,7 +1607,7 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 			max_parental_rating = excluded.max_parental_rating,
 			unknown_rating_policy = excluded.unknown_rating_policy,
 			storage_quota_bytes = excluded.storage_quota_bytes;
-	`, profile.ID, profile.HouseholdID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, profile.CreatedByUserID, profile.CreatedAt.UTC())
+	`, profile.ID, hID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, creatorID, profile.CreatedAt.UTC())
 	if err != nil {
 		return err
 	}

@@ -29,6 +29,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,6 +217,12 @@ func TestAndroidDualKey_DPoPAndDeviceGrantE2E(t *testing.T) {
 	assert.Equal(t, "DPoP", rotRes.TokenType)
 	assert.NotEqual(t, grantRes.RefreshToken, rotRes.RefreshToken, "Refresh token must be rotated")
 
+	// The refresh endpoint used to live outside api/openapi.yaml, so nothing
+	// compared what it served against a contract. It is declared now, and the
+	// device that depends on it can only generate a decoder from a response
+	// shape the server is actually held to.
+	assertMatchesOpenAPIResponse(t, reqLegitRefresh, wLegitRefresh)
+
 	// 6. REPLAY ATTACK TEST: Replaying old Refresh Token must fail with 401 and revoke device grant
 	dpopProof3 := createTestDPoPProof(devicePrivKey, deviceJWK, "POST", refreshURL, now.Unix()+10, "")
 	reqReplay := httptest.NewRequest(http.MethodPost, "/api/v3/auth/device/refresh", bytes.NewReader(refreshJSON))
@@ -393,4 +402,40 @@ func encodeTestCBORDPoP(item any) []byte {
 	default:
 		return nil
 	}
+}
+
+// assertMatchesOpenAPIResponse validates one recorded response against
+// api/openapi.yaml.
+//
+// The v3 package has its own copy of this for internal tests; this file is an
+// external test package and cannot reach it. Twenty lines duplicated is a
+// better trade than exporting test machinery from the production package.
+func assertMatchesOpenAPIResponse(t *testing.T, req *http.Request, rr *httptest.ResponseRecorder) {
+	t.Helper()
+
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+	doc, err := loader.LoadFromFile(filepath.Join("..", "..", "..", "..", "api", "openapi.yaml"))
+	require.NoError(t, err, "load openapi document")
+	require.NoError(t, doc.Validate(context.Background()), "validate openapi document")
+
+	router, err := legacy.NewRouter(doc)
+	require.NoError(t, err, "openapi router init")
+
+	route, pathParams, err := router.FindRoute(req)
+	require.NoError(t, err, "openapi route lookup")
+
+	input := &openapi3filter.ResponseValidationInput{
+		RequestValidationInput: &openapi3filter.RequestValidationInput{
+			Request:    req,
+			PathParams: pathParams,
+			Route:      route,
+		},
+		Status:  rr.Code,
+		Header:  rr.Header(),
+		Options: &openapi3filter.Options{},
+	}
+	input.SetBodyBytes(rr.Body.Bytes())
+
+	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input), "openapi response validation")
 }

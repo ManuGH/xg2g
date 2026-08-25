@@ -26,22 +26,7 @@ afterEach(() => {
 // Storage plus a permissive StorageEvent when the environment is broken — a
 // no-op on Node versions / CI where jsdom provides a working localStorage.
 function installWebStorageCompat(): void {
-  // In a non-DOM environment (`@vitest-environment node`) there is nothing to
-  // patch — bail out before touching `window` below.
   if (typeof window === 'undefined') {
-    return;
-  }
-  const works = (() => {
-    try {
-      return (
-        window.localStorage != null &&
-        typeof window.localStorage.clear === 'function'
-      );
-    } catch {
-      return false;
-    }
-  })();
-  if (works) {
     return;
   }
 
@@ -71,8 +56,12 @@ function installWebStorageCompat(): void {
 
   for (const name of ['localStorage', 'sessionStorage'] as const) {
     const value = makeStorage();
-    Object.defineProperty(window, name, { configurable: true, value });
-    Object.defineProperty(globalThis, name, { configurable: true, value });
+    try {
+      Object.defineProperty(window, name, { configurable: true, value, writable: true });
+      Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
+    } catch {
+      // ignore
+    }
   }
 
   // jsdom's StorageEvent webidl-validates `storageArea` as a jsdom Storage,

@@ -1,0 +1,164 @@
+package audiotopology
+
+import (
+	"fmt"
+	"strings"
+)
+
+// ClassifyPurpose derives the AudioPurpose of a track with confidence tracking.
+func ClassifyPurpose(
+	lang LanguageInfo,
+	e2Desc string,
+	cleanEffects bool,
+	isPrimary bool,
+) (AudioPurpose, Confidence) {
+	descLower := strings.ToLower(strings.TrimSpace(e2Desc))
+
+	// 1. Explicit Enigma2 indication
+	if strings.Contains(descLower, "originalton") || strings.Contains(descLower, "original") {
+		return AudioPurposeAlternate, ConfidenceHigh
+	}
+	if strings.Contains(descLower, "kommentar") || strings.Contains(descLower, "commentary") {
+		return AudioPurposeCommentary, ConfidenceHigh
+	}
+
+	// 2. DVB ETSI original audio indicator
+	if lang.IsOriginal {
+		return AudioPurposeAlternate, ConfidenceExplicit
+	}
+
+	// 3. Clean effects / Stadium sound without commentary
+	if cleanEffects || strings.Contains(descLower, "stadion") || strings.Contains(descLower, "stadium") {
+		return AudioPurposeAlternate, ConfidenceHigh
+	}
+
+	// 4. Multiple languages code (mul) without explicit description
+	if lang.ISO639_2 == "mul" {
+		return AudioPurposeAlternate, ConfidenceMedium
+	}
+
+	// 5. Non-primary language on the service
+	if !isPrimary && !lang.IsUndefined {
+		return AudioPurposeAlternate, ConfidenceMedium
+	}
+
+	return AudioPurposeMain, ConfidenceLow
+}
+
+// ClassifyAccessibility determines barrier-free features from PMT and Enigma2 descriptions.
+func ClassifyAccessibility(
+	visualImpaired bool,
+	hearingImpaired bool,
+	e2Desc string,
+) AudioAccessibility {
+	acc := AudioAccessibility{
+		AudioDescription: visualImpaired,
+		HearingImpaired:  hearingImpaired,
+	}
+
+	descLower := strings.ToLower(strings.TrimSpace(e2Desc))
+
+	if strings.Contains(descLower, "audiodeskription") ||
+		strings.Contains(descLower, "hörfilm") ||
+		strings.Contains(descLower, "mit audiodeskription") {
+		if !strings.Contains(descLower, "ohne audiodeskription") {
+			acc.AudioDescription = true
+		}
+	}
+
+	// Only explicit Clear Voice / Klare Sprache signals ClearDialogue.
+	// Generic "barrierefrei" is not mapped to ClearDialogue.
+	if strings.Contains(descLower, "klare sprache") ||
+		strings.Contains(descLower, "dialog") {
+		acc.ClearDialogue = true
+	}
+
+	return acc
+}
+
+// BuildTrackLabel constructs a clear, user-facing label for the audio track.
+func BuildTrackLabel(
+	lang LanguageInfo,
+	codec AudioCodec,
+	channels int,
+	purpose AudioPurpose,
+	acc AudioAccessibility,
+	e2Desc string,
+) string {
+	var parts []string
+
+	// 1. Language or Main Feature
+	baseName := languageDisplayName(lang)
+	e2Lower := strings.ToLower(strings.TrimSpace(e2Desc))
+
+	switch {
+	case acc.AudioDescription:
+		parts = append(parts, "Audiodeskription (Hörfilm)")
+	case acc.ClearDialogue:
+		if baseName != "" {
+			parts = append(parts, fmt.Sprintf("%s (Klare Sprache)", baseName))
+		} else {
+			parts = append(parts, "Klare Sprache")
+		}
+	case purpose == AudioPurposeAlternate && (strings.Contains(e2Lower, "original") || lang.IsOriginal):
+		parts = append(parts, "Originalton")
+	case strings.Contains(e2Lower, "stadion") || strings.Contains(e2Lower, "stadium"):
+		parts = append(parts, "Stadionton")
+	case purpose == AudioPurposeCommentary || strings.Contains(e2Lower, "kommentar"):
+		parts = append(parts, "Kommentar")
+	case strings.Contains(e2Lower, "französisch"):
+		parts = append(parts, "Französisch")
+	case strings.Contains(e2Lower, "englisch"):
+		parts = append(parts, "Englisch")
+	case baseName != "":
+		parts = append(parts, baseName)
+	default:
+		parts = append(parts, "Audio")
+	}
+
+	// 2. Format / Channel Layout
+	switch {
+	case codec == CodecAC3 || codec == CodecEAC3:
+		if channels == 6 {
+			parts = append(parts, "Dolby Digital 5.1")
+		} else {
+			parts = append(parts, "Dolby Digital 2.0")
+		}
+	case channels == 6:
+		parts = append(parts, "5.1 Surround")
+	case channels == 2:
+		if len(parts) == 1 && !acc.AudioDescription && !acc.ClearDialogue {
+			parts = append(parts, "Stereo")
+		}
+	}
+
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return fmt.Sprintf("%s – %s", parts[0], parts[1])
+}
+
+func languageDisplayName(lang LanguageInfo) string {
+	switch lang.ISO639_1 {
+	case "de":
+		return "Deutsch"
+	case "fr":
+		return "Französisch"
+	case "en":
+		return "Englisch"
+	case "it":
+		return "Italienisch"
+	case "es":
+		return "Spanisch"
+	case "mul":
+		return "Mehrsprachig"
+	default:
+		if lang.IsOriginal {
+			return "Originalton"
+		}
+		if lang.IsUndefined {
+			return ""
+		}
+		return strings.ToUpper(lang.ISO639_2)
+	}
+}

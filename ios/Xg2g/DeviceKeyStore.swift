@@ -237,7 +237,7 @@ actor SecureEnclaveDeviceKeyStore: DeviceKeyStore {
 
         return DeviceKeyAttestation(
             provenance: isSecureEnclave ? .hardwareBacked : .software,
-            publicKey: ECPublicKeyJWK(x: Base64URL.encode(Data(x)), y: Base64URL.encode(Data(y)))
+            publicKey: Xg2gContract.ECPublicKeyJWK.p256(x: Base64URL.encode(Data(x)), y: Base64URL.encode(Data(y)))
         )
     }
 }

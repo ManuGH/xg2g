@@ -224,6 +224,10 @@ func (m *mockDeps) ResolveServerIdentity(ctx context.Context, userID, profileID 
 	return identity.RoleMember, nil, nil, identity.PolicyDecision{Allowed: true}, nil
 }
 
+func (m *mockDeps) CanStartService(serviceRef, sessionID string) (bool, string, string) {
+	return true, "", ""
+}
+
 func (m *mockDeps) RecordReject(code string) {
 	m.rejectCodes = append(m.rejectCodes, code)
 }
@@ -743,7 +747,7 @@ func TestService_ProcessIntent_StartUsesEncodeOnlyForIOSSafariNativeHEVC(t *test
 		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
 		Params: map[string]string{
 			"profile":                "safari_hevc_hw",
-			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafari,
 		},
 		CorrelationID: "corr-ios-hevc-cpu",
 		Mode:          model.ModeLive,
@@ -789,7 +793,7 @@ func TestService_ProcessIntent_StartAllowsFullVAAPIForIOSSafariNativeHEVCWhenCon
 		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
 		Params: map[string]string{
 			"profile":                "safari_hevc_hw",
-			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+			model.CtxKeyClientFamily: playbackprofile.ClientIOSSafari,
 		},
 		CorrelationID: "corr-ios-hevc-full",
 		Mode:          model.ModeLive,
@@ -913,7 +917,7 @@ func TestService_ProcessIntent_StartDerivesRequestedCodecsFromClientCapsWhenMiss
 		Mode:          model.ModeLive,
 		UserAgent:     "unit-test",
 		ClientCaps: &capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 			VideoCodecs:          []string{"hevc", "h264"},
 			VideoCodecSignals: []capabilities.VideoCodecSignal{

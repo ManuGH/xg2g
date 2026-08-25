@@ -57,7 +57,15 @@ func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.Str
 
 func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string, opts ProbeOptions) (*vod.StreamInfo, error) {
 	headers := "Connection: close\r\n"
-	if u, err := url.Parse(path); err == nil && u.User != nil {
+	inputPath := path
+	if after, ok := strings.CutPrefix(inputPath, "file://"); ok {
+		raw := after
+		if decoded, err := url.PathUnescape(raw); err == nil {
+			inputPath = decoded
+		} else {
+			inputPath = raw
+		}
+	} else if u, err := url.Parse(inputPath); err == nil && u.User != nil {
 		pwd, _ := u.User.Password()
 		auth := u.User.Username() + ":" + pwd
 		headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
@@ -65,10 +73,10 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		// Authorization header, so they cannot leak via /proc/<pid>/cmdline
 		// of the ffprobe subprocess.
 		u.User = nil
-		path = u.String()
+		inputPath = u.String()
 	}
 
-	args := buildProbeArgs(path, headers, opts)
+	args := buildProbeArgs(inputPath, headers, opts)
 
 	ffprobeBin := strings.TrimSpace(binaryPath)
 	if ffprobeBin == "" {
@@ -132,60 +140,64 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 	for _, s := range data.Streams {
 		switch s.CodecType {
 		case "video":
-			info.Video.CodecName = s.CodecName
-			info.Video.PixFmt = s.PixFmt
-			if s.BitsPerRawSample != "" {
-				if v, err := strconv.Atoi(s.BitsPerRawSample); err == nil {
-					info.Video.BitDepth = v
+			if info.Video.CodecName == "" {
+				info.Video.CodecName = s.CodecName
+				info.Video.PixFmt = s.PixFmt
+				if s.BitsPerRawSample != "" {
+					if v, err := strconv.Atoi(s.BitsPerRawSample); err == nil {
+						info.Video.BitDepth = v
+					}
 				}
-			}
-			// Fallback bit depth from pix_fmt if needed...
-			if info.Video.BitDepth == 0 && s.PixFmt == "yuv420p10le" {
-				info.Video.BitDepth = 10
-			} else if info.Video.BitDepth == 0 {
-				info.Video.BitDepth = 8
-			}
+				// Fallback bit depth from pix_fmt if needed...
+				if info.Video.BitDepth == 0 && s.PixFmt == "yuv420p10le" {
+					info.Video.BitDepth = 10
+				} else if info.Video.BitDepth == 0 {
+					info.Video.BitDepth = 8
+				}
 
-			if s.Duration != "" {
-				if d, err := strconv.ParseFloat(s.Duration, 64); err == nil {
-					info.Video.Duration = d
+				if s.Duration != "" {
+					if d, err := strconv.ParseFloat(s.Duration, 64); err == nil {
+						info.Video.Duration = d
+					}
 				}
-			}
-			info.Video.Width = s.Width
-			info.Video.Height = s.Height
-			info.Video.FieldOrder = strings.ToLower(strings.TrimSpace(s.FieldOrder))
-			if info.Video.FieldOrder != "" && info.Video.FieldOrder != "progressive" {
-				info.Video.Interlaced = true
-			}
-			if fps := parseFrameRate(s.AvgFrameRate); fps > 0 {
-				info.Video.FPS = fps
-			}
-			if signalFPS := parseFrameRate(s.RFrameRate); signalFPS > 0 {
-				info.Video.SignalFPS = signalFPS
-			}
-			if info.Video.SignalFPS == 0 {
-				info.Video.SignalFPS = info.Video.FPS
-			}
-			if info.BitrateKbps == 0 && s.BitRate != "" {
-				if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
-					info.BitrateKbps = bitrateKbps
+				info.Video.Width = s.Width
+				info.Video.Height = s.Height
+				info.Video.FieldOrder = strings.ToLower(strings.TrimSpace(s.FieldOrder))
+				if info.Video.FieldOrder != "" && info.Video.FieldOrder != "progressive" {
+					info.Video.Interlaced = true
+				}
+				if fps := parseFrameRate(s.AvgFrameRate); fps > 0 {
+					info.Video.FPS = fps
+				}
+				if signalFPS := parseFrameRate(s.RFrameRate); signalFPS > 0 {
+					info.Video.SignalFPS = signalFPS
+				}
+				if info.Video.SignalFPS == 0 {
+					info.Video.SignalFPS = info.Video.FPS
+				}
+				if info.BitrateKbps == 0 && s.BitRate != "" {
+					if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
+						info.BitrateKbps = bitrateKbps
+					}
 				}
 			}
 
 		case "audio":
-			info.Audio.CodecName = s.CodecName
-			if s.SampleRate != "" {
-				if sampleRate, err := strconv.Atoi(s.SampleRate); err == nil {
-					info.Audio.SampleRate = sampleRate
+			if info.Audio.CodecName == "" {
+				info.Audio.CodecName = s.CodecName
+				if s.SampleRate != "" {
+					if sampleRate, err := strconv.Atoi(s.SampleRate); err == nil {
+						info.Audio.SampleRate = sampleRate
+					}
 				}
+				if s.Channels > 0 {
+					info.Audio.Channels = s.Channels
+				}
+				if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
+					info.Audio.BitrateKbps = bitrateKbps
+				}
+				info.Audio.ChannelLayout = strings.ToLower(strings.TrimSpace(s.ChannelLayout))
 			}
-			if s.Channels > 0 {
-				info.Audio.Channels = s.Channels
-			}
-			if bitrateKbps := parseBitrateKbps(s.BitRate); bitrateKbps > 0 {
-				info.Audio.BitrateKbps = bitrateKbps
-			}
-			info.Audio.ChannelLayout = strings.ToLower(strings.TrimSpace(s.ChannelLayout))
 			info.Audio.TrackCount++
 		}
 	}

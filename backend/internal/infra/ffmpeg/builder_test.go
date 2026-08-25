@@ -349,3 +349,104 @@ func TestMapProfileToArgs_InputStabilityFlagsPrecedeInput(t *testing.T) {
 		t.Fatalf("expected input stability flags before -i, got %v", args)
 	}
 }
+
+func TestMapProfileToArgs_TargetProfileSupportsAV1VAAPI(t *testing.T) {
+	spec := vod.Spec{
+		Input:      "/media/nfs-recordings/test.ts",
+		WorkDir:    "/tmp/work",
+		OutputTemp: "index.live.m3u8",
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
+			Container: "mp4",
+			Packaging: ports.PackagingFMP4,
+			Video: ports.VideoTarget{
+				Mode:  ports.MediaModeTranscode,
+				Codec: "av1",
+			},
+			Audio: ports.AudioTarget{
+				Mode:        ports.MediaModeTranscode,
+				Codec:       "aac",
+				Channels:    2,
+				BitrateKbps: 320,
+				SampleRate:  48000,
+			},
+			HLS: ports.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: "fmp4",
+				SegmentSeconds:   6,
+			},
+			HWAccel: ports.HWAccelVAAPI,
+		}},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	joined := ""
+	for _, a := range args {
+		joined += " " + a
+	}
+
+	if !containsSubstring(args, "-init_hw_device") || !containsSubstring(args, "av1_vaapi") || !containsSubstring(args, "format=p010le,hwupload,scale_vaapi=format=p010:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709") {
+		t.Fatalf("expected VAAPI hardware args and av1_vaapi encoder in args, got %s", joined)
+	}
+}
+
+func TestMapProfileToArgs_WithStartOffset(t *testing.T) {
+	spec := vod.Spec{
+		Input:         "/tmp/input.ts",
+		WorkDir:       "/tmp/work",
+		OutputTemp:    "index.live.m3u8",
+		StartOffsetMs: 1800500, // 1800.5 seconds
+		Intent: &ports.BuildIntent{
+			StartOffsetMs: 1800500,
+			Target: ports.TargetPlaybackProfile{
+				Video: ports.VideoTarget{
+					Mode:  ports.MediaModeTranscode,
+					Codec: "av1",
+				},
+				Audio: ports.AudioTarget{
+					Mode:  ports.MediaModeTranscode,
+					Codec: "aac",
+				},
+				HLS: ports.HLSTarget{
+					Enabled:          true,
+					SegmentContainer: "fmp4",
+				},
+			},
+		},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	ssIndex := -1
+	iIndex := -1
+	for idx, a := range args {
+		if a == "-ss" {
+			ssIndex = idx
+		}
+		if a == "-i" {
+			iIndex = idx
+		}
+	}
+
+	if ssIndex == -1 || iIndex == -1 || ssIndex >= iIndex {
+		t.Fatalf("expected -ss before -i in args, got ssIndex=%d, iIndex=%d, args=%v", ssIndex, iIndex, args)
+	}
+	if args[ssIndex+1] != "1800.5" {
+		t.Fatalf("expected -ss 1800.5, got %s", args[ssIndex+1])
+	}
+}
+
+func containsSubstring(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}

@@ -47,6 +47,40 @@ components:
       schema:
         type: string
 
+    PlaybackStartOffsetMs:
+      name: start_ms
+      in: query
+      required: false
+      description: |
+        Canonical playback start offset in milliseconds. This is the only accepted
+        seek-anchor input on the playback-info surface; the resolved anchor is echoed
+        back as `PlaybackInfo.anchorStartMs` and `PlaybackInfo.anchorStartSec`.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+
+    PlaybackRequestProfileQuery:
+      name: profile
+      in: query
+      required: false
+      description: |
+        Explicit playback request profile. Overrides the `X-XG2G-Profile` header when both
+        are present. The backend owns profile interpretation; clients only forward the
+        profile identifier they were handed.
+      schema:
+        type: string
+
+    PlaybackRequestProfileHeader:
+      name: X-XG2G-Profile
+      in: header
+      required: false
+      description: |
+        Playback request profile carried as a header. Equivalent to the `profile` query
+        parameter, which takes precedence when both are supplied.
+      schema:
+        type: string
+
   schemas:
     DeviceBindingState:
       type: string
@@ -80,7 +114,17 @@ components:
 
     DeviceAuthDeviceType:
       type: string
-      enum: [android_phone, android_tablet, android_tv, browser, unknown]
+      enum:
+        [
+          android_phone,
+          android_tablet,
+          android_tv,
+          ios_phone,
+          ios_tablet,
+          apple_tv,
+          browser,
+          unknown,
+        ]
 
     PairingStatus:
       type: string
@@ -402,6 +446,56 @@ components:
           type: string
           format: date-time
 
+    DeviceRefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          description: >-
+            The rotating refresh token most recently issued to this device,
+            either by the pairing exchange or by a previous refresh.
+
+    DeviceGrantResponse:
+      type: object
+      description: |
+        A freshly issued, DPoP-bound device grant.
+
+        The field names are snake_case here and camelCase in
+        ExchangePairingResponse. That is the wire as it stands, documented
+        rather than quietly corrected: aligning the two casings is a breaking
+        change for any device already speaking this endpoint.
+      additionalProperties: false
+      required: [token_type, access_token, refresh_token, expires_in, device_id, scope]
+      properties:
+        token_type:
+          type: string
+          description: Always "DPoP"; the token is sender-constrained to the device key.
+          example: DPoP
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+          description: >-
+            Replaces the presented token. Presenting a superseded value is
+            treated as replay and revokes the whole refresh family.
+        expires_in:
+          type: integer
+          format: int32
+          description: Access-token lifetime in seconds, counted from this response.
+          example: 900
+        device_id:
+          type: string
+        scope:
+          type: string
+
+    # Shape of the converged exchange (ADR-032). A successful exchange now
+    # yields identity credentials directly: a DPoP-bound access token plus a
+    # rotating refresh token. The former deviceGrantId/deviceGrant/
+    # accessSessionId trio is gone because the concepts are — the rotating
+    # secret is a refresh-token family entry and the access token is bound to
+    # the device key rather than to a separate session row.
     ExchangePairingResponse:
       type: object
       additionalProperties: false
@@ -409,14 +503,12 @@ components:
         [
           pairingId,
           deviceId,
-          deviceGrantId,
-          deviceGrant,
-          deviceGrantExpiresAt,
-          accessSessionId,
+          tokenType,
           accessToken,
-          accessTokenExpiresAt,
+          expiresIn,
+          refreshToken,
+          scope,
           policyVersion,
-          scopes,
           endpoints,
         ]
       properties:
@@ -424,30 +516,43 @@ components:
           type: string
         deviceId:
           type: string
-        deviceGrantId:
+        tokenType:
           type: string
-        deviceGrant:
-          type: string
-        deviceGrantExpiresAt:
-          type: string
-          format: date-time
-        accessSessionId:
-          type: string
+          description: Always "DPoP"; the token is sender-constrained to the enrolled device key.
+          example: DPoP
         accessToken:
           type: string
-        accessTokenExpiresAt:
+        expiresIn:
+          type: integer
+          format: int32
+          description: Access-token lifetime in seconds, from the moment of the response.
+          example: 900
+        refreshToken:
           type: string
-          format: date-time
+          description: >-
+            Rotates on every refresh. Presenting a superseded value is treated
+            as replay and revokes the whole family.
+        scope:
+          type: string
         policyVersion:
           type: string
-        scopes:
-          type: array
-          items:
-            type: string
         endpoints:
           type: array
           items:
             $ref: "#/components/schemas/PublishedEndpoint"
+
+    AuthSessionResponse:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+        cookie:
+          type: string
+        path:
+          type: string
+        expiresIn:
+          type: integer
 
     IntentRequest:
       type: object
@@ -852,69 +957,111 @@ components:
 
     SystemInfoData:
       type: object
+      description: |
+        Receiver and host facts for the system view.
+
+        The seven sections are named schemas rather than inline objects: an
+        inline object generates an anonymous nested struct that no handler can
+        name or reasonably construct, which is why this response used to be
+        served from a hand-written copy instead of the generated type.
+
+        Required-ness mirrors what the server actually sends. A field the
+        handler omits when empty is optional here; one it always writes is
+        required — which is every section, so a client never has to guard a
+        whole block away.
+      required: [hardware, software, tuners, network, storage, runtime, resource]
       properties:
         hardware:
-          type: object
-          properties:
-            brand: { type: string }
-            model: { type: string }
-            boxtype: { type: string }
-            chipset: { type: string }
-            chipsetDescription: { type: string }
+          $ref: "#/components/schemas/HardwareInfo"
         software:
-          type: object
-          properties:
-            oeVersion: { type: string }
-            imageDistro: { type: string }
-            imageVersion: { type: string }
-            enigmaVersion: { type: string }
-            kernelVersion: { type: string }
-            driverDate: { type: string }
-            webifVersion: { type: string }
+          $ref: "#/components/schemas/SoftwareInfo"
         tuners:
           type: array
           items:
-            type: object
-            properties:
-              name: { type: string }
-              type: { type: string }
-              status: { type: string }
+            $ref: "#/components/schemas/TunerInfo"
         network:
-          type: object
-          properties:
-            interfaces:
-              type: array
-              items:
-                type: object
-                properties:
-                  name: { type: string }
-                  type: { type: string }
-                  speed: { type: string }
-                  mac: { type: string }
-                  ip: { type: string }
-                  ipv6: { type: string }
-                  dhcp: { type: boolean }
+          $ref: "#/components/schemas/NetworkInfo"
         storage:
-          type: object
-          properties:
-            devices:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
-            locations:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
+          $ref: "#/components/schemas/StorageInfo"
         runtime:
-          type: object
-          properties:
-            uptime: { type: string }
+          $ref: "#/components/schemas/RuntimeInfo"
         resource:
-          type: object
-          properties:
-            memoryTotal: { type: string }
-            memoryAvailable: { type: string }
-            memoryUsed: { type: string }
+          $ref: "#/components/schemas/ResourceInfo"
+
+    HardwareInfo:
+      type: object
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        boxtype: { type: string }
+        chipset: { type: string }
+        chipsetDescription: { type: string }
+
+    SoftwareInfo:
+      type: object
+      properties:
+        oeVersion: { type: string }
+        imageDistro: { type: string }
+        imageVersion: { type: string }
+        enigmaVersion: { type: string }
+        kernelVersion: { type: string }
+        driverDate: { type: string }
+        webifVersion: { type: string }
+
+    TunerInfo:
+      type: object
+      required: [name, type, status]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        status: { type: string }
+
+    NetworkInfo:
+      type: object
+      required: [interfaces]
+      properties:
+        interfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkInterfaceInfo"
+
+    NetworkInterfaceInfo:
+      type: object
+      required: [name, type, speed, mac, ip, ipv6, dhcp]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        speed: { type: string }
+        mac: { type: string }
+        ip: { type: string }
+        ipv6: { type: string }
+        dhcp: { type: boolean }
+
+    StorageInfo:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+
+    RuntimeInfo:
+      type: object
+      required: [uptime]
+      properties:
+        uptime: { type: string }
+
+    ResourceInfo:
+      type: object
+      required: [memoryTotal, memoryAvailable, memoryUsed]
+      properties:
+        memoryTotal: { type: string }
+        memoryAvailable: { type: string }
+        memoryUsed: { type: string }
 
     StorageItem:
       type: object
@@ -1556,6 +1703,90 @@ components:
         endXmltv:
           type: string
           description: Original XMLTV end timestamp including offset
+        ageRating:
+          $ref: "#/components/schemas/EpgAgeRating"
+        episodeInfo:
+          $ref: "#/components/schemas/EpgEpisodeInfo"
+        genre:
+          type: string
+          description: Canonical genre as observed on ingest.
+        genreSource:
+          type: string
+          description: Where the genre was observed, e.g. dvb_descriptor, dvb_category, dvb_text.
+        ratingScore:
+          $ref: "#/components/schemas/EpgRatingScore"
+        posterUrl:
+          type: string
+          description: External provider poster URL. Never overwrites observed DVB metadata.
+        providerSummary:
+          type: string
+          description: External provider synopsis. Never overwrites the observed DVB description.
+
+    EpgAgeRating:
+      type: object
+      description: |
+        Age certification with explicit scheme and provenance. `confidence` states how the
+        value was obtained; it is not a legal broadcast guarantee.
+      required: [value, scheme, country, source, confidence]
+      additionalProperties: false
+      properties:
+        value:
+          type: integer
+          description: Age in years, e.g. 0, 6, 12, 16, 18.
+        scheme:
+          type: string
+          description: Rating scheme, e.g. FSK when explicitly stated, otherwise broadcaster_age.
+        country:
+          type: string
+          description: Country the scheme belongs to, or `unknown` for generic broadcaster text.
+        source:
+          $ref: "#/components/schemas/EpgRatingSource"
+        confidence:
+          $ref: "#/components/schemas/EpgRatingConfidence"
+
+    EpgRatingSource:
+      type: string
+      description: Where an age rating was extracted or retrieved from.
+      enum: [dvb_text, dvb_descriptor, provider, override]
+
+    EpgRatingConfidence:
+      type: string
+      description: |
+        Certainty of the extraction. `observed` was read directly from source text or
+        descriptors, `matched` came from a high-confidence provider match, `inferred` was
+        derived heuristically.
+      enum: [observed, matched, inferred]
+
+    EpgEpisodeInfo:
+      type: object
+      description: Season and episode numbering extracted with high precision.
+      additionalProperties: false
+      properties:
+        seasonNumber:
+          type: integer
+        episodeNumber:
+          type: integer
+        episodeTitle:
+          type: string
+        sourcePattern:
+          type: string
+          description: The pattern the numbering was recognised by.
+
+    EpgRatingScore:
+      type: object
+      description: External provider rating, kept separate from observed DVB metadata.
+      required: [score, scale, source]
+      additionalProperties: false
+      properties:
+        score:
+          type: number
+          format: double
+        scale:
+          type: number
+          format: double
+        source:
+          type: string
+          description: Provider the score came from, e.g. tvmaze, tmdb, imdb.
 
     NowNextItem:
       type: object
@@ -1576,6 +1807,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NowNextItem"
+
+    EpgItem:
+      type: object
+      properties:
+        id: { type: string }
+        serviceRef: { type: string }
+        title: { type: string }
+        desc: { type: string }
+        start: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        duration: { type: integer, format: int64 }
+        startXmltv: { type: string }
+        endXmltv: { type: string }
+        genre: { type: string }
 
     ProblemCode:
       type: string
@@ -1768,9 +2013,6 @@ components:
         state:
           type: string
           enum: [scheduled, recording, completed, disabled, unknown]
-        receiverState:
-          type: object
-          additionalProperties: true
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1811,6 +2053,20 @@ components:
           type: integer
           format: int64
           description: wall-clock timestamp (UNIX) of the earliest segment in window. Becomes required in P3-4.
+        anchorStartMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Timeline anchor in milliseconds that the returned media URL was built against.
+            Present when the request carried a `start_ms` offset.
+        anchorStartSec:
+          type: number
+          format: double
+          minimum: 0
+          description: |
+            Timeline anchor in seconds. Redundant convenience mirror of `anchorStartMs`
+            for players that operate on a seconds timeline.
         durationSeconds:
           type: integer
           format: int64
@@ -1860,11 +2116,100 @@ components:
         - unknown
       description: Reason for the playback decision.
 
+    LiveStreamInfoRequest:
+      type: object
+      required: [serviceRef, capabilities]
+      properties:
+        serviceRef:
+          type: string
+          description: The Enigma2 service reference
+        capabilities:
+          $ref: "#/components/schemas/PlaybackCapabilities"
+
+    LiveStreamInfoResponse:
+      type: object
+      properties:
+        playbackDecisionToken:
+          type: string
+        sessionId:
+          type: string
+        mode:
+          $ref: "#/components/schemas/PlaybackInfoMode"
+        decisionReason:
+          type: string
+        url:
+          type: string
+        isSeekable:
+          type: boolean
+        dvrWindowSeconds:
+          type: integer
+          format: int64
+
+    PlaybackTicketResponse:
+      type: object
+      required: [sessionId, ticket, cookie, path, expiresIn]
+      properties:
+        sessionId:
+          type: string
+        ticket:
+          type: string
+        cookie:
+          type: string
+        path:
+          type: string
+        expiresIn:
+          type: integer
+
+    ZapPreparationResponse:
+      type: object
+      required: [preparationId, state]
+      properties:
+        preparationId:
+          type: string
+        zapId:
+          type: string
+        serviceRef:
+          type: string
+        state:
+          $ref: "#/components/schemas/ZapPreparationState"
+        outcome:
+          type: string
+        generation:
+          type: integer
+          format: int64
+        readyAfterMs:
+          type: integer
+          format: int64
+        pending:
+          type: object
+          additionalProperties:
+            type: string
+        detail:
+          type: string
+
+    ZapPreparationState:
+      type: string
+      enum: [pending, ready, failed, cancelled, committed]
+
     # ==================== P4-1: Decision Engine Schemas ====================
+
+    PlaybackMaxVideo:
+      type: object
+      description: Optional resolution/FPS constraints
+      properties:
+        width:
+          type: integer
+          example: 1920
+        height:
+          type: integer
+          example: 1080
+        fps:
+          type: integer
+          example: 60
 
     PlaybackCapabilities:
       type: object
-      required: [capabilitiesVersion, container, videoCodecs, audioCodecs]
+      required: [capabilitiesVersion, clientIdentity, container, videoCodecs, audioCodecs]
       additionalProperties: false
       description: Client capabilities for playback decision (P4-1)
       properties:
@@ -1896,18 +2241,7 @@ components:
           description: Supported audio codecs
           example: ["aac", "ac3"]
         maxVideo:
-          type: object
-          description: Optional resolution/FPS constraints
-          properties:
-            width:
-              type: integer
-              example: 1920
-            height:
-              type: integer
-              example: 1080
-            fps:
-              type: integer
-              example: 60
+          $ref: "#/components/schemas/PlaybackMaxVideo"
         deviceContext:
           $ref: "#/components/schemas/PlaybackDeviceContext"
         networkContext:
@@ -1920,10 +2254,8 @@ components:
           type: boolean
           description: Whether client supports HTTP range requests
           example: true
-        deviceType:
-          type: string
-          description: Client device category for policy decisions
-          example: "desktop"
+        clientIdentity:
+          $ref: "#/components/schemas/PlaybackClientIdentity"
         hlsEngines:
           type: array
           items:
@@ -1942,15 +2274,64 @@ components:
           type: integer
           description: Version of the runtime playback probe contract
           example: 2
-        clientFamilyFallback:
-          type: string
-          description: Browser-family fallback used when the server needs conservative capability defaults
-          example: "chromium_hlsjs"
         allowTranscode:
           type: boolean
           description: Whether client allows transcoding (force bypass)
           default: true
           example: true
+
+    PlaybackClientIdentity:
+      type: object
+      description: |
+        What the client *is*. Platform and surface are facts about the running
+        client; the family it belongs to, the capability defaults that follow
+        from it, and the playback policy applied to it are all the server's to
+        decide.
+
+        This replaces `clientFamilyFallback` and `deviceType`, which asked the
+        client to classify itself. It could not: the native iOS app called
+        itself `ios_safari_native` — the identifier for Safari on iOS — so the
+        backend applied browser policy to an app that ships its own transport
+        stream demuxer, and no browser and no app could be told apart.
+      required: [platform, surface]
+      additionalProperties: false
+      properties:
+        platform:
+          $ref: "#/components/schemas/PlaybackClientPlatform"
+        surface:
+          $ref: "#/components/schemas/PlaybackClientSurface"
+        browserEngine:
+          $ref: "#/components/schemas/PlaybackBrowserEngine"
+        appVersion:
+          type: string
+          description: |
+            Version of the native client, when there is one. Diagnostic only:
+            no policy is keyed on it, because a policy that were would make
+            every client release a server change.
+
+    PlaybackClientPlatform:
+      type: string
+      description: |
+        The operating system the client runs on. `unknown` is a legitimate
+        answer and is treated as the most conservative case rather than as an
+        error.
+      enum: [ios, ipados, macos, tvos, android, android_tv, windows, linux, unknown]
+
+    PlaybackClientSurface:
+      type: string
+      description: |
+        Whether the client is a native application or a page in a browser. The
+        distinction the old identifiers could not express, and the one that
+        decides whether capability claims are decoder truth or a browser's
+        best guess.
+      enum: [native_app, browser]
+
+    PlaybackBrowserEngine:
+      type: string
+      description: |
+        Rendering engine, for `surface: browser` only. A native client omits
+        it; sending one is not an error but carries no meaning.
+      enum: [webkit, blink, gecko, unknown]
 
     PlaybackVideoCodecSignal:
       type: object
@@ -3200,6 +3581,28 @@ components:
         finished: { type: boolean }
         updatedAt: { type: string, format: date-time }
 
+    RecordingResumeRequest:
+      type: object
+      required: [position]
+      properties:
+        position:
+          type: number
+          format: double
+          description: Playback position in seconds.
+        total:
+          type: number
+          format: double
+          description: Total duration in seconds.
+        finished:
+          type: boolean
+          description: Whether the user finished watching the recording.
+        title:
+          type: string
+          description: Optional display title snapshot.
+        channel:
+          type: string
+          description: Optional display channel snapshot.
+
     RecordingResponse:
       type: object
       required: [requestId]
@@ -3225,7 +3628,87 @@ components:
 security:
   - BearerAuth: [v3:read]
 
+x-xg2g-native-contract:
+  # The subset of the contract the native iOS and Android clients decode
+  # directly. gen-native-contract emits their wire model layer from exactly
+  # these schemas, and verify-native-contract-fresh locks the result against
+  # drift.
+  #
+  # Listing a schema here is what makes it part of the native contract. Only
+  # roots are listed: everything a root references is pulled in transitively,
+  # so adding a $ref to a listed schema never needs a second edit here.
+  roots:
+    - ApprovePairingRequest
+    - ApprovePairingResponse
+    - AuthSessionResponse
+    - Bouquet
+    - DeviceGrantResponse
+    - DeviceRefreshRequest
+    - ECPublicKeyJWK
+    - EpgItem
+    - ExchangePairingResponse
+    - IntentAcceptedResponse
+    - IntentRequest
+    - LiveStreamInfoRequest
+    - LiveStreamInfoResponse
+    - NowNextRequest
+    - NowNextResponse
+    - PairingSecretRequest
+    - PairingStatusResponse
+    - PlaybackTicketResponse
+    - PublishedEndpoint
+    - RecordingResponse
+    - RecordingResumeRequest
+    - Service
+    - StartPairingRequest
+    - StartPairingResponse
+    - TimerCreateRequest
+    - TimerList
+    - ZapPreparationResponse
+
 x-xg2g-operation-policies:
+  PostSessionPlaybackTicket:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  StartStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetStreamPrepareStatus:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  CommitStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  CancelStreamPrepare:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PutRecordingResume:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
   AddTimer:
     class: write
     auth: bearer_scope
@@ -3317,6 +3800,13 @@ x-xg2g-operation-policies:
     rateLimit: global
     audit: true
     redactErrors: false
+  DeviceRefresh:
+    class: device
+    auth: device_grant
+    browserTrust: not_browser
+    rateLimit: device_grant
+    audit: true
+    redactErrors: true
   ExchangePairing:
     class: pairing
     auth: pairing_secret
@@ -4273,29 +4763,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: false
-                  properties:
-                    id:
-                      type: string
-                    serviceRef:
-                      type: string
-                    title:
-                      type: string
-                    desc:
-                      type: string
-                    start:
-                      type: integer
-                    end:
-                      type: integer
-                    duration:
-                      type: integer
-                    startXmltv:
-                      type: string
-                      description: Original XMLTV start timestamp including offset
-                    endXmltv:
-                      type: string
-                      description: Original XMLTV end timestamp including offset
+                  $ref: "#/components/schemas/EpgItem"
 
   /services:
     get:
@@ -4374,27 +4842,24 @@ paths:
       tags: [streams]
       security:
         - BearerAuth: [v3:read]
+      parameters:
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       requestBody:
         description: Client capabilities and service reference for decision making
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [serviceRef, capabilities]
-              properties:
-                serviceRef:
-                  type: string
-                  description: The Enigma2 service reference
-                capabilities:
-                  $ref: "#/components/schemas/PlaybackCapabilities"
+              $ref: "#/components/schemas/LiveStreamInfoRequest"
       responses:
         "200":
           description: Playback decision and info
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlaybackInfo"
+                $ref: "#/components/schemas/LiveStreamInfoResponse"
         "400":
           description: Invalid capabilities or service reference
           content:
@@ -4766,6 +5231,52 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /recordings/{recordingId}/resume:
+    put:
+      summary: Save playback resume point for a recording
+      operationId: putRecordingResume
+      tags: [recordings]
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HouseholdProfileHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordingResumeRequest"
+      responses:
+        "204":
+          description: Resume point saved successfully
+        "400":
+          description: Invalid input or recording ID
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: Internal error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Resume store unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /recordings/{recordingId}/status:
     get:
       summary: Get recording build status
@@ -4803,6 +5314,9 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       responses:
         "200":
           description: Playback strategy info
@@ -4838,6 +5352,9 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/PlaybackStartOffsetMs"
+        - $ref: "#/components/parameters/PlaybackRequestProfileQuery"
+        - $ref: "#/components/parameters/PlaybackRequestProfileHeader"
       requestBody:
         description: Client capabilities for decision making
         required: true
@@ -5190,6 +5707,59 @@ paths:
         "404":
           description: Segment not found
 
+  /auth/device/refresh:
+    post:
+      summary: Rotate a device refresh token
+      description: |
+        Exchanges the device's current refresh token for a new access token and
+        a rotated refresh token.
+
+        Authentication is the refresh token itself plus a DPoP proof over the
+        device key the grant is bound to, so the operation carries no bearer
+        scope. Replay of a superseded refresh token revokes the entire family.
+      operationId: DeviceRefresh
+      tags:
+        - auth
+      security: []
+      parameters:
+        - name: DPoP
+          in: header
+          required: true
+          description: DPoP proof JWT (RFC 9449) signed by the enrolled device key.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRefreshRequest"
+      responses:
+        "200":
+          description: A rotated device grant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGrantResponse"
+        "400":
+          description: Missing or invalid DPoP proof, or malformed body
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Refresh token invalid, revoked, or replayed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /auth/session:
     post:
       summary: Create session cookie
@@ -5202,6 +5772,10 @@ paths:
       responses:
         "200":
           description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
         "400":
           description: HTTPS required for session exchange
         "401":
@@ -5672,6 +6246,119 @@ paths:
           description: Feedback accepted
         "404":
           description: Session not found
+
+  /sessions/{sessionId}/playback-ticket:
+    post:
+      summary: Issue a playback ticket for a media session
+      operationId: postSessionPlaybackTicket
+      tags: [streams]
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      responses:
+        "201":
+          description: Playback ticket issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackTicketResponse"
+        "400":
+          description: Invalid input
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal error
+
+  /stream/prepare:
+    post:
+      summary: Start warming a channel stream
+      operationId: startStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: sref
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation started or updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+
+  /stream/prepare/{preparationId}:
+    get:
+      summary: Check status of stream preparation
+      operationId: getStreamPrepareStatus
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+    delete:
+      summary: Cancel stream preparation
+      operationId: cancelStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preparation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+
+  /stream/prepare/{preparationId}/commit:
+    post:
+      summary: Commit stream preparation
+      operationId: commitStreamPrepare
+      tags: [streams]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: generation
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Preparation committed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZapPreparationResponse"
+        "404":
+          description: Preparation not found
+        "409":
+          description: Generation mismatch
 
   /logs:
     get:

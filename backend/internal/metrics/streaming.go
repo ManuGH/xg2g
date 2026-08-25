@@ -150,7 +150,23 @@ var (
 		Name: "xg2g_active_enigma2_connections",
 		Help: "Current number of active Go-managed HTTP connections to Enigma2 receiver (avsync spool / ingest proxy)",
 	}, []string{"mode"})
+
+	// ReceiverStreamReaped counts receiver connections closed by the idle
+	// watchdog rather than by their session ending.
+	//
+	// Every one of these is a tuner that was held by a session nobody was
+	// consuming any more. The watchdog recovers the tuner, so playback keeps
+	// working and the underlying leak leaves no symptom a user would report —
+	// which is exactly why it needs a counter. A non-zero rate here means
+	// sessions are being orphaned upstream.
+	ReceiverStreamReaped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_receiver_stream_reaped_total",
+		Help: "Receiver stream connections closed by the idle watchdog after their session was orphaned",
+	}, []string{"mode"})
 )
+
+// IncReceiverStreamReaped counts one receiver connection recovered by the idle watchdog.
+func IncReceiverStreamReaped(mode string) { ReceiverStreamReaped.WithLabelValues(mode).Inc() }
 
 // IncActiveFFmpegProcesses increments the active FFmpeg processes gauge.
 func IncActiveFFmpegProcesses() { ActiveFFmpegProcesses.Inc() }

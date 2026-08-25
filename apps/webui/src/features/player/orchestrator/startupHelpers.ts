@@ -272,14 +272,11 @@ export function buildLiveIntentBody(
   if (typeof effectiveDvrWindowSec === 'number') {
     intentParams.dvr_window_sec = String(effectiveDvrWindowSec);
   }
-  if (requestCaps.clientFamilyFallback) {
-    intentParams.client_family = requestCaps.clientFamilyFallback;
-  }
+  // `client_family` and `device_type` are gone from here: the server derives
+  // both from the identity the capabilities carry, and discards anything a
+  // client puts in params. Sending them was how the page chose its own policy.
   if (requestCaps.preferredHlsEngine) {
     intentParams.preferred_hls_engine = requestCaps.preferredHlsEngine;
-  }
-  if (requestCaps.deviceType) {
-    intentParams.device_type = requestCaps.deviceType;
   }
   const autoCodecs = resolveAutoTranscodeCodecs(requestCaps);
   if (autoCodecs.length > 0) {

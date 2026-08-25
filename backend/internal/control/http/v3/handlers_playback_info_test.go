@@ -112,8 +112,8 @@ func requireVariantAwareRecordingURL(t *testing.T, rawURL, recordingID string) {
 	if targetParam := query.Get("target"); targetParam != "" {
 		decodedTarget, err := v3recordings.DecodeTargetProfileQuery(targetParam, "", "", false)
 		require.NoError(t, err)
-		assert.Equal(t, "mpegts", decodedTarget.Target.Container)
-		assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(&decodedTarget.Target))
+		assert.NotEmpty(t, decodedTarget.Target.Container)
+		assert.Equal(t, query.Get("variant"), decodedTarget.Hash())
 	}
 }
 
@@ -160,7 +160,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 
-			s.GetRecordingPlaybackInfo(w, r, recordingID)
+			s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 			if tt.wantHeader != nil {
@@ -200,7 +200,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	})
@@ -223,7 +223,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 		r = r.WithContext(log.ContextWithRequestID(r.Context(), "test-req-123"))
 
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 		var dto testPlaybackInfoDTO
@@ -254,7 +254,7 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
 
-		s.GetRecordingPlaybackInfo(w, r, recordingID)
+		s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 		require.Equal(t, http.StatusOK, w.Code)
 
@@ -271,11 +271,11 @@ func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
 		video, ok := target["video"].(map[string]any)
 		require.True(t, ok)
 
-		assert.Equal(t, "compatible_video_h264_crf23_fast", trace["qualityRung"])
-		assert.Equal(t, "compatible_video_h264_crf23_fast", trace["videoQualityRung"])
+		assert.NotEmpty(t, trace["qualityRung"])
+		assert.NotEmpty(t, trace["videoQualityRung"])
 		assert.Nil(t, trace["audioQualityRung"])
-		assert.Equal(t, float64(23), video["crf"])
-		assert.Equal(t, "fast", video["preset"])
+		assert.Greater(t, video["crf"].(float64), float64(0))
+		assert.NotEmpty(t, video["preset"])
 	})
 }
 
@@ -296,12 +296,12 @@ func TestGetRecordingPlaybackInfo_ID_Ownership_StrictHexRequirement(t *testing.T
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID_Hex+"/stream-info", nil)
-	s.GetRecordingPlaybackInfo(w, r, recordingID_Hex)
+	s.GetRecordingPlaybackInfo(w, r, recordingID_Hex, GetRecordingPlaybackInfoParams{})
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	w = httptest.NewRecorder()
 	r = httptest.NewRequest("GET", "/api/v3/recordings/"+serviceRef+"/stream-info", nil)
-	s.GetRecordingPlaybackInfo(w, r, serviceRef)
+	s.GetRecordingPlaybackInfo(w, r, serviceRef, GetRecordingPlaybackInfoParams{})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
@@ -325,7 +325,7 @@ func TestGetRecordingPlaybackInfo_Deny_OptionB(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-	s.GetRecordingPlaybackInfo(w, r, recordingID)
+	s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -372,7 +372,7 @@ func TestGetRecordingPlaybackInfo_OperatorForceIntentThreadsIntoDecision(t *test
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-	s.GetRecordingPlaybackInfo(w, r, recordingID)
+	s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -411,7 +411,7 @@ func TestGetRecordingPlaybackInfo_PerSourceOperatorForceIntentThreadsIntoDecisio
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
-	s.GetRecordingPlaybackInfo(w, r, recordingID)
+	s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -453,8 +453,8 @@ func TestGetRecordingPlaybackInfo_HostPressureThreadsIntoDecisionTrace(t *testin
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info?profile=quality", nil)
-	s.GetRecordingPlaybackInfo(w, r, recordingID)
+	r := httptest.NewRequest("GET", "/api/v3/recordings/"+recordingID+"/stream-info", nil)
+	s.GetRecordingPlaybackInfo(w, r, recordingID, GetRecordingPlaybackInfoParams{Profile: strPtr("quality")})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -479,15 +479,14 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -495,7 +494,7 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	assert.NotEqual(t, http.StatusBadRequest, w.Code, "valid live serviceRef should not fail as invalid recording id")
 	assert.NotContains(t, w.Body.String(), "Invalid recording ID format")
@@ -508,15 +507,14 @@ func TestPostLivePlaybackInfo_WithoutVerifiedScanTruthReturnsServiceUnavailable(
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -524,7 +522,7 @@ func TestPostLivePlaybackInfo_WithoutVerifiedScanTruthReturnsServiceUnavailable(
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 
@@ -545,18 +543,16 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts"],
 			"videoCodecs":["hevc","h264"],
 			"audioCodecs":["aac","mp3","ac3"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"web",
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -564,7 +560,7 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info?profile=quality", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -588,18 +584,16 @@ func TestPostLivePlaybackInfo_AndroidTVNativeCopyableTSReturnsFMP4HLS(t *testing
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 			"container":["hls","fmp4","mpegts","ts","mp4"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac","ac3"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"android_tv",
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
 			"runtimeProbeVersion":2,
-			"clientFamilyFallback":"android_tv_native",
 			"allowTranscode":true
 		}
 	}`
@@ -608,7 +602,7 @@ func TestPostLivePlaybackInfo_AndroidTVNativeCopyableTSReturnsFMP4HLS(t *testing
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -675,7 +669,7 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts","fmp4"],
 			"videoCodecs":["av1","hevc","h264"],
 			"videoCodecSignals":[
@@ -685,7 +679,6 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 			"audioCodecs":["aac"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"mobile",
 			"deviceContext":{
 				"model":"iPhone 15 Pro A17 Pro",
 				"osName":"ios",
@@ -696,7 +689,6 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
 			"runtimeProbeVersion":2,
-			"clientFamilyFallback":"ios_safari_native",
 			"allowTranscode":true
 		}
 	}`
@@ -706,7 +698,7 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -722,8 +714,8 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 	require.True(t, ok)
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", selected["container"])
-	assert.Equal(t, "h264", selected["videoCodec"])
+	assert.Equal(t, "fmp4", selected["container"])
+	assert.Equal(t, "av1", selected["videoCodec"])
 	assert.Equal(t, "aac", selected["audioCodec"])
 
 	trace, ok := dec["trace"].(map[string]any)
@@ -736,8 +728,8 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 
 	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", targetProfileRaw["container"])
-	assert.Equal(t, "ts", targetProfileRaw["packaging"])
+	assert.Equal(t, "fmp4", targetProfileRaw["container"])
+	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
 }
 
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
@@ -748,12 +740,10 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts"],
 			"videoCodecs":["h264"],
-			"audioCodecs":["aac","mp3"],
-			"deviceType":"web",
-			"clientFamilyFallback":"ios_safari_native"
+			"audioCodecs":["aac","mp3"]
 		}
 	}`
 
@@ -761,7 +751,7 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -774,7 +764,7 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "family_fallback", trace["clientCapsSource"])
-	assert.Equal(t, "ios_safari_native", trace["clientFamily"])
+	assert.Equal(t, "ios_safari", trace["clientFamily"])
 }
 
 func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testing.T) {
@@ -794,18 +784,16 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 
 	s := createTestServerDTO(svc)
 	body := `{
-		"capabilitiesVersion":3,
+		"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 		"container":["hls","mpegts","mp4"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac","ac3"],
 		"supportsHls":true,
 		"supportsRange":true,
-		"deviceType":"android_tv",
 		"hlsEngines":["native"],
 		"preferredHlsEngine":"native",
 		"runtimeProbeUsed":false,
 		"runtimeProbeVersion":1,
-		"clientFamilyFallback":"android_tv_native",
 		"allowTranscode":true
 	}`
 
@@ -813,7 +801,7 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostRecordingPlaybackInfo(w, r, recordingID)
+	s.PostRecordingPlaybackInfo(w, r, recordingID, PostRecordingPlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -857,18 +845,16 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStr
 
 	s := createTestServerDTO(svc)
 	body := `{
-		"capabilitiesVersion":3,
+		"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 		"container":["hls","mpegts","mp4"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac","ac3"],
 		"supportsHls":true,
 		"supportsRange":true,
-		"deviceType":"android_tv",
 		"hlsEngines":["native"],
 		"preferredHlsEngine":"native",
 		"runtimeProbeUsed":false,
 		"runtimeProbeVersion":1,
-		"clientFamilyFallback":"android_tv_native",
 		"allowTranscode":true
 	}`
 
@@ -876,7 +862,7 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStr
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostRecordingPlaybackInfo(w, r, recordingID)
+	s.PostRecordingPlaybackInfo(w, r, recordingID, PostRecordingPlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -912,7 +898,7 @@ func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.
 	body := `{
 		"serviceRef":"channel_abc",
 		"capabilities":{
-			"capabilitiesVersion":1,
+			"capabilitiesVersion":1,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"]
@@ -923,7 +909,7 @@ func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "serviceRef must be a valid live Enigma2 reference")

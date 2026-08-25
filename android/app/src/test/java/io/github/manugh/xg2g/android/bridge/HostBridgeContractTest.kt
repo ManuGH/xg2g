@@ -43,7 +43,7 @@ class HostBridgeContractTest {
         val snapshot = JSONObject(
             HostBridgeContract.snapshotJson(
                 serializedHostCapabilities = """{"platform":"android-tv"}""",
-                serializedPlaybackCapabilities = """{"deviceType":"android_tv"}""",
+                serializedPlaybackCapabilities = """{"clientIdentity":{"platform":"android_tv","surface":"native_app"}}""",
                 nativePlaybackStateJson = """{"playerState":3}"""
             )
         )
@@ -51,7 +51,10 @@ class HostBridgeContractTest {
         assertEquals(HostBridgeContract.PROTOCOL_VERSION, snapshot.getInt("protocolVersion"))
         assertEquals("snapshot", snapshot.getString("type"))
         assertEquals("android-tv", snapshot.getJSONObject("host").getString("platform"))
-        assertEquals("android_tv", snapshot.getJSONObject("playbackCapabilities").getString("deviceType"))
+        assertEquals(
+            "android_tv",
+            snapshot.getJSONObject("playbackCapabilities").getJSONObject("clientIdentity").getString("platform")
+        )
         assertEquals(3, snapshot.getJSONObject("nativePlaybackState").getInt("playerState"))
     }
 

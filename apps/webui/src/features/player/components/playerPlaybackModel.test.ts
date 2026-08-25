@@ -53,6 +53,7 @@ describe('playerPlaybackModel', () => {
   it('resolves auto transcode codecs from advertised codecs before probe signals', () => {
     const snapshot: CapabilitySnapshot = {
       capabilitiesVersion: 3,
+      clientIdentity: { platform: "linux", surface: "browser", browserEngine: "blink" },
       container: ['ts'],
       videoCodecs: ['H264', 'hevc', 'unsupported', 'h264'],
       audioCodecs: ['aac'],
@@ -67,6 +68,7 @@ describe('playerPlaybackModel', () => {
   it('falls back to codec signals and always keeps h264 as the safe floor', () => {
     const snapshot: CapabilitySnapshot = {
       capabilitiesVersion: 3,
+      clientIdentity: { platform: "linux", surface: "browser", browserEngine: "blink" },
       container: ['ts'],
       videoCodecs: [],
       audioCodecs: ['aac'],

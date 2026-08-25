@@ -44,7 +44,6 @@ const (
 	ExposureRateLimitPairingPoll   ExposureRateLimitClass = "pairing_poll"
 	ExposureRateLimitPairingSecret ExposureRateLimitClass = "pairing_secret"
 	ExposureRateLimitDeviceGrant   ExposureRateLimitClass = "device_grant"
-	ExposureRateLimitBootstrap     ExposureRateLimitClass = "web_bootstrap"
 )
 
 type ExposureBrowserTrust string

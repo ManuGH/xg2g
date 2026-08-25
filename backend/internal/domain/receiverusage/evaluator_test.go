@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 )
 
 var fixedTime = time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -474,5 +475,215 @@ func TestReceiverUsage_ZeroSideEffects_PureEvaluation(t *testing.T) {
 	}
 	if snapshot.ActiveSessions[0] != origSessState {
 		t.Fatalf("evaluator mutated active session content")
+	}
+}
+
+func TestReceiverUsage_TopologyAwareRejection(t *testing.T) {
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Test FBC Receiver",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", Label: "Tuner A", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topo service: %v", err)
+	}
+	registry := receivertopology.NewTransponderRegistry()
+	// The ARD Digital 1 carrier as the receiver itself records it
+	// (/etc/enigma2/lamedb: 00c00000:03fb:0001 -> 11493750 kHz horizontal, DVB-S2).
+	registry.RegisterTransponder(0x03FB, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
+	topoSvc.SetResolver(registry)
+
+	// Occupy the only demodulator with stream 1 on High-H
+	sRef1 := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	_, _, err = topoSvc.ReserveStreamLeaseAtomic(sRef1, "sess-1", receivertopology.PriorityLive, time.Minute)
+	if err != nil {
+		t.Fatalf("failed to seed session 1: %v", err)
+	}
+
+	evaluator := NewEvaluatorWithTopology(topoSvc)
+	policy := ReceiverUsagePolicy{
+		Mode:            ReceiverUsageModeEnforce,
+		MaxLiveSessions: 10, // High session limit, but hardware only has 1 demod!
+	}
+
+	// Stream 2 requests a different transponder -> hardware exhausted!
+	req2 := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-2",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: "1:0:19:9999:999:1:C00000:0:0:0:"},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision, err := evaluator.Evaluate(context.Background(), policy, req2, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Kind != DecisionReject {
+		t.Fatalf("expected DecisionReject due to demod exhaustion, got %v", decision.Kind)
+	}
+	if decision.Reason != model.RLeaseBusy {
+		t.Fatalf("expected Reason RLeaseBusy, got %v", decision.Reason)
+	}
+
+	// Stream 3 requests the SAME multiplex as Stream 1 -> Multiplex Reuse -> ALLOW!
+	req3 := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-3",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: sRef1},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision3, err := evaluator.Evaluate(context.Background(), policy, req3, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision3.Kind != DecisionAllow {
+		t.Fatalf("expected DecisionAllow via multiplex reuse, got %v", decision3.Kind)
+	}
+}
+
+func TestReceiverUsage_Topology_InvalidRef_EnforceRejects(t *testing.T) {
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Test FBC Receiver",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", Label: "Tuner A", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topo service: %v", err)
+	}
+
+	evaluator := NewEvaluatorWithTopology(topoSvc)
+	policy := ReceiverUsagePolicy{
+		Mode:            ReceiverUsageModeEnforce,
+		MaxLiveSessions: 10,
+	}
+
+	reqInvalid := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-invalid",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: "INVALID_REF"},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision, err := evaluator.Evaluate(context.Background(), policy, reqInvalid, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Kind != DecisionReject {
+		t.Fatalf("expected DecisionReject for invalid service reference under ENFORCE mode, got %v", decision.Kind)
+	}
+	if decision.Reason != model.RLeaseBusy {
+		t.Fatalf("expected Reason RLeaseBusy, got %v", decision.Reason)
+	}
+}
+
+func TestReceiverUsage_Topology_InvalidRef_AuditOnlyAllowsWithMessage(t *testing.T) {
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Test FBC Receiver",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", Label: "Tuner A", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topo service: %v", err)
+	}
+
+	evaluator := NewEvaluatorWithTopology(topoSvc)
+	policy := ReceiverUsagePolicy{
+		Mode:            ReceiverUsageModeAuditOnly,
+		MaxLiveSessions: 10,
+	}
+
+	reqInvalid := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-invalid",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: "INVALID_REF"},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision, err := evaluator.Evaluate(context.Background(), policy, reqInvalid, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Kind != DecisionAllow {
+		t.Fatalf("expected DecisionAllow for AUDIT_ONLY mode, got %v", decision.Kind)
+	}
+	expectedPrefix := "audit-only: receiver topology evaluation failed:"
+	if len(decision.Message) < len(expectedPrefix) || decision.Message[:len(expectedPrefix)] != expectedPrefix {
+		t.Fatalf("expected message to start with %q, got %q", expectedPrefix, decision.Message)
+	}
+}
+
+func TestReceiverUsage_Topology_NilService_EvaluatesNormally(t *testing.T) {
+	evaluator := NewEvaluatorWithTopology(nil)
+	policy := ReceiverUsagePolicy{
+		Mode:            ReceiverUsageModeEnforce,
+		MaxLiveSessions: 2,
+	}
+
+	req := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-1",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision, err := evaluator.Evaluate(context.Background(), policy, req, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Kind != DecisionAllow {
+		t.Fatalf("expected DecisionAllow when topologyService is nil, got %v", decision.Kind)
+	}
+	if len(decision.Requirements) != 1 || decision.Requirements[0].Kind != ReqTunerSlot {
+		t.Fatalf("expected 1 ReqTunerSlot requirement, got %v", decision.Requirements)
 	}
 }

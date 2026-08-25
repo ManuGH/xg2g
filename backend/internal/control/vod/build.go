@@ -85,11 +85,12 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 	}
 
 	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
-		Input:      input,
-		WorkDir:    workDir,
-		OutputTemp: outputTemp,
-		Profile:    internalProfile,
-		Intent:     intent,
+		Input:         input,
+		WorkDir:       workDir,
+		OutputTemp:    outputTemp,
+		Profile:       internalProfile,
+		Intent:        intent,
+		StartOffsetMs: intent.StartOffsetMs,
 	})
 }
 
@@ -125,6 +126,13 @@ func (m *Manager) startBuildWithSpec(ctx context.Context, jobID, metaID, finalPa
 	// Run monitor in background
 	// Use manager context so we can cancel it on Shutdown
 	runCtx := m.ctx
+	if runCtx == nil || runCtx.Err() != nil {
+		if ctx != nil && ctx.Err() == nil {
+			runCtx = ctx
+		} else {
+			runCtx = context.Background()
+		}
+	}
 	m.buildWg.Add(1)
 	go func() {
 		defer m.buildWg.Done()

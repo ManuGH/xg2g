@@ -93,9 +93,9 @@ func runHTTPCharacterizationTest(t *testing.T, tc httpCharacterizationTest) {
 	w := httptest.NewRecorder()
 
 	if tc.mode == "live" {
-		s.PostLivePlaybackInfo(w, req)
+		s.PostLivePlaybackInfo(w, req, PostLivePlaybackInfoParams{})
 	} else {
-		s.PostRecordingPlaybackInfo(w, req, recordingID)
+		s.PostRecordingPlaybackInfo(w, req, recordingID, PostRecordingPlaybackInfoParams{})
 	}
 
 	require.Equal(t, http.StatusOK, w.Code, "expected 200 OK, got body: %s", w.Body.String())
@@ -153,7 +153,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "1_Safari_Native_H264",
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 50},
-			capabilities:     `{"clientFamilyFallback":"safari_native", "container":["mp4","ts","mpegts","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
+			capabilities:     `{ "container":["mp4","ts","mpegts","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "ts",
@@ -163,7 +163,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "2_Safari_Native_HEVC_4K",
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "hevc", AudioCodec: "aac", Width: 3840, Height: 2160, FPS: 50},
-			capabilities:     `{"capabilitiesVersion": 3, "clientFamilyFallback":"safari_native", "container":["mp4","fmp4","hls"], "videoCodecs":["hevc","h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
+			capabilities:     `{"capabilitiesVersion": 3,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"}, "container":["mp4","fmp4","hls"], "videoCodecs":["hevc","h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "fmp4",
@@ -173,7 +173,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "3_iOS_Safari",
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1280, Height: 720, FPS: 50},
-			capabilities:     `{"clientFamilyFallback":"ios_safari_native", "container":["mp4","ts","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
+			capabilities:     `{ "container":["mp4","ts","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"native", "hlsEngines":["native"]}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "ts",
@@ -183,7 +183,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "4_Chromium_HLSJS",
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 50},
-			capabilities:     `{"capabilitiesVersion": 3, "clientFamilyFallback":"chromium", "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
+			capabilities:     `{"capabilitiesVersion": 3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"}, "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "ts",
@@ -194,7 +194,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 50},
 			hostPressure:     playbackprofile.HostPressureConstrained,
-			capabilities:     `{"capabilitiesVersion": 3, "clientFamilyFallback":"chromium", "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"], "networkContext": {"downlinkKbps": 1000}}`,
+			capabilities:     `{"capabilitiesVersion": 3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"}, "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"], "networkContext": {"downlinkKbps": 1000}}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "ts",
@@ -204,7 +204,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "6_Dirty_DVB_Fallback",
 			mode:             "live",
 			sourceCap:        scan.Capability{State: scan.CapabilityStatePartial, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 25, Interlaced: true},
-			capabilities:     `{"clientFamilyFallback":"chromium", "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
+			capabilities:     `{ "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
 			wantDecisionMode: "transcode",
 			wantEngine:       "hls",
 			wantContainer:    "fmp4",
@@ -214,7 +214,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "7_Recording_Playback",
 			mode:             "recording",
 			truth:            playback.MediaTruth{Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 50},
-			capabilities:     `{"capabilitiesVersion": 3, "clientFamilyFallback":"chromium", "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
+			capabilities:     `{"capabilitiesVersion": 3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"}, "container":["mp4","fmp4","hls"], "videoCodecs":["h264"], "audioCodecs":["aac"], "preferredHlsEngine":"hls.js", "hlsEngines":["hls.js"]}`,
 			wantDecisionMode: "direct_stream",
 			wantEngine:       "hls",
 			wantContainer:    "mpegts",
@@ -224,7 +224,7 @@ func TestHTTPBoundary_Characterization(t *testing.T) {
 			name:             "8_Deny_Scenario",
 			mode:             "recording",
 			truth:            playback.MediaTruth{Container: "mpegts", VideoCodec: "mpeg2video", AudioCodec: "mp2", Width: 720, Height: 576, FPS: 25},
-			capabilities:     `{"capabilitiesVersion": 3, "clientFamilyFallback":"safari_native", "container":["mp4"], "videoCodecs":["hevc"], "audioCodecs":["aac"], "allowTranscode": false}`,
+			capabilities:     `{"capabilitiesVersion": 3,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"}, "container":["mp4"], "videoCodecs":["hevc"], "audioCodecs":["aac"], "allowTranscode": false}`,
 			wantDecisionMode: "deny",
 			wantTokenMode:    "deny",
 		},
@@ -268,13 +268,13 @@ func TestHTTPBoundary_EpgBadgeIsPassiveAndCannotAuthorizeStart(t *testing.T) {
 		RecordingsService: svc,
 	})
 
-	body := `{"serviceRef":"` + serviceRef + `","capabilities":{"capabilitiesVersion":3,"container":["mp4","ts","fmp4"],"videoCodecs":["h264"],"audioCodecs":["aac"],"supportsHls":true,"hlsEngines":["native"]}}`
+	body := `{"serviceRef":"` + serviceRef + `","capabilities":{"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},"container":["mp4","ts","fmp4"],"videoCodecs":["h264"],"audioCodecs":["aac"],"supportsHls":true,"hlsEngines":["native"]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(v3recordings.PlaybackInfoContextHeader, v3recordings.PlaybackInfoContextEpgBadge)
 	w := httptest.NewRecorder()
 
-	s.PostLivePlaybackInfo(w, req)
+	s.PostLivePlaybackInfo(w, req, PostLivePlaybackInfoParams{})
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	var raw map[string]any

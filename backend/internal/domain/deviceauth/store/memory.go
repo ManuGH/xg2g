@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
@@ -50,8 +51,30 @@ func (s *MemoryStateStore) GetPairingByUserCode(_ context.Context, userCode stri
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	clean := strings.ToUpper(strings.ReplaceAll(userCode, "-", ""))
+	var hyphenated string
+	if len(clean) == 8 {
+		hyphenated = clean[:4] + "-" + clean[4:]
+	}
+
 	pairingID, ok := s.pairingsByCode[userCode]
 	if !ok {
+		pairingID, ok = s.pairingsByCode[clean]
+	}
+	if !ok && hyphenated != "" {
+		pairingID, ok = s.pairingsByCode[hyphenated]
+	}
+	if !ok {
+		for _, rec := range s.pairings {
+			if strings.EqualFold(rec.UserCode, userCode) ||
+				strings.EqualFold(strings.ReplaceAll(rec.UserCode, "-", ""), clean) {
+				cloned, err := clonePairing(rec)
+				if err != nil {
+					return nil, err
+				}
+				return &cloned, nil
+			}
+		}
 		return nil, ErrNotFound
 	}
 	record, ok := s.pairings[pairingID]

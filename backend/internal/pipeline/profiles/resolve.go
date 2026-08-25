@@ -64,6 +64,9 @@ var aliasMap = map[string]string{
 	"safari_hq":         ProfileSafariRuntimeHQ, // Legacy internal name kept for persisted sessions and traces.
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
+	"normalize":         ProfileH264FMP4,
+	"qsv_normalize":     ProfileH264FMP4,
+	"qsv":               ProfileH264FMP4,
 	"android":           ProfileAndroid,
 	"android_native":    ProfileAndroid,
 	"android_tv_native": ProfileAndroid,
@@ -397,6 +400,7 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 	canonical := resolveCanonicalProfile(requested, isSafari)
 
 	spec := newResolvedSpec(canonical)
+	spec.Intent = playbackprofile.NormalizeRequestedIntent(requested)
 
 	// Carry the verified source height so downstream bitrate budgeting can scale
 	// with resolution (SD sources get a lower ceiling than HD).
@@ -469,16 +473,18 @@ func isSafariUA(ua string) bool {
 		return false
 	}
 	ua = strings.ToLower(ua)
-	if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") || strings.Contains(ua, "ipod") {
-		return true
+	if strings.Contains(ua, "chrome") ||
+		strings.Contains(ua, "chromium") ||
+		strings.Contains(ua, "crios") ||
+		strings.Contains(ua, "fxios") ||
+		strings.Contains(ua, "edgios") {
+		return false
 	}
-	// Chrome also includes "Safari", so check for "Safari" AND NOT "Chrome".
-	return strings.Contains(ua, "safari") &&
-		!strings.Contains(ua, "chrome") &&
-		!strings.Contains(ua, "chromium") &&
-		!strings.Contains(ua, "crios") &&
-		!strings.Contains(ua, "fxios") &&
-		!strings.Contains(ua, "edgios")
+	return strings.Contains(ua, "safari") ||
+		strings.Contains(ua, "iphone") ||
+		strings.Contains(ua, "ipad") ||
+		strings.Contains(ua, "ipod") ||
+		strings.Contains(ua, "xg2g-ios")
 }
 
 func applyH264VideoLadder(spec *model.ProfileSpec, rung playbackprofile.QualityRung) {

@@ -61,18 +61,24 @@ func (w *LeaseExpiryWorker) Run(ctx context.Context) error {
 	}
 }
 
+// ExpireStaleSessions executes a single synchronous reaper sweep over stale sessions.
+func (w *LeaseExpiryWorker) ExpireStaleSessions(ctx context.Context) {
+	w.expireStaleSessions(ctx)
+}
+
 func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 	now := time.Now().Unix()
 	expiredAt := time.Unix(now, 0)
 
-	// CTO Patch 2: Efficient query (NO full-scan)
-	// Filter by: states (new|starting|priming|ready) AND lease_expires_at <= now
+	// Filter by: states (new|starting|priming|ready|draining|stopping) AND lease_expires_at <= now
 	filter := store.SessionFilter{
 		States: []model.SessionState{
 			model.SessionNew,
 			model.SessionStarting,
 			model.SessionPriming,
 			model.SessionReady,
+			model.SessionDraining,
+			model.SessionStopping,
 		},
 		LeaseExpiresBefore: now,
 	}
@@ -85,7 +91,6 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 
 	expiredCount := 0
 
-	// CTO Patch 3: Already filtered to new|starting|priming|ready by query
 	for _, session := range sessions {
 		// Determine stop reason based on state
 		var stopReason string
@@ -104,6 +109,9 @@ func (w *LeaseExpiryWorker) expireStaleSessions(ctx context.Context) {
 		case model.SessionReady:
 			stopReason = "LEASE_EXPIRED"
 			releaseResources = true // Release tuner, cleanup HLS
+		case model.SessionDraining, model.SessionStopping:
+			stopReason = "LEASE_EXPIRED"
+			releaseResources = true
 		default:
 			continue // Skip (defensive, should not happen due to filter)
 		}

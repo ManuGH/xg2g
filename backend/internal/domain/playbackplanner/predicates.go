@@ -1,6 +1,10 @@
 package playbackplanner
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
+)
 
 // hasValidEvidence checks if the evidence is structurally sound.
 func hasValidEvidence(ev PlaybackEvidence) bool {
@@ -124,9 +128,32 @@ func requiresPlannedTranscode(ev PlaybackEvidence) bool {
 		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
 	}
 	switch requested {
-	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier":
+	case "direct", "passthrough", "copy":
+		return false
+	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier", "normalize":
 		return true
 	default:
+		if ev.Scope == "live" && playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
+			return true
+		}
+		return false
+	}
+}
+
+func requiresVideoNormalization(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "direct", "passthrough", "copy":
+		return false
+	case "normalize":
+		return true
+	default:
+		if ev.Scope == "live" && playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
+			return true
+		}
 		return false
 	}
 }

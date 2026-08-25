@@ -3011,7 +3011,7 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 			PreferredHLSEngine:   "native",
 			RuntimeProbeUsed:     true,
 			RuntimeProbeVersion:  2,
-			ClientFamilyFallback: "ios_safari_native",
+			ClientFamilyFallback: "ios_safari",
 			ClientCapsSource:     "runtime_plus_family",
 			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 		},
@@ -3022,8 +3022,7 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
 	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Mode)
 	assert.Equal(t, "hls", res.PlannerEvaluation.Result.Plan.DeliveryEngine)
-	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
-	assert.Equal(t, "mpegts", res.PlannerEvaluation.Result.Plan.Packaging.Container, "copied DVB H.264 uses MPEG-TS to prevent open-GOP fMP4 judder")
+	assert.Equal(t, "fmp4", res.PlannerEvaluation.Result.Plan.Packaging.Container, "native iOS AVPlayer uses fMP4 for Apple Silicon DMA hardware decoding")
 }
 
 func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *testing.T) {

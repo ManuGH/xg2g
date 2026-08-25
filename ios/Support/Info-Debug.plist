@@ -73,8 +73,24 @@
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>io.github.manugh.xg2g.playback</string>
+	</array>
+
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>xg2g connects to your receiver and xg2g server on your local network.</string>
+
+	<!-- Without this iOS caps CADisplayLink at 60 Hz on ProMotion iPhones. The
+	     native 1080i50 path presents 50 fields/s, which divides into no refresh
+	     rate; 120 Hz halves the per-field timing quantisation against 60 Hz. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>

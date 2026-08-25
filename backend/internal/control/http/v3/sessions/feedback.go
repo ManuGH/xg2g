@@ -387,7 +387,7 @@ func shouldEscalateIOSAV1HlsStall(sess *model.SessionRecord) bool {
 		return false
 	}
 
-	if strings.TrimSpace(sessionClientFamilyForFeedback(sess)) != playbackprofile.ClientIOSSafariNative {
+	if strings.TrimSpace(sessionClientFamilyForFeedback(sess)) != playbackprofile.ClientIOSSafari {
 		return false
 	}
 	if strings.TrimSpace(sessionClientPathForFeedback(sess)) != "hlsjs" {

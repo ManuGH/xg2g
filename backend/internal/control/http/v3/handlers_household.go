@@ -198,6 +198,10 @@ func (s *Server) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if profs == nil {
+		profs = []identity.Profile{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(profs)
 }
@@ -214,6 +218,68 @@ func (s *Server) GetProfile(w http.ResponseWriter, r *http.Request) {
 	prof, pol, err := svc.Store().GetProfile(r.Context(), profID)
 	if err != nil {
 		writeRegisteredProblem(w, r, http.StatusNotFound, "system/not_found", "Profile Not Found", problemcode.CodeNotFound, "Profile not found", nil)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"profile": prof,
+		"policy":  pol,
+	})
+}
+
+// UpdateProfile handles PUT /api/v3/profiles/{id}
+func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	profID := chi.URLParam(r, "id")
+	if strings.TrimSpace(profID) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Profile ID required", nil)
+		return
+	}
+
+	var req CreateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "Failed to parse JSON body", nil)
+		return
+	}
+
+	prof, pol, err := svc.Store().GetProfile(r.Context(), profID)
+	if err != nil || prof == nil {
+		writeRegisteredProblem(w, r, http.StatusNotFound, "system/not_found", "Profile Not Found", problemcode.CodeNotFound, "Profile not found", nil)
+		return
+	}
+
+	if req.Name != "" {
+		prof.Name = req.Name
+	}
+	if req.AvatarURL != "" {
+		prof.AvatarURL = req.AvatarURL
+	}
+	prof.IsChild = req.IsChild
+	if req.MaturityLevel > 0 {
+		prof.MaxParentalRating = req.MaturityLevel
+	}
+
+	if pol == nil {
+		pol = &identity.ProfilePolicy{
+			ProfileID: profID,
+		}
+	}
+	if req.MaturityLevel > 0 {
+		pol.MaturityLevel = req.MaturityLevel
+	}
+	if req.ExitPIN != "" {
+		h, _ := identity.HashProfilePIN(req.ExitPIN)
+		pol.ExitPINHash = h
+	}
+
+	if err := svc.Store().PutProfile(r.Context(), prof, pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to update profile", nil)
 		return
 	}
 
@@ -574,5 +640,172 @@ func (s *Server) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to revoke user sessions", nil)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListHouseholdDevices handles GET /api/v3/household/devices
+func (s *Server) ListHouseholdDevices(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	type deviceResponseItem struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		DeviceType     string `json:"deviceType"`
+		DPoPThumbprint string `json:"dpopThumbprint,omitempty"`
+		TrustedUntil   string `json:"trustedUntil,omitempty"`
+		LastActiveAt   string `json:"lastActiveAt,omitempty"`
+		IPAddress      string `json:"ipAddress,omitempty"`
+	}
+
+	out := make([]deviceResponseItem, 0)
+	seen := make(map[string]bool)
+
+	// 1. Identity Store devices
+	if svc := s.getIdentityService(); svc != nil {
+		devs, err := svc.Store().ListDevicesByUser(r.Context(), "usr_admin")
+		if err == nil {
+			for _, d := range devs {
+				if seen[d.ID] {
+					continue
+				}
+				seen[d.ID] = true
+				dType := "mobile"
+				if strings.Contains(strings.ToLower(d.Platform), "tv") {
+					dType = "android_tv"
+				} else if strings.Contains(strings.ToLower(d.Platform), "web") {
+					dType = "web"
+				}
+				out = append(out, deviceResponseItem{
+					ID:             d.ID,
+					Name:           d.DeviceName,
+					DeviceType:     dType,
+					DPoPThumbprint: d.JWKThumbprint,
+					LastActiveAt:   d.LastSeenAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	// 2. DeviceAuth memory / state store devices
+	if s.hasDeviceAuthStore() {
+		memDevs, err := s.deviceAuthStore().ListDevicesByOwner(r.Context(), "admin")
+		if err == nil {
+			for _, d := range memDevs {
+				if seen[d.DeviceID] {
+					continue
+				}
+				seen[d.DeviceID] = true
+				dType := "mobile"
+				if strings.Contains(strings.ToLower(string(d.DeviceType)), "tv") {
+					dType = "android_tv"
+				}
+				lastActive := d.CreatedAt.UTC().Format(time.RFC3339)
+				if d.LastSeenAt != nil {
+					lastActive = d.LastSeenAt.UTC().Format(time.RFC3339)
+				}
+				out = append(out, deviceResponseItem{
+					ID:           d.DeviceID,
+					Name:         d.DeviceName,
+					DeviceType:   dType,
+					LastActiveAt: lastActive,
+				})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// RevokeHouseholdDevice handles POST /api/v3/household/devices/{id}/revoke
+func (s *Server) RevokeHouseholdDevice(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Device ID required", nil)
+		return
+	}
+
+	now := time.Now().UTC()
+	if svc := s.getIdentityService(); svc != nil {
+		_ = svc.Store().RevokeDeviceCredentials(r.Context(), id, now)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListHouseholdMembers handles GET /api/v3/household/members
+func (s *Server) ListHouseholdMembers(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	type memberResponseItem struct {
+		ID          string `json:"id"`
+		Username    string `json:"username"`
+		DisplayName string `json:"displayName"`
+		Role        string `json:"role"`
+		CreatedAt   string `json:"createdAt"`
+	}
+
+	out := make([]memberResponseItem, 0)
+	if svc := s.getIdentityService(); svc != nil {
+		users, err := svc.Store().ListUsers(r.Context())
+		if err == nil && len(users) > 0 {
+			for _, u := range users {
+				out = append(out, memberResponseItem{
+					ID:          u.ID,
+					Username:    u.Username,
+					DisplayName: u.DisplayName,
+					Role:        string(u.Role),
+					CreatedAt:   u.CreatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		out = append(out, memberResponseItem{
+			ID:          "usr_admin",
+			Username:    "admin",
+			DisplayName: "Administrator",
+			Role:        "admin",
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// RemoveHouseholdMember handles DELETE /api/v3/household/members/{id}
+func (s *Server) RemoveHouseholdMember(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "User ID required", nil)
+		return
+	}
+
+	if svc := s.getIdentityService(); svc != nil {
+		_ = svc.Store().DeleteUser(r.Context(), id)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -17,6 +17,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/matcher"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -38,8 +40,10 @@ type epgFetchClient interface {
 // It builds service reference maps, matches events to channels,
 // and converts them to XMLTV programmes.
 type epgAggregator struct {
-	ctx   context.Context
-	items []playlist.Item
+	ctx             context.Context
+	items           []playlist.Item
+	enrichmentStore store.EnrichmentStore
+	enrichmentQueue *epg.EnrichmentQueue
 }
 
 // newEPGAggregator creates a new EPG aggregator
@@ -48,6 +52,13 @@ func newEPGAggregator(ctx context.Context, items []playlist.Item) *epgAggregator
 		ctx:   ctx,
 		items: items,
 	}
+}
+
+// withEnrichment configures optional async enrichment pipeline
+func (a *epgAggregator) withEnrichment(store store.EnrichmentStore, queue *epg.EnrichmentQueue) *epgAggregator {
+	a.enrichmentStore = store
+	a.enrichmentQueue = queue
+	return a
 }
 
 // buildSRefMap creates a mapping from service reference to the desired Channel ID (which is now the ServiceRef)
@@ -123,9 +134,27 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 				}
 			}
 
-			// Add Genre if available (from parser or event)
-			// Note: OpenWebIF event doesn't have Genre field yet, but we can add it later
-			// For now, we rely on what we parsed or what might be added to EPGEvent
+			if event.Genre != "" {
+				prog.Category = []string{event.Genre}
+			}
+
+			// Parse canonical metadata (FSK / Broadcaster Age, Episode info, DVB Genre) once on ingest
+			epg.EnrichProgramme(&prog)
+
+			// Async Provider Enrichment (Phase E2)
+			if a.enrichmentStore != nil || a.enrichmentQueue != nil {
+				fp := matcher.ExtractFingerprint(&prog)
+				if a.enrichmentStore != nil {
+					if cached, found, err := a.enrichmentStore.Get(a.ctx, fp); err == nil && found && cached != nil {
+						matcher.AttachEnrichment(&prog, cached)
+					} else if a.enrichmentQueue != nil {
+						// Non-blocking enqueue for async background lookup
+						a.enrichmentQueue.Enqueue(fp)
+					}
+				} else if a.enrichmentQueue != nil {
+					a.enrichmentQueue.Enqueue(fp)
+				}
+			}
 
 			allProgrammes = append(allProgrammes, prog)
 		}
@@ -144,14 +173,14 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 
 // collectEPGProgrammes is the main entry point for EPG collection.
 // It uses per-service fetching to ensure reliability (OpenATV 7.6.0 bugs with bouquet endpoints).
-func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig, enrichmentStore store.EnrichmentStore, enrichmentQueue *epg.EnrichmentQueue) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 	logger.Info().Msg("Fetching EPG via per-service requests")
-	return collectEPGPerService(ctx, client, items, cfg)
+	return collectEPGPerService(ctx, client, items, cfg, enrichmentStore, enrichmentQueue)
 }
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
-func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig, enrichmentStore store.EnrichmentStore, enrichmentQueue *epg.EnrichmentQueue) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -219,8 +248,8 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 		allEvents = append(allEvents, res.events...)
 	}
 
-	// Use aggregator for consistent event processing
-	aggregator := newEPGAggregator(ctx, items)
+	// Use aggregator with wired store and queue for consistent event processing & enrichment
+	aggregator := newEPGAggregator(ctx, items).withEnrichment(enrichmentStore, enrichmentQueue)
 	srefMap := aggregator.buildSRefMap()
 	allProgrammes := aggregator.aggregateEvents(allEvents, srefMap)
 

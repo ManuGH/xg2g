@@ -5,7 +5,7 @@
  * Probes browser codec support via MediaCapabilities, MediaSource, and HTMLVideoElement APIs.
  */
 
-import { detectPlaybackClientFamily } from './playbackClientFamily';
+import { detectPlaybackClientIdentity } from '../../../services/clientIdentity';
 
 export type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
@@ -23,10 +23,18 @@ export function resetCachedCodecs(): void {
   cachedVideoCodecSignals = null;
 }
 
+// These two ask a platform question — "is this WebKit on iOS / on a Mac" — to
+// decide whether an AV1 decode probe is worth running locally. That is a
+// property of this runtime, not a policy decision, so it reads the identity
+// rather than a family the server owns.
 function isIOSNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
   if (!videoEl) return false;
   try {
-    return detectPlaybackClientFamily(videoEl) === 'ios_safari_native';
+    const identity = detectPlaybackClientIdentity();
+    return (
+      identity.browserEngine === 'webkit' &&
+      (identity.platform === 'ios' || identity.platform === 'ipados')
+    );
   } catch {
     return false;
   }
@@ -35,7 +43,8 @@ function isIOSNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean 
 function isDesktopSafariNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
   if (!videoEl) return false;
   try {
-    return detectPlaybackClientFamily(videoEl) === 'safari_native';
+    const identity = detectPlaybackClientIdentity();
+    return identity.browserEngine === 'webkit' && identity.platform === 'macos';
   } catch {
     return false;
   }

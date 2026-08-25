@@ -193,7 +193,7 @@ http://example.com/live?k=3&ref=1:0:1:CCCC:
 	if len(items) != 2 {
 		t.Fatalf("expected two visible EPG entries, got %d", len(items))
 	}
-	if items[0].Title != "Kids Show" || items[1].Title != "News Update" {
+	if items[0].Title == nil || *items[0].Title != "Kids Show" || items[1].Title == nil || *items[1].Title != "News Update" {
 		t.Fatalf("unexpected epg items: %#v", items)
 	}
 }

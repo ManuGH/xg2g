@@ -55,7 +55,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowInteractive(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -69,7 +69,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowInteractive(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-interactive-allow-123"))
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var info PlaybackInfo
@@ -107,7 +107,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowEpgBadge(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -122,7 +122,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowEpgBadge(t *testing.T) {
 	r.Header.Set(v3recordings.PlaybackInfoContextHeader, v3recordings.PlaybackInfoContextEpgBadge)
 	r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-epg-badge-456"))
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var info PlaybackInfo
@@ -156,7 +156,7 @@ func TestPlaybackInfoDivergenceMatrix_Deny(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mp4"],
 			"videoCodecs":["hevc"],
 			"audioCodecs":["ac3"],
@@ -170,7 +170,7 @@ func TestPlaybackInfoDivergenceMatrix_Deny(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-deny-789"))
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var info PlaybackInfo
@@ -209,7 +209,7 @@ func TestPlaybackInfoDivergenceMatrix_RequestIDPropagation(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -222,7 +222,7 @@ func TestPlaybackInfoDivergenceMatrix_RequestIDPropagation(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 
-	s.PostLivePlaybackInfo(w, r)
+	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var info PlaybackInfo

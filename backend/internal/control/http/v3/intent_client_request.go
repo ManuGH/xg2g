@@ -23,7 +23,7 @@ func hashV3Capabilities(caps *PlaybackCapabilities) string {
 	return ""
 }
 
-func normalizeIntentClientCaps(caps *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
+func normalizeIntentClientCaps(caps *PlaybackCapabilities, userAgent string) *capabilities.PlaybackCapabilities {
 	if caps == nil {
 		return nil
 	}
@@ -31,7 +31,7 @@ func normalizeIntentClientCaps(caps *PlaybackCapabilities) *capabilities.Playbac
 	if b, err := json.Marshal(caps); err == nil {
 		_ = json.Unmarshal(b, &infoCaps)
 	}
-	internal := v3playbackinfo.MapV3CapsToInternal(&infoCaps)
+	internal := v3playbackinfo.MapV3CapsToInternal(&infoCaps, userAgent)
 	if internal == nil {
 		return nil
 	}
@@ -44,6 +44,12 @@ func normalizeIntentParams(params *map[string]string, clientCaps *capabilities.P
 	if params != nil {
 		maps.Copy(out, *params)
 	}
+	// Client family and device type are server conclusions, so a value a client
+	// put in `params` cannot stand: it used to, and a client that named a family
+	// there chose its own playback policy. They are overwritten, not merged.
+	delete(out, model.CtxKeyClientFamily)
+	delete(out, model.CtxKeyDeviceType)
+
 	if clientCaps != nil {
 		if clientFamily := normalize.Token(clientCaps.ClientFamilyFallback); clientFamily != "" {
 			out[model.CtxKeyClientFamily] = clientFamily

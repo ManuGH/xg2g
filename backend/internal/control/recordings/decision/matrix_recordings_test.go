@@ -49,7 +49,7 @@ func TestDecide_ClientMatrix(t *testing.T) {
 		},
 		{
 			name:             "ios safari transcodes unverified ac3 claim",
-			clientFixture:    playbackprofile.ClientIOSSafariNative,
+			clientFixture:    playbackprofile.ClientIOSSafari,
 			sourceFixture:    playbackprofile.SourceH264AC3,
 			requestedIntent:  playbackprofile.IntentCompatible,
 			wantMode:         ModeTranscode,

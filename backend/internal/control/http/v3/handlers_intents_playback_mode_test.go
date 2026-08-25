@@ -180,6 +180,8 @@ func TestHandleV3Intents_PlaybackModeHLSJSDesktopSafariMapsToH264FMP4WithoutCopy
 
 	serviceRef := "1:0:19:8F:4:85:C00000:0:0:0:"
 	now := time.Now().Unix()
+	clientCaps := testClientCapabilities("macos", "browser", "webkit")
+	clientCapHash := hashV3Capabilities(clientCaps)
 	token := generateTestToken(t, auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -189,7 +191,7 @@ func TestHandleV3Intents_PlaybackModeHLSJSDesktopSafariMapsToH264FMP4WithoutCopy
 		Nbf:     now - 10,
 		Exp:     now + 60,
 		Mode:    "hlsjs",
-		CapHash: "cap-match",
+		CapHash: clientCapHash,
 	}, auth.TestSecret())
 
 	reqBody := v3api.IntentRequest{
@@ -199,12 +201,15 @@ func TestHandleV3Intents_PlaybackModeHLSJSDesktopSafariMapsToH264FMP4WithoutCopy
 		Params: map[string]string{
 			"playback_mode":           "hlsjs",
 			"playback_decision_token": token,
-			"capHash":                 "cap-match",
-			model.CtxKeyClientFamily:  "safari_native",
+			"capHash":                 clientCapHash,
 		},
 	}
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+	// The client declares what it is; the server decides what family that
+	// makes it. This used to be a `client_family` request parameter, which
+	// let the caller pick the policy applied to it.
+	body = withClientCapabilities(t, body, clientCaps)
 
 	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -346,7 +351,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSPreservesSafariBrowserContainer(t 
 	require.Equal(t, http.StatusAccepted, rr.Code)
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, "safari", store.lastSession.Profile.Name)
-	require.False(t, store.lastSession.Profile.TranscodeVideo)
+	require.True(t, store.lastSession.Profile.TranscodeVideo)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 	require.Equal(t, "safari", store.lastSession.ContextData["profile"])
 }
@@ -454,6 +459,8 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesQualifiedHEVCForSafariNative(t
 
 	serviceRef := "1:0:19:33:6:85:C00000:0:0:0:"
 	now := time.Now().Unix()
+	clientCaps := testClientCapabilities("macos", "browser", "webkit")
+	clientCapHash := hashV3Capabilities(clientCaps)
 	token := generateTestToken(t, auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -463,7 +470,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesQualifiedHEVCForSafariNative(t
 		Nbf:     now - 10,
 		Exp:     now + 60,
 		Mode:    "native_hls",
-		CapHash: "cap-match",
+		CapHash: clientCapHash,
 	}, auth.TestSecret())
 
 	reqBody := v3api.IntentRequest{
@@ -473,13 +480,16 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesQualifiedHEVCForSafariNative(t
 		Params: map[string]string{
 			"playback_mode":           "native_hls",
 			"playback_decision_token": token,
-			"capHash":                 "cap-match",
-			model.CtxKeyClientFamily:  playbackprofile.ClientSafariNative,
+			"capHash":                 clientCapHash,
 			"codecs":                  "hevc,h264",
 		},
 	}
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+	// The client declares what it is; the server decides what family that
+	// makes it. This used to be a `client_family` request parameter, which
+	// let the caller pick the policy applied to it.
+	body = withClientCapabilities(t, body, clientCaps)
 
 	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -533,6 +543,8 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesFMP4ForQualifiedHEVCOnIOSSafar
 
 	serviceRef := "1:0:19:35:6:85:C00000:0:0:0:"
 	now := time.Now().Unix()
+	clientCaps := testClientCapabilities("ios", "browser", "webkit")
+	clientCapHash := hashV3Capabilities(clientCaps)
 	token := generateTestToken(t, auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -542,7 +554,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesFMP4ForQualifiedHEVCOnIOSSafar
 		Nbf:     now - 10,
 		Exp:     now + 60,
 		Mode:    "native_hls",
-		CapHash: "cap-match",
+		CapHash: clientCapHash,
 	}, auth.TestSecret())
 
 	reqBody := v3api.IntentRequest{
@@ -552,13 +564,16 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesFMP4ForQualifiedHEVCOnIOSSafar
 		Params: map[string]string{
 			"playback_mode":           "native_hls",
 			"playback_decision_token": token,
-			"capHash":                 "cap-match",
-			model.CtxKeyClientFamily:  playbackprofile.ClientIOSSafariNative,
+			"capHash":                 clientCapHash,
 			"codecs":                  "hevc,h264",
 		},
 	}
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+	// The client declares what it is; the server decides what family that
+	// makes it. This used to be a `client_family` request parameter, which
+	// let the caller pick the policy applied to it.
+	body = withClientCapabilities(t, body, clientCaps)
 
 	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -615,16 +630,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesAV1FMP4ForRuntimeCapableIOSSaf
 
 	serviceRef := "1:0:19:36:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "fmp4"},
-		VideoCodecs:          []string{"av1", "hevc", "h264"},
-		AudioCodecs:          []string{"aac", "ac3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientIOSSafariNative),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
-		DeviceType:           strPtr("iphone"),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "fmp4"},
+		VideoCodecs:         []string{"av1", "hevc", "h264"},
+		AudioCodecs:         []string{"aac", "ac3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "ios", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 		DeviceContext: &PlaybackDeviceContext{
 			Model:     strPtr("iPhone 15 Pro A17 Pro"),
 			OsName:    strPtr("ios"),
@@ -719,15 +733,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCBaselineFromCli
 
 	serviceRef := "1:0:19:44:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts"},
-		VideoCodecs:          []string{"h264"},
-		AudioCodecs:          []string{"aac", "ac3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientSafariNative),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts"},
+		VideoCodecs:         []string{"h264"},
+		AudioCodecs:         []string{"aac", "ac3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "macos", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -809,15 +823,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCFMP4OnIOSSafari
 
 	serviceRef := "1:0:19:46:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts"},
-		VideoCodecs:          []string{"h264"},
-		AudioCodecs:          []string{"aac", "ac3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientIOSSafariNative),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts"},
+		VideoCodecs:         []string{"h264"},
+		AudioCodecs:         []string{"aac", "ac3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "ios", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -908,16 +922,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsUseAV1ProfileFo
 
 	serviceRef := "1:0:19:146:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts", "fmp4"},
-		VideoCodecs:          []string{"av1", "hevc", "h264"},
-		AudioCodecs:          []string{"aac", "ac3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientIOSSafariNative),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
-		DeviceType:           strPtr("iphone"),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:         []string{"av1", "hevc", "h264"},
+		AudioCodecs:         []string{"aac", "ac3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "ios", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 		DeviceContext: &PlaybackDeviceContext{
 			Model:     strPtr("iPhone 15 Pro A17 Pro"),
 			OsName:    strPtr("ios"),
@@ -970,8 +983,8 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsUseAV1ProfileFo
 	require.Equal(t, http.StatusAccepted, rr.Code)
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
-	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 }
 
 func TestHandleV3Intents_PlaybackModeHLSJSRuntimeRichCodecsKeepHighProfileForChromiumH264Source(t *testing.T) {
@@ -1019,15 +1032,15 @@ func TestHandleV3Intents_PlaybackModeHLSJSRuntimeRichCodecsKeepHighProfileForChr
 
 	serviceRef := "1:0:19:246:6:85:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts", "fmp4"},
-		VideoCodecs:          []string{"av1", "hevc", "h264"},
-		AudioCodecs:          []string{"aac", "ac3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientChromiumHLSJS),
-		PreferredHlsEngine:   strPtr("hlsjs"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:         []string{"av1", "hevc", "h264"},
+		AudioCodecs:         []string{"aac", "ac3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "linux", Surface: "browser", BrowserEngine: browserEnginePtr("blink")},
+		PreferredHlsEngine:  strPtr("hlsjs"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -1120,15 +1133,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileF
 
 	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts"},
-		VideoCodecs:          []string{"hevc", "h264"},
-		AudioCodecs:          []string{"aac", "ac3", "mp3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr(playbackprofile.ClientSafariNative),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts"},
+		VideoCodecs:         []string{"hevc", "h264"},
+		AudioCodecs:         []string{"aac", "ac3", "mp3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "macos", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 	}
 	capHash := hashV3Capabilities(&clientCaps)
 
@@ -1171,11 +1184,16 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileF
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.ContextData["profile"])
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 }
 
-func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1Profile(t *testing.T) {
+// A client sending `client_family`, `device_type` and `preferred_hls_engine` in
+// params alongside a declared identity that contradicts them. The declared
+// identity is macOS Safari; the params say "safari" and "mac", which used to be
+// what the server believed. It now believes neither, and derives the family
+// from the identity — which is the whole point of the split.
+func TestHandleV3Intents_ClientSentFamilyParamsDoNotOverrideDeclaredIdentity(t *testing.T) {
 	store := &capturingIntentStore{}
 	cfg := config.AppConfig{}
 	cfg.Engine.TunerSlots = []int{0}
@@ -1221,15 +1239,15 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 
 	serviceRef := "1:0:19:EF75:3F9:1:C00000:0:0:0:"
 	clientCaps := PlaybackCapabilities{
-		CapabilitiesVersion:  3,
-		Container:            []string{"mp4", "ts", "fmp4"},
-		VideoCodecs:          []string{"av1", "hevc", "h264"},
-		AudioCodecs:          []string{"aac", "ac3", "mp3"},
-		SupportsHls:          boolPtr(true),
-		ClientFamilyFallback: strPtr("safari"),
-		PreferredHlsEngine:   strPtr("native"),
-		RuntimeProbeUsed:     boolPtr(true),
-		RuntimeProbeVersion:  intPtr(2),
+		CapabilitiesVersion: 3,
+		Container:           []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:         []string{"av1", "hevc", "h264"},
+		AudioCodecs:         []string{"aac", "ac3", "mp3"},
+		SupportsHls:         boolPtr(true),
+		ClientIdentity:      PlaybackClientIdentity{Platform: "macos", Surface: "browser", BrowserEngine: browserEnginePtr("webkit")},
+		PreferredHlsEngine:  strPtr("native"),
+		RuntimeProbeUsed:    boolPtr(true),
+		RuntimeProbeVersion: intPtr(2),
 		DeviceContext: &PlaybackDeviceContext{
 			Model:     strPtr("MacBook Air M3"),
 			OsName:    strPtr("macos"),
@@ -1287,7 +1305,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.ContextData["profile"])
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.ContextData[model.CtxKeyClientFamily])
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.PlaybackTrace.Client.ClientFamily)
@@ -1403,6 +1421,8 @@ func TestHandleV3Intents_PlaybackModeTranscodeUsesEncodeOnlyHEVCForIOSSafari(t *
 
 	serviceRef := "1:0:19:23:6:85:C00000:0:0:0:"
 	now := time.Now().Unix()
+	clientCaps := testClientCapabilities("ios", "browser", "webkit")
+	clientCapHash := hashV3Capabilities(clientCaps)
 	token := generateTestToken(t, auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -1412,7 +1432,7 @@ func TestHandleV3Intents_PlaybackModeTranscodeUsesEncodeOnlyHEVCForIOSSafari(t *
 		Nbf:     now - 10,
 		Exp:     now + 60,
 		Mode:    "transcode",
-		CapHash: "cap-match",
+		CapHash: clientCapHash,
 	}, auth.TestSecret())
 
 	reqBody := v3api.IntentRequest{
@@ -1422,13 +1442,16 @@ func TestHandleV3Intents_PlaybackModeTranscodeUsesEncodeOnlyHEVCForIOSSafari(t *
 		Params: map[string]string{
 			"playback_mode":           "transcode",
 			"playback_decision_token": token,
-			"capHash":                 "cap-match",
-			model.CtxKeyClientFamily:  playbackprofile.ClientIOSSafariNative,
+			"capHash":                 clientCapHash,
 			"codecs":                  "hevc,h264",
 		},
 	}
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+	// The client declares what it is; the server decides what family that
+	// makes it. This used to be a `client_family` request parameter, which
+	// let the caller pick the policy applied to it.
+	body = withClientCapabilities(t, body, clientCaps)
 
 	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -1486,6 +1509,8 @@ func TestHandleV3Intents_PlaybackModeTranscodeClampsIOSSafariParamsToHEVCFMP4(t 
 
 	serviceRef := "1:0:19:24:6:85:C00000:0:0:0:"
 	now := time.Now().Unix()
+	clientCaps := testClientCapabilities("ios", "browser", "webkit")
+	clientCapHash := hashV3Capabilities(clientCaps)
 	token := generateTestToken(t, auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -1495,7 +1520,7 @@ func TestHandleV3Intents_PlaybackModeTranscodeClampsIOSSafariParamsToHEVCFMP4(t 
 		Nbf:     now - 10,
 		Exp:     now + 60,
 		Mode:    "transcode",
-		CapHash: "cap-match",
+		CapHash: clientCapHash,
 	}, auth.TestSecret())
 
 	reqBody := v3api.IntentRequest{
@@ -1505,13 +1530,16 @@ func TestHandleV3Intents_PlaybackModeTranscodeClampsIOSSafariParamsToHEVCFMP4(t 
 		Params: map[string]string{
 			"playback_mode":           "transcode",
 			"playback_decision_token": token,
-			"capHash":                 "cap-match",
-			model.CtxKeyClientFamily:  playbackprofile.ClientIOSSafariNative,
+			"capHash":                 clientCapHash,
 			"codecs":                  "av1,hevc,h264",
 		},
 	}
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+	// The client declares what it is; the server decides what family that
+	// makes it. This used to be a `client_family` request parameter, which
+	// let the caller pick the policy applied to it.
+	body = withClientCapabilities(t, body, clientCaps)
 
 	req := httptest.NewRequest(http.MethodPost, "/intents", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -1527,4 +1555,47 @@ func TestHandleV3Intents_PlaybackModeTranscodeClampsIOSSafariParamsToHEVCFMP4(t 
 	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
 	require.Equal(t, "hevc", store.lastSession.Profile.VideoCodec)
 	require.True(t, store.lastSession.Profile.TranscodeVideo)
+}
+
+func browserEnginePtr(value string) *PlaybackBrowserEngine {
+	engine := PlaybackBrowserEngine(value)
+	return &engine
+}
+
+// testClientCapabilities builds the capability object a client of this shape
+// sends. The family it belongs to is not in here, because a client does not
+// decide that any more.
+func testClientCapabilities(platform, surface, browserEngine string) *PlaybackCapabilities {
+	caps := &PlaybackCapabilities{
+		CapabilitiesVersion: 3,
+		ClientIdentity: PlaybackClientIdentity{
+			Platform: PlaybackClientPlatform(platform),
+			Surface:  PlaybackClientSurface(surface),
+		},
+		Container:   []string{"mp4", "fmp4", "mpegts"},
+		VideoCodecs: []string{"hevc", "h264"},
+		AudioCodecs: []string{"aac"},
+	}
+	if browserEngine != "" {
+		caps.ClientIdentity.BrowserEngine = browserEnginePtr(browserEngine)
+	}
+	return caps
+}
+
+// withClientCapabilities attaches the capability object to a marshalled intent
+// body.
+//
+// A body transform rather than a typed field because these tests build the
+// request with the internal pipeline shape, which has no `client` member; the
+// contract type does, and the handler decodes into it.
+func withClientCapabilities(t *testing.T, body []byte, caps *PlaybackCapabilities) []byte {
+	t.Helper()
+
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	envelope["client"] = caps
+
+	updated, err := json.Marshal(envelope)
+	require.NoError(t, err)
+	return updated
 }

@@ -1,0 +1,140 @@
+// Copyright (c) 2026 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+import CoreMedia
+import Foundation
+
+/// Elementary Stream video data chunk extracted from a PES packet.
+public struct PESVideoData: Sendable {
+    public let data: Data
+    public let pts: CMTime?
+    public let dts: CMTime?
+}
+
+public protocol PESPacketAssemblerDelegate: AnyObject, Sendable {
+    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData)
+    func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String)
+}
+
+/// Assembles Packetized Elementary Stream (PES) packets from TS payloads.
+///
+/// Features:
+/// - Reassembles fragmented payloads across TS packets.
+/// - Parses PES header, PTS and DTS flags.
+/// - Decodes 33-bit MPEG-2 90 kHz timestamps into `CMTime`.
+/// - Emits continuous Elementary Stream data chunks to the Access Unit Assembler.
+public final class PESPacketAssembler: @unchecked Sendable {
+
+    private var currentPESBuffer = Data()
+    public weak var delegate: PESPacketAssemblerDelegate?
+
+    /// Lifts the 33-bit timestamps onto a continuous timeline.
+    ///
+    /// The audio path has always done this; video did not, and the asymmetry is
+    /// the bug. At the 2^33 boundary — every 26.5 hours of stream time — audio
+    /// would carry straight on while video dropped back to zero, so the two
+    /// tracks ended up on timelines 95443 seconds apart and video could never
+    /// come due against the master clock again.
+    private var ptsNormalizer = PTS33BitNormalizer()
+
+    public init() {}
+
+    public func reset() {
+        currentPESBuffer.removeAll(keepingCapacity: true)
+        ptsNormalizer.reset()
+    }
+
+    /// Ingests a video TS payload fragment.
+    public func feed(payload: Data, unitStart: Bool) {
+        if unitStart {
+            if !currentPESBuffer.isEmpty {
+                parseAndEmitCurrentPES()
+            }
+            currentPESBuffer = payload
+        } else {
+            if !currentPESBuffer.isEmpty {
+                currentPESBuffer.append(payload)
+            }
+        }
+    }
+
+    private func parseAndEmitCurrentPES() {
+        let data = currentPESBuffer
+        currentPESBuffer.removeAll(keepingCapacity: true)
+
+        guard data.count >= 6 else { return }
+
+        // Start code prefix: 0x00 0x00 0x01
+        guard data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 else {
+            delegate?.pesAssembler(self, didEncounterPESError: "Invalid PES start code prefix")
+            return
+        }
+
+        let streamID = data[3]
+        // Video stream IDs: 0xE0 - 0xEF or 0xFD (extended) or 0xBD (private stream)
+        guard (streamID >= 0xE0 && streamID <= 0xEF) || streamID == 0xFD || streamID == 0xBD else {
+            return
+        }
+
+        // Optional PES header starts at byte 6
+        guard data.count >= 9 else { return }
+
+        let flags2 = data[7]
+        let headerDataLength = Int(data[8])
+        let ptsDtsFlags = (flags2 & 0xC0) >> 6
+
+        var pts: CMTime? = nil
+        var dts: CMTime? = nil
+
+        let headerEnd = 9 + headerDataLength
+        guard data.count >= headerEnd else { return }
+
+        if (ptsDtsFlags == 0x02 || ptsDtsFlags == 0x03) && headerDataLength >= 5 {
+            // PTS present
+            let rawPTS = decode33BitTimestamp(data: data, offset: 9)
+            let unwrapped = ptsNormalizer.unwrap(rawPTS: rawPTS)
+            pts = CMTime(value: CMTimeValue(unwrapped), timescale: 90000)
+
+            if ptsDtsFlags == 0x03 && headerDataLength >= 10 {
+                // DTS present. Derived from the unwrapped PTS rather than run
+                // through a second normalizer: the two share one timeline, and
+                // two independent wrap detectors would disagree about where the
+                // epoch changed for the handful of pictures around the boundary.
+                // PTS is at or ahead of DTS on that timeline, so their raw
+                // difference is the offset, taken modulo 2^33 for the one header
+                // where the wrap falls between them.
+                let rawDTS = decode33BitTimestamp(data: data, offset: 14)
+                let lead = (rawPTS &- rawDTS) & 0x1_FFFF_FFFF
+                dts = CMTime(value: CMTimeValue(Int64(unwrapped) - Int64(lead)), timescale: 90000)
+            }
+        } else if ptsDtsFlags == 0x03 && headerDataLength >= 10 {
+            // DTS without PTS is malformed, but it costs nothing to carry it
+            // through on its own rather than dropping the timing entirely.
+            let dtsVal = decode33BitTimestamp(data: data, offset: 14)
+            dts = CMTime(value: CMTimeValue(dtsVal), timescale: 90000)
+        }
+
+        let esData = Data(data.dropFirst(headerEnd))
+        guard !esData.isEmpty else { return }
+
+        let payload = PESVideoData(data: esData, pts: pts, dts: dts)
+        delegate?.pesAssembler(self, didEmitVideoPayload: payload)
+    }
+
+    private func decode33BitTimestamp(data: Data, offset: Int) -> UInt64 {
+        let bytes = [UInt8](data.dropFirst(offset).prefix(5))
+        guard bytes.count == 5 else { return 0 }
+        let b0 = UInt64(bytes[0])
+        let b1 = UInt64(bytes[1])
+        let b2 = UInt64(bytes[2])
+        let b3 = UInt64(bytes[3])
+        let b4 = UInt64(bytes[4])
+
+        let pts32_30 = (b0 & 0x0E) >> 1
+        let pts29_15 = ((b1 & 0xFF) << 7) | ((b2 & 0xFE) >> 1)
+        let pts14_0  = ((b3 & 0xFF) << 7) | ((b4 & 0xFE) >> 1)
+
+        return (pts32_30 << 30) | (pts29_15 << 15) | pts14_0
+    }
+}

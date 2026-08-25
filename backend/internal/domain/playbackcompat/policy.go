@@ -74,7 +74,6 @@ var browserFamilies = stringSet(
 	"safari",
 	"safari_native",
 	"ios_safari",
-	"ios_safari_native",
 	"firefox",
 	"firefox_hlsjs",
 	"android_tv_browser",
@@ -86,6 +85,38 @@ var browserFamilies = stringSet(
 	"chromium_hlsjs",
 	"webkit",
 )
+
+// appleWebKitFamilies are the clients that play HLS through AVFoundation or
+// WebKit and therefore want fMP4 packaging.
+//
+// `ios_safari_native` used to stand for all of them at once — the browser and
+// the native app both reported it — so a rule written for one silently applied
+// to the other. The set is spelled out now, and the two are separate members.
+var appleWebKitFamilies = stringSet(
+	"safari",
+	"safari_native",
+	"ios_safari",
+	"ios_native",
+	"apple_tv_native",
+	"webkit",
+)
+
+// IsAppleWebKitClient reports whether a family plays through AVFoundation or
+// WebKit.
+func IsAppleWebKitClient(family string) bool {
+	_, ok := appleWebKitFamilies[token(family)]
+	return ok
+}
+
+// IsIOSClient reports whether a family runs on iOS or iPadOS, app or browser.
+func IsIOSClient(family string) bool {
+	switch token(family) {
+	case "ios_native", "ios_safari":
+		return true
+	default:
+		return false
+	}
+}
 
 // Resolve applies the compatibility policy without widening any supplied set.
 func Resolve(raw Claims) Resolution {

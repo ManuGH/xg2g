@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ import (
 	identitystore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/provider"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -43,6 +47,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/receipts"
 	receiptamazon "github.com/ManuGH/xg2g/internal/receipts/amazon"
 	receiptgoogle "github.com/ManuGH/xg2g/internal/receipts/google"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/verification/checks"
@@ -68,6 +73,8 @@ type Container struct {
 	piconPool        *jobs.PiconPool
 	scanManager      *scan.Manager
 	verificationWork *verification.Worker
+	epgStore         store.EnrichmentStore
+	epgQueue         *epg.EnrichmentQueue
 
 	startOnce        sync.Once
 	runtimeHooksOnce sync.Once
@@ -205,6 +212,36 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	householdService := monetization.households
 	receiptService := monetization.receipts
 
+	var (
+		epgStore store.EnrichmentStore
+		epgQueue *epg.EnrichmentQueue
+	)
+	if cfg.Store.Backend == "memory" {
+		epgStore = store.NewMemoryEnrichmentStore()
+	} else {
+		epgDBPath := filepath.Join(cfg.Store.Path, "epg_enrichment.sqlite")
+		db, err := sql.Open("sqlite", epgDBPath)
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to open epg_enrichment.sqlite, falling back to memory store")
+			epgStore = store.NewMemoryEnrichmentStore()
+		} else {
+			sStore, err := store.NewSQLiteEnrichmentStore(db)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to initialize SQLiteEnrichmentStore, falling back to memory store")
+				epgStore = store.NewMemoryEnrichmentStore()
+			} else {
+				epgStore = sStore
+			}
+		}
+	}
+
+	tvmazeClient := provider.NewTVMazeClient(provider.DefaultTVMazeConfig())
+	epgQueue = epg.NewEnrichmentQueue(epg.DefaultQueueConfig(), epgStore, tvmazeClient)
+
+	s.SetRefreshFunc(func(jobCtx context.Context, snap config.Snapshot) (*jobs.Status, error) {
+		return jobs.RefreshWithOptions(jobCtx, snap, jobs.WithEnrichment(epgStore, epgQueue))
+	})
+
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
 		return nil, fmt.Errorf("invalid playlist path: %w", err)
@@ -302,6 +339,77 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Int("missing", startupReport.Summary.Missing).
 		Msg("mandatory startup reconciliation completed successfully")
 
+	var topoSvc *receivertopology.Service
+	if domainTopo, mode, configured, err := config.ToDomainTopology(cfg.ReceiverTopology); configured {
+		if err != nil {
+			return nil, fmt.Errorf("invalid configured receiver topology: %w", err)
+		}
+		topoSvc, err = receivertopology.NewService(domainTopo, mode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize verified receiver topology service: %w", err)
+		}
+		logger.Info().
+			Str("model", domainTopo.Model).
+			Str("confidence", string(domainTopo.Confidence)).
+			Str("mode", string(mode)).
+			Int("inputs", len(domainTopo.Inputs)).
+			Int("demods", len(domainTopo.Demodulators)).
+			Msg("initialized verified receiver topology from configuration")
+	} else {
+		topoSvc, err = receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeAuditOnly)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize fallback receiver topology service: %w", err)
+		}
+	}
+
+	if topoSvc != nil {
+		tpRegistry := receivertopology.NewTransponderRegistry()
+		if owiClient != nil {
+			// The receiver's own service database is the only authoritative source of
+			// physical RF facts. Load it eagerly so the first stream does not pay for
+			// the fetch, and log the yield: topology decisions made without it are
+			// guesses, so an operator has to be able to see whether it arrived.
+			tpRegistry.SetLamedbSource(owiClient)
+			if snap, lErr := tpRegistry.LoadLamedb(ctx); lErr != nil {
+				logger.Warn().Err(lErr).
+					Msg("receiver service database unavailable; transponder resolution will fail until the receiver answers")
+			} else {
+				logger.Info().
+					Int("lamedb_version", snap.Version).
+					Int("transponders", len(snap.Transponders)).
+					Int("skipped", snap.Skipped).
+					Int("malformed", snap.Malformed).
+					Msg("loaded authoritative transponder facts from receiver service database")
+			}
+		}
+		topoSvc.SetResolver(tpRegistry)
+		s.SetTopologyService(topoSvc)
+	}
+
+	if topoSvc != nil && v3Store != nil {
+		// Mandatory startup reconciliation for receiver topology hardware claims
+		sessions, err := v3Store.ListSessions(ctx)
+		if err == nil {
+			var activeSessionIDs []string
+			for _, s := range sessions {
+				if !s.State.IsTerminal() {
+					activeSessionIDs = append(activeSessionIDs, s.SessionID)
+				}
+			}
+			if recErr := topoSvc.ReconcileStartupClaims(ctx, v3Store, activeSessionIDs, nil); recErr != nil {
+				logger.Warn().Err(recErr).Msg("topology startup claim reconciliation encountered non-fatal issue")
+			} else {
+				logger.Info().Int("active_sessions", len(activeSessionIDs)).Msg("topology startup claim reconciliation completed")
+			}
+		}
+	}
+
+	if owiClient != nil && topoSvc != nil {
+		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
+		topoSvc.SetPoller(syncPoller)
+		go syncPoller.Run(ctx)
+	}
+
 	deps := daemon.Deps{
 		Logger:                logger,
 		Config:                cfg,
@@ -317,7 +425,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		ScanManager:           v3Scan,
 		ReceiverHealthCheck:   newReceiverHealthCheck(cfg, e2Client),
 		MediaPipeline:         mediaPipeline,
-		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController),
+		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController, topoSvc),
 	}
 
 	mgr, err := daemon.NewManager(serverCfg, deps)
@@ -330,6 +438,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	}
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
+	app.SetEPGEnrichment(epgStore, epgQueue)
 
 	wireSuccess = true
 	return &Container{
@@ -345,6 +454,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		snapshot:         snap,
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
+		epgStore:         epgStore,
+		epgQueue:         epgQueue,
 	}, nil
 }
 
@@ -357,6 +468,11 @@ func (c *Container) Close() error {
 	if closer, ok := c.IntentStore.(io.Closer); ok {
 		if err := closer.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close intent store: %w", err))
+		}
+	}
+	if c.epgStore != nil {
+		if err := c.epgStore.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close epg store: %w", err))
 		}
 	}
 	return errors.Join(errs...)
@@ -798,6 +914,16 @@ func (c *Container) Run(ctx context.Context, stop context.CancelFunc) error {
 		c.Manager.RegisterShutdownHook("api_server_shutdown", func(shutdownCtx context.Context) error {
 			return c.Server.Shutdown(shutdownCtx)
 		})
+		if c.epgQueue != nil {
+			if err := c.epgQueue.Start(ctx); err != nil {
+				c.Logger.Warn().Err(err).Msg("failed to start EPG enrichment queue")
+			} else {
+				c.Manager.RegisterShutdownHook("epg_queue_shutdown", func(shutdownCtx context.Context) error {
+					c.epgQueue.Stop()
+					return nil
+				})
+			}
+		}
 	})
 
 	return c.App.Run(ctx)
@@ -812,7 +938,7 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 	case <-timer.C:
 	}
 	c.Logger.Info().Msg("performing initial data refresh (background)")
-	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool))
+	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool), jobs.WithEnrichment(c.epgStore, c.epgQueue))
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("initial data refresh failed")
 		c.Logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")

@@ -44,6 +44,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/receipts"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/singleflight"
@@ -60,6 +61,7 @@ type Server struct {
 	// Opaque auth session store for xg2g_session cookies.
 	authSessionStore ctrlauth.SessionTokenStore
 	authSessionTTL   time.Duration
+	playbackTickets  *playbackTicketStore
 	// Opaque household unlock store for xg2g_household_unlock cookies.
 	householdUnlockStore household.UnlockStore
 	householdUnlockTTL   time.Duration
@@ -105,6 +107,7 @@ type Server struct {
 	libraryService          *library.Service // Media library per ADR-ENG-002
 	admission               *admission.Controller
 	admissionState          AdmissionState
+	topologyService         *receivertopology.Service
 	householdAdmission      *policy.HouseholdResourceAdmission
 	householdResourcePolicy *identity.HouseholdResourcePolicy
 	hostPressureMonitor     *admissionmonitor.ResourceMonitor
@@ -337,8 +340,17 @@ func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
 	s.snap = snap
 	s.householdUnlockTTL = cfg.Household.UnlockTTL
 	s.owiClient = nil // Invalidate cached OWI client; s.owiEpoch is reset on next newOpenWebIFClient call
+
+	tunerCapacity := len(cfg.Engine.TunerSlots)
+	if tunerCapacity <= 0 && s.topologyService != nil {
+		tunerCapacity = s.topologyService.EffectiveTunerCapacity()
+	}
+	if tunerCapacity <= 0 {
+		tunerCapacity = 1
+	}
+
 	if state, ok := s.admissionState.(*storeAdmissionState); ok {
-		state.SetTunerCount(len(cfg.Engine.TunerSlots))
+		state.SetTunerCount(tunerCapacity)
 	}
 	if s.tokensService != nil {
 		s.tokensService.UpdateConfig(cfg)
@@ -388,6 +400,7 @@ type Dependencies struct {
 	RequestShutdown    func(context.Context) error
 	PreflightProvider  PreflightProvider
 	IdentityService    *identity.Service
+	TopologyService    *receivertopology.Service
 }
 
 // SetDependencies injects shared services into the handler.
@@ -405,8 +418,20 @@ func (s *Server) SetDependencies(deps Dependencies) {
 	s.applyDeviceAuthDependencies(deps)
 	s.applyVODDependencies(deps)
 
+	// Determine authoritative tuner capacity following the priority hierarchy:
+	// 1. Explicit configuration: len(cfg.Engine.TunerSlots) if > 0
+	// 2. Discovered / verified topology: EffectiveTunerCapacity()
+	// 3. Fallback topology: 1 tuner
+	tunerCapacity := len(s.cfg.Engine.TunerSlots)
+	if tunerCapacity <= 0 && s.topologyService != nil {
+		tunerCapacity = s.topologyService.EffectiveTunerCapacity()
+	}
+	if tunerCapacity <= 0 {
+		tunerCapacity = 1
+	}
+
 	// Initialize Admission State Source (Store-backed)
-	s.admissionState = newStoreAdmissionState(s.v3Store, len(s.cfg.Engine.TunerSlots))
+	s.admissionState = newStoreAdmissionState(s.v3Store, tunerCapacity)
 }
 
 // applyServiceDependencies copies the straightforward, side-effect-free service
@@ -415,6 +440,10 @@ func (s *Server) SetDependencies(deps Dependencies) {
 // dedicated helpers because those involve additional construction and side
 // effects beyond a plain field assignment.
 func (s *Server) applyServiceDependencies(deps Dependencies) {
+	if deps.TopologyService != nil {
+		s.topologyService = deps.TopologyService
+	}
+
 	if !isNil(deps.Bus) {
 		s.v3Bus = deps.Bus
 	} else {

@@ -14,7 +14,7 @@
     "resolvedIntent": "compatible",
     "targetProfile": {
       "audio": {
-        "bitrateKbps": 192,
+        "bitrateKbps": 320,
         "channels": 2,
         "codec": "aac",
         "mode": "transcode",
@@ -36,7 +36,7 @@
         "width": 0
       }
     },
-    "targetProfileHash": "52feee7bb2a64404f195adda750cdc8ced9e3b230ff97d918453a314ed20d74d"
+    "targetProfileHash": "b889bed4615d7aba543f9a44c00c66bc7c86c96ceb20c5c476a4745f69c147e5"
   },
   "correlationId": "corr-test-001",
   "updatedAtMs": 1700000000000,

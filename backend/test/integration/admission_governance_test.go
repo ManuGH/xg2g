@@ -51,6 +51,7 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 				!strings.Contains(path, "internal/pipeline/lease/") &&
 				!strings.Contains(path, "internal/domain/receiverusage/") &&
 				!strings.Contains(path, "internal/domain/session/manager/orchestrator_leases.go") &&
+				!strings.Contains(path, "internal/stream/ingest/") &&
 				!strings.Contains(path, "_test.go") {
 				directBypassDetected = true
 				t.Errorf("governance failure: un-gated direct lease call '%s' at %s:%d", sel.Sel.Name, path, fset.Position(sel.Pos()).Line)

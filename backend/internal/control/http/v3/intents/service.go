@@ -39,8 +39,10 @@ func WithClientAV1Disabled(disabled bool) Option {
 
 func WithIOSNativeHEVCHWMode(mode string) Option {
 	return func(s *Service) {
-		s.iosNativeHEVCHWMode = mode
-		s.iosHEVCPolicySet = true
+		if mode != "" {
+			s.iosNativeHEVCHWMode = mode
+			s.iosHEVCPolicySet = true
+		}
 	}
 }
 

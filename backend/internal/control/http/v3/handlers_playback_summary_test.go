@@ -16,15 +16,14 @@ import (
 )
 
 const playbackSummaryTestCaps = `{
-	"capabilitiesVersion":2,
+	"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 	"container":["mpegts","ts"],
 	"videoCodecs":["h264"],
 	"audioCodecs":["aac"],
 	"hlsEngines":["native"],
 	"preferredHlsEngine":"native",
 	"runtimeProbeUsed":true,
-	"runtimeProbeVersion":1,
-	"clientFamilyFallback":"safari_native"
+	"runtimeProbeVersion":1
 }`
 
 func postPlaybackSummary(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
@@ -87,7 +86,7 @@ func TestPostLivePlaybackSummary_RejectsInvalidCapabilities(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)
 
-	body := `{"serviceRefs":["1:0:1:1234:5678:9ABC:0:0:0:0:"],"capabilities":{"capabilitiesVersion":0}}`
+	body := `{"serviceRefs":["1:0:1:1234:5678:9ABC:0:0:0:0:"],"capabilities":{"capabilitiesVersion":0,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"}}}`
 	w := postPlaybackSummary(t, s, body)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }

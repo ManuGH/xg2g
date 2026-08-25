@@ -73,6 +73,7 @@ The core knobs for a typical deployment. Everything in the per-area sections bel
 | `enigma2.username` | `XG2G_E2_USER` | - |
 | `epg.days` | `XG2G_EPG_DAYS` | `14` |
 | `epg.enabled` | `XG2G_EPG_ENABLED` | `true` |
+| `epg.refreshInterval` | `XG2G_EPG_REFRESH_INTERVAL` | `1h` |
 | `logLevel` | `XG2G_LOG_LEVEL` | `info` |
 | `picons.baseUrl` | `XG2G_PICON_BASE` | - |
 | `streaming.delivery_policy` | `XG2G_STREAMING_POLICY` | `universal` |
@@ -165,6 +166,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `epg.enabled` | `XG2G_EPG_ENABLED` | `true` | Active | Simple |
 | `epg.fuzzyMax` | `XG2G_FUZZY_MAX` | `2` | Active | Advanced |
 | `epg.maxConcurrency` | `XG2G_EPG_MAX_CONCURRENCY` | `1` | Active | Advanced |
+| `epg.refreshInterval` | `XG2G_EPG_REFRESH_INTERVAL` | `1h` | Active | Simple |
 | `epg.retries` | `XG2G_EPG_RETRIES` | `2` | Active | Advanced |
 | `epg.source` | `XG2G_EPG_SOURCE` | `per-service` | Active | Advanced |
 | `epg.timeoutMs` | `XG2G_EPG_TIMEOUT_MS` | `20000` | Active | Advanced |
@@ -298,6 +300,15 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `rateLimit.enabled` | - | `true` | Active | Advanced |
 | `rateLimit.global` | - | `100` | Active | Advanced |
 | `rateLimit.whitelist` | `XG2G_RATE_LIMIT_WHITELIST` | - | Active | Advanced |
+
+### receiver_topology
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `receiver_topology.demodulators` | - | - | Active | Advanced |
+| `receiver_topology.inputs` | - | - | Active | Advanced |
+| `receiver_topology.mode` | - | - | Active | Advanced |
+| `receiver_topology.model` | - | - | Active | Advanced |
 
 ### receiver_usage
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The repository root, not the script directory. This used to resolve to
+# scripts/, so every derived path — .env, bin/xg2g, logs/, build/ — pointed one
+# level too deep and the smoke could not find the backend it was supposed to
+# exercise.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT}/.env"
 BIN_PATH="${ROOT}/bin/xg2g"
 LOG_DIR="${ROOT}/logs/android-tv-smoke"
@@ -120,38 +124,70 @@ list_connected_devices() {
     adb devices | awk 'NR > 1 && $2 == "device" {print $1}'
 }
 
+# The smoke resets app state with `pm clear` and drives the UI, so it only ever
+# runs against an emulator. A physical TV plugged into the same machine used to
+# be a valid target here, which meant a developer's own device could be wiped by
+# a test run. Opting in to a physical device is deliberate and explicit:
+# XG2G_TV_SMOKE_ALLOW_PHYSICAL=1.
+allow_physical_device() {
+    [[ "${XG2G_TV_SMOKE_ALLOW_PHYSICAL:-0}" == "1" ]]
+}
+
+is_emulator_serial() {
+    [[ "${1}" == emulator-* ]]
+}
+
+require_emulator_serial() {
+    local serial="${1}"
+    if is_emulator_serial "${serial}" || allow_physical_device; then
+        return 0
+    fi
+    fail "refusing to run against physical device ${serial}: this smoke calls 'pm clear' and drives the UI. Start an Android TV emulator, or set XG2G_TV_SMOKE_ALLOW_PHYSICAL=1 to override deliberately."
+}
+
 choose_serial() {
     if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+        require_emulator_serial "${ANDROID_SERIAL}"
         printf '%s\n' "${ANDROID_SERIAL}"
         return 0
     fi
 
     mapfile -t devices < <(list_connected_devices)
-    if (( ${#devices[@]} == 1 )); then
-        printf '%s\n' "${devices[0]}"
-        return 0
-    fi
 
-    if (( ${#devices[@]} == 0 )); then
-        return 1
-    fi
-
-    local emulator_device=""
+    local emulators=()
+    local physical=()
     local device
     for device in "${devices[@]}"; do
-        if [[ "${device}" == emulator-* ]]; then
-            if [[ -n "${emulator_device}" ]]; then
-                fail "multiple adb devices detected; set ANDROID_SERIAL explicitly"
-            fi
-            emulator_device="${device}"
+        if is_emulator_serial "${device}"; then
+            emulators+=("${device}")
+        else
+            physical+=("${device}")
         fi
     done
-    if [[ -n "${emulator_device}" ]]; then
-        printf '%s\n' "${emulator_device}"
+
+    if (( ${#emulators[@]} == 1 )); then
+        printf '%s\n' "${emulators[0]}"
         return 0
     fi
+    if (( ${#emulators[@]} > 1 )); then
+        fail "multiple Android emulators detected; set ANDROID_SERIAL explicitly"
+    fi
 
-    fail "multiple adb devices detected; set ANDROID_SERIAL explicitly"
+    # No emulator. Physical devices are never picked up implicitly, so the
+    # caller lands in the emulator-boot path below instead of on their TV.
+    if (( ${#physical[@]} > 0 )) && ! allow_physical_device; then
+        log "ignoring ${#physical[@]} physical adb device(s); this smoke runs on an emulator (set XG2G_TV_SMOKE_ALLOW_PHYSICAL=1 to override)"
+        return 1
+    fi
+    if (( ${#physical[@]} == 1 )); then
+        printf '%s\n' "${physical[0]}"
+        return 0
+    fi
+    if (( ${#physical[@]} > 1 )); then
+        fail "multiple adb devices detected; set ANDROID_SERIAL explicitly"
+    fi
+
+    return 1
 }
 
 wait_for_boot() {
@@ -472,6 +508,10 @@ pair_device() {
 }
 
 launch_app() {
+    # Guarded a second time at the point of damage: choose_serial already
+    # refuses a physical device, and this makes the destructive call itself
+    # unreachable if that ever changes.
+    require_emulator_serial "${selected_serial}"
     log "Resetting dev app state ..."
     adb_shell pm clear "${PACKAGE_NAME}" >/dev/null
     adb_shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true

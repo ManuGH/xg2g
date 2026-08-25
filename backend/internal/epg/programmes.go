@@ -43,6 +43,10 @@ func ProgrammesFromEPG(events []openwebif.EPGEvent, channelID string) []Programm
 			},
 			Desc: &Description{Text: html.UnescapeString(buildDescription(event))}, // Decode HTML entities in description
 		}
+		if event.Genre != "" {
+			prog.Category = []string{event.Genre}
+		}
+		EnrichProgramme(&prog)
 
 		programmes = append(programmes, prog)
 	}

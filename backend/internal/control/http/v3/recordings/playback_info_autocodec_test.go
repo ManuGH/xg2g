@@ -26,7 +26,7 @@ func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
 	})
 
 	resolvedCaps := capabilities.PlaybackCapabilities{
-		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+		ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 		Containers:           []string{"mp4", "ts", "fmp4"},
 		VideoCodecs:          []string{"av1", "hevc", "h264"},
@@ -82,7 +82,7 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 		},
 	}
 	resolvedCaps := capabilities.PlaybackCapabilities{
-		ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+		ClientFamilyFallback: playbackprofile.ClientIOSSafari,
 		ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
 		AllowTranscode:       &allowTranscode,
 		Containers:           []string{"mp4", "ts", "fmp4"},

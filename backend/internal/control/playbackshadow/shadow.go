@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -337,6 +338,10 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				plannerTranscodesDolbyForBrowser(planner, evidence) {
 				item.Disposition = DiffAccepted
 				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
+			} else if evidence != nil && evidence.Scope == "live" &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) {
+				item.Disposition = DiffAccepted
+				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
 			}
 		case "audio_codec_mismatch":
 			if legacy.AudioMode == "copy" && planner.AudioMode == "transcode" &&
@@ -344,12 +349,23 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				item.Disposition = DiffAccepted
 				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			}
+		case "video_codec_mismatch":
+			if evidence != nil && evidence.Scope == "live" &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) {
+				item.Disposition = DiffAccepted
+				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
+			}
 		case "mode_mismatch":
 			if legacy.Mode == "remux" && planner.Mode == "transcode" &&
 				planner.VideoMode == "copy" && planner.AudioMode == "transcode" &&
 				plannerTranscodesDolbyForBrowser(planner, evidence) {
 				item.Disposition = DiffAccepted
 				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
+			} else if evidence != nil && evidence.Scope == "live" &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) &&
+				legacy.Mode == "remux" && planner.Mode == "transcode" {
+				item.Disposition = DiffAccepted
+				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
 			}
 		case "video_mode_mismatch":
 			if legacy.Mode == "transcode" && planner.Mode == "transcode" &&
@@ -358,6 +374,11 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				legacy.AudioMode == "transcode" && planner.AudioMode == "transcode" {
 				item.Disposition = DiffAccepted
 				item.Reason = "compatible_video_copy_avoids_reencode_during_audio_transcode"
+			} else if evidence != nil && evidence.Scope == "live" &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) &&
+				legacy.VideoMode == "copy" && planner.VideoMode == "transcode" {
+				item.Disposition = DiffAccepted
+				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
 			}
 		case "scale_drift":
 			if evidence != nil && legacy.Mode == "transcode" && planner.Mode == "transcode" {

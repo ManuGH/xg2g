@@ -416,6 +416,8 @@ type EPGEvent struct {
 	Begin               int64  `json:"begin_timestamp"`
 	Duration            int64  `json:"duration_sec"`
 	SRef                string `json:"sref"`
+	Genre               string `json:"genre,omitempty"`
+	GenreID             int    `json:"genreid,omitempty"`
 }
 
 // EPGResponse represents the OpenWebIF EPG API response structure
@@ -570,6 +572,7 @@ func (c *Client) parseEPGXML(body []byte) ([]EPGEvent, error) {
 				Begin:       xmlEvent.Start,
 				Duration:    int64(xmlEvent.Duration),
 				SRef:        xmlEvent.ServiceRef,
+				Genre:       html.UnescapeString(xmlEvent.Genre),
 			}
 			events = append(events, event)
 		}

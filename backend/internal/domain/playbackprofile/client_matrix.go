@@ -6,17 +6,32 @@ package playbackprofile
 
 import "github.com/ManuGH/xg2g/internal/normalize"
 
+// The client families the policy matrix is keyed on.
+//
+// Browser and native are separate identities on every platform that has both.
+// `ios_safari_native` used to be one identifier for two of them — Safari on
+// iOS, and the native iOS app, which reported the same string — so the app got
+// browser capability defaults and browser packaging policy. Splitting them is
+// what lets each carry the profile that is true of it.
 const (
-	ClientSafariNative     = "safari_native"
-	ClientIOSSafariNative  = "ios_safari_native"
-	ClientFirefoxHLSJS     = "firefox_hlsjs"
-	ClientAndroidTVBrowser = "android_tv_browser"
-	ClientChromiumHLSJS    = "chromium_hlsjs"
+	// Browser surfaces.
+	ClientSafariNative     = "safari_native"      // Safari on macOS
+	ClientIOSSafari        = "ios_safari"         // Safari (and every browser) on iOS/iPadOS
+	ClientFirefoxHLSJS     = "firefox_hlsjs"      //
+	ClientAndroidTVBrowser = "android_tv_browser" //
+	ClientChromiumHLSJS    = "chromium_hlsjs"     //
+
+	// Native surfaces: applications that enumerate their own decoders.
+	ClientIOSNative       = "ios_native"
+	ClientAppleTVNative   = "apple_tv_native"
+	ClientAndroidNative   = "android_native"
+	ClientAndroidTVNative = "android_tv_native"
 )
 
 var clientFixtureOrder = []string{
 	ClientSafariNative,
-	ClientIOSSafariNative,
+	ClientIOSSafari,
+	ClientIOSNative,
 	ClientFirefoxHLSJS,
 	ClientAndroidTVBrowser,
 	ClientChromiumHLSJS,
@@ -42,7 +57,7 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 			FPS:    60,
 		},
 	}),
-	ClientIOSSafariNative: CanonicalizeClient(ClientPlaybackProfile{
+	ClientIOSSafari: CanonicalizeClient(ClientPlaybackProfile{
 		DeviceType:     "ios_safari",
 		PlaybackEngine: "native_hls",
 		Containers:     []string{"mp4", "mpegts"},
@@ -61,6 +76,29 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 			FPS:    60,
 		},
 	}),
+	// The native iOS app carries its own transport-stream demuxer and hardware
+	// decoder, so mpegts is a first-class container for it rather than
+	// something to remux away, and Dolby audio is real decoder truth rather
+	// than a browser's claim.
+	ClientIOSNative: CanonicalizeClient(ClientPlaybackProfile{
+		DeviceType:     "ios_native",
+		PlaybackEngine: "native_ts",
+		Containers:     []string{"mp4", "mpegts"},
+		VideoCodecs:    []string{"h264", "hevc", "mpeg2video"},
+		AudioCodecs:    []string{"aac", "mp3", "ac3", "eac3"},
+		HLSPackaging:   []string{"fmp4", "ts"},
+		SupportsHLS:    true,
+		SupportsRange:  true,
+		AllowTranscode: boolPtr(true),
+		MaxVideo: &VideoConstraints{
+			Width:  3840,
+			Height: 2160,
+			FPS:    60,
+		},
+	}),
+	// Android TV boxes decode 4K and pass Dolby through to a receiver; the
+	// browser profile on the same hardware cannot, which is exactly why the two
+	// are separate families.
 	ClientFirefoxHLSJS: CanonicalizeClient(ClientPlaybackProfile{
 		DeviceType:     "firefox",
 		PlaybackEngine: "hls_js",

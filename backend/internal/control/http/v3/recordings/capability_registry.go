@@ -288,7 +288,7 @@ func capabilityLookupEligible(identity capreg.DeviceIdentity) bool {
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(identity.ClientFamily)) {
-	case "android_native", "android_tv_native", "ios_safari_native", "safari_native":
+	case "android_native", "android_tv_native", "ios_native", "apple_tv_native", "safari_native":
 		return strings.TrimSpace(identity.DeviceType) != ""
 	default:
 		return false

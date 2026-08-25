@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { gatherPlaybackCapabilities } from "./playbackCapabilities";
 import { probeRuntimePlaybackCapabilities } from "./playbackProbe";
-import { detectPlaybackClientFamily } from "./playbackClientFamily";
+import { detectPlaybackClientIdentity } from "../../../services/clientIdentity";
 
 const originalMaxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(
   Navigator.prototype,
@@ -20,33 +20,9 @@ vi.mock("./playbackProbe", () => ({
   probeRuntimePlaybackCapabilities: vi.fn(),
 }));
 
-vi.mock("./playbackClientFamily", () => ({
-  detectPlaybackClientFamily: vi.fn(),
-  normalizePlaybackClientFamily: (value: string | null | undefined) => {
-    switch ((value || "").trim().toLowerCase()) {
-      case "safari":
-      case "safari_native":
-        return "safari_native";
-      case "ios_safari":
-      case "ios_safari_native":
-        return "ios_safari_native";
-      case "firefox":
-      case "firefox_hlsjs":
-        return "firefox_hlsjs";
-      case "android_tv":
-      case "android_tv_browser":
-      case "android_tv_hlsjs":
-      case "shield_browser":
-        return "android_tv_browser";
-      case "chromium":
-      case "chrome":
-      case "edge":
-      case "chromium_hlsjs":
-        return "chromium_hlsjs";
-      default:
-        return undefined;
-    }
-  },
+vi.mock("../../../services/clientIdentity", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../services/clientIdentity")>()),
+  detectPlaybackClientIdentity: vi.fn(),
 }));
 
 describe("gatherPlaybackCapabilities", () => {
@@ -100,12 +76,10 @@ describe("gatherPlaybackCapabilities", () => {
           },
           supportsHls: true,
           supportsRange: true,
-          deviceType: "android_tv",
           hlsEngines: ["native"],
           preferredHlsEngine: "native",
           runtimeProbeUsed: false,
           runtimeProbeVersion: 1,
-          clientFamilyFallback: "android_tv_native",
           allowTranscode: true,
         }),
     };
@@ -114,7 +88,6 @@ describe("gatherPlaybackCapabilities", () => {
 
     expect(capabilities).toEqual(
       expect.objectContaining({
-        deviceType: "android_tv",
         preferredHlsEngine: "native",
         runtimeProbeUsed: false,
         videoCodecs: ["h264"],
@@ -148,15 +121,13 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("chromium_hlsjs");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "linux", surface: "browser", browserEngine: "blink" });
 
     const capabilities = await gatherPlaybackCapabilities("live");
 
     expect(capabilities).toEqual(
       expect.objectContaining({
-        deviceType: "web",
         preferredHlsEngine: "hlsjs",
-        clientFamilyFallback: "chromium_hlsjs",
         runtimeProbeUsed: true,
         videoCodecs: ["h264"],
         deviceContext: expect.objectContaining({
@@ -184,15 +155,13 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("android_tv_browser");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "android_tv", surface: "browser", browserEngine: "blink" });
 
     const capabilities = await gatherPlaybackCapabilities("live");
 
     expect(capabilities).toEqual(
       expect.objectContaining({
-        deviceType: "android_tv",
         preferredHlsEngine: "hlsjs",
-        clientFamilyFallback: "android_tv_browser",
         videoCodecs: ["h264"],
       }),
     );
@@ -212,7 +181,7 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("android_tv_browser");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "android_tv", surface: "browser", browserEngine: "blink" });
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       value:
@@ -248,7 +217,7 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("android_tv_browser");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "android_tv", surface: "browser", browserEngine: "blink" });
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       value:
@@ -285,12 +254,10 @@ describe("gatherPlaybackCapabilities", () => {
           audioCodecs: ["aac", "ac3", "mp3"],
           supportsHls: true,
           supportsRange: true,
-          deviceType: "safari",
           hlsEngines: ["native"],
           preferredHlsEngine: "native",
           runtimeProbeUsed: true,
           runtimeProbeVersion: 2,
-          clientFamilyFallback: "safari",
           allowTranscode: true,
         }),
     };
@@ -299,7 +266,6 @@ describe("gatherPlaybackCapabilities", () => {
 
     expect(capabilities).toEqual(
       expect.objectContaining({
-        clientFamilyFallback: "safari_native",
         preferredHlsEngine: "native",
         videoCodecs: ["av1", "hevc", "h264"],
       }),
@@ -320,7 +286,7 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3", "ac3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("ios_safari_native");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "ios", surface: "browser", browserEngine: "webkit" });
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       value:
@@ -360,7 +326,7 @@ describe("gatherPlaybackCapabilities", () => {
       audioCodecs: ["aac", "mp3", "ac3"],
       supportsRange: true,
     });
-    vi.mocked(detectPlaybackClientFamily).mockReturnValue("safari_native");
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "macos", surface: "browser", browserEngine: "webkit" });
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       value:

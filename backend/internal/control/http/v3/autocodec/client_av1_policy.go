@@ -46,7 +46,7 @@ func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, 
 		family = playbackprofile.ClientAndroidTVBrowser
 	}
 	switch family {
-	case playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return appleMobileAV1Allowed(canonical)
 	case playbackprofile.ClientSafariNative:
 		return appleDesktopAV1Allowed(canonical)
@@ -59,6 +59,9 @@ func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, 
 
 func hasRuntimeAV1Signal(caps capabilities.PlaybackCapabilities) bool {
 	source := normalize.Token(caps.ClientCapsSource)
+	if source == "" && (caps.RuntimeProbeUsed || len(caps.VideoCodecSignals) > 0) {
+		source = capabilities.ClientCapsSourceRuntime
+	}
 	if source != capabilities.ClientCapsSourceRuntime && source != capabilities.ClientCapsSourceRuntimePlusFam {
 		return false
 	}

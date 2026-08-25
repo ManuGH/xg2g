@@ -292,14 +292,20 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 	}
 
 	metrics.IncActiveEnigma2Connections("spool")
-	spool := newBoundedStartupSpool(resp.Body, sessionID, a)
+
+	// Guarded before the spool wraps it, so the watchdog sees the reads the spool
+	// makes on the socket rather than the reads ffmpeg makes on the spool. When
+	// the consumer dies the spool fills, stops pulling, and the connection goes
+	// idle — which is precisely the condition to reap.
+	guarded := newGuardedStreamBody(resp.Body, sessionID, "spool")
+	spool := newBoundedStartupSpool(guarded, sessionID, a)
 	go spool.run(avsyncPeekMaxBytes)
 
 	// Close the spool and relay body when the session context ends
 	go func() {
 		<-ctx.Done()
 		spool.close()
-		_ = resp.Body.Close()
+		_ = guarded.Close()
 		dc := a.GetDiagnosticContext(sessionID)
 		a.Logger.Info().
 			Str("session_id", dc.SessionID).
@@ -307,7 +313,6 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 			Str("reason", dc.Reason).
 			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
 			Msg("http_body_closed")
-		metrics.DecActiveEnigma2Connections("spool")
 	}()
 
 	peekCtx, cancel := context.WithTimeout(ctx, avsyncPeekTimeout)

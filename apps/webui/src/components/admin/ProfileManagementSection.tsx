@@ -1,7 +1,5 @@
-// Copyright (c) 2025-2026 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-
 import React, { useState, useEffect } from 'react';
+import { request } from '../../lib/api';
 
 export interface ProfileData {
   id: string;
@@ -39,9 +37,7 @@ export const ProfileManagementSection: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/v3/household/profiles');
-      if (!res.ok) throw new Error('Sehprofile konnten nicht geladen werden.');
-      const data = await res.json();
+      const data = await request<ProfileData[]>('/api/v3/household/profiles');
       setProfiles(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e.message || 'Fehler beim Laden der Sehprofile.');
@@ -91,26 +87,21 @@ export const ProfileManagementSection: React.FC = () => {
       name: formName.trim(),
       avatarUrl: formAvatar,
       isChild: formIsChild,
-      maxParentalRating: Number(formMaxRating),
-      unknownRatingPolicy: formUnknownPolicy,
-      pinCode: formPin ? formPin.trim() : undefined,
+      maturityLevel: Number(formMaxRating),
+      exitPin: formPin ? formPin.trim() : undefined,
     };
 
     try {
       const url = editingProfile
-        ? `/api/v3/household/profiles/${editingProfile.id}`
+        ? `/api/v3/household/profiles/${encodeURIComponent(editingProfile.id)}`
         : '/api/v3/household/profiles';
       const method = editingProfile ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      await request(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        throw new Error('Speichern des Profils fehlgeschlagen.');
-      }
 
       setSuccess(editingProfile ? 'Profil wurde aktualisiert.' : 'Neues Sehprofil wurde angelegt.');
       setIsModalOpen(false);
@@ -127,8 +118,7 @@ export const ProfileManagementSection: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`/api/v3/household/profiles/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Löschen des Profils fehlgeschlagen.');
+      await request(`/api/v3/household/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
       setSuccess('Profil wurde gelöscht.');
       setDeletingId(null);
       void fetchProfiles();

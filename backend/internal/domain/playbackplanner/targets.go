@@ -2,6 +2,8 @@ package playbackplanner
 
 import (
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 )
 
 // resolveMediaTargets populates Video, Audio, Packaging, Filters, and RateControl based on the selected Mode.
@@ -16,56 +18,54 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		plan.Audio = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.AudioCodec}
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 {
+		if ev.ClientEvidence.PrefersFMP4 || playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
 			plan.Packaging.Container = "fmp4"
 		}
 
 	case "transcode":
 		plan.Video = TrackPlan{Mode: "transcode", Codec: "h264"} // Default
-		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 320, Channels: 2, SampleRate: 48000}
 		autoTranscodeProfile := false
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 {
+		if ev.ClientEvidence.PrefersFMP4 || playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
 			plan.Packaging.Container = "fmp4"
+		}
+
+		if requiresInterlaceRepair(ev) {
+			plan.Filters.Deinterlace = true
+		}
+		if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
+			plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
 		}
 
 		isABRIntent := isABRRequested(ev)
 		if isABRIntent {
 			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
-		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
+		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" && !requiresVideoNormalization(ev) {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
-		} else {
-			if requiresInterlaceRepair(ev) {
-				plan.Filters.Deinterlace = true
-			}
-			if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
-				plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
-			}
-
-			if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
-				plan.Video.Codec = codec
-				autoTranscodeProfile = true
-				if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS && !nativeWebKitClient(ev.ClientEvidence.Family) {
-					plan.Packaging.Container = "mpegts"
-				} else {
-					plan.Packaging.Container = "fmp4"
-				}
+		} else if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
+			plan.Video.Codec = codec
+			autoTranscodeProfile = true
+			if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS && !nativeWebKitClient(ev.ClientEvidence.Family) {
+				plan.Packaging.Container = "mpegts"
 			} else {
-				isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
-					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
+				plan.Packaging.Container = "fmp4"
+			}
+		} else {
+			isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
+				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
 
-				isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
-					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
-					ev.ClientEvidence.Family == "safari_hevc" ||
-					ev.ClientEvidence.Family == "safari_hevc_hw"
+			isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
+				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
+				ev.ClientEvidence.Family == "safari_hevc" ||
+				ev.ClientEvidence.Family == "safari_hevc_hw"
 
-				isHLSJS := strings.EqualFold(ev.ClientEvidence.PreferredEngine, "hlsjs")
+			isHLSJS := strings.EqualFold(ev.ClientEvidence.PreferredEngine, "hlsjs")
 
-				if isSafari && !isChromium && !isHLSJS &&
-					explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
-					contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
-					plan.Video.Codec = "hevc"
-				}
+			if isSafari && !isChromium && !isHLSJS &&
+				explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
+				contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
+				plan.Video.Codec = "hevc"
 			}
 		}
 
@@ -80,7 +80,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			// Legacy repair/forced-transcode mode is track-aware. Preserve a
 			// compatible video bitstream, but ensure the mode is not a no-op by
 			// normalizing audio to AAC when both tracks were otherwise copyable.
-			plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+			plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 320, Channels: 2, SampleRate: 48000}
 		}
 		if plan.Video.Mode == "transcode" {
 			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
@@ -103,7 +103,11 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 }
 
 func allowsCopiedH264FMP4(client ClientEvidence) bool {
-	return strings.EqualFold(strings.TrimSpace(client.Family), "android_tv_native") && client.PrefersFMP4
+	if playbackcompat.IsIOSClient(client.Family) {
+		return true
+	}
+	fam := strings.ToLower(strings.TrimSpace(client.Family))
+	return fam == "android_tv_native" && client.PrefersFMP4
 }
 
 func copyCodecRequiresFMP4(codec string) bool {

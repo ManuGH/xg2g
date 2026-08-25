@@ -108,7 +108,7 @@ func copyPreferredStartProfile(requestedPlaybackMode, clientFamily string) strin
 
 func mapCopyFallbackProfile(clientFamily string) string {
 	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return profiles.ProfileSafari
 	default:
 		return profiles.ProfileHigh
@@ -123,7 +123,7 @@ func shouldPreferMappedStartProfile(requestedPlaybackMode, clientFamily string, 
 	switch normalize.Token(requestedPlaybackMode) {
 	case "native_hls":
 		switch normalize.Token(clientFamily) {
-		case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+		case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 			return true
 		default:
 			return false

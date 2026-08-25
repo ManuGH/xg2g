@@ -177,9 +177,7 @@ func ClassifyRoute(routerID string, variant ConfigVariant, method string, patter
 	// 1. Unbounded Streaming routes (ONLY GET requests for SSE sessions/events and stream.mp4)
 	// NOTE: SSE sessions/events route requires explicit Flush capability (RequiresFlush = true).
 	if method == http.MethodGet {
-		// Both are Server-Sent Event endpoints: they hold the connection open and flush
-		// incrementally, so an API-bounded write deadline would cut the stream.
-		if strings.HasSuffix(pattern, "/events") || strings.HasSuffix(pattern, "/notifications/stream") {
+		if strings.HasSuffix(pattern, "/events") || strings.HasSuffix(pattern, "/notifications/stream") || strings.Contains(pattern, "/stream/smooth") || strings.Contains(pattern, "/stream/live") {
 			return RoutePolicy{
 				Class:                RouteDeadlineStreaming,
 				RequiresFlush:        true,
@@ -380,7 +378,7 @@ func isRecognizedAPIRoute(method string, pattern string) bool {
 	switch pattern {
 	case "/healthz", "/readyz", "/index.html", "/",
 		"/internal/system/config/reload", "/internal/setup/validate",
-		"/Items/{itemId}/PlaybackInfo", "/ui", "/ui/*":
+		"/ui", "/ui/*":
 		return true
 	}
 

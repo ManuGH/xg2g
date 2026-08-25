@@ -61,6 +61,11 @@ func (s *Service) resolvePlannerStartProfile(intent Intent, hw startHardwareStat
 		s.iosNativeHEVCHWMode,
 	)
 	profileSpec = applyPlannerPlanToProfile(profileSpec, plan)
+	reqIntent := playbackprofile.NormalizeRequestedIntent(intent.Params["intent"])
+	if reqIntent == playbackprofile.IntentUnknown {
+		reqIntent = playbackprofile.NormalizeRequestedIntent(profileID)
+	}
+	profileSpec.Intent = reqIntent
 
 	publicProfile := plannerPublicProfile(plan)
 	bucket := "0"

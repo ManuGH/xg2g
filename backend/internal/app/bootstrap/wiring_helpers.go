@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	sessionmodel "github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -23,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -100,10 +102,14 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 
 type v3OrchestratorFactory struct {
 	tunerController lease.TunerLeaseController
+	topologyService *receivertopology.Service
 }
 
-func buildV3OrchestratorFactory(tunerCtrl lease.TunerLeaseController) daemon.V3OrchestratorFactory {
-	return v3OrchestratorFactory{tunerController: tunerCtrl}
+func buildV3OrchestratorFactory(tunerCtrl lease.TunerLeaseController, topoSvc *receivertopology.Service) daemon.V3OrchestratorFactory {
+	return v3OrchestratorFactory{
+		tunerController: tunerCtrl,
+		topologyService: topoSvc,
+	}
 }
 
 func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
@@ -121,6 +127,8 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
 	profileResolver := profiles.LoadResolver()
 
+	evaluator := receiverusage.NewEvaluatorWithTopology(f.topologyService)
+
 	orch := &worker.Orchestrator{
 		Store:                inputs.Store,
 		Bus:                  bus.NewAdapter(inputs.Bus),
@@ -131,6 +139,9 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 		Owner:                workerOwner,
 		TunerSlots:           cfg.Engine.TunerSlots,
 		TunerLeaseController: f.tunerController,
+		UsagePolicy:          cfg.ReceiverUsage,
+		UsageEvaluator:       evaluator,
+		TopologyService:      f.topologyService,
 		HLSRoot:              cfg.HLS.Root,
 		LiveReadySegments:    cfg.HLS.ReadySegments,
 		LiveSegmentSeconds:   cfg.HLS.SegmentSeconds,

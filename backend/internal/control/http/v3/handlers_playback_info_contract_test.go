@@ -97,7 +97,7 @@ func TestContract_PlaybackInfo_Preparing(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
 
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Equal(t, "5", w.Header().Get("Retry-After"))
@@ -120,7 +120,7 @@ func TestContract_PlaybackInfo_Forbidden(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
 
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	var prob struct {
@@ -138,7 +138,7 @@ func TestContract_PlaybackInfo_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
 
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	var prob struct {
@@ -156,7 +156,7 @@ func TestContract_PlaybackInfo_UpstreamError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
 
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusBadGateway, w.Code)
 	var prob struct {
@@ -179,7 +179,7 @@ func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {
 	s_srv := createTestServer(svc)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v3/recordings/"+validRecordingID+"/stream-info", nil)
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var dto map[string]interface{}
@@ -196,7 +196,7 @@ func TestInvariant_SuccessAlwaysSeekable(t *testing.T) {
 	}, nil).Once()
 
 	w = httptest.NewRecorder()
-	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID)
+	s_srv.GetRecordingPlaybackInfo(w, r, validRecordingID, v3.GetRecordingPlaybackInfoParams{})
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	json.Unmarshal(w.Body.Bytes(), &dto)

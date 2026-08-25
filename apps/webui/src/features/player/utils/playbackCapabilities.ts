@@ -4,13 +4,33 @@ import {
   resolveHostEnvironment,
 } from "../../../lib/hostBridge";
 import {
-  detectPlaybackClientFamily,
-  normalizePlaybackClientFamily,
-} from "./playbackClientFamily";
+  detectPlaybackClientIdentity,
+  inferBrowserDeviceContext,
+} from "../../../services/clientIdentity";
 import {
   probeRuntimePlaybackCapabilities,
   type RuntimePlaybackProbeScope,
 } from "./playbackProbe";
+
+/**
+ * Reads a stored identity back, or re-detects it.
+ *
+ * A persisted snapshot predating the identity field has none; detecting again
+ * is right, because the identity describes the runtime reading it, not the one
+ * that wrote it.
+ */
+function readClientIdentity(
+  record: Record<string, unknown>,
+): CapabilitySnapshot["clientIdentity"] {
+  const stored = record.clientIdentity;
+  if (stored && typeof stored === "object") {
+    const candidate = stored as Record<string, unknown>;
+    if (typeof candidate.platform === "string" && typeof candidate.surface === "string") {
+      return candidate as CapabilitySnapshot["clientIdentity"];
+    }
+  }
+  return detectPlaybackClientIdentity();
+}
 
 export type CapabilitySnapshot = Pick<
   PlaybackCapabilitiesContract,
@@ -18,13 +38,12 @@ export type CapabilitySnapshot = Pick<
   | "container"
   | "videoCodecs"
   | "audioCodecs"
-  | "deviceType"
+  | "clientIdentity"
   | "supportsHls"
   | "supportsRange"
   | "allowTranscode"
   | "runtimeProbeUsed"
   | "runtimeProbeVersion"
-  | "clientFamilyFallback"
   | "videoCodecSignals"
 > & {
   deviceContext?: {
@@ -199,8 +218,7 @@ function sanitizeNativePlaybackCapabilities(
     maxVideo,
     supportsHls: record.supportsHls === true,
     supportsRange: record.supportsRange === true,
-    deviceType:
-      typeof record.deviceType === "string" ? record.deviceType : undefined,
+    clientIdentity: readClientIdentity(record),
     hlsEngines,
     preferredHlsEngine:
       typeof record.preferredHlsEngine === "string"
@@ -211,11 +229,6 @@ function sanitizeNativePlaybackCapabilities(
       typeof record.runtimeProbeVersion === "number"
         ? record.runtimeProbeVersion
         : undefined,
-    clientFamilyFallback: normalizePlaybackClientFamily(
-      typeof record.clientFamilyFallback === "string"
-        ? record.clientFamilyFallback
-        : undefined,
-    ),
     allowTranscode:
       typeof record.allowTranscode === "boolean"
         ? record.allowTranscode
@@ -223,117 +236,6 @@ function sanitizeNativePlaybackCapabilities(
     deviceContext,
     networkContext,
   };
-}
-
-function inferBrowserDeviceContext(): CapabilitySnapshot["deviceContext"] {
-  const nav = navigator as Navigator & {
-    userAgentData?: {
-      platform?: string;
-      platformVersion?: string;
-    };
-    maxTouchPoints?: number;
-  };
-  const ua = navigator.userAgent;
-  const platform = nav.userAgentData?.platform || navigator.platform || "browser";
-  const platformVersion =
-    typeof nav.userAgentData?.platformVersion === "string"
-      ? nav.userAgentData.platformVersion.trim()
-      : undefined;
-
-  const isIPadOSDesktopUA =
-    /Mac OS X/i.test(ua) && /Macintosh/i.test(ua) && (nav.maxTouchPoints ?? 0) > 1;
-  let osName = "browser";
-  let osVersion: string | undefined;
-  const patterns: Array<[RegExp, string]> = [
-    [/Android\s+([\d.]+)/i, "android"],
-    [/Fire\s*OS\s+([\d.]+)/i, "fireos"],
-    [/Vega\s*OS(?:\s+version:?)?\s*([\d.]+)/i, "vegaos"],
-    [/(?:iPhone|iPad|CPU (?:iPhone )?OS)\s+([\d_]+)/i, "ios"],
-    [/Windows NT\s+([\d.]+)/i, "windows"],
-    [/Mac OS X\s+([\d_]+)/i, "macos"],
-    [/CrOS\s+[\w_]+\s+([\d.]+)/i, "chromeos"],
-  ];
-  for (const [pattern, candidate] of patterns) {
-    const match = ua.match(pattern);
-    if (match) {
-      osName = candidate;
-      osVersion = match[1]?.replace(/_/g, ".");
-      break;
-    }
-  }
-  if (isIPadOSDesktopUA) {
-    osName = "ipados";
-  }
-  if (osName === "browser" && /Linux/i.test(ua)) {
-    osName = "linux";
-  }
-  if (!osVersion && platformVersion) {
-    osVersion = platformVersion;
-  }
-  if (isFrozenWebKitMacOSVersion(ua, osName, osVersion, String(platform))) {
-    osVersion = undefined;
-  }
-
-  return {
-    ...inferBrowserDeviceHints(ua),
-    platform: String(platform).toLowerCase(),
-    osName,
-    osVersion,
-  };
-}
-
-function inferBrowserDeviceHints(
-  userAgent: string,
-): Partial<NonNullable<CapabilitySnapshot["deviceContext"]>> {
-  const fireTVModel = userAgent.match(/\b(AFT[A-Z0-9]+)\b/i)?.[1];
-  if (fireTVModel) {
-    return {
-      brand: "amazon",
-      manufacturer: "Amazon",
-      product: fireTVModel.toUpperCase(),
-      device: "firetv",
-      model: fireTVModel.toUpperCase(),
-    };
-  }
-
-  if (/shield\s+android\s+tv/i.test(userAgent)) {
-    return {
-      brand: "nvidia",
-      manufacturer: "NVIDIA",
-      device: "shield",
-      model: "SHIELD Android TV",
-    };
-  }
-
-  const xiaomiModel =
-    userAgent.match(/\b(MDZ-[A-Z0-9-]+)\b/i)?.[1] ||
-    userAgent.match(/\b(MiTV-[A-Z0-9-]+)\b/i)?.[1];
-  if (xiaomiModel || /xiaomi\s+tv\s+stick\s+4k|mi\s+tv\s+stick\s+4k/i.test(userAgent)) {
-    return {
-      brand: "xiaomi",
-      manufacturer: "Xiaomi",
-      product: xiaomiModel,
-      device: "xiaomi-tv-stick",
-      model: xiaomiModel || "Xiaomi TV Stick 4K",
-    };
-  }
-
-  return {};
-}
-
-function isFrozenWebKitMacOSVersion(
-  userAgent: string,
-  osName: string,
-  osVersion: string | undefined,
-  platform: string,
-): boolean {
-  return (
-    (osName === "macos" || osName === "ipados") &&
-    osVersion === "10.15.7" &&
-    /Safari\/605\.1\.15/i.test(userAgent) &&
-    !/(Chrome|Chromium|Edg|OPR|Firefox)\//i.test(userAgent) &&
-    String(platform).toLowerCase() === "macintel"
-  );
 }
 
 function inferBrowserNetworkContext(): CapabilitySnapshot["networkContext"] {
@@ -375,10 +277,10 @@ export async function gatherPlaybackCapabilities(
   }
 
   const probe = await probeRuntimePlaybackCapabilities(videoEl, scope);
-  const clientFamilyFallback = detectPlaybackClientFamily(videoEl);
 
   return {
     capabilitiesVersion: 3,
+    clientIdentity: detectPlaybackClientIdentity(),
     container: probe.containers,
     videoCodecs: probe.videoCodecs,
     videoCodecSignals: probe.videoCodecSignals,
@@ -389,11 +291,9 @@ export async function gatherPlaybackCapabilities(
     supportsHls: probe.hlsEngines.length > 0,
     supportsRange: probe.supportsRange,
     allowTranscode: true,
-    deviceType: clientFamilyFallback === "android_tv_browser" ? "android_tv" : "web",
     deviceContext: inferBrowserDeviceContext(),
     networkContext: inferBrowserNetworkContext(),
     runtimeProbeUsed: probe.usedRuntimeProbe,
     runtimeProbeVersion: probe.version,
-    clientFamilyFallback,
   };
 }

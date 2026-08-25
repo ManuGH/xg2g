@@ -1,5 +1,5 @@
-// xg2g WebUI only needs the core HLS playback path.
-// The light build trims unused features like alternate audio, subtitles, CMCD, and DRM.
-import Hls from 'hls.js/light';
+// xg2g WebUI HLS runtime with full multi-audio & subtitle support.
+import Hls from 'hls.js';
 
 export default Hls;
+

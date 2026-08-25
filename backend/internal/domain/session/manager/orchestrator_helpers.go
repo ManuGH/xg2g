@@ -13,6 +13,7 @@ import (
 )
 
 type sessionContext struct {
+	SessionID    string
 	Mode         string
 	ServiceRef   string
 	ClientFamily string
@@ -110,6 +111,7 @@ func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model
 
 type leaseAcquisition struct {
 	Slot                   int
+	GenerationToken        string
 	TunerLease             store.Lease
 	TunerHandle            *pipelineLease.TunerLeaseHandle
 	DedupLease             store.Lease

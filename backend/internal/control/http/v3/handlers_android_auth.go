@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
@@ -27,10 +28,6 @@ type DeviceGrantFinishRequest struct {
 	Platform   string                     `json:"platform"`
 	DeviceJWK  dpop.JWKECPublicKey        `json:"deviceJwk"`
 	Scopes     string                     `json:"scopes,omitempty"`
-}
-
-type DeviceRefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
 }
 
 // DeviceGrantStart handles POST /api/v3/auth/device/grant/start
@@ -116,29 +113,76 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 		Msg("issued DPoP-bound device grant for android")
 
 	// Set mandatory RFC 9449 / OAuth2 token headers
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
 }
 
-// DeviceRefresh handles POST /api/v3/auth/device/refresh
-func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
+// DeviceSelfRevoke handles POST /api/v3/auth/device/revoke
+//
+// A device retires its own credentials — and only its own. There is
+// deliberately no device identifier in the request: the caller's device is read
+// from the authenticated principal, where it arrived via the DPoP binding that
+// ValidateDPoPAccessToken enforces. A body field would be a request to trust
+// the caller about who it is, and removing the field is a stronger guarantee
+// than validating it, because there is then nothing to get wrong later.
+//
+// Removing *another* device is a different operation with a different
+// authority, and stays in the household surface. This endpoint cannot express
+// it.
+//
+// The response is 204: the client destroys its local key only after this
+// returns, so the useful signal is "the server is certain", not a body.
+func (s *Server) DeviceSelfRevoke(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
-	dpopProof := r.Header.Get("DPoP")
-	if dpopProof == "" {
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
+	principal := auth.PrincipalFromContext(r.Context())
+	if principal == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "This endpoint requires an authenticated device credential", nil)
 		return
 	}
 
+	// Every other credential class - config tokens, browser sessions - is a
+	// valid way to call the API and still not a device. Nothing here can be
+	// done on their behalf, and picking some device for them would be exactly
+	// the confusion this endpoint refuses to allow.
+	if principal.DeviceID == "" {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/not_a_device_credential", "Not a Device Credential", problemcode.CodeForbidden, "Self-revocation requires a device-bound DPoP credential. Removing another device is a household operation.", nil)
+		return
+	}
+
+	if err := svc.RevokeDeviceSelf(r.Context(), principal.DeviceID); err != nil {
+		if errors.Is(err, identity.ErrInvalidDeviceID) {
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "The authenticated device no longer exists", nil)
+			return
+		}
+		log.FromContext(r.Context()).Error().Err(err).Msg("device self-revocation failed")
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Revocation Failed", problemcode.CodeInternalError, "The device could not be revoked", nil)
+		return
+	}
+
+	log.FromContext(r.Context()).Info().Str("device_id", principal.DeviceID).Msg("device revoked itself")
+	w.Header().Set("Cache-Control", "no-store, no-cache, private")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeviceRefresh handles POST /api/v3/auth/device/refresh
+func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request, params DeviceRefreshParams) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
+		return
+	}
+
+	// Presence is enforced by the generated wrapper now that the contract
+	// declares the header. What is left here is proving it.
 	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
-	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
+	proofClaims, err := validator.ValidateProof(r, params.DPoP, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device refresh")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -164,8 +208,28 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	// Credentials must never be cached, by a proxy or by the client.
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
+}
+
+// deviceGrantResponse renders an issued grant in the shape DeviceGrantResponse
+// declares.
+//
+// Both issuance paths hand out the same thing — passkey enrollment at
+// /auth/device/grant/finish and rotation at /auth/device/refresh — but only the
+// second is declared in api/openapi.yaml. Sharing the mapping is what keeps the
+// undeclared one from drifting away from the shape its sibling is held to; it
+// also means bringing the grant endpoints into the contract later changes the
+// routing, not the bytes.
+func deviceGrantResponse(grant *identity.DeviceGrantResult) DeviceGrantResponse {
+	return DeviceGrantResponse{
+		TokenType:    grant.TokenType,
+		AccessToken:  grant.AccessToken,
+		RefreshToken: grant.RefreshToken,
+		ExpiresIn:    contractInt32(grant.ExpiresIn),
+		DeviceId:     grant.DeviceID,
+		Scope:        grant.Scope,
+	}
 }

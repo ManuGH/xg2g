@@ -455,7 +455,7 @@ seg_000005.ts
 	// EXT-X-PLAYLIST-TYPE:EVENT is append-only per spec and breaks the moment
 	// delete_segments prunes the window head (~at DVR-window age) -> client hard-stop.
 	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "DVR live MUST NOT force a playlist type so delete_segments can slide the window without violating an append-only EVENT contract")
-	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=YES", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=NO", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
 
 	// Check tag order: the start tag follows the header.
@@ -844,11 +844,107 @@ stream_0.m3u8
 `
 	rec := &model.SessionRecord{}
 	rec.Profile.Container = "fmp4"
-	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", zerolog.Logger{})
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", "", zerolog.Logger{})
 	assert.NoError(t, err)
 	assert.True(t, valid, "master playlist should be valid even without EXT-X-MAP")
 	out, _ := io.ReadAll(rdr)
 	assert.Contains(t, string(out), "#EXT-X-STREAM-INF")
+}
+
+func TestRewritePlaylist_AppendsTicketParam(t *testing.T) {
+	playlistContent := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:2.000000,
+seg_000000.m4s
+#EXTINF:2.000000,
+seg_000001.m4s
+`
+	rec := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "fmp4",
+		},
+	}
+
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(playlistContent), rec, "", "ticket12345", zerolog.Logger{})
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	out, _ := io.ReadAll(rdr)
+	outStr := string(out)
+	assert.Contains(t, outStr, `URI="init.mp4?ticket=ticket12345"`)
+	assert.Contains(t, outStr, "seg_000000.m4s?ticket=ticket12345")
+	assert.Contains(t, outStr, "seg_000001.m4s?ticket=ticket12345")
+}
+
+func TestRewritePlaylist_MultiAudioMasterAndAudioRenditions(t *testing.T) {
+	masterContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_1",DEFAULT=YES,LANGUAGE="de",CHANNELS="6",URI="stream_1.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_2",DEFAULT=NO,LANGUAGE="en",CHANNELS="2",URI="stream_2.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=422400,RESOLUTION=1920x1080,CODECS="av01.0.13M.10.0.111.01.01.01.0,ac-3",AUDIO="group_audio"
+stream_0.m3u8
+`
+	rec := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "fmp4",
+		},
+	}
+
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", "t123", zerolog.Logger{})
+	require.NoError(t, err)
+	require.True(t, valid)
+	out, _ := io.ReadAll(rdr)
+	outStr := string(out)
+	assert.Contains(t, outStr, `URI="stream_1.m3u8?ticket=t123"`)
+	assert.Contains(t, outStr, `URI="stream_2.m3u8?ticket=t123"`)
+	assert.Contains(t, outStr, `stream_0.m3u8?ticket=t123`)
+	assert.Contains(t, outStr, `NAME="Deutsch (Dolby Digital 5.1)"`)
+	assert.Contains(t, outStr, `NAME="Originalton (Englisch) (Stereo)"`)
+	assert.Contains(t, outStr, `DEFAULT=YES,AUTOSELECT=YES`)
+	assert.NotContains(t, outStr, "#EXT-X-START:") // Master playlists do not have EXT-X-START
+
+	// Now check that an audio rendition playlist (init_2.mp4) HAS EXT-X-START injected identically to video
+	audioPlContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-MAP:URI="init_2.mp4"
+#EXT-X-DISCONTINUITY
+#EXTINF:2.000000,
+seg_2_000000.m4s
+#EXTINF:2.000000,
+seg_2_000001.m4s
+#EXTINF:2.000000,
+seg_2_000002.m4s
+#EXTINF:2.000000,
+seg_2_000003.m4s
+#EXTINF:2.000000,
+seg_2_000004.m4s
+`
+	recClient := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "fmp4",
+		},
+		ContextData: map[string]string{
+			model.CtxKeyClientFamily: "ios_safari",
+		},
+	}
+	rdrAudio, _, validAudio, errAudio := rewritePlaylist(strings.NewReader(audioPlContent), recClient, "", "t123", zerolog.Logger{})
+	require.NoError(t, errAudio)
+	require.True(t, validAudio)
+	outAudio, _ := io.ReadAll(rdrAudio)
+	assert.Contains(t, string(outAudio), "#EXT-X-START:")
+	assert.Contains(t, string(outAudio), `URI="init_2.mp4?ticket=t123"`)
+	assert.Contains(t, string(outAudio), "seg_2_000000.m4s?ticket=t123")
 }
 
 func buildTestTSPacket(pid int, pusi bool, payload []byte) []byte {
@@ -923,33 +1019,24 @@ func buildTestPESPacket(annexBPayload []byte) []byte {
 }
 
 func TestRewritePlaylist_FilterRAP(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "session_rap_filter"
-	sessionDir := filepath.Join(tmpDir, sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	sessionDir := t.TempDir()
 
-	// Create seg_000000.ts (dummy file, non-IDR/unsafe)
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte{0x47, 0x00, 0x00, 0x10}, 0644))
+	// Segment 0: audio only (no video PID 0x100) -> not safe
+	seg0Path := filepath.Join(sessionDir, "seg_000000.ts")
+	audioPkt := buildTestTSPacket(0x101, true, []byte{0x00, 0x00, 0x01, 0xC0})
+	require.NoError(t, os.WriteFile(seg0Path, audioPkt, 0o600))
 
-	// Create seg_000001.ts with valid PAT/PMT + SPS(7), PPS(8), IDR(5) -> safe RAP
-	annexB := []byte{
-		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E,
-		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
-		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00,
-	}
-	videoPID := 0x0100
-	var tsData bytes.Buffer
-	tsData.Write(buildTestPATPMT(videoPID))
-	tsData.Write(buildTestTSPacket(videoPID, true, buildTestPESPacket(annexB)))
-	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.ts"), tsData.Bytes(), 0644))
+	// Segment 1: Safe RAP with PAT/PMT + SPS + PPS + IDR
+	seg1Path := filepath.Join(sessionDir, "seg_000001.ts")
+	createMockSafeTSSegment(t, seg1Path)
 
 	playlistContent := `#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:2
 #EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:2.000,
+#EXTINF:2.000000,
 seg_000000.ts
-#EXTINF:2.000,
+#EXTINF:2.000000,
 seg_000001.ts
 `
 	rec := &model.SessionRecord{
@@ -960,7 +1047,7 @@ seg_000001.ts
 		},
 	}
 
-	rdr, _, valid, err := rewritePlaylist(strings.NewReader(playlistContent), rec, sessionDir, zerolog.Logger{})
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(playlistContent), rec, sessionDir, "", zerolog.Logger{})
 	require.NoError(t, err)
 	require.True(t, valid)
 
@@ -1042,9 +1129,12 @@ seg_000000.m4s
 		Profile: model.ProfileSpec{Container: "fmp4", DVRWindowSec: 60, TranscodeVideo: false},
 	}}
 	nativeReq := hlsRequest{isPlaylist: true}
-	assert.True(t, shouldHoldAndroidTVNativeCopyPlaylist(nativeReq, store.Session))
-	_, ready := awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, 0)
+	assert.True(t, shouldHoldNativeCopyPlaylist(nativeReq, store.Session))
+	_, ready := awaitNativeCopyReady(context.Background(), store, store.Session, 0)
 	assert.False(t, ready)
+
+	store.Session.ContextData[model.CtxKeyClientFamily] = "ios_safari"
+	assert.True(t, shouldHoldNativeCopyPlaylist(nativeReq, store.Session), "iOS Safari Native must also be held until ready")
 
 	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)
 	store.Session.ContextData[model.CtxKeyClientFamily] = "chromium_hlsjs"
@@ -1054,9 +1144,80 @@ seg_000000.m4s
 
 	store.Session.ContextData[model.CtxKeyClientFamily] = "android_tv_native"
 	store.Session.State = model.SessionReady
-	_, ready = awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, time.Second)
+	_, ready = awaitNativeCopyReady(context.Background(), store, store.Session, time.Second)
 	assert.True(t, ready)
 	w = httptest.NewRecorder()
 	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// A ticket is echoed into the rewritten playlist and cached in lkgPlaylists,
+// so whatever survives extraction ends up in a body served to later requests.
+// These cases are the reason extraction validates the shape.
+func TestExtractRequestTicketRejectsValuesTheServerNeverIssued(t *testing.T) {
+	const issued = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	t.Run("accepts an issued ticket from every source", func(t *testing.T) {
+		for _, source := range []struct {
+			name  string
+			build func() *http.Request
+		}{
+			{"query ticket", func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/x.m3u8?ticket="+issued, nil)
+			}},
+			{"query t", func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/x.m3u8?t="+issued, nil)
+			}},
+			{"header", func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				r.Header.Set("X-Playback-Ticket", issued)
+				return r
+			}},
+			{"cookie", func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				r.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: issued})
+				return r
+			}},
+		} {
+			t.Run(source.name, func(t *testing.T) {
+				assert.Equal(t, issued, extractRequestTicket(source.build()))
+			})
+		}
+	})
+
+	t.Run("rejects anything else", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			ticket string
+		}{
+			// A newline does not stay inside the query string it is appended
+			// to: rewritePlaylist terminates every line with '\n', so this
+			// injects a playlist directive of the attacker's choosing.
+			{"playlist directive injection", issued + "\n#EXT-X-KEY:METHOD=AES-128,URI=\"http://attacker.example/k\""},
+			{"carriage return", issued + "\r\n#EXT-X-ENDLIST"},
+			{"html payload", "<script>alert(1)</script>"},
+			{"query parameter smuggling", issued + "&redirect=http://attacker.example"},
+			{"uppercase hex is not what is minted", strings.ToUpper(issued)},
+			{"too short", strings.Repeat("a", 63)},
+			{"too long", strings.Repeat("a", 65)},
+			{"non hex", strings.Repeat("g", 64)},
+			{"empty", ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				q := r.URL.Query()
+				q.Set("ticket", tc.ticket)
+				r.URL.RawQuery = q.Encode()
+				assert.Empty(t, extractRequestTicket(r), "an unissued ticket must not reach the playlist body")
+
+				h := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				// Header values cannot carry a bare newline, so the header case
+				// covers the payloads that survive header encoding.
+				if !strings.ContainsAny(tc.ticket, "\r\n") {
+					h.Header.Set("X-Playback-Ticket", tc.ticket)
+					assert.Empty(t, extractRequestTicket(h))
+				}
+			})
+		}
+	})
 }

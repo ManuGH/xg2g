@@ -48,8 +48,8 @@ func TestRequestedCodecsForIntent_AppleAV1DecodeGate(t *testing.T) {
 	}{
 		{"mac m2 (no hw av1) excluded", mk(playbackprofile.ClientSafariNative, "macos", "14.4", "MacBook Pro M2", ""), false},
 		{"mac m3 (hw av1) included", mk(playbackprofile.ClientSafariNative, "macos", "14.4", "MacBook Pro M3", ""), true},
-		{"iphone 14 a16 excluded", mk(playbackprofile.ClientIOSSafariNative, "ios", "18.1", "iPhone 14 Pro A16", "iphone"), false},
-		{"iphone 16 included", mk(playbackprofile.ClientIOSSafariNative, "ios", "18.1", "iPhone 16 Pro", "iphone"), true},
+		{"iphone 14 a16 excluded", mk(playbackprofile.ClientIOSSafari, "ios", "18.1", "iPhone 14 Pro A16", "iphone"), false},
+		{"iphone 16 included", mk(playbackprofile.ClientIOSSafari, "ios", "18.1", "iPhone 16 Pro", "iphone"), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

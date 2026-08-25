@@ -151,3 +151,8 @@ func (s *Server) HandleRecordingResume(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// PutRecordingResume implements ServerInterface (PUT /recordings/{recordingId}/resume)
+func (s *Server) PutRecordingResume(w http.ResponseWriter, r *http.Request, recordingId string, params PutRecordingResumeParams) {
+	s.HandleRecordingResume(w, r)
+}

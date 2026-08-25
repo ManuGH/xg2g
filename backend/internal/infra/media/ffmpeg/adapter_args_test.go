@@ -127,7 +127,10 @@ func TestBuildArgs_LiveAudioProbePrefersBroadcastPrimaryTrack(t *testing.T) {
 	assert.Contains(t, args, "0:2?", "the broadcaster's primary track wins even when it carries surround")
 	assert.NotContains(t, args, "0:a:0?", "probe result should replace blind first-audio mapping")
 	assert.Contains(t, args, "aac", "the track is transcoded to AAC when transcoding video to maintain PTS sync")
-	ac, ok := valueAfter(args, "-ac")
+	ac, ok := valueAfter(args, "-ac:a:0")
+	if !ok {
+		ac, ok = valueAfter(args, "-ac")
+	}
 	require.True(t, ok)
 	assert.Equal(t, "2", ac, "surround is downmixed, not skipped")
 }
@@ -2827,4 +2830,77 @@ func TestBuildArgs_LiveMultipleAudioStreamsUseStereoMuxedTrack(t *testing.T) {
 	require.NotEmpty(t, args)
 	assert.Contains(t, args[len(args)-1], "index.m3u8")
 	assert.NotContains(t, args, "stream_%v.m3u8")
+}
+
+func TestBuildArgs_LiveMultiAudioRenditions_ZDF(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg",
+		"ffprobe",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		0,
+		0,
+		"",
+	)
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		return []liveAudioStream{
+			{Index: 1, ID: "0x17e8", CodecType: "audio", CodecName: "mp2", Channels: 2, Tags: map[string]string{"language": "deu"}},
+			{Index: 2, ID: "0x17e9", CodecType: "audio", CodecName: "mp2", Channels: 2, Tags: map[string]string{"language": "deu"}, Disposition: liveAudioDisposition{VisualImpaired: 1}},
+			{Index: 3, ID: "0x17ea", CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Tags: map[string]string{"language": "deu"}},
+			{Index: 4, ID: "0x17eb", CodecType: "audio", CodecName: "mp2", Channels: 2, Tags: map[string]string{"language": "mul"}},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID:    "zdf-multi-audio",
+		ClientFamily: "ios_safari",
+		Mode:         ports.ModeLive,
+		Format:       ports.FormatHLS,
+		Quality:      ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://10.10.55.64:17999/1:0:19:2B66:3F3:1:C00000:0:0:0:",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	// Maps: should map the 3 selected distinct renditions (AC3 5.1, Originalton mul, Audiodeskription)
+	assert.Contains(t, args, "0:3?", "Dolby Digital 5.1 mapped")
+	assert.Contains(t, args, "0:4?", "Originalton mapped")
+	assert.Contains(t, args, "0:2?", "Audiodeskription mapped")
+	assert.NotContains(t, args, "0:1?", "redundant MP2 stereo duplicate deduplicated")
+
+	// Multi-Audio flags
+	assert.Contains(t, args, "-master_pl_name")
+	assert.Contains(t, args, "index.m3u8")
+	assert.Contains(t, args, "-var_stream_map")
+	vsm, ok := valueAfter(args, "-var_stream_map")
+	require.True(t, ok)
+	assert.Contains(t, vsm, "v:0,agroup:audio,default:yes")
+	assert.Contains(t, vsm, "a:0,agroup:audio")
+	assert.Contains(t, vsm, "default:yes")
+	assert.Contains(t, vsm, "a:1,agroup:audio")
+	assert.Contains(t, vsm, "default:no")
+	assert.Contains(t, vsm, "a:2,agroup:audio")
+
+	require.NotEmpty(t, args)
+	assert.Contains(t, args[len(args)-1], "stream_%v.m3u8")
 }

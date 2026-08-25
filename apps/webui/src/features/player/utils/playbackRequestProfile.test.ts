@@ -15,12 +15,12 @@ import type { CapabilitySnapshot } from './playbackCapabilities';
 function buildCapabilities(overrides: Partial<CapabilitySnapshot> = {}): CapabilitySnapshot {
   return {
     capabilitiesVersion: 3,
+    clientIdentity: { platform: "linux", surface: "browser", browserEngine: "blink" },
     container: ['hls', 'mpegts', 'ts', 'mp4'],
     videoCodecs: ['h264', 'hevc'],
     audioCodecs: ['aac', 'ac3'],
     supportsHls: true,
     supportsRange: true,
-    deviceType: 'android_tv',
     runtimeProbeUsed: true,
     allowTranscode: true,
     maxVideo: {

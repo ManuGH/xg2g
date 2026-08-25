@@ -2,12 +2,16 @@ package v3
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -83,6 +87,22 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 		}, nil
 	}
 
+	occupiedResourceIDs := make(map[string]struct{})
+	nowUnix := time.Now().Unix()
+
+	// 1. Authoritative LeaseStore: unexpired hardware tuner leases (tuner:0, tuner:1, ...)
+	if leaseStore, ok := s.store.(store.LeaseStore); ok {
+		leases, lErr := leaseStore.ListLeases(queryCtx)
+		if lErr == nil {
+			for _, l := range leases {
+				if strings.HasPrefix(l.Key(), "tuner:") {
+					occupiedResourceIDs[l.Key()] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// 2. Active sessions occupying capacity
 	activeCount := 0
 	transcodeCount := 0
 	for _, sess := range sessions {
@@ -93,9 +113,29 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 		if sess.Profile.TranscodeVideo {
 			transcodeCount++
 		}
+
+		// Conservative accounting: If the session lease is unexpired (or no explicit lease expiry set),
+		// record its unique tuner resource identifier in the occupied set.
+		if sess.LeaseExpiresAtUnix <= 0 || nowUnix <= sess.LeaseExpiresAtUnix {
+			resKey := ""
+			if sess.ContextData != nil {
+				if slotStr := sess.ContextData[model.CtxKeyTunerSlot]; slotStr != "" {
+					if slot, err := strconv.Atoi(slotStr); err == nil {
+						resKey = model.LeaseKeyTunerSlot(slot)
+					}
+				}
+				if resKey == "" && sess.ContextData["tuner_scope"] != "" {
+					resKey = sess.ContextData["tuner_scope"]
+				}
+			}
+			if resKey == "" {
+				resKey = fmt.Sprintf("session:%s", sess.SessionID)
+			}
+			occupiedResourceIDs[resKey] = struct{}{}
+		}
 	}
 
-	availTuners := max(tuners-activeCount, 0)
+	availTuners := max(tuners-len(occupiedResourceIDs), 0)
 	state := admission.RuntimeState{
 		TunerSlots:       availTuners,
 		SessionsActive:   activeCount,

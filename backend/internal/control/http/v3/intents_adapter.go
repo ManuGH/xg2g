@@ -25,7 +25,41 @@ func (d *serverIntentDeps) DVRWindow() time.Duration {
 }
 
 func (d *serverIntentDeps) HasTunerSlots() bool {
-	return len(d.s.GetConfig().Engine.TunerSlots) > 0
+	if len(d.s.GetConfig().Engine.TunerSlots) > 0 {
+		return true
+	}
+	d.s.mu.RLock()
+	topoSvc := d.s.topologyService
+	d.s.mu.RUnlock()
+	if topoSvc != nil && topoSvc.EffectiveTunerCapacity() > 0 {
+		return true
+	}
+	return true
+}
+
+func (d *serverIntentDeps) CanStartService(serviceRef, sessionID string) (bool, string, string) {
+	d.s.mu.RLock()
+	topoSvc := d.s.topologyService
+	d.s.mu.RUnlock()
+
+	if topoSvc == nil {
+		return true, "", ""
+	}
+
+	decision, err := topoSvc.CanStartStream(serviceRef, sessionID)
+	if err != nil {
+		return true, "", ""
+	}
+
+	if !decision.Allowed {
+		probCode := decision.ProblemCode
+		if probCode == "" {
+			probCode = admission.CodeNoTuners
+		}
+		return false, probCode, decision.Reason
+	}
+
+	return true, "", ""
 }
 
 func (d *serverIntentDeps) SessionLeaseTTL() time.Duration {
