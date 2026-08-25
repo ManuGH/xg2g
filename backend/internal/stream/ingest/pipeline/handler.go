@@ -351,9 +351,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer sampler.Flush()
 
 	// Runtime Plan Transparency Headers
+	//
+	// They describe what is actually being sent, not what was decided. Attaching to
+	// a variant can fail - no transcoder, a worker that cannot start - and this
+	// request then falls back to the master stream unchanged. A header still
+	// claiming "transcode" would leave the client expecting AAC on a stream that is
+	// still carrying MP2, which is the one thing these headers exist to prevent.
+	servedFromVariant := releaseVariant != nil
+
 	videoMode := "direct"
 	effectiveVideoCodec := srcVideoCodec
-	if needsVideoTranscode {
+	if needsVideoTranscode && servedFromVariant {
 		videoMode = "transcode"
 		effectiveVideoCodec = targetVideoCodec
 	}
@@ -361,9 +369,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		effectiveVideoCodec = "unknown"
 	}
 
+	// The scan policy is a property of the transcode, so a passthrough stream has
+	// none to report either.
+	effectiveScanPolicy := scanPolicy
+	if !servedFromVariant {
+		effectiveScanPolicy = "passthrough"
+	}
+
 	audioMode := "direct"
 	effectiveAudioCodec := selectedTrack.Codec
-	if needsAudioTranscode {
+	if needsAudioTranscode && servedFromVariant {
 		audioMode = "transcode"
 		effectiveAudioCodec = targetAudioCodec
 	}
@@ -374,7 +389,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Xg2g-Video-Mode", videoMode)
 	w.Header().Set("X-Xg2g-Video-Source", srcVideoCodec)
 	w.Header().Set("X-Xg2g-Video-Effective", effectiveVideoCodec)
-	w.Header().Set("X-Xg2g-Scan-Policy", scanPolicy)
+	w.Header().Set("X-Xg2g-Scan-Policy", effectiveScanPolicy)
 	w.Header().Set("X-Xg2g-Audio-Mode", audioMode)
 	w.Header().Set("X-Xg2g-Audio-Source", selectedTrack.Codec)
 	w.Header().Set("X-Xg2g-Audio-Effective", effectiveAudioCodec)
