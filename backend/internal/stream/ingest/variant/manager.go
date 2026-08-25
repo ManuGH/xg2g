@@ -14,6 +14,21 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
 
+const (
+	// idleWorkerTimeout is how long a worker with no subscribers is kept before it
+	// is stopped. A worker costs one FFmpeg process, so it cannot be held
+	// indefinitely - and it is not free to recreate either, being a process start
+	// plus the wait for the next random access point, so a client that switches
+	// audio track and back finds it still running. The ingest sessions upstream
+	// hold open for a comparable window for the same reason.
+	idleWorkerTimeout = 10 * time.Second
+
+	// idleSweepInterval is how often idle workers are looked for. The last
+	// subscriber's release is deliberately not the moment to reap: the point of the
+	// timeout is the window after it.
+	idleSweepInterval = 2 * time.Second
+)
+
 // AudioVariantManager manages active AudioVariantWorkers for a single SessionPipeline.
 // It ensures that multiple concurrent clients requesting the same variant key share
 // the exact same transcode worker, avoiding duplicate FFmpeg processes and CPU overhead.
@@ -35,17 +50,38 @@ type AudioVariantManager struct {
 	// things being shared between.
 	workerCtx      context.Context
 	stopAllWorkers context.CancelFunc
+
+	// The idle policy is what reclaims a worker now that no subscriber's context
+	// can. It is held per manager rather than as a constant so a test does not have
+	// to wait out the production timeout to observe it.
+	idleTimeout   time.Duration
+	sweepInterval time.Duration
+	sweepDone     chan struct{}
 }
 
 // NewAudioVariantManager creates a manager downstream of the given MasterRing.
 func NewAudioVariantManager(masterRing *ring.MasterRing) *AudioVariantManager {
+	return newAudioVariantManager(masterRing, idleWorkerTimeout, idleSweepInterval)
+}
+
+// newAudioVariantManager takes the idle policy as parameters so it can be exercised
+// without a test waiting out the production timeout.
+func newAudioVariantManager(masterRing *ring.MasterRing, idleTimeout, sweepInterval time.Duration) *AudioVariantManager {
 	workerCtx, stopAllWorkers := context.WithCancel(context.Background())
-	return &AudioVariantManager{
+
+	m := &AudioVariantManager{
 		masterRing:     masterRing,
 		workers:        make(map[string]*AudioVariantWorker),
 		workerCtx:      workerCtx,
 		stopAllWorkers: stopAllWorkers,
+		idleTimeout:    idleTimeout,
+		sweepInterval:  sweepInterval,
+		sweepDone:      make(chan struct{}),
 	}
+
+	go m.sweepIdle()
+
+	return m
 }
 
 // GetOrCreateWorker retrieves an existing running worker for the given key, or spawns and starts a new one.
@@ -120,54 +156,61 @@ func (m *AudioVariantManager) ReleaseWorker(key AudioVariantKey) {
 // ReleaseWorkerInstance releases one subscriber's hold on the worker it actually
 // attached to, whether or not it is still the one mapped to its key.
 //
-// The last hold to go stops the worker. That is the whole reclaim path: a
-// subscriber's own context ends its own subscription and nothing more, so the
-// refcount is what decides when the process is no longer needed. Without this the
-// ownership fix would trade one fault for another - no client could kill a shared
-// worker any more, and nothing else would ever reclaim one either, because
-// CleanupIdle has no caller.
+// Releasing does not stop anything. Whether the worker is still wanted is a
+// question about all of its subscribers, not about the one that just left, and
+// answering it here would make a client that switches audio track pay for a new
+// FFmpeg process every time. The idle policy decides, once the worker has actually
+// been unwanted for a while.
 func (m *AudioVariantManager) ReleaseWorkerInstance(worker *AudioVariantWorker) {
 	if worker == nil {
 		return
 	}
-
-	m.mu.Lock()
 	worker.RemoveSubscriber()
-	reclaim := worker.SubscriberCount() == 0
-	if reclaim {
-		// Only if it is still the mapped one. After a generation cut the key points
-		// at the replacement, and the entry being dropped here must not be it.
-		keyStr := worker.Key().String()
-		if current, ok := m.workers[keyStr]; ok && current == worker {
+}
+
+// CleanupIdle stops and removes any workers that have had 0 active subscribers for
+// at least idleTimeout. It is driven by sweepIdle, and stays exported so a caller
+// can force the policy without waiting for the next tick.
+func (m *AudioVariantManager) CleanupIdle(idleTimeout time.Duration) {
+	m.mu.Lock()
+	var idle []*AudioVariantWorker
+	for keyStr, worker := range m.workers {
+		// Subscribed is not idle, whatever the timeout says. At idleTimeout 0 the
+		// duration alone would match a worker clients are watching right now, which
+		// is the failure the ownership rule exists to prevent, reached from the
+		// other direction.
+		if worker.SubscriberCount() > 0 {
+			continue
+		}
+		if worker.IdleDuration() >= idleTimeout {
+			idle = append(idle, worker)
 			delete(m.workers, keyStr)
 		}
 	}
 	m.mu.Unlock()
 
-	// Outside the lock: Stop waits for the process to go, and holding the manager
-	// mutex across that would block every other client's attach behind one
-	// disconnect.
-	if reclaim {
+	// Stop outside the lock: it waits for FFmpeg to exit, and a client attaching to
+	// an unrelated variant must not queue behind that. Removal happened under the
+	// lock, so a worker being stopped can no longer be handed out.
+	for _, worker := range idle {
 		worker.Stop()
 	}
 }
 
-// CleanupIdle stops and removes any workers that have had 0 active subscribers for
-// at least idleTimeout.
-//
-// It has no production caller, and with reclaim happening at refcount zero it
-// normally finds nothing: a worker does not survive its last subscriber long
-// enough to become idle. It is kept as a sweep for a worker whose release path was
-// somehow missed, and is where a warm-hold policy would go if variant workers ever
-// need to outlive a zap the way ingest sessions already do.
-func (m *AudioVariantManager) CleanupIdle(idleTimeout time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// sweepIdle enforces the idle policy until the manager is closed. Nothing else
+// drives it: a subscriber's own context ends its own subscription and nothing more.
+func (m *AudioVariantManager) sweepIdle() {
+	defer close(m.sweepDone)
 
-	for keyStr, worker := range m.workers {
-		if worker.IdleDuration() >= idleTimeout {
-			worker.Stop()
-			delete(m.workers, keyStr)
+	ticker := time.NewTicker(m.sweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.workerCtx.Done():
+			return
+		case <-ticker.C:
+			m.CleanupIdle(m.idleTimeout)
 		}
 	}
 }
@@ -187,13 +230,18 @@ func (m *AudioVariantManager) Close() {
 		return
 	}
 	m.closed = true
-	m.stopAllWorkers()
 	workersToStop := make([]*AudioVariantWorker, 0, len(m.workers))
 	for _, w := range m.workers {
 		workersToStop = append(workersToStop, w)
 	}
 	m.workers = make(map[string]*AudioVariantWorker)
 	m.mu.Unlock()
+
+	// Cancelling first starts every worker's teardown at once, so the Stop calls
+	// below only wait for them rather than serialize them. The sweep is joined
+	// before that, so it cannot be reaping into a map that is being torn down.
+	m.stopAllWorkers()
+	<-m.sweepDone
 
 	for _, w := range workersToStop {
 		w.Stop()
