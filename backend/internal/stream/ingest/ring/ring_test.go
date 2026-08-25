@@ -567,13 +567,29 @@ func TestMasterRing_MultiReaderConcurrency(t *testing.T) {
 	}
 }
 
+// An overrun on a service with no video resumes at the tail: there are no random
+// access points to wait for and no decoder state to corrupt. The topology has to be
+// known for that to be decidable, so the PMT below is pushed before the subscriber
+// attaches - a ring that has parsed no PMT waits instead, which is covered by
+// TestSubscriberReader_UnknownTopologyWaitsRatherThanResumingAtTail.
 func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 	r := NewMasterRing(10 * TSPacketSize)
 	defer r.Close()
 
+	for _, pkt := range createMultiPacketPAT(100) {
+		_, _ = r.Push(pkt)
+	}
+	for _, pkt := range createMultiPacketPMTWithVersion(100, 0, false, false, 0, 1) {
+		_, _ = r.Push(pkt)
+	}
+	if r.videoPID != 0 {
+		t.Fatalf("test setup: expected an audio-only PMT, got video PID %d", r.videoPID)
+	}
+
 	reader := r.NewSubscriberReader(0)
 	defer reader.Close()
 
+	baseline := r.Tail()
 	for i := 0; i < 30; i++ {
 		_, _ = r.Push(createBasicPacket(256, false, uint8(i%16)))
 	}
@@ -584,8 +600,13 @@ func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 		t.Fatalf("read after overrun failed: n=%d err=%v", n, err)
 	}
 
-	if reader.DroppedBytes() != 20*TSPacketSize {
-		t.Fatalf("expected 3760 dropped bytes, got %d", reader.DroppedBytes())
+	// Everything the ring evicted between the subscriber's start offset and the
+	// tail it found on wake-up, and nothing else.
+	if want := r.Tail() - baseline; reader.DroppedBytes() != want {
+		t.Fatalf("expected %d dropped bytes, got %d", want, reader.DroppedBytes())
+	}
+	if got := reader.ResyncSkippedBytes(); got != 0 {
+		t.Fatalf("audio-only recovery skipped %d bytes; there is no keyframe to skip to", got)
 	}
 }
 

@@ -7,6 +7,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -385,6 +386,61 @@ func TestPipeline_PrimedAttachWithoutKeyframeFailsDeterministically(t *testing.T
 }
 
 // 5. Slow Subscriber Isolation: Overrun subscriber drops packets without affecting fast subscribers
+// audioOnlyPSI builds a PAT and a PMT that names one audio elementary stream and no
+// video. A ring fed this knows what the service is - which is what decides how an
+// overrun recovers - while still holding no random access points, so an overtaken
+// subscriber resumes at the tail exactly as it did before that distinction existed.
+func audioOnlyPSI(t *testing.T) []byte {
+	t.Helper()
+
+	const pmtPID = 100
+
+	pat := []byte{
+		0x00,
+		0xB0, 0x0D,
+		0x00, 0x01,
+		0xC1,
+		0x00, 0x00,
+		0x00, 0x01, // program_number = 1
+		0xE0 | byte((pmtPID>>8)&0x1F), byte(pmtPID & 0xFF),
+		0x00, 0x00, 0x00, 0x00,
+	}
+	binary.BigEndian.PutUint32(pat[12:16], ring.CalculateMPEG2CRC32(pat[:12]))
+
+	pmt := []byte{
+		0x02,
+		0xB0, 0x12,
+		0x00, 0x01,
+		0xC1,
+		0x00, 0x00,
+		0xE0, 0x55, // PCR PID = audio
+		0xF0, 0x00,
+
+		0x06,       // AC-3 audio, no video stream at all
+		0xE0, 0x55, // audio PID 85
+		0xF0, 0x00,
+
+		0x00, 0x00, 0x00, 0x00,
+	}
+	binary.BigEndian.PutUint32(pmt[17:21], ring.CalculateMPEG2CRC32(pmt[:17]))
+
+	wrap := func(pid uint16, section []byte) []byte {
+		pkt := make([]byte, ring.TSPacketSize)
+		pkt[0] = ring.SyncByte
+		pkt[1] = 0x40 | byte((pid>>8)&0x1F)
+		pkt[2] = byte(pid & 0xFF)
+		pkt[3] = 0x10
+		pkt[4] = 0x00 // pointer_field
+		copy(pkt[5:], section)
+		for i := 5 + len(section); i < ring.TSPacketSize; i++ {
+			pkt[i] = 0xFF
+		}
+		return pkt
+	}
+
+	return append(wrap(0, pat), wrap(pmtPID, pmt)...)
+}
+
 func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 	const smallRingCapacity = 50 * ring.TSPacketSize // 50 packets capacity
 
@@ -454,6 +510,13 @@ func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 				readTotal += n
 			}
 		}()
+	}
+
+	// State what the service is before flooding it. Without a parsed PMT the ring
+	// cannot tell an audio-only service from a video one whose topology has not
+	// arrived yet, and an overrun then waits rather than resuming at the tail.
+	if _, err := pw.Write(audioOnlyPSI(t)); err != nil {
+		t.Fatalf("pipe write of PSI failed: %v", err)
 	}
 
 	// Feed 200 packets (> 4x ring capacity) in paced slices so fast readers keep up with head
