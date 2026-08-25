@@ -1114,7 +1114,16 @@ func (r *MasterRing) PrimedAttachPoint() PrimedAttachPoint {
 func (r *MasterRing) LatestKeyframeOffset() (int64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.latestKeyframeOffsetLocked()
+}
 
+// latestKeyframeOffsetLocked reports the newest random access point still held by
+// the ring. A keyframe that has fallen behind the tail is gone even though its
+// offset is still indexed, so it is not a valid entry point.
+//
+// Callers that already hold r.mu use this; the exported wrappers must not, because
+// r.mu is not reentrant and SubscriberReader.Read holds it across recovery.
+func (r *MasterRing) latestKeyframeOffsetLocked() (int64, bool) {
 	if len(r.keyframeOffsets) == 0 {
 		return 0, false
 	}
@@ -1129,7 +1138,12 @@ func (r *MasterRing) LatestKeyframeOffset() (int64, bool) {
 func (r *MasterRing) PATPMTPreamble() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.patpmtPreambleLocked()
+}
 
+// patpmtPreambleLocked builds the active topology preamble for callers already
+// holding r.mu. See latestKeyframeOffsetLocked for why the split exists.
+func (r *MasterRing) patpmtPreambleLocked() []byte {
 	var preamble []byte
 	for _, pkt := range r.rawPATPackets {
 		preamble = append(preamble, pkt...)
