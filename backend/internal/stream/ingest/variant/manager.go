@@ -75,7 +75,13 @@ func (m *AudioVariantManager) GetOrCreateWorker(ctx context.Context, key AudioVa
 	return worker, nil
 }
 
-// ReleaseWorker decrements the subscriber count on the worker for the given key.
+// ReleaseWorker decrements the subscriber count on the worker currently mapped to
+// the given key.
+//
+// Prefer ReleaseWorkerInstance when the caller still holds the worker it attached
+// to. A key no longer identifies one worker for all time: a generation cut replaces
+// the entry, and releasing by key then credits the decrement to the replacement -
+// pushing a worker toward idle on behalf of subscribers that never used it.
 func (m *AudioVariantManager) ReleaseWorker(key AudioVariantKey) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -84,6 +90,15 @@ func (m *AudioVariantManager) ReleaseWorker(key AudioVariantKey) {
 	if worker, exists := m.workers[keyStr]; exists {
 		worker.RemoveSubscriber()
 	}
+}
+
+// ReleaseWorkerInstance decrements the subscriber count on the worker the caller
+// actually attached to, whether or not it is still the one mapped to its key.
+func (m *AudioVariantManager) ReleaseWorkerInstance(worker *AudioVariantWorker) {
+	if worker == nil {
+		return
+	}
+	worker.RemoveSubscriber()
 }
 
 // CleanupIdle stops and removes any workers that have had 0 active subscribers for at least idleTimeout.
