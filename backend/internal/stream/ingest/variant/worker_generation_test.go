@@ -6,123 +6,24 @@ package variant
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/tsfixture"
 )
-
-// The captures under testdata/segments carry a single PMT version each, so none of
-// them contains a topology change on its own. Two of them do differ in topology at
-// identical PIDs, which is enough to build one at run time:
-//
-//	verify_final_v3.ts    H.264 on PID 256, AAC on PID 257
-//	test_hevc_stream.ts   HEVC  on PID 256, AAC on PID 257
-//	verify_seg.ts         H.264 on PID 256, MP2 on PID 257
-//
-// Concatenating two of them yields real elementary data on both sides of the cut,
-// which a synthetic fixture could not. The second capture's PMT version has to be
-// rewritten first: the ring decides a topology changed from the version number and
-// the program number, and both captures use version 0 for program 1. Without the
-// bump the change would be invisible - which is itself worth knowing about spliced
-// sources, even though spec-conformant DVB always increments.
-
-const capturePMTPID = 4096
-
-// bumpPMTVersion rewrites every complete PMT section in a capture to the given
-// version, recomputing the section CRC. Sections that span packets are left alone;
-// the captures repeat their PMT often enough that the single-packet ones suffice.
-func bumpPMTVersion(t *testing.T, data []byte, version uint8) []byte {
-	t.Helper()
-
-	out := append([]byte(nil), data...)
-	offset := -1
-	for i := 0; i < ring.TSPacketSize && offset < 0; i++ {
-		aligned := true
-		for k := 0; k < 5; k++ {
-			if i+k*ring.TSPacketSize >= len(out) || out[i+k*ring.TSPacketSize] != ring.SyncByte {
-				aligned = false
-				break
-			}
-		}
-		if aligned {
-			offset = i
-		}
-	}
-	if offset < 0 {
-		t.Fatal("capture is not TS aligned")
-	}
-
-	rewritten := 0
-	for k := 0; offset+(k+1)*ring.TSPacketSize <= len(out); k++ {
-		s := offset + k*ring.TSPacketSize
-		pid := (uint16(out[s+1]&0x1F) << 8) | uint16(out[s+2])
-		pusi := out[s+1]&0x40 != 0
-		afc := (out[s+3] >> 4) & 0x03
-		if pid != capturePMTPID || !pusi || afc == 0 || afc == 2 {
-			continue
-		}
-
-		base := s + 4
-		if afc == 3 {
-			base = s + 5 + int(out[s+4])
-		}
-		if base >= s+ring.TSPacketSize {
-			continue
-		}
-		sec := base + 1 + int(out[base])
-		if sec+12 >= s+ring.TSPacketSize || out[sec] != 0x02 {
-			continue
-		}
-
-		length := 3 + int(uint16(out[sec+1]&0x0F)<<8|uint16(out[sec+2]))
-		if sec+length > s+ring.TSPacketSize {
-			continue // section continues in the next packet
-		}
-
-		out[sec+5] = (out[sec+5] & 0xC1) | ((version & 0x1F) << 1)
-		crc := ring.CalculateMPEG2CRC32(out[sec : sec+length-4])
-		binary.BigEndian.PutUint32(out[sec+length-4:sec+length], crc)
-		rewritten++
-	}
-
-	if rewritten == 0 {
-		t.Fatal("no complete PMT section found to bump")
-	}
-	return out
-}
-
-func loadCapture(t *testing.T, name string) []byte {
-	t.Helper()
-
-	data, err := os.ReadFile("../../../../testdata/segments/" + name)
-	if err != nil {
-		t.Skipf("skipping: capture %s not available: %v", name, err)
-	}
-	return data
-}
-
-func requireFFmpeg(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Skip("skipping: ffmpeg not available")
-	}
-}
 
 // runGenerationCut feeds a worker the first capture, waits for it to be producing,
 // then feeds the second one with a bumped PMT version, and reports how the worker
 // ended.
 func runGenerationCut(t *testing.T, firstCapture, secondCapture string, key AudioVariantKey) error {
 	t.Helper()
-	requireFFmpeg(t)
+	skipIfNoFFmpeg(t)
 
-	first := loadCapture(t, firstCapture)
-	second := bumpPMTVersion(t, loadCapture(t, secondCapture), 1)
+	first := tsfixture.Load(t, firstCapture)
+	second := tsfixture.BumpPMTVersion(t, tsfixture.Load(t, secondCapture), 1)
 
 	masterRing := ring.NewMasterRing(16 * 1024 * 1024)
 	defer masterRing.Close()
@@ -237,10 +138,10 @@ func TestAudioVariantWorker_AudioCodecChange_EndsWithGenerationCut(t *testing.T)
 // This is what makes ending the worker a correct policy rather than just a safe
 // one. A cut the consumer cannot recover from would only move the breakage.
 func TestAudioVariant_GenerationCut_ClientReattachesToNewWorker(t *testing.T) {
-	requireFFmpeg(t)
+	skipIfNoFFmpeg(t)
 
-	first := loadCapture(t, "verify_final_v3.ts")
-	second := bumpPMTVersion(t, loadCapture(t, "test_hevc_stream.ts"), 1)
+	first := tsfixture.Load(t, "verify_final_v3.ts")
+	second := tsfixture.BumpPMTVersion(t, tsfixture.Load(t, "test_hevc_stream.ts"), 1)
 
 	masterRing := ring.NewMasterRing(16 * 1024 * 1024)
 	defer masterRing.Close()

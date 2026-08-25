@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ingeststats"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
 
@@ -36,6 +37,21 @@ var (
 	// one, and its subscribers re-attach primed on the new topology.
 	ErrUpstreamGenerationChanged = errors.New("upstream topology generation changed")
 )
+
+// workerStopReason classifies how a worker's run loop ended, for the one metric
+// that must not conflate the two: a topology cut is the lifecycle working as
+// designed, and counting it as a crash would make a channel that legitimately
+// changes its PMT look like a transcoder that keeps falling over.
+func workerStopReason(err error) string {
+	switch {
+	case errors.Is(err, ErrUpstreamGenerationChanged):
+		return ingeststats.WorkerStopGenerationChange
+	case err == nil, errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return ingeststats.WorkerStopShutdown
+	default:
+		return ingeststats.WorkerStopError
+	}
+}
 
 const (
 	// masterAttachTimeout bounds the wait for the upstream ring to offer a random
@@ -181,6 +197,8 @@ func (w *AudioVariantWorker) Start(ctx context.Context) {
 		w.errMu.Lock()
 		w.runErr = err
 		w.errMu.Unlock()
+
+		ingeststats.RecordVariantWorkerStopped(workerStopReason(err))
 	}()
 }
 
@@ -376,12 +394,20 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			_ = masterReader.Close()
 		}()
 
+		// The upstream subscription is sampled on the loop that already reads it.
+		// Its lag is the one that decides whether this worker survives: an overtaken
+		// variant worker loses its FFmpeg process, where a native client would only
+		// re-enter at the next random access point.
+		sampler := ingeststats.NewSubscriberSampler(ingeststats.RoleVariantWorker, masterReader)
+		defer sampler.Flush()
+
 		buf := make([]byte, 32*1024)
 		for {
 			if ctx.Err() != nil {
 				return
 			}
 			n, rerr := masterReader.Read(buf)
+			sampler.Sample()
 
 			// Checked between the read and the write, not before the read: the read
 			// can block for a whole GOP while waiting to recover, and the topology
