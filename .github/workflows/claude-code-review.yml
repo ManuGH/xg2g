@@ -12,8 +12,6 @@ on:
 
 jobs:
   claude-review:
-    if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,6 +27,10 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        if: ${{ env.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         uses: anthropics/claude-code-action@6bcfb8263aca9b0eab0aba20d96dddd74de2875f # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
