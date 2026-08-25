@@ -1150,3 +1150,74 @@ seg_000000.m4s
 	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// A ticket is echoed into the rewritten playlist and cached in lkgPlaylists,
+// so whatever survives extraction ends up in a body served to later requests.
+// These cases are the reason extraction validates the shape.
+func TestExtractRequestTicketRejectsValuesTheServerNeverIssued(t *testing.T) {
+	const issued = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	t.Run("accepts an issued ticket from every source", func(t *testing.T) {
+		for _, source := range []struct {
+			name  string
+			build func() *http.Request
+		}{
+			{"query ticket", func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/x.m3u8?ticket="+issued, nil)
+			}},
+			{"query t", func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/x.m3u8?t="+issued, nil)
+			}},
+			{"header", func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				r.Header.Set("X-Playback-Ticket", issued)
+				return r
+			}},
+			{"cookie", func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				r.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: issued})
+				return r
+			}},
+		} {
+			t.Run(source.name, func(t *testing.T) {
+				assert.Equal(t, issued, extractRequestTicket(source.build()))
+			})
+		}
+	})
+
+	t.Run("rejects anything else", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			ticket string
+		}{
+			// A newline does not stay inside the query string it is appended
+			// to: rewritePlaylist terminates every line with '\n', so this
+			// injects a playlist directive of the attacker's choosing.
+			{"playlist directive injection", issued + "\n#EXT-X-KEY:METHOD=AES-128,URI=\"http://attacker.example/k\""},
+			{"carriage return", issued + "\r\n#EXT-X-ENDLIST"},
+			{"html payload", "<script>alert(1)</script>"},
+			{"query parameter smuggling", issued + "&redirect=http://attacker.example"},
+			{"uppercase hex is not what is minted", strings.ToUpper(issued)},
+			{"too short", strings.Repeat("a", 63)},
+			{"too long", strings.Repeat("a", 65)},
+			{"non hex", strings.Repeat("g", 64)},
+			{"empty", ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				r := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				q := r.URL.Query()
+				q.Set("ticket", tc.ticket)
+				r.URL.RawQuery = q.Encode()
+				assert.Empty(t, extractRequestTicket(r), "an unissued ticket must not reach the playlist body")
+
+				h := httptest.NewRequest(http.MethodGet, "/x.m3u8", nil)
+				// Header values cannot carry a bare newline, so the header case
+				// covers the payloads that survive header encoding.
+				if !strings.ContainsAny(tc.ticket, "\r\n") {
+					h.Header.Set("X-Playback-Ticket", tc.ticket)
+					assert.Empty(t, extractRequestTicket(h))
+				}
+			})
+		}
+	})
+}

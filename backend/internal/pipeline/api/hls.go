@@ -683,20 +683,43 @@ func extractHLSAttribute(line, attr string) string {
 	return ""
 }
 
+// playbackTicketPattern is the shape of a ticket this server issues: 32 random
+// bytes, hex-encoded (see playbackTicketStore.issue). Nothing else can be a
+// live ticket, so nothing else is worth carrying.
+var playbackTicketPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// extractRequestTicket returns the playback ticket a media request carries, or
+// "" if it carries nothing that could be one.
+//
+// # Why the shape is checked here
+//
+// The ticket is echoed back into the rewritten playlist, appended to every
+// segment URI, and the result is stored in lkgPlaylists and served to later
+// requests for the same session. Taken together that means an unchecked value
+// from ?ticket=, ?t= or X-Playback-Ticket would be attacker-chosen text placed
+// into a response body handed to somebody else. A value containing a newline
+// would not even stay in the query string it was appended to: rewritePlaylist
+// writes each line followed by '\n', so an embedded newline injects a further
+// playlist line — an #EXT-X-KEY pointing at another host, for instance.
+//
+// Validating rather than escaping is what fits here: the server mints these
+// ids itself, so a value that does not have the minted shape was not minted
+// here and cannot authorise anything. Treating it as absent is both the safe
+// answer and the honest one.
 func extractRequestTicket(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if qTicket := r.URL.Query().Get("ticket"); qTicket != "" {
+	if qTicket := r.URL.Query().Get("ticket"); playbackTicketPattern.MatchString(qTicket) {
 		return qTicket
 	}
-	if qTicket := r.URL.Query().Get("t"); qTicket != "" {
+	if qTicket := r.URL.Query().Get("t"); playbackTicketPattern.MatchString(qTicket) {
 		return qTicket
 	}
-	if hTicket := r.Header.Get("X-Playback-Ticket"); hTicket != "" {
+	if hTicket := r.Header.Get("X-Playback-Ticket"); playbackTicketPattern.MatchString(hTicket) {
 		return hTicket
 	}
-	if c, err := r.Cookie("xg2g_playback"); err == nil && c.Value != "" {
+	if c, err := r.Cookie("xg2g_playback"); err == nil && playbackTicketPattern.MatchString(c.Value) {
 		return c.Value
 	}
 	return ""
@@ -735,6 +758,11 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 			}
 			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
 				lkgBytes := lkgRaw.([]byte)
+				// This path writes the body directly instead of going through
+				// http.ServeContent, so nothing else would state the type and
+				// net/http would fall back to sniffing the bytes.
+				w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.Header().Set("Content-Length", strconv.Itoa(len(lkgBytes)))
 				_, _ = w.Write(lkgBytes)
 				return
