@@ -140,7 +140,7 @@ func buildTrack(
 	var evidence []Observation
 
 	// 1. Resolve Codec
-	var codec AudioCodec = CodecUnknown
+	codec := CodecUnknown
 	if pmt != nil {
 		if pmt.Codec != "" {
 			codec = NormalizeCodec(pmt.Codec)
@@ -277,7 +277,7 @@ func buildTrack(
 func computeStructuralRevision(tracks []AudioTrack) uint64 {
 	hasher := fnv.New64a()
 	for _, t := range tracks {
-		fmt.Fprintf(hasher, "%d:%s:%d:%s:%s:%t:%t:%t|",
+		_, _ = fmt.Fprintf(hasher, "%d:%s:%d:%s:%s:%t:%t:%t|",
 			t.PID,
 			t.Codec,
 			t.Channels,
@@ -295,7 +295,7 @@ func computeStructuralRevision(tracks []AudioTrack) uint64 {
 func computeMetadataRevision(tracks []AudioTrack) uint64 {
 	hasher := fnv.New64a()
 	for _, t := range tracks {
-		fmt.Fprintf(hasher, "%d:%s:%t:%t:%s:%d:%d|",
+		_, _ = fmt.Fprintf(hasher, "%d:%s:%t:%t:%s:%d:%d|",
 			t.PID,
 			t.Label,
 			t.BroadcastDefault,

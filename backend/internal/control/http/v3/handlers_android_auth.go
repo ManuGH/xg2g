@@ -228,7 +228,7 @@ func deviceGrantResponse(grant *identity.DeviceGrantResult) DeviceGrantResponse 
 		TokenType:    grant.TokenType,
 		AccessToken:  grant.AccessToken,
 		RefreshToken: grant.RefreshToken,
-		ExpiresIn:    clampTokenLifetimeSeconds(grant.ExpiresIn),
+		ExpiresIn:    contractInt32(grant.ExpiresIn),
 		DeviceId:     grant.DeviceID,
 		Scope:        grant.Scope,
 	}

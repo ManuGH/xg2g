@@ -233,19 +233,19 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("stdin pipe: %w", err)
 	}
-	defer stdin.Close()
+	defer func() { _ = stdin.Close() }()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
-	defer stdout.Close()
+	defer func() { _ = stdout.Close() }()
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("stderr pipe: %w", err)
 	}
-	defer stderr.Close()
+	defer func() { _ = stderr.Close() }()
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start ffmpeg: %w", err)
@@ -273,7 +273,7 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer stdin.Close()
+		defer func() { _ = stdin.Close() }()
 
 		preamble := w.masterRing.PATPMTPreamble()
 		if len(preamble) > 0 {
@@ -287,11 +287,11 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			startOffset = kfOffset
 		}
 		reader := w.masterRing.NewSubscriberReader(startOffset)
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 
 		go func() {
 			<-ctx.Done()
-			reader.Close()
+			_ = reader.Close()
 		}()
 
 		buf := make([]byte, 32*1024)
@@ -328,7 +328,11 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 				chunk = chunk[start:]
 				pushLen := (len(chunk) / ring.TSPacketSize) * ring.TSPacketSize
 				if pushLen > 0 {
-					w.variantRing.Push(chunk[:pushLen])
+					// Two failures are possible and neither is actionable here:
+					// a non-packet-sized push, which pushLen has just ruled out, and
+					// a closed ring, which means this worker is being torn down and
+					// the read loop below is about to end anyway.
+					_, _ = w.variantRing.Push(chunk[:pushLen])
 				}
 				rem := len(chunk) - pushLen
 				if rem > 0 {

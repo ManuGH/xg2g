@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"os/exec"
 	"strings"
@@ -42,6 +43,32 @@ type liveAudioSelection struct {
 	AudioArgs    []string
 	IsMultiAudio bool
 	VarStreamMap string
+}
+
+// syntheticStreamPID stands in for a PID ffprobe did not report.
+//
+// Derived from the stream's ordinal so the map still has a distinct key per
+// stream. A negative or absurd index is not a stream this code can address, and
+// returns the same 0 the caller already treats as unknown.
+func syntheticStreamPID(index int) uint16 {
+	if index < 0 || index >= math.MaxUint16 {
+		return 0
+	}
+	return uint16(index + 1) // #nosec G115 -- bounded by the check above
+}
+
+// parsedStreamPID narrows a PID parsed out of ffprobe's stream id.
+//
+// A transport-stream PID is 13 bits, so anything that does not fit a uint16 did
+// not come from a PID and is reported as 0 — the same "unknown" the caller
+// already handles — rather than being truncated into a valid-looking PID that
+// belongs to a different stream. ffprobe's `id` is free text, so this is input
+// validation, not a formality.
+func parsedStreamPID(value uint64) uint16 {
+	if value > math.MaxUint16 {
+		return 0
+	}
+	return uint16(value)
 }
 
 func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string) liveAudioSelection {
@@ -97,16 +124,16 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 			var p uint64
 			if strings.HasPrefix(strings.ToLower(s.ID), "0x") {
 				if _, err := fmt.Sscanf(s.ID, "0x%x", &p); err == nil {
-					pid = uint16(p)
+					pid = parsedStreamPID(p)
 				}
 			} else {
 				if _, err := fmt.Sscanf(s.ID, "%d", &p); err == nil {
-					pid = uint16(p)
+					pid = parsedStreamPID(p)
 				}
 			}
 		}
 		if pid == 0 {
-			pid = uint16(s.Index + 1)
+			pid = syntheticStreamPID(s.Index)
 		}
 		streamByPID[pid] = s
 
@@ -433,16 +460,16 @@ func (a *LocalAdapter) ProbeAudioTopology(ctx context.Context, sessionID, servic
 			var p uint64
 			if strings.HasPrefix(strings.ToLower(s.ID), "0x") {
 				if _, err := fmt.Sscanf(s.ID, "0x%x", &p); err == nil {
-					pid = uint16(p)
+					pid = parsedStreamPID(p)
 				}
 			} else {
 				if _, err := fmt.Sscanf(s.ID, "%d", &p); err == nil {
-					pid = uint16(p)
+					pid = parsedStreamPID(p)
 				}
 			}
 		}
 		if pid == 0 {
-			pid = uint16(s.Index + 1)
+			pid = syntheticStreamPID(s.Index)
 		}
 
 		probeObs = append(probeObs, audiotopology.ProbeTrackObservation{

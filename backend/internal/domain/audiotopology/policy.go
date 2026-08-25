@@ -223,11 +223,12 @@ func evaluateDefaultScore(track AudioTrack, primaryLangCode string) int {
 	}
 
 	// Purpose (+500 for Main)
-	if track.Purpose == AudioPurposeMain {
+	switch track.Purpose {
+	case AudioPurposeMain:
 		score += 500
-	} else if track.Purpose == AudioPurposeAlternate {
+	case AudioPurposeAlternate:
 		score -= 200
-	} else if track.Purpose == AudioPurposeCommentary {
+	case AudioPurposeCommentary:
 		score -= 400
 	}
 

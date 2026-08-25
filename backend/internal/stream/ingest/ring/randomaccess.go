@@ -102,7 +102,10 @@ func (b *bitReader) readBit() (uint32, bool) {
 		return 0, false
 	}
 	byteIdx := b.pos >> 3
-	bitIdx := 7 - uint(b.pos&7)
+	// `& 7` leaves 0..7, so the conversion cannot overflow. gosec cannot see a
+	// mask, and widening `pos` to uint would push the same conversion onto every
+	// caller instead of removing it.
+	bitIdx := 7 - uint(b.pos&7) // #nosec G115 -- masked to 0..7 on the line above
 	b.pos++
 	return uint32((b.data[byteIdx] >> bitIdx) & 1), true
 }
@@ -139,7 +142,9 @@ func (b *bitReader) readUE() (uint32, bool) {
 		}
 		suffix = (suffix << 1) | bit
 	}
-	return (1 << uint(leadingZeros)) - 1 + suffix, true
+	// leadingZeros is bounded by the loop that produced it, which stops well
+	// before the width of the shift.
+	return (1 << uint(leadingZeros)) - 1 + suffix, true // #nosec G115 -- loop-bounded above
 }
 
 // removeEmulationPrevention strips the 0x03 bytes an encoder inserts to keep

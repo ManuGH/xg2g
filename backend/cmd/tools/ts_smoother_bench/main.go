@@ -69,14 +69,15 @@ func recordTrace(url, tracePath string, duration time.Duration) {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
+	// #nosec G304 -- developer bench tool; the trace path is the operator's own flag
 	f, err := os.Create(tracePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create trace file: %v\n", err)
 		os.Exit(1)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	buf := make([]byte, 64*1024)
 	lastArrival := time.Now()
@@ -92,7 +93,7 @@ func recordTrace(url, tracePath string, duration time.Duration) {
 
 			// Write: [int64 delayNs][int32 dataLen][bytes]
 			_ = binary.Write(f, binary.BigEndian, delay)
-			_ = binary.Write(f, binary.BigEndian, int32(n))
+			_ = binary.Write(f, binary.BigEndian, int32(n)) // #nosec G115 -- n is a read length bounded by len(buf)
 			_, _ = f.Write(buf[:n])
 
 			totalBytes += int64(n)
@@ -113,6 +114,7 @@ type TimedTraceReader struct {
 }
 
 func LoadTrace(tracePath string) ([]TraceChunk, error) {
+	// #nosec G304 -- developer bench tool; the trace path is the operator's own flag
 	data, err := os.ReadFile(tracePath)
 	if err != nil {
 		return nil, err
@@ -257,7 +259,7 @@ func runLive(url string, duration time.Duration, reservoirMs, pacerMs float64) {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	cfg := smoother.DefaultConfig()
 	cfg.StartupReservoirMs = reservoirMs

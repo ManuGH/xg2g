@@ -30,7 +30,14 @@ protocol LiveStreamIngestDelegate: AnyObject {
 }
 
 /// One HTTP byte stream: the transport-stream ingest the native player reads.
-final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
+///
+/// `@unchecked Sendable` is deliberate and load-bearing. `URLSessionDelegate` is
+/// `Sendable`, and this type cannot satisfy that structurally: `delegate` is
+/// `weak`, which Swift requires to be `var` because the runtime clears it, and
+/// the session and task are replaced by `open` and `close`. The compiler cannot
+/// see that the state is safe, so the guarantee is provided here instead — every
+/// access goes through `lock`, and nothing escapes it.
+final class LiveStreamIngest: NSObject, URLSessionDataDelegate, @unchecked Sendable {
 
     /// One transaction's setup cost, split into the phases that have different
     /// causes and different fixes.
@@ -67,15 +74,34 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
         )
     }
 
-    private weak var delegate: LiveStreamIngestDelegate?
-    private var session: URLSession?
-    private var task: URLSessionDataTask?
+    /// Guards every stored property below.
+    ///
+    /// `open` and `close` run on the caller's thread while the delegate
+    /// callbacks run on the session's own serial queue, so the two touch this
+    /// state concurrently. An uncontended lock costs nothing next to the work
+    /// each callback is about to do.
+    private let lock = NSLock()
+    private weak var _delegate: LiveStreamIngestDelegate?
+    private var _session: URLSession?
+    private var _task: URLSessionDataTask?
+
+    /// The delegate, read under the lock and released before use so a callback
+    /// never runs with the lock held.
+    private var currentDelegate: LiveStreamIngestDelegate? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _delegate
+    }
 
     /// Whether a stream is currently open.
-    var isOpen: Bool { task != nil }
+    var isOpen: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _task != nil
+    }
 
     init(delegate: LiveStreamIngestDelegate) {
-        self.delegate = delegate
+        self._delegate = delegate
         super.init()
     }
 
@@ -106,7 +132,6 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
         queue.qualityOfService = .userInteractive
 
         let session = URLSession(configuration: config, delegate: self, delegateQueue: queue)
-        self.session = session
 
         var request = URLRequest(url: url)
         request.setValue(evidence.userAgent, forHTTPHeaderField: "User-Agent")
@@ -117,16 +142,27 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
         request.setValue(evidence.videoCodecs.joined(separator: ","), forHTTPHeaderField: "X-Client-Video-Codecs")
 
         let task = session.dataTask(with: request)
-        self.task = task
+        lock.lock()
+        _session = session
+        _task = task
+        lock.unlock()
+
         task.resume()
     }
 
     /// Cancels the stream and tears the session down. Idempotent.
     func close() {
+        lock.lock()
+        let task = _task
+        let session = _session
+        _task = nil
+        _session = nil
+        lock.unlock()
+
+        // Cancellation outside the lock: `invalidateAndCancel` delivers the
+        // completion callback, which reaches for the lock itself.
         task?.cancel()
-        task = nil
         session?.invalidateAndCancel()
-        session = nil
     }
 
     // MARK: - URLSessionDataDelegate
@@ -141,16 +177,16 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
             completionHandler(.allow)
             return
         }
-        let accepted = delegate?.ingest(self, didReceiveResponse: http) ?? false
+        let accepted = currentDelegate?.ingest(self, didReceiveResponse: http) ?? false
         completionHandler(accepted ? .allow : .cancel)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        delegate?.ingest(self, didReceive: data)
+        currentDelegate?.ingest(self, didReceive: data)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        delegate?.ingest(self, didCompleteWith: error, bytesReceived: task.countOfBytesReceived)
+        currentDelegate?.ingest(self, didCompleteWith: error, bytesReceived: task.countOfBytesReceived)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
@@ -172,6 +208,6 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate {
                 host: transaction.request.url?.host
             )
         }
-        delegate?.ingest(self, didCollect: phases)
+        currentDelegate?.ingest(self, didCollect: phases)
     }
 }

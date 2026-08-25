@@ -44,8 +44,10 @@ const (
 var mpeg2CRCTable [256]uint32
 
 func init() {
-	for i := 0; i < 256; i++ {
-		crc := uint32(i) << 24
+	// Counted as uint32 so the shift needs no narrowing conversion; the bound
+	// makes the two identical, but only one of them is checkable.
+	for i := uint32(0); i < 256; i++ {
+		crc := i << 24
 		for j := 0; j < 8; j++ {
 			if (crc & 0x80000000) != 0 {
 				crc = (crc << 1) ^ 0x04C11DB7
@@ -454,7 +456,6 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 			return
 		}
 		pointerField := int(payload[0])
-		offset = 1
 
 		if pointerField > 0 {
 			// Case A: Bytes before pointer complete previous in-flight section

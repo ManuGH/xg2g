@@ -13,13 +13,8 @@ func DetectConflicts(
 ) []Conflict {
 	var conflicts []Conflict
 
-	visualImpaired := false
-	if pmt != nil && (pmt.VisualImpaired || pmt.AudioType == 0x03) {
-		visualImpaired = true
-	}
-	if probe != nil && (probe.DispositionVisualImpaired || probe.DispositionDescriptions) {
-		visualImpaired = true
-	}
+	visualImpaired := (pmt != nil && (pmt.VisualImpaired || pmt.AudioType == 0x03)) ||
+		(probe != nil && (probe.DispositionVisualImpaired || probe.DispositionDescriptions))
 
 	if e2 != nil {
 		e2DescLower := strings.ToLower(strings.TrimSpace(e2.Description))

@@ -7,7 +7,6 @@ package v3
 import (
 	"encoding/json"
 	"errors"
-	"math"
 	"net/http"
 	"time"
 
@@ -159,7 +158,7 @@ func (s *Server) ExchangePairing(w http.ResponseWriter, r *http.Request, pairing
 		DeviceId:      result.DeviceID,
 		TokenType:     result.TokenType,
 		AccessToken:   result.AccessToken,
-		ExpiresIn:     clampTokenLifetimeSeconds(result.ExpiresIn),
+		ExpiresIn:     contractInt32(result.ExpiresIn),
 		RefreshToken:  result.RefreshToken,
 		Scope:         result.Scope,
 		PolicyVersion: result.PolicyVersion,
@@ -202,21 +201,6 @@ func decodePairingBody(r *http.Request, out any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(out)
-}
-
-// clampTokenLifetimeSeconds keeps the published lifetime inside the int32 the
-// contract declares. A negative lifetime is an upstream bug rather than
-// something to hand a client, so it becomes zero — already expired — instead of
-// wrapping into a very long one.
-func clampTokenLifetimeSeconds(seconds int) int32 {
-	switch {
-	case seconds < 0:
-		return 0
-	case seconds > math.MaxInt32:
-		return math.MaxInt32
-	default:
-		return int32(seconds)
-	}
 }
 
 // domainDeviceJWK converts the wire key into the identity domain's key.

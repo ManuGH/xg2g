@@ -7,6 +7,7 @@ package v3
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,6 +35,31 @@ func (s *Server) GetErrors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ErrorCatalogResponse{Items: items})
+}
+
+// contractInt32 narrows a domain integer to the int32 the OpenAPI contract
+// declares for it.
+//
+// The two sides disagree by design: the domain counts with `int` because that is
+// what Go counts with, and the contract says `int32` because that is what every
+// generated client can represent. Somewhere the two have to meet, and a bare
+// conversion is the wrong place — it wraps silently, so a device limit of
+// 2^31 would be published as a negative number and a client would faithfully
+// enforce it.
+//
+// Saturating is the honest answer for values that are counts and durations: the
+// magnitude is already meaningless at that size, and a clamped maximum is at
+// least true about its direction. A negative input is an upstream bug, so it
+// becomes zero rather than a very large unsigned-looking number on the wire.
+func contractInt32[T int | int64](value T) int32 {
+	switch {
+	case value < 0:
+		return 0
+	case int64(value) > math.MaxInt32:
+		return math.MaxInt32
+	default:
+		return int32(value)
+	}
 }
 
 func stringPtrOrNil(value string) *string {

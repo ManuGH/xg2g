@@ -77,7 +77,7 @@ func (c Config) Validate() error {
 		return errors.New("MaxCorrectionTrim must be between 0 and 0.50")
 	}
 	if c.Kp < 0 || c.Kp > 1.0 {
-		return errors.New("Kp must be between 0 and 1.0")
+		return errors.New("kp must be between 0 and 1.0")
 	}
 	if c.PacerIntervalMs < 1.0 || c.PacerIntervalMs > 1000.0 {
 		return errors.New("PacerIntervalMs must be between 1 and 1000 ms")

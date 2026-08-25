@@ -81,7 +81,7 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 
 	go func() {
 		defer close(p.doneCh)
-		defer upstream.Close()
+		defer func() { _ = upstream.Close() }()
 		defer p.ring.Close()
 		defer p.norm.Close()
 

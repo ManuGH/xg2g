@@ -329,7 +329,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		varAttach, varReader, release, varErr := pipe.AttachAudioVariantWithTimeout(r.Context(), variantKey, primedAttachTimeout)
 		if varErr == nil {
-			reader.Close()
+			_ = reader.Close()
 			reader = varReader
 			attach = varAttach
 			releaseVariant = release
@@ -337,7 +337,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			logger.Warn().Err(varErr).Msg("failed to attach to stream variant; falling back to direct master stream")
 		}
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Runtime Plan Transparency Headers
 	videoMode := "direct"

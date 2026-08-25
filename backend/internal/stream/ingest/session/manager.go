@@ -59,60 +59,65 @@ func (m *Manager) Acquire(ctx context.Context, key SessionKey) (*Lease, error) {
 	}
 	key = key.Canonicalize()
 
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		m.mu.Lock()
-		if m.isClosed {
-			m.mu.Unlock()
-			return nil, ErrManagerClosed
-		}
-
-		s, exists := m.sessions[key]
-		if exists {
-			// Fast-path: try acquiring active or holding session
-			if lease, ok := s.TryAcquireActive(); ok {
-				m.mu.Unlock()
-				return lease, nil
-			}
-
-			// If starting, wait for start result outside mutex
-			if s.State() == StateStarting {
-				m.mu.Unlock()
-				lease, err := s.AwaitStart(ctx)
-				if err != nil {
-					return nil, err
-				}
-				return lease, nil
-			}
-
-			// If session is stopped or failed, purge from map and recreate
-			delete(m.sessions, key)
-		}
-
-		// Create fresh starting session
-		s = NewSession(key, m.cfg.WarmHoldDuration, m.removeSession)
-		m.sessions[key] = s
-
-		connectCtx, cancelConnect := context.WithTimeout(context.Background(), m.cfg.ConnectTimeout)
-		s.cancelFunc = cancelConnect
-
-		go m.startUpstream(connectCtx, cancelConnect, s)
-
-		m.mu.Unlock()
-
-		lease, err := s.AwaitStart(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			// Startup failed: retry fresh if another attempt is viable
-			return nil, err
-		}
-		return lease, nil
+	// Not a loop. Every path below returns, so this ran exactly once; the
+	// comment further down promised a retry that was never implemented. Making
+	// it actually retry is a behaviour change — a failing upstream would be
+	// re-dialled per request — and belongs in its own change with a bound on
+	// attempts. Leaving the `for` in place only made the code claim something
+	// it did not do.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+
+	m.mu.Lock()
+	if m.isClosed {
+		m.mu.Unlock()
+		return nil, ErrManagerClosed
+	}
+
+	s, exists := m.sessions[key]
+	if exists {
+		// Fast-path: try acquiring active or holding session
+		if lease, ok := s.TryAcquireActive(); ok {
+			m.mu.Unlock()
+			return lease, nil
+		}
+
+		// If starting, wait for start result outside mutex
+		if s.State() == StateStarting {
+			m.mu.Unlock()
+			lease, err := s.AwaitStart(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return lease, nil
+		}
+
+		// If session is stopped or failed, purge from map and recreate
+		delete(m.sessions, key)
+	}
+
+	// Create fresh starting session
+	s = NewSession(key, m.cfg.WarmHoldDuration, m.removeSession)
+	m.sessions[key] = s
+
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), m.cfg.ConnectTimeout)
+	s.cancelFunc = cancelConnect
+
+	go m.startUpstream(connectCtx, cancelConnect, s)
+
+	m.mu.Unlock()
+
+	lease, err := s.AwaitStart(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// Startup failed. The caller decides whether to ask again; this does
+		// not retry on its behalf.
+		return nil, err
+	}
+	return lease, nil
 }
 
 func (m *Manager) startUpstream(connectCtx context.Context, cancelConnect context.CancelFunc, s *Session) {
