@@ -91,7 +91,12 @@ func (a *LocalAdapter) acquireSharedIngestInput(ctx context.Context, spec ports.
 
 	preamble, reader, err := source.Attach(ctx, sharedIngestAttachTimeout)
 	if err != nil {
-		return nil, err
+		// The playback trace publishes why a live start failed, and it used to learn
+		// that from the TS preflight. The preflight is gone, but the question it
+		// answered is not - so the same taxonomy is filled from what the ingest
+		// already observed, and the orchestrator's structured-failure path keeps
+		// working unchanged.
+		return nil, preflightErrorFromFacts(source.Facts(), err)
 	}
 	in.reader = reader
 
