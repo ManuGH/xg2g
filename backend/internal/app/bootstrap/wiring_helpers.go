@@ -153,6 +153,7 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 			Interval:         1 * time.Minute,
 			SessionRetention: 24 * time.Hour,
 		},
+		ReceiverBaseURL: cfg.Enigma2.BaseURL,
 		OutboundPolicy: platformnet.OutboundPolicy{
 			Enabled: cfg.Network.Outbound.Enabled,
 			Allow: platformnet.OutboundAllowlist{

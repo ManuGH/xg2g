@@ -339,6 +339,13 @@ func (o *Orchestrator) startPipeline(
 		// In that case SourceType is File.
 		spec.Source.Type = ports.SourceFile
 	} else if u, ok := platformnet.ParseDirectHTTPURL(sessionCtx.ServiceRef); ok {
+		// Checked at the API too. Repeated here because this is the last point
+		// before the URL becomes an ffmpeg -i argument, and a session can reach
+		// this code from more than one caller.
+		if platformnet.PointsAtReceiver(u.String(), o.ReceiverBaseURL) {
+			return "", model.ProfileSpec{}, newReasonError(model.RBadRequest,
+				"serviceRef addresses the receiver directly; live input must come from shared ingest", nil)
+		}
 		normalized, err := platformnet.ValidateOutboundURL(hbCtx, u.String(), o.OutboundPolicy)
 		if err != nil {
 			return "", model.ProfileSpec{}, newReasonError(model.RBadRequest, "outbound url rejected by policy", err)

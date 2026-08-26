@@ -179,6 +179,15 @@ func resolveIntentServiceRef(w http.ResponseWriter, r *http.Request, deps sessio
 	serviceRef = strings.TrimSpace(rawServiceRef)
 	if intentType == model.IntentTypeStreamStart {
 		if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
+			// A direct URL becomes a SourceURL session, which hands the URL to
+			// FFmpeg without a tuner lease, a zap or a readiness check. Pointed at
+			// the receiver that is a live transcode opening the receiver behind
+			// shared ingest's back, under the source class meant for external IPTV.
+			if platformnet.PointsAtReceiver(u.String(), deps.cfg.Enigma2.BaseURL) {
+				respondIntentFailure(w, r, IntentErrInvalidInput,
+					"serviceRef must not address the receiver directly; use a service reference for live TV")
+				return "", true
+			}
 			normalized, err := platformnet.ValidateOutboundURL(r.Context(), u.String(), outboundPolicyFromConfig(deps.cfg))
 			if err != nil {
 				respondIntentFailure(w, r, IntentErrInvalidInput, "direct URL serviceRef rejected by outbound policy")
