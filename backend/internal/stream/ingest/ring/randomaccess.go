@@ -4,6 +4,8 @@
 
 package ring
 
+import "github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
+
 // Random access classification.
 //
 // A subscriber that joins mid-broadcast has no reference pictures, so it can only
@@ -338,6 +340,17 @@ type AudioTrackInfo struct {
 	// Declared is what the PMT says about this track's channel count. It is a
 	// declaration read from a descriptor, never a measurement of the audio.
 	Declared AudioChannelDeclaration `json:"declared"`
+
+	// Observed is what the elementary stream itself has been seen to carry. It is
+	// the only source that can name a count above two: the descriptors declare a
+	// class, so 5.1 and 7.1 declare the same thing, and the difference exists only
+	// in the audio. Empty until enough frames have agreed, and empty for the
+	// codecs this path does not read.
+	//
+	// Kept beside Declared rather than merged into it. They answer differently
+	// often enough - a descriptor can be absent, stale, or wrong - that collapsing
+	// them would throw away the evidence needed to tell which happened.
+	Observed esaudio.Observation `json:"observed,omitzero"`
 }
 
 // AudioChannelDeclaration is the channel information a DVB descriptor declares

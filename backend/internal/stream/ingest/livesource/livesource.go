@@ -155,9 +155,11 @@ func factsFrom(f ring.ReadinessFacts) ports.LiveSourceFacts {
 	}
 }
 
-// audioTracksFrom carries the PMT's audio declarations across the port boundary
-// without reinterpreting them. In particular a multichannel declaration stays a
-// flag: the descriptor names a class, not a count.
+// audioTracksFrom carries the PMT's audio declarations and the elementary
+// stream's own observation across the port boundary without reinterpreting
+// either. In particular a multichannel declaration stays a flag: the descriptor
+// names a class, not a count, and the count - where there is one - comes from the
+// observation beside it rather than from turning the class into a number.
 func audioTracksFrom(tracks []ring.AudioTrackInfo) []ports.LiveAudioTrack {
 	if len(tracks) == 0 {
 		return nil
@@ -173,6 +175,11 @@ func audioTracksFrom(tracks []ring.AudioTrackInfo) []ports.LiveAudioTrack {
 			Multichannel:     t.Declared.Multichannel,
 			ComponentType:    t.Declared.ComponentType,
 			HasComponentType: t.Declared.HasComponentType,
+
+			ObservedChannels:           t.Observed.Channels,
+			ObservedLFE:                t.Observed.LFE,
+			ObservedFrames:             t.Observed.Frames,
+			ObservedDependentSubstream: t.Observed.DependentSubstream,
 		})
 	}
 	return out

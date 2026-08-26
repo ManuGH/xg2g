@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"errors"
 	"sync"
+
+	"github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
 )
 
 const (
@@ -204,6 +206,16 @@ type MasterRing struct {
 	// audioPIDs holds the elementary audio streams named by the active PMT.
 	audioPIDs   []uint16
 	audioTracks []AudioTrackInfo
+
+	// audioObservers follow the audio payload of the tracks whose codec this path
+	// can read, one per PID. They exist because the audio topology is not a
+	// property of the session start: a service moves between stereo and 5.1 on the
+	// same PID as programmes change, and a reading taken once at attach describes
+	// only whatever happened to be running then.
+	//
+	// Keyed by PID and rebuilt from scratch whenever the PMT changes, so an
+	// observation can never outlive the table that named the stream it came from.
+	audioObservers map[uint16]*esaudio.Observer
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -349,21 +361,67 @@ func (r *MasterRing) indexPacketLocked(pkt []byte, offset int64) {
 		return
 	}
 
-	// 4. Audio elementary streams, observed for descrambling only. Their payload is
-	//    never parsed here - the client selects and decodes the track - but whether
-	//    it arrives clear decides whether a channel is presentable.
+	// 4. Audio elementary streams. Whether the payload arrives clear decides
+	//    whether a channel is presentable, and for the codecs that carry their
+	//    channel layout in the frame header the payload is also the only place a
+	//    channel count above two can be read at all.
 	for _, apid := range r.audioPIDs {
 		if pid == apid {
 			if (pkt[3]>>6)&0x03 != 0 {
 				r.scrambledAudioPackets++
 				r.audioClearRun = 0
-			} else {
-				r.clearAudioPackets++
-				r.audioClearRun++
+				return
 			}
+			r.clearAudioPackets++
+			r.audioClearRun++
+			r.observeAudioPayloadLocked(apid, pusi, payload)
 			return
 		}
 	}
+}
+
+// observableAudioCodec reports whether the frame headers of a codec are read for
+// their channel layout. Everything else is left to the declaration and to
+// whatever the media path already does; a codec this parser cannot read produces
+// no observation rather than a guessed one.
+func observableAudioCodec(codec string) bool {
+	return codec == esaudio.CodecAC3 || codec == esaudio.CodecEAC3
+}
+
+// observeAudioPayloadLocked hands one clear audio packet's elementary stream
+// bytes to the observer for that PID.
+//
+// This is where transport ends. The observer is given elementary stream payload
+// and nothing else - no PID, no packet, no PMT - so what it reads is a property
+// of the audio rather than of how the audio arrived.
+func (r *MasterRing) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte) {
+	obs := r.audioObservers[pid]
+	if obs == nil {
+		return
+	}
+
+	es := payload
+	if pusi {
+		// A PES packet starts here, so the elementary stream does not: skip the
+		// header. Audio arrives either as an audio stream id or, for AC-3 in DVB,
+		// as private_stream_1.
+		if len(payload) < 9 || payload[0] != 0x00 || payload[1] != 0x00 || payload[2] != 0x01 {
+			return
+		}
+		if sid := payload[3]; sid != 0xBD && sid != 0xFD && (sid < 0xC0 || sid > 0xDF) {
+			return
+		}
+		esStart := 9 + int(payload[8])
+		if esStart >= len(payload) {
+			// The optional header ran past this packet. Rare, and not worth state of
+			// its own: the remainder is fed as if it were elementary stream, where it
+			// has to survive a syncword check and a run of agreeing frames before it
+			// could reach the observation.
+			return
+		}
+		es = payload[esStart:]
+	}
+	obs.Feed(es)
 }
 
 func (r *MasterRing) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte, pkt []byte) int {
@@ -681,6 +739,12 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 								Language:   lang,
 								Declared:   declared,
 							})
+							if observableAudioCodec(codec) {
+								if r.audioObservers == nil {
+									r.audioObservers = make(map[uint16]*esaudio.Observer, 2)
+								}
+								r.audioObservers[elemPID] = esaudio.NewObserver()
+							}
 						}
 					}
 
@@ -741,6 +805,10 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.audioClearRun = 0
 	r.audioPIDs = nil
 	r.audioTracks = nil
+	// Observations do not survive the table that named their stream. The same PID
+	// can carry a different elementary stream after a PMT change, and carrying the
+	// old layout across would describe audio that is no longer there.
+	r.audioObservers = nil
 	r.raObs = RandomAccessObservation{}
 	r.cleanRAPCount = 0
 	r.cleanAccessUnits = 0
@@ -1333,6 +1401,15 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 
 	tracks := make([]AudioTrackInfo, len(r.audioTracks))
 	copy(tracks, r.audioTracks)
+	// The declaration is fixed by the PMT and only changes with it; the
+	// observation moves with the audio. Reading it here rather than storing it on
+	// the track is what makes a mid-programme change to 5.1 visible to the next
+	// snapshot instead of to the next PMT version.
+	for i := range tracks {
+		if obs := r.audioObservers[tracks[i].PID]; obs != nil {
+			tracks[i].Observed = obs.Current()
+		}
+	}
 
 	parameterSets := false
 	switch r.videoCodec {
