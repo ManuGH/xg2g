@@ -51,19 +51,36 @@ func obsPAT() []byte {
 	return psiPacket(0, s)
 }
 
-// obsPMT names one video and one audio elementary stream. streamType and the
-// descriptors decide which codec the audio is taken to be.
-func obsPMT(version uint8, audioPID uint16, streamType byte, descriptors []byte) []byte {
+// obsTrack is one audio elementary stream for the PMT builder to name.
+type obsTrack struct {
+	pid         uint16
+	streamType  byte
+	descriptors []byte
+}
+
+// ac3Track is the shorthand a multi-track case needs: an AC-3 stream declaring a
+// channel class and a language.
+func ac3Track(pid uint16, lang string, componentType byte) obsTrack {
+	d := append(ac3Descriptor(componentType), langDescriptor(lang)...)
+	return obsTrack{pid: pid, streamType: 0x06, descriptors: d}
+}
+
+// obsPMT names one video stream and the given audio streams. streamType and the
+// descriptors decide which codec each audio track is taken to be.
+func obsPMT(version uint8, tracks ...obsTrack) []byte {
 	es := []byte{
 		0x1B, // H.264
 		0xE0 | byte(obsVideoPID>>8), byte(obsVideoPID & 0xFF),
 		0xF0, 0x00,
-
-		streamType,
-		0xE0 | byte(audioPID>>8), byte(audioPID & 0xFF),
-		0xF0 | byte(len(descriptors)>>8), byte(len(descriptors) & 0xFF),
 	}
-	es = append(es, descriptors...)
+	for _, tr := range tracks {
+		es = append(es,
+			tr.streamType,
+			0xE0|byte(tr.pid>>8), byte(tr.pid&0xFF),
+			0xF0|byte(len(tr.descriptors)>>8), byte(len(tr.descriptors)&0xFF),
+		)
+		es = append(es, tr.descriptors...)
+	}
 
 	sectionLen := 9 + len(es) + 4
 	s := []byte{
@@ -85,6 +102,11 @@ func obsPMT(version uint8, audioPID uint16, streamType byte, descriptors []byte)
 // what makes the PMT declare a channel class.
 func ac3Descriptor(componentType byte) []byte {
 	return []byte{0x6A, 0x02, 0x80, componentType}
+}
+
+// langDescriptor is the ISO 639 language descriptor, tag 0x0A.
+func langDescriptor(lang string) []byte {
+	return []byte{0x0A, 0x04, lang[0], lang[1], lang[2], 0x00}
 }
 
 // audioPackets frames elementary stream bytes into TS packets, the first of them
@@ -184,7 +206,7 @@ func TestMasterRing_ObservesAC3ChannelsFromTheStream(t *testing.T) {
 	defer r.Close()
 
 	// Component type 0x85: multichannel, no count declared.
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Surround51, 4))
 
 	track := observedTrack(t, r, obsAudioPID)
@@ -206,7 +228,7 @@ func TestMasterRing_ObservesAC3Stereo(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x82)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x82)}))
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Stereo, 4))
 
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Channels != 2 || got.LFE {
@@ -220,7 +242,7 @@ func TestMasterRing_FollowsALayoutChangeWithoutAPMTChange(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Stereo, 4))
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Channels != 2 {
@@ -250,14 +272,14 @@ func TestMasterRing_PMTChangeDropsTheObservation(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Surround51, 4))
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Channels != 6 {
 		t.Fatalf("Observed.Channels = %d, want 6 before the change", got.Channels)
 	}
 
 	// Same PID, new table.
-	pushAll(t, r, obsPMT(1, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPMT(1, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Known() {
 		t.Errorf("Observed = %+v, want nothing carried across the PMT change", got)
@@ -277,14 +299,14 @@ func TestMasterRing_PMTChangeToAnUnreadCodecDropsTheObservation(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Surround51, 4))
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Channels != 6 {
 		t.Fatalf("Observed.Channels = %d, want 6 before the change", got.Channels)
 	}
 
 	// Same PID, now MPEG-1 layer II.
-	pushAll(t, r, obsPMT(1, obsAudioPID, 0x03, nil))
+	pushAll(t, r, obsPMT(1, obsTrack{obsAudioPID, 0x03, nil}))
 
 	track := observedTrack(t, r, obsAudioPID)
 	if track.Codec != "mp2" {
@@ -301,10 +323,10 @@ func TestMasterRing_AudioPIDChangeDropsTheObservation(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Surround51, 4))
 
-	pushAll(t, r, obsPMT(1, obsOtherPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPMT(1, obsTrack{obsOtherPID, 0x06, ac3Descriptor(0x85)}))
 
 	facts := r.ReadinessFacts()
 	for _, track := range facts.AudioTracks {
@@ -329,7 +351,7 @@ func TestMasterRing_UnreadCodecProducesNoObservation(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x03, nil)) // MPEG-1 layer II
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x03, nil})) // MPEG-1 layer II
 	pushAudio(t, r, obsAudioPID, obsAC3Run(obsByte6Surround51, 4))
 
 	track := observedTrack(t, r, obsAudioPID)
@@ -347,7 +369,7 @@ func TestMasterRing_ScrambledAudioIsNotObserved(t *testing.T) {
 	r := NewMasterRing(4000 * TSPacketSize)
 	defer r.Close()
 
-	pushAll(t, r, obsPAT(), obsPMT(0, obsAudioPID, 0x06, ac3Descriptor(0x85)))
+	pushAll(t, r, obsPAT(), obsPMT(0, obsTrack{obsAudioPID, 0x06, ac3Descriptor(0x85)}))
 	pushAll(t, r, audioPackets(obsAudioPID, obsAC3Run(obsByte6Surround51, 4), true)...)
 
 	if got := observedTrack(t, r, obsAudioPID).Observed; got.Known() {
