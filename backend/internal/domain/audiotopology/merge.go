@@ -12,6 +12,7 @@ func BuildTopology(
 	serviceRef string,
 	pmtTracks []PMTTrackObservation,
 	probeTracks []ProbeTrackObservation,
+	esTracks []ESTrackObservation,
 	e2Tracks []Enigma2TrackObservation,
 	now time.Time,
 ) AudioTopology {
@@ -23,6 +24,11 @@ func BuildTopology(
 	probeMap := make(map[uint16]ProbeTrackObservation, len(probeTracks))
 	for _, pr := range probeTracks {
 		probeMap[pr.PID] = pr
+	}
+
+	esMap := make(map[uint16]ESTrackObservation, len(esTracks))
+	for _, es := range esTracks {
+		esMap[es.PID] = es
 	}
 
 	e2Map := make(map[uint16]Enigma2TrackObservation, len(e2Tracks))
@@ -83,12 +89,17 @@ func BuildTopology(
 			probePtr = &pr
 		}
 
+		var esPtr *ESTrackObservation
+		if e, ok := esMap[pid]; ok {
+			esPtr = &e
+		}
+
 		var e2Ptr *Enigma2TrackObservation
 		if e, ok := e2Map[pid]; ok {
 			e2Ptr = &e
 		}
 
-		track := buildTrack(pid, primaryLangCode, pmtPtr, probePtr, e2Ptr)
+		track := buildTrack(pid, primaryLangCode, pmtPtr, probePtr, esPtr, e2Ptr)
 		tracks = append(tracks, track)
 	}
 
@@ -135,6 +146,7 @@ func buildTrack(
 	primaryLangCode string,
 	pmt *PMTTrackObservation,
 	probe *ProbeTrackObservation,
+	es *ESTrackObservation,
 	e2 *Enigma2TrackObservation,
 ) AudioTrack {
 	var evidence []Observation
@@ -171,15 +183,31 @@ func buildTrack(
 	lang := NormalizeLanguage(rawLang)
 
 	// 3. Resolve Channels & Bitrates
+	//
+	// channels still starts at 2 where no source names one. That default is wrong
+	// - a stream that has not said how many channels it carries does not have two
+	// - and removing it is its own change, because every consumer downstream has
+	// to be able to carry "unknown" first.
 	channels := 2
 	sampleRate := 48000
 	bitrateKbps := 0
 
+	// Every source that named a count is recorded, whichever one is used. The
+	// evidence list is the audit trail of what was said, not of what won.
+	if pmt != nil && pmt.Channels > 0 {
+		evidence = append(evidence, Observation{Source: EvidencePMT, Field: "channels", Value: fmt.Sprintf("%d", pmt.Channels)})
+	}
+	if probe != nil && probe.Channels > 0 {
+		evidence = append(evidence, Observation{Source: EvidenceProbe, Field: "channels", Value: fmt.Sprintf("%d", probe.Channels)})
+	}
+	if es != nil && es.Channels > 0 {
+		evidence = append(evidence, Observation{Source: EvidenceObserved, Field: "channels", Value: fmt.Sprintf("%d", es.Channels)})
+	}
+	if resolved, _, ok := resolveChannels(pmt, probe, es); ok {
+		channels = resolved
+	}
+
 	if pmt != nil {
-		if pmt.Channels > 0 {
-			channels = pmt.Channels
-			evidence = append(evidence, Observation{Source: EvidencePMT, Field: "channels", Value: fmt.Sprintf("%d", pmt.Channels)})
-		}
 		if pmt.SampleRate > 0 {
 			sampleRate = pmt.SampleRate
 		}
@@ -187,15 +215,8 @@ func buildTrack(
 			bitrateKbps = pmt.BitrateKbps
 		}
 	}
-
-	if probe != nil {
-		if probe.Channels > 0 {
-			channels = probe.Channels
-			evidence = append(evidence, Observation{Source: EvidenceProbe, Field: "channels", Value: fmt.Sprintf("%d", probe.Channels)})
-		}
-		if probe.BitrateKbps > 0 {
-			bitrateKbps = probe.BitrateKbps
-		}
+	if probe != nil && probe.BitrateKbps > 0 {
+		bitrateKbps = probe.BitrateKbps
 	}
 
 	// 4. Resolve Accessibility & Purpose
@@ -252,7 +273,7 @@ func buildTrack(
 	isPrimary := broadcastDefault || receiverSelected || (lang.ISO639_2 == primaryLangCode)
 	purpose, confidence := ClassifyPurpose(lang, e2Desc, cleanEffects, isPrimary)
 	label := BuildTrackLabel(lang, codec, channels, purpose, acc, e2Desc)
-	conflicts := DetectConflicts(pmt, probe, e2)
+	conflicts := DetectConflicts(pmt, probe, es, e2)
 
 	return AudioTrack{
 		ID:               fmt.Sprintf("audio-%d", pid),

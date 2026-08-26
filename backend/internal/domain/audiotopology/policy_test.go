@@ -17,7 +17,7 @@ func TestAudioOutputPolicy_51PassthroughForAppleClients(t *testing.T) {
 		{PID: 6122, Codec: "ac3", Channels: 6, Language: "deu", BitrateKbps: 448},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, nil, now)
+	topo := BuildTopology(sref, pmt, nil, nil, nil, now)
 	require.Len(t, topo.Tracks, 2)
 	assert.Equal(t, PresenceVerified, topo.Presence)
 
@@ -61,7 +61,7 @@ func TestAudioOutputPolicy_ExactlyOneDefaultAcrossMultipleSurroundTracks(t *test
 		{PID: 103, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192, VisualImpaired: true},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, nil, now)
+	topo := BuildTopology(sref, pmt, nil, nil, nil, now)
 	require.Len(t, topo.Tracks, 3)
 
 	appleCaps := ClientAudioCapabilities{SupportsAC3: true, SupportsAAC: true}
@@ -86,7 +86,7 @@ func TestAudioOutputPolicy_PresenceGate(t *testing.T) {
 	appleCaps := ClientAudioCapabilities{SupportsAC3: true, SupportsAAC: true}
 
 	e2 := []Enigma2TrackObservation{{PID: 200, Description: "Stereo"}}
-	topoProvisional := BuildTopology(sref, nil, nil, e2, now)
+	topoProvisional := BuildTopology(sref, nil, nil, nil, e2, now)
 	assert.Equal(t, PresenceProvisional, topoProvisional.Presence)
 
 	planProvisional := PlanAudioOutput(topoProvisional, appleCaps)
@@ -115,7 +115,7 @@ func TestPlanMultiAudioOutput_ZDFHD(t *testing.T) {
 		{TrackID: 3, PID: 6122, Description: "AC3 (Dolby Digital 5.1)"},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 	require.Len(t, topo.Tracks, 4)
 
 	appleCaps := ClientAudioCapabilities{
@@ -176,7 +176,7 @@ func TestPlanMultiAudioOutput_DasErsteHD(t *testing.T) {
 		{TrackID: 3, PID: 5106, Description: "AC3 (Dolby Digital 2.0)"},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 	appleCaps := ClientAudioCapabilities{SupportsAC3: true, SupportsAAC: true, PrefersPassthrough: true}
 
 	multiPlan := PlanMultiAudioOutput(topo, appleCaps)

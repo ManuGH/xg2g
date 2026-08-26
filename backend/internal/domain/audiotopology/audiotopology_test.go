@@ -21,7 +21,7 @@ func TestORF1HD_RealWorldDiscovery(t *testing.T) {
 		{TrackID: 1, PID: 1922, Description: "MPEG (Miscellaneous languages)", Active: false},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 
 	require.Len(t, topo.Tracks, 2)
 	require.Equal(t, sref, topo.ServiceRef)
@@ -62,7 +62,7 @@ func TestDasErsteHD_RealWorldDiscovery(t *testing.T) {
 		{TrackID: 3, PID: 5106, Description: "AC3 (Dolby Digital 2.0)", Active: false},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 
 	require.Len(t, topo.Tracks, 4)
 
@@ -104,7 +104,7 @@ func TestZDFHD_RealWorldDiscovery(t *testing.T) {
 		{TrackID: 3, PID: 6122, Description: "AC3 (Dolby Digital 5.1)", Active: false},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 
 	require.Len(t, topo.Tracks, 4)
 
@@ -138,7 +138,7 @@ func TestArteHD_ConflictPreservation(t *testing.T) {
 		{TrackID: 3, PID: 5117, Description: "MPEG (ohne Audiodeskription)", Active: false},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, e2, now)
+	topo := BuildTopology(sref, pmt, nil, nil, e2, now)
 	require.Len(t, topo.Tracks, 4)
 
 	var frenchTrack *AudioTrack
@@ -169,18 +169,18 @@ func TestPresenceStates_VerifiedVsProvisionalVsEmpty(t *testing.T) {
 
 	// 1. PMT only -> Verified Presence
 	pmt := []PMTTrackObservation{{PID: 100, Codec: "mp2", Language: "deu"}}
-	topoVerified := BuildTopology(sref, pmt, nil, nil, now)
+	topoVerified := BuildTopology(sref, pmt, nil, nil, nil, now)
 	assert.Equal(t, PresenceVerified, topoVerified.Presence)
 	require.Len(t, topoVerified.Tracks, 1)
 
 	// 2. Enigma2 only (unprobed stream) -> Provisional Presence
 	e2 := []Enigma2TrackObservation{{PID: 200, Description: "MPEG (stereo)"}}
-	topoProvisional := BuildTopology(sref, nil, nil, e2, now)
+	topoProvisional := BuildTopology(sref, nil, nil, nil, e2, now)
 	assert.Equal(t, PresenceProvisional, topoProvisional.Presence)
 	require.Len(t, topoProvisional.Tracks, 1)
 
 	// 3. No observations -> Empty Presence
-	topoEmpty := BuildTopology(sref, nil, nil, nil, now)
+	topoEmpty := BuildTopology(sref, nil, nil, nil, nil, now)
 	assert.Equal(t, PresenceEmpty, topoEmpty.Presence)
 	assert.Empty(t, topoEmpty.Tracks)
 }
@@ -195,7 +195,7 @@ func TestPrimaryLanguage_NotDependentOnPIDOrdering(t *testing.T) {
 		{PID: 800, Codec: "mp2", Language: "deu", IsDefault: true},
 	}
 
-	topo := BuildTopology(sref, pmt, nil, nil, now)
+	topo := BuildTopology(sref, pmt, nil, nil, nil, now)
 	require.Len(t, topo.Tracks, 2)
 
 	// PID 200 (numerically smaller) MUST NOT be classified as Main Anchor
@@ -236,8 +236,8 @@ func TestDualRevisions_StructuralVsMetadata(t *testing.T) {
 		{PID: 100, Description: "Stereo", Active: false},
 	}
 
-	topo1 := BuildTopology(sref, pmt, nil, e2Active, now)
-	topo2 := BuildTopology(sref, pmt, nil, e2Inactive, now)
+	topo1 := BuildTopology(sref, pmt, nil, nil, e2Active, now)
+	topo2 := BuildTopology(sref, pmt, nil, nil, e2Inactive, now)
 
 	// Structural revision is IDENTICAL (same PID, codec, channels)
 	assert.Equal(t, topo1.StructuralRevision, topo2.StructuralRevision)
