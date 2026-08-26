@@ -73,6 +73,27 @@ type LiveAudioTrack struct {
 	// service-type bits this type deliberately does not interpret.
 	ComponentType    uint8
 	HasComponentType bool
+
+	// ObservedChannels is the channel count the elementary stream itself has been
+	// seen to carry, or 0 where the audio has not established one. It is the only
+	// source that can name a count above two - the descriptors above declare a
+	// class, and 5.1 and 7.1 declare the same class - and it moves with the audio
+	// rather than with the PMT, so it follows a service that changes layout
+	// between programmes.
+	ObservedChannels int
+
+	// ObservedLFE reports the low frequency effects channel, already counted in
+	// ObservedChannels.
+	ObservedLFE bool
+
+	// ObservedFrames counts the audio frames the observation rests on, so a
+	// consumer can tell a settled reading from a stream that has barely started.
+	ObservedFrames uint64
+
+	// ObservedDependentSubstream reports that E-AC-3 dependent substreams were
+	// seen. ObservedChannels then describes the independent substream only, and
+	// the programme may carry more than it says.
+	ObservedDependentSubstream bool
 }
 
 // Descrambled reports whether the receiver is delivering this service in the
