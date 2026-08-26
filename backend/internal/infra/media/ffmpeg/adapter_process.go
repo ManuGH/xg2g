@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -161,7 +160,6 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		if orphan, stdin, useAtrim := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); stdin != nil {
 			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, effectiveSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
-			usingPipe = true
 			if !useAtrim {
 				a.Logger.Warn().
 					Str("session_id", spec.SessionID).
@@ -173,13 +171,6 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 					Str("startup_phase", "avsync_pipe_diagnostic").
 					Msg("live-copy avsync diagnostic: stdin pipe active without audio trim")
 			}
-		}
-	}
-
-	if !usingPipe && spec.Source.Type == ports.SourceTuner {
-		if stdin, ok := a.prepareTelemetryPipe(ctx, inputURL, spec.SessionID); ok {
-			args = transformArgsForTelemetryPipeMode(args)
-			avsyncStdin = stdin
 		}
 	}
 
@@ -909,98 +900,6 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 func processDetailPriority(detail string) int {
 	return ports.ClassifyProcessFailure(detail).Priority()
 }
-
-type telemetryReader struct {
-	source   io.Reader
-	tracer   telemetry.StartupTracer
-	buf      []byte
-	e2Marked bool
-	t2Marked bool
-}
-
-func (r *telemetryReader) Read(p []byte) (n int, err error) {
-	n, err = r.source.Read(p)
-	if n > 0 && !r.e2Marked {
-		r.e2Marked = true
-		r.tracer.MarkOnce(telemetry.MilestoneE2, "first_body_byte")
-	}
-	if n > 0 && !r.t2Marked {
-		r.buf = append(r.buf, p[:n]...)
-		if len(r.buf) > 1500 {
-			r.buf = r.buf[len(r.buf)-1500:]
-		}
-		for i := 0; i <= len(r.buf)-377; i++ {
-			if r.buf[i] == 0x47 && r.buf[i+188] == 0x47 && r.buf[i+376] == 0x47 {
-				r.t2Marked = true
-				r.tracer.MarkOnce(telemetry.MilestoneT2, "first_valid_ts_packet")
-				r.buf = nil // free memory
-				break
-			}
-		}
-	}
-	return n, err
-}
-
-func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, sessionID string) (io.Reader, bool) {
-	if !a.Config.StartupIngestProxy {
-		return nil, false
-	}
-	if !isHTTPInputURL(rawURL) {
-		return nil, false
-	}
-	req, _, err := buildAuthenticatedRequest(ctx, http.MethodGet, rawURL)
-	if err != nil {
-		return nil, false
-	}
-	req.Header.Set("Icy-MetaData", "1")
-
-	if a.httpClient == nil {
-		return nil, false
-	}
-	streamClient := *a.httpClient
-	streamClient.Timeout = 0
-
-	tracer := telemetry.GetStartupTracer(sessionID)
-	tracer.MarkOnce(telemetry.MilestoneE0, "http_request_started")
-
-	resp, err := streamClient.Do(req)
-	if err != nil {
-		return nil, false
-	}
-	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
-		return nil, false
-	}
-
-	tracer.MarkOnce(telemetry.MilestoneT1, "input_connected")
-	tracer.MarkOnce(telemetry.MilestoneE1, "http_response_headers_received")
-	metrics.IncActiveEnigma2Connections("proxy")
-
-	// The guard owns the body from here: it decrements the gauge and logs
-	// whichever path closes first, and closes the connection by itself if the
-	// session is orphaned and `ctx` never fires. See `guardedStreamBody`.
-	guarded := newGuardedStreamBody(resp.Body, sessionID, "proxy")
-
-	go func() {
-		<-ctx.Done()
-		_ = guarded.Close()
-		dc := a.GetDiagnosticContext(sessionID)
-		a.Logger.Info().
-			Str("session_id", dc.SessionID).
-			Str("generation_id", dc.GenerationID).
-			Str("reason", dc.Reason).
-			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
-			Msg("http_body_closed")
-	}()
-
-	tr := &telemetryReader{
-		source: guarded,
-		tracer: tracer,
-	}
-
-	return tr, true
-}
-
 func transformArgsForTelemetryPipeMode(args []string) []string {
 	stripValueFlag := map[string]bool{
 		"-headers":                    true,
