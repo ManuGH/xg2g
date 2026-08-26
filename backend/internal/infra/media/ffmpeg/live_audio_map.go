@@ -15,6 +15,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	infraffmpeg "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 const defaultLiveAudioMap = "0:a:0?"
@@ -101,6 +102,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 			Str("input_url", sanitizeURLForLog(inputURL)).
 			Str("fallback_map", defaultLiveAudioMap).
 			Msg("live audio stream probe failed; using first audio stream")
+		metrics.IncAudioProbe(metrics.AudioProbeFailed)
 		return defaultSel
 	}
 
@@ -111,6 +113,9 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 	if len(audioStreams) == 0 {
+		// Not the same thing as a failed probe. The run completed and reported no
+		// audio, which is a statement about the service rather than about ffprobe.
+		metrics.IncAudioProbe(metrics.AudioProbeEmpty)
 		return defaultSel
 	}
 
@@ -172,8 +177,14 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		clientCaps.PrefersPassthrough = true
 	}
 
+	// Two dimensions, recorded at the one point where both are known: that the
+	// probe was there to be classified at all, and - given that it was - which
+	// source supplied each track's channel information. Neither number may hide
+	// the other, so they are separate series rather than one enum.
+	//
 	// Recorded before the merge consumes them, because the merge is where the two
 	// sources become one answer and the question here is which of them supplied it.
+	metrics.IncAudioProbe(metrics.AudioProbeAvailable)
 	recordAudioEvidence(pmtAudio, streamByPID)
 
 	topo := audiotopology.BuildTopology(spec.Source.ID, pmtTrackObservations(pmtAudio), probeObs, nil, time.Now())
