@@ -70,6 +70,10 @@ type Orchestrator struct {
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
+
+	// ReceiverBaseURL identifies the receiver box so a direct-URL session can be
+	// refused when it points there. Empty disables the check.
+	ReceiverBaseURL string
 	// RecoveryProfileResolver freezes the narrow profile-building capability
 	// needed by runtime recovery without coupling orchestration to a concrete
 	// configuration loader.
