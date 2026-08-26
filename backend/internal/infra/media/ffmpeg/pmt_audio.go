@@ -18,9 +18,9 @@ import (
 // the transport stream's own tables. Shared ingest does, so this fills an argument
 // that has always existed rather than adding a path.
 //
-// The merge resolves the two sources itself - a probe observation still overrides
-// a PMT declaration for the same PID, and a disagreement is recorded as a conflict
-// - so this deliberately makes no decision beyond translating.
+// The merge resolves the sources itself, by a precedence named per field rather
+// than by whichever wrote last, and records a disagreement as a conflict - so this
+// deliberately makes no decision beyond translating.
 func pmtTrackObservations(tracks []ports.LiveAudioTrack) []audiotopology.PMTTrackObservation {
 	if len(tracks) == 0 {
 		return nil
@@ -39,6 +39,29 @@ func pmtTrackObservations(tracks []ports.LiveAudioTrack) []audiotopology.PMTTrac
 			// gave. What the declaration does carry either way is the codec and
 			// the language, and those are exact.
 			Channels: t.Channels,
+		})
+	}
+	return out
+}
+
+// esTrackObservations carries what shared ingest has observed on each audio
+// elementary stream into the domain, as its own evidence rather than folded into
+// the PMT declaration beside it.
+//
+// A track the stream has not established a layout for is left out entirely. An
+// entry with a zero count would be a source claiming to have answered.
+func esTrackObservations(tracks []ports.LiveAudioTrack) []audiotopology.ESTrackObservation {
+	var out []audiotopology.ESTrackObservation
+	for _, t := range tracks {
+		if t.ObservedChannels <= 0 {
+			continue
+		}
+		out = append(out, audiotopology.ESTrackObservation{
+			PID:                t.PID,
+			Channels:           t.ObservedChannels,
+			LFE:                t.ObservedLFE,
+			Frames:             t.ObservedFrames,
+			DependentSubstream: t.ObservedDependentSubstream,
 		})
 	}
 	return out

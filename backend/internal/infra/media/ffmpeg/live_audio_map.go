@@ -187,7 +187,14 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	metrics.IncAudioProbe(metrics.AudioProbeAvailable)
 	recordAudioEvidence(pmtAudio, streamByPID)
 
-	topo := audiotopology.BuildTopology(spec.Source.ID, pmtTrackObservations(pmtAudio), probeObs, nil, time.Now())
+	topo := audiotopology.BuildTopology(
+		spec.Source.ID,
+		pmtTrackObservations(pmtAudio),
+		probeObs,
+		esTrackObservations(pmtAudio),
+		nil,
+		time.Now(),
+	)
 	multiPlan := audiotopology.PlanMultiAudioOutput(topo, clientCaps)
 
 	a.Logger.Info().

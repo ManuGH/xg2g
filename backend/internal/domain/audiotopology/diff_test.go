@@ -14,8 +14,8 @@ func TestDiffTopologies_NoChange(t *testing.T) {
 		{PID: 6120, Codec: "mp2", Channels: 2, Language: "deu"},
 		{PID: 6122, Codec: "ac3", Channels: 6, Language: "deu"},
 	}
-	topo1 := BuildTopology("sref1", pmt, nil, nil, now)
-	topo2 := BuildTopology("sref1", pmt, nil, nil, now)
+	topo1 := BuildTopology("sref1", pmt, nil, nil, nil, now)
+	topo2 := BuildTopology("sref1", pmt, nil, nil, nil, now)
 
 	diff := DiffTopologies(topo1, topo2)
 	assert.False(t, diff.HasChange)
@@ -29,13 +29,13 @@ func TestDiffTopologies_ChannelLayoutChange_2_0_to_5_1(t *testing.T) {
 	pmtBefore := []PMTTrackObservation{
 		{PID: 6122, Codec: "ac3", Channels: 2, Language: "deu"},
 	}
-	topoBefore := BuildTopology("sref1", pmtBefore, nil, nil, now)
+	topoBefore := BuildTopology("sref1", pmtBefore, nil, nil, nil, now)
 
 	// Movie start: Deutsch AC-3 5.1
 	pmtAfter := []PMTTrackObservation{
 		{PID: 6122, Codec: "ac3", Channels: 6, Language: "deu"},
 	}
-	topoAfter := BuildTopology("sref1", pmtAfter, nil, nil, now.Add(time.Minute))
+	topoAfter := BuildTopology("sref1", pmtAfter, nil, nil, nil, now.Add(time.Minute))
 
 	diff := DiffTopologies(topoBefore, topoAfter)
 	require.True(t, diff.HasChange)
@@ -53,7 +53,7 @@ func TestDiffTopologies_TrackAppearedAndDisappeared(t *testing.T) {
 	pmt1 := []PMTTrackObservation{
 		{PID: 5101, Codec: "mp2", Channels: 2, Language: "deu"},
 	}
-	topo1 := BuildTopology("sref1", pmt1, nil, nil, now)
+	topo1 := BuildTopology("sref1", pmt1, nil, nil, nil, now)
 
 	// Game starts: Stadium sound (PID 5102) added
 	pmt2 := []PMTTrackObservation{
@@ -64,7 +64,7 @@ func TestDiffTopologies_TrackAppearedAndDisappeared(t *testing.T) {
 		{PID: 5101, Description: "Kommentar"},
 		{PID: 5102, Description: "Stadionton"},
 	}
-	topo2 := BuildTopology("sref1", pmt2, nil, e22, now.Add(time.Minute))
+	topo2 := BuildTopology("sref1", pmt2, nil, nil, e22, now.Add(time.Minute))
 
 	diff := DiffTopologies(topo1, topo2)
 	require.True(t, diff.HasChange)
@@ -85,13 +85,13 @@ func TestDiffTopologies_MetadataOnlyChange(t *testing.T) {
 	pmt := []PMTTrackObservation{
 		{PID: 6120, Codec: "mp2", Channels: 2, Language: "deu"},
 	}
-	topo1 := BuildTopology("sref1", pmt, nil, nil, now)
+	topo1 := BuildTopology("sref1", pmt, nil, nil, nil, now)
 
 	// Receiver provides description without any elementary stream changes
 	e2 := []Enigma2TrackObservation{
 		{PID: 6120, Description: "Stereo (Standard)"},
 	}
-	topo2 := BuildTopology("sref1", pmt, nil, e2, now.Add(time.Second))
+	topo2 := BuildTopology("sref1", pmt, nil, nil, e2, now.Add(time.Second))
 
 	diff := DiffTopologies(topo1, topo2)
 	require.True(t, diff.HasChange)

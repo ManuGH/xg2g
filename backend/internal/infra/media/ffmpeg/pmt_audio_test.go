@@ -65,7 +65,7 @@ func TestBuildTopology_UsesThePMTDeclaration(t *testing.T) {
 		{PID: 257, StreamType: 0x81, Codec: "ac3", Language: "deu", Channels: 2},
 	})
 
-	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, nil, nil, time.Now())
+	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, nil, nil, nil, time.Now())
 
 	if len(topo.Tracks) != 1 {
 		t.Fatalf("topology has %d tracks, want 1 from the PMT alone", len(topo.Tracks))
@@ -90,7 +90,7 @@ func TestBuildTopology_ProbeOverridesTheDeclaration(t *testing.T) {
 		{PID: 257, StreamIndex: 0, Codec: "ac3", Channels: 6, Language: "deu"},
 	}
 
-	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, probe, nil, time.Now())
+	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, probe, nil, nil, time.Now())
 
 	if len(topo.Tracks) != 1 {
 		t.Fatalf("topology has %d tracks, want the two observations merged into 1", len(topo.Tracks))
@@ -111,7 +111,7 @@ func TestBuildTopology_KeepsADeclarationTheProbeMissed(t *testing.T) {
 		{PID: 257, StreamIndex: 0, Codec: "ac3", Channels: 2, Language: "deu"},
 	}
 
-	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, probe, nil, time.Now())
+	topo := audiotopology.BuildTopology("1:0:19:83:6:85:C00000:0:0:0:", pmt, probe, nil, nil, time.Now())
 
 	if len(topo.Tracks) != 2 {
 		t.Fatalf("topology has %d tracks, want both PIDs", len(topo.Tracks))

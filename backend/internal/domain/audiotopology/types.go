@@ -11,6 +11,11 @@ const (
 	EvidencePMT     EvidenceSource = "pmt"
 	EvidenceEnigma2 EvidenceSource = "enigma2"
 	EvidenceProbe   EvidenceSource = "probe"
+	// EvidenceObserved is the elementary stream read continuously by shared
+	// ingest. Its own source rather than a better PMT, because a declaration and
+	// a measurement of the same track can differ and which one answered has to
+	// stay legible afterwards.
+	EvidenceObserved EvidenceSource = "observed"
 )
 
 // PresenceState indicates the degree of physical verification for the topology.
@@ -133,6 +138,31 @@ type PMTTrackObservation struct {
 	HearingImpaired bool   `json:"hearingImpaired"`
 	CleanEffects    bool   `json:"cleanEffects"`
 	IsDefault       bool   `json:"isDefault"`
+}
+
+// ESTrackObservation is what an audio elementary stream was seen to carry, read
+// from its own frame headers by shared ingest.
+//
+// It holds only the fields the frames actually answer. Language, purpose and
+// accessibility are not here because an audio frame header does not carry them -
+// which is what keeps source precedence a per-field question rather than a
+// ranking of sources.
+type ESTrackObservation struct {
+	PID uint16 `json:"pid"`
+
+	// Channels is the count the stream established, or 0 while it has not. Zero
+	// means "not yet seen", never stereo.
+	Channels int `json:"channels"`
+
+	LFE bool `json:"lfe,omitempty"`
+
+	// Frames is how many frames the observation rests on.
+	Frames uint64 `json:"frames,omitempty"`
+
+	// DependentSubstream reports that E-AC-3 dependent substreams were present, so
+	// Channels describes the independent substream and the programme may carry
+	// more.
+	DependentSubstream bool `json:"dependentSubstream,omitempty"`
 }
 
 // Enigma2TrackObservation represents metadata from OpenWebIF /web/getaudiotracks.
