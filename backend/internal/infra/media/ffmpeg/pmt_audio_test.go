@@ -125,3 +125,64 @@ func TestBuildTopology_KeepsADeclarationTheProbeMissed(t *testing.T) {
 		t.Error("the PMT-only track was dropped; a declaration the probe missed is exactly what this feeds in for")
 	}
 }
+
+// The scenario review found once the declarations started reaching the plan: the
+// PMT names two languages, the startup snapshot only shows one. Before the filter
+// the missing track fell back to the first audio stream, so the German stream was
+// published twice - once correctly, once advertised as English.
+func TestSplitMappableTracks_DropsATrackWithNoInputStream(t *testing.T) {
+	streams := map[uint16]liveAudioStream{
+		101: {Index: 0, ID: "0x65", CodecName: "ac3", Channels: 2},
+	}
+	tracks := []audiotopology.TrackPlan{
+		{PID: 101, Name: "Deutsch"},
+		{PID: 102, Name: "English"},
+	}
+
+	mappable, unmappable := splitMappableTracks(tracks, streams)
+
+	if len(mappable) != 1 || mappable[0].PID != 101 {
+		t.Errorf("mappable = %+v, want only the probed PID 101", mappable)
+	}
+	if len(unmappable) != 1 || unmappable[0].PID != 102 {
+		t.Errorf("unmappable = %+v, want the PMT-only PID 102", unmappable)
+	}
+}
+
+// The input must survive the split intact, because the caller logs one half after
+// reading the other. An in-place filter would rewrite the array under it.
+func TestSplitMappableTracks_LeavesTheInputIntact(t *testing.T) {
+	streams := map[uint16]liveAudioStream{101: {Index: 0}}
+	tracks := []audiotopology.TrackPlan{
+		{PID: 101, Name: "Deutsch"},
+		{PID: 102, Name: "English"},
+		{PID: 103, Name: "Français"},
+	}
+
+	_, unmappable := splitMappableTracks(tracks, streams)
+
+	if len(tracks) != 3 || tracks[1].PID != 102 || tracks[2].PID != 103 {
+		t.Errorf("input was mutated: %+v", tracks)
+	}
+	if len(unmappable) != 2 {
+		t.Fatalf("unmappable has %d entries, want 2", len(unmappable))
+	}
+	if unmappable[0].Name != "English" || unmappable[1].Name != "Français" {
+		t.Errorf("unmappable = %+v, want the two names preserved for the log", unmappable)
+	}
+}
+
+// Nothing to drop is the ordinary case and must stay untouched.
+func TestSplitMappableTracks_KeepsEverythingWhenAllProbed(t *testing.T) {
+	streams := map[uint16]liveAudioStream{101: {Index: 0}, 102: {Index: 1}}
+	tracks := []audiotopology.TrackPlan{{PID: 101}, {PID: 102}}
+
+	mappable, unmappable := splitMappableTracks(tracks, streams)
+
+	if len(mappable) != 2 {
+		t.Errorf("mappable has %d entries, want 2", len(mappable))
+	}
+	if len(unmappable) != 0 {
+		t.Errorf("unmappable = %+v, want none", unmappable)
+	}
+}

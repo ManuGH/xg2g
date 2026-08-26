@@ -184,15 +184,38 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		Int("tracks_count", len(multiPlan.Tracks)).
 		Msg("evaluated audio topology and output policy")
 
+	// A planned track can now exist for a PID ffprobe never reported. Feeding the
+	// PMT's declarations into BuildTopology is what makes that possible, and it is
+	// the point of doing so - the declaration knows about a track the startup
+	// snapshot missed. But there is no input stream to map such a track to.
+	//
+	// Mapping it anyway is what the code did until this filter existed: the PID
+	// lookup missed, the plan fell back to the first audio stream, and that stream
+	// was published twice - once correctly, once carrying another track's language
+	// in the manifest. Silently, because a fallback is not an error.
+	//
+	// Dropping the track has to happen before the argv and the var_stream_map are
+	// built, because both are derived from this slice and skipping inside either
+	// loop alone would shift them against each other.
+	if mappable, unmappable := splitMappableTracks(multiPlan.Tracks, streamByPID); len(unmappable) > 0 {
+		for _, tp := range unmappable {
+			a.Logger.Warn().
+				Str("session_id", spec.SessionID).
+				Str("startup_phase", "live_audio_track_unmappable").
+				Uint16("pid", tp.PID).
+				Str("track_name", tp.Name).
+				Msg("declared audio track has no probed input stream; leaving it out rather than mapping another stream under its name")
+		}
+		multiPlan.Tracks = mappable
+	}
+
 	if len(multiPlan.Tracks) > 1 {
 		var maps []string
 		var audioArgs []string
 
 		for i, tp := range multiPlan.Tracks {
-			matchedStream, ok := streamByPID[tp.PID]
-			if !ok {
-				matchedStream = audioStreams[0]
-			}
+			// Guaranteed to hit: the filter above removed every track without one.
+			matchedStream := streamByPID[tp.PID]
 			mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
 			maps = append(maps, mapArg)
 
@@ -253,6 +276,9 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		selectedPlan = multiPlan.Tracks[0]
 	}
 
+	// After the filter the only way this misses is the genuine empty-plan case,
+	// where selectedPlan is the zero value and the first audio stream is the right
+	// default rather than a substitute for something else.
 	matchedStream, ok := streamByPID[selectedPlan.PID]
 	if !ok {
 		matchedStream = audioStreams[0]
@@ -431,4 +457,21 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		"-of", "json",
 		inputURL,
 	)
+}
+
+// splitMappableTracks separates the planned tracks that have an input stream to
+// be mapped to from those that do not.
+//
+// Both halves are returned rather than filtering in place, because the caller
+// reports what it dropped: an in-place filter rewrites the backing array under
+// the very slice a second pass would read.
+func splitMappableTracks(tracks []audiotopology.TrackPlan, streamByPID map[uint16]liveAudioStream) (mappable, unmappable []audiotopology.TrackPlan) {
+	for _, tp := range tracks {
+		if _, ok := streamByPID[tp.PID]; ok {
+			mappable = append(mappable, tp)
+			continue
+		}
+		unmappable = append(unmappable, tp)
+	}
+	return mappable, unmappable
 }
