@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 func TestPMTTrackObservations_CarriesTheDeclaration(t *testing.T) {
@@ -184,5 +185,114 @@ func TestSplitMappableTracks_KeepsEverythingWhenAllProbed(t *testing.T) {
 	}
 	if len(unmappable) != 0 {
 		t.Errorf("unmappable = %+v, want none", unmappable)
+	}
+}
+
+func TestClassifyAudioEvidence_Outcomes(t *testing.T) {
+	tests := []struct {
+		name   string
+		pmt    []ports.LiveAudioTrack
+		probes map[uint16]liveAudioStream
+		want   []audioEvidence
+	}{
+		{
+			name:   "the pmt named a count and the probe agrees",
+			pmt:    []ports.LiveAudioTrack{{PID: 101, Codec: "ac3", Channels: 2}},
+			probes: map[uint16]liveAudioStream{101: {CodecName: "ac3", Channels: 2}},
+			want:   []audioEvidence{{codec: "ac3", result: metrics.AudioEvidenceDeclaredExact}},
+		},
+		{
+			name:   "more than two channels, count unstated",
+			pmt:    []ports.LiveAudioTrack{{PID: 101, Codec: "ac3", Multichannel: true}},
+			probes: map[uint16]liveAudioStream{101: {CodecName: "ac3", Channels: 6}},
+			want:   []audioEvidence{{codec: "ac3", result: metrics.AudioEvidenceDeclaredMulti}},
+		},
+		{
+			name:   "the descriptor carried nothing usable",
+			pmt:    []ports.LiveAudioTrack{{PID: 101, Codec: "mp2"}},
+			probes: map[uint16]liveAudioStream{101: {CodecName: "mp2", Channels: 2}},
+			want:   []audioEvidence{{codec: "mp2", result: metrics.AudioEvidenceDeclaredNone}},
+		},
+		{
+			name:   "both named a count and disagreed",
+			pmt:    []ports.LiveAudioTrack{{PID: 101, Codec: "ac3", Channels: 2}},
+			probes: map[uint16]liveAudioStream{101: {CodecName: "ac3", Channels: 6}},
+			want:   []audioEvidence{{codec: "ac3", result: metrics.AudioEvidenceConflict}},
+		},
+		{
+			name:   "only the tables know this track",
+			pmt:    []ports.LiveAudioTrack{{PID: 102, Codec: "aac", Channels: 2}},
+			probes: map[uint16]liveAudioStream{},
+			want:   []audioEvidence{{codec: "aac", result: metrics.AudioEvidencePMTOnly}},
+		},
+		{
+			name:   "only the probe knows this track",
+			pmt:    nil,
+			probes: map[uint16]liveAudioStream{103: {CodecName: "eac3", Channels: 6}},
+			want:   []audioEvidence{{codec: "eac3", result: metrics.AudioEvidenceProbeOnly}},
+		},
+		{
+			name:   "nothing at all",
+			pmt:    nil,
+			probes: nil,
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyAudioEvidence(tc.pmt, tc.probes)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d outcomes %+v, want %d", len(got), got, len(tc.want))
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("outcome %d = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// A count matching on both sides is agreement, not a conflict, and a probe that
+// reported nothing cannot contradict anything.
+func TestClassifyAudioEvidence_ConflictNeedsTwoCounts(t *testing.T) {
+	tests := []struct {
+		name  string
+		track ports.LiveAudioTrack
+		probe liveAudioStream
+		want  string
+	}{
+		{"same count", ports.LiveAudioTrack{Channels: 2}, liveAudioStream{Channels: 2}, metrics.AudioEvidenceDeclaredExact},
+		{"probe silent", ports.LiveAudioTrack{Channels: 2}, liveAudioStream{Channels: 0}, metrics.AudioEvidenceDeclaredExact},
+		{"pmt silent", ports.LiveAudioTrack{}, liveAudioStream{Channels: 6}, metrics.AudioEvidenceDeclaredNone},
+		{"multichannel is not a disagreement", ports.LiveAudioTrack{Multichannel: true}, liveAudioStream{Channels: 6}, metrics.AudioEvidenceDeclaredMulti},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := declaredResult(tc.track, tc.probe); got != tc.want {
+				t.Errorf("declaredResult = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Every track is counted exactly once, whichever source knows it.
+func TestClassifyAudioEvidence_CountsEachTrackOnce(t *testing.T) {
+	pmt := []ports.LiveAudioTrack{
+		{PID: 101, Codec: "ac3", Channels: 2},
+		{PID: 102, Codec: "aac"},
+	}
+	probes := map[uint16]liveAudioStream{
+		101: {CodecName: "ac3", Channels: 2},
+		103: {CodecName: "mp2", Channels: 2},
+	}
+
+	got := classifyAudioEvidence(pmt, probes)
+
+	if len(got) != 3 {
+		t.Fatalf("got %d outcomes %+v, want one per distinct PID (3)", len(got), got)
 	}
 }

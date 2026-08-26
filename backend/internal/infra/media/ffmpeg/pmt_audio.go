@@ -7,6 +7,7 @@ package ffmpeg
 import (
 	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // pmtTrackObservations turns the PMT's audio declarations into the domain's PMT
@@ -41,4 +42,74 @@ func pmtTrackObservations(tracks []ports.LiveAudioTrack) []audiotopology.PMTTrac
 		})
 	}
 	return out
+}
+
+// audioEvidence is one planned track's codec and where its channel information
+// came from.
+type audioEvidence struct {
+	codec  string
+	result string
+}
+
+// classifyAudioEvidence reports, per audio track, which source supplied the
+// channel information and whether the two sources agreed.
+//
+// It exists to answer a question that cannot be reasoned out: DVB descriptors may
+// omit the channel information, and where they carry it they name a class rather
+// than a count, so how far the declarations alone would carry can only be counted
+// on real services. Nothing here influences the plan.
+//
+// The union of both sources is walked, not just the intersection, because a track
+// only one of them knows about is itself one of the answers.
+func classifyAudioEvidence(pmt []ports.LiveAudioTrack, probes map[uint16]liveAudioStream) []audioEvidence {
+	if len(pmt) == 0 && len(probes) == 0 {
+		return nil
+	}
+
+	out := make([]audioEvidence, 0, len(pmt)+len(probes))
+	seen := make(map[uint16]struct{}, len(pmt))
+
+	for _, track := range pmt {
+		seen[track.PID] = struct{}{}
+		probe, probed := probes[track.PID]
+		if !probed {
+			// Not a fault. A startup snapshot is short, and a track the tables
+			// already name can simply not have arrived in it yet.
+			out = append(out, audioEvidence{codec: track.Codec, result: metrics.AudioEvidencePMTOnly})
+			continue
+		}
+		out = append(out, audioEvidence{codec: track.Codec, result: declaredResult(track, probe)})
+	}
+
+	for pid, probe := range probes {
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		out = append(out, audioEvidence{codec: probe.CodecName, result: metrics.AudioEvidenceProbeOnly})
+	}
+	return out
+}
+
+// declaredResult classifies a track both sources know about.
+func declaredResult(track ports.LiveAudioTrack, probe liveAudioStream) string {
+	switch {
+	case track.Channels > 0 && probe.Channels > 0 && track.Channels != probe.Channels:
+		return metrics.AudioEvidenceConflict
+	case track.Channels > 0:
+		return metrics.AudioEvidenceDeclaredExact
+	case track.Multichannel:
+		// Its own outcome on purpose. "More than two, count unstated" is neither a
+		// number nor silence, and folding it into either would answer the question
+		// this counter exists to ask.
+		return metrics.AudioEvidenceDeclaredMulti
+	default:
+		return metrics.AudioEvidenceDeclaredNone
+	}
+}
+
+// recordAudioEvidence publishes the classification. Measurement only.
+func recordAudioEvidence(pmt []ports.LiveAudioTrack, probes map[uint16]liveAudioStream) {
+	for _, ev := range classifyAudioEvidence(pmt, probes) {
+		metrics.IncAudioTopologyEvidence(ev.codec, ev.result)
+	}
 }
