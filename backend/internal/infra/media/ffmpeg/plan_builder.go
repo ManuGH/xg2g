@@ -2,7 +2,6 @@ package ffmpeg
 
 import (
 	"context"
-	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -16,7 +15,12 @@ type inputPlan struct {
 	// pmtAudio is what the transport stream's own PMT declares about its audio
 	// tracks, taken from shared ingest. It is empty for a source that has no
 	// ingest session behind it, which is what BuildTopology has always been given.
-	pmtAudio []audiotopology.PMTTrackObservation
+	//
+	// Carried in the declaration's own shape rather than the domain observation:
+	// the difference between "declared two channels" and "declared more than two
+	// without saying how many" survives here and is lost in the conversion, and
+	// the evidence counter needs to tell those apart.
+	pmtAudio []ports.LiveAudioTrack
 
 	// authURL preserves the original input URL with userinfo credentials
 	// before they are stripped from inputURL.  Probe functions (ffprobe,
@@ -70,7 +74,7 @@ type liveSegmentLayout struct {
 	listSize               int
 }
 
-func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtAudio []audiotopology.PMTTrackObservation) (finalizedPlan, error) {
+func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtAudio []ports.LiveAudioTrack) (finalizedPlan, error) {
 	inputPhase, err := a.planInput(spec, inputURL)
 	if err != nil {
 		return finalizedPlan{}, err

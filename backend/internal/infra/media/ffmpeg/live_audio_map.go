@@ -71,7 +71,7 @@ func parsedStreamPID(value uint64) uint16 {
 	return uint16(value)
 }
 
-func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtTracks []audiotopology.PMTTrackObservation) liveAudioSelection {
+func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtAudio []ports.LiveAudioTrack) liveAudioSelection {
 	defaultSel := liveAudioSelection{
 		Maps:      []string{defaultLiveAudioMap},
 		AudioArgs: appendLiveAudioArgs(nil, spec, 2),
@@ -172,7 +172,11 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		clientCaps.PrefersPassthrough = true
 	}
 
-	topo := audiotopology.BuildTopology(spec.Source.ID, pmtTracks, probeObs, nil, time.Now())
+	// Recorded before the merge consumes them, because the merge is where the two
+	// sources become one answer and the question here is which of them supplied it.
+	recordAudioEvidence(pmtAudio, streamByPID)
+
+	topo := audiotopology.BuildTopology(spec.Source.ID, pmtTrackObservations(pmtAudio), probeObs, nil, time.Now())
 	multiPlan := audiotopology.PlanMultiAudioOutput(topo, clientCaps)
 
 	a.Logger.Info().
