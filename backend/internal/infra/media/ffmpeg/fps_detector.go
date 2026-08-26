@@ -253,12 +253,15 @@ func (a *LocalAdapter) buildFPSProbeArgs(inputURL string, retry bool) []string {
 		inputURL = u.String()
 	}
 
-	args := []string{
-		"-v", "error",
-		"-headers", headers,
-	}
-	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
-		args = append(args, "-protocol_whitelist", whitelist)
+	args := []string{"-v", "error"}
+	// HTTP options are meaningless for the startup snapshot a tuner source is
+	// probed from, and passing them anyway makes the argv claim a transport that
+	// is not in use.
+	if isHTTPInputURL(inputURL) {
+		args = append(args, "-headers", headers)
+		if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
+			args = append(args, "-protocol_whitelist", whitelist)
+		}
 	}
 	if v := strings.TrimSpace(a.FPSProbeFFlags); v != "" {
 		args = append(args, "-fflags", v)

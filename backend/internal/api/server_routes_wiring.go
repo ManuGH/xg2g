@@ -169,6 +169,7 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	liveConnectorCfg.RequireTopology = true // Production live route is strictly FAIL-CLOSED
 	liveConnector := pipeline.NewLivePipelineConnector(liveConnectorCfg)
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
+	s.liveSessionMgr = liveSessionMgr
 	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
 	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)

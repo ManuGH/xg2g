@@ -34,6 +34,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/epg/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/household"
+	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -48,6 +49,7 @@ import (
 	receiptamazon "github.com/ManuGH/xg2g/internal/receipts/amazon"
 	receiptgoogle "github.com/ManuGH/xg2g/internal/receipts/google"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/livesource"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/verification/checks"
@@ -253,6 +255,18 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	v3Scan.ActivePlaybackFn = newBackgroundScanPlaybackDetector(v3Store, owiClient)
 	storeRegistry := pipelinestore.NewMemoryStoreRegistry()
 	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger, storeRegistry, v3Store)
+
+	// A tuner transcode takes its bytes from the same shared ingest the live route
+	// serves, so both must hold the one manager. The live route builds it when its
+	// router is built, which is after this point, so the provider resolves it on
+	// first use rather than being handed a nil here.
+	if adapter, ok := mediaPipeline.(*ffmpeg.LocalAdapter); ok {
+		adapter.LiveSources = livesource.NewLazyProvider(
+			s.LiveSessionManager,
+			cfg.Enigma2.BaseURL,
+			cfg.Enigma2.StreamPort,
+		)
+	}
 
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:                v3Bus,

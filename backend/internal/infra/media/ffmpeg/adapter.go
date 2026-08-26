@@ -58,11 +58,6 @@ type pathProbeRequest struct {
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
-	// scrambleObs remembers per-service descrambling outcomes so a scrambled
-	// upstream can be attributed to the service or to the receiver.
-	scrambleObs          *ports.ScrambleObserver
-	scrambleObserverOnce sync.Once
-
 	Config                     AdapterConfig
 	BinPath                    string
 	FFprobeBin                 string
@@ -89,9 +84,15 @@ type LocalAdapter struct {
 	httpClient                 *http.Client
 	Logger                     zerolog.Logger
 	E2                         *enigma2.Client // Dependency for Tuner operations
-	FallbackTo8001             bool
-	PreflightTimeout           time.Duration
-	SegmentSeconds             int
+
+	// LiveSources is where a SourceTuner transcode gets its bytes. It is the only
+	// sanctioned live input: with it absent, Start refuses a tuner source rather
+	// than resolving a receiver URL, so a misconfigured deployment fails loudly
+	// instead of quietly reopening the path this replaced.
+	LiveSources      ports.LiveSourceProvider
+	FallbackTo8001   bool
+	PreflightTimeout time.Duration
+	SegmentSeconds   int
 	// LowLatencyHLS switches fmp4 live sessions to the LL-HLS segment
 	// layout: short segments fragmented on the part-target grid.
 	LowLatencyHLS             bool
