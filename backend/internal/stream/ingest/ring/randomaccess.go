@@ -334,6 +334,153 @@ type AudioTrackInfo struct {
 	StreamType byte   `json:"streamType"`
 	Codec      string `json:"codec"`    // "mp2", "aac", "ac3", "eac3", "dts", "unknown"
 	Language   string `json:"language"` // e.g. "deu", "eng", "und"
+
+	// Declared is what the PMT says about this track's channel count. It is a
+	// declaration read from a descriptor, never a measurement of the audio.
+	Declared AudioChannelDeclaration `json:"declared"`
+}
+
+// AudioChannelDeclaration is the channel information a DVB descriptor declares
+// for an audio track.
+//
+// It is deliberately not an ffmpeg channel count. The descriptors carry a coarse
+// class, and above stereo they say "more than two channels" without naming a
+// number - an AC-3 service at 5.1 and one at 7.1 declare the same value. Turning
+// that into a 6 is an inference, and it belongs in the policy layer that knows
+// what it will do with the answer, not here.
+//
+// The zero value means the stream declared nothing usable, which is a distinct
+// state from declaring stereo. Guessing here would put a plausible wrong number
+// in front of the encoder, which is worse than admitting the stream is silent on
+// the subject.
+type AudioChannelDeclaration struct {
+	// Channels is the declared count where the declaration names one, and 0 where
+	// it does not. A multichannel declaration leaves this 0 and sets Multichannel.
+	Channels int `json:"channels,omitempty"`
+
+	// Multichannel reports a declaration of more than two channels that carries no
+	// exact count.
+	Multichannel bool `json:"multichannel,omitempty"`
+
+	// ComponentType is the raw ETSI EN 300 468 component_type byte this was read
+	// from, kept so a policy layer can reach conclusions this type deliberately
+	// does not - service type, audio description, hearing impaired.
+	ComponentType uint8 `json:"componentType,omitempty"`
+
+	// HasComponentType separates "the descriptor carried a component type" from a
+	// component type that happens to be zero.
+	HasComponentType bool `json:"hasComponentType,omitempty"`
+}
+
+// Known reports whether the declaration says anything about the channel count.
+func (d AudioChannelDeclaration) Known() bool {
+	return d.Channels > 0 || d.Multichannel
+}
+
+// AC-3 component_type, ETSI EN 300 468 Annex D. The low nibble is the declared
+// number of channels; everything at or above ac3ChannelsMultiFirst says only that
+// there are more than two.
+const (
+	ac3ComponentTypeFlagBit = 0x80 // component_type_flag in the descriptor's first body byte
+	ac3ChannelsMask         = 0x0F
+
+	ac3ChannelsMono       = 0x00
+	ac3ChannelsDualMono   = 0x01 // 1+1, two independent mono programmes
+	ac3ChannelsStereo     = 0x02
+	ac3ChannelsStereoDsur = 0x03 // 2 channel, Dolby surround encoded
+	ac3ChannelsMultiFirst = 0x04 // multichannel, no count declared
+	ac3ChannelsMultiLast  = 0x06
+)
+
+// AAC_type, ETSI EN 300 468 Table 26. Only the values whose channel meaning is
+// unambiguous are mapped; anything else stays unknown rather than being guessed.
+const (
+	aacTypeFlagBit = 0x80 // AAC_type_flag, first bit after profile_and_level
+
+	aacTypeMono     = 0x01
+	aacTypeStereo   = 0x03
+	aacTypeSurround = 0x05
+	aacTypeHEMono   = 0x43
+	aacTypeHEStereo = 0x45
+	aacTypeHESurr   = 0x47
+)
+
+// AudioChannelsFromDescriptors reads the declared channel information out of an
+// elementary stream's PMT descriptors.
+//
+// Only AC-3, E-AC-3 and AAC declare channels in a descriptor, and only when the
+// optional component type is present. MPEG-1/2 layer II carries its channel mode
+// in the audio frame header, which is elementary stream payload this package does
+// not parse, so it returns unknown. DTS is likewise not declared here.
+func AudioChannelsFromDescriptors(descriptors []byte) AudioChannelDeclaration {
+	for i := 0; i+2 <= len(descriptors); {
+		tag := descriptors[i]
+		length := int(descriptors[i+1])
+		if i+2+length > len(descriptors) {
+			break
+		}
+		body := descriptors[i+2 : i+2+length]
+
+		switch tag {
+		case descriptorAC3, descriptorEnhAC3:
+			if d, ok := ac3ChannelDeclaration(body); ok {
+				return d
+			}
+		case descriptorAAC:
+			if d, ok := aacChannelDeclaration(body); ok {
+				return d
+			}
+		}
+		i += 2 + length
+	}
+	return AudioChannelDeclaration{}
+}
+
+// ac3ChannelDeclaration reads the AC-3 / E-AC-3 descriptor body. Its first byte
+// is a set of presence flags; component_type, when the flag says it is there,
+// follows immediately.
+func ac3ChannelDeclaration(body []byte) (AudioChannelDeclaration, bool) {
+	if len(body) < 2 || body[0]&ac3ComponentTypeFlagBit == 0 {
+		return AudioChannelDeclaration{}, false
+	}
+	componentType := body[1]
+
+	d := AudioChannelDeclaration{ComponentType: componentType, HasComponentType: true}
+	switch componentType & ac3ChannelsMask {
+	case ac3ChannelsMono:
+		d.Channels = 1
+	case ac3ChannelsDualMono, ac3ChannelsStereo, ac3ChannelsStereoDsur:
+		d.Channels = 2
+	case ac3ChannelsMultiFirst, ac3ChannelsMultiFirst + 1, ac3ChannelsMultiLast:
+		d.Multichannel = true
+	default:
+		// Reserved. The component type is still worth carrying, but it names no
+		// channel count this code is willing to claim.
+	}
+	return d, true
+}
+
+// aacChannelDeclaration reads the AAC descriptor body: profile_and_level, then a
+// flag bit, then AAC_type when that flag is set.
+func aacChannelDeclaration(body []byte) (AudioChannelDeclaration, bool) {
+	if len(body) < 3 || body[1]&aacTypeFlagBit == 0 {
+		return AudioChannelDeclaration{}, false
+	}
+	aacType := body[2]
+
+	d := AudioChannelDeclaration{ComponentType: aacType, HasComponentType: true}
+	switch aacType {
+	case aacTypeMono, aacTypeHEMono:
+		d.Channels = 1
+	case aacTypeStereo, aacTypeHEStereo:
+		d.Channels = 2
+	case aacTypeSurround, aacTypeHESurr:
+		d.Multichannel = true
+	default:
+		// Table 26 also names audio description, hard of hearing and mixed
+		// supplementary variants whose channel count is not fixed by the value.
+	}
+	return d, true
 }
 
 // AudioCodecFromStreamType identifies the audio codec normalized from stream type and descriptors.

@@ -673,11 +673,13 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 							r.audioPIDs = appendPID(r.audioPIDs, elemPID)
 							codec := AudioCodecFromStreamType(st, descriptors)
 							lang := LanguageFromDescriptors(descriptors)
+							declared := AudioChannelsFromDescriptors(descriptors)
 							r.audioTracks = appendAudioTrack(r.audioTracks, AudioTrackInfo{
 								PID:        elemPID,
 								StreamType: st,
 								Codec:      codec,
 								Language:   lang,
+								Declared:   declared,
 							})
 						}
 					}
