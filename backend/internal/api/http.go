@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
+	ingestsession "github.com/ManuGH/xg2g/internal/stream/ingest/session"
 	"github.com/ManuGH/xg2g/internal/verification"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -80,6 +81,12 @@ type Server struct {
 	started         atomic.Bool // P10: Lifecycle Invariant (Deliverable #4)
 	topologyService pipeline.TopologyService
 
+	// liveSessionMgr is the shared ingest of the live route. It is kept here so
+	// the media path can be given the same manager: a second one would mean a
+	// second connection to the receiver for the same service, which is the whole
+	// thing shared ingest exists to prevent.
+	liveSessionMgr *ingestsession.Manager
+
 	// Dependency Injection (Internal)
 	v3Factory func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
 }
@@ -125,6 +132,14 @@ func (s *Server) TopologyService() pipeline.TopologyService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.topologyService
+}
+
+// LiveSessionManager returns the shared ingest manager backing the live route, or
+// nil before the routes are wired. The media path is handed this instance rather
+// than building its own: two managers would each dial the receiver for the same
+// service, and the coalescing would silently not happen.
+func (s *Server) LiveSessionManager() *ingestsession.Manager {
+	return s.liveSessionMgr
 }
 
 // WithRootContext sets the server root context before subsystem wiring.

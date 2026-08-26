@@ -66,32 +66,38 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 
 	inputURL := ""
+
+	// ingestInput holds the shared-ingest attachment for a tuner source. It owns
+	// the claim that keeps the upstream alive, so it is released only once the
+	// process that reads it has exited - handed to the monitor below, or released
+	// here if the spawn never happens.
+	var ingestInput *sharedIngestInput
+	ingestHandedOff := false
+	defer func() {
+		if ingestInput != nil && !ingestHandedOff {
+			ingestInput.Release()
+		}
+	}()
+
 	switch spec.Source.Type {
 	case ports.SourceTuner:
-		if a.E2 == nil {
-			return "", fmt.Errorf("tuner source requires enigma2 client")
-		}
-		streamURL, err := a.E2.ResolveStreamURL(prepCtx, spec.Source.ID)
-		if err != nil {
-			return "", fmt.Errorf("resolve stream url: %w", err)
-		}
-		streamURL = a.injectCredentialsIfAllowed(streamURL)
-		a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "stream_url_resolved").
-			Str("resolved_url", sanitizeURLForLog(streamURL)).
-			Msg("stream url resolved")
-
-		chosenURL, err := a.selectStreamURL(prepCtx, spec.SessionID, spec.Source.ID, streamURL)
+		// The receiver URL is gone from this path. Bytes come from the one
+		// connection shared ingest already holds for this service, and the startup
+		// probes read a snapshot of its head from a file rather than opening
+		// connections of their own. There is deliberately no fallback that
+		// resolves a stream URL: a tuner transcode that cannot reach shared ingest
+		// must fail, or the path this replaced would live on as an error handler.
+		in, err := a.acquireSharedIngestInput(prepCtx, spec)
 		if err != nil {
 			return "", err
 		}
-		inputURL = chosenURL
+		ingestInput = in
+		inputURL = in.ProbePath()
 		a.Logger.Info().
 			Str("session_id", spec.SessionID).
-			Str("startup_phase", "input_url_selected").
-			Str("input_url", sanitizeURLForLog(inputURL)).
-			Msg("stream input url selected")
+			Str("startup_phase", "input_source_selected").
+			Str("probe_source", inputURL).
+			Msg("live input taken from shared ingest")
 	case ports.SourceURL:
 		inputURL = spec.Source.ID
 		a.Logger.Info().
@@ -140,7 +146,18 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	effectiveSpec := spec
 	effectiveSpec.Profile = plan.effectiveProfile
 	var usingPipe bool
-	if a.shouldAvsyncAtrim(effectiveSpec) {
+
+	// A tuner source is always a pipe now, and its bytes always come from the
+	// spool. The two paths below that used to build their own HTTP connection to
+	// the receiver only ever ran for this source type, so they are skipped
+	// entirely rather than being given a second byte source to choose from.
+	if ingestInput != nil {
+		args = transformArgsForTelemetryPipeMode(args)
+		avsyncStdin = ingestInput.Stdin()
+		usingPipe = true
+	}
+
+	if !usingPipe && a.shouldAvsyncAtrim(effectiveSpec) {
 		if orphan, stdin, useAtrim := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); stdin != nil {
 			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, effectiveSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
@@ -310,7 +327,17 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
 	}
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	// The shared-ingest claim outlives Start and belongs to the process, not to
+	// this call: the upstream stays alive only while a holder is attached, so
+	// releasing it here would pull the stream out from under an ffmpeg that is
+	// still reading. The monitor blocks on cmd.Wait, which makes its return the
+	// first moment nothing is reading any more.
+	ingestHandedOff = true
+	releaseIngest := ingestInput
+	go func() {
+		defer releaseIngest.Release()                                                                                                                                                                                                                                                  // nil-safe; a non-tuner source has none
+		a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	}()
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}

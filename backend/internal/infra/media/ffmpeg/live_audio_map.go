@@ -378,6 +378,7 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 }
 
 func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL string) []string {
+	httpInput := isHTTPInputURL(inputURL)
 	headers := "Connection: close\r\nIcy-MetaData: 1\r\n"
 	if u, err := url.Parse(inputURL); err == nil && u.User != nil {
 		pwd, _ := u.User.Password()
@@ -410,12 +411,14 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		}
 	}
 
-	args := []string{
-		"-v", "error",
-		"-headers", headers,
-	}
-	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
-		args = append(args, "-protocol_whitelist", whitelist)
+	args := []string{"-v", "error"}
+	// See buildFPSProbeArgs: a tuner source is probed from a local startup
+	// snapshot, where HTTP options describe a transport that is not in use.
+	if httpInput {
+		args = append(args, "-headers", headers)
+		if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {
+			args = append(args, "-protocol_whitelist", whitelist)
+		}
 	}
 	if analyzeDuration != "" {
 		args = append(args, "-analyzeduration", analyzeDuration)
