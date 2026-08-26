@@ -30,7 +30,7 @@ func TestABR_VAAPI_3Tier_Plan(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
 
@@ -64,7 +64,7 @@ func TestABR_VAAPI_2Tier_Deinterlace_Plan(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
 
@@ -97,7 +97,7 @@ func TestABR_UnverifiedVAAPI_FallsBackToCPU(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
 

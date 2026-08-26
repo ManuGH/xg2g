@@ -75,13 +75,13 @@ func TestAndroidTVNativeStartupSkipsAudioProbeWithoutChangingWeb(t *testing.T) {
 		return []liveAudioStream{{Index: 2, CodecType: "audio", CodecName: "mp2", Channels: 2}}, nil
 	}
 
-	native := adapter.planLiveAudioSelection(context.Background(), androidTVNativeTranscodeSpec(), "http://example.com/live")
+	native := adapter.planLiveAudioSelection(context.Background(), androidTVNativeTranscodeSpec(), "http://example.com/live", nil)
 	assert.Equal(t, []string{defaultLiveAudioMap}, native.Maps)
 	assert.Zero(t, probeCalls)
 
 	webSpec := androidTVNativeTranscodeSpec()
 	webSpec.ClientFamily = "chromium_hlsjs"
-	web := adapter.planLiveAudioSelection(context.Background(), webSpec, "http://example.com/live")
+	web := adapter.planLiveAudioSelection(context.Background(), webSpec, "http://example.com/live", nil)
 	assert.Equal(t, []string{"0:2?"}, web.Maps)
 	assert.Equal(t, 1, probeCalls, "web audio selection must retain its compatibility probe")
 }

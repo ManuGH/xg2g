@@ -326,7 +326,7 @@ func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testi
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, spec.Source.ID)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, spec.Source.ID, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, plan.args)
 	assert.Equal(t, ports.RuntimeModeCopy, plan.effectiveProfile.EffectiveRuntimeMode)
@@ -667,7 +667,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
 	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 	args := plan.args
 
@@ -745,7 +745,7 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
 	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 	args := plan.args
 
@@ -796,7 +796,7 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
 	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 	args := plan.args
 
@@ -851,7 +851,7 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0"
 	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 	args := plan.args
 
@@ -2064,7 +2064,7 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 	}
 
 	streamURL := "http://127.0.0.1:17999/1:0:19:132F:3EF:1:C00000:0:0:0:"
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 
 	assert.Contains(t, plan.args, "av1_vaapi")
@@ -2248,7 +2248,7 @@ func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 	streamURL := "http://127.0.0.1:17999/1:0:19:91:4:85:C00000:0:0:0:"
 	adapter.setLastKnownFPS(fpsCacheKey(spec.Source, streamURL), 50)
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL)
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, streamURL, nil)
 	require.NoError(t, err)
 	args := plan.args
 

@@ -146,6 +146,15 @@ func (in *sharedIngestInput) ProbePath() string {
 	return in.snapshotPath
 }
 
+// Facts reports what the ingest knows about the stream. A nil input has none,
+// which is the honest answer for a source that has no ingest session behind it.
+func (in *sharedIngestInput) Facts() ports.LiveSourceFacts {
+	if in == nil || in.source == nil {
+		return ports.LiveSourceFacts{}
+	}
+	return in.source.Facts()
+}
+
 // Stdin is the byte stream handed to FFmpeg.
 func (in *sharedIngestInput) Stdin() io.Reader {
 	if in == nil {

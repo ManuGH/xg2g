@@ -41,6 +41,38 @@ type LiveSourceFacts struct {
 
 	ScrambledVideoPackets uint64
 	ClearVideoPackets     uint64
+
+	// AudioTracks are the elementary audio streams the PMT names, in the order it
+	// names them.
+	AudioTracks []LiveAudioTrack
+}
+
+// LiveAudioTrack is one audio elementary stream as the PMT declares it.
+//
+// Everything here is declared, not measured: it comes from the descriptor loop,
+// which is why there is no sample rate, no bitrate and no measured channel count.
+// A consumer that needs those still has to look at the audio itself.
+type LiveAudioTrack struct {
+	PID        uint16
+	StreamType byte
+	Codec      string
+	Language   string
+
+	// Channels is the declared channel count where the descriptor names one, and
+	// 0 where it does not. Zero means "the stream did not say", which is a
+	// different thing from stereo.
+	Channels int
+
+	// Multichannel reports a declaration of more than two channels carrying no
+	// exact count - an AC-3 service at 5.1 and one at 7.1 declare the same value,
+	// so turning this into a number would be an invention.
+	Multichannel bool
+
+	// ComponentType is the raw ETSI EN 300 468 component type the declaration was
+	// read from, carried through for a consumer that knows what to do with the
+	// service-type bits this type deliberately does not interpret.
+	ComponentType    uint8
+	HasComponentType bool
 }
 
 // Descrambled reports whether the receiver is delivering this service in the

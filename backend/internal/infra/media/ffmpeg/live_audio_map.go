@@ -71,7 +71,7 @@ func parsedStreamPID(value uint64) uint16 {
 	return uint16(value)
 }
 
-func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string) liveAudioSelection {
+func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtTracks []audiotopology.PMTTrackObservation) liveAudioSelection {
 	defaultSel := liveAudioSelection{
 		Maps:      []string{defaultLiveAudioMap},
 		AudioArgs: appendLiveAudioArgs(nil, spec, 2),
@@ -172,7 +172,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		clientCaps.PrefersPassthrough = true
 	}
 
-	topo := audiotopology.BuildTopology(spec.Source.ID, nil, probeObs, nil, time.Now())
+	topo := audiotopology.BuildTopology(spec.Source.ID, pmtTracks, probeObs, nil, time.Now())
 	multiPlan := audiotopology.PlanMultiAudioOutput(topo, clientCaps)
 
 	a.Logger.Info().

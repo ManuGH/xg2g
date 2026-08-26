@@ -151,5 +151,29 @@ func factsFrom(f ring.ReadinessFacts) ports.LiveSourceFacts {
 		CleanAccessUnits:      f.CleanAccessUnits,
 		ScrambledVideoPackets: f.Scrambling.VideoScrambled,
 		ClearVideoPackets:     f.Scrambling.VideoClear,
+		AudioTracks:           audioTracksFrom(f.AudioTracks),
 	}
+}
+
+// audioTracksFrom carries the PMT's audio declarations across the port boundary
+// without reinterpreting them. In particular a multichannel declaration stays a
+// flag: the descriptor names a class, not a count.
+func audioTracksFrom(tracks []ring.AudioTrackInfo) []ports.LiveAudioTrack {
+	if len(tracks) == 0 {
+		return nil
+	}
+	out := make([]ports.LiveAudioTrack, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, ports.LiveAudioTrack{
+			PID:              t.PID,
+			StreamType:       t.StreamType,
+			Codec:            t.Codec,
+			Language:         t.Language,
+			Channels:         t.Declared.Channels,
+			Multichannel:     t.Declared.Multichannel,
+			ComponentType:    t.Declared.ComponentType,
+			HasComponentType: t.Declared.HasComponentType,
+		})
+	}
+	return out
 }
