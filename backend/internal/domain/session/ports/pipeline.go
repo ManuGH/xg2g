@@ -2,8 +2,6 @@ package ports
 
 import (
 	"context"
-
-	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 )
 
 // MediaPipeline defines the contract for controlling media processes.
@@ -57,9 +55,4 @@ type DiagnosticMetadata struct {
 // DiagnosticLookup exposes session metadata needed for diagnostic contexts without coupling to store models.
 type DiagnosticLookup interface {
 	GetDiagnosticMetadata(ctx context.Context, sessionID string) (DiagnosticMetadata, bool)
-}
-
-// AudioTopologyProber provides an on-demand audio topology probe capability for an active session.
-type AudioTopologyProber interface {
-	ProbeAudioTopology(ctx context.Context, sessionID, serviceRef, inputURL string) (audiotopology.AudioTopology, error)
 }
