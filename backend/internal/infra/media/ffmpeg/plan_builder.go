@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
@@ -11,6 +12,11 @@ const experimentalInterlacedVAAPICodecsEnv = "XG2G_EXPERIMENTAL_ALLOW_UNVERIFIED
 type inputPlan struct {
 	args     []string
 	inputURL string
+
+	// pmtAudio is what the transport stream's own PMT declares about its audio
+	// tracks, taken from shared ingest. It is empty for a source that has no
+	// ingest session behind it, which is what BuildTopology has always been given.
+	pmtAudio []audiotopology.PMTTrackObservation
 
 	// authURL preserves the original input URL with userinfo credentials
 	// before they are stripped from inputURL.  Probe functions (ffprobe,
@@ -64,11 +70,12 @@ type liveSegmentLayout struct {
 	listSize               int
 }
 
-func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string) (finalizedPlan, error) {
+func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtAudio []audiotopology.PMTTrackObservation) (finalizedPlan, error) {
 	inputPhase, err := a.planInput(spec, inputURL)
 	if err != nil {
 		return finalizedPlan{}, err
 	}
+	inputPhase.pmtAudio = pmtAudio
 	if spec.Mode == ports.ModeLive {
 		// Pass the original (pre-sanitisation) URL so that any probe calls
 		// inside FinalizePlan (e.g. safari runtime probe) can authenticate

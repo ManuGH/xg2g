@@ -18,7 +18,7 @@ func noopStartupSpan() trace.Span {
 }
 
 func (a *LocalAdapter) buildArgs(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]string, error) {
-	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL)
+	plan, err := a.buildArgsWithPlan(ctx, spec, inputURL, nil)
 	if err != nil {
 		return nil, err
 	}

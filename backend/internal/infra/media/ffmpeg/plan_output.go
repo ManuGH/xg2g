@@ -45,7 +45,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		}
 	}
 
-	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL)
+	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL, input.pmtAudio)
 
 	out := outputPlan{
 		effectiveProfile: spec.Profile,

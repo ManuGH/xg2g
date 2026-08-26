@@ -51,7 +51,7 @@ func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
 
@@ -124,7 +124,7 @@ func TestABR_RegressionGuard_DirectCopy(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
 
@@ -186,7 +186,7 @@ func TestABR_2Tier_VBVParameters(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), spec720, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec720, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
 
@@ -242,7 +242,7 @@ func TestABR_UnknownSourceHeight_DefaultsTo2Tier(t *testing.T) {
 		},
 	}
 
-	plan, err := adapter.buildArgsWithPlan(context.Background(), specUnknown, "http://localhost:8080/stream")
+	plan, err := adapter.buildArgsWithPlan(context.Background(), specUnknown, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
 
@@ -275,7 +275,7 @@ func TestABR_3Tier_Source1080p_DynamicGOP(t *testing.T) {
 		},
 	}
 
-	plan25, err := adapter25.buildArgsWithPlan(context.Background(), spec25, "http://localhost:8080/stream")
+	plan25, err := adapter25.buildArgsWithPlan(context.Background(), spec25, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan25.primaryPlaylist)
 
@@ -311,7 +311,7 @@ func TestABR_3Tier_Source1080p_DynamicGOP(t *testing.T) {
 		},
 	}
 
-	plan50, err := adapter50.buildArgsWithPlan(context.Background(), spec50, "http://localhost:8080/stream")
+	plan50, err := adapter50.buildArgsWithPlan(context.Background(), spec50, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan50.primaryPlaylist)
 
@@ -338,7 +338,7 @@ func TestABR_2Tier_Source720p_NoFakeUpscaling(t *testing.T) {
 		},
 	}
 
-	plan720, err := adapter.buildArgsWithPlan(context.Background(), spec720, "http://localhost:8080/stream")
+	plan720, err := adapter.buildArgsWithPlan(context.Background(), spec720, "http://localhost:8080/stream", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "master.m3u8", plan720.primaryPlaylist)
 
