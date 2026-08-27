@@ -200,11 +200,16 @@ jobs:
           # and this is where it shows.
           file ./xg2g.bin | grep -q "statically linked"
 
-      - name: The media core runs in the image and exits cleanly
+      # An ELF header is a claim about a binary; running it is the check. A wrong
+      # target architecture produced a header that looked right in every other
+      # step and an image that could not exec its own entrypoint, so both
+      # binaries are started here rather than only inspected.
+      - name: Both binaries run in the image and exit cleanly
         run: |
           set -euo pipefail
-          docker run --rm --entrypoint /usr/local/bin/xg2g-media-core \
-            "xg2g-image-check:${{ github.sha }}"
+          img="xg2g-image-check:${{ github.sha }}"
+          docker run --rm --entrypoint /usr/local/bin/xg2g-media-core "$img"
+          docker run --rm --entrypoint /usr/local/bin/xg2g "$img" --version
 
       - name: The image still runs as the non-root service user
         run: |
