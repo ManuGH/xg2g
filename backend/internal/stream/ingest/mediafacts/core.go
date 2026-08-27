@@ -22,8 +22,13 @@ import (
 //
 //	chunk in -> facts and ordered events out -> caller commits the bytes
 //
-// An implementation may live in this process or behind a socket. Nothing in the
-// contract assumes either, which is the point of it existing.
+// The contract is shaped so an implementation could live behind a socket, but
+// that is a statement about this interface, not about the caller. MasterRing
+// currently calls Ingest while holding the lock its readers use, so a remote core
+// that hung would block subscribers, readiness and Close along with it. The
+// semantic boundary is here; the fault-isolation boundary is not, and the
+// changeset that introduces a remote core has to move the call out of the reader
+// lock and give it a deadline before that sentence becomes true.
 type Core interface {
 	// Ingest consumes one chunk of transport stream. startOffset is the chunk's
 	// position in the caller's own monotonic byte coordinate system, and every
@@ -49,6 +54,13 @@ type Core interface {
 type EventKind uint8
 
 const (
+	// EventUnknown is the zero value and means nothing. It exists so that a
+	// missing, uninitialised or badly decoded event cannot arrive as a lifecycle
+	// change: across a wire boundary the zero value is what a truncated frame or a
+	// failed decode produces, and "advance the generation" is the last thing that
+	// should mean.
+	EventUnknown EventKind = iota
+
 	// EventProgramIdentityChanged reports that the program this stream carries is
 	// no longer the one it was: a new PMT version, a different program number, a
 	// changed elementary stream layout.
@@ -56,7 +68,7 @@ const (
 	// It is not a generation. What a caller does with it - bump an epoch, cut
 	// workers, invalidate an index - is the caller's decision, and this event
 	// carries no opinion about it.
-	EventProgramIdentityChanged EventKind = iota
+	EventProgramIdentityChanged
 
 	// EventRandomAccessPoint reports an access unit a decoder can be started on,
 	// at Offset in the caller's coordinate system.
@@ -76,7 +88,11 @@ type Event struct {
 
 // ParseResult is what one chunk meant.
 type ParseResult struct {
-	// ProcessedThroughOffset is the offset one past the last byte interpreted.
+	// ProcessedThroughOffset is the offset one past the last byte interpreted. A
+	// core that consumed less than it was given must say so here; the caller
+	// rejects the chunk rather than committing bytes whose meaning it does not
+	// have. Partial processing is not a supported outcome - this field exists to
+	// make the unsupported case detectable rather than silent.
 	ProcessedThroughOffset int64
 
 	// Events are ordered as they occurred within the chunk. A caller must replay

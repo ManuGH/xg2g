@@ -31,6 +31,11 @@ const (
 // ErrInvalidPacketSize reports data that is not 188-byte packet aligned.
 var ErrInvalidPacketSize = mediafacts.ErrInvalidPacketSize
 
+// ErrCoreIncomplete reports a media core that interpreted less of a chunk than it
+// was given. The chunk is refused rather than committed, because bytes the ring
+// cannot explain are worse than bytes it does not have.
+var ErrCoreIncomplete = errors.New("media facts core did not interpret the whole chunk")
+
 // The interpretation of transport stream bytes lives in mediafacts. These aliases
 // keep the names consumers already import while the boundary is drawn: the ring
 // owns bytes, offsets and the generation; mediafacts owns what the bytes mean.
@@ -134,6 +139,12 @@ func (r *MasterRing) applyLocked(res mediafacts.ParseResult) {
 			if len(r.keyframeOffsets) > r.maxKeyframes {
 				r.keyframeOffsets = r.keyframeOffsets[1:]
 			}
+		default:
+			// EventUnknown, or a kind this build does not know. Both are refused
+			// rather than guessed at: across a wire boundary the zero value is what a
+			// truncated or mis-decoded event looks like, and the two things this
+			// switch can do - end an epoch, offer an attach point - are the two things
+			// that must never happen by accident.
 		}
 	}
 	r.facts = res.Facts
@@ -164,6 +175,13 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	res, err := r.core.Ingest(r.head, data)
 	if err != nil {
 		return 0, err
+	}
+	// A core that interpreted less than it was given leaves the ring with bytes it
+	// has no meaning for. Committing them anyway is exactly the failure this
+	// boundary exists to prevent, so the chunk is refused and nothing here moves:
+	// not the head, not the generation, not the index, not the facts.
+	if want := r.head + int64(len(data)); res.ProcessedThroughOffset != want {
+		return 0, ErrCoreIncomplete
 	}
 	r.applyLocked(res)
 
@@ -442,7 +460,14 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 	// Everything the stream says about itself comes from the core. The two fields
 	// added here are the ones it cannot answer: which lifecycle epoch this is, and
 	// whether an entry point is still inside a buffer it cannot see.
+	// Copied on the way out. The cached facts are the ring's own state, and a
+	// consumer that received the backing arrays could write through a snapshot
+	// into the ring - or read them while a concurrent Push replaces what they
+	// describe. The pre-seam code copied these for the same reason.
 	f := r.facts
+	f.AudioPIDs = append([]uint16(nil), f.AudioPIDs...)
+	f.AudioTracks = append([]AudioTrackInfo(nil), f.AudioTracks...)
+	f.Scrambling.AudioPIDs = append([]uint16(nil), f.Scrambling.AudioPIDs...)
 
 	attach := false
 	if len(r.keyframeOffsets) > 0 {

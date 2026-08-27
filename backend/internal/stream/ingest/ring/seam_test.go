@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
@@ -202,5 +203,177 @@ func TestSeam_EntryPointsBeforeAnIdentityChangeAreDropped(t *testing.T) {
 	got := r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 300 {
 		t.Errorf("KeyframeOffsets = %v, want only the entry point that arrived after the identity change", got)
+	}
+}
+
+// A snapshot the caller can write through is not a snapshot. The pre-seam code
+// copied these slices on the way out; the boundary made that easy to lose,
+// because the cached facts already look like a private copy - they are, of the
+// core's state, and shared with every caller of this one.
+func TestSeam_ReadinessFactsIsIndependentOfTheRing(t *testing.T) {
+	r := NewMasterRingWithProgram(400*TSPacketSize, 1)
+	defer r.Close()
+
+	pushAll(t, r, obsPAT(), obsPMT(0,
+		ac3Track(mtGerman, "deu", 0x85),
+		ac3Track(mtEnglish, "eng", 0x82),
+	))
+
+	first := r.ReadinessFacts()
+	if len(first.AudioPIDs) == 0 || len(first.AudioTracks) == 0 {
+		t.Fatal("fixture no longer produces audio tracks; this test would prove nothing")
+	}
+
+	wantPID := first.AudioPIDs[0]
+	wantCodec := first.AudioTracks[0].Codec
+	wantScramblingPID := first.Scrambling.AudioPIDs[0]
+
+	// A consumer doing what consumers do with a value they were handed.
+	first.AudioPIDs[0] = 0xBEEF
+	first.AudioTracks[0].Codec = "clobbered"
+	first.Scrambling.AudioPIDs[0] = 0xBEEF
+
+	second := r.ReadinessFacts()
+	if second.AudioPIDs[0] != wantPID {
+		t.Errorf("AudioPIDs[0] = %d after a caller wrote to an earlier snapshot, want %d", second.AudioPIDs[0], wantPID)
+	}
+	if second.AudioTracks[0].Codec != wantCodec {
+		t.Errorf("AudioTracks[0].Codec = %q, want %q", second.AudioTracks[0].Codec, wantCodec)
+	}
+	if second.Scrambling.AudioPIDs[0] != wantScramblingPID {
+		t.Errorf("Scrambling.AudioPIDs[0] = %d, want %d", second.Scrambling.AudioPIDs[0], wantScramblingPID)
+	}
+
+	// And the two snapshots must not share backing arrays with each other either.
+	second.AudioPIDs[0] = 0xF00D
+	if third := r.ReadinessFacts(); third.AudioPIDs[0] != wantPID {
+		t.Errorf("AudioPIDs[0] = %d, want %d - snapshots share a backing array", third.AudioPIDs[0], wantPID)
+	}
+}
+
+// shortCore interprets everything it is given and then understates how far it
+// got, which is what a truncated IPC response or a core that gave up mid-chunk
+// would look like from the ring's side.
+type shortCore struct {
+	mediafacts.Core
+	shortBy int64
+}
+
+func (c shortCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	res, err := c.Core.Ingest(startOffset, data)
+	res.ProcessedThroughOffset -= c.shortBy
+	// Events the ring must not act on, precisely because the chunk is short.
+	res.Events = append(res.Events, mediafacts.Event{Kind: mediafacts.EventProgramIdentityChanged})
+	return res, err
+}
+
+// Bytes the ring cannot explain are worse than bytes it does not have. A chunk
+// the core did not fully interpret is refused, and nothing moves with it.
+func TestSeam_AChunkTheCoreDidNotFinishIsNotCommitted(t *testing.T) {
+	const pmtPID = 100
+
+	r := NewMasterRingWithProgram(400*TSPacketSize, 1)
+	defer r.Close()
+	r.core = shortCore{Core: r.core, shortBy: TSPacketSize}
+
+	headBefore := r.Head()
+	tailBefore := r.Tail()
+	genBefore := r.Generation()
+	kfBefore := len(r.KeyframeOffsets())
+	factsBefore := r.ReadinessFacts()
+
+	data := createMultiPacketPAT(pmtPID)[0]
+	n, err := r.Push(data)
+
+	if !errors.Is(err, ErrCoreIncomplete) {
+		t.Fatalf("Push err = %v, want ErrCoreIncomplete", err)
+	}
+	if n != 0 {
+		t.Errorf("Push n = %d, want 0", n)
+	}
+	if got := r.Head(); got != headBefore {
+		t.Errorf("Head = %d, want %d - bytes were committed for a chunk that was refused", got, headBefore)
+	}
+	if got := r.Tail(); got != tailBefore {
+		t.Errorf("Tail = %d, want %d", got, tailBefore)
+	}
+	if got := r.Generation(); got != genBefore {
+		t.Errorf("Generation = %d, want %d - the refused chunk's events were applied", got, genBefore)
+	}
+	if got := len(r.KeyframeOffsets()); got != kfBefore {
+		t.Errorf("KeyframeOffsets len = %d, want %d", got, kfBefore)
+	}
+	if got := r.ReadinessFacts(); got.HasPAT != factsBefore.HasPAT || got.ProgramNumber != factsBefore.ProgramNumber {
+		t.Errorf("facts moved on a refused chunk: %+v", got)
+	}
+	if got := r.BufferedBytes(); got != 0 {
+		t.Errorf("BufferedBytes = %d, want 0 - refused bytes are readable", got)
+	}
+}
+
+// The zero value of an event is what a truncated frame or a failed decode
+// produces. It must mean nothing, not "a new programme began".
+func TestSeam_TheZeroEventIsNotALifecycleChange(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+
+	r.mu.Lock()
+	genBefore := r.generation
+	r.applyLocked(mediafacts.ParseResult{Events: []mediafacts.Event{
+		{},                                // zero value
+		{Kind: mediafacts.EventUnknown},   // named, still nothing
+		{Kind: mediafacts.EventKind(200)}, // a kind this build does not know
+		{Kind: mediafacts.EventKind(200), Offset: 4242},
+	}})
+	genAfter := r.generation
+	kf := len(r.keyframeOffsets)
+	r.mu.Unlock()
+
+	if genAfter != genBefore {
+		t.Errorf("Generation moved from %d to %d on events that say nothing", genBefore, genAfter)
+	}
+	if kf != 0 {
+		t.Errorf("KeyframeOffsets len = %d, want 0", kf)
+	}
+}
+
+// The PMT PID is what the PAT says, so it is a fact about the stream rather than
+// a helper for tests. It has to survive a remapping, and a remapping is an
+// identity change.
+func TestSeam_PMTPIDFollowsThePAT(t *testing.T) {
+	core := mediafacts.NewGoCore(1)
+
+	ingest := func(packets [][]byte) mediafacts.ParseResult {
+		t.Helper()
+		var last mediafacts.ParseResult
+		for _, pkt := range packets {
+			res, err := core.Ingest(0, pkt)
+			if err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			last = res
+		}
+		return last
+	}
+
+	ingest(createMultiPacketPAT(100))
+	if got := core.Snapshot().PMTPID; got != 100 {
+		t.Fatalf("Facts.PMTPID = %d, want 100", got)
+	}
+
+	// The same program is remapped to a different PMT PID.
+	res := ingest(createMultiPacketPATWithVersion(200, 1, 1))
+	if got := core.Snapshot().PMTPID; got != 200 {
+		t.Errorf("Facts.PMTPID = %d after the PAT remapped the program, want 200", got)
+	}
+
+	identity := false
+	for _, ev := range res.Events {
+		if ev.Kind == mediafacts.EventProgramIdentityChanged {
+			identity = true
+		}
+	}
+	if !identity {
+		t.Error("a PAT that moved the program to another PMT PID reported no identity change")
 	}
 }
