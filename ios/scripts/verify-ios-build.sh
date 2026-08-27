@@ -18,11 +18,17 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Verifying iOS build-for-testing on ${SIMULATOR}..."
+if [[ "${SIMULATOR}" =~ ^[0-9A-Fa-f-]+$ ]]; then
+  DESTINATION="platform=iOS Simulator,id=${SIMULATOR}"
+else
+  DESTINATION="platform=iOS Simulator,name=${SIMULATOR}"
+fi
+
+echo "==> Verifying iOS build-for-testing on ${DESTINATION}..."
 xcodebuild build-for-testing \
   -project "${REPO_ROOT}/ios/Xg2g.xcodeproj" \
   -scheme Xg2g \
-  -destination "platform=iOS Simulator,name=${SIMULATOR}" \
+  -destination "${DESTINATION}" \
   -quiet
 
 echo "✅ iOS build-for-testing passed (entire Xg2gTests target compiles cleanly)"
