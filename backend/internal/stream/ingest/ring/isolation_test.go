@@ -336,3 +336,60 @@ func TestIsolation_ARingThatMovedUnderTheChunkRefusesTheCommit(t *testing.T) {
 		t.Errorf("the core was entered %d more times after it diverged from the ring, want 0", got-entered)
 	}
 }
+
+// An empty chunk is still a write, and a closed ring refuses writes. Moving the
+// core out of the reader lock moved the zero-length shortcut above the state
+// checks with it, which quietly turned "the ring is closed" into "nothing to do".
+func TestPush_EmptyChunkPreservesClosedSemantics(t *testing.T) {
+	t.Run("a closed ring refuses an empty chunk", func(t *testing.T) {
+		r := NewMasterRing(400 * TSPacketSize)
+		core := &countingCore{Core: r.core}
+		r.core = core
+
+		r.Close()
+
+		for _, data := range [][]byte{nil, {}} {
+			if _, err := r.Push(data); !errors.Is(err, ErrRingClosed) {
+				t.Errorf("Push(%v) err = %v, want ErrRingClosed", data, err)
+			}
+		}
+
+		core.mu.Lock()
+		defer core.mu.Unlock()
+		if len(core.offsets) != 0 {
+			t.Errorf("the core was entered %d times for an empty chunk, want 0", len(core.offsets))
+		}
+	})
+
+	t.Run("an open ring accepts an empty chunk and does nothing", func(t *testing.T) {
+		r := NewMasterRing(400 * TSPacketSize)
+		defer r.Close()
+		core := &countingCore{Core: r.core}
+		r.core = core
+
+		headBefore, tailBefore, genBefore := r.Head(), r.Tail(), r.Generation()
+
+		n, err := r.Push(nil)
+		if err != nil {
+			t.Fatalf("Push(nil) err = %v, want nil", err)
+		}
+		if n != 0 {
+			t.Errorf("Push(nil) n = %d, want 0", n)
+		}
+		if got := r.Head(); got != headBefore {
+			t.Errorf("Head = %d, want %d", got, headBefore)
+		}
+		if got := r.Tail(); got != tailBefore {
+			t.Errorf("Tail = %d, want %d", got, tailBefore)
+		}
+		if got := r.Generation(); got != genBefore {
+			t.Errorf("Generation = %d, want %d", got, genBefore)
+		}
+
+		core.mu.Lock()
+		defer core.mu.Unlock()
+		if len(core.offsets) != 0 {
+			t.Errorf("the core was entered %d times for an empty chunk, want 0", len(core.offsets))
+		}
+	})
+}
