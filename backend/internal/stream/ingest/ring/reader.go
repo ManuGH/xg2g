@@ -174,7 +174,7 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 			//	                         decoder state to corrupt, so the tail is the
 			//	                         only entry point there is, and a legal one.
 			//	topology known, video  - only a random access point will do.
-			s.awaitingRandomAccess = !s.ring.hasPMTVersion || s.ring.videoPID != 0
+			s.awaitingRandomAccess = !s.ring.facts.HasPMT || s.ring.facts.VideoPID != 0
 		}
 
 		// The wait is a state, not a single pass. Without it the next push would
