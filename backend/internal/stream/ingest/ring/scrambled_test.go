@@ -7,6 +7,8 @@ package ring
 import (
 	"errors"
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 )
 
 // idrESPayload returns Annex-B elementary stream bytes containing an IDR slice NAL unit.
@@ -51,7 +53,7 @@ func TestMasterRing_ScrambledVideo_NotIndexedAndAttachIsTerminal(t *testing.T) {
 
 	pushClearPATPMT(t, r, pmtPID, videoPID)
 
-	for i := 0; i < scrambledVerdictMinPackets; i++ {
+	for i := 0; i < mediafacts.ScrambledVerdictMinPackets; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
 		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)
@@ -63,8 +65,8 @@ func TestMasterRing_ScrambledVideo_NotIndexedAndAttachIsTerminal(t *testing.T) {
 	}
 
 	scrambled, clear := r.ScramblingObservation()
-	if scrambled != scrambledVerdictMinPackets {
-		t.Fatalf("expected %d scrambled video packets observed, got %d", scrambledVerdictMinPackets, scrambled)
+	if scrambled != mediafacts.ScrambledVerdictMinPackets {
+		t.Fatalf("expected %d scrambled video packets observed, got %d", mediafacts.ScrambledVerdictMinPackets, scrambled)
 	}
 	if clear != 0 {
 		t.Fatalf("expected zero clear video packets, got %d", clear)
@@ -92,7 +94,7 @@ func TestMasterRing_ClearPayloadPresent_NotDeclaredScrambled(t *testing.T) {
 
 	pushClearPATPMT(t, r, pmtPID, videoPID)
 
-	for i := 0; i < scrambledVerdictMinPackets*2; i++ {
+	for i := 0; i < mediafacts.ScrambledVerdictMinPackets*2; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
 		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)
@@ -134,7 +136,7 @@ func TestMasterRing_ProgramChange_ResetsScramblingObservation(t *testing.T) {
 
 	pushClearPATPMT(t, r, pmtPID, videoPID)
 
-	for i := 0; i < scrambledVerdictMinPackets; i++ {
+	for i := 0; i < mediafacts.ScrambledVerdictMinPackets; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
 		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)

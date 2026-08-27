@@ -582,8 +582,8 @@ func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 0, false, false, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
-	if r.videoPID != 0 {
-		t.Fatalf("test setup: expected an audio-only PMT, got video PID %d", r.videoPID)
+	if r.facts.VideoPID != 0 {
+		t.Fatalf("test setup: expected an audio-only PMT, got video PID %d", r.facts.VideoPID)
 	}
 
 	reader := r.NewSubscriberReader(0)
@@ -654,7 +654,7 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt2Corrupted[3] = (pkt2Corrupted[3] & 0xF0) | 0x05
 	_, _ = r.Push(pkt2Corrupted)
 
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("corrupted PAT section with CC gap was incorrectly accepted")
 	}
 
@@ -669,8 +669,8 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt2Valid[3] = (pkt2Valid[3] & 0xF0) | 0x07
 	_, _ = r.Push(pkt2Valid)
 
-	if r.pmtPID != pmtPID {
-		t.Fatalf("expected pmtPID=%d after clean retransmission, got %d", pmtPID, r.pmtPID)
+	if r.facts.PMTPID != pmtPID {
+		t.Fatalf("expected pmtPID=%d after clean retransmission, got %d", pmtPID, r.facts.PMTPID)
 	}
 }
 
@@ -684,7 +684,7 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("inactive PAT table (current_next=0) was incorrectly accepted")
 	}
 
@@ -692,8 +692,8 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	if r.pmtPID != pmtPID {
-		t.Fatalf("active PAT table was not accepted: got %d", r.pmtPID)
+	if r.facts.PMTPID != pmtPID {
+		t.Fatalf("active PAT table was not accepted: got %d", r.facts.PMTPID)
 	}
 }
 
@@ -787,15 +787,15 @@ func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
 	_, _ = r.Push(patPackets[0])
 	_, _ = r.Push(pkt2Corrupt)
 
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("PAT section with corrupted CRC32 was incorrectly accepted")
 	}
 
 	_, _ = r.Push(patPackets[0])
 	_, _ = r.Push(patPackets[1])
 
-	if r.pmtPID != pmtPID {
-		t.Fatalf("valid PAT section was not accepted: got %d", r.pmtPID)
+	if r.facts.PMTPID != pmtPID {
+		t.Fatalf("valid PAT section was not accepted: got %d", r.facts.PMTPID)
 	}
 }
 
@@ -806,16 +806,16 @@ func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
 	defer r1.Close()
 	_, _ = r1.Push(multiPAT)
 
-	if r1.pmtPID != 100 {
-		t.Fatalf("expected default r1 to select PMT 100, got %d", r1.pmtPID)
+	if r1.facts.PMTPID != 100 {
+		t.Fatalf("expected default r1 to select PMT 100, got %d", r1.facts.PMTPID)
 	}
 
 	r2 := NewMasterRingWithProgram(100*TSPacketSize, 2)
 	defer r2.Close()
 	_, _ = r2.Push(multiPAT)
 
-	if r2.pmtPID != 200 {
-		t.Fatalf("expected r2 to select PMT 200 for program 2, got %d", r2.pmtPID)
+	if r2.facts.PMTPID != 200 {
+		t.Fatalf("expected r2 to select PMT 200 for program 2, got %d", r2.facts.PMTPID)
 	}
 }
 
@@ -863,8 +863,8 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 	defer r.Close()
 
 	_, _ = r.Push(multiPAT)
-	if r.pmtPID != 100 {
-		t.Fatalf("expected pmtPID=100 for program 1, got %d", r.pmtPID)
+	if r.facts.PMTPID != 100 {
+		t.Fatalf("expected pmtPID=100 for program 1, got %d", r.facts.PMTPID)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 256, false, true, 0, 1) {
@@ -886,8 +886,8 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 	}
 
 	_, _ = r.Push(multiPAT)
-	if r.pmtPID != 200 {
-		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.pmtPID)
+	if r.facts.PMTPID != 200 {
+		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.facts.PMTPID)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(200, 512, true, true, 0, 1) {
@@ -924,7 +924,7 @@ func TestMasterRing_PointerField_CompletesPreviousSectionAndStartsNew(t *testing
 	copy(pkt1[178:], sec1[:10])
 
 	_, _ = r.Push(pkt1)
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("section 1 should be incomplete")
 	}
 
@@ -946,8 +946,8 @@ func TestMasterRing_PointerField_CompletesPreviousSectionAndStartsNew(t *testing
 	_, _ = r.Push(pkt2)
 
 	// Section 2 was also parsed in the same packet and updated PMT PID to 200!
-	if r.pmtPID != 200 {
-		t.Fatalf("expected pmtPID=200 from Section 2 parsed in same packet, got %d", r.pmtPID)
+	if r.facts.PMTPID != 200 {
+		t.Fatalf("expected pmtPID=200 from Section 2 parsed in same packet, got %d", r.facts.PMTPID)
 	}
 }
 
@@ -975,8 +975,8 @@ func TestMasterRing_MultipleCompleteSectionsInSinglePacket(t *testing.T) {
 
 	_, _ = r.Push(pkt)
 
-	if r.pmtPID != 200 {
-		t.Fatalf("expected pmtPID=200 for target program 20 from multi-section packet, got %d", r.pmtPID)
+	if r.facts.PMTPID != 200 {
+		t.Fatalf("expected pmtPID=200 for target program 20 from multi-section packet, got %d", r.facts.PMTPID)
 	}
 }
 
@@ -1006,14 +1006,14 @@ func TestMasterRing_MultiSectionPAT_TargetOnlyInSection1(t *testing.T) {
 
 	// Push Section 0 (target 30 not in Section 0)
 	_, _ = r.Push(pkt0)
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("table should not be activated before section 1 arrives")
 	}
 
 	// Push Section 1
 	_, _ = r.Push(pkt1)
-	if r.pmtPID != 300 {
-		t.Fatalf("expected pmtPID=300 from Section 1, got %d", r.pmtPID)
+	if r.facts.PMTPID != 300 {
+		t.Fatalf("expected pmtPID=300 from Section 1, got %d", r.facts.PMTPID)
 	}
 
 	// Verify PAT preamble contains both Section 0 and Section 1 TS packets
@@ -1053,8 +1053,8 @@ func TestMasterRing_CarouselRepeatedSection0_PreservesMultiSectionPreamble(t *te
 	_, _ = r.Push(pkt0)
 	_, _ = r.Push(pkt1)
 
-	if r.pmtPID != 300 {
-		t.Fatalf("expected pmtPID=300, got %d", r.pmtPID)
+	if r.facts.PMTPID != 300 {
+		t.Fatalf("expected pmtPID=300, got %d", r.facts.PMTPID)
 	}
 
 	// Periodic DVB Carousel: Section 0 arrives again!
@@ -1064,8 +1064,8 @@ func TestMasterRing_CarouselRepeatedSection0_PreservesMultiSectionPreamble(t *te
 	_, _ = r.Push(pkt0Next)
 
 	// Target resolution must NOT be destroyed
-	if r.pmtPID != 300 {
-		t.Fatalf("expected pmtPID=300 preserved after carousel section 0, got %d", r.pmtPID)
+	if r.facts.PMTPID != 300 {
+		t.Fatalf("expected pmtPID=300 preserved after carousel section 0, got %d", r.facts.PMTPID)
 	}
 
 	// Preamble must STILL contain both sections
@@ -1091,8 +1091,8 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	copy(pktInit[5:], secInit)
 	_, _ = r.Push(pktInit)
 
-	if r.pmtPID != 100 {
-		t.Fatalf("expected initial pmtPID=100, got %d", r.pmtPID)
+	if r.facts.PMTPID != 100 {
+		t.Fatalf("expected initial pmtPID=100, got %d", r.facts.PMTPID)
 	}
 
 	// New version v1 announces last_section_number = 1 (2 sections required)
@@ -1108,8 +1108,8 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	_, _ = r.Push(pktV1_0)
 
 	// Because Section 1 of v1 is missing, table v1 is INCOMPLETE and must not activate!
-	if r.pmtPID != 100 {
-		t.Fatalf("incomplete table version must not activate: expected pmtPID=100, got %d", r.pmtPID)
+	if r.facts.PMTPID != 100 {
+		t.Fatalf("incomplete table version must not activate: expected pmtPID=100, got %d", r.facts.PMTPID)
 	}
 
 	// Push Section 1 of v1 (with program 30 -> PMT 300)
@@ -1124,8 +1124,8 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	_, _ = r.Push(pktV1_1)
 
 	// Now table v1 is complete and activates!
-	if r.pmtPID != 300 {
-		t.Fatalf("expected pmtPID=300 after complete v1 assembly, got %d", r.pmtPID)
+	if r.facts.PMTPID != 300 {
+		t.Fatalf("expected pmtPID=300 after complete v1 assembly, got %d", r.facts.PMTPID)
 	}
 }
 
@@ -1147,8 +1147,8 @@ func TestMasterRing_DuplicateCC_IgnoredWithoutDiscontinuity(t *testing.T) {
 	_, _ = r.Push(patPackets[1])
 
 	// Assembly must have succeeded seamlessly
-	if r.pmtPID != pmtPID {
-		t.Fatalf("duplicate CC packet caused incorrect discontinuity reset: got pmtPID=%d", r.pmtPID)
+	if r.facts.PMTPID != pmtPID {
+		t.Fatalf("duplicate CC packet caused incorrect discontinuity reset: got pmtPID=%d", r.facts.PMTPID)
 	}
 }
 
@@ -1182,13 +1182,13 @@ func TestMasterRing_PSIHeaderSplitAcrossPackets(t *testing.T) {
 	copy(pkt2[4:], sec[2:])
 
 	_, _ = r.Push(pkt1)
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("table should not be resolved after 2 header bytes")
 	}
 
 	_, _ = r.Push(pkt2)
-	if r.pmtPID != pmtPID {
-		t.Fatalf("expected pmtPID=%d from section with split header across packets, got %d", pmtPID, r.pmtPID)
+	if r.facts.PMTPID != pmtPID {
+		t.Fatalf("expected pmtPID=%d from section with split header across packets, got %d", pmtPID, r.facts.PMTPID)
 	}
 }
 
@@ -1215,7 +1215,7 @@ func TestMasterRing_SameCCDifferentPayload_ResetsAssembly(t *testing.T) {
 	_, _ = r.Push(patPackets[1])
 
 	// Assembly must have been aborted by the glitch packet
-	if r.pmtPID != 0 {
+	if r.facts.PMTPID != 0 {
 		t.Fatalf("same CC with different payload failed to abort corrupted assembly")
 	}
 }
@@ -1242,8 +1242,8 @@ func TestMasterRing_MultipleSectionsSamePacket_PreambleDoesNotDuplicatePacket(t 
 
 	_, _ = r.Push(pkt)
 
-	if r.pmtPID != 200 {
-		t.Fatalf("expected pmtPID=200, got %d", r.pmtPID)
+	if r.facts.PMTPID != 200 {
+		t.Fatalf("expected pmtPID=200, got %d", r.facts.PMTPID)
 	}
 
 	// Preamble must contain the packet EXACTLY ONCE (188 bytes), not duplicated (376 bytes)
@@ -1299,8 +1299,8 @@ func TestMasterRing_MPEG2_SequenceHeaderAndIFrame(t *testing.T) {
 	}
 	_, _ = r.Push(pmtPkt)
 
-	if r.videoCodec != CodecMPEG2 {
-		t.Fatalf("expected CodecMPEG2, got %v", r.videoCodec)
+	if r.facts.VideoCodec != CodecMPEG2 {
+		t.Fatalf("expected CodecMPEG2, got %v", r.facts.VideoCodec)
 	}
 
 	// 3. MPEG-2 Video PES containing Sequence Header (00 00 01 B3) and I-Frame Picture Header (00 00 01 00 00 08)

@@ -395,8 +395,8 @@ func TestSubscriberReader_MPEG2OverrunResyncsToIFrame(t *testing.T) {
 	if _, err := r.Push(mpeg2PMTPacket(t, 100, 200)); err != nil {
 		t.Fatalf("push MPEG-2 PMT: %v", err)
 	}
-	if r.videoCodec != CodecMPEG2 {
-		t.Fatalf("test setup: expected CodecMPEG2, got %v", r.videoCodec)
+	if r.facts.VideoCodec != CodecMPEG2 {
+		t.Fatalf("test setup: expected CodecMPEG2, got %v", r.facts.VideoCodec)
 	}
 
 	reader := r.NewSubscriberReader(0)
@@ -479,8 +479,8 @@ func TestSubscriberReader_AudioOnlyServiceResumesAtTailWithoutWaiting(t *testing
 			t.Fatalf("push audio-only PMT: %v", err)
 		}
 	}
-	if r.videoPID != 0 {
-		t.Fatalf("test setup: expected no video PID, got %d", r.videoPID)
+	if r.facts.VideoPID != 0 {
+		t.Fatalf("test setup: expected no video PID, got %d", r.facts.VideoPID)
 	}
 
 	reader := r.NewSubscriberReader(0)
