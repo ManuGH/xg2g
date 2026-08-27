@@ -95,9 +95,12 @@ type Conflict struct {
 
 // AudioTrack represents a fully resolved, evidence-backed audio track.
 type AudioTrack struct {
-	ID               string             `json:"id"`
-	PID              uint16             `json:"pid"`
-	Codec            AudioCodec         `json:"codec"`
+	ID    string     `json:"id"`
+	PID   uint16     `json:"pid"`
+	Codec AudioCodec `json:"codec"`
+	// Channels is the resolved count, or 0 where no source stated one. Zero means
+	// unknown and never stereo - a track nobody measured is not a track with two
+	// channels, and a consumer that needs a number has to choose one knowingly.
 	Channels         int                `json:"channels"`
 	SampleRate       int                `json:"sampleRate,omitempty"`
 	BitrateKbps      int                `json:"bitrateKbps,omitempty"`

@@ -210,3 +210,46 @@ func TestBuildTopology_ObservedChangeMovesTheStructuralRevision(t *testing.T) {
 	assert.NotEqual(t, stereo.StructuralRevision, surround.StructuralRevision,
 		"the same PMT with a different observed layout is a different topology")
 }
+
+// A track no source named a count for enters the topology as unknown. It used to
+// enter as stereo, which is a statement the stream never made and which nothing
+// downstream could afterwards tell apart from one it had.
+func TestBuildTopology_UnstatedChannelsStayUnknown(t *testing.T) {
+	topo := BuildTopology(chSref,
+		[]PMTTrackObservation{{PID: 101, Codec: "ac3", Language: "deu"}},
+		nil, nil, nil, time.Now())
+
+	require.Len(t, topo.Tracks, 1)
+	assert.Equal(t, 0, topo.Tracks[0].Channels, "unknown is a state, not two channels")
+	assert.Empty(t, evidenceFor(topo.Tracks[0], "channels"), "no source answered, so nothing may be recorded as having answered")
+}
+
+// The policy still has to write a number, and stereo is the safe one. What must
+// not happen is the number looking like knowledge.
+func TestPlanSingleTrack_UnknownChannelsAreDecidedNotKnown(t *testing.T) {
+	caps := ClientAudioCapabilities{SupportsAAC: true}
+
+	tests := []struct {
+		name         string
+		channels     int
+		wantChannels int
+		wantAssumed  bool
+	}{
+		{"the stream never said", 0, 2, true},
+		{"the stream said stereo", 2, 2, false},
+		{"the stream said mono", 1, 2, false},
+		{"the stream said 5.1", 6, 6, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := planSingleTrack(
+				AudioTrack{PID: 101, Codec: CodecAC3, Channels: tc.channels},
+				ClientAudioCapabilities{SupportsAAC: caps.SupportsAAC, SupportsSpatial51: true},
+			)
+
+			assert.Equal(t, tc.wantChannels, plan.Channels)
+			assert.Equal(t, tc.wantAssumed, plan.ChannelsAssumed)
+		})
+	}
+}

@@ -184,11 +184,12 @@ func buildTrack(
 
 	// 3. Resolve Channels & Bitrates
 	//
-	// channels still starts at 2 where no source names one. That default is wrong
-	// - a stream that has not said how many channels it carries does not have two
-	// - and removing it is its own change, because every consumer downstream has
-	// to be able to carry "unknown" first.
-	channels := 2
+	// Unknown stays unknown. Where no source named a count this used to start at
+	// 2, which meant a track nobody had measured entered the topology as stereo -
+	// a fact the stream never stated, indistinguishable afterwards from one it
+	// had. Deciding what to do about an unstated layout is the policy layer's
+	// job; stating it is nobody's.
+	channels := 0
 	sampleRate := 48000
 	bitrateKbps := 0
 

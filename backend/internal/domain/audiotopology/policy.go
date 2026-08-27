@@ -34,12 +34,16 @@ type ClientAudioCapabilities struct {
 
 // TrackPlan specifies the planned encoding, FFmpeg args, and HLS rendition parameters.
 type TrackPlan struct {
-	PID             uint16             `json:"pid"`
-	InputCodec      AudioCodec         `json:"inputCodec"`
-	Strategy        CodecStrategy      `json:"strategy"`
-	EncoderCodec    string             `json:"encoderCodec"` // FFmpeg codec: "copy", "aac", "ac3", "eac3"
-	HLSCodec        string             `json:"hlsCodec"`     // HLS RFC 6381 CODECS: "mp4a.40.2", "ac-3", "ec-3"
-	Channels        int                `json:"channels"`     // 2 or 6
+	PID          uint16        `json:"pid"`
+	InputCodec   AudioCodec    `json:"inputCodec"`
+	Strategy     CodecStrategy `json:"strategy"`
+	EncoderCodec string        `json:"encoderCodec"` // FFmpeg codec: "copy", "aac", "ac3", "eac3"
+	HLSCodec     string        `json:"hlsCodec"`     // HLS RFC 6381 CODECS: "mp4a.40.2", "ac-3", "ec-3"
+	Channels     int           `json:"channels"`     // 2 or 6
+	// ChannelsAssumed marks a plan whose channel count was chosen rather than
+	// known: the track never stated its layout, and an encoder argument has to say
+	// something. The number below is real - this says it was decided here.
+	ChannelsAssumed bool               `json:"channelsAssumed,omitempty"`
 	BitrateKbps     int                `json:"bitrateKbps"`
 	Rendition       AudioRenditionKind `json:"rendition"`
 	HLSChannels     string             `json:"hlsChannels"` // "2" or "6"
@@ -337,10 +341,19 @@ func planSingleTrack(
 		return plan
 	}
 
-	// 2. Stereo (2 channels)
+	// 2. Stereo, and everything the stream has not established as 5.1.
+	//
+	// An unknown layout lands here too, and that is a decision rather than
+	// knowledge. The facts layer reports that the track never stated its channel
+	// count; something still has to be written on the command line, and stereo is
+	// the safe choice because it is what a downmix produces either way. What
+	// changed is where the choice is made: here, in the layer allowed to choose,
+	// and marked as chosen - instead of being written into the facts as if the
+	// stream had said it.
 	plan.Rendition = RenditionStereo
 	plan.HLSChannels = "2"
 	plan.Channels = 2
+	plan.ChannelsAssumed = track.Channels <= 0
 
 	if (track.Codec == CodecAC3 && clientCaps.SupportsAC3) || (track.Codec == CodecEAC3 && clientCaps.SupportsEAC3) {
 		if clientCaps.PrefersPassthrough {
