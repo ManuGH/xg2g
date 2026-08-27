@@ -92,25 +92,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - name: Resolve and Pre-boot iOS Simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          SIM_NAME="iPhone 16 Pro"
+          SIM_UDID=$(xcrun simctl list devices "${SIM_NAME}" available | grep -E -m1 "${SIM_NAME}.*\([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/' || true)
+          if [ -z "${SIM_UDID}" ]; then
+            echo "iPhone 16 Pro not found, falling back to first available iPhone"
+            SIM_UDID=$(xcrun simctl list devices available | grep -E -m1 "iPhone.*\([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/')
+          fi
+          echo "Selected Simulator UDID: ${SIM_UDID}"
+          echo "udid=${SIM_UDID}" >> "$GITHUB_OUTPUT"
+          echo "Pre-booting simulator ${SIM_UDID} in background..."
+          xcrun simctl boot "${SIM_UDID}" 2>/dev/null || true
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: backend/go.mod
           cache: false
 
-      - name: Compile iOS application
-        working-directory: ios
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project Xg2g.xcodeproj \
-            -scheme Xg2g \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
       - name: Exercise generated iOS contracts against the Go router
-        run: ./ios/scripts/run-contract-tests.sh 'iPhone 16 Pro'
+        run: ./ios/scripts/run-contract-tests.sh "${{ steps.simulator.outputs.udid }}"
 
   merge-gate:
     name: Architecture Convergence / Merge Gate
