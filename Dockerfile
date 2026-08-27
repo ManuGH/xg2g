@@ -121,7 +121,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 FROM rust:1.91.0-slim-trixie AS media-core-builder
 
 WORKDIR /media-core
-COPY media-core/rust-toolchain.toml media-core/Cargo.toml media-core/Cargo.lock ./
+# rust-toolchain.toml is deliberately not copied. Inside this stage the FROM tag
+# is the pin; the file would become an override on top of it and send rustup to
+# the network mid-build for components this stage never uses - rustfmt, clippy,
+# and a foreign-arch std, none of which a native `cargo build` touches. The two
+# pins are kept in step by a CI check rather than by carrying the file here.
+COPY media-core/Cargo.toml media-core/Cargo.lock ./
 COPY media-core/src ./src
 
 # --locked so a build that would have to change Cargo.lock fails here instead of

@@ -63,6 +63,22 @@ jobs:
       - name: Cargo.lock is unchanged
         run: git diff --exit-code Cargo.lock
 
+      # Two places name the compiler: this file, for cargo, and the Dockerfile's
+      # base image for the stage that deliberately does not read it. Drift would
+      # mean the image ships a binary built by a compiler no gate ever tested.
+      - name: The image's Rust matches the pinned toolchain
+        working-directory: .
+        run: |
+          set -euo pipefail
+          pinned="$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' media-core/rust-toolchain.toml)"
+          image="$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile)"
+          test -n "$pinned" && test -n "$image"
+          echo "rust-toolchain.toml: $pinned   Dockerfile: $image"
+          test "$pinned" = "$image" || {
+            echo "the toolchain file pins $pinned but the image builds with $image"
+            exit 1
+          }
+
   build:
     name: Release build (${{ matrix.target }})
     runs-on: ubuntu-latest
