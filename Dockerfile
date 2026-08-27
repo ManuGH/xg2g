@@ -98,8 +98,12 @@ COPY --from=webui-builder /apps/webui/dist /app/backend/internal/control/http/di
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+# The environment has to be on the command it is meant for. As a prefix to the
+# whole line it applied to `cd` and nothing else, so `go build` ran with cgo
+# enabled and the image has been shipping a dynamically linked daemon.
+WORKDIR /app/backend
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    cd /app/backend && go build -buildvcs=false -ldflags="-s -w -X github.com/ManuGH/xg2g/internal/version.Version=${BUILD_VERSION} -X github.com/ManuGH/xg2g/internal/version.Commit=${BUILD_COMMIT} -X github.com/ManuGH/xg2g/internal/version.Date=${BUILD_DATE}" -o /xg2g ./cmd/daemon
+    go build -buildvcs=false -ldflags="-s -w -X github.com/ManuGH/xg2g/internal/version.Version=${BUILD_VERSION} -X github.com/ManuGH/xg2g/internal/version.Commit=${BUILD_COMMIT} -X github.com/ManuGH/xg2g/internal/version.Date=${BUILD_DATE}" -o /xg2g ./cmd/daemon
 
 # Stage 4: Final runtime image.
 # By default this inherits the internal FFmpeg base stage.
