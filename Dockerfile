@@ -96,8 +96,14 @@ COPY . /app
 # Copy built WebUI assets to the correct location for Go embedding
 COPY --from=webui-builder /apps/webui/dist /app/backend/internal/control/http/dist
 
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+# Declared without values on purpose. BuildKit fills these in from the platform
+# being built; giving them defaults replaces that with the default, so a
+# --platform=linux/arm64 build compiled the daemon for amd64 and put it in an
+# arm64 image. That stayed invisible while CGO_ENABLED and GOARCH were being
+# dropped by the shell - Go then built for whatever the emulated builder was,
+# which happened to be right.
+ARG TARGETOS
+ARG TARGETARCH
 # The environment has to be on the command it is meant for. As a prefix to the
 # whole line it applied to `cd` and nothing else, so `go build` ran with cgo
 # enabled and the image has been shipping a dynamically linked daemon.
