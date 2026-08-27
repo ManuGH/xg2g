@@ -7,6 +7,7 @@ package ffmpeg
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -218,5 +219,42 @@ func TestLiveAudioProbeMetrics_AndroidTVNativeIsNotCounted(t *testing.T) {
 	}
 	if got := counterVecTotal(t, metrics.AudioTopologyEvidenceTotal) - beforeEvidence; got != 0 {
 		t.Errorf("topology evidence delta = %v, want 0", got)
+	}
+}
+
+// The facts layer now reports an unstated channel count as unknown instead of as
+// stereo, and the multi-track argument builder no longer carries a fallback for a
+// zero. Neither may change what reaches ffmpeg: the policy decides stereo, and
+// the command line says 2. A regression here would read as "-ac:a:0 0".
+func TestPlanLiveAudio_UnknownChannelsStillEncodeAsStereo(t *testing.T) {
+	adapter := probeMetricsAdapter(t)
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		// Channels 0 throughout: nothing anywhere names a count.
+		return []liveAudioStream{
+			{Index: 1, ID: "101", CodecType: "audio", CodecName: "ac3", Tags: map[string]string{"language": "deu"}},
+			{Index: 2, ID: "102", CodecType: "audio", CodecName: "ac3", Tags: map[string]string{"language": "eng"}},
+		}, nil
+	}
+
+	pmt := []ports.LiveAudioTrack{
+		{PID: 101, Codec: "ac3", Language: "deu"},
+		{PID: 102, Codec: "ac3", Language: "eng"},
+	}
+
+	spec := probeMetricsSpec()
+	sel := adapter.planLiveAudioSelection(context.Background(), spec, spec.Source.ID, pmt)
+
+	if len(sel.Maps) < 2 {
+		t.Fatalf("Maps = %v, want both tracks planned", sel.Maps)
+	}
+	for i := range sel.Maps {
+		flag := fmt.Sprintf("-ac:a:%d", i)
+		got, ok := valueAfter(sel.AudioArgs, flag)
+		if !ok {
+			t.Fatalf("%s missing from %v", flag, sel.AudioArgs)
+		}
+		if got != "2" {
+			t.Errorf("%s = %q, want 2 - an unknown layout is still encoded as stereo", flag, got)
+		}
 	}
 }

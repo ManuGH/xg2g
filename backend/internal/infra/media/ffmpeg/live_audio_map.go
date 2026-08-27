@@ -255,14 +255,10 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 				if bitrateKbps <= 0 {
 					bitrateKbps = 192
 				}
-				channels := tp.Channels
-				if channels <= 0 {
-					channels = 2
-				}
 				audioArgs = append(audioArgs,
 					fmt.Sprintf("-c:a:%d", i), encoderCodec,
 					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
-					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", channels),
+					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", tp.Channels),
 					fmt.Sprintf("-ar:a:%d", i), "48000",
 				)
 			}
@@ -331,6 +327,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		Str("encoder_codec", selectedPlan.EncoderCodec).
 		Str("hls_codec", selectedPlan.HLSCodec).
 		Int("channels", selectedPlan.Channels).
+		Bool("channels_assumed", selectedPlan.ChannelsAssumed).
 		Int("bitrate_kbps", selectedPlan.BitrateKbps).
 		Str("track_name", selectedPlan.Name).
 		Msg("selected live audio stream for playback pipeline")
@@ -358,6 +355,10 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 		bitrateKbps = 192
 	}
 
+	// Not an unknown channel count - a planned track always carries a decided one.
+	// This guards the empty-plan case above, where selectedPlan is the zero value
+	// because no track was planned at all, and an encoder still needs an argument.
+	// It goes away when that case produces a plan rather than a zero value.
 	channels := plan.Channels
 	if channels <= 0 {
 		channels = 2
