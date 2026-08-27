@@ -197,9 +197,6 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	}
 
 	n := len(data)
-	if n == 0 {
-		return 0, nil
-	}
 
 	// One writer at a time, and the core belongs to whoever holds this. Taken
 	// before r.mu and released after it, never the other way round.
@@ -219,6 +216,14 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	}
 	startOffset := r.head
 	r.mu.Unlock()
+
+	// An empty chunk has nothing to interpret and nothing to commit, so the core
+	// is never entered for one. It is answered here rather than at the top of the
+	// function: whether the ring is still accepting writes is a question about the
+	// ring, and an empty chunk does not exempt a caller from the answer.
+	if n == 0 {
+		return 0, nil
+	}
 
 	// 2. Interpret the chunk with no ring lock held. This is the call that may sit
 	//    on a socket, and it is the reason the lock above was released.
