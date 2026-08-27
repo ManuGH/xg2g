@@ -71,22 +71,25 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            linker: gcc-x86-64-linux-gnu
+            # Native on this runner; the cross packages are the same toolchain.
+            packages: gcc-x86-64-linux-gnu libc6-dev-amd64-cross
             linker_env: CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER
             linker_bin: x86_64-linux-gnu-gcc
           - target: aarch64-unknown-linux-gnu
-            linker: gcc-aarch64-linux-gnu
+            # The compiler alone is not enough: linking needs the target's libc
+            # start files, and without them ld fails on Scrt1.o and crti.o.
+            packages: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
             linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
             linker_bin: aarch64-linux-gnu-gcc
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
 
-      - name: Install the cross linker
+      - name: Install the cross toolchain
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.linker }}
+          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
 
       - name: cargo build --release --target ${{ matrix.target }}
         env:
