@@ -61,6 +61,12 @@ fi
 #
 # Running the same package with a test filter that matches nothing does that
 # work up front, through `go test` so the build flags stay identical.
+# Guarantee that the entire test target compiles cleanly before anything else.
+# -only-testing must never hide compilation errors in other test suites, and a
+# Swift break has no reason to wait for a Go build and a fixture server first -
+# it cannot be caused by either, and it fails the job regardless.
+"${REPO_ROOT}/ios/scripts/verify-ios-build.sh" "${SIMULATOR}"
+
 echo "==> building the contract fixture"
 (
   cd "${REPO_ROOT}/backend"
@@ -109,10 +115,6 @@ if [[ -z "${READY:-}" ]]; then
   report_fixture_log
   exit 1
 fi
-
-# Guarantee that the entire test target compiles cleanly before running.
-# -only-testing must never hide compilation errors in other test suites.
-"${REPO_ROOT}/ios/scripts/verify-ios-build.sh" "${SIMULATOR}"
 
 if [[ "${SIMULATOR}" =~ ^[0-9A-Fa-f-]+$ ]]; then
   DESTINATION="platform=iOS Simulator,id=${SIMULATOR}"

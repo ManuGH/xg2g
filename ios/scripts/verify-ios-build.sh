@@ -18,11 +18,11 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "${SIMULATOR}" =~ ^[0-9A-Fa-f-]+$ ]]; then
-  DESTINATION="platform=iOS Simulator,id=${SIMULATOR}"
-else
-  DESTINATION="platform=iOS Simulator,name=${SIMULATOR}"
-fi
+# Compiling needs a platform, not a device. The step this replaced used the
+# generic destination for exactly that reason, and keeping it means a simulator
+# that failed to resolve or boot cannot take the only compile coverage with it.
+# The concrete device is picked later, by the run that actually needs one.
+DESTINATION="generic/platform=iOS Simulator"
 
 echo "==> Verifying iOS build-for-testing on ${DESTINATION}..."
 xcodebuild build-for-testing \
