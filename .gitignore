@@ -33,6 +33,9 @@ ffprobe-wrapper.sh
 *.pid
 *.lock
 !/DIGESTS.lock
+# Cargo.lock is the pinned dependency set for a binary crate, so it belongs in
+# the repository. The blanket *.lock rule above is aimed at stray process locks.
+!/media-core/Cargo.lock
 *.tmp
 *.bk
 *.bak
@@ -163,3 +166,6 @@ red/
 /openclaw-workspace-state.json
 /update_events.py
 /update_manager.py
+
+# Rust build output. Cargo.lock is committed; target/ never is.
+/media-core/target/

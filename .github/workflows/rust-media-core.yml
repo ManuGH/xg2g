@@ -1,0 +1,194 @@
+name: Rust Media Core
+
+# The media core is a second build artifact, not a Go dependency. This gate keeps
+# it honest on its own terms - formatted, lint-clean, tested, and buildable for
+# every platform the runtime image targets - without the Go build knowing it
+# exists.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: media-core
+
+jobs:
+  check:
+    name: Format, lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
+
+      # rust-toolchain.toml pins the compiler, the components and the targets, so
+      # there is nothing to choose here: whatever it names is what runs.
+      - name: Show the pinned toolchain
+        run: |
+          set -euo pipefail
+          cat rust-toolchain.toml
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # Latest stable
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            media-core/target
+          key: rust-media-core-${{ runner.os }}-${{ hashFiles('media-core/Cargo.lock', 'media-core/rust-toolchain.toml') }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      - name: cargo clippy -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --locked
+
+      # Cargo.lock is committed, so a build that would have to change it is a
+      # build whose inputs moved without anyone saying so.
+      - name: Cargo.lock is unchanged
+        run: git diff --exit-code Cargo.lock
+
+  build:
+    name: Release build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            linker: gcc-x86-64-linux-gnu
+            linker_env: CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER
+            linker_bin: x86_64-linux-gnu-gcc
+          - target: aarch64-unknown-linux-gnu
+            linker: gcc-aarch64-linux-gnu
+            linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
+            linker_bin: aarch64-linux-gnu-gcc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
+
+      - name: Install the cross linker
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.linker }}
+
+      - name: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TERM_COLOR: always
+        run: |
+          set -euo pipefail
+          export ${{ matrix.linker_env }}=${{ matrix.linker_bin }}
+          cargo build --release --locked --target ${{ matrix.target }}
+
+      # A binary that exists but is built for the wrong machine would pass every
+      # step above and fail only in the image.
+      - name: The binary is for the target it names
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/xg2g-media-core"
+          test -x "$bin"
+          file "$bin"
+          case "${{ matrix.target }}" in
+            x86_64-*)  file "$bin" | grep -q "x86-64" ;;
+            aarch64-*) file "$bin" | grep -q "aarch64" ;;
+          esac
+
+  image:
+    name: Runtime image (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: x86-64
+          - platform: linux/arm64
+            arch: aarch64
+    # The image build reads the whole repository, not just the crate.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Read from the same place the Makefile reads it, so the base image cannot
+      # drift away from what the rest of the build expects.
+      - name: Resolve the FFmpeg base
+        id: ffmpeg
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^FFMPEG_VERSION[[:space:]]*:=[[:space:]]*//p' mk/variables.mk | head -1)"
+          test -n "$version"
+          echo "base=ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the runtime image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            FFMPEG_BASE_IMAGE=${{ steps.ffmpeg.outputs.base }}
+          tags: xg2g-image-check:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Pulled out of the image and inspected on the runner, because the runtime
+      # image is slim and what is or is not installed inside it should not decide
+      # whether this gate can answer.
+      - name: Both binaries are present and built for this platform
+        run: |
+          set -euo pipefail
+          img="xg2g-image-check:${{ github.sha }}"
+          cid="$(docker create "$img")"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+
+          docker cp "$cid:/usr/local/bin/xg2g" ./xg2g.bin
+          docker cp "$cid:/usr/local/bin/xg2g-media-core" ./media-core.bin
+          file ./xg2g.bin ./media-core.bin
+
+          file ./xg2g.bin          | grep -q "${{ matrix.arch }}"
+          file ./media-core.bin    | grep -q "${{ matrix.arch }}"
+
+          # Rust arrived as a separate artifact, not as a library linked into the
+          # daemon. If that ever stops being true, the Go binary stops being static
+          # and this is where it shows.
+          file ./xg2g.bin | grep -q "statically linked"
+
+      - name: The media core runs in the image and exits cleanly
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /usr/local/bin/xg2g-media-core \
+            "xg2g-image-check:${{ github.sha }}"
+
+      - name: The image still runs as the non-root service user
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint /bin/sh "xg2g-image-check:${{ github.sha }}" -c 'id -u')"
+          test "$uid" = "10001" || { echo "image runs as uid $uid, want 10001"; exit 1; }

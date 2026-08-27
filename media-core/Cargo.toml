@@ -1,0 +1,31 @@
+[package]
+name = "xg2g-media-core"
+version = "0.1.0"
+edition = "2024"
+# Pinned deliberately. The toolchain that builds this is fixed in
+# rust-toolchain.toml; this is the floor the source is allowed to assume, and
+# raising it is a decision rather than a side effect of someone's local update.
+rust-version = "1.91"
+license = "PolyForm-Noncommercial-1.0.0"
+publish = false
+description = "Media facts core for xg2g. Reads what a transport stream says about itself."
+
+[[bin]]
+name = "xg2g-media-core"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+[profile.release]
+# The core is a long-lived process reading untrusted bytes. Overflow checks stay
+# on in release: a wrapped length or offset in a bitstream parser is exactly the
+# kind of wrong that produces a plausible answer instead of a crash.
+overflow-checks = true
+panic = "unwind"
+strip = "symbols"

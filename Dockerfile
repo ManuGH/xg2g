@@ -111,6 +111,24 @@ WORKDIR /app/backend
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -buildvcs=false -ldflags="-s -w -X github.com/ManuGH/xg2g/internal/version.Version=${BUILD_VERSION} -X github.com/ManuGH/xg2g/internal/version.Commit=${BUILD_COMMIT} -X github.com/ManuGH/xg2g/internal/version.Date=${BUILD_DATE}" -o /xg2g ./cmd/daemon
 
+# Stage 3b: the media facts core.
+#
+# A separate artifact, not a Go dependency. It is built by its own toolchain into
+# its own binary, and the Go build above is untouched by it - in particular that
+# build stays CGO_ENABLED=0, because nothing here is ever linked into the daemon.
+# Like the Go stage, this runs on the target platform, so the compile is native
+# rather than cross.
+FROM rust:1.91.0-slim-trixie AS media-core-builder
+
+WORKDIR /media-core
+COPY media-core/rust-toolchain.toml media-core/Cargo.toml media-core/Cargo.lock ./
+COPY media-core/src ./src
+
+# --locked so a build that would have to change Cargo.lock fails here instead of
+# silently resolving to something nobody reviewed.
+RUN cargo build --release --locked && \
+    install -m 0755 target/release/xg2g-media-core /xg2g-media-core
+
 # Stage 4: Final runtime image.
 # By default this inherits the internal FFmpeg base stage.
 # Local/CI fast paths can override FFMPEG_BASE_IMAGE with a prebuilt base image tag.
@@ -120,6 +138,10 @@ ARG BUILD_VERSION
 
 # Copy xg2g binary
 COPY --from=app-builder --chown=10001:10001 /xg2g /usr/local/bin/xg2g
+
+# Copy the media facts core. Present in the image, started by nobody: the daemon
+# does not launch it yet, and its runtime semantics are unchanged by its presence.
+COPY --from=media-core-builder --chown=10001:10001 /xg2g-media-core /usr/local/bin/xg2g-media-core
 
 # Switch to non-root user
 USER 10001:10001

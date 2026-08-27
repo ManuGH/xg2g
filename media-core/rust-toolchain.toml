@@ -1,0 +1,7 @@
+# Pinned so every machine and every CI run builds this with the same compiler.
+# The Go side is reproducible because the builder image names an exact version;
+# this is the same commitment on the other half of the artifact.
+[toolchain]
+channel = "1.91.0"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
