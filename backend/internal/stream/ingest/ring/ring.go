@@ -246,10 +246,18 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	// describe the ring it was read against. Committing after a Close would
 	// publish into a stream nobody is holding; committing at a moved head would
 	// publish at the wrong offset. Both are refused rather than reconciled.
+	//
+	// Both also leave the core holding a chunk the ring does not have, which is
+	// the same divergence an error or a short result produces - the reason for it
+	// differs, the consequence does not. Every path that returns after Ingest
+	// without committing retires the core, so no later path can be added that
+	// forgets to. ingestMu is still held, which is what guards the flag.
 	if r.isClosed {
+		r.coreUnusable = true
 		return 0, ErrRingClosed
 	}
 	if r.head != startOffset {
+		r.coreUnusable = true
 		return 0, ErrRingAdvanced
 	}
 

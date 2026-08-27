@@ -46,6 +46,7 @@ type blockingCore struct {
 	entered chan struct{}
 	release chan struct{}
 	once    sync.Once
+	calls   atomic.Int32
 }
 
 func newBlockingCore(inner mediafacts.Core) *blockingCore {
@@ -53,6 +54,7 @@ func newBlockingCore(inner mediafacts.Core) *blockingCore {
 }
 
 func (c *blockingCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	c.calls.Add(1)
 	c.once.Do(func() { close(c.entered) })
 	<-c.release
 	return c.Core.Ingest(startOffset, data)
@@ -321,5 +323,16 @@ func TestIsolation_ARingThatMovedUnderTheChunkRefusesTheCommit(t *testing.T) {
 
 	if got := r.Head(); got != TSPacketSize {
 		t.Errorf("Head = %d, want %d - the chunk was committed at the wrong offset", got, TSPacketSize)
+	}
+
+	// The core interpreted that chunk and the ring threw it away, which is the
+	// same divergence an error or a short result leaves behind. Asking it again
+	// would be asking about a stream nobody is holding.
+	entered := core.calls.Load()
+	if _, err := r.Push(onePacket()); !errors.Is(err, ErrCoreUnusable) {
+		t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
+	}
+	if got := core.calls.Load(); got != entered {
+		t.Errorf("the core was entered %d more times after it diverged from the ring, want 0", got-entered)
 	}
 }
