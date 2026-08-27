@@ -114,7 +114,15 @@ fi
 # -only-testing must never hide compilation errors in other test suites.
 "${REPO_ROOT}/ios/scripts/verify-ios-build.sh" "${SIMULATOR}"
 
-echo "==> running iOS contract suite against ${BASE_URL}"
+if [[ "${SIMULATOR}" =~ ^[0-9A-Fa-f-]+$ ]]; then
+  DESTINATION="platform=iOS Simulator,id=${SIMULATOR}"
+  echo "==> Ensuring simulator ${SIMULATOR} is fully booted..."
+  xcrun simctl bootstatus "${SIMULATOR}" -b
+else
+  DESTINATION="platform=iOS Simulator,name=${SIMULATOR}"
+fi
+
+echo "==> running iOS contract suite against ${BASE_URL} on ${DESTINATION}"
 cd "${REPO_ROOT}/ios"
 
 # The address lives in the scheme's test environment, not on this command line:
@@ -125,7 +133,7 @@ set +e
 xcodebuild test \
   -project Xg2g.xcodeproj \
   -scheme Xg2g \
-  -destination "platform=iOS Simulator,name=${SIMULATOR}" \
+  -destination "${DESTINATION}" \
   -only-testing:Xg2gTests/BackendContractTests \
   2>&1 | tee "${OUTPUT}"
 STATUS="${PIPESTATUS[0]}"
