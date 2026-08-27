@@ -36,6 +36,17 @@ var ErrInvalidPacketSize = mediafacts.ErrInvalidPacketSize
 // cannot explain are worse than bytes it does not have.
 var ErrCoreIncomplete = errors.New("media facts core did not interpret the whole chunk")
 
+// ErrCoreUnusable reports a core that has already failed once. A core that
+// errored or came back short may have consumed bytes the ring then refused, so
+// its state and the ring's have diverged and no later answer from it can be
+// trusted. Recovery is a new core, not another attempt at this one.
+var ErrCoreUnusable = errors.New("media facts core is unusable after an earlier failure")
+
+// ErrRingAdvanced reports that the ring moved while a chunk was being
+// interpreted, so what the core read no longer describes where the bytes would
+// land. The chunk is refused rather than committed at the wrong offset.
+var ErrRingAdvanced = errors.New("ring advanced while the chunk was being interpreted")
+
 // The interpretation of transport stream bytes lives in mediafacts. These aliases
 // keep the names consumers already import while the boundary is drawn: the ring
 // owns bytes, offsets and the generation; mediafacts owns what the bytes mean.
@@ -74,9 +85,23 @@ type MasterRing struct {
 	maxKeyframes    int
 	generation      uint64
 
+	// ingestMu serialises writers and owns the core for the length of a call. It
+	// exists so the core can run without r.mu: a core behind a socket may hang,
+	// and a hung core must not take subscribers, readiness and Close with it.
+	//
+	// Lock order is always ingestMu before mu, never the reverse. Close and every
+	// reader take mu alone, which is what keeps them reachable while a core runs.
+	ingestMu sync.Mutex
+
+	// coreUnusable marks a core that answered with an error or an incomplete
+	// result. Such a core may already have advanced past bytes the ring refused,
+	// so its next answer would describe a stream nobody is holding. Guarded by
+	// ingestMu, because it is a property of the core rather than of the ring.
+	coreUnusable bool
+
 	// core reads what the transport stream says about itself. It is given byte
 	// chunks and the offset they start at, and answers with facts and ordered
-	// events; it never sees this struct.
+	// events; it never sees this struct. Guarded by ingestMu.
 	core mediafacts.Core
 
 	// facts is the last answer the core gave, cached so an accessor never calls
@@ -115,10 +140,24 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 // SetTargetProgram configures the desired program number for PMT resolution,
 // immediately invalidating existing PSI and decoder states if the target changed.
 func (r *MasterRing) SetTargetProgram(progNum uint16) {
+	// The core is single-threaded by contract, so this cannot run beside an
+	// Ingest. It waits behind a slow core, which is the right trade: this is
+	// control plane, and the calls that must never wait are Close and the readers.
+	r.ingestMu.Lock()
+	defer r.ingestMu.Unlock()
+
+	if r.coreUnusable {
+		return
+	}
+	res := r.core.SetTargetProgram(progNum)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.applyLocked(r.core.SetTargetProgram(progNum))
+	if r.isClosed {
+		return
+	}
+	r.applyLocked(res)
 }
 
 // applyLocked takes what the core said about a chunk and acts on it.
@@ -157,35 +196,66 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 		return 0, ErrInvalidPacketSize
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.isClosed {
-		return 0, ErrRingClosed
-	}
-
 	n := len(data)
 	if n == 0 {
 		return 0, nil
 	}
 
-	// 1. Read what the chunk means before any of it becomes visible. The bytes are
-	//    committed below; a subscriber that could see them before the facts caught
-	//    up would be reading the new program with the old program's truth.
-	res, err := r.core.Ingest(r.head, data)
+	// One writer at a time, and the core belongs to whoever holds this. Taken
+	// before r.mu and released after it, never the other way round.
+	r.ingestMu.Lock()
+	defer r.ingestMu.Unlock()
+
+	if r.coreUnusable {
+		return 0, ErrCoreUnusable
+	}
+
+	// 1. Read the ring's position, then let go of it. Everything a reader needs -
+	//    subscribers, readiness, Close - stays reachable while the core works.
+	r.mu.Lock()
+	if r.isClosed {
+		r.mu.Unlock()
+		return 0, ErrRingClosed
+	}
+	startOffset := r.head
+	r.mu.Unlock()
+
+	// 2. Interpret the chunk with no ring lock held. This is the call that may sit
+	//    on a socket, and it is the reason the lock above was released.
+	res, err := r.core.Ingest(startOffset, data)
 	if err != nil {
+		r.coreUnusable = true
 		return 0, err
 	}
 	// A core that interpreted less than it was given leaves the ring with bytes it
 	// has no meaning for. Committing them anyway is exactly the failure this
-	// boundary exists to prevent, so the chunk is refused and nothing here moves:
-	// not the head, not the generation, not the index, not the facts.
-	if want := r.head + int64(len(data)); res.ProcessedThroughOffset != want {
+	// boundary exists to prevent, so the chunk is refused and nothing moves: not
+	// the head, not the generation, not the index, not the facts. The core is
+	// finished either way - it consumed what the ring is about to throw away.
+	if want := startOffset + int64(n); res.ProcessedThroughOffset != want {
+		r.coreUnusable = true
 		return 0, ErrCoreIncomplete
 	}
+
+	// 3. Commit. Facts, events, PSI and bytes become visible together, under one
+	//    hold of the lock, or none of them do.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// The ring was unlocked while the core ran, so what it read may no longer
+	// describe the ring it was read against. Committing after a Close would
+	// publish into a stream nobody is holding; committing at a moved head would
+	// publish at the wrong offset. Both are refused rather than reconciled.
+	if r.isClosed {
+		return 0, ErrRingClosed
+	}
+	if r.head != startOffset {
+		return 0, ErrRingAdvanced
+	}
+
 	r.applyLocked(res)
 
-	// 2. Write data into circular buffer safely, supporting len(data) > capacity without panic
+	// 4. Write data into circular buffer safely, supporting len(data) > capacity without panic
 	remaining := data
 	for len(remaining) > 0 {
 		chunk := remaining
@@ -361,6 +431,9 @@ func (r *MasterRing) BufferedBytes() int {
 
 // Close closes the master ring buffer, waking all blocked subscriber readers.
 func (r *MasterRing) Close() {
+	// Deliberately does not take ingestMu. Close has to work while a core is
+	// running, including one that will never return; a chunk in flight sees the
+	// closed flag when it comes back to commit and is refused there.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
