@@ -260,11 +260,17 @@ func (r *RemoteCore) Close() error {
 
 func (r *RemoteCore) shutdown() error {
 	if r.conn != nil {
-		// Best effort and briefly: a core that will not take the message is about
-		// to be signalled anyway.
+		// Best effort, briefly, and only if the connection is free. A core that
+		// will not take the message is about to be signalled anyway, and one whose
+		// connection is held by a request that will never be answered must not be
+		// waited on at all - the 200 ms below bounds the exchange, not the wait for
+		// the mutex in front of it.
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		_, _ = r.conn.roundTrip(ctx, Frame{Type: MsgShutdown})
+		_, _, _ = r.conn.tryRoundTrip(ctx, Frame{Type: MsgShutdown})
 		cancel()
+		// Outside the request serialisation on purpose. This is the lifecycle
+		// ending, not a request being made, and it is what unblocks a read or
+		// write that is still in progress.
 		_ = r.conn.close()
 	}
 	if r.ln != nil {
@@ -276,18 +282,34 @@ func (r *RemoteCore) shutdown() error {
 		return nil
 	}
 
-	_ = r.cmd.Process.Signal(syscall.SIGTERM)
+	// The group, not the leader. Setpgid put the core in its own process group so
+	// that its descendants could be cleaned up with it; signalling only the leader
+	// gives that up and leaves whatever it spawned behind - and because the leader
+	// then exits promptly, waitDone wins the race below and Close returns while a
+	// grandchild is still running.
+	pgid := r.cmd.Process.Pid
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 
 	grace := time.NewTimer(termGrace)
 	defer grace.Stop()
 	select {
 	case <-r.waitDone:
 	case <-grace.C:
-		// It was asked. Now it is told. Kill reaches the group, because a core
-		// that ignored SIGTERM may also have left something of its own behind.
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+		// It was asked. Now it is told.
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		<-r.waitDone
 	}
+
+	// The leader is gone; the group is not necessarily empty. A descendant that
+	// outlived it keeps the group alive, and reaping the leader says nothing about
+	// it. Best effort, because there is usually nothing left to find.
+	//
+	// A group with nothing in it has released its id, so in principle this could
+	// reach an unrelated group that has since been given the same one. That needs
+	// the pid space to wrap onto this exact number and a new group leader to claim
+	// it inside the microseconds between the wait returning and this line, which
+	// is not a risk worth leaving descendants behind to avoid.
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 
 	r.cleanupDir()
 

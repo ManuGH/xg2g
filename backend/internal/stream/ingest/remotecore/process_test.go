@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +29,10 @@ import (
 // script cannot open a Unix socket.
 
 const helperEnv = "XG2G_REMOTECORE_HELPER"
+
+// helperMarkerEnv carries a path for a helper's child to write to, so a test can
+// tell a descendant that was asked to leave from one that was killed.
+const helperMarkerEnv = "XG2G_REMOTECORE_HELPER_MARKER"
 
 // TestHelperProcess is not a test. It is the child.
 func TestHelperProcess(t *testing.T) {
@@ -74,6 +79,55 @@ func TestHelperProcess(t *testing.T) {
 		signal.Ignore(syscall.SIGTERM)
 		// Connected, so accept succeeds - and then nothing. The socket stays open,
 		// which is why no read on the parent side ever ends by itself.
+		time.Sleep(10 * time.Minute)
+
+	case "connect-then-never-answer-a-request":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		// Answers the handshake so Start succeeds, then takes a request and sits
+		// on it. Leaves on SIGTERM: the point here is the hung request, not a
+		// stubborn process.
+		serveOneHandshake(c)
+		time.Sleep(10 * time.Minute)
+
+	case "connect-then-spawn-a-child-that-ignores-term":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		// No Setpgid: the child stays in this process group, which is the whole
+		// point - it is what a core that shells out to something looks like.
+		child := exec.Command("/bin/sh", "-c", `trap "" TERM; sleep 600`)
+		if err := child.Start(); err != nil {
+			os.Exit(5)
+		}
+		serveOneHandshake(c)
+		// Leaves when asked. The child does not.
+		time.Sleep(10 * time.Minute)
+
+	case "connect-then-spawn-a-child-that-notes-term":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		marker := os.Getenv(helperMarkerEnv)
+		if marker == "" {
+			os.Exit(6)
+		}
+		// "sleep & wait" rather than a plain sleep: a POSIX shell runs a trap only
+		// once the current command finishes, so a foreground sleep would swallow
+		// the signal for ten minutes.
+		child := exec.Command("/bin/sh", "-c",
+			`trap 'printf term > "$0"; exit 0' TERM; sleep 600 & wait`, marker)
+		if err := child.Start(); err != nil {
+			os.Exit(5)
+		}
+		serveOneHandshake(c)
 		time.Sleep(10 * time.Minute)
 
 	case "connect-then-die-mid-frame":
@@ -158,7 +212,7 @@ func TestProcess_ExitsBeforeConnecting(t *testing.T) {
 	if took := time.Since(start); took > startupTimeout {
 		t.Errorf("Start took %v; a child that already exited should not be waited out", took)
 	}
-	assertNoChildren(t)
+	assertNoZombieChildren(t)
 }
 
 // A core that starts, never connects, and ignores being asked to leave. Start
@@ -171,7 +225,7 @@ func TestProcess_HangsWithoutConnecting(t *testing.T) {
 	if !errors.Is(err, mediafacts.ErrCoreTimeout) {
 		t.Fatalf("Start err = %v, want ErrCoreTimeout", err)
 	}
-	assertNoChildren(t)
+	assertNoZombieChildren(t)
 }
 
 // The gap the accept budget alone left open. A core that connects has already
@@ -219,7 +273,7 @@ func TestProcess_ConnectsThenNeverAnswersTheHandshake(t *testing.T) {
 	if took := time.Since(began); took > startupTimeout+3*time.Second {
 		t.Errorf("Start took %v; spawn, connect and handshake share a budget of %v", took, startupTimeout)
 	}
-	assertNoChildren(t)
+	assertNoZombieChildren(t)
 }
 
 // The one that matters most. A core that connects, works, and then refuses
@@ -246,7 +300,7 @@ func TestProcess_IgnoresSigtermAndIsKilledAndReaped(t *testing.T) {
 	}
 
 	assertReaped(t, pid)
-	assertNoChildren(t)
+	assertNoZombieChildren(t)
 }
 
 // A core that dies in the middle of an answer is gone, and the caller learns it
@@ -282,7 +336,7 @@ func TestProcess_RepeatedStartAndStopLeavesNothingBehind(t *testing.T) {
 			t.Errorf("round %d left %s behind", i, core.dir)
 		}
 	}
-	assertNoChildren(t)
+	assertNoZombieChildren(t)
 }
 
 // assertReaped fails if the pid is still a process this parent has not collected.
@@ -300,7 +354,10 @@ func assertReaped(t *testing.T, pid int) {
 }
 
 // assertNoChildren fails if this process has any child left, zombie or otherwise.
-func assertNoChildren(t *testing.T) {
+// assertNoZombieChildren looks for defunct children only. Named for what it
+// checks: a live child of this process is not what this finds, and the earlier
+// name promised otherwise.
+func assertNoZombieChildren(t *testing.T) {
 	t.Helper()
 	// /proc first, because the runtime image has no ps and skipping there would
 	// mean the acceptance run silently proves nothing - which is what it did
@@ -380,4 +437,147 @@ func TestProcess_TheZombieDetectorSeesAZombie(t *testing.T) {
 	}
 	found, _ := zombieChildrenFromProc(os.Getpid())
 	t.Fatalf("an unreaped exited child was not reported as defunct; detector saw %q", found)
+}
+
+// Close against a request that will never be answered.
+//
+// roundTrip serialises on a mutex, and the graceful shutdown message is itself a
+// round trip. If it waits for that mutex, then a request in flight against a
+// silent peer holds Close for as long as its own context allows - and an Ingest
+// with a Background context holds it forever. The 200 ms budget on the shutdown
+// exchange does nothing about a wait that happens before the exchange starts.
+//
+// So the graceful message is skipped when the connection is busy, and the socket
+// is closed instead, outside the serialisation. That both bounds Close and frees
+// the request that was stuck.
+func TestProcess_CloseIsBoundedWhileARequestIsStuck(t *testing.T) {
+	core, err := startHelper(t, context.Background(), "connect-then-never-answer-a-request")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pid := core.cmd.Process.Pid
+	dir := core.dir
+
+	ingestDone := make(chan error, 1)
+	go func() {
+		// Background on purpose: this is the caller who has no deadline to save
+		// them, and Close is the only thing that can end this.
+		_, err := core.Ingest(context.Background(), 0, make([]byte, 188))
+		ingestDone <- err
+	}()
+
+	// Long enough for the Ingest to be inside roundTrip holding the mutex. Short
+	// enough that the test is not measuring the sleep.
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case err := <-ingestDone:
+		t.Fatalf("the helper answered after all; this test needs a stuck request (got %v)", err)
+	default:
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- core.Close() }()
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Errorf("Close err = %v, want nil", err)
+		}
+	case <-time.After(termGrace + 5*time.Second):
+		t.Fatal("Close never returned; it waited on a request that will never finish")
+	}
+
+	select {
+	case err := <-ingestDone:
+		if err == nil {
+			t.Error("the stuck Ingest returned success; closing the socket under it is a failure")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stuck Ingest never returned; closing the socket did not free it")
+	}
+
+	assertReaped(t, pid)
+	assertNoZombieChildren(t)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("%s was left behind", dir)
+	}
+}
+
+// A core that spawns something of its own.
+//
+// Setpgid exists so the core and its descendants can be ended together. Sending
+// SIGTERM to the leader alone gives that up: the leader does as it is told, the
+// wait completes, Close returns - and the grandchild is still running, now
+// orphaned, with nothing left that knows about it.
+//
+// The process group is the unit. Checking it needs no knowledge of what the core
+// spawned: while any member is alive the group id resolves, and signal 0 to the
+// negated id succeeds. After Close it must not.
+func TestProcess_ClosingTakesTheWholeProcessGroup(t *testing.T) {
+	core, err := startHelper(t, context.Background(), "connect-then-spawn-a-child-that-ignores-term")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid := core.cmd.Process.Pid
+
+	// The child is spawned before the handshake is answered, so by the time Start
+	// has returned the group has more than one member. Asserted, because a test
+	// that proves a group is gone when it never had anything in it proves nothing.
+	if err := syscall.Kill(-pgid, 0); err != nil {
+		t.Fatalf("the process group is not there to begin with: %v", err)
+	}
+
+	if err := core.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	assertReaped(t, core.cmd.Process.Pid)
+
+	// The leader is reaped; the group must be empty. A surviving descendant keeps
+	// the id resolvable, which is exactly the failure being looked for.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(-pgid, 0); err != nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("process group %d still has members after Close; the core left a descendant behind", pgid)
+}
+
+// The other half of the group question: not whether descendants are removed, but
+// whether they are asked first.
+//
+// The test above passes on the closing sweep alone - a child that ignores SIGTERM
+// is killed either way, so it cannot tell SIGTERM-to-the-leader from
+// SIGTERM-to-the-group. This one can: the child handles the signal and records
+// that it arrived. No marker means the group was never asked and the descendant
+// was killed outright, which for anything holding state is a different outcome
+// entirely.
+func TestProcess_TheWholeGroupIsAskedBeforeItIsKilled(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "term-received")
+	t.Setenv(helperMarkerEnv, marker)
+
+	core, err := startHelper(t, context.Background(), "connect-then-spawn-a-child-that-notes-term")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid := core.cmd.Process.Pid
+	if err := syscall.Kill(-pgid, 0); err != nil {
+		t.Fatalf("the process group is not there to begin with: %v", err)
+	}
+
+	if err := core.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// The child writes the marker as it leaves, which races Close returning.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(marker); err == nil && string(b) == "term" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Error("the core's child never saw SIGTERM; it was killed rather than asked, " +
+		"which means the signal went to the leader alone")
 }
