@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -63,11 +64,11 @@ func TestSeam_EntryPointOffsetsAreInTheCallersCoordinateSystem(t *testing.T) {
 
 	data := streamWithEntryPoint(videoPID)
 
-	atZero, err := mediafacts.NewGoCore(1).Ingest(0, data)
+	atZero, err := mediafacts.NewGoCore(1).Ingest(context.Background(), 0, data)
 	if err != nil {
 		t.Fatalf("ingest at 0: %v", err)
 	}
-	atBase, err := mediafacts.NewGoCore(1).Ingest(base, data)
+	atBase, err := mediafacts.NewGoCore(1).Ingest(context.Background(), base, data)
 	if err != nil {
 		t.Fatalf("ingest at base: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestSeam_TheCoreReportsIdentityAndTheRingDecidesTheEpoch(t *testing.T) {
 	ingest := func(packets [][]byte) {
 		t.Helper()
 		for _, pkt := range packets {
-			res, err := core.Ingest(0, pkt)
+			res, err := core.Ingest(context.Background(), 0, pkt)
 			if err != nil {
 				t.Fatalf("ingest: %v", err)
 			}
@@ -148,12 +149,12 @@ func TestSeam_EveryIdentityChangeBecomesExactlyOneGeneration(t *testing.T) {
 	before := r.Generation()
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT: %v", err)
 		}
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT: %v", err)
 		}
 	}
@@ -163,7 +164,7 @@ func TestSeam_EveryIdentityChangeBecomesExactlyOneGeneration(t *testing.T) {
 	}
 
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push repeated PMT: %v", err)
 		}
 	}
@@ -172,7 +173,7 @@ func TestSeam_EveryIdentityChangeBecomesExactlyOneGeneration(t *testing.T) {
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, videoPID, false, true, 1, 1) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push new PMT version: %v", err)
 		}
 	}
@@ -259,8 +260,8 @@ type shortCore struct {
 	shortBy int64
 }
 
-func (c shortCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
-	res, err := c.Core.Ingest(startOffset, data)
+func (c shortCore) Ingest(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	res, err := c.Core.Ingest(ctx, startOffset, data)
 	res.ProcessedThroughOffset -= c.shortBy
 	// Events the ring must not act on, precisely because the chunk is short.
 	res.Events = append(res.Events, mediafacts.Event{Kind: mediafacts.EventProgramIdentityChanged})
@@ -283,7 +284,7 @@ func TestSeam_AChunkTheCoreDidNotFinishIsNotCommitted(t *testing.T) {
 	factsBefore := r.ReadinessFacts()
 
 	data := createMultiPacketPAT(pmtPID)[0]
-	n, err := r.Push(data)
+	n, err := r.Push(context.Background(), data)
 
 	if !errors.Is(err, ErrCoreIncomplete) {
 		t.Fatalf("Push err = %v, want ErrCoreIncomplete", err)
@@ -347,7 +348,7 @@ func TestSeam_PMTPIDFollowsThePAT(t *testing.T) {
 		t.Helper()
 		var last mediafacts.ParseResult
 		for _, pkt := range packets {
-			res, err := core.Ingest(0, pkt)
+			res, err := core.Ingest(context.Background(), 0, pkt)
 			if err != nil {
 				t.Fatalf("ingest: %v", err)
 			}

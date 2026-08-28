@@ -6,6 +6,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"sync"
 	"testing"
@@ -219,14 +220,14 @@ func TestMasterRing_MultiPacketPATPMT_Assembly(t *testing.T) {
 
 	patPackets := createMultiPacketPAT(pmtPID)
 	for _, pkt := range patPackets {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push pat failed: %v", err)
 		}
 	}
 
 	pmtPackets := createMultiPacketPMT(pmtPID, videoPID, false)
 	for _, pkt := range pmtPackets {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push pmt failed: %v", err)
 		}
 	}
@@ -256,10 +257,10 @@ func TestMasterRing_StatefulAnnexBSplitAcrossTSPackets(t *testing.T) {
 	const videoPID = 256
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	frameStartOffset := r.Head()
@@ -275,10 +276,10 @@ func TestMasterRing_StatefulAnnexBSplitAcrossTSPackets(t *testing.T) {
 	pkt2 := createBasicPacket(videoPID, false, 1)
 	copy(pkt2[4:], es2)
 
-	if _, err := r.Push(pkt1); err != nil {
+	if _, err := r.Push(context.Background(), pkt1); err != nil {
 		t.Fatalf("push pkt1 failed: %v", err)
 	}
-	if _, err := r.Push(pkt2); err != nil {
+	if _, err := r.Push(context.Background(), pkt2); err != nil {
 		t.Fatalf("push pkt2 failed: %v", err)
 	}
 
@@ -299,10 +300,10 @@ func TestMasterRing_SPSWithoutIDR_NotIndexed(t *testing.T) {
 	const videoPID = 256
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	// Standalone SPS parameter update (NAL 7) without PPS or slice
@@ -310,7 +311,7 @@ func TestMasterRing_SPSWithoutIDR_NotIndexed(t *testing.T) {
 		0x00, 0x00, 0x00, 0x01, 0x07, 0x42, 0x00, 0x1E,
 	}
 	pkt := createVideoPESPacket(videoPID, true, 0, es)
-	if _, err := r.Push(pkt); err != nil {
+	if _, err := r.Push(context.Background(), pkt); err != nil {
 		t.Fatalf("push failed: %v", err)
 	}
 
@@ -328,10 +329,10 @@ func TestMasterRing_NonVideoPID_RandomAccessIndicatorIgnored(t *testing.T) {
 	const audioPID = 85
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	audioPkt := make([]byte, TSPacketSize)
@@ -342,7 +343,7 @@ func TestMasterRing_NonVideoPID_RandomAccessIndicatorIgnored(t *testing.T) {
 	audioPkt[4] = 5
 	audioPkt[5] = 0x40
 
-	if _, err := r.Push(audioPkt); err != nil {
+	if _, err := r.Push(context.Background(), audioPkt); err != nil {
 		t.Fatalf("push failed: %v", err)
 	}
 
@@ -359,10 +360,10 @@ func TestMasterRing_HEVC_KeyframeDetection(t *testing.T) {
 	const videoPID = 256
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, true) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	vPID, vCodec := r.VideoDetails()
@@ -379,7 +380,7 @@ func TestMasterRing_HEVC_KeyframeDetection(t *testing.T) {
 		0x00, 0x00, 0x00, 0x01, 0x26, 0x01,
 	}
 	pkt := createVideoPESPacket(videoPID, true, 0, es)
-	if _, err := r.Push(pkt); err != nil {
+	if _, err := r.Push(context.Background(), pkt); err != nil {
 		t.Fatalf("push failed: %v", err)
 	}
 
@@ -399,7 +400,7 @@ func TestMasterRing_PushLargerThanRingCapacity(t *testing.T) {
 		copy(largeData[i*TSPacketSize:], pkt)
 	}
 
-	n, err := r.Push(largeData)
+	n, err := r.Push(context.Background(), largeData)
 	if err != nil || n != len(largeData) {
 		t.Fatalf("large push failed: n=%d err=%v", n, err)
 	}
@@ -423,21 +424,21 @@ func TestMasterRing_KeyframePruneAllOlderThanTail(t *testing.T) {
 	const videoPID = 256
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	es := []byte{0x00, 0x00, 0x01, 0x05}
-	_, _ = r.Push(createVideoPESPacket(videoPID, true, 0, es))
+	_, _ = r.Push(context.Background(), createVideoPESPacket(videoPID, true, 0, es))
 
 	if _, ok := r.LatestKeyframeOffset(); !ok {
 		t.Fatalf("expected initial keyframe indexed")
 	}
 
 	for i := 0; i < 30; i++ {
-		_, _ = r.Push(createBasicPacket(videoPID, false, uint8(i%16)))
+		_, _ = r.Push(context.Background(), createBasicPacket(videoPID, false, uint8(i%16)))
 	}
 
 	if _, ok := r.LatestKeyframeOffset(); ok {
@@ -467,7 +468,7 @@ func TestSubscriberReader_ConcurrentReadSeekClose_NoDeadlock(t *testing.T) {
 			default:
 				pkt := createBasicPacket(256, false, cc)
 				cc++
-				_, _ = r.Push(pkt)
+				_, _ = r.Push(context.Background(), pkt)
 				time.Sleep(500 * time.Microsecond)
 			}
 		}
@@ -549,7 +550,7 @@ func TestMasterRing_MultiReaderConcurrency(t *testing.T) {
 			if end > len(allData) {
 				end = len(allData)
 			}
-			_, _ = r.Push(allData[i:end])
+			_, _ = r.Push(context.Background(), allData[i:end])
 			time.Sleep(1 * time.Millisecond)
 		}
 		r.Close()
@@ -577,10 +578,10 @@ func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 	defer r.Close()
 
 	for _, pkt := range createMultiPacketPAT(100) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 0, false, false, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	if r.facts.VideoPID != 0 {
 		t.Fatalf("test setup: expected an audio-only PMT, got video PID %d", r.facts.VideoPID)
@@ -591,7 +592,7 @@ func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 
 	baseline := r.Tail()
 	for i := 0; i < 30; i++ {
-		_, _ = r.Push(createBasicPacket(256, false, uint8(i%16)))
+		_, _ = r.Push(context.Background(), createBasicPacket(256, false, uint8(i%16)))
 	}
 
 	buf := make([]byte, TSPacketSize)
@@ -646,13 +647,13 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt1 := make([]byte, TSPacketSize)
 	copy(pkt1, patPackets[0])
 	pkt1[3] = (pkt1[3] & 0xF0) | 0x00
-	_, _ = r.Push(pkt1)
+	_, _ = r.Push(context.Background(), pkt1)
 
 	// 2. Send corrupted second packet with CC=5 (gap!)
 	pkt2Corrupted := make([]byte, TSPacketSize)
 	copy(pkt2Corrupted, patPackets[1])
 	pkt2Corrupted[3] = (pkt2Corrupted[3] & 0xF0) | 0x05
-	_, _ = r.Push(pkt2Corrupted)
+	_, _ = r.Push(context.Background(), pkt2Corrupted)
 
 	if r.facts.PMTPID != 0 {
 		t.Fatalf("corrupted PAT section with CC gap was incorrectly accepted")
@@ -662,12 +663,12 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt1Valid := make([]byte, TSPacketSize)
 	copy(pkt1Valid, patPackets[0])
 	pkt1Valid[3] = (pkt1Valid[3] & 0xF0) | 0x06
-	_, _ = r.Push(pkt1Valid)
+	_, _ = r.Push(context.Background(), pkt1Valid)
 
 	pkt2Valid := make([]byte, TSPacketSize)
 	copy(pkt2Valid, patPackets[1])
 	pkt2Valid[3] = (pkt2Valid[3] & 0xF0) | 0x07
-	_, _ = r.Push(pkt2Valid)
+	_, _ = r.Push(context.Background(), pkt2Valid)
 
 	if r.facts.PMTPID != pmtPID {
 		t.Fatalf("expected pmtPID=%d after clean retransmission, got %d", pmtPID, r.facts.PMTPID)
@@ -681,7 +682,7 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 	const pmtPID = 100
 	patPacketsInactive := createMultiPacketPATWithVersion(pmtPID, 0, 0)
 	for _, pkt := range patPacketsInactive {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	if r.facts.PMTPID != 0 {
@@ -689,7 +690,7 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 	}
 
 	for _, pkt := range createMultiPacketPATWithVersion(pmtPID, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	if r.facts.PMTPID != pmtPID {
@@ -703,11 +704,11 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 
 	const pmtPID = 100
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	vPID1, vCodec1 := r.VideoDetails()
@@ -716,7 +717,7 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 	}
 
 	es1 := []byte{0x00, 0x00, 0x01, 0x05}
-	_, _ = r.Push(createVideoPESPacket(256, true, 0, es1))
+	_, _ = r.Push(context.Background(), createVideoPESPacket(256, true, 0, es1))
 
 	if _, ok := r.LatestKeyframeOffset(); !ok {
 		t.Fatalf("expected keyframe on PID 256 indexed")
@@ -724,7 +725,7 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 
 	pmtV2 := createMultiPacketPMTWithVersion(pmtPID, 512, true, true, 1, 1)
 	for _, pkt := range pmtV2 {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	vPID2, vCodec2 := r.VideoDetails()
@@ -738,7 +739,7 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 
 	frameStart := r.Head()
 	es2 := []byte{0x00, 0x00, 0x00, 0x01, 0x26, 0x01}
-	_, _ = r.Push(createVideoPESPacket(512, true, 0, es2))
+	_, _ = r.Push(context.Background(), createVideoPESPacket(512, true, 0, es2))
 
 	newOffset, ok := r.LatestKeyframeOffset()
 	if !ok || newOffset != frameStart {
@@ -752,11 +753,11 @@ func TestMasterRing_PMTVersionChange_NoVideoStream_LeavesPIDZero(t *testing.T) {
 
 	const pmtPID = 100
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	if vPID, _ := r.VideoDetails(); vPID != 256 {
@@ -764,7 +765,7 @@ func TestMasterRing_PMTVersionChange_NoVideoStream_LeavesPIDZero(t *testing.T) {
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 0, false, false, 1, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	vPID, vCodec := r.VideoDetails()
@@ -784,15 +785,15 @@ func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
 	copy(pkt2Corrupt, patPackets[1])
 	pkt2Corrupt[6] ^= 0xFF
 
-	_, _ = r.Push(patPackets[0])
-	_, _ = r.Push(pkt2Corrupt)
+	_, _ = r.Push(context.Background(), patPackets[0])
+	_, _ = r.Push(context.Background(), pkt2Corrupt)
 
 	if r.facts.PMTPID != 0 {
 		t.Fatalf("PAT section with corrupted CRC32 was incorrectly accepted")
 	}
 
-	_, _ = r.Push(patPackets[0])
-	_, _ = r.Push(patPackets[1])
+	_, _ = r.Push(context.Background(), patPackets[0])
+	_, _ = r.Push(context.Background(), patPackets[1])
 
 	if r.facts.PMTPID != pmtPID {
 		t.Fatalf("valid PAT section was not accepted: got %d", r.facts.PMTPID)
@@ -804,7 +805,7 @@ func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
 
 	r1 := NewMasterRing(100 * TSPacketSize)
 	defer r1.Close()
-	_, _ = r1.Push(multiPAT)
+	_, _ = r1.Push(context.Background(), multiPAT)
 
 	if r1.facts.PMTPID != 100 {
 		t.Fatalf("expected default r1 to select PMT 100, got %d", r1.facts.PMTPID)
@@ -812,7 +813,7 @@ func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
 
 	r2 := NewMasterRingWithProgram(100*TSPacketSize, 2)
 	defer r2.Close()
-	_, _ = r2.Push(multiPAT)
+	_, _ = r2.Push(context.Background(), multiPAT)
 
 	if r2.facts.PMTPID != 200 {
 		t.Fatalf("expected r2 to select PMT 200 for program 2, got %d", r2.facts.PMTPID)
@@ -827,16 +828,16 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 	const videoPID = 256
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 	pmtV0 := createMultiPacketPMTWithVersion(pmtPID, videoPID, false, true, 0, 1)
 	for _, pkt := range pmtV0 {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	frameStart := r.Head()
 	es := []byte{0x00, 0x00, 0x01, 0x05}
-	_, _ = r.Push(createVideoPESPacket(videoPID, true, 0, es))
+	_, _ = r.Push(context.Background(), createVideoPESPacket(videoPID, true, 0, es))
 
 	offset1, ok := r.LatestKeyframeOffset()
 	if !ok || offset1 != frameStart {
@@ -844,7 +845,7 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 	}
 
 	for _, pkt := range pmtV0 {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	offset2, ok := r.LatestKeyframeOffset()
@@ -862,21 +863,21 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 	r := NewMasterRingWithProgram(100*TSPacketSize, 1)
 	defer r.Close()
 
-	_, _ = r.Push(multiPAT)
+	_, _ = r.Push(context.Background(), multiPAT)
 	if r.facts.PMTPID != 100 {
 		t.Fatalf("expected pmtPID=100 for program 1, got %d", r.facts.PMTPID)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 256, false, true, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
-	_, _ = r.Push(createVideoPESPacket(256, true, 0, []byte{0x00, 0x00, 0x01, 0x05}))
+	_, _ = r.Push(context.Background(), createVideoPESPacket(256, true, 0, []byte{0x00, 0x00, 0x01, 0x05}))
 	if _, ok := r.LatestKeyframeOffset(); !ok {
 		t.Fatalf("expected initial keyframe indexed")
 	}
 
-	r.SetTargetProgram(2)
+	r.SetTargetProgram(context.Background(), 2)
 
 	if vPID, _ := r.VideoDetails(); vPID != 0 {
 		t.Fatalf("expected vPID=0 immediately after SetTargetProgram, got %d", vPID)
@@ -885,13 +886,13 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 		t.Fatalf("expected keyframe purged immediately after SetTargetProgram")
 	}
 
-	_, _ = r.Push(multiPAT)
+	_, _ = r.Push(context.Background(), multiPAT)
 	if r.facts.PMTPID != 200 {
 		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.facts.PMTPID)
 	}
 
 	for _, pkt := range createMultiPacketPMTWithVersion(200, 512, true, true, 0, 1) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	vPID2, vCodec2 := r.VideoDetails()
@@ -923,7 +924,7 @@ func TestMasterRing_PointerField_CompletesPreviousSectionAndStartsNew(t *testing
 	pkt1[177] = 0x00 // pointer_field = 0
 	copy(pkt1[178:], sec1[:10])
 
-	_, _ = r.Push(pkt1)
+	_, _ = r.Push(context.Background(), pkt1)
 	if r.facts.PMTPID != 0 {
 		t.Fatalf("section 1 should be incomplete")
 	}
@@ -943,7 +944,7 @@ func TestMasterRing_PointerField_CompletesPreviousSectionAndStartsNew(t *testing
 		pkt2[i] = 0xFF // Stuffing
 	}
 
-	_, _ = r.Push(pkt2)
+	_, _ = r.Push(context.Background(), pkt2)
 
 	// Section 2 was also parsed in the same packet and updated PMT PID to 200!
 	if r.facts.PMTPID != 200 {
@@ -973,7 +974,7 @@ func TestMasterRing_MultipleCompleteSectionsInSinglePacket(t *testing.T) {
 		pkt[i] = 0xFF // Stuffing
 	}
 
-	_, _ = r.Push(pkt)
+	_, _ = r.Push(context.Background(), pkt)
 
 	if r.facts.PMTPID != 200 {
 		t.Fatalf("expected pmtPID=200 for target program 20 from multi-section packet, got %d", r.facts.PMTPID)
@@ -1005,13 +1006,13 @@ func TestMasterRing_MultiSectionPAT_TargetOnlyInSection1(t *testing.T) {
 	copy(pkt1[5:], sec1)
 
 	// Push Section 0 (target 30 not in Section 0)
-	_, _ = r.Push(pkt0)
+	_, _ = r.Push(context.Background(), pkt0)
 	if r.facts.PMTPID != 0 {
 		t.Fatalf("table should not be activated before section 1 arrives")
 	}
 
 	// Push Section 1
-	_, _ = r.Push(pkt1)
+	_, _ = r.Push(context.Background(), pkt1)
 	if r.facts.PMTPID != 300 {
 		t.Fatalf("expected pmtPID=300 from Section 1, got %d", r.facts.PMTPID)
 	}
@@ -1050,8 +1051,8 @@ func TestMasterRing_CarouselRepeatedSection0_PreservesMultiSectionPreamble(t *te
 	pkt1[4] = 0x00
 	copy(pkt1[5:], sec1)
 
-	_, _ = r.Push(pkt0)
-	_, _ = r.Push(pkt1)
+	_, _ = r.Push(context.Background(), pkt0)
+	_, _ = r.Push(context.Background(), pkt1)
 
 	if r.facts.PMTPID != 300 {
 		t.Fatalf("expected pmtPID=300, got %d", r.facts.PMTPID)
@@ -1061,7 +1062,7 @@ func TestMasterRing_CarouselRepeatedSection0_PreservesMultiSectionPreamble(t *te
 	pkt0Next := make([]byte, TSPacketSize)
 	copy(pkt0Next, pkt0)
 	pkt0Next[3] = 0x12 // CC=2
-	_, _ = r.Push(pkt0Next)
+	_, _ = r.Push(context.Background(), pkt0Next)
 
 	// Target resolution must NOT be destroyed
 	if r.facts.PMTPID != 300 {
@@ -1089,7 +1090,7 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	pktInit[3] = 0x10
 	pktInit[4] = 0x00
 	copy(pktInit[5:], secInit)
-	_, _ = r.Push(pktInit)
+	_, _ = r.Push(context.Background(), pktInit)
 
 	if r.facts.PMTPID != 100 {
 		t.Fatalf("expected initial pmtPID=100, got %d", r.facts.PMTPID)
@@ -1105,7 +1106,7 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	pktV1_0[3] = 0x11
 	pktV1_0[4] = 0x00
 	copy(pktV1_0[5:], secV1_0)
-	_, _ = r.Push(pktV1_0)
+	_, _ = r.Push(context.Background(), pktV1_0)
 
 	// Because Section 1 of v1 is missing, table v1 is INCOMPLETE and must not activate!
 	if r.facts.PMTPID != 100 {
@@ -1121,7 +1122,7 @@ func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
 	pktV1_1[3] = 0x12
 	pktV1_1[4] = 0x00
 	copy(pktV1_1[5:], secV1_1)
-	_, _ = r.Push(pktV1_1)
+	_, _ = r.Push(context.Background(), pktV1_1)
 
 	// Now table v1 is complete and activates!
 	if r.facts.PMTPID != 300 {
@@ -1138,13 +1139,13 @@ func TestMasterRing_DuplicateCC_IgnoredWithoutDiscontinuity(t *testing.T) {
 	patPackets := createMultiPacketPAT(pmtPID)
 
 	// 1. Push Packet 1 with CC=0
-	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(context.Background(), patPackets[0])
 
 	// 2. Push exact duplicate of Packet 1 with same CC=0 (DVB retransmission)
-	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(context.Background(), patPackets[0])
 
 	// 3. Push Packet 2 with CC=1
-	_, _ = r.Push(patPackets[1])
+	_, _ = r.Push(context.Background(), patPackets[1])
 
 	// Assembly must have succeeded seamlessly
 	if r.facts.PMTPID != pmtPID {
@@ -1181,12 +1182,12 @@ func TestMasterRing_PSIHeaderSplitAcrossPackets(t *testing.T) {
 	pkt2[3] = 0x11 // CC=1
 	copy(pkt2[4:], sec[2:])
 
-	_, _ = r.Push(pkt1)
+	_, _ = r.Push(context.Background(), pkt1)
 	if r.facts.PMTPID != 0 {
 		t.Fatalf("table should not be resolved after 2 header bytes")
 	}
 
-	_, _ = r.Push(pkt2)
+	_, _ = r.Push(context.Background(), pkt2)
 	if r.facts.PMTPID != pmtPID {
 		t.Fatalf("expected pmtPID=%d from section with split header across packets, got %d", pmtPID, r.facts.PMTPID)
 	}
@@ -1201,7 +1202,7 @@ func TestMasterRing_SameCCDifferentPayload_ResetsAssembly(t *testing.T) {
 	patPackets := createMultiPacketPAT(pmtPID)
 
 	// 1. Push Packet 1 (PUSI=1, CC=0)
-	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(context.Background(), patPackets[0])
 
 	// 2. Push glitch continuation packet with SAME CC=0 but PUSI=0 and different payload
 	corruptedPkt := make([]byte, TSPacketSize)
@@ -1209,10 +1210,10 @@ func TestMasterRing_SameCCDifferentPayload_ResetsAssembly(t *testing.T) {
 	corruptedPkt[1] = 0x00 // PUSI=0
 	corruptedPkt[2] = 0x00
 	corruptedPkt[3] = 0x10 // CC=0 (same CC as pkt 1, but completely different packet!)
-	_, _ = r.Push(corruptedPkt)
+	_, _ = r.Push(context.Background(), corruptedPkt)
 
 	// 3. Push Packet 2 (PUSI=0, CC=1)
-	_, _ = r.Push(patPackets[1])
+	_, _ = r.Push(context.Background(), patPackets[1])
 
 	// Assembly must have been aborted by the glitch packet
 	if r.facts.PMTPID != 0 {
@@ -1240,7 +1241,7 @@ func TestMasterRing_MultipleSectionsSamePacket_PreambleDoesNotDuplicatePacket(t 
 		pkt[i] = 0xFF // Stuffing
 	}
 
-	_, _ = r.Push(pkt)
+	_, _ = r.Push(context.Background(), pkt)
 
 	if r.facts.PMTPID != 200 {
 		t.Fatalf("expected pmtPID=200, got %d", r.facts.PMTPID)
@@ -1259,7 +1260,7 @@ func TestMasterRing_MPEG2_SequenceHeaderAndIFrame(t *testing.T) {
 
 	// 1. PAT with prog 1 -> PMT PID 100
 	for _, pkt := range createMultiPacketPAT(100) {
-		_, _ = r.Push(pkt)
+		_, _ = r.Push(context.Background(), pkt)
 	}
 
 	// 2. PMT with video stream_type=0x02 (MPEG-2 Video) on PID 200
@@ -1297,7 +1298,7 @@ func TestMasterRing_MPEG2_SequenceHeaderAndIFrame(t *testing.T) {
 	for i := 5 + len(pmtSection); i < TSPacketSize; i++ {
 		pmtPkt[i] = 0xFF
 	}
-	_, _ = r.Push(pmtPkt)
+	_, _ = r.Push(context.Background(), pmtPkt)
 
 	if r.facts.VideoCodec != CodecMPEG2 {
 		t.Fatalf("expected CodecMPEG2, got %v", r.facts.VideoCodec)
@@ -1312,11 +1313,11 @@ func TestMasterRing_MPEG2_SequenceHeaderAndIFrame(t *testing.T) {
 	}
 
 	videoPkt := createVideoPESPacket(200, true, 0, mpeg2ES)
-	_, _ = r.Push(videoPkt)
+	_, _ = r.Push(context.Background(), videoPkt)
 
 	// Finalize the access unit with another packet
 	nextAUPkt := createVideoPESPacket(200, true, 1, []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x10}) // P-Frame
-	_, _ = r.Push(nextAUPkt)
+	_, _ = r.Push(context.Background(), nextAUPkt)
 
 	kf, ok := r.LatestKeyframeOffset()
 	if !ok {

@@ -6,6 +6,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -82,7 +83,7 @@ func TestMasterRing_RealCapture_H264_DecodingVerification(t *testing.T) {
 			end = i + ((end-i)/TSPacketSize)*TSPacketSize
 		}
 		if end > i {
-			if _, err := r.Push(data[i:end]); err != nil {
+			if _, err := r.Push(context.Background(), data[i:end]); err != nil {
 				t.Fatalf("push failed at %d: %v", i, err)
 			}
 		}
@@ -172,7 +173,7 @@ func TestMasterRing_RemuxedHEVC_TS_DecodingVerification(t *testing.T) {
 			end = i + ((end-i)/TSPacketSize)*TSPacketSize
 		}
 		if end > i {
-			if _, err := r.Push(data[i:end]); err != nil {
+			if _, err := r.Push(context.Background(), data[i:end]); err != nil {
 				t.Fatalf("push failed at %d: %v", i, err)
 			}
 		}
@@ -247,7 +248,7 @@ func TestMasterRing_RealCapture_AllSegments_Sanity(t *testing.T) {
 			defer r.Close()
 
 			n, err := io.Copy(writerFunc(func(p []byte) (int, error) {
-				return r.Push(p)
+				return r.Push(context.Background(), p)
 			}), bytes.NewReader(data))
 
 			if err != nil || n == 0 {

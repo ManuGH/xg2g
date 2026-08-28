@@ -5,8 +5,10 @@
 package ring
 
 import (
+	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 )
@@ -99,6 +101,10 @@ type MasterRing struct {
 	// ingestMu, because it is a property of the core rather than of the ring.
 	coreUnusable bool
 
+	// ingestDeadline bounds a single call into the core. It is not a budget to be
+	// spent - it is how long a core may go quiet before it is treated as gone.
+	ingestDeadline time.Duration
+
 	// core reads what the transport stream says about itself. It is given byte
 	// chunks and the offset they start at, and answers with facts and ordered
 	// events; it never sees this struct. Guarded by ingestMu.
@@ -128,10 +134,11 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 	}
 
 	r := &MasterRing{
-		buf:          make([]byte, capacityBytes),
-		capacity:     capacityBytes,
-		maxKeyframes: 64,
-		core:         mediafacts.NewGoCore(targetProgram),
+		buf:            make([]byte, capacityBytes),
+		capacity:       capacityBytes,
+		maxKeyframes:   64,
+		ingestDeadline: mediafacts.DefaultIngestDeadline,
+		core:           mediafacts.NewGoCore(targetProgram),
 	}
 	r.notEmpty = sync.NewCond(&r.mu)
 	return r
@@ -139,7 +146,14 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 
 // SetTargetProgram configures the desired program number for PMT resolution,
 // immediately invalidating existing PSI and decoder states if the target changed.
-func (r *MasterRing) SetTargetProgram(progNum uint16) {
+func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error {
+	// Before the core is entered, a caller that gave up means the call never
+	// happened. Nothing was interpreted, so nothing diverged, and the core is
+	// still good for the next chunk.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// The core is single-threaded by contract, so this cannot run beside an
 	// Ingest. It waits behind a slow core, which is the right trade: this is
 	// control plane, and the calls that must never wait are Close and the readers.
@@ -147,17 +161,45 @@ func (r *MasterRing) SetTargetProgram(progNum uint16) {
 	defer r.ingestMu.Unlock()
 
 	if r.coreUnusable {
-		return
+		return ErrCoreUnusable
 	}
-	res := r.core.SetTargetProgram(progNum)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, r.ingestDeadline)
+	defer cancel()
+
+	res, err := r.core.SetTargetProgram(callCtx, progNum)
+	if err != nil {
+		return r.retireCore(ctx, err)
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.isClosed {
-		return
+		r.coreUnusable = true
+		return ErrRingClosed
 	}
 	r.applyLocked(res)
+	return nil
+}
+
+// retireCore records that the core can no longer be trusted and names why.
+//
+// Every failure after the core has been entered lands here, because every one of
+// them leaves the same wreckage: the core consumed something the ring is about to
+// throw away, so the two no longer describe the same stream. The distinction the
+// caller may care about - did it time out, or did the caller give up - is kept in
+// the returned error, not in whether the core survives.
+func (r *MasterRing) retireCore(callerCtx context.Context, err error) error {
+	r.coreUnusable = true
+	if callerCtx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		// Our own deadline, not the caller's. The core went quiet.
+		return errors.Join(mediafacts.ErrCoreTimeout, err)
+	}
+	return err
 }
 
 // applyLocked takes what the core said about a chunk and acts on it.
@@ -191,12 +233,20 @@ func (r *MasterRing) applyLocked(res mediafacts.ParseResult) {
 }
 
 // Push writes a chunk of TS packets into the ring buffer and indexes PAT/PMT/IDR boundaries.
-func (r *MasterRing) Push(data []byte) (int, error) {
+func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	if len(data)%TSPacketSize != 0 {
 		return 0, ErrInvalidPacketSize
 	}
 
 	n := len(data)
+
+	// Cancellation before the core is entered is not a core failure. Nothing was
+	// interpreted, so the core and the ring still agree and it stays usable. That
+	// is the whole distinction: not that the context expired, but whether the core
+	// had already consumed something by the time it did.
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 
 	// One writer at a time, and the core belongs to whoever holds this. Taken
 	// before r.mu and released after it, never the other way round.
@@ -205,6 +255,13 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 
 	if r.coreUnusable {
 		return 0, ErrCoreUnusable
+	}
+
+	// Re-checked: waiting for the writer lock can take as long as the core call
+	// ahead of it, and a caller that gave up during that wait is in the same
+	// position as one that gave up before it.
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 
 	// 1. Read the ring's position, then let go of it. Everything a reader needs -
@@ -227,10 +284,16 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 
 	// 2. Interpret the chunk with no ring lock held. This is the call that may sit
 	//    on a socket, and it is the reason the lock above was released.
-	res, err := r.core.Ingest(startOffset, data)
+	// The core runs under a deadline of its own, derived from the caller's context
+	// rather than replacing it: whichever expires first ends the call.
+	ingestCtx, cancel := context.WithTimeout(ctx, r.ingestDeadline)
+	defer cancel()
+
+	res, err := r.core.Ingest(ingestCtx, startOffset, data)
 	if err != nil {
-		r.coreUnusable = true
-		return 0, err
+		// Past this point the core has been entered, so every way out that does
+		// not commit retires it - the caller's own cancellation included.
+		return 0, r.retireCore(ctx, err)
 	}
 	// A core that interpreted less than it was given leaves the ring with bytes it
 	// has no meaning for. Committing them anyway is exactly the failure this
@@ -238,8 +301,7 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	// the head, not the generation, not the index, not the facts. The core is
 	// finished either way - it consumed what the ring is about to throw away.
 	if want := startOffset + int64(n); res.ProcessedThroughOffset != want {
-		r.coreUnusable = true
-		return 0, ErrCoreIncomplete
+		return 0, r.retireCore(ctx, ErrCoreIncomplete)
 	}
 
 	// 3. Commit. Facts, events, PSI and bytes become visible together, under one
@@ -258,12 +320,10 @@ func (r *MasterRing) Push(data []byte) (int, error) {
 	// without committing retires the core, so no later path can be added that
 	// forgets to. ingestMu is still held, which is what guards the flag.
 	if r.isClosed {
-		r.coreUnusable = true
-		return 0, ErrRingClosed
+		return 0, r.retireCore(ctx, ErrRingClosed)
 	}
 	if r.head != startOffset {
-		r.coreUnusable = true
-		return 0, ErrRingAdvanced
+		return 0, r.retireCore(ctx, ErrRingAdvanced)
 	}
 
 	r.applyLocked(res)

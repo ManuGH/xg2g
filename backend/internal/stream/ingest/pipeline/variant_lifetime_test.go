@@ -56,7 +56,7 @@ func feedRingDirectly(t *testing.T, master *ring.MasterRing) {
 					return
 				default:
 				}
-				if _, err := master.Push(capture[i : i+chunk]); err != nil {
+				if _, err := master.Push(context.Background(), capture[i:i+chunk]); err != nil {
 					return
 				}
 				time.Sleep(time.Millisecond)

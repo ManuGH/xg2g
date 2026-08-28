@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
 )
@@ -175,7 +176,7 @@ func obsAC3Run(byte6 byte, n int) []byte {
 func pushAll(t *testing.T, r *MasterRing, packets ...[]byte) {
 	t.Helper()
 	for _, pkt := range packets {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push: %v", err)
 		}
 	}

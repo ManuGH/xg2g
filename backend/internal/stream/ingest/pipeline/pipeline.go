@@ -53,10 +53,9 @@ func NewSessionPipeline(normCfg normalizer.Config, ringCapacity int, targetProgr
 	master := ring.NewMasterRingWithProgram(ringCapacity, targetProgram)
 
 	norm, err := normalizer.NewStreamNormalizer(normCfg, func(ctx context.Context, chunk []byte) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		_, pushErr := master.Push(chunk)
+		// The pipeline's own context now reaches the core, so a chunk is bounded
+		// rather than only refused before it starts.
+		_, pushErr := master.Push(ctx, chunk)
 		return pushErr
 	})
 	if err != nil {

@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -53,11 +54,11 @@ func newBlockingCore(inner mediafacts.Core) *blockingCore {
 	return &blockingCore{Core: inner, entered: make(chan struct{}), release: make(chan struct{})}
 }
 
-func (c *blockingCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+func (c *blockingCore) Ingest(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
 	c.calls.Add(1)
 	c.once.Do(func() { close(c.entered) })
 	<-c.release
-	return c.Core.Ingest(startOffset, data)
+	return c.Core.Ingest(ctx, startOffset, data)
 }
 
 func onePacket() []byte {
@@ -78,7 +79,7 @@ func TestIsolation_ASlowCoreDoesNotBlockReadersOrClose(t *testing.T) {
 	r.core = core
 
 	pushErr := make(chan error, 1)
-	go func() { _, err := r.Push(onePacket()); pushErr <- err }()
+	go func() { _, err := r.Push(context.Background(), onePacket()); pushErr <- err }()
 
 	<-core.entered
 
@@ -114,7 +115,7 @@ type countingCore struct {
 	offsets []int64
 }
 
-func (c *countingCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+func (c *countingCore) Ingest(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
 	now := c.inFlight.Add(1)
 	for {
 		max := c.maxInFlight.Load()
@@ -131,7 +132,7 @@ func (c *countingCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseR
 	c.offsets = append(c.offsets, startOffset)
 	c.mu.Unlock()
 
-	return c.Core.Ingest(startOffset, data)
+	return c.Core.Ingest(ctx, startOffset, data)
 }
 
 // 2. The core is single-threaded by contract, and the bytes have to land in the
@@ -151,7 +152,7 @@ func TestIsolation_WritersAreSerialisedAndKeepTheirOrder(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := r.Push(onePacket()); err != nil {
+			if _, err := r.Push(context.Background(), onePacket()); err != nil {
 				t.Errorf("Push: %v", err)
 			}
 		}()
@@ -194,7 +195,7 @@ type erroringCore struct {
 	calls atomic.Int32
 }
 
-func (c *erroringCore) Ingest(startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+func (c *erroringCore) Ingest(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
 	c.calls.Add(1)
 	return mediafacts.ParseResult{}, c.err
 }
@@ -230,7 +231,7 @@ func TestIsolation_AFailedCoreIsNotReused(t *testing.T) {
 
 			headBefore, genBefore := r.Head(), r.Generation()
 
-			if _, err := r.Push(onePacket()); !errors.Is(err, tc.wantErr) {
+			if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, tc.wantErr) {
 				t.Fatalf("first Push err = %v, want %v", err, tc.wantErr)
 			}
 			if got := r.Head(); got != headBefore {
@@ -244,7 +245,7 @@ func TestIsolation_AFailedCoreIsNotReused(t *testing.T) {
 			}
 
 			// The second attempt must not reach the core at all.
-			if _, err := r.Push(onePacket()); !errors.Is(err, ErrCoreUnusable) {
+			if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
 				t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
 			}
 			if got := r.Head(); got != headBefore {
@@ -265,7 +266,7 @@ func TestIsolation_CloseDuringIngestPreventsAStaleCommit(t *testing.T) {
 	headBefore, genBefore := r.Head(), r.Generation()
 
 	pushErr := make(chan error, 1)
-	go func() { _, err := r.Push(onePacket()); pushErr <- err }()
+	go func() { _, err := r.Push(context.Background(), onePacket()); pushErr <- err }()
 
 	<-core.entered
 	r.Close()
@@ -301,7 +302,7 @@ func TestIsolation_ARingThatMovedUnderTheChunkRefusesTheCommit(t *testing.T) {
 	r.core = core
 
 	pushErr := make(chan error, 1)
-	go func() { _, err := r.Push(onePacket()); pushErr <- err }()
+	go func() { _, err := r.Push(context.Background(), onePacket()); pushErr <- err }()
 
 	<-core.entered
 
@@ -329,7 +330,7 @@ func TestIsolation_ARingThatMovedUnderTheChunkRefusesTheCommit(t *testing.T) {
 	// same divergence an error or a short result leaves behind. Asking it again
 	// would be asking about a stream nobody is holding.
 	entered := core.calls.Load()
-	if _, err := r.Push(onePacket()); !errors.Is(err, ErrCoreUnusable) {
+	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
 		t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
 	}
 	if got := core.calls.Load(); got != entered {
@@ -349,7 +350,7 @@ func TestPush_EmptyChunkPreservesClosedSemantics(t *testing.T) {
 		r.Close()
 
 		for _, data := range [][]byte{nil, {}} {
-			if _, err := r.Push(data); !errors.Is(err, ErrRingClosed) {
+			if _, err := r.Push(context.Background(), data); !errors.Is(err, ErrRingClosed) {
 				t.Errorf("Push(%v) err = %v, want ErrRingClosed", data, err)
 			}
 		}
@@ -369,7 +370,7 @@ func TestPush_EmptyChunkPreservesClosedSemantics(t *testing.T) {
 
 		headBefore, tailBefore, genBefore := r.Head(), r.Tail(), r.Generation()
 
-		n, err := r.Push(nil)
+		n, err := r.Push(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("Push(nil) err = %v, want nil", err)
 		}

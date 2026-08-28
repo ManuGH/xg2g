@@ -5,6 +5,7 @@
 package ingeststats
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -83,7 +84,7 @@ func overrunSubscriber(t *testing.T) (*ring.SubscriberReader, ring.SubscriberSta
 		if end > len(capture) {
 			end = len(capture)
 		}
-		if _, err := r.Push(capture[i:end]); err != nil {
+		if _, err := r.Push(context.Background(), capture[i:end]); err != nil {
 			t.Fatalf("push capture: %v", err)
 		}
 	}

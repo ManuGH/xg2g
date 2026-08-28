@@ -6,6 +6,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,12 +51,12 @@ func h264Ring(t *testing.T, videoPID uint16) (*MasterRing, uint16) {
 	t.Cleanup(r.Close)
 
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT: %v", err)
 		}
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT: %v", err)
 		}
 	}
@@ -69,7 +70,7 @@ func h264Ring(t *testing.T, videoPID uint16) (*MasterRing, uint16) {
 func pushAU(t *testing.T, r *MasterRing, videoPID uint16, cc uint8, es []byte) int64 {
 	t.Helper()
 	offset := r.Head()
-	if _, err := r.Push(createVideoPESPacket(videoPID, true, cc, es)); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(videoPID, true, cc, es)); err != nil {
 		t.Fatalf("push access unit: %v", err)
 	}
 	return offset
@@ -201,10 +202,10 @@ func TestRandomAccess_SliceHeaderSplitAcrossTSPackets(t *testing.T) {
 	}
 
 	want := r.Head()
-	if _, err := r.Push(createVideoPESPacket(vpid, true, 0, head)); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(vpid, true, 0, head)); err != nil {
 		t.Fatalf("push head: %v", err)
 	}
-	if _, err := r.Push(createVideoPESPacket(vpid, false, 1, []byte{sliceHeaderI, 0x00, 0x00})); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(vpid, false, 1, []byte{sliceHeaderI, 0x00, 0x00})); err != nil {
 		t.Fatalf("push tail: %v", err)
 	}
 	pushAU(t, r, vpid, 2, nal(nalHdrNonIDR, sliceHeaderP))
@@ -226,10 +227,10 @@ func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
 		r := NewMasterRing(400 * TSPacketSize)
 		t.Cleanup(r.Close)
 		for _, pkt := range createMultiPacketPAT(pmtPID) {
-			_, _ = r.Push(pkt)
+			_, _ = r.Push(context.Background(), pkt)
 		}
 		for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, true) {
-			_, _ = r.Push(pkt)
+			_, _ = r.Push(context.Background(), pkt)
 		}
 		return r
 	}
@@ -299,7 +300,7 @@ func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
 	scrambled[3] |= 0xC0 // transport_scrambling_control = odd key
 
 	for i := 0; i < 3; i++ {
-		if _, err := r.Push(clear); err != nil {
+		if _, err := r.Push(context.Background(), clear); err != nil {
 			t.Fatalf("push clear: %v", err)
 		}
 	}
@@ -307,7 +308,7 @@ func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
 		t.Fatalf("after three clear packets: %+v", got)
 	}
 
-	if _, err := r.Push(scrambled); err != nil {
+	if _, err := r.Push(context.Background(), scrambled); err != nil {
 		t.Fatalf("push scrambled: %v", err)
 	}
 	got := r.Scrambling()
@@ -350,7 +351,7 @@ func TestRandomAccess_RealCapture_ClassificationIsStable(t *testing.T) {
 
 			r := NewMasterRing(len(data) + TSPacketSize)
 			defer r.Close()
-			if _, err := r.Push(data); err != nil {
+			if _, err := r.Push(context.Background(), data); err != nil {
 				t.Fatalf("push capture: %v", err)
 			}
 

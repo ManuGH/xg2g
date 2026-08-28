@@ -4,7 +4,10 @@
 
 package ring
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func FuzzMasterRingPush(f *testing.F) {
 	f.Add(make([]byte, TSPacketSize))
@@ -14,7 +17,7 @@ func FuzzMasterRingPush(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		r := NewMasterRing(64 * TSPacketSize)
 		defer r.Close()
-		_, _ = r.Push(data)
+		_, _ = r.Push(context.Background(), data)
 		_, _ = r.LatestKeyframeOffset()
 		_ = r.RandomAccess()
 		_, _ = r.VideoDetails()
