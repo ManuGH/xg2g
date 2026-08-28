@@ -92,6 +92,15 @@ func start(ctx context.Context, binaryPath string, extraArgs []string, targetPro
 		return nil, fmt.Errorf("listen on %s: %w", sock, err)
 	}
 
+	// The 0700 directory already makes this unreachable to anything else, but a
+	// socket left at whatever the umask produced is a second thing to reason about
+	// if that directory is ever relaxed. Tightened so there is only one.
+	if err := os.Chmod(sock, 0o600); err != nil {
+		_ = ln.Close()
+		_ = os.RemoveAll(dir)
+		return nil, fmt.Errorf("restrict socket: %w", err)
+	}
+
 	r := &RemoteCore{dir: dir, ln: ln, waitDone: make(chan struct{})}
 	defer func() {
 		if err != nil {
