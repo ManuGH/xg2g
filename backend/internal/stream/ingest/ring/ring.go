@@ -175,6 +175,15 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 		return r.retireCore(ctx, err)
 	}
 
+	// Same reasoning as in Push: a core that answered after the call stopped being
+	// wanted has still answered, and its result is not applied.
+	if err := ctx.Err(); err != nil {
+		return r.retireCore(ctx, err)
+	}
+	if err := callCtx.Err(); err != nil {
+		return r.retireCore(ctx, err)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -293,6 +302,22 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	if err != nil {
 		// Past this point the core has been entered, so every way out that does
 		// not commit retires it - the caller's own cancellation included.
+		return 0, r.retireCore(ctx, err)
+	}
+
+	// A successful return is not the same as a return that is still wanted. A core
+	// that ignores its context - which a remote one may do by accident, or by
+	// being a process that finished its work before noticing the socket closed -
+	// can hand back a complete, well-formed result for a chunk nobody is waiting
+	// for any more. Committing it would publish bytes past the point the caller
+	// gave up, which is the one thing the deadline exists to prevent.
+	//
+	// The contract cannot assume cooperation. It has to hold for a core that does
+	// the wrong thing, because that is the core it will eventually meet.
+	if err := ctx.Err(); err != nil {
+		return 0, r.retireCore(ctx, err)
+	}
+	if err := ingestCtx.Err(); err != nil {
 		return 0, r.retireCore(ctx, err)
 	}
 	// A core that interpreted less than it was given leaves the ring with bytes it

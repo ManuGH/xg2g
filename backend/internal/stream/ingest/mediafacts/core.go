@@ -39,8 +39,8 @@ import (
 // every later chunk fails immediately - so the deadline can afford headroom
 // without putting the zap at risk.
 //
-// 500ms is roughly 33x the slowest measured chunk and an eighth of the smallest
-// viewer-facing budget. A test in the pipeline package holds the two against each
+// 500ms is roughly 33x the slowest measured chunk and a sixteenth of the
+// smallest viewer-facing budget. A test in the pipeline package holds the two against each
 // other, because a deadline that quietly grew past the zap budget would turn a
 // hung core into a hung zap instead of a failed one.
 const DefaultIngestDeadline = 500 * time.Millisecond
