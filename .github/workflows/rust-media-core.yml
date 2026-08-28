@@ -41,7 +41,7 @@ jobs:
           cargo --version
 
       - name: Cache cargo
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # Latest stable
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # Latest stable
         with:
           path: |
             ~/.cargo/registry
@@ -149,10 +149,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # Read from the same place the Makefile reads it, so the base image cannot
       # drift away from what the rest of the build expects.
