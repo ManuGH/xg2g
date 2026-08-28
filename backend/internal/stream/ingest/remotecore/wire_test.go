@@ -74,8 +74,16 @@ func TestEndToEnd_TheRealCoreAnswersWhatItWasGiven(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	defer func() {
+		// Timed, because Close succeeds either way. It asks the core to leave,
+		// then signals, then kills - so a core that ignores the shutdown message
+		// still produces a nil error, just later. Under the grace period is the
+		// only evidence that it went because it was asked.
+		began := time.Now()
 		if err := core.Close(); err != nil {
 			t.Errorf("Close: %v", err)
+		}
+		if took := time.Since(began); took >= termGrace {
+			t.Errorf("Close took %v; the core had to be signalled or killed rather than leaving when asked", took)
 		}
 	}()
 
