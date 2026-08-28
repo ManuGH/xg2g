@@ -59,6 +59,19 @@ var (
 	ErrCoreGone = errors.New("media facts core is gone")
 
 	// ErrCoreCrashed means the core terminated abnormally.
+	//
+	// The difference from ErrCoreGone is what was observed, not how bad it was. A
+	// call broken by EOF or a half-written frame reports ErrCoreGone: the socket
+	// says the conversation ended, and it does not say why - a core that exited
+	// cleanly and one that was killed look identical from there. ErrCoreCrashed is
+	// reported only where an abnormal exit was actually seen, which for an
+	// out-of-process core means waiting on it and getting a non-zero status or a
+	// signal.
+	//
+	// So the same crash can be reported both ways depending on who noticed first,
+	// and a caller must not read ErrCoreGone as "it exited cleanly". Both are core
+	// failures under IsCoreFailure and both retire the core; the distinction is
+	// for a human reading a log, not for control flow.
 	ErrCoreCrashed = errors.New("media facts core crashed")
 
 	// ErrCoreInvalidResponse means the core answered with something that is not a

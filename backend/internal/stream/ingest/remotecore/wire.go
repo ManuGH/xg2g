@@ -53,9 +53,17 @@ const HeaderSize = 1 + 1 + 4
 // MaxFrameSize bounds a single message.
 //
 // The largest thing this protocol carries is one ingest chunk, and the largest
-// chunk the ring produces is the normalizer's staging buffer at 4 MiB. Eight
-// leaves room for that plus a header and for a staging buffer someone raises
-// once, while still being a number a reader can refuse without allocating.
+// chunk the ring produces today is the normalizer's staging buffer at its default
+// of 4 MiB. That is the current default, not a ceiling: normalizer config
+// validates only a lower bound on StagingBufferCapacity, so an operator can
+// configure a larger one and nothing stops them. Eight leaves room for the
+// default plus request metadata and a header, and for one increase, while still
+// being a number a reader can refuse without allocating.
+//
+// TestWire_TheDefaultIngestChunkFitsAFrame keeps the first half of that honest:
+// if the default staging buffer is raised past what fits, it fails here rather
+// than in the field. It cannot speak for a configured value, which is why a
+// chunk too large to send is a refusal at Encode and not a truncation.
 //
 // The bound exists so a length prefix cannot become an allocation instruction. A
 // peer that announces more than this is not asking for memory, it is failing.

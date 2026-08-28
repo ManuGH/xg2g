@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"os"
 	"testing"
 	"time"
@@ -91,5 +92,27 @@ func TestEndToEnd_TheRealCoreAnswersWhatItWasGiven(t *testing.T) {
 
 	if _, err := core.SetTargetProgram(ctx, 2); err != nil {
 		t.Errorf("SetTargetProgram: %v", err)
+	}
+}
+
+// The frame bound is chosen against a number that lives in another package. This
+// is the check that says so out loud: raise the default staging buffer past what
+// a frame can hold and this fails, instead of every ingest failing at runtime.
+//
+// Only the default. A configured StagingBufferCapacity has no upper bound - see
+// normalizer.Config.Validate, which checks a minimum and nothing else - so this
+// cannot promise anything about an operator who sets a larger one. That case is
+// handled where it has to be: Encode refuses rather than truncating.
+func TestWire_TheDefaultIngestChunkFitsAFrame(t *testing.T) {
+	chunk := normalizer.DefaultConfig().StagingBufferCapacity
+	// An ingest request is the header, the start offset, then the chunk.
+	need := HeaderSize + 8 + chunk
+	if need > MaxFrameSize {
+		t.Fatalf("a default ingest chunk needs %d bytes on the wire, MaxFrameSize is %d; "+
+			"the staging buffer default grew past what a frame can carry", need, MaxFrameSize)
+	}
+	// And that it still fits is not the same as it being sendable.
+	if _, err := (Frame{Type: MsgIngest, Body: make([]byte, 8+chunk)}).Encode(); err != nil {
+		t.Fatalf("encoding a default-sized ingest request: %v", err)
 	}
 }

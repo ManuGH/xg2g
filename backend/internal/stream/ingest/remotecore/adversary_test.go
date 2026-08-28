@@ -203,3 +203,135 @@ func TestAdversary_CallerCancelsWithNoDeadline(t *testing.T) {
 	cancel()
 	expect(t, errCh, context.Canceled)
 }
+
+// An answer of the right shape to the wrong question. The id matches and the body
+// looks plausible; only the type says it is an answer to something else.
+func TestAdversary_AnswersWithTheWrongMessageType(t *testing.T) {
+	c, far := peer(t)
+	go func() {
+		req := readRequest(t, far)
+		answer(t, far, Frame{
+			Version:   Version,
+			Type:      MsgSetTargetProgram, // asked for Ingest
+			RequestID: req.RequestID,
+			Body:      []byte{StatusOK},
+		})
+	}()
+	expect(t, call(context.Background(), c), mediafacts.ErrCoreInvalidResponse)
+}
+
+// A version this build does not speak, in a frame that is also wrong in another
+// way. The version has to win: once it differs, every other field means whatever
+// that version says it means, and reporting the id would send the caller after a
+// problem that is not there.
+func TestAdversary_AnUnknownVersionIsReportedBeforeAnythingElse(t *testing.T) {
+	c, far := peer(t)
+	go func() {
+		req := readRequest(t, far)
+		answer(t, far, Frame{
+			Version:   Version + 1,
+			Type:      MsgSetTargetProgram,
+			RequestID: req.RequestID + 99,
+			Body:      nil,
+		})
+	}()
+	expect(t, call(context.Background(), c), mediafacts.ErrCoreProtocolVersion)
+}
+
+// The nastiest one, because it looks like an intermittent core.
+//
+// Each call watches its context so a blocked read or write can be broken out of.
+// If that watcher is only signalled and not waited for, it can still be inside
+// its select when the call returns - and then set a deadline in the past while
+// the *next* call is already using the connection. Request N+1 dies of request
+// N's context, and nothing in the logs says why.
+//
+// #896 makes this the normal case rather than a corner: the context it derives
+// for each chunk is cancelled the instant the call returns.
+func TestAdversary_AStaleWatcherDoesNotPoisonTheNextRequest(t *testing.T) {
+	c, far := peer(t)
+
+	go func() {
+		for {
+			req := readRequest(t, far)
+			if req.Type == 0 {
+				return
+			}
+			answer(t, far, Frame{Version: Version, Type: req.Type, RequestID: req.RequestID, Body: []byte{StatusOK}})
+		}
+	}()
+
+	// Repeated, because the window is a scheduling one: a single pass can miss it
+	// even when the join is absent.
+	for i := 0; i < 200; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		if _, err := c.roundTrip(ctx, Frame{Type: MsgSetTargetProgram, Body: []byte{0, 1}}); err != nil {
+			cancel()
+			t.Fatalf("round %d: first call: %v", i, err)
+		}
+		// Exactly what the ring does the moment a chunk is done with.
+		cancel()
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
+		_, err := c.roundTrip(ctx2, Frame{Type: MsgSetTargetProgram, Body: []byte{0, 1}})
+		cancel2()
+		if err != nil {
+			t.Fatalf("round %d: the call after a cancelled one failed: %v", i, err)
+		}
+	}
+}
+
+// coreOnPipe is a RemoteCore with no process behind it, talking to a socket the
+// test controls.
+//
+// Needed because the body of an answer means different things per message type,
+// so the checks on it live in the methods and not in roundTrip. Everything above
+// goes through roundTrip and therefore cannot see them - a test that calls
+// roundTrip to check a per-message rule tests nothing and fails for its own
+// reasons, which is how the first version of the two below was written.
+func coreOnPipe(t *testing.T) (*RemoteCore, net.Conn) {
+	t.Helper()
+	c, far := peer(t)
+	return &RemoteCore{conn: c}, far
+}
+
+// More than was agreed. Trailing bytes are how a peer built against a later
+// protocol looks from here, and reading past them as if they were not there
+// would let a version mismatch pass quietly as agreement.
+func TestAdversary_AnIngestAnswerWithMoreBodyThanAgreed(t *testing.T) {
+	core, far := coreOnPipe(t)
+	go func() {
+		req := readRequest(t, far)
+		body := append([]byte{StatusOK}, make([]byte, 8+4)...) // status + offset + four too many
+		answer(t, far, Frame{Version: Version, Type: req.Type, RequestID: req.RequestID, Body: body})
+	}()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := core.Ingest(context.Background(), 0, make([]byte, 188))
+		errCh <- err
+	}()
+	expect(t, errCh, mediafacts.ErrCoreInvalidResponse)
+}
+
+// The same for the message whose answer is only a status byte. A peer that
+// appends to it is not answering this protocol.
+func TestAdversary_ASetTargetAnswerWithMoreBodyThanAgreed(t *testing.T) {
+	core, far := coreOnPipe(t)
+	go func() {
+		req := readRequest(t, far)
+		answer(t, far, Frame{
+			Version:   Version,
+			Type:      req.Type,
+			RequestID: req.RequestID,
+			Body:      []byte{StatusOK, 0x00},
+		})
+	}()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := core.SetTargetProgram(context.Background(), 1)
+		errCh <- err
+	}()
+	expect(t, errCh, mediafacts.ErrCoreInvalidResponse)
+}

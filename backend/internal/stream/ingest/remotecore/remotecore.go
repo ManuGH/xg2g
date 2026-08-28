@@ -21,12 +21,17 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 )
 
-// acceptTimeout bounds how long a started process has to connect back.
+// startupTimeout bounds getting a core to the point where it can be asked
+// something: spawned, connected, and past the handshake.
 //
-// Generous compared to what it takes - a process that is going to connect does it
-// in milliseconds - and short enough that a binary which starts but never speaks
-// is a failure rather than a wait.
-const acceptTimeout = 5 * time.Second
+// One budget for all of it rather than one per step. Two independent budgets add
+// up, and worse, the handshake had none at all when the caller passed a context
+// without a deadline - so a core that connected and then said nothing pinned
+// Start forever, which is exactly the core this is built to survive.
+//
+// Generous compared to what it takes: a process that is going to connect and
+// answer does both in milliseconds.
+const startupTimeout = 5 * time.Second
 
 // termGrace is how long a core gets to leave after being asked politely.
 //
@@ -128,13 +133,17 @@ func start(ctx context.Context, binaryPath string, extraArgs []string, targetPro
 		close(r.waitDone)
 	}()
 
-	c, err := r.accept(ctx)
+	// Everything from here to a usable core shares one deadline.
+	startCtx, cancelStart := context.WithTimeout(ctx, startupTimeout)
+	defer cancelStart()
+
+	c, err := r.accept(startCtx)
 	if err != nil {
 		return nil, err
 	}
 	r.conn = newConn(c)
 
-	if err = r.handshake(ctx, targetProgram); err != nil {
+	if err = r.handshake(startCtx, targetProgram); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -154,9 +163,6 @@ func (r *RemoteCore) accept(ctx context.Context) (net.Conn, error) {
 		got <- result{c, err}
 	}()
 
-	deadline := time.NewTimer(acceptTimeout)
-	defer deadline.Stop()
-
 	select {
 	case res := <-got:
 		if res.err != nil {
@@ -168,10 +174,10 @@ func (r *RemoteCore) accept(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("%w: exited before connecting: %v", mediafacts.ErrCoreCrashed, r.waitErr)
 	case <-ctx.Done():
 		_ = r.ln.Close()
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("%w: did not connect within %v", mediafacts.ErrCoreTimeout, startupTimeout)
+		}
 		return nil, ctx.Err()
-	case <-deadline.C:
-		_ = r.ln.Close()
-		return nil, fmt.Errorf("%w: did not connect within %v", mediafacts.ErrCoreTimeout, acceptTimeout)
 	}
 }
 
@@ -183,7 +189,10 @@ func (r *RemoteCore) handshake(ctx context.Context, targetProgram uint16) error 
 	if err != nil {
 		return err
 	}
-	return statusError(resp)
+	if err := statusError(resp); err != nil {
+		return err
+	}
+	return exactBody(resp, 1)
 }
 
 // Ingest hands one chunk to the core process.
@@ -203,11 +212,11 @@ func (r *RemoteCore) Ingest(ctx context.Context, startOffset int64, data []byte)
 	if err := statusError(resp); err != nil {
 		return mediafacts.ParseResult{}, err
 	}
-	// Response body is one status byte, then the payload. statusError has already
-	// read the first; the offset is the eight after it.
-	if len(resp.Body) < 1+8 {
-		return mediafacts.ParseResult{}, fmt.Errorf("%w: ingest answer carried %d bytes, expected at least %d",
-			mediafacts.ErrCoreInvalidResponse, len(resp.Body), 1+8)
+	// Response body is one status byte, then the offset. Exactly that: extra bytes
+	// mean the peer is sending something this build does not understand, and a
+	// reader that ignores them cannot tell that from a peer it agrees with.
+	if err := exactBody(resp, 1+8); err != nil {
+		return mediafacts.ParseResult{}, err
 	}
 	// The peer supplied this number. A value past what an offset can be is not a
 	// large offset, it is a peer that is failing - and converting it blindly would
@@ -230,6 +239,9 @@ func (r *RemoteCore) SetTargetProgram(ctx context.Context, programNumber uint16)
 		return mediafacts.ParseResult{}, err
 	}
 	if err := statusError(resp); err != nil {
+		return mediafacts.ParseResult{}, err
+	}
+	if err := exactBody(resp, 1); err != nil {
 		return mediafacts.ParseResult{}, err
 	}
 	return mediafacts.ParseResult{}, nil
@@ -306,6 +318,15 @@ func (r *RemoteCore) cleanupDir() {
 	if r.dir != "" {
 		_ = os.RemoveAll(r.dir)
 	}
+}
+
+// exactBody rejects an answer whose shape is not the one agreed for it.
+func exactBody(resp Frame, want int) error {
+	if len(resp.Body) != want {
+		return fmt.Errorf("%w: answer carried %d body bytes, expected %d",
+			mediafacts.ErrCoreInvalidResponse, len(resp.Body), want)
+	}
+	return nil
 }
 
 func statusError(resp Frame) error {

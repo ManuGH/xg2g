@@ -127,7 +127,9 @@ pub fn handle(frame: &Frame) -> Outcome {
         // with it yet; they are one arm because they are one shape, not because
         // the distinction was forgotten.
         MSG_HANDSHAKE | MSG_SET_TARGET_PROGRAM => {
-            if frame.body.len() < 2 {
+            // Exactly two. A body that is longer carries something this build does
+            // not know about, and answering OK to it would claim otherwise.
+            if frame.body.len() != 2 {
                 return Outcome::Answer(vec![STATUS_MALFORMED]);
             }
             Outcome::Answer(vec![STATUS_OK])
@@ -148,7 +150,12 @@ pub fn handle(frame: &Frame) -> Outcome {
             body.extend_from_slice(&through.to_be_bytes());
             Outcome::Answer(body)
         }
-        MSG_SHUTDOWN => Outcome::Finished(vec![STATUS_OK]),
+        MSG_SHUTDOWN => {
+            if !frame.body.is_empty() {
+                return Outcome::Answer(vec![STATUS_MALFORMED]);
+            }
+            Outcome::Finished(vec![STATUS_OK])
+        }
         _ => Outcome::Answer(vec![STATUS_UNKNOWN_MESSAGE]),
     }
 }
