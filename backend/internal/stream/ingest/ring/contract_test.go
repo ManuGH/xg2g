@@ -7,6 +7,7 @@ package ring
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -211,4 +212,127 @@ type failingTargetCore struct{ mediafacts.Core }
 
 func (c *failingTargetCore) SetTargetProgram(context.Context, uint16) (mediafacts.ParseResult, error) {
 	return mediafacts.ParseResult{}, mediafacts.ErrCoreGone
+}
+
+// uncooperativeCore is the core the contract has to survive: it ignores its
+// context entirely, works until it is done, and returns a complete, well-formed
+// result for a chunk the caller stopped waiting for.
+//
+// Not a strawman. A process on the other end of a socket learns that its caller
+// gave up only when it next touches the socket, and a core that finished parsing
+// just before that will answer with a perfectly good result to nobody.
+type uncooperativeCore struct {
+	mediafacts.Core
+	entered chan struct{}
+	proceed chan struct{}
+	once    sync.Once
+	visits  atomic.Int32
+}
+
+func newUncooperativeCore(inner mediafacts.Core) *uncooperativeCore {
+	return &uncooperativeCore{Core: inner, entered: make(chan struct{}), proceed: make(chan struct{})}
+}
+
+func (c *uncooperativeCore) Ingest(_ context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	c.visits.Add(1)
+	c.once.Do(func() { close(c.entered) })
+	<-c.proceed
+	// context.Background() on purpose: this core does not honour cancellation.
+	return c.Core.Ingest(context.Background(), startOffset, data)
+}
+
+func (c *uncooperativeCore) SetTargetProgram(_ context.Context, n uint16) (mediafacts.ParseResult, error) {
+	c.visits.Add(1)
+	c.once.Do(func() { close(c.entered) })
+	<-c.proceed
+	return c.Core.SetTargetProgram(context.Background(), n)
+}
+
+// A result that arrives after the caller gave up is not a result. Committing it
+// would publish bytes past the point the caller stopped waiting, which is exactly
+// what the deadline exists to prevent - and a core cannot be trusted to decline
+// on its own.
+func TestContract_ASuccessfulAnswerAfterCancellationIsNotCommitted(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+	core := newUncooperativeCore(r.core)
+	r.core = core
+
+	headBefore, genBefore := r.Head(), r.Generation()
+	factsBefore := r.ReadinessFacts()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := r.Push(ctx, onePacket())
+		errCh <- err
+	}()
+
+	<-core.entered
+	cancel()
+	close(core.proceed)
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Push err = %v, want context.Canceled", err)
+		}
+	case <-time.After(isolationWait):
+		t.Fatal("Push never returned")
+	}
+
+	if got := r.Head(); got != headBefore {
+		t.Errorf("Head = %d, want %d - a result nobody was waiting for was committed", got, headBefore)
+	}
+	if got := r.Generation(); got != genBefore {
+		t.Errorf("Generation = %d, want %d", got, genBefore)
+	}
+	if got := r.BufferedBytes(); got != 0 {
+		t.Errorf("BufferedBytes = %d, want 0", got)
+	}
+	if got := r.ReadinessFacts(); got.HasPAT != factsBefore.HasPAT || got.ProgramNumber != factsBefore.ProgramNumber {
+		t.Errorf("facts moved on a chunk that was refused: %+v", got)
+	}
+
+	entered := core.visits.Load()
+	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+		t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
+	}
+	if got := core.visits.Load(); got != entered {
+		t.Errorf("core entered %d more times after it answered too late, want 0", got-entered)
+	}
+}
+
+// The same for the other call into the core.
+func TestContract_SetTargetProgramIgnoresAnAnswerAfterCancellation(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+	core := newUncooperativeCore(r.core)
+	r.core = core
+
+	genBefore := r.Generation()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- r.SetTargetProgram(ctx, 2) }()
+
+	<-core.entered
+	cancel()
+	close(core.proceed)
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SetTargetProgram err = %v, want context.Canceled", err)
+		}
+	case <-time.After(isolationWait):
+		t.Fatal("SetTargetProgram never returned")
+	}
+
+	if got := r.Generation(); got != genBefore {
+		t.Errorf("Generation = %d, want %d - the refused result was applied", got, genBefore)
+	}
+	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+		t.Errorf("Push err = %v, want ErrCoreUnusable", err)
+	}
 }
