@@ -302,12 +302,82 @@ func assertReaped(t *testing.T, pid int) {
 // assertNoChildren fails if this process has any child left, zombie or otherwise.
 func assertNoChildren(t *testing.T) {
 	t.Helper()
+	// /proc first, because the runtime image has no ps and skipping there would
+	// mean the acceptance run silently proves nothing - which is what it did
+	// until this was written. ps stays as the fallback for hosts without /proc.
+	if zombies, ok := zombieChildrenFromProc(os.Getpid()); ok {
+		if zombies != "" {
+			t.Errorf("a child of this process is defunct:\n%s", zombies)
+		}
+		return
+	}
 	out, err := exec.Command("ps", "-o", "ppid=,stat=", "-U", strconv.Itoa(os.Getuid())).Output()
 	if err != nil {
 		t.Skipf("cannot inspect processes here: %v", err)
 	}
-	// A defunct entry parented by this test is the failure this looks for.
 	if containsZombieOf(string(out), os.Getpid()) {
 		t.Errorf("a child of this process is defunct:\n%s", out)
 	}
+}
+
+// zombieChildrenFromProc lists defunct children of pid straight from /proc.
+// Reports ok=false where there is no /proc to read, so the caller can fall back
+// rather than mistake an unreadable directory for a clean one.
+func zombieChildrenFromProc(pid int) (string, bool) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return "", false
+	}
+	want := "PPid:\t" + strconv.Itoa(pid)
+	var found []string
+	for _, e := range entries {
+		if _, err := strconv.Atoi(e.Name()); err != nil {
+			continue
+		}
+		status, err := os.ReadFile("/proc/" + e.Name() + "/status")
+		if err != nil {
+			// Exited between listing and reading. Not a zombie: a zombie is
+			// exactly the process that still has an entry.
+			continue
+		}
+		text := string(status)
+		if !strings.Contains(text, want+"\n") {
+			continue
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, "State:") && strings.Contains(line, "Z") {
+				found = append(found, e.Name()+" "+line)
+			}
+		}
+	}
+	return strings.Join(found, "\n"), true
+}
+
+// The zombie detector, tested against a real zombie.
+//
+// Without this the acceptance run inside the image would be back where it
+// started: a check that always says "clean" is indistinguishable from a check
+// that works, and the previous one skipped itself into exactly that.
+func TestProcess_TheZombieDetectorSeesAZombie(t *testing.T) {
+	if _, ok := zombieChildrenFromProc(os.Getpid()); !ok {
+		t.Skip("no /proc here; this host uses the ps fallback")
+	}
+
+	// Started and deliberately not waited on: a child that has exited and not
+	// been collected is the definition of the thing being looked for.
+	cmd := exec.Command("/bin/sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = cmd.Wait() }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if found, _ := zombieChildrenFromProc(os.Getpid()); strings.Contains(found, strconv.Itoa(cmd.Process.Pid)) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	found, _ := zombieChildrenFromProc(os.Getpid())
+	t.Fatalf("an unreaped exited child was not reported as defunct; detector saw %q", found)
 }
