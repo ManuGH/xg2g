@@ -6,9 +6,98 @@ package mediafacts
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
 )
+
+// DefaultIngestDeadline bounds how long one chunk may be interpreted.
+//
+// It is a stall detector, not a budget meant to be spent. The in-process core
+// finishes a 64 KiB chunk in microseconds and a core on a local socket should
+// answer in milliseconds, so anything approaching this value means the core has
+// stopped answering rather than that it is working hard.
+//
+// The number is derived from two measurements rather than chosen. Measured on
+// the repository's own DVB captures, GoCore interprets a chunk in:
+//
+//	 64 KiB   p50 ~230us   p99 ~350us
+//	256 KiB   p50 ~1.0ms   p99 ~1.05ms
+//	  1 MiB   p50 ~3.7ms   p99 ~4.1ms
+//	  4 MiB           ~14.9ms
+//
+// 4 MiB is the ceiling: the normalizer's sink is handed its staging buffer, which
+// defaults to that size. So the worst realistic chunk costs about 15 ms in
+// process, and a core across a local socket adds a transfer and a round trip to
+// that, not an order of magnitude.
+//
+// The upper bound comes from the viewer. A zap fails when transport readiness is
+// not reached within the pipeline's ReadyTimeout, 8s by default. A hung core
+// costs that budget exactly one deadline and no more - the caller retires it, and
+// every later chunk fails immediately - so the deadline can afford headroom
+// without putting the zap at risk.
+//
+// 500ms is roughly 33x the slowest measured chunk and an eighth of the smallest
+// viewer-facing budget. A test in the pipeline package holds the two against each
+// other, because a deadline that quietly grew past the zap budget would turn a
+// hung core into a hung zap instead of a failed one.
+const DefaultIngestDeadline = 500 * time.Millisecond
+
+// Ways a core fails. They are separate because a caller may want to tell them
+// apart in a log or a metric - but not in its handling, which is identical for
+// all of them and stated on Core.Ingest.
+var (
+	// ErrCoreTimeout means the core did not answer within the deadline. It says
+	// nothing about whether the core is alive; a core that answers later has still
+	// missed the chunk, and its state has moved on without the caller.
+	ErrCoreTimeout = errors.New("media facts core did not answer within the deadline")
+
+	// ErrCoreGone means the core ended the conversation - a closed pipe, an EOF,
+	// a process that is no longer there.
+	ErrCoreGone = errors.New("media facts core is gone")
+
+	// ErrCoreCrashed means the core terminated abnormally.
+	ErrCoreCrashed = errors.New("media facts core crashed")
+
+	// ErrCoreInvalidResponse means the core answered with something that is not a
+	// result: a truncated frame, a field that cannot be, a decode failure.
+	ErrCoreInvalidResponse = errors.New("media facts core returned an invalid response")
+
+	// ErrCoreProtocolVersion means the core speaks a version of this contract that
+	// this build does not. It is fatal on purpose: a partially understood protocol
+	// is how a caller ends up acting on fields that mean something else.
+	ErrCoreProtocolVersion = errors.New("media facts core protocol version mismatch")
+)
+
+// IsCoreFailure reports whether an error means the core can no longer be trusted
+// with the next chunk.
+//
+// Every failure of a core is one of these, and every one of them has the same
+// consequence: the chunk is refused and the core is retired. The classification
+// exists so that consequence is applied by asking one question rather than by
+// listing errors at each call site - a list that would eventually miss one.
+func IsCoreFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, ErrCoreTimeout),
+		errors.Is(err, ErrCoreGone),
+		errors.Is(err, ErrCoreCrashed),
+		errors.Is(err, ErrCoreInvalidResponse),
+		errors.Is(err, ErrCoreProtocolVersion),
+		errors.Is(err, ErrInvalidPacketSize):
+		return true
+	}
+	// An unrecognised error from a core is still an error from a core. Treating
+	// only known failures as failures is how an unknown one becomes a silent
+	// success.
+	return true
+}
 
 // Core reads transport stream bytes and reports what they say.
 //
@@ -33,20 +122,34 @@ type Core interface {
 	// Ingest consumes one chunk of transport stream. startOffset is the chunk's
 	// position in the caller's own monotonic byte coordinate system, and every
 	// offset in the result is expressed in that same system.
-	Ingest(startOffset int64, data []byte) (ParseResult, error)
-
-	// Snapshot returns what the core currently knows. Facts only move when a chunk
-	// is ingested, so a caller that keeps the facts from the last Ingest never
-	// needs to call this on a hot path.
-	Snapshot() Facts
+	//
+	// The context bounds the call. An implementation that reaches another process
+	// must stop waiting when it expires and must not answer afterwards - a late
+	// answer describes a chunk the caller has already refused.
+	//
+	// Any error, of any kind, means the same thing to the caller and is not
+	// negotiable: no facts, no events, no PSI, no bytes committed, and this core
+	// is never asked again. That includes a result that is well-formed but
+	// incomplete, because a core that consumed less than it was given has moved
+	// past bytes the caller is about to throw away.
+	Ingest(ctx context.Context, startOffset int64, data []byte) (ParseResult, error)
 
 	// SetTargetProgram selects which program of a multi-program transport is
 	// followed. Changing it discards everything read about the previous one.
-	SetTargetProgram(programNumber uint16) ParseResult
-
-	// Reset discards all parser state.
-	Reset() ParseResult
+	//
+	// Bounded and fallible for the same reason Ingest is: it is the only other
+	// call that reaches the core, and an implementation behind a socket can hang
+	// here just as easily. Its failures carry the same consequence.
+	SetTargetProgram(ctx context.Context, programNumber uint16) (ParseResult, error)
 }
+
+// Deliberately absent from this interface: Snapshot and Reset.
+//
+// Neither is called on a Core anywhere in production - the caller keeps the facts
+// from the last Ingest, and nothing resets a core it is about to retire. Leaving
+// them in would mean a later wire protocol has to carry two messages that exist
+// only because an interface once listed them. GoCore keeps both as its own
+// methods, where they are used internally and by tests.
 
 // EventKind names something the core saw that the caller has to act on. Facts
 // describe a state; events describe a moment in the byte stream, and their order
@@ -257,20 +360,44 @@ func NewGoCore(targetProgramNumber uint16) *GoCore {
 }
 
 // Ingest interprets one chunk of transport stream.
-func (c *GoCore) Ingest(startOffset int64, data []byte) (ParseResult, error) {
+func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (ParseResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ParseResult{}, err
+	}
 	if len(data)%TSPacketSize != 0 {
 		return ParseResult{}, ErrInvalidPacketSize
 	}
 
 	c.events = c.events[:0]
 	for i := 0; i < len(data); i += TSPacketSize {
+		// Checked during the chunk, not only before it. The largest chunk this
+		// path sees is the normalizer's staging buffer, and a caller that gave up
+		// half way through one should not wait for the rest.
+		//
+		// Returning here leaves the parser part way through a chunk the caller
+		// will refuse. That is not a leak: the caller retires a core whose Ingest
+		// returned an error, so this state is never read again.
+		if i%(ctxCheckPackets*TSPacketSize) == 0 {
+			if err := ctx.Err(); err != nil {
+				return ParseResult{}, err
+			}
+		}
 		c.indexPacketLocked(data[i:i+TSPacketSize], startOffset+int64(i))
 	}
 	return c.result(startOffset + int64(len(data))), nil
 }
 
+// ctxCheckPackets is how often the context is re-read while a chunk is being
+// interpreted. At the measured throughput this is a few milliseconds apart -
+// often enough that cancellation is not delayed noticeably, rare enough that the
+// check does not show up beside the parsing.
+const ctxCheckPackets = 4096
+
 // SetTargetProgram selects the program to follow.
-func (c *GoCore) SetTargetProgram(programNumber uint16) ParseResult {
+func (c *GoCore) SetTargetProgram(ctx context.Context, programNumber uint16) (ParseResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ParseResult{}, err
+	}
 	c.events = c.events[:0]
 	if c.targetProgramNumber != programNumber {
 		c.targetProgramNumber = programNumber
@@ -284,7 +411,7 @@ func (c *GoCore) SetTargetProgram(programNumber uint16) ParseResult {
 		c.rawPATPackets = nil
 		c.resetProgramStateLocked()
 	}
-	return c.result(0)
+	return c.result(0), nil
 }
 
 // Reset discards everything read so far.

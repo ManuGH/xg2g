@@ -343,7 +343,7 @@ func TestPipeline_PrimedAttachSnapshotAndReaderAreAtomic(t *testing.T) {
 	defer master.Close()
 
 	// Past the 733-packet threshold, with room to spare rather than on the edge of it
-	_, err = master.Push(data[:800*ring.TSPacketSize])
+	_, err = master.Push(context.Background(), data[:800*ring.TSPacketSize])
 	if err != nil {
 		t.Fatalf("push failed: %v", err)
 	}

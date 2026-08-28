@@ -116,10 +116,10 @@ func newPrimedRing(t *testing.T, capacityPackets int) *ring.MasterRing {
 	r := ring.NewMasterRing(capacityPackets * ring.TSPacketSize)
 	t.Cleanup(r.Close)
 
-	if _, err := r.Push(tsPATPacket(t, 100, 0)); err != nil {
+	if _, err := r.Push(context.Background(), tsPATPacket(t, 100, 0)); err != nil {
 		t.Fatalf("push PAT: %v", err)
 	}
-	if _, err := r.Push(tsPMTPacket(t, 100, 256, false, 0)); err != nil {
+	if _, err := r.Push(context.Background(), tsPMTPacket(t, 100, 256, false, 0)); err != nil {
 		t.Fatalf("push PMT: %v", err)
 	}
 	return r
@@ -133,17 +133,17 @@ func TestAttachPrimedMaster_AttachesAtKeyframeNotTail(t *testing.T) {
 
 	// Filler ahead of the keyframe, so tail != keyframe offset.
 	for i := 0; i < 20; i++ {
-		if _, err := r.Push(tsVideoPacket(t, 85, uint8(i), []byte{0xAA})); err != nil {
+		if _, err := r.Push(context.Background(), tsVideoPacket(t, 85, uint8(i), []byte{0xAA})); err != nil {
 			t.Fatalf("push filler: %v", err)
 		}
 	}
 
 	keyframeOffset := r.Head()
-	if _, err := r.Push(tsVideoPacket(t, 256, 0, h264IDR)); err != nil {
+	if _, err := r.Push(context.Background(), tsVideoPacket(t, 256, 0, h264IDR)); err != nil {
 		t.Fatalf("push keyframe: %v", err)
 	}
 	for i := 0; i < 5; i++ {
-		if _, err := r.Push(tsVideoPacket(t, 256, uint8(i+1), []byte{0xBB})); err != nil {
+		if _, err := r.Push(context.Background(), tsVideoPacket(t, 256, uint8(i+1), []byte{0xBB})); err != nil {
 			t.Fatalf("push trailing video: %v", err)
 		}
 	}
@@ -179,7 +179,7 @@ func TestAttachPrimedMaster_RefusesTailWhenNoKeyframe(t *testing.T) {
 
 	// Audio only: nothing here is a video random access point.
 	for i := 0; i < 30; i++ {
-		if _, err := r.Push(tsVideoPacket(t, 85, uint8(i), []byte{0xAA})); err != nil {
+		if _, err := r.Push(context.Background(), tsVideoPacket(t, 85, uint8(i), []byte{0xAA})); err != nil {
 			t.Fatalf("push audio: %v", err)
 		}
 	}
@@ -207,7 +207,7 @@ func TestAttachPrimedMaster_RefusesTailWhenNoKeyframe(t *testing.T) {
 func TestAttachPrimedMaster_PMTChangeInvalidatesRatherThanFallsBackToTail(t *testing.T) {
 	r := newPrimedRing(t, 200)
 
-	if _, err := r.Push(tsVideoPacket(t, 256, 0, h264IDR)); err != nil {
+	if _, err := r.Push(context.Background(), tsVideoPacket(t, 256, 0, h264IDR)); err != nil {
 		t.Fatalf("push first keyframe: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestAttachPrimedMaster_PMTChangeInvalidatesRatherThanFallsBackToTail(t *tes
 
 	// PMT v1 moves video to another PID and codec. The ring invalidates the video
 	// state, drops the keyframe index and bumps the generation.
-	if _, err := r.Push(tsPMTPacket(t, 100, 512, true, 1)); err != nil {
+	if _, err := r.Push(context.Background(), tsPMTPacket(t, 100, 512, true, 1)); err != nil {
 		t.Fatalf("push PMT v1: %v", err)
 	}
 	if _, ok := r.LatestKeyframeOffset(); ok {
@@ -235,7 +235,7 @@ func TestAttachPrimedMaster_PMTChangeInvalidatesRatherThanFallsBackToTail(t *tes
 
 	// The new generation produces its own random access point.
 	newKeyframe := r.Head()
-	if _, err := r.Push(tsVideoPacket(t, 512, 0, hevcIRAP)); err != nil {
+	if _, err := r.Push(context.Background(), tsVideoPacket(t, 512, 0, hevcIRAP)); err != nil {
 		t.Fatalf("push second keyframe: %v", err)
 	}
 
@@ -300,10 +300,10 @@ func TestAttachPrimedMaster_ConcurrentGenerationChurnNeverMixesSnapshot(t *testi
 				videoPID = 512
 				es = hevcIRAP
 			}
-			_, _ = r.Push(tsPMTPacket(t, 100, videoPID, hevc, version))
-			_, _ = r.Push(tsVideoPacket(t, videoPID, 0, es))
+			_, _ = r.Push(context.Background(), tsPMTPacket(t, 100, videoPID, hevc, version))
+			_, _ = r.Push(context.Background(), tsVideoPacket(t, videoPID, 0, es))
 			for i := 0; i < 8; i++ {
-				_, _ = r.Push(tsVideoPacket(t, videoPID, uint8(i+1), []byte{0xCC}))
+				_, _ = r.Push(context.Background(), tsVideoPacket(t, videoPID, uint8(i+1), []byte{0xCC}))
 			}
 			time.Sleep(2 * time.Millisecond)
 		}

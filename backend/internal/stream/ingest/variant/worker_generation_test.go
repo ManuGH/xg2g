@@ -36,7 +36,7 @@ func runGenerationCut(t *testing.T, firstCapture, secondCapture string, key Audi
 			if end > len(data) {
 				end = len(data)
 			}
-			if _, err := masterRing.Push(data[i:end]); err != nil {
+			if _, err := masterRing.Push(context.Background(), data[i:end]); err != nil {
 				return
 			}
 			time.Sleep(time.Millisecond)
@@ -154,7 +154,7 @@ func TestAudioVariant_GenerationCut_ClientReattachesToNewWorker(t *testing.T) {
 			if end > len(data) {
 				end = len(data)
 			}
-			if _, err := masterRing.Push(data[i:end]); err != nil {
+			if _, err := masterRing.Push(context.Background(), data[i:end]); err != nil {
 				return
 			}
 			time.Sleep(time.Millisecond)

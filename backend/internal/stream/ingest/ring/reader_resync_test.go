@@ -6,6 +6,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"sync"
 	"testing"
@@ -28,12 +29,12 @@ func newH264Ring(t *testing.T, capacityPackets int) (*MasterRing, *SubscriberRea
 	t.Cleanup(r.Close)
 
 	for _, pkt := range createMultiPacketPAT(100) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT: %v", err)
 		}
 	}
 	for _, pkt := range createMultiPacketPMT(100, 256, false) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT: %v", err)
 		}
 	}
@@ -48,7 +49,7 @@ func newH264Ring(t *testing.T, capacityPackets int) (*MasterRing, *SubscriberRea
 func pushFiller(t *testing.T, r *MasterRing, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
-		if _, err := r.Push(createBasicPacket(85, false, uint8(i%16))); err != nil {
+		if _, err := r.Push(context.Background(), createBasicPacket(85, false, uint8(i%16))); err != nil {
 			t.Fatalf("push filler %d: %v", i, err)
 		}
 	}
@@ -59,10 +60,10 @@ func pushFiller(t *testing.T, r *MasterRing, count int) {
 func pushKeyframe(t *testing.T, r *MasterRing, pid uint16, es []byte, cc uint8) int64 {
 	t.Helper()
 	offset := r.Head()
-	if _, err := r.Push(createVideoPESPacket(pid, true, cc, es)); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(pid, true, cc, es)); err != nil {
 		t.Fatalf("push keyframe: %v", err)
 	}
-	if _, err := r.Push(createVideoPESPacket(pid, true, cc+1, []byte{0x00, 0x00, 0x01, 0x41})); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(pid, true, cc+1, []byte{0x00, 0x00, 0x01, 0x41})); err != nil {
 		t.Fatalf("finalise access unit: %v", err)
 	}
 	return offset
@@ -212,7 +213,7 @@ func TestSubscriberReader_PMTChangeDuringWaitDeliversNewGenerationPreamble(t *te
 
 	// New generation: video moves to PID 512 and to HEVC.
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 512, true, true, 1, 1) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT v1: %v", err)
 		}
 	}
@@ -388,11 +389,11 @@ func TestSubscriberReader_MPEG2OverrunResyncsToIFrame(t *testing.T) {
 	defer r.Close()
 
 	for _, pkt := range createMultiPacketPAT(100) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT: %v", err)
 		}
 	}
-	if _, err := r.Push(mpeg2PMTPacket(t, 100, 200)); err != nil {
+	if _, err := r.Push(context.Background(), mpeg2PMTPacket(t, 100, 200)); err != nil {
 		t.Fatalf("push MPEG-2 PMT: %v", err)
 	}
 	if r.facts.VideoCodec != CodecMPEG2 {
@@ -410,10 +411,10 @@ func TestSubscriberReader_MPEG2OverrunResyncsToIFrame(t *testing.T) {
 		0x00, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00, 0x00, // picture header, I-frame
 	}
 	keyframe := r.Head()
-	if _, err := r.Push(createVideoPESPacket(200, true, 0, mpeg2IFrame)); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(200, true, 0, mpeg2IFrame)); err != nil {
 		t.Fatalf("push I-frame: %v", err)
 	}
-	if _, err := r.Push(createVideoPESPacket(200, true, 1, []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x10})); err != nil {
+	if _, err := r.Push(context.Background(), createVideoPESPacket(200, true, 1, []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x10})); err != nil {
 		t.Fatalf("finalise access unit: %v", err)
 	}
 
@@ -470,12 +471,12 @@ func TestSubscriberReader_AudioOnlyServiceResumesAtTailWithoutWaiting(t *testing
 	defer r.Close()
 
 	for _, pkt := range createMultiPacketPAT(100) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT: %v", err)
 		}
 	}
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 0, false, false, 0, 1) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push audio-only PMT: %v", err)
 		}
 	}
@@ -526,7 +527,7 @@ func TestSubscriberReader_UnknownTopologyWaitsRatherThanResumingAtTail(t *testin
 
 	// No PAT, no PMT: nothing here says what this stream is.
 	for i := 0; i < 30; i++ {
-		if _, err := r.Push(createBasicPacket(256, false, uint8(i%16))); err != nil {
+		if _, err := r.Push(context.Background(), createBasicPacket(256, false, uint8(i%16))); err != nil {
 			t.Fatalf("push %d: %v", i, err)
 		}
 	}
@@ -585,7 +586,7 @@ func TestSubscriberReader_PartialPreambleIsDiscardedOnGenerationChange(t *testin
 
 	// The stream moves on while the rest is still queued.
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 512, true, true, 1, 1) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT v1: %v", err)
 		}
 	}

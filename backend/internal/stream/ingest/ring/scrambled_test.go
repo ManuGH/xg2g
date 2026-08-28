@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -29,12 +30,12 @@ func scrambleTSPacket(pkt []byte) []byte {
 func pushClearPATPMT(t *testing.T, r *MasterRing, pmtPID, videoPID uint16) {
 	t.Helper()
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PAT failed: %v", err)
 		}
 	}
 	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
-		if _, err := r.Push(pkt); err != nil {
+		if _, err := r.Push(context.Background(), pkt); err != nil {
 			t.Fatalf("push PMT failed: %v", err)
 		}
 	}
@@ -55,7 +56,7 @@ func TestMasterRing_ScrambledVideo_NotIndexedAndAttachIsTerminal(t *testing.T) {
 
 	for i := 0; i < mediafacts.ScrambledVerdictMinPackets; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
-		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
+		if _, err := r.Push(context.Background(), scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)
 		}
 	}
@@ -96,14 +97,14 @@ func TestMasterRing_ClearPayloadPresent_NotDeclaredScrambled(t *testing.T) {
 
 	for i := 0; i < mediafacts.ScrambledVerdictMinPackets*2; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
-		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
+		if _, err := r.Push(context.Background(), scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)
 		}
 	}
 
 	// A clear non-VCL slice: parsed, but not a random access point.
 	clearPkt := createVideoPESPacket(videoPID, true, 0x0F, []byte{0x00, 0x00, 0x01, 0x01, 0x11, 0x22})
-	if _, err := r.Push(clearPkt); err != nil {
+	if _, err := r.Push(context.Background(), clearPkt); err != nil {
 		t.Fatalf("push clear video packet failed: %v", err)
 	}
 
@@ -138,7 +139,7 @@ func TestMasterRing_ProgramChange_ResetsScramblingObservation(t *testing.T) {
 
 	for i := 0; i < mediafacts.ScrambledVerdictMinPackets; i++ {
 		pkt := createVideoPESPacket(videoPID, true, uint8(i&0x0F), idrESPayload())
-		if _, err := r.Push(scrambleTSPacket(pkt)); err != nil {
+		if _, err := r.Push(context.Background(), scrambleTSPacket(pkt)); err != nil {
 			t.Fatalf("push scrambled video packet %d failed: %v", i, err)
 		}
 	}
@@ -147,7 +148,7 @@ func TestMasterRing_ProgramChange_ResetsScramblingObservation(t *testing.T) {
 		t.Fatalf("precondition failed: expected scrambled packets to be observed before program change")
 	}
 
-	r.SetTargetProgram(2)
+	r.SetTargetProgram(context.Background(), 2)
 
 	scrambled, clear := r.ScramblingObservation()
 	if scrambled != 0 || clear != 0 {

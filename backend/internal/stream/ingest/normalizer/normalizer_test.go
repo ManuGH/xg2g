@@ -572,7 +572,7 @@ func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		_, pushErr := master.Push(chunk)
+		_, pushErr := master.Push(context.Background(), chunk)
 		return pushErr
 	})
 	if err != nil {

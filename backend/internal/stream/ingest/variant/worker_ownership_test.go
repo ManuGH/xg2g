@@ -51,7 +51,7 @@ func feedCapture(t *testing.T, r *ring.MasterRing) {
 			if end > len(data) {
 				end = len(data)
 			}
-			if _, err := r.Push(data[i:end]); err != nil {
+			if _, err := r.Push(context.Background(), data[i:end]); err != nil {
 				return false
 			}
 			time.Sleep(time.Millisecond)

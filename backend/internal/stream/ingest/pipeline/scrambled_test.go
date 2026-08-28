@@ -51,7 +51,7 @@ func videoPIDOf(t *testing.T, data []byte) uint16 {
 	t.Helper()
 	probe := ring.NewMasterRing(len(data) + ring.TSPacketSize)
 	defer probe.Close()
-	if _, err := probe.Push(data); err != nil {
+	if _, err := probe.Push(context.Background(), data); err != nil {
 		t.Fatalf("probe push failed: %v", err)
 	}
 	pid, _ := probe.VideoDetails()

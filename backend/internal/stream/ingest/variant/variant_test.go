@@ -212,7 +212,7 @@ func TestAudioVariantWorker_RealCapture_TranscodeAndAttach(t *testing.T) {
 					end = i + ((end-i)/ring.TSPacketSize)*ring.TSPacketSize
 				}
 				if end > i {
-					if _, perr := masterRing.Push(data[i:end]); perr != nil {
+					if _, perr := masterRing.Push(context.Background(), data[i:end]); perr != nil {
 						return
 					}
 				}

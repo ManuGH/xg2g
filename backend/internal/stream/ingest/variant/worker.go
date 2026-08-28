@@ -450,7 +450,10 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 					// a non-packet-sized push, which pushLen has just ruled out, and
 					// a closed ring, which means this worker is being torn down and
 					// the read loop below is about to end anyway.
-					_, _ = w.variantRing.Push(chunk[:pushLen])
+					//
+					// The worker's own context bounds the call, so a core that stops
+					// answering ends this worker rather than pinning it.
+					_, _ = w.variantRing.Push(ctx, chunk[:pushLen])
 				}
 				rem := len(chunk) - pushLen
 				if rem > 0 {
