@@ -130,6 +130,29 @@ func TestHelperProcess(t *testing.T) {
 		serveOneHandshake(c)
 		time.Sleep(10 * time.Minute)
 
+	case "connect-then-spawn-a-child-that-takes-its-time-leaving":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		marker := os.Getenv(helperMarkerEnv)
+		if marker == "" {
+			os.Exit(6)
+		}
+		// A descendant that does real work on the way out: notes that it started,
+		// takes a while, notes that it finished. The leader leaves immediately, so
+		// the only thing that can let this run to the end is a grace period that
+		// waits for the group rather than for the leader.
+		child := exec.Command("/bin/sh", "-c",
+			`trap 'printf started >> "$0"; sleep 0.3; printf finished >> "$0"; exit 0' TERM; sleep 600 & wait`,
+			marker)
+		if err := child.Start(); err != nil {
+			os.Exit(5)
+		}
+		serveOneHandshake(c)
+		time.Sleep(10 * time.Minute)
+
 	case "connect-then-die-mid-frame":
 		c, err := dialHelper(sock)
 		if err != nil {
@@ -580,4 +603,64 @@ func TestProcess_TheWholeGroupIsAskedBeforeItIsKilled(t *testing.T) {
 	}
 	t.Error("the core's child never saw SIGTERM; it was killed rather than asked, " +
 		"which means the signal went to the leader alone")
+}
+
+// The grace period is the group's, not the leader's.
+//
+// This is the same mistake as signalling only the leader, one step later. The
+// core exits promptly when asked; if Close treats that as the end, a descendant
+// that is halfway through its own SIGTERM handler is killed in the middle of it.
+// For anything that flushes a buffer or writes out state on the way down, that
+// is the difference between a clean stop and a torn one.
+//
+// The marker test above cannot see this: a handler that only records the signal
+// finishes before the kill lands, so it stays green either way. This one takes
+// long enough to be interrupted, and says so.
+func TestProcess_TheGracePeriodBelongsToTheGroup(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "term-handler")
+	t.Setenv(helperMarkerEnv, marker)
+
+	core, err := startHelper(t, context.Background(), "connect-then-spawn-a-child-that-takes-its-time-leaving")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid := core.cmd.Process.Pid
+	if err := syscall.Kill(-pgid, 0); err != nil {
+		t.Fatalf("the process group is not there to begin with: %v", err)
+	}
+
+	began := time.Now()
+	if err := core.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	took := time.Since(began)
+
+	// Close returns once the group is empty, so by then the child is done - no
+	// polling here. If the handler had been cut short, Close would have returned
+	// sooner, not later.
+	b, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("the child never ran its SIGTERM handler: %v", err)
+	}
+	switch string(b) {
+	case "startedfinished":
+	case "started":
+		t.Error("the child was killed partway through its SIGTERM handler; " +
+			"the grace period ended when the leader exited rather than when the group did")
+	default:
+		t.Errorf("unexpected handler trace %q", b)
+	}
+
+	// Waited for the group, not out the whole budget.
+	if took >= termGrace {
+		t.Errorf("Close took %v, the whole grace of %v; it should end when the group is empty", took, termGrace)
+	}
+	if took < 300*time.Millisecond {
+		t.Errorf("Close returned after %v, before the child could have finished leaving", took)
+	}
+
+	if err := syscall.Kill(-pgid, 0); err == nil {
+		t.Errorf("process group %d still has members after Close", pgid)
+	}
+	assertReaped(t, core.cmd.Process.Pid)
 }
