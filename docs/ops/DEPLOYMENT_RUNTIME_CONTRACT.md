@@ -190,6 +190,9 @@ services:
     container_name: xg2g
     restart: unless-stopped
 
+    # Init / subreaper - required, see below
+    init: true
+
     # Network
     network_mode: host  # or bridge with port mapping
 
@@ -215,6 +218,18 @@ services:
         limits:
           memory: 4G
 ```
+
+**Init is part of the contract, not a convenience:**
+
+xg2g may supervise child processes.
+Containerized daemon deployments require a real init/subreaper.
+Canonical Compose provides this via `init: true`.
+Direct `docker run` of the daemon requires `--init`.
+
+Without one the daemon is PID 1 of the container's PID namespace and reaps only
+its own children, so descendants orphaned by a supervised process stay behind as
+zombies. `backend/scripts/verify-compose-contract.sh` enforces `init: true` on
+the base compose file and rejects any overlay that turns it off.
 
 **Optional `/dev/dri` Overlay (`docker-compose.gpu.yml`)**:
 
