@@ -29,6 +29,12 @@ import (
 //
 // Skipped without a core binary. Linux is where the answer counts; a number from
 // the development machine says nothing about the host that runs this.
+//
+// What this does NOT measure: parsing. The core answers an ingest with the offset
+// it was given plus the length - there is no demuxer behind it yet. So these
+// numbers are the cost of the transport, and the budget they leave is the budget
+// parsing has to fit into, not proof that it will. Re-read them when there is
+// something behind the socket doing work.
 func TestAcceptance_AFullChunkRoundTripsInsideTheDeadline(t *testing.T) {
 	bin := os.Getenv("XG2G_MEDIA_CORE_BIN")
 	if bin == "" {
