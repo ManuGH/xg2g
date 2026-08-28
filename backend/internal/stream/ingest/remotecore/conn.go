@@ -56,14 +56,26 @@ func (t *conn) roundTrip(ctx context.Context, req Frame) (Frame, error) {
 
 	// Unblocks a read or write that is already in progress when the context ends.
 	// Setting a deadline in the past makes the in-flight call return immediately.
+	//
+	// Joined, not just signalled. Closing stop only tells the watcher to leave; it
+	// may still be inside the select and go on to set a deadline in the past. If
+	// that lands after the next round trip has set its own, request N+1 dies of
+	// request N's context - and the caller sees a core that times out for no
+	// reason it can see. #896 makes that likely rather than theoretical: the
+	// context it derives per chunk is cancelled the moment the call returns.
 	stop := make(chan struct{})
-	defer close(stop)
+	watchDone := make(chan struct{})
 	go func() {
+		defer close(watchDone)
 		select {
 		case <-ctx.Done():
 			_ = t.c.SetDeadline(time.Unix(1, 0))
 		case <-stop:
 		}
+	}()
+	defer func() {
+		close(stop)
+		<-watchDone
 	}()
 
 	req.Version = Version
@@ -83,15 +95,27 @@ func (t *conn) roundTrip(ctx context.Context, req Frame) (Frame, error) {
 		return Frame{}, err
 	}
 
-	// A peer that answers a question nobody asked is not a peer this side can
-	// stay in step with: the next answer would belong to the request after that.
-	if resp.RequestID != req.RequestID {
-		return Frame{}, fmt.Errorf("%w: answer carried request id %d, expected %d",
-			mediafacts.ErrCoreInvalidResponse, resp.RequestID, req.RequestID)
-	}
+	// Version first, and on its own. If the version is wrong then every field
+	// after it means whatever that version says it means - so a mismatched id in
+	// the same frame is not evidence of anything, and reporting it would send the
+	// caller after the wrong problem.
 	if resp.Version != Version {
 		return Frame{}, fmt.Errorf("%w: peer answered with version %d, this build speaks %d",
 			mediafacts.ErrCoreProtocolVersion, resp.Version, Version)
+	}
+	// An answer to a different question is not an answer, even when the id
+	// matches. Without this a peer could reply to Ingest with a SetTargetProgram
+	// frame whose body happens to be the right shape, and the caller would read
+	// a result out of it.
+	if resp.Type != req.Type {
+		return Frame{}, fmt.Errorf("%w: asked type %d, answered type %d",
+			mediafacts.ErrCoreInvalidResponse, req.Type, resp.Type)
+	}
+	// A peer that answers a question nobody asked is not one this side can stay in
+	// step with: the next answer would belong to the request after that.
+	if resp.RequestID != req.RequestID {
+		return Frame{}, fmt.Errorf("%w: answer carried request id %d, expected %d",
+			mediafacts.ErrCoreInvalidResponse, resp.RequestID, req.RequestID)
 	}
 	return resp, nil
 }

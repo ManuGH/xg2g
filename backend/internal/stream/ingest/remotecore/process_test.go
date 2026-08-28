@@ -65,6 +65,17 @@ func TestHelperProcess(t *testing.T) {
 		serveOneHandshake(c)
 		time.Sleep(10 * time.Minute)
 
+	case "connect-then-never-answer-handshake":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		signal.Ignore(syscall.SIGTERM)
+		// Connected, so accept succeeds - and then nothing. The socket stays open,
+		// which is why no read on the parent side ever ends by itself.
+		time.Sleep(10 * time.Minute)
+
 	case "connect-then-die-mid-frame":
 		c, err := dialHelper(sock)
 		if err != nil {
@@ -144,7 +155,7 @@ func TestProcess_ExitsBeforeConnecting(t *testing.T) {
 	if !errors.Is(err, mediafacts.ErrCoreCrashed) {
 		t.Fatalf("Start err = %v, want ErrCoreCrashed", err)
 	}
-	if took := time.Since(start); took > acceptTimeout {
+	if took := time.Since(start); took > startupTimeout {
 		t.Errorf("Start took %v; a child that already exited should not be waited out", took)
 	}
 	assertNoChildren(t)
@@ -159,6 +170,54 @@ func TestProcess_HangsWithoutConnecting(t *testing.T) {
 	}
 	if !errors.Is(err, mediafacts.ErrCoreTimeout) {
 		t.Fatalf("Start err = %v, want ErrCoreTimeout", err)
+	}
+	assertNoChildren(t)
+}
+
+// The gap the accept budget alone left open. A core that connects has already
+// passed that budget; if the handshake gets a fresh one - or, when the caller
+// passes a context without a deadline, none at all - then a core that connects
+// and then says nothing pins Start forever. Which is precisely the core this
+// whole package exists to survive.
+//
+// So: one budget for spawn, connect and handshake together.
+func TestProcess_ConnectsThenNeverAnswersTheHandshake(t *testing.T) {
+	began := time.Now()
+
+	done := make(chan struct {
+		core *RemoteCore
+		err  error
+	}, 1)
+	go func() {
+		// Background on purpose. The bound has to come from the package, not from
+		// a caller who remembered to set one.
+		c, err := startHelper(t, context.Background(), "connect-then-never-answer-handshake")
+		done <- struct {
+			core *RemoteCore
+			err  error
+		}{c, err}
+	}()
+
+	var res struct {
+		core *RemoteCore
+		err  error
+	}
+	select {
+	case res = <-done:
+	case <-time.After(startupTimeout + 20*time.Second):
+		t.Fatal("Start never returned; a core that connected and went quiet pinned it")
+	}
+	if res.core != nil {
+		_ = res.core.Close()
+	}
+
+	if !errors.Is(res.err, mediafacts.ErrCoreTimeout) {
+		t.Fatalf("Start err = %v, want ErrCoreTimeout", res.err)
+	}
+	// The whole start, not the handshake alone: two budgets in sequence would
+	// pass an assertion on either one of them separately.
+	if took := time.Since(began); took > startupTimeout+3*time.Second {
+		t.Errorf("Start took %v; spawn, connect and handshake share a budget of %v", took, startupTimeout)
 	}
 	assertNoChildren(t)
 }
