@@ -27,6 +27,21 @@ func capture(t *testing.T, name string) []byte {
 // DefaultIngestDeadline, the headroom the number was chosen for is gone and this
 // says so before a stalled core starts looking like a slow one.
 func TestIngestStaysFarInsideItsDeadline(t *testing.T) {
+	// A wall-clock guard measures the parser. Under coverage it measures the
+	// counters coverage inserted into the parser, which is a different thing and
+	// not one DefaultIngestDeadline was derived from - atomic counters on every
+	// block turn the 4 MiB chunk from ~15ms into ~54ms without the parser having
+	// changed at all.
+	//
+	// Skipping here is not a loosened gate. The property is still checked on every
+	// ordinary run and on the race job; what is dropped is a timing claim from the
+	// one run that cannot make it honestly. The alternative - raising the limit
+	// until instrumented timings fit under it - would fit the contract to the
+	// measuring instrument and leave the real headroom unguarded.
+	if testing.CoverMode() != "" {
+		t.Skip("wall-clock ingest headroom is not meaningful under coverage instrumentation")
+	}
+
 	for _, name := range []string{"test_hevc_stream.ts", "verify_aac.ts", "verify_seg.ts"} {
 		data := capture(t, name)
 		data = data[:len(data)/TSPacketSize*TSPacketSize]
