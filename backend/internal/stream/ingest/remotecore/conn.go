@@ -43,7 +43,28 @@ func newConn(c net.Conn) *conn { return &conn{c: c} }
 func (t *conn) roundTrip(ctx context.Context, req Frame) (Frame, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.roundTripLocked(ctx, req)
+}
 
+// tryRoundTrip is roundTrip for a caller that must not queue behind another
+// request. Reports false, having sent nothing, when the connection is busy.
+//
+// This exists for shutdown. Asking the core to leave is optional; Close being
+// bounded is not. A request already in flight against a peer that never answers
+// holds this mutex for as long as its own context allows - and if that context
+// is Background, forever - so waiting here would hang Close on precisely the
+// core it exists to escape from. Closing the socket, which happens outside this
+// lock, breaks that request loose instead.
+func (t *conn) tryRoundTrip(ctx context.Context, req Frame) (Frame, error, bool) {
+	if !t.mu.TryLock() {
+		return Frame{}, nil, false
+	}
+	defer t.mu.Unlock()
+	f, err := t.roundTripLocked(ctx, req)
+	return f, err, true
+}
+
+func (t *conn) roundTripLocked(ctx context.Context, req Frame) (Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return Frame{}, err
 	}
