@@ -11,8 +11,14 @@
 //! binary beside it. Parsing, the socket and the process lifecycle arrive in
 //! their own changesets, one problem at a time.
 //!
-//! It opens no socket, starts no listener and reads no input.
+//! It opens no listener. The caller creates a Unix socket, starts this process
+//! with `--socket <path>`, and this connects back to it - so there is never a
+//! moment where something else on the machine could arrive first.
 
+mod ipc;
+
+use std::io::BufWriter;
+use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 
 /// The crate version, from the manifest rather than a second copy of the number.
@@ -28,10 +34,59 @@ pub fn identity() -> String {
 }
 
 fn main() -> ExitCode {
-    // Started, said what it is, finished. The next changeset gives it something
-    // to do between those two points.
-    println!("{}", identity());
-    ExitCode::SUCCESS
+    let mut args = std::env::args().skip(1);
+    let mut socket: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--socket" => socket = args.next(),
+            "--version" | "-V" => {
+                println!("{}", identity());
+                return ExitCode::SUCCESS;
+            }
+            other => {
+                eprintln!("{}: unknown argument {other}", identity());
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    let Some(path) = socket else {
+        // Still answers the question it answered before there was a socket.
+        println!("{}", identity());
+        return ExitCode::SUCCESS;
+    };
+
+    match serve(&path) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{}: {e}", identity());
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// One connection, one request at a time, until the caller says stop or goes away.
+///
+/// A closed socket ends this process without complaint: the caller hanging up is
+/// how it is told to finish, and treating that as a failure would make every
+/// normal shutdown look like a crash.
+fn serve(path: &str) -> std::io::Result<()> {
+    let stream = UnixStream::connect(path)?;
+    let mut reader = stream.try_clone()?;
+    let mut writer = BufWriter::new(stream);
+
+    while let Some(frame) = ipc::read_frame(&mut reader)? {
+        match ipc::handle(&frame) {
+            ipc::Outcome::Answer(body) => {
+                ipc::write_frame(&mut writer, frame.kind, frame.request_id, &body)?;
+            }
+            ipc::Outcome::Finished(body) => {
+                ipc::write_frame(&mut writer, frame.kind, frame.request_id, &body)?;
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
