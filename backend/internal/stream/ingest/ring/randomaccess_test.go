@@ -351,8 +351,25 @@ func TestRandomAccess_RealCapture_ClassificationIsStable(t *testing.T) {
 
 			r := NewMasterRing(len(data) + TSPacketSize)
 			defer r.Close()
-			if _, err := r.Push(context.Background(), data); err != nil {
-				t.Fatalf("push capture: %v", err)
+
+			// Fed the way the normalizer feeds it. Its sink is handed the staging
+			// buffer, 4 MiB by default, so that is the largest chunk the ring ever
+			// sees in production - and the size the core's deadline was derived
+			// for. A single 7.6 MiB push tested a call that cannot happen and, once
+			// the deadline existed, failed for that reason alone.
+			//
+			// Chunking also makes this a stronger test than it was: the numbers
+			// below now have to survive real chunk boundaries falling anywhere in
+			// the stream, not just one push that contains everything.
+			const maxChunk = 4 * 1024 * 1024 / TSPacketSize * TSPacketSize
+			for off := 0; off < len(data); off += maxChunk {
+				end := off + maxChunk
+				if end > len(data) {
+					end = len(data)
+				}
+				if _, err := r.Push(context.Background(), data[off:end]); err != nil {
+					t.Fatalf("push at %d: %v", off, err)
+				}
 			}
 
 			if _, codec := r.VideoDetails(); codec != tc.codec {

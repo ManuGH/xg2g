@@ -336,3 +336,92 @@ func TestContract_SetTargetProgramIgnoresAnAnswerAfterCancellation(t *testing.T)
 		t.Errorf("Push err = %v, want ErrCoreUnusable", err)
 	}
 }
+
+// gatedCore is entered, waits to be let go, answers successfully, and says when
+// it has done so. It ignores its context throughout.
+type gatedCore struct {
+	mediafacts.Core
+	entered  chan struct{}
+	proceed  chan struct{}
+	returned chan struct{}
+	onceIn   sync.Once
+	onceOut  sync.Once
+	visits   atomic.Int32
+}
+
+func newGatedCore(inner mediafacts.Core) *gatedCore {
+	return &gatedCore{
+		Core:     inner,
+		entered:  make(chan struct{}),
+		proceed:  make(chan struct{}),
+		returned: make(chan struct{}),
+	}
+}
+
+func (c *gatedCore) Ingest(_ context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	c.visits.Add(1)
+	c.onceIn.Do(func() { close(c.entered) })
+	<-c.proceed
+	res, err := c.Core.Ingest(context.Background(), startOffset, data)
+	c.onceOut.Do(func() { close(c.returned) })
+	return res, err
+}
+
+// The last window. Between reading the context after the core returns and
+// actually committing, the caller waits for the ring lock - and that wait is as
+// long as whatever reader is holding it. A chunk that stopped being wanted during
+// that wait must not be published on the other side of it.
+//
+// The lock is taken by the test only once the core is already inside, because
+// Push takes it briefly beforehand to read the head; holding it from the start
+// would stop the chunk before it ever reached the core and prove nothing.
+func TestContract_CancellationWhileWaitingForTheCommitLockIsNotCommitted(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+	core := newGatedCore(r.core)
+	r.core = core
+
+	headBefore, genBefore := r.Head(), r.Generation()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := r.Push(ctx, onePacket())
+		errCh <- err
+	}()
+
+	// The core is inside and past the point where Push needed the lock.
+	<-core.entered
+
+	// A reader now holds it, so the commit has to queue.
+	r.mu.Lock()
+	close(core.proceed)
+	<-core.returned
+
+	// The caller is queued for the lock this test holds.
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	r.mu.Unlock()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Push err = %v, want context.Canceled", err)
+		}
+	case <-time.After(isolationWait):
+		t.Fatal("Push never returned")
+	}
+
+	if got := r.Head(); got != headBefore {
+		t.Errorf("Head = %d, want %d - the chunk was committed after the caller gave up", got, headBefore)
+	}
+	if got := r.Generation(); got != genBefore {
+		t.Errorf("Generation = %d, want %d", got, genBefore)
+	}
+	if got := r.BufferedBytes(); got != 0 {
+		t.Errorf("BufferedBytes = %d, want 0", got)
+	}
+	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+		t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
+	}
+}
