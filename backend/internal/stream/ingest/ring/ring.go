@@ -187,6 +187,14 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Last read of the context, on the far side of the lock wait, for the same
+	// reason as in Push.
+	if err := ctx.Err(); err != nil {
+		return r.retireCore(ctx, err)
+	}
+	if err := callCtx.Err(); err != nil {
+		return r.retireCore(ctx, err)
+	}
 	if r.isClosed {
 		r.coreUnusable = true
 		return ErrRingClosed
@@ -344,6 +352,18 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	// differs, the consequence does not. Every path that returns after Ingest
 	// without committing retires the core, so no later path can be added that
 	// forgets to. ingestMu is still held, which is what guards the flag.
+	//
+	// The context is read once more here, and this is the last place it can be:
+	// waiting for this lock takes as long as the reader holding it, and a chunk
+	// that stopped being wanted during that wait must not be published on the
+	// other side of it. Checked after the lock rather than before, so there is no
+	// window left between the check and the commit.
+	if err := ctx.Err(); err != nil {
+		return 0, r.retireCore(ctx, err)
+	}
+	if err := ingestCtx.Err(); err != nil {
+		return 0, r.retireCore(ctx, err)
+	}
 	if r.isClosed {
 		return 0, r.retireCore(ctx, ErrRingClosed)
 	}
