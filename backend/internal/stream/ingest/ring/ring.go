@@ -187,8 +187,8 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Last read of the context, on the far side of the lock wait, for the same
-	// reason as in Push.
+	// Last read of the context, on the far side of the lock wait. Same
+	// linearization point as in Push, and the same reason for it.
 	if err := ctx.Err(); err != nil {
 		return r.retireCore(ctx, err)
 	}
@@ -291,6 +291,19 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	startOffset := r.head
 	r.mu.Unlock()
 
+	// Waiting for that lock is a wait like any other, and a caller can give up
+	// during it. The core has still not been entered, so this is the same
+	// situation as a cancellation before the call: nothing was interpreted,
+	// nothing diverged, and the core is not retired.
+	//
+	// Without this the rule would quietly read "cancelled before some of the
+	// pre-core locks leaves the core usable, cancelled while waiting for this one
+	// retires it" - an edge that is invisible here and would be discovered across
+	// a socket.
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
 	// An empty chunk has nothing to interpret and nothing to commit, so the core
 	// is never entered for one. It is answered here rather than at the top of the
 	// function: whether the ring is still accepting writes is a question about the
@@ -353,11 +366,15 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	// without committing retires the core, so no later path can be added that
 	// forgets to. ingestMu is still held, which is what guards the flag.
 	//
-	// The context is read once more here, and this is the last place it can be:
-	// waiting for this lock takes as long as the reader holding it, and a chunk
-	// that stopped being wanted during that wait must not be published on the
-	// other side of it. Checked after the lock rather than before, so there is no
-	// window left between the check and the commit.
+	// The context is read once more here, under the lock, and that read is the
+	// commit's linearization point: a cancellation visible by then wins, and one
+	// that becomes visible after it does not.
+	//
+	// Stated that way on purpose. Cancellation is asynchronous, so "no commit may
+	// happen after the caller gives up" is not implementable - there is always a
+	// last instruction. What is implementable, and what a remote core can be held
+	// to, is a single point where the question is asked for the last time, with
+	// nothing between it and the commit that could wait.
 	if err := ctx.Err(); err != nil {
 		return 0, r.retireCore(ctx, err)
 	}

@@ -358,6 +358,15 @@ func newGatedCore(inner mediafacts.Core) *gatedCore {
 	}
 }
 
+func (c *gatedCore) SetTargetProgram(_ context.Context, n uint16) (mediafacts.ParseResult, error) {
+	c.visits.Add(1)
+	c.onceIn.Do(func() { close(c.entered) })
+	<-c.proceed
+	res, err := c.Core.SetTargetProgram(context.Background(), n)
+	c.onceOut.Do(func() { close(c.returned) })
+	return res, err
+}
+
 func (c *gatedCore) Ingest(_ context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
 	c.visits.Add(1)
 	c.onceIn.Do(func() { close(c.entered) })
@@ -423,5 +432,98 @@ func TestContract_CancellationWhileWaitingForTheCommitLockIsNotCommitted(t *test
 	}
 	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
 		t.Errorf("second Push err = %v, want ErrCoreUnusable", err)
+	}
+}
+
+// Cancellation during the wait for the ring lock that Push takes to read the
+// head. The core has still not been entered at that point, so this belongs on the
+// usable side of the rule - and without a check there it would land on the other
+// one, which is an edge nobody would find until a socket made the wait long.
+//
+// The lock is held from the start here, which is exactly what makes the wait
+// happen: Push needs it before it reaches the core.
+func TestContract_CancellationWaitingForTheHeadLockLeavesTheCoreUsable(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+	core := newGatedCore(r.core)
+	close(core.proceed) // never reached; the point is that it is not
+	r.core = core
+
+	r.mu.Lock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := r.Push(ctx, onePacket())
+		errCh <- err
+	}()
+
+	// Push now holds ingestMu and is queued for the lock this test holds.
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	r.mu.Unlock()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Push err = %v, want context.Canceled", err)
+		}
+	case <-time.After(isolationWait):
+		t.Fatal("Push never returned")
+	}
+
+	if got := core.visits.Load(); got != 0 {
+		t.Errorf("core entered %d times before the caller gave up, want 0", got)
+	}
+	if got := r.Head(); got != 0 {
+		t.Errorf("Head = %d, want 0", got)
+	}
+
+	// The core was never entered, so it was never damaged.
+	if _, err := r.Push(context.Background(), onePacket()); err != nil {
+		t.Errorf("second Push err = %v, want nil - the core should still be usable", err)
+	}
+}
+
+// The same commit-lock guard as Push has, on the other call into the core.
+// SetTargetProgram is a separate implementation, and separate implementations of
+// the same rule are how one of them ends up without it.
+func TestContract_SetTargetProgramCancellationAtTheCommitLockIsNotApplied(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+	core := newGatedCore(r.core)
+	r.core = core
+
+	genBefore := r.Generation()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- r.SetTargetProgram(ctx, 2) }()
+
+	<-core.entered
+	// SetTargetProgram does not take the ring lock before the core, so it can be
+	// held from here: the call will queue for it on the way to applying.
+	r.mu.Lock()
+	close(core.proceed)
+	<-core.returned
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	r.mu.Unlock()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SetTargetProgram err = %v, want context.Canceled", err)
+		}
+	case <-time.After(isolationWait):
+		t.Fatal("SetTargetProgram never returned")
+	}
+
+	if got := r.Generation(); got != genBefore {
+		t.Errorf("Generation = %d, want %d - the result was applied after the caller gave up", got, genBefore)
+	}
+	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+		t.Errorf("Push err = %v, want ErrCoreUnusable", err)
 	}
 }
