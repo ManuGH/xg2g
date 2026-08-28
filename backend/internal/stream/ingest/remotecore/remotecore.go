@@ -283,33 +283,47 @@ func (r *RemoteCore) shutdown() error {
 	}
 
 	// The group, not the leader. Setpgid put the core in its own process group so
-	// that its descendants could be cleaned up with it; signalling only the leader
-	// gives that up and leaves whatever it spawned behind - and because the leader
-	// then exits promptly, waitDone wins the race below and Close returns while a
-	// grandchild is still running.
+	// that its descendants could be ended with it; signalling only the leader
+	// gives that up and leaves whatever it spawned behind.
 	pgid := r.cmd.Process.Pid
 	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 
+	// And the grace belongs to the group too.
+	//
+	// Waiting for the leader and stopping there is the same mistake one step
+	// later: the core exits promptly when asked, the wait completes, and a
+	// descendant that is halfway through its own SIGTERM handler - flushing a
+	// buffer, closing a file, writing out state - is killed in the middle of it.
+	// The leader is one member of the lifecycle unit, not the unit.
+	//
+	// So the grace ends when the group is empty, or when it runs out.
 	grace := time.NewTimer(termGrace)
 	defer grace.Stop()
-	select {
-	case <-r.waitDone:
-	case <-grace.C:
-		// It was asked. Now it is told.
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	poll := time.NewTicker(20 * time.Millisecond)
+	defer poll.Stop()
+
+	leaderDone := false
+	waitDone := r.waitDone
+	for done := false; !done; {
+		if !processGroupExists(pgid) {
+			break
+		}
+		select {
+		case <-waitDone:
+			// Noted, not acted on. Nilling the channel keeps this case from
+			// spinning; the loop goes on waiting for the rest of the group.
+			leaderDone = true
+			waitDone = nil
+		case <-poll.C:
+		case <-grace.C:
+			// It was asked. Now it is told.
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			done = true
+		}
+	}
+	if !leaderDone {
 		<-r.waitDone
 	}
-
-	// The leader is gone; the group is not necessarily empty. A descendant that
-	// outlived it keeps the group alive, and reaping the leader says nothing about
-	// it. Best effort, because there is usually nothing left to find.
-	//
-	// A group with nothing in it has released its id, so in principle this could
-	// reach an unrelated group that has since been given the same one. That needs
-	// the pid space to wrap onto this exact number and a new group leader to claim
-	// it inside the microseconds between the wait returning and this line, which
-	// is not a risk worth leaving descendants behind to avoid.
-	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 
 	r.cleanupDir()
 
@@ -334,6 +348,18 @@ func (r *RemoteCore) teardown() {
 		<-r.waitDone
 	}
 	r.cleanupDir()
+}
+
+// processGroupExists reports whether anything is left in a process group.
+//
+// Signal zero runs the permission checks and delivers nothing, so the error is
+// the whole answer: EPERM means the group is there and not ours to signal - a
+// descendant that changed user is still a descendant - and ESRCH means there is
+// nothing left. A zombie counts as present, which is what makes this safe to
+// wait on: the group only empties once the leader has been reaped.
+func processGroupExists(pgid int) bool {
+	err := syscall.Kill(-pgid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func (r *RemoteCore) cleanupDir() {
