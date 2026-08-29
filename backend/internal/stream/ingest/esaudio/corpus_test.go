@@ -255,7 +255,71 @@ func corpusCases() []corpusCase {
 		},
 	)
 
+	cases = append(cases, frameSizeCases()...)
 	return append(cases, streamingCases()...)
+}
+
+// frameSizeCases pin the frame length across the language boundary.
+//
+// A header alone cannot prove a frame size: an implementation that computes the
+// wrong length still reads the first header correctly and only goes wrong at the
+// step to the next one. So each case is several whole frames of a length written
+// out here from A/52 Table 5.18, and the expectation is that all of them are
+// found. An implementation that steps too far skips a frame and never
+// establishes the layout; the run of three is what makes that a hard failure
+// rather than a smaller number nobody notices.
+func frameSizeCases() []corpusCase {
+	sizes := []struct {
+		name       string
+		fscod      uint8
+		frmsizecod uint8
+		size       int
+	}{
+		{"48khz_32kbit", 0x00, 0, 128},
+		{"48khz_448kbit", 0x00, 30, 1792},
+		{"32khz_32kbit", 0x02, 0, 192},
+		{"44_1khz_64kbit_even", 0x01, 8, 278},
+		{"44_1khz_64kbit_odd", 0x01, 9, 280},
+	}
+
+	var cases []corpusCase
+	for _, sz := range sizes {
+		f := ac3FrameWith(sz.fscod, sz.frmsizecod, 8, ac3Byte6(2, false), sz.size)
+		cases = append(cases, corpusCase{
+			name: "ac3_frame_size_" + sz.name,
+			desc: fmt.Sprintf("fscod %d frmsizecod %d is a %d byte frame; three of them in a row prove the step, not just the header",
+				sz.fscod, sz.frmsizecod, sz.size),
+			steps: []feedStep{
+				{feed: join(f, f, f), want: established(2, false, 3)},
+			},
+		})
+	}
+
+	// The other direction. Stepping too far skips a frame, which the cases above
+	// catch; stepping too short lands inside the previous frame, and a byte-wise
+	// scan simply walks forward to the next syncword and recovers - so a short
+	// step is invisible unless something is waiting where it lands.
+	//
+	// At 44.1 kHz the table lists two lengths per bitrate and frmsizecod's low bit
+	// picks between them, which is the one place an implementation is likely to be
+	// exactly two bytes short. So this case puts a parseable stereo header at
+	// exactly that spot: the last two bytes of the frame plus the first five of
+	// the next one. An implementation that steps 280 never sees it. One that steps
+	// 278 reads it as a frame and is never in step again.
+	decoyFirst := ac3FrameWith(0x01, 9, 8, ac3Byte6(7, true), 280)
+	decoyFirst[278], decoyFirst[279] = 0x0B, 0x77
+	decoySecond := ac3FrameWith(0x01, 9, 8, ac3Byte6(7, true), 280)
+	decoySecond[2], decoySecond[3] = 0x00, 8<<3 // crc1, unchecked: here it completes the decoy header
+	third := ac3FrameWith(0x01, 9, 8, ac3Byte6(7, true), 280)
+
+	cases = append(cases, corpusCase{
+		name: "ac3_frame_size_44_1khz_short_step_lands_on_a_decoy",
+		desc: "a 278 byte step at frmsizecod 9 lands on a header that parses; a correct 280 byte step never sees it",
+		steps: []feedStep{
+			{feed: join(decoyFirst, decoySecond, third), want: established(7, true, 3)},
+		},
+	})
+	return cases
 }
 
 func withDependent(o Observation) Observation {
