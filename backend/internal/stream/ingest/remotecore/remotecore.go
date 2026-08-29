@@ -52,10 +52,19 @@ type RemoteCore struct {
 	dir  string
 	ln   net.Listener
 
+	// identity names this core's process group for the rest of its life. Taken
+	// before anything can reap the leader, released after the last group
+	// operation - and it is the only way this type addresses the group.
+	identity processIdentity
+
 	// waitDone closes when the child has been reaped. There is exactly one Wait,
 	// started here, so nothing else may call it and nothing is left unreaped.
 	waitDone chan struct{}
 	waitErr  error
+
+	// waitStarted says whether that Wait is running. Between starting the process
+	// and starting the goroutine there is a moment where nobody else will reap it.
+	waitStarted bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -128,10 +137,29 @@ func start(ctx context.Context, binaryPath string, extraArgs []string, targetPro
 	}
 	r.cmd = cmd
 
+	// Before the reaper, not after. A pidfd taken once something could already
+	// have reaped the leader is a reference to a number the kernel may have
+	// handed to somebody else - which is the whole failure this identity exists
+	// to remove. Nothing reaps here yet, so this is the one moment where the pid
+	// is unambiguously ours.
+	id, idErr := acquireIdentity(cmd.Process.Pid)
+	if idErr != nil {
+		// The same moment makes this kill safe: no Wait has run, so the number
+		// still means this process. There is deliberately no group kill here - a
+		// host that cannot name the group is a host this package refuses to run
+		// on, and guessing at the group by number would be the refused thing.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		err = idErr
+		return nil, err
+	}
+	r.identity = id
+
 	go func() {
 		r.waitErr = cmd.Wait()
 		close(r.waitDone)
 	}()
+	r.waitStarted = true
 
 	// Everything from here to a usable core shares one deadline.
 	startCtx, cancelStart := context.WithTimeout(ctx, startupTimeout)
@@ -282,11 +310,11 @@ func (r *RemoteCore) shutdown() error {
 		return nil
 	}
 
-	// The group, not the leader. Setpgid put the core in its own process group so
-	// that its descendants could be ended with it; signalling only the leader
-	// gives that up and leaves whatever it spawned behind.
-	pgid := r.cmd.Process.Pid
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	// The group, not the leader - and the group by name, not by number. Setpgid
+	// put the core in its own process group so that its descendants could be
+	// ended with it; signalling only the leader gives that up, and addressing the
+	// group by pgid gives away who is on the other end of it.
+	_ = r.identity.SignalGroup(syscall.SIGTERM)
 
 	// And the grace belongs to the group too.
 	//
@@ -305,7 +333,10 @@ func (r *RemoteCore) shutdown() error {
 	leaderDone := false
 	waitDone := r.waitDone
 	for done := false; !done; {
-		if !processGroupExists(pgid) {
+		// An error is not an answer, and the safe reading of no answer is "still
+		// there": waiting the grace out costs two seconds, leaving early on a
+		// guess costs a descendant the end of its shutdown.
+		if alive, err := r.identity.GroupExists(); err == nil && !alive {
 			break
 		}
 		select {
@@ -317,13 +348,16 @@ func (r *RemoteCore) shutdown() error {
 		case <-poll.C:
 		case <-grace.C:
 			// It was asked. Now it is told.
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			_ = r.identity.SignalGroup(syscall.SIGKILL)
 			done = true
 		}
 	}
 	if !leaderDone {
 		<-r.waitDone
 	}
+
+	// After the last group operation, and only then.
+	_ = r.identity.Close()
 
 	r.cleanupDir()
 
@@ -343,23 +377,16 @@ func (r *RemoteCore) teardown() {
 	if r.ln != nil {
 		_ = r.ln.Close()
 	}
-	if r.cmd != nil && r.cmd.Process != nil {
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+	if r.cmd != nil && r.cmd.Process != nil && r.identity != nil {
+		_ = r.identity.SignalGroup(syscall.SIGKILL)
+	}
+	if r.waitStarted {
 		<-r.waitDone
 	}
+	if r.identity != nil {
+		_ = r.identity.Close()
+	}
 	r.cleanupDir()
-}
-
-// processGroupExists reports whether anything is left in a process group.
-//
-// Signal zero runs the permission checks and delivers nothing, so the error is
-// the whole answer: EPERM means the group is there and not ours to signal - a
-// descendant that changed user is still a descendant - and ESRCH means there is
-// nothing left. A zombie counts as present, which is what makes this safe to
-// wait on: the group only empties once the leader has been reaped.
-func processGroupExists(pgid int) bool {
-	err := syscall.Kill(-pgid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func (r *RemoteCore) cleanupDir() {
