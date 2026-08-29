@@ -555,3 +555,87 @@ func TestAudioShadow_NothingIsCapturedWithoutOne(t *testing.T) {
 		t.Errorf("a core without a shadow reported %+v", got)
 	}
 }
+
+// --- the captured feeds' lifetime ------------------------------------------
+
+// assertNoCapturedFeeds looks past the length into the backing array. Reslicing
+// to zero hides the elements without releasing what they point at, and what they
+// point at is the chunk that has just been interpreted.
+func assertNoCapturedFeeds(t *testing.T, core *GoCore) {
+	t.Helper()
+	if len(core.shadowBatches) != 0 {
+		t.Errorf("%d batches left after Ingest returned", len(core.shadowBatches))
+	}
+	full := core.shadowBatches[:cap(core.shadowBatches)]
+	for i, b := range full {
+		if b.Batch.Feeds != nil {
+			t.Errorf("slot %d of the batch array still holds %d feed slices into a chunk that is gone",
+				i, len(b.Batch.Feeds))
+		}
+		if b.Batch.PID != 0 || b.Batch.Epoch != 0 {
+			t.Errorf("slot %d still describes stream %d epoch %d", i, b.Batch.PID, b.Batch.Epoch)
+		}
+	}
+}
+
+// stallingContext is fine for the first few checks and cancelled after them, so
+// a chunk can be given up on at a known point rather than a hoped-for one.
+type stallingContext struct {
+	context.Context
+	okChecks int
+	checks   int
+}
+
+func (s *stallingContext) Err() error {
+	s.checks++
+	if s.checks <= s.okChecks {
+		return nil
+	}
+	return context.Canceled
+}
+
+func TestAudioShadow_TheCapturedFeedsDoNotOutliveTheChunk(t *testing.T) {
+	core := NewGoCore(1)
+	core.SetAudioShadow(newReplayShadow())
+
+	chunk := append([]byte(nil), shadowPAT()...)
+	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
+
+	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	assertNoCapturedFeeds(t, core)
+}
+
+// The path that never reaches the shadow at all. Audio is captured, the caller
+// gives up part way through the chunk, and Ingest returns an error - and the
+// feeds still have to be gone, because the chunk they point into is.
+func TestAudioShadow_AnAbandonedChunkLeavesNoFeedsBehind(t *testing.T) {
+	core := NewGoCore(1)
+	core.SetAudioShadow(newReplayShadow())
+
+	chunk := append([]byte(nil), shadowPAT()...)
+	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
+	// Past the next context check, so the chunk is abandoned after the audio has
+	// been captured rather than before.
+	null := make([]byte, TSPacketSize)
+	null[0], null[1], null[2], null[3] = SyncByte, 0x1F, 0xFF, 0x10
+	for len(chunk) < (ctxCheckPackets+8)*TSPacketSize {
+		chunk = append(chunk, null...)
+	}
+
+	// One check at the top of Ingest, one at packet 0, and then the one at packet
+	// 4096 is where it gives up.
+	ctx := &stallingContext{Context: context.Background(), okChecks: 2}
+	if _, err := core.Ingest(ctx, 0, chunk); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Ingest err = %v, want context.Canceled", err)
+	}
+	if core.AudioShadowReport().Batches != 0 {
+		t.Fatal("the shadow was run for a chunk the caller gave up on")
+	}
+	assertNoCapturedFeeds(t, core)
+}

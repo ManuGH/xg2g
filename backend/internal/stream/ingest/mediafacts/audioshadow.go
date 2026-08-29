@@ -63,8 +63,10 @@ type AudioShadowMismatch struct {
 type AudioShadowReport struct {
 	// Batches is how many stream-and-epoch runs have been handed over.
 	Batches uint64
-	// Compared is how many observations could be held against the core's own. A
-	// batch from an epoch the core has since left has nothing to compare to.
+	// Compared is how many observations were held against the core's own answer.
+	// Every batch has one, including a batch from an epoch that ended inside the
+	// chunk: the reference is frozen with the batch, so an epoch the core has
+	// left is still compared rather than skipped.
 	Compared uint64
 	// Mismatches counts comparisons that disagreed about anything.
 	Mismatches uint64
@@ -153,6 +155,19 @@ func (c *GoCore) captureAudioShadowFeedLocked(pid uint16, es []byte, observer *e
 	})
 }
 
+// clearAudioShadowBatches drops the captured feeds and the references to them.
+//
+// clear before the reslice, not instead of it. Reslicing to zero length leaves
+// the elements in the backing array untouched, and those elements hold slices
+// into the chunk that has just been interpreted - so a core that reslices and
+// nothing more keeps the last chunk it saw reachable, and one whose shadow has
+// since been retired keeps it for good, because nothing will ever overwrite
+// those slots again.
+func (c *GoCore) clearAudioShadowBatches() {
+	clear(c.shadowBatches)
+	c.shadowBatches = c.shadowBatches[:0]
+}
+
 // runAudioShadow hands the chunk's batches over and compares what comes back.
 //
 // Everything in here is best effort in one direction only: it reads the core's
@@ -166,8 +181,10 @@ func (c *GoCore) captureAudioShadowFeedLocked(pid uint16, es []byte, observer *e
 // disagreements between a working observer and a broken one. Reviving it would
 // also be the transparent restart the process contract already refuses.
 func (c *GoCore) runAudioShadow(ctx context.Context) {
+	// Not cleared here. Ingest clears on every way out, including the ones that
+	// never reach this function, and dropping the length early would hide the
+	// elements that still have to be zeroed from that cleanup.
 	pending := c.shadowBatches
-	c.shadowBatches = c.shadowBatches[:0]
 
 	if c.shadow == nil || c.shadowReport.Disabled || len(pending) == 0 {
 		return
