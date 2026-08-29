@@ -359,6 +359,14 @@ type GoCore struct {
 	// observation can never outlive the table that named the stream it came from.
 	audioObservers map[uint16]*esaudio.Observer
 
+	// shadow is a second observer of the same elementary stream bytes, attached
+	// for a migration and never for a decision. Everything about it is in
+	// audioshadow.go.
+	shadow        AudioShadow
+	shadowEpoch   uint64
+	shadowBatches []AudioShadowBatch
+	shadowReport  AudioShadowReport
+
 	// events accumulates what the chunk being ingested meant, in order.
 	events []Event
 }
@@ -382,6 +390,10 @@ func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (Pa
 	}
 
 	c.events = c.events[:0]
+	// Cleared here, not only after a successful run: the feeds below point into
+	// data, and a chunk the caller gave up on must not leave slices behind that
+	// outlive it.
+	c.shadowBatches = c.shadowBatches[:0]
 	for i := 0; i < len(data); i += TSPacketSize {
 		// Checked during the chunk, not only before it. The largest chunk this
 		// path sees is the normalizer's staging buffer, and a caller that gave up
@@ -397,6 +409,10 @@ func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (Pa
 		}
 		c.indexPacketLocked(data[i:i+TSPacketSize], startOffset+int64(i))
 	}
+	// After the chunk is interpreted and before the result is built, so that the
+	// feeds still point into a chunk that exists and nothing the shadow does can
+	// reach the result. It cannot fail this call: see runAudioShadow.
+	c.runAudioShadow(ctx)
 	return c.result(startOffset + int64(len(data))), nil
 }
 
@@ -604,6 +620,10 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 		es = payload[esStart:]
 	}
 	obs.Feed(es)
+	// The same bytes, in the same piece, at the same moment. Anything else - the
+	// packet, the chunk, a re-derivation from transport - would be a different
+	// input, and agreement on a different input is not agreement.
+	c.captureAudioShadowFeedLocked(pid, es)
 }
 func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte, pkt []byte) int {
 	if len(chunk) == 0 {
@@ -967,6 +987,11 @@ func (c *GoCore) resetProgramStateLocked() {
 	// can carry a different elementary stream after a PMT change, and carrying the
 	// old layout across would describe audio that is no longer there.
 	c.audioObservers = nil
+	// And the shadow's epoch turns here rather than on the event below, because
+	// this line is where the state it mirrors actually dies. Deriving it from
+	// EventProgramIdentityChanged later would put the boundary one step away from
+	// the thing it is a boundary of.
+	c.shadowEpoch++
 	c.raObs = RandomAccessObservation{}
 	c.cleanRAPCount = 0
 	c.cleanAccessUnits = 0
