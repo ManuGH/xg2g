@@ -5,6 +5,7 @@
 package mediafacts
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -80,9 +81,16 @@ func shadowPMT(version uint8, audioPID uint16) []byte {
 	return shadowPSIPacket(shadowPMTPID, s)
 }
 
-// shadowAudioPackets frames elementary stream bytes the way DVB carries AC-3.
-func shadowAudioPackets(pid uint16, es []byte) []byte {
+// shadowAudioPackets frames elementary stream bytes the way DVB carries AC-3,
+// and returns both the transport packets and the elementary stream slices that
+// have to come back out of them.
+//
+// The expected feeds are taken from how the packets were built, not by parsing
+// them again: a test that re-implements the rule it is checking agrees with
+// itself for free.
+func shadowAudioPackets(pid uint16, es []byte) ([]byte, [][]byte) {
 	var out []byte
+	var feeds [][]byte
 	first := true
 	for len(es) > 0 {
 		pkt := make([]byte, TSPacketSize)
@@ -108,8 +116,12 @@ func shadowAudioPackets(pid uint16, es []byte) []byte {
 			pkt[i] = 0xFF
 		}
 		out = append(out, pkt...)
+		// Everything after the transport header, and after the PES header where
+		// there is one - padding included, because the core does not trim it
+		// either.
+		feeds = append(feeds, append([]byte(nil), pkt[body:]...))
 	}
-	return out
+	return out, feeds
 }
 
 func shadowAC3Run(byte6 byte, frames int) []byte {
@@ -192,6 +204,26 @@ func (s *replayShadow) batchesFor(pid uint16) []AudioShadowBatch {
 	return out
 }
 
+// assertFeeds requires the captured feeds to be exactly the slices the packets
+// were built from, in order.
+func assertFeeds(t *testing.T, batches []AudioShadowBatch, want [][]byte) {
+	t.Helper()
+	var got [][]byte
+	for _, b := range batches {
+		got = append(got, b.Feeds...)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("captured %d feeds, want %d - the capture is not at the same call the observer is fed at",
+			len(got), len(want))
+	}
+	for i := range want {
+		if !bytes.Equal(got[i], want[i]) {
+			t.Fatalf("feed %d differs (%d bytes captured, %d expected)\n captured %x…\n expected %x…",
+				i, len(got[i]), len(want[i]), got[i][:min(12, len(got[i]))], want[i][:min(12, len(want[i]))])
+		}
+	}
+}
+
 func observedTrack(t *testing.T, facts Facts, pid uint16) esaudio.Observation {
 	t.Helper()
 	for _, tr := range facts.AudioTracks {
@@ -215,12 +247,18 @@ func TestAudioShadow_ReplayingTheCapturedFeedsReproducesTheCoresOwnObservation(t
 
 	chunk := append([]byte(nil), shadowPAT()...)
 	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))...)
+	audio, wantFeeds := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
 
 	res, err := core.Ingest(context.Background(), 0, chunk)
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
+
+	// Byte for byte and boundary for boundary, not merely "close enough to reach
+	// the same answer". A capture one PES header too early reaches the same answer
+	// too, and would be a different input the day a parser disagrees about it.
+	assertFeeds(t, shadow.batchesFor(shadowAudioPID), wantFeeds)
 
 	want := observedTrack(t, res.Facts, shadowAudioPID)
 	if !want.Known() {
@@ -248,11 +286,13 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 
 	chunk := append([]byte(nil), shadowPAT()...)
 	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Stereo, 4))...)
+	stereo, stereoFeeds := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Stereo, 4))
+	chunk = append(chunk, stereo...)
 	// A new PMT version for the same PID: a different elementary stream that
 	// happens to share a number.
 	chunk = append(chunk, shadowPMT(1, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 4))...)
+	surround, surroundFeeds := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 4))
+	chunk = append(chunk, surround...)
 
 	res, err := core.Ingest(context.Background(), 0, chunk)
 	if err != nil {
@@ -270,6 +310,8 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 	if batches[1].Epoch < batches[0].Epoch {
 		t.Fatalf("the epoch went backwards: %d then %d", batches[0].Epoch, batches[1].Epoch)
 	}
+	assertFeeds(t, batches[:1], stereoFeeds)
+	assertFeeds(t, batches[1:], surroundFeeds)
 
 	// The second batch is the only one the core still has an observer for, and
 	// what it establishes must be the new layout counted from zero.
@@ -303,7 +345,8 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 func TestAudioShadow_AFailingShadowChangesNothingAndIsNotAskedAgain(t *testing.T) {
 	chunk := append([]byte(nil), shadowPAT()...)
 	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
 
 	plain := NewGoCore(1)
 	plainResult, err := plain.Ingest(context.Background(), 0, chunk)
@@ -354,7 +397,8 @@ func TestAudioShadow_AMismatchNamesTheFieldsAndLeavesTheFactsAlone(t *testing.T)
 
 	chunk := append([]byte(nil), shadowPAT()...)
 	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
 
 	res, err := core.Ingest(context.Background(), 0, chunk)
 	if err != nil {
@@ -381,7 +425,8 @@ func TestAudioShadow_NothingIsCapturedWithoutOne(t *testing.T) {
 	core := NewGoCore(1)
 	chunk := append([]byte(nil), shadowPAT()...)
 	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
-	chunk = append(chunk, shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
 
 	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
 		t.Fatalf("Ingest: %v", err)
