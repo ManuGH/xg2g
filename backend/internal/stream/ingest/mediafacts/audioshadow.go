@@ -78,6 +78,22 @@ type AudioShadowReport struct {
 	Recent []AudioShadowMismatch
 }
 
+// pendingAudioShadowBatch is a batch and the core's own answer to it.
+//
+// The reference is frozen here rather than read back later, because "later" may
+// be after the observer that produced it has been thrown away: a PMT change can
+// end an epoch half way through a chunk, and the batch from before it is exactly
+// the one a PID-reuse bug would show up in. Comparing only what is still alive at
+// the end of the chunk would skip it - and a shadow that gets the ended epoch
+// wrong and the current one right would report no disagreement at all.
+//
+// The reference never leaves this process. A shadow is asked what it made of the
+// bytes, not asked to agree with an answer it was given.
+type pendingAudioShadowBatch struct {
+	Batch     AudioShadowBatch
+	Reference esaudio.Observation
+}
+
 // recentMismatches is how many disagreements are kept. Enough to see a pattern,
 // few enough that a stream disagreeing about every chunk cannot grow memory.
 const recentMismatches = 8
@@ -108,25 +124,32 @@ func (c *GoCore) AudioShadowReport() AudioShadowReport {
 // it: a PMT change can happen half way through a chunk, and the feeds either
 // side of it belong to different elementary streams that merely share a number.
 // Folding them together would hand the shadow a stream that never existed.
-func (c *GoCore) captureAudioShadowFeedLocked(pid uint16, es []byte) {
+func (c *GoCore) captureAudioShadowFeedLocked(pid uint16, es []byte, observer *esaudio.Observer) {
 	if c.shadow == nil || c.shadowReport.Disabled || len(es) == 0 {
 		return
 	}
 	for i := len(c.shadowBatches) - 1; i >= 0; i-- {
 		b := &c.shadowBatches[i]
-		if b.Epoch != c.shadowEpoch {
+		if b.Batch.Epoch != c.shadowEpoch {
 			// Everything from here back belongs to an epoch that has ended.
 			break
 		}
-		if b.PID == pid {
-			b.Feeds = append(b.Feeds, es)
+		if b.Batch.PID == pid {
+			b.Batch.Feeds = append(b.Batch.Feeds, es)
+			// Kept level with the feeds: after the last one of a batch this is the
+			// core's answer to exactly those bytes, whatever happens to the observer
+			// afterwards.
+			b.Reference = observer.Current()
 			return
 		}
 	}
-	c.shadowBatches = append(c.shadowBatches, AudioShadowBatch{
-		PID:   pid,
-		Epoch: c.shadowEpoch,
-		Feeds: [][]byte{es},
+	c.shadowBatches = append(c.shadowBatches, pendingAudioShadowBatch{
+		Batch: AudioShadowBatch{
+			PID:   pid,
+			Epoch: c.shadowEpoch,
+			Feeds: [][]byte{es},
+		},
+		Reference: observer.Current(),
 	})
 }
 
@@ -143,48 +166,69 @@ func (c *GoCore) captureAudioShadowFeedLocked(pid uint16, es []byte) {
 // disagreements between a working observer and a broken one. Reviving it would
 // also be the transparent restart the process contract already refuses.
 func (c *GoCore) runAudioShadow(ctx context.Context) {
-	batches := c.shadowBatches
+	pending := c.shadowBatches
 	c.shadowBatches = c.shadowBatches[:0]
 
-	if c.shadow == nil || c.shadowReport.Disabled || len(batches) == 0 {
+	if c.shadow == nil || c.shadowReport.Disabled || len(pending) == 0 {
 		return
 	}
-	c.shadowReport.Batches += uint64(len(batches))
+	c.shadowReport.Batches += uint64(len(pending))
+
+	batches := make([]AudioShadowBatch, len(pending))
+	for i := range pending {
+		batches[i] = pending[i].Batch
+	}
 
 	observations, err := c.shadow.ObserveAudio(ctx, batches)
 	if err != nil {
-		c.shadowReport.Errors++
-		// One flag, read everywhere: the report is the state, not a copy of it.
-		c.shadowReport.Disabled = true
+		c.retireAudioShadow()
 		return
 	}
 
-	for _, o := range observations {
-		if o.Epoch != c.shadowEpoch {
-			// An epoch the core has left. Its observer is gone, so there is nothing
-			// left here that the answer could be held against.
-			continue
+	// The answer is checked before any of it is believed. An answer that is
+	// missing, extra, reordered or labelled with somebody else's stream is not a
+	// smaller comparison - it is a shadow that has lost track of what it was
+	// asked, and every remaining number it produces is about an unknown stream.
+	if len(observations) != len(batches) {
+		c.retireAudioShadow()
+		return
+	}
+	for i := range observations {
+		if observations[i].PID != batches[i].PID || observations[i].Epoch != batches[i].Epoch {
+			c.retireAudioShadow()
+			return
 		}
-		reference := c.audioObservers[o.PID]
-		if reference == nil {
-			continue
-		}
+	}
+
+	for i, o := range observations {
+		reference := pending[i].Reference
 		c.shadowReport.Compared++
-		fields := esaudio.Compare(reference.Current(), o.Observation)
+		fields := esaudio.Compare(reference, o.Observation)
 		if len(fields) == 0 {
 			continue
 		}
 		c.shadowReport.Mismatches++
-		mismatch := AudioShadowMismatch{
+		c.shadowReport.Recent = append(c.shadowReport.Recent, AudioShadowMismatch{
 			PID:       o.PID,
 			Epoch:     o.Epoch,
 			Fields:    fields,
-			Reference: reference.Current(),
+			Reference: reference,
 			Shadow:    o.Observation,
-		}
-		c.shadowReport.Recent = append(c.shadowReport.Recent, mismatch)
+		})
 		if len(c.shadowReport.Recent) > recentMismatches {
 			c.shadowReport.Recent = c.shadowReport.Recent[len(c.shadowReport.Recent)-recentMismatches:]
 		}
 	}
+}
+
+// retireAudioShadow ends the comparison for the lifetime of this core.
+//
+// A shadow that failed once is a second implementation in an unknown state, and
+// the useful thing to report from here on is "the comparison stopped", not a
+// stream of disagreements between a working observer and a broken one. Reviving
+// it would also be the transparent restart the process contract already refuses.
+func (c *GoCore) retireAudioShadow() {
+	c.shadowReport.Errors++
+	// One flag, read everywhere: the report is the state, not a copy of it.
+	c.shadowReport.Disabled = true
 }

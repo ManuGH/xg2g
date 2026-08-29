@@ -156,6 +156,9 @@ type replayShadow struct {
 
 	err     error
 	distort func(AudioShadowObservation) AudioShadowObservation
+	// mangle rewrites the whole answer, for the cases about a shadow that has
+	// lost track of what it was asked.
+	mangle func([]AudioShadowObservation) []AudioShadowObservation
 }
 
 func newReplayShadow() *replayShadow {
@@ -189,6 +192,9 @@ func (s *replayShadow) ObserveAudio(_ context.Context, batches []AudioShadowBatc
 			obs = s.distort(obs)
 		}
 		out = append(out, obs)
+	}
+	if s.mangle != nil {
+		out = s.mangle(out)
 	}
 	return out, nil
 }
@@ -335,8 +341,119 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 	}
 
 	report := core.AudioShadowReport()
+	if report.Batches != 2 || report.Compared != 2 {
+		t.Fatalf("report = %+v; both epochs are handed over and both have a reference to be held against - "+
+			"comparing only the one whose observer is still alive is how a shadow that gets the ended epoch "+
+			"wrong reports no disagreement at all", report)
+	}
 	if report.Mismatches != 0 {
 		t.Errorf("mismatches across a reset: %+v", report.Recent)
+	}
+}
+
+// The reference for an epoch that ended inside this chunk has to outlive the
+// observer that produced it. A shadow that is wrong only about the stream that
+// has already gone is exactly the PID-reuse bug this differential exists for.
+func TestAudioShadow_ADisagreementAboutTheEndedEpochIsStillFound(t *testing.T) {
+	core := NewGoCore(1)
+	shadow := newReplayShadow()
+	core.SetAudioShadow(shadow)
+
+	chunk := append([]byte(nil), shadowPAT()...)
+	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
+	stereo, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Stereo, 4))
+	chunk = append(chunk, stereo...)
+	chunk = append(chunk, shadowPMT(1, shadowAudioPID)...)
+	surround, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 4))
+	chunk = append(chunk, surround...)
+
+	// Wrong about the first epoch only, and right about the one the core still
+	// has an observer for.
+	var firstEpoch uint64
+	shadow.distort = func(o AudioShadowObservation) AudioShadowObservation {
+		if firstEpoch == 0 || o.Epoch < firstEpoch {
+			firstEpoch = o.Epoch
+		}
+		if o.Epoch == firstEpoch {
+			o.Observation.Channels = 6
+			o.Observation.LFE = true
+		}
+		return o
+	}
+
+	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	report := core.AudioShadowReport()
+	if report.Compared != 2 {
+		t.Fatalf("compared %d of 2 batches: %+v", report.Compared, report)
+	}
+	if report.Mismatches != 1 || len(report.Recent) != 1 {
+		t.Fatalf("a disagreement about the ended epoch went unreported: %+v", report)
+	}
+	if report.Recent[0].Epoch != firstEpoch {
+		t.Errorf("mismatch reported on epoch %d, want %d - the ended one", report.Recent[0].Epoch, firstEpoch)
+	}
+	if !reflect.DeepEqual(report.Recent[0].Fields, []string{"channels", "lfe"}) {
+		t.Errorf("mismatch fields = %v, want [channels lfe]", report.Recent[0].Fields)
+	}
+}
+
+// An answer that does not line up with the question is a shadow that has lost
+// track of what it was asked, not a smaller comparison.
+func TestAudioShadow_AnAnswerThatDoesNotLineUpRetiresTheShadow(t *testing.T) {
+	chunk := append([]byte(nil), shadowPAT()...)
+	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk = append(chunk, audio...)
+
+	plain := NewGoCore(1)
+	plainResult, err := plain.Ingest(context.Background(), 0, chunk)
+	if err != nil {
+		t.Fatalf("Ingest without a shadow: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		mangle func([]AudioShadowObservation) []AudioShadowObservation
+	}{
+		{"nothing at all", func([]AudioShadowObservation) []AudioShadowObservation { return nil }},
+		{"one too many", func(o []AudioShadowObservation) []AudioShadowObservation {
+			return append(o, o[0])
+		}},
+		{"another stream's pid", func(o []AudioShadowObservation) []AudioShadowObservation {
+			o[0].PID++
+			return o
+		}},
+		{"another epoch", func(o []AudioShadowObservation) []AudioShadowObservation {
+			o[0].Epoch++
+			return o
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			core := NewGoCore(1)
+			shadow := newReplayShadow()
+			shadow.mangle = tc.mangle
+			core.SetAudioShadow(shadow)
+
+			got, err := core.Ingest(context.Background(), 0, chunk)
+			if err != nil {
+				t.Fatalf("Ingest: %v", err)
+			}
+			if !reflect.DeepEqual(plainResult, got) {
+				t.Fatalf("a shadow that lost track changed the authoritative result")
+			}
+			report := core.AudioShadowReport()
+			if !report.Disabled || report.Errors != 1 {
+				t.Fatalf("the shadow was not retired: %+v", report)
+			}
+			if report.Compared != 0 || report.Mismatches != 0 {
+				t.Errorf("an answer that does not line up was believed in part: %+v", report)
+			}
+		})
 	}
 }
 
