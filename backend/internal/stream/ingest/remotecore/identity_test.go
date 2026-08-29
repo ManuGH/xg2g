@@ -272,12 +272,13 @@ func TestIdentity_ThePackageNeverSignalsAProcessGroupByNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read package directory: %v", err)
 	}
-	exceptionUses := 0
+	exceptionUses, sources := 0, 0
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		sources++
 		body, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -290,6 +291,12 @@ func TestIdentity_ThePackageNeverSignalsAProcessGroupByNumber(t *testing.T) {
 		if uses > 0 {
 			t.Errorf("%s signals a process group by number %d time(s); the running lifecycle has an identity for that", name, uses)
 		}
+	}
+	if sources == 0 {
+		// A compiled test binary run somewhere else - the image acceptance, for
+		// one - has no sources to read. Saying nothing would be worse than saying
+		// that: a gate that silently inspects an empty directory always passes.
+		t.Skip("no package sources here; this gate reads the files it guards")
 	}
 	if exceptionUses != 1 {
 		t.Errorf("%s names a process group by number %d time(s), want exactly 1: "+
