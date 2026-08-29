@@ -171,6 +171,24 @@ func TestHelperProcess(t *testing.T) {
 		serveOneHandshake(c)
 		os.Exit(0)
 
+	case "spawn-a-descendant-then-wait-to-be-owned":
+		// A core that has already spawned something before anybody could take
+		// ownership of it. It never connects: what this mode is for happens
+		// during Start, long before the socket would matter.
+		marker := os.Getenv(helperMarkerEnv)
+		if marker == "" {
+			os.Exit(6)
+		}
+		child := exec.Command("/bin/sh", "-c", `sleep 600`)
+		if err := child.Start(); err != nil {
+			os.Exit(5)
+		}
+		if err := os.WriteFile(marker, []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+			os.Exit(7)
+		}
+		signal.Ignore(syscall.SIGTERM)
+		time.Sleep(10 * time.Minute)
+
 	case "connect-then-die-mid-frame":
 		c, err := dialHelper(sock)
 		if err != nil {

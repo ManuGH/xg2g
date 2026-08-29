@@ -261,13 +261,18 @@ func TestIdentity_NothingIsSignalledByNumber(t *testing.T) {
 
 // A gate rather than a test: the numeric form must not come back by accident.
 //
-// The lifecycle has no legitimate use for kill(-pgid, ...) any more, and the one
-// import that could reintroduce it is the same one that was there before.
+// Exactly one file may name a process group by number, for the one moment where
+// the number is provably still this core's - see start_failure_cleanup.go. The
+// exception is written down here so it cannot quietly spread, and so that
+// moving it silently is not an option either.
 func TestIdentity_ThePackageNeverSignalsAProcessGroupByNumber(t *testing.T) {
+	const exception = "start_failure_cleanup.go"
+
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read package directory: %v", err)
 	}
+	exceptionUses := 0
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -277,8 +282,17 @@ func TestIdentity_ThePackageNeverSignalsAProcessGroupByNumber(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if strings.Contains(string(body), "Kill(-") {
-			t.Errorf("%s signals a process group by number; the group has an identity for that", name)
+		uses := strings.Count(string(body), "Kill(-")
+		if name == exception {
+			exceptionUses = uses
+			continue
 		}
+		if uses > 0 {
+			t.Errorf("%s signals a process group by number %d time(s); the running lifecycle has an identity for that", name, uses)
+		}
+	}
+	if exceptionUses != 1 {
+		t.Errorf("%s names a process group by number %d time(s), want exactly 1: "+
+			"if the pre-identity cleanup moved, this gate has to move with it", exception, exceptionUses)
 	}
 }
