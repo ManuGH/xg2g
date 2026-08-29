@@ -144,11 +144,12 @@ func start(ctx context.Context, binaryPath string, extraArgs []string, targetPro
 	// is unambiguously ours.
 	id, idErr := acquireIdentity(cmd.Process.Pid)
 	if idErr != nil {
-		// The same moment makes this kill safe: no Wait has run, so the number
-		// still means this process. There is deliberately no group kill here - a
-		// host that cannot name the group is a host this package refuses to run
-		// on, and guessing at the group by number would be the refused thing.
-		_ = cmd.Process.Kill()
+		// The group, not just the leader: the core may already have spawned
+		// something, and a core that will not be run is no reason to leave it
+		// behind. See killTheGroupBeforeAnythingReapsIt for why addressing it by
+		// number is correct in this one place and nowhere else - and why it has
+		// to happen before the Wait below.
+		killTheGroupBeforeAnythingReapsIt(cmd)
 		_ = cmd.Wait()
 		err = idErr
 		return nil, err

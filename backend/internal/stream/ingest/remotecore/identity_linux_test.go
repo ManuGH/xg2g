@@ -100,6 +100,96 @@ func waitForFile(t *testing.T, path, what string) {
 	}
 }
 
+// socketDirs lists the socket directories a core would have created, so a test
+// can tell one that was cleaned up from one that was left behind.
+func socketDirs(t *testing.T) map[string]bool {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "xg2g-media-core-*"))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	out := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		out[m] = true
+	}
+	return out
+}
+
+// A start that cannot own the core still has to take away everything it made.
+//
+// By the time the identity fails, the core has already spawned a descendant -
+// which is the whole point: killing the leader alone leaves it running, and the
+// leader is reaped a line later, after which the group can no longer be named
+// safely at all. So the failure path takes the group, and takes it first.
+func TestIdentity_AFailedAcquisitionTakesTheWholeGroup(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "descendant")
+	t.Setenv(helperMarkerEnv, marker)
+	before := socketDirs(t)
+
+	var pgid int
+	useIdentity(t, func(pid int) (processIdentity, error) {
+		pgid = pid
+		// Not before the core has a group to leave behind.
+		waitForFile(t, marker, "the core's descendant")
+		return nil, ErrCoreUnsupportedPlatform
+	})
+
+	core, err := startHelper(t, context.Background(), "spawn-a-descendant-then-wait-to-be-owned")
+	if core != nil {
+		_ = core.Close()
+		t.Fatal("Start returned a core it could not own")
+	}
+	if !errors.Is(err, ErrCoreUnsupportedPlatform) {
+		t.Fatalf("Start err = %v, want ErrCoreUnsupportedPlatform", err)
+	}
+	t.Cleanup(func() { collectOrphans(t) })
+
+	raw, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("read the descendant's pid: %v", err)
+	}
+	descendant, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatalf("descendant pid %q: %v", raw, err)
+	}
+
+	if state := procStateOf(pgid); state != "gone" {
+		t.Errorf("the leader is %q after a refused start; it should have been reaped", state)
+	}
+
+	// Nothing of that group may still be running. Whether the corpses have been
+	// collected is the deployment's init contract and not this one, so a zombie
+	// counts as dealt with here.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var running []int
+		for pid, state := range groupMembers(t, pgid) {
+			if state != "Z" {
+				running = append(running, pid)
+			}
+		}
+		if len(running) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still running in group %d after a refused start: %v - "+
+				"the failure path took the leader and left what it had spawned", pgid, running)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if state := procStateOf(descendant); state != "gone" && state != "Z" {
+		t.Errorf("the descendant %d is %q; a start that refuses the core must not leave behind what it spawned",
+			descendant, state)
+	}
+
+	assertNoZombieChildren(t)
+	for dir := range socketDirs(t) {
+		if !before[dir] {
+			t.Errorf("socket directory left behind: %s", dir)
+		}
+	}
+}
+
 // The kernel property the whole design rests on, stated as a test.
 //
 // A pidfd is not just a stable name for the leader: it keeps naming the process
