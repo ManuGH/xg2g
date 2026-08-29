@@ -390,10 +390,13 @@ func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (Pa
 	}
 
 	c.events = c.events[:0]
-	// Cleared here, not only after a successful run: the feeds below point into
-	// data, and a chunk the caller gave up on must not leave slices behind that
-	// outlive it.
-	c.shadowBatches = c.shadowBatches[:0]
+	// The feeds captured below point into data. They are valid for this call and
+	// no longer, so every way out of it has to drop them - the cancelled chunk
+	// half way through the loop included, which never reaches runAudioShadow at
+	// all. Cleared on the way in as well, because an earlier call that returned
+	// through such a path is exactly what would leave something here.
+	c.clearAudioShadowBatches()
+	defer c.clearAudioShadowBatches()
 	for i := 0; i < len(data); i += TSPacketSize {
 		// Checked during the chunk, not only before it. The largest chunk this
 		// path sees is the normalizer's staging buffer, and a caller that gave up
