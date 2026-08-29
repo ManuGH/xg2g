@@ -10,6 +10,13 @@ license = "PolyForm-Noncommercial-1.0.0"
 publish = false
 description = "Media facts core for xg2g. Reads what a transport stream says about itself."
 
+[lib]
+# The parsing lives in a library so it can be tested against the shared corpus
+# without the binary's socket and process lifecycle in the way. The binary is
+# still what ships.
+name = "xg2g_media_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "xg2g-media-core"
 path = "src/main.rs"
