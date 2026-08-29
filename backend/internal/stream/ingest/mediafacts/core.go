@@ -364,7 +364,7 @@ type GoCore struct {
 	// audioshadow.go.
 	shadow        AudioShadow
 	shadowEpoch   uint64
-	shadowBatches []AudioShadowBatch
+	shadowBatches []pendingAudioShadowBatch
 	shadowReport  AudioShadowReport
 
 	// events accumulates what the chunk being ingested meant, in order.
@@ -623,7 +623,7 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 	// The same bytes, in the same piece, at the same moment. Anything else - the
 	// packet, the chunk, a re-derivation from transport - would be a different
 	// input, and agreement on a different input is not agreement.
-	c.captureAudioShadowFeedLocked(pid, es)
+	c.captureAudioShadowFeedLocked(pid, es, obs)
 }
 func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte, pkt []byte) int {
 	if len(chunk) == 0 {
