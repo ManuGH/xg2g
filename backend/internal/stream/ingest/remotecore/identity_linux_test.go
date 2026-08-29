@@ -142,8 +142,6 @@ func TestIdentity_AFailedAcquisitionTakesTheWholeGroup(t *testing.T) {
 	if !errors.Is(err, ErrCoreUnsupportedPlatform) {
 		t.Fatalf("Start err = %v, want ErrCoreUnsupportedPlatform", err)
 	}
-	t.Cleanup(func() { collectOrphans(t) })
-
 	raw, err := os.ReadFile(marker)
 	if err != nil {
 		t.Fatalf("read the descendant's pid: %v", err)
@@ -182,6 +180,10 @@ func TestIdentity_AFailedAcquisitionTakesTheWholeGroup(t *testing.T) {
 			descendant, state)
 	}
 
+	// Where this process is its namespace's init - a container without one - the
+	// descendant we just killed comes back to us as a zombie. Play init before
+	// asking whether init did its job; anywhere else this does nothing.
+	collectOrphans(t)
 	assertNoZombieChildren(t)
 	for dir := range socketDirs(t) {
 		if !before[dir] {
