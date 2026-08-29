@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -153,6 +154,23 @@ func TestHelperProcess(t *testing.T) {
 		serveOneHandshake(c)
 		time.Sleep(10 * time.Minute)
 
+	case "connect-then-spawn-a-child-then-leave-when-asked":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		// Spawns a descendant and then leaves on the goodbye message rather than
+		// on a signal. That is what lets a test watch a shutdown in which no
+		// signal was delivered at all, and check what survived it.
+		child := exec.Command("/bin/sh", "-c", `sleep 600`)
+		if err := child.Start(); err != nil {
+			os.Exit(5)
+		}
+		serveOneHandshake(c)
+		serveOneHandshake(c)
+		os.Exit(0)
+
 	case "connect-then-die-mid-frame":
 		c, err := dialHelper(sock)
 		if err != nil {
@@ -168,7 +186,29 @@ func TestHelperProcess(t *testing.T) {
 
 // startHelper is Start, with the child replaced by this binary running
 // TestHelperProcess in a chosen mode.
+//
+// Skips where a core cannot be owned. RemoteCore refuses to start without a
+// stable process identity, so off Linux there is no lifecycle here to test -
+// only ErrCoreUnsupportedPlatform, which has its own test.
 func startHelper(t *testing.T, ctx context.Context, mode string) (*RemoteCore, error) {
+	t.Helper()
+	requireOwnableCore(t)
+	return startHelperAnywhere(t, ctx, mode)
+}
+
+// requireOwnableCore skips where no core can be started at all. Call it from the
+// test body, not from a goroutine: a skip is a Goexit, and one of those in a
+// goroutine ends the goroutine rather than the test.
+func requireOwnableCore(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skipf("RemoteCore needs Linux pidfd support; %v", ErrCoreUnsupportedPlatform)
+	}
+}
+
+// startHelperAnywhere is startHelper without the platform skip, for the tests
+// that are about a core refusing to start.
+func startHelperAnywhere(t *testing.T, ctx context.Context, mode string) (*RemoteCore, error) {
 	t.Helper()
 	t.Setenv(helperEnv, mode)
 	// The trailing "--" matters: this binary parses flags before any test runs,
@@ -259,6 +299,9 @@ func TestProcess_HangsWithoutConnecting(t *testing.T) {
 //
 // So: one budget for spawn, connect and handshake together.
 func TestProcess_ConnectsThenNeverAnswersTheHandshake(t *testing.T) {
+	// Here rather than in startHelper alone: this one starts the core from a
+	// goroutine, where a skip would end the goroutine and leave the test waiting.
+	requireOwnableCore(t)
 	began := time.Now()
 
 	done := make(chan struct {
