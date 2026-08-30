@@ -202,12 +202,21 @@ type audioShadowRunner struct {
 	errors     atomic.Uint64
 
 	// retired is read on the capture path for every audio packet of every chunk,
-	// which is the other reason none of this is behind the mutex.
+	// which is why it is an atomic and not something the lock below has to be
+	// taken for.
 	retired atomic.Bool
-	// retireOnce guards the one state transition there is. Whoever reaches it
-	// first decides what the end was - a failure, a full queue, or a Close - and
-	// everyone after it adds nothing.
-	retireOnce sync.Once
+
+	// lifecycle pairs the two things that must be one decision: putting work in
+	// the queue, and ending the comparison. Checking a flag and then sending are
+	// two moments, and a producer that passed the check before a retirement would
+	// otherwise land a chunk's audio in a channel nobody will read again.
+	//
+	// It is worth naming for what it is not. It is never held across ObserveAudio,
+	// a comparison, or a mismatch being recorded, and it never nests with mu. The
+	// longest a producer can wait on it is one channel send and at most
+	// audioShadowQueueDepth non-blocking receives - local instructions, never the
+	// speed of the shadow.
+	lifecycle sync.Mutex
 
 	mu     sync.Mutex
 	recent []AudioShadowMismatch
@@ -252,10 +261,12 @@ func (r *audioShadowRunner) Close() {
 	// Through the same door as a retirement, so a shutdown does not also get
 	// counted as a failure - and so a shadow erroring out on its way to the exit
 	// does not add one either. Whatever ended it first is what the report says.
-	r.retireOnce.Do(func() {
-		r.retired.Store(true)
-		r.cancel()
-	})
+	r.lifecycle.Lock()
+	r.retireLocked(false)
+	r.lifecycle.Unlock()
+	// Waited for with the lock released. The worker takes it to retire itself,
+	// and a Close holding it while waiting for that worker to finish would be
+	// waiting for something it had made impossible.
 	<-r.done
 }
 
@@ -283,7 +294,19 @@ func (r *audioShadowRunner) run(ctx context.Context) {
 // are stateful, so a missing batch makes every later one a comparison against a
 // stream the shadow never saw - agreement and disagreement would both stop
 // meaning anything. So the queue filling up ends the comparison instead.
+//
+// The send is under the lifecycle lock, and so is every retirement it can race
+// with. An unlocked check followed by an unlocked send is two moments: a
+// producer can pass "not retired yet", a worker can retire and empty the queue
+// in between, and the send then lands in a channel that will never be read -
+// one chunk's owned audio, held for as long as the core holds the runner.
 func (r *audioShadowRunner) offer(work audioShadowWork) {
+	if r.retired.Load() {
+		return
+	}
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	// Again, now that the answer cannot change underneath the send.
 	if r.retired.Load() {
 		return
 	}
@@ -291,27 +314,57 @@ func (r *audioShadowRunner) offer(work audioShadowWork) {
 	case r.queue <- work:
 		r.batches.Add(uint64(len(work.batches)))
 	default:
-		r.retire()
+		// Still holding the lock. The retirement a failed send causes has to be
+		// the same moment as the send, or the queue it empties could be refilled
+		// by the offer immediately behind it.
+		r.retireLocked(true)
 	}
 }
 
 // retire ends the comparison for good, once, whichever side noticed first.
+func (r *audioShadowRunner) retire() {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	r.retireLocked(true)
+}
+
+// retireLocked is the one state transition there is, and the only place the
+// queue is emptied. The caller holds lifecycle.
 //
 // Once, because Errors is not "how many things went wrong" but "the comparison
 // stopped, and this is the reason": a shadow that failed while the queue behind
-// it filled up is one retirement. The error is counted before the flag is
-// raised, so anything that sees the comparison stopped also sees why.
+// it filled up is one retirement. counted is false for a Close, which ends the
+// comparison without anything having gone wrong. The error is counted before the
+// flag is raised, so anything that sees the comparison stopped also sees why.
 //
-// And it cancels. A retirement decided on the producer side - a full queue -
-// must reach a worker that is already inside a call, or the comparison would be
-// over while the goroutine ran on. Cancelling is how it reaches it, and
-// cancelling never blocks, which is why this is safe to call from Ingest.
-func (r *audioShadowRunner) retire() {
-	r.retireOnce.Do(func() {
+// It cancels. A retirement decided on the producer side - a full queue - must
+// reach a worker that is already inside a call, or the comparison would be over
+// while the goroutine ran on. Cancelling is how it reaches it, and cancelling
+// never blocks, which is why this is safe to reach from Ingest.
+//
+// And it empties the queue, which is not the same thing as dropping a batch. A
+// dropped batch would be a hole in a stateful comparison that carries on either
+// side of it; this is the comparison ending, after which those work items have
+// no future at all. Nothing will ever hold them against a reference. Left in the
+// channel they would keep several chunks of copied audio reachable for as long
+// as the core keeps the runner - so the worse the shadow behaved, the more
+// memory its corpse would hold.
+func (r *audioShadowRunner) retireLocked(counted bool) {
+	if r.retired.Load() {
+		return
+	}
+	if counted {
 		r.errors.Add(1)
-		r.retired.Store(true)
-		r.cancel()
-	})
+	}
+	r.retired.Store(true)
+	r.cancel()
+	for {
+		select {
+		case <-r.queue:
+		default:
+			return
+		}
+	}
 }
 
 func (r *audioShadowRunner) snapshot() AudioShadowReport {
@@ -402,8 +455,9 @@ func (c *GoCore) SetAudioShadow(shadow AudioShadow) {
 
 // CloseAudioShadow ends the comparison and the goroutine behind it.
 //
-// Bounded: it does not wait for the shadow to come back. See
-// (*audioShadowRunner).Close.
+// It waits for the worker to have terminated, and is bounded by the AudioShadow
+// cancellation contract and by nothing else: it never waits for a shadow to
+// finish work it has not been cancelled out of. See (*audioShadowRunner).Close.
 func (c *GoCore) CloseAudioShadow() {
 	if c.shadowRunner != nil {
 		c.shadowRunner.Close()
