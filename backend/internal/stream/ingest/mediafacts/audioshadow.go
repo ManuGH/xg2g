@@ -273,9 +273,11 @@ func (r *audioShadowRunner) Close() {
 func (r *audioShadowRunner) run(ctx context.Context) {
 	defer close(r.done)
 	for {
-		// Checked before the select rather than left to it: once the comparison is
-		// over, what is still queued is work whose answer nobody may believe, and
-		// draining it would be a race against ctx.Done for no reason.
+		// Checked before the select rather than left to it. Draining is not this
+		// loop's job: the retirement path empties the queue under lifecycle, and no
+		// later offer can refill it. So by the time this is visible, nothing queued
+		// has a semantic future and nothing is left to collect - the worker's only
+		// remaining job is to stop being a goroutine.
 		if r.retired.Load() {
 			return
 		}
