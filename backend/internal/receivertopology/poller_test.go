@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,4 +215,60 @@ func TestExtractExternalAllocations_CorrelatesXG2GStreams(t *testing.T) {
 	assert.Equal(t, "external_stream_client", allocs[0].Source)
 	require.NotNil(t, allocs[0].DemodID)
 	assert.Equal(t, DemodulatorID("tuner_b"), *allocs[0].DemodID)
+}
+
+func TestCollectRuntimeSnapshot_StandbySkipsGetCurrent(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	var getCurrentCalled bool
+	client := &mockPollerClient{
+		statusInfoFunc: func(ctx context.Context) (*openwebif.StatusInfo, error) {
+			return &openwebif.StatusInfo{
+				InStandby: "true",
+			}, nil
+		},
+		currentFunc: func(ctx context.Context) (*openwebif.CurrentInfo, error) {
+			getCurrentCalled = true
+			return &openwebif.CurrentInfo{}, nil
+		},
+	}
+
+	snap := CollectRuntimeSnapshot(ctx, client, now)
+
+	assert.True(t, snap.InStandby)
+	assert.Equal(t, EvidenceObserved, snap.StandbyEvidence)
+	assert.False(t, getCurrentCalled, "GetCurrent must NOT be called when receiver is in standby")
+}
+
+func TestExternalSyncPoller_SyncOnce_TopologyElevation(t *testing.T) {
+	ctx := context.Background()
+
+	var aboutCalls int
+	client := &mockPollerClient{
+		aboutFunc: func(ctx context.Context) (*openwebif.AboutInfo, error) {
+			aboutCalls++
+			var about openwebif.AboutInfo
+			about.Info.Model = "Vu+ Uno 4K SE"
+			about.Info.Tuners = []openwebif.AboutTuner{
+				{Name: "Tuner A", Type: "DVB-S2"},
+			}
+			return &about, nil
+		},
+		statusInfoFunc: func(ctx context.Context) (*openwebif.StatusInfo, error) {
+			return &openwebif.StatusInfo{InStandby: "true"}, nil
+		},
+	}
+
+	svc, err := NewService(ReceiverTopology{Confidence: ConfidenceDefault}, EvaluationModeAuditOnly)
+	require.NoError(t, err)
+
+	poller := NewExternalSyncPoller(client, svc, 10*time.Second, zerolog.Nop())
+
+	err = poller.SyncOnce(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, ConfidenceObserved, svc.Topology().Confidence)
+	assert.Equal(t, "Vu+ Uno 4K SE", svc.Topology().Model)
+	assert.Equal(t, 1, aboutCalls, "About should only be called once during SyncOnce")
 }

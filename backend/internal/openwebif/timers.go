@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const defaultTimerCacheTTL = 5 * time.Second
+const defaultTimerCacheTTL = 15 * time.Second
 
 // InvalidateTimerCache clears the cached timer list (e.g. after a mutation).
 func (c *Client) InvalidateTimerCache() {

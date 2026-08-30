@@ -75,6 +75,21 @@ type Client struct {
 	timerCache   []Timer
 	timerCacheAt time.Time
 	timerGroup   singleflight.Group
+
+	// About metadata caching & deduplication
+	aboutCacheMu sync.RWMutex
+	aboutCache   *AboutInfo
+	aboutCacheAt time.Time
+	aboutGroup   singleflight.Group
+
+	// Status info caching & deduplication
+	statusCacheMu sync.RWMutex
+	statusCache   *StatusInfo
+	statusCacheAt time.Time
+	statusGroup   singleflight.Group
+
+	// Current service request deduplication
+	currentGroup singleflight.Group
 }
 
 // Cacher provides caching capabilities for OpenWebIF requests.

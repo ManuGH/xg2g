@@ -7,62 +7,166 @@ import (
 	"time"
 )
 
-// About fetches receiver metadata from /api/about (best-effort).
+const (
+	defaultAboutCacheTTL  = 15 * time.Second
+	defaultStatusCacheTTL = 3 * time.Second
+)
+
+// InvalidateAboutCache clears the cached about metadata.
+func (c *Client) InvalidateAboutCache() {
+	c.aboutCacheMu.Lock()
+	c.aboutCache = nil
+	c.aboutCacheAt = time.Time{}
+	c.aboutCacheMu.Unlock()
+}
+
+// InvalidateStatusCache clears the cached statusinfo metadata.
+func (c *Client) InvalidateStatusCache() {
+	c.statusCacheMu.Lock()
+	c.statusCache = nil
+	c.statusCacheAt = time.Time{}
+	c.statusCacheMu.Unlock()
+}
+
+// About fetches receiver metadata from /api/about with 15s caching,
+// singleflight request deduplication, and last-known-good fallback.
 func (c *Client) About(ctx context.Context) (*AboutInfo, error) {
-	body, err := c.get(ctx, "/api/about", "about", nil)
-	if err != nil {
-		return nil, err
+	c.aboutCacheMu.RLock()
+	if c.aboutCache != nil && time.Since(c.aboutCacheAt) < defaultAboutCacheTTL {
+		cached := *c.aboutCache
+		c.aboutCacheMu.RUnlock()
+		return &cached, nil
 	}
-	var info AboutInfo
-	if err := json.Unmarshal(body, &info); err != nil {
-		return nil, fmt.Errorf("parse about response: %w", err)
-	}
-	return &info, nil
-}
+	c.aboutCacheMu.RUnlock()
 
-// GetStatusInfo fetches current receiver status (recording, standby, service).
-func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
-	// Short cache TTL (1s) to avoid hammering but allow rapid UI updates
-	const cacheKey = "statusinfo"
-	if c.cache != nil {
-		if cached, ok := c.cache.Get(cacheKey); ok {
-			if result, ok := cached.(*StatusInfo); ok {
-				return result, nil
-			}
+	val, err, _ := c.aboutGroup.Do("about.info", func() (any, error) {
+		c.aboutCacheMu.RLock()
+		if c.aboutCache != nil && time.Since(c.aboutCacheAt) < defaultAboutCacheTTL {
+			cached := *c.aboutCache
+			c.aboutCacheMu.RUnlock()
+			return &cached, nil
 		}
-	}
+		c.aboutCacheMu.RUnlock()
 
-	body, err := c.get(ctx, "/api/statusinfo", "status.info", nil)
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		body, err := c.get(reqCtx, "/api/about", "about", nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var info AboutInfo
+		if err := json.Unmarshal(body, &info); err != nil {
+			return nil, fmt.Errorf("parse about response: %w", err)
+		}
+
+		c.aboutCacheMu.Lock()
+		c.aboutCache = &info
+		c.aboutCacheAt = time.Now()
+		c.aboutCacheMu.Unlock()
+
+		return &info, nil
+	})
+
 	if err != nil {
+		c.aboutCacheMu.RLock()
+		if c.aboutCache != nil {
+			cached := *c.aboutCache
+			c.aboutCacheMu.RUnlock()
+			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF about fetch failed or timed out; serving Last-Known-Good cached about info")
+			return &cached, nil
+		}
+		c.aboutCacheMu.RUnlock()
 		return nil, err
 	}
 
-	var info StatusInfo
-	if err := json.Unmarshal(body, &info); err != nil {
-		return nil, fmt.Errorf("failed to decode status info: %w", err)
-	}
-
-	if c.cache != nil {
-		c.cache.Set(cacheKey, &info, 2*time.Second) // 2s
-	}
-
-	return &info, nil
+	info := val.(*AboutInfo)
+	copied := *info
+	return &copied, nil
 }
 
-// GetCurrent fetches detailed current service information (PIDs, etc).
-func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
-	// Status data changes rapidly, so very short TTL or no cache
-	// We want fresh data for readiness checks.
-	body, err := c.get(ctx, "/api/getcurrent", "get.current", nil)
+// GetStatusInfo fetches current receiver status (recording, standby, service)
+// with 3s caching, singleflight request deduplication, and last-known-good fallback.
+func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
+	c.statusCacheMu.RLock()
+	if c.statusCache != nil && time.Since(c.statusCacheAt) < defaultStatusCacheTTL {
+		cached := *c.statusCache
+		c.statusCacheMu.RUnlock()
+		return &cached, nil
+	}
+	c.statusCacheMu.RUnlock()
+
+	val, err, _ := c.statusGroup.Do("status.info", func() (any, error) {
+		c.statusCacheMu.RLock()
+		if c.statusCache != nil && time.Since(c.statusCacheAt) < defaultStatusCacheTTL {
+			cached := *c.statusCache
+			c.statusCacheMu.RUnlock()
+			return &cached, nil
+		}
+		c.statusCacheMu.RUnlock()
+
+		reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+		body, err := c.get(reqCtx, "/api/statusinfo", "status.info", nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var info StatusInfo
+		if err := json.Unmarshal(body, &info); err != nil {
+			return nil, fmt.Errorf("failed to decode status info: %w", err)
+		}
+
+		c.statusCacheMu.Lock()
+		c.statusCache = &info
+		c.statusCacheAt = time.Now()
+		c.statusCacheMu.Unlock()
+
+		return &info, nil
+	})
+
 	if err != nil {
+		c.statusCacheMu.RLock()
+		if c.statusCache != nil {
+			cached := *c.statusCache
+			c.statusCacheMu.RUnlock()
+			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF status fetch failed or timed out; serving Last-Known-Good cached status info")
+			return &cached, nil
+		}
+		c.statusCacheMu.RUnlock()
 		return nil, err
 	}
 
-	var info CurrentInfo
-	if err := json.Unmarshal(body, &info); err != nil {
-		return nil, fmt.Errorf("failed to decode current info: %w", err)
+	info := val.(*StatusInfo)
+	copied := *info
+	return &copied, nil
+}
+
+// GetCurrent fetches detailed current service information (PIDs, etc) with singleflight deduplication.
+func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
+	val, err, _ := c.currentGroup.Do("get.current", func() (any, error) {
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		body, err := c.get(reqCtx, "/api/getcurrent", "get.current", nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var info CurrentInfo
+		if err := json.Unmarshal(body, &info); err != nil {
+			return nil, fmt.Errorf("failed to decode current info: %w", err)
+		}
+		return &info, nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
-	return &info, nil
+	info := val.(*CurrentInfo)
+	return info, nil
 }
 
 // GetSignal fetches signal statistics (SNR, BER, etc).

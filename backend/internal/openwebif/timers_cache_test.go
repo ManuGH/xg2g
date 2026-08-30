@@ -53,9 +53,9 @@ func TestGetTimers_CachingSingleflightAndLKGFallback(t *testing.T) {
 	assert.Equal(t, "Test Timer 1", timers2[0].Name)
 	assert.Equal(t, int64(1), atomic.LoadInt64(&requestCount), "Should be served from 5s cache without HTTP call")
 
-	// 3. Force cache expiration (simulate time passing > 5s)
+	// 3. Force cache expiration (simulate time passing > 15s TTL)
 	client.timerCacheMu.Lock()
-	client.timerCacheAt = time.Now().Add(-10 * time.Second)
+	client.timerCacheAt = time.Now().Add(-20 * time.Second)
 	client.timerCacheMu.Unlock()
 
 	// 4. Fetch when backend errors -> falls back to Last-Known-Good (LKG) cached timers
