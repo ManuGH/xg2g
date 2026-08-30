@@ -114,23 +114,43 @@ const recentMismatches = 8
 // queue would only delay noticing that, while holding a copy of every chunk's
 // audio in the meantime.
 //
-// What that costs, exactly, because "bounded" on its own is not a number:
+// What that costs, exactly, because "bounded" on its own is not a number.
 //
-//	live work items       = audioShadowQueueDepth + 1 in the worker's hand = 5
-//	largest chunk C       = the normalizer's staging capacity, 4 MiB by default;
-//	                        it is what one egress tick can hand the ring
-//	worst-case bytes/item = every packet of the chunk carrying audio payload:
-//	                        184/188*C copied + a 24 byte slice header per feed
-//	                        (one feed per packet, 24/188*C) = 208/188*C = 1.106*C
-//	                        plus 64 bytes per stream-and-epoch in the chunk,
-//	                        which the PMT bounds and rounding already covers
-//	worst-case per core    = 5 * 1.106 * 4 MiB = 22.1 MiB
+// A logical payload-and-metadata upper bound, and deliberately not called a heap
+// or RSS ceiling: every term below is a structure this code builds, and none of
+// them accounts for what the allocator rounds a size class up to, or for the
+// capacity an append leaves behind where a builder does not pre-size exactly.
+//
+//	largest chunk C = the normalizer's staging capacity, 4 MiB by default;
+//	                  it is what one egress tick can hand the ring
+//	max feeds      <= C/188, one per transport packet
+//	max batches    <= C/188 as well, because every batch needs at least one feed:
+//	                  a chunk alternating between streams is the worst case, and
+//	                  the per-batch term is not a rounding error against the
+//	                  payload the way a per-PMT bound would be
+//
+//	per work item, worst case:
+//	  ES bytes copied    184/188 * C
+//	  feed headers        24/188 * C   (24 bytes per []byte)
+//	  batch + reference   64/188 * C   (40 + 24 bytes per stream-and-epoch)
+//	                    ------------
+//	                    272/188 * C  = 1.447 * C = 5.79 MiB at C = 4 MiB
+//
+//	live work items:
+//	  retained by the runner  5 = audioShadowQueueDepth + one in the worker's
+//	                              hand                       = 28.9 MiB
+//	  peak                    6 = the above plus the one the producer is
+//	                              assembling before the offer = 34.7 MiB
+//
+// Beside that, and only for the duration of one Ingest, the capture side holds
+// c.shadowBatches: 64 bytes per batch and 24 per feed, up to 88/188 * C of
+// metadata again - and no payload, because those feeds point into the caller's
+// chunk instead of copying it.
 //
 // Retained, not allocated: the allocation volume of a run is larger and is a
-// different question. This is what a core with a shadow attached can be holding
-// at one instant, and it is reached only by a stream that is audio and nothing
-// else with the worker fully stalled - at which point the next chunk retires the
-// comparison and it all becomes garbage.
+// different question. And reaching any of this needs a stream that is audio and
+// nothing else with the worker fully stalled - at which point the next chunk
+// retires the comparison and all of it becomes garbage.
 const audioShadowQueueDepth = 4
 
 // pendingAudioShadowBatch is a batch and the core's own answer to it.
