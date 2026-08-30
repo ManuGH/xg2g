@@ -169,10 +169,6 @@ type replayShadow struct {
 	// only thing waiting on it, which is the property most of these tests are
 	// about.
 	block chan struct{}
-	// ignoreCtx makes it the badly behaved kind: one that sits in the block and
-	// never looks at the context it was handed. Cancelling cannot get it back,
-	// which is exactly the case Close has to be bounded for.
-	ignoreCtx bool
 
 	err     error
 	distort func(AudioShadowObservation) AudioShadowObservation
@@ -187,15 +183,14 @@ func newReplayShadow() *replayShadow {
 
 func (s *replayShadow) ObserveAudio(ctx context.Context, batches []AudioShadowBatch) ([]AudioShadowObservation, error) {
 	s.entries.Add(1)
+	// Held here until the test lets go - or until the context is cancelled, which
+	// is the AudioShadow contract and the only reason anything downstream of this
+	// can promise that a worker ends.
 	if s.block != nil {
-		if s.ignoreCtx {
-			<-s.block
-		} else {
-			select {
-			case <-s.block:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+		select {
+		case <-s.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 	s.mu.Lock()
@@ -813,8 +808,10 @@ func TestAudioShadow_AHangingShadowNeverHoldsUpIngest(t *testing.T) {
 		}
 	}
 
-	// And the shadow is still in there. What kept the ingests going is the
-	// hand-off never waiting, not the shadow having quietly finished.
+	// The shadow was reached once and never answered: the test never let go of it,
+	// and what ended the call in the end was the retirement cancelling it. What
+	// kept the ingests going was the hand-off never waiting - not the shadow
+	// quietly finishing, and not the queue quietly draining.
 	if got, answered := hanging.enteredCount(), hanging.callCount(); got != 1 || answered != 0 {
 		t.Errorf("the shadow was reached %d times and answered %d; the test never let the first call return",
 			got, answered)
@@ -882,21 +879,24 @@ func TestAudioShadow_AFullQueueRetiresRatherThanSkippingAChunk(t *testing.T) {
 			report.Batches, audioShadowQueueDepth+1)
 	}
 
-	// Letting the shadow go must not restart it. What is still in the queue is a
-	// run with a hole after it, and comparing across that hole is the thing this
-	// design refuses to do.
-	close(blocked.block)
-	deadline := time.Now().Add(5 * time.Second)
-	for len(runner.queue) > 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the worker never drained the queue")
-		}
-		time.Sleep(time.Millisecond)
+	// And the retirement reaches the call that is already in progress. Nobody
+	// closes the block and nobody calls Close: the cancellation the retirement
+	// carries is the whole reason the worker can end here at all.
+	select {
+	case <-runner.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker outlived the retirement; a retirement decided on the producer side never reached it")
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := blocked.enteredCount(); got != 1 {
 		t.Errorf("the shadow was reached %d times; everything queued behind the retirement was carried on with", got)
 	}
+	// What was still queued is abandoned rather than caught up on. It is a run
+	// with a hole in front of it, and comparing across that hole is the thing this
+	// design refuses to do.
+	if len(runner.queue) == 0 {
+		t.Error("the queue was drained after the retirement; those batches were compared or dropped, and either would be a lie")
+	}
+	close(blocked.block)
 
 	// And a chunk after all that reaches nothing at all.
 	ingest(audioShadowQueueDepth + 2)
@@ -950,52 +950,46 @@ func TestAudioShadow_TheWorkOwnsItsBytesOnceIngestHasReturned(t *testing.T) {
 	}
 }
 
-// Close is bounded whatever the shadow is doing, and the goroutine behind it
-// ends - at the latest when the shadow finally comes back.
-func TestAudioShadow_CloseComesBackWhileTheShadowIsStillInThere(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		ignoreCtx bool
-	}{
-		{"a shadow that watches its context", false},
-		{"a shadow that ignores it", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			chunk := shadowChunk()
-			core := NewGoCore(1)
-			stuck := newReplayShadow()
-			stuck.block = make(chan struct{})
-			stuck.ignoreCtx = tc.ignoreCtx
-			core.SetAudioShadow(stuck)
-			runner := core.shadowRunner
+// Close cancels whatever the worker is inside and does not come back until the
+// goroutine is gone.
+//
+// There is no companion case for a shadow that ignores its context, because
+// there is nothing to assert about one. Go cannot end a goroutine parked in an
+// interface method from the outside, so bounded shutdown and an accounted-for
+// worker cannot both be had against arbitrary code - which is why cancellation
+// is a contract in the AudioShadow doc rather than a hope in this file. Proving
+// a real implementation keeps it against a peer that never replies belongs to
+// the RemoteAudioShadow in 4b.2b, and cannot be proven here.
+func TestAudioShadow_CloseCancelsTheShadowAndWaitsForTheWorker(t *testing.T) {
+	chunk := shadowChunk()
+	core := NewGoCore(1)
+	stuck := newReplayShadow()
+	stuck.block = make(chan struct{})
+	defer close(stuck.block)
+	core.SetAudioShadow(stuck)
+	runner := core.shadowRunner
 
-			if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
-				t.Fatalf("Ingest: %v", err)
-			}
-			awaitEntered(t, stuck, 1)
+	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	awaitEntered(t, stuck, 1)
 
-			withinDeadline(t, 2*time.Second, "CloseAudioShadow with the shadow still inside", core.CloseAudioShadow)
+	// Nothing else can end that call: the block is still shut, and only the
+	// cancellation Close carries can get the shadow out of it.
+	withinDeadline(t, 5*time.Second, "CloseAudioShadow with the shadow still waiting", core.CloseAudioShadow)
 
-			if tc.ignoreCtx {
-				// Nothing can get it back, so the goroutine is still in there - and
-				// the caller is not.
-				select {
-				case <-runner.done:
-					t.Fatal("the worker ended while the shadow it called had not returned")
-				case <-time.After(50 * time.Millisecond):
-				}
-				close(stuck.block)
-			}
+	// Not "eventually, probably". Close having returned is the goroutine having
+	// ended, or the wait in it was decoration.
+	select {
+	case <-runner.done:
+	default:
+		t.Fatal("Close returned with the worker still running")
+	}
 
-			select {
-			case <-runner.done:
-			case <-time.After(5 * time.Second):
-				t.Fatal("the worker goroutine outlived the shadow's return")
-			}
-			if !tc.ignoreCtx {
-				close(stuck.block)
-			}
-		})
+	// A shutdown is not a failure. A report that called it one would say the
+	// comparison stopped for a reason that never happened.
+	if got := runner.snapshot(); got.Errors != 0 {
+		t.Errorf("a clean Close was reported as %d errors: %+v", got.Errors, got)
 	}
 }
 
