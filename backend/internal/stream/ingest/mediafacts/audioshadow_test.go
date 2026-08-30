@@ -9,8 +9,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
 )
@@ -150,9 +154,25 @@ const (
 // valid after the call, which is exactly the contract a wire implementation has
 // to respect too.
 type replayShadow struct {
+	mu        sync.Mutex
 	observers map[[2]uint64]*esaudio.Observer
 	seen      []AudioShadowBatch
 	calls     int
+
+	// entries counts calls that have been reached, as opposed to calls that have
+	// answered. A shadow held in the block below has been reached and has not
+	// answered, and which of the two a test waits for is the difference between
+	// watching the worker and watching the comparison.
+	entries atomic.Int64
+
+	// block, when set, holds ObserveAudio until it is closed. The worker is the
+	// only thing waiting on it, which is the property most of these tests are
+	// about.
+	block chan struct{}
+	// ignoreCtx makes it the badly behaved kind: one that sits in the block and
+	// never looks at the context it was handed. Cancelling cannot get it back,
+	// which is exactly the case Close has to be bounded for.
+	ignoreCtx bool
 
 	err     error
 	distort func(AudioShadowObservation) AudioShadowObservation
@@ -165,7 +185,21 @@ func newReplayShadow() *replayShadow {
 	return &replayShadow{observers: map[[2]uint64]*esaudio.Observer{}}
 }
 
-func (s *replayShadow) ObserveAudio(_ context.Context, batches []AudioShadowBatch) ([]AudioShadowObservation, error) {
+func (s *replayShadow) ObserveAudio(ctx context.Context, batches []AudioShadowBatch) ([]AudioShadowObservation, error) {
+	s.entries.Add(1)
+	if s.block != nil {
+		if s.ignoreCtx {
+			<-s.block
+		} else {
+			select {
+			case <-s.block:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.calls++
 	if s.err != nil {
 		return nil, s.err
@@ -201,6 +235,8 @@ func (s *replayShadow) ObserveAudio(_ context.Context, batches []AudioShadowBatc
 
 // batchesFor is every batch the shadow was handed for one stream, in order.
 func (s *replayShadow) batchesFor(pid uint16) []AudioShadowBatch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var out []AudioShadowBatch
 	for _, b := range s.seen {
 		if b.PID == pid {
@@ -227,6 +263,48 @@ func assertFeeds(t *testing.T, batches []AudioShadowBatch, want [][]byte) {
 			t.Fatalf("feed %d differs (%d bytes captured, %d expected)\n captured %x…\n expected %x…",
 				i, len(got[i]), len(want[i]), got[i][:min(12, len(got[i]))], want[i][:min(12, len(want[i]))])
 		}
+	}
+}
+
+func (s *replayShadow) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+// enteredCount is how many calls have been reached, answered or not.
+func (s *replayShadow) enteredCount() int {
+	return int(s.entries.Load())
+}
+
+// awaitEntered waits for the worker to be inside the shadow.
+func awaitEntered(t *testing.T, s *replayShadow, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for s.enteredCount() < want {
+		if time.Now().After(deadline) {
+			t.Fatalf("the worker reached the shadow %d times, want %d", s.enteredCount(), want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// awaitShadow waits for the worker to get where the test needs it.
+//
+// The comparison is off the ingest path now, so "after Ingest returned" is no
+// longer "after the shadow answered". Polling a counter is what that costs.
+func awaitShadow(t *testing.T, core *GoCore, what string, done func(AudioShadowReport) bool) AudioShadowReport {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		report := core.AudioShadowReport()
+		if done(report) {
+			return report
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s; report = %+v", what, report)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -261,19 +339,17 @@ func TestAudioShadow_ReplayingTheCapturedFeedsReproducesTheCoresOwnObservation(t
 		t.Fatalf("Ingest: %v", err)
 	}
 
-	// Byte for byte and boundary for boundary, not merely "close enough to reach
-	// the same answer". A capture one PES header too early reaches the same answer
-	// too, and would be a different input the day a parser disagrees about it.
-	assertFeeds(t, shadow.batchesFor(shadowAudioPID), wantFeeds)
-
 	want := observedTrack(t, res.Facts, shadowAudioPID)
 	if !want.Known() {
 		t.Fatalf("the core established nothing to compare against: %+v", want)
 	}
-	report := core.AudioShadowReport()
-	if report.Compared == 0 {
-		t.Fatal("nothing was compared")
-	}
+	report := awaitShadow(t, core, "the first comparison", func(r AudioShadowReport) bool {
+		return r.Compared > 0 || r.Disabled
+	})
+	// Byte for byte and boundary for boundary, not merely "close enough to reach
+	// the same answer". A capture one PES header too early reaches the same answer
+	// too, and would be a different input the day a parser disagrees about it.
+	assertFeeds(t, shadow.batchesFor(shadowAudioPID), wantFeeds)
 	if report.Mismatches != 0 {
 		t.Fatalf("the replayed feeds disagreed with the core: %+v", report.Recent)
 	}
@@ -305,6 +381,9 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 		t.Fatalf("Ingest: %v", err)
 	}
 
+	awaitShadow(t, core, "both epochs to be compared", func(r AudioShadowReport) bool {
+		return r.Compared >= 2 || r.Disabled
+	})
 	batches := shadow.batchesFor(shadowAudioPID)
 	if len(batches) != 2 {
 		t.Fatalf("got %d batches for PID %d, want 2 - the feeds either side of the reset are not one stream",
@@ -340,7 +419,9 @@ func TestAudioShadow_AnEpochChangeInsideOneChunkSplitsTheBatches(t *testing.T) {
 			replayed.Current().Frames)
 	}
 
-	report := core.AudioShadowReport()
+	report := awaitShadow(t, core, "both epochs to be compared", func(r AudioShadowReport) bool {
+		return r.Compared >= 2 || r.Disabled
+	})
 	if report.Batches != 2 || report.Compared != 2 {
 		t.Fatalf("report = %+v; both epochs are handed over and both have a reference to be held against - "+
 			"comparing only the one whose observer is still alive is how a shadow that gets the ended epoch "+
@@ -385,7 +466,9 @@ func TestAudioShadow_ADisagreementAboutTheEndedEpochIsStillFound(t *testing.T) {
 		t.Fatalf("Ingest: %v", err)
 	}
 
-	report := core.AudioShadowReport()
+	report := awaitShadow(t, core, "both epochs to be compared", func(r AudioShadowReport) bool {
+		return r.Compared >= 2 || r.Disabled
+	})
 	if report.Compared != 2 {
 		t.Fatalf("compared %d of 2 batches: %+v", report.Compared, report)
 	}
@@ -446,9 +529,11 @@ func TestAudioShadow_AnAnswerThatDoesNotLineUpRetiresTheShadow(t *testing.T) {
 			if !reflect.DeepEqual(plainResult, got) {
 				t.Fatalf("a shadow that lost track changed the authoritative result")
 			}
-			report := core.AudioShadowReport()
-			if !report.Disabled || report.Errors != 1 {
-				t.Fatalf("the shadow was not retired: %+v", report)
+			report := awaitShadow(t, core, "the shadow to be retired", func(r AudioShadowReport) bool {
+				return r.Disabled
+			})
+			if report.Errors != 1 {
+				t.Fatalf("the shadow was not retired cleanly: %+v", report)
 			}
 			if report.Compared != 0 || report.Mismatches != 0 {
 				t.Errorf("an answer that does not line up was believed in part: %+v", report)
@@ -485,9 +570,11 @@ func TestAudioShadow_AFailingShadowChangesNothingAndIsNotAskedAgain(t *testing.T
 			plainResult, shadowedResult)
 	}
 
-	report := shadowed.AudioShadowReport()
-	if !report.Disabled || report.Errors != 1 {
-		t.Fatalf("a failed shadow was not retired: %+v", report)
+	report := awaitShadow(t, shadowed, "the shadow to be retired", func(r AudioShadowReport) bool {
+		return r.Disabled
+	})
+	if report.Errors != 1 {
+		t.Fatalf("a failed shadow was not retired cleanly: %+v", report)
 	}
 
 	// A second chunk must not reach it. A shadow that failed once is a second
@@ -496,8 +583,8 @@ func TestAudioShadow_AFailingShadowChangesNothingAndIsNotAskedAgain(t *testing.T
 	if _, err := shadowed.Ingest(context.Background(), int64(len(chunk)), chunk); err != nil {
 		t.Fatalf("second Ingest: %v", err)
 	}
-	if failing.calls != 1 {
-		t.Errorf("the shadow was called %d times after failing once", failing.calls)
+	if failing.callCount() != 1 {
+		t.Errorf("the shadow was called %d times after failing once", failing.callCount())
 	}
 }
 
@@ -525,7 +612,9 @@ func TestAudioShadow_AMismatchNamesTheFieldsAndLeavesTheFactsAlone(t *testing.T)
 		t.Fatalf("the shadow's opinion reached the facts: %+v", got)
 	}
 
-	report := core.AudioShadowReport()
+	report := awaitShadow(t, core, "the mismatch to be recorded", func(r AudioShadowReport) bool {
+		return r.Compared > 0 || r.Disabled
+	})
 	if report.Mismatches != 1 || len(report.Recent) != 1 {
 		t.Fatalf("mismatch not recorded: %+v", report)
 	}
@@ -638,4 +727,371 @@ func TestAudioShadow_AnAbandonedChunkLeavesNoFeedsBehind(t *testing.T) {
 		t.Fatal("the shadow was run for a chunk the caller gave up on")
 	}
 	assertNoCapturedFeeds(t, core)
+}
+
+// --- the shadow is not on the authoritative path ---------------------------
+
+// shadowChunk is what these tests hand over: a program, one AC-3 stream, and
+// enough frames for there to be an observation to disagree about.
+func shadowChunk() []byte {
+	chunk := append([]byte(nil), shadowPAT()...)
+	chunk = append(chunk, shadowPMT(0, shadowAudioPID)...)
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	return append(chunk, audio...)
+}
+
+// withinDeadline runs f and fails the test if it has not come back in time.
+//
+// A blocked hand-off would not be a slow test, it would be a hung one, and a
+// hung test says "timeout after 10 minutes" without saying where. This says
+// where.
+func withinDeadline(t *testing.T, d time.Duration, what string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("%s did not come back within %s", what, d)
+	}
+}
+
+// The invariant the whole step is for: a shadow that never answers cannot slow
+// down, fail or change a single authoritative ingest.
+//
+// Both cores are given the same chunks in the same order and their results are
+// held against each other on every one of them - not just at the end, because a
+// shadow that perturbed the middle of the run and was right again by the end
+// would pass that.
+func TestAudioShadow_AHangingShadowNeverHoldsUpIngest(t *testing.T) {
+	const chunks = 100
+	chunk := shadowChunk()
+
+	plain := NewGoCore(1)
+	shadowed := NewGoCore(1)
+	hanging := newReplayShadow()
+	hanging.block = make(chan struct{})
+	shadowed.SetAudioShadow(hanging)
+	defer shadowed.CloseAudioShadow()
+	defer close(hanging.block)
+
+	results := make([]ParseResult, 0, chunks)
+	first, err := shadowed.Ingest(context.Background(), 0, chunk)
+	if err != nil {
+		t.Fatalf("shadowed Ingest 0: %v", err)
+	}
+	results = append(results, first)
+	// Waited for on purpose. The interesting run is the one where the worker is
+	// already inside a call that will never return, not the one where the
+	// scheduler never got round to starting it.
+	awaitEntered(t, hanging, 1)
+
+	withinDeadline(t, 30*time.Second, fmt.Sprintf("%d ingests behind a shadow that never answers", chunks-1), func() {
+		for i := 1; i < chunks; i++ {
+			got, err := shadowed.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk)
+			if err != nil {
+				t.Errorf("shadowed Ingest %d: %v", i, err)
+				return
+			}
+			results = append(results, got)
+		}
+	})
+	if t.Failed() {
+		return
+	}
+
+	for i := 0; i < chunks; i++ {
+		want, err := plain.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk)
+		if err != nil {
+			t.Fatalf("plain Ingest %d: %v", i, err)
+		}
+		if !reflect.DeepEqual(want, results[i]) {
+			t.Fatalf("chunk %d: a shadow that never answered changed the authoritative result", i)
+		}
+	}
+
+	// And the shadow is still in there. What kept the ingests going is the
+	// hand-off never waiting, not the shadow having quietly finished.
+	if got, answered := hanging.enteredCount(), hanging.callCount(); got != 1 || answered != 0 {
+		t.Errorf("the shadow was reached %d times and answered %d; the test never let the first call return",
+			got, answered)
+	}
+}
+
+// A queue that fills up ends the comparison. It does not drop a chunk and carry
+// on: the shadow's observers are stateful, so the batch after a missing one is a
+// comparison against a stream it never saw.
+func TestAudioShadow_AFullQueueRetiresRatherThanSkippingAChunk(t *testing.T) {
+	chunk := shadowChunk()
+
+	core := NewGoCore(1)
+	blocked := newReplayShadow()
+	blocked.block = make(chan struct{})
+	core.SetAudioShadow(blocked)
+	runner := core.shadowRunner
+	defer core.CloseAudioShadow()
+
+	plain := NewGoCore(1)
+
+	ingest := func(i int) {
+		t.Helper()
+		want, err := plain.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk)
+		if err != nil {
+			t.Fatalf("plain Ingest %d: %v", i, err)
+		}
+		var got ParseResult
+		withinDeadline(t, 10*time.Second, fmt.Sprintf("Ingest %d", i), func() {
+			var err error
+			got, err = core.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk)
+			if err != nil {
+				t.Errorf("Ingest %d: %v", i, err)
+			}
+		})
+		if t.Failed() {
+			t.FailNow()
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Fatalf("chunk %d: the result differs from a core with no shadow attached", i)
+		}
+	}
+
+	// The first one leaves the queue and is stuck inside the shadow. Waiting for
+	// that is what makes the count below the queue's and not a race with it.
+	ingest(0)
+	awaitEntered(t, blocked, 1)
+
+	// Now fill the queue exactly, and then hand over one more.
+	for i := 1; i <= audioShadowQueueDepth; i++ {
+		ingest(i)
+		if report := core.AudioShadowReport(); report.Disabled {
+			t.Fatalf("retired at chunk %d, before the queue was full: %+v", i, report)
+		}
+	}
+	ingest(audioShadowQueueDepth + 1)
+
+	report := core.AudioShadowReport()
+	if !report.Disabled || report.Errors != 1 {
+		t.Fatalf("a full queue did not retire the shadow exactly once: %+v", report)
+	}
+	// One batch per chunk, and only the ones that were taken.
+	if report.Batches != uint64(audioShadowQueueDepth+1) {
+		t.Errorf("Batches = %d, want %d - the chunk that found the queue full is not an accepted batch",
+			report.Batches, audioShadowQueueDepth+1)
+	}
+
+	// Letting the shadow go must not restart it. What is still in the queue is a
+	// run with a hole after it, and comparing across that hole is the thing this
+	// design refuses to do.
+	close(blocked.block)
+	deadline := time.Now().Add(5 * time.Second)
+	for len(runner.queue) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the worker never drained the queue")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if got := blocked.enteredCount(); got != 1 {
+		t.Errorf("the shadow was reached %d times; everything queued behind the retirement was carried on with", got)
+	}
+
+	// And a chunk after all that reaches nothing at all.
+	ingest(audioShadowQueueDepth + 2)
+	if got := core.AudioShadowReport(); got.Errors != 1 || got.Batches != uint64(audioShadowQueueDepth+1) {
+		t.Errorf("work was accepted after the retirement: %+v", got)
+	}
+}
+
+// The hand-off owns its bytes. The chunk is the caller's and is gone the moment
+// Ingest returns, so the copy is made before that - and this is the test that
+// the copy is a copy.
+func TestAudioShadow_TheWorkOwnsItsBytesOnceIngestHasReturned(t *testing.T) {
+	head := append([]byte(nil), shadowPAT()...)
+	head = append(head, shadowPMT(0, shadowAudioPID)...)
+	audio, wantFeeds := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, 5))
+	chunk := append(head, audio...)
+
+	core := NewGoCore(1)
+	// Blocked, so the shadow is guaranteed to still be waiting when the chunk it
+	// was given is overwritten underneath it.
+	shadow := newReplayShadow()
+	shadow.block = make(chan struct{})
+	core.SetAudioShadow(shadow)
+	defer core.CloseAudioShadow()
+
+	res, err := core.Ingest(context.Background(), 0, chunk)
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	want := observedTrack(t, res.Facts, shadowAudioPID)
+	if !want.Known() {
+		t.Fatalf("the core established nothing to compare against: %+v", want)
+	}
+
+	// The caller reuses its buffer, which is what a caller with a staging buffer
+	// does between chunks.
+	for i := range chunk {
+		chunk[i] = 0xAA
+	}
+	close(shadow.block)
+
+	report := awaitShadow(t, core, "the comparison to happen after the chunk was overwritten", func(r AudioShadowReport) bool {
+		return r.Compared > 0 || r.Disabled
+	})
+	if report.Disabled {
+		t.Fatalf("the shadow was retired: %+v", report)
+	}
+	assertFeeds(t, shadow.batchesFor(shadowAudioPID), wantFeeds)
+	if report.Mismatches != 0 {
+		t.Fatalf("the shadow read the overwritten chunk: %+v", report.Recent)
+	}
+}
+
+// Close is bounded whatever the shadow is doing, and the goroutine behind it
+// ends - at the latest when the shadow finally comes back.
+func TestAudioShadow_CloseComesBackWhileTheShadowIsStillInThere(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		ignoreCtx bool
+	}{
+		{"a shadow that watches its context", false},
+		{"a shadow that ignores it", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chunk := shadowChunk()
+			core := NewGoCore(1)
+			stuck := newReplayShadow()
+			stuck.block = make(chan struct{})
+			stuck.ignoreCtx = tc.ignoreCtx
+			core.SetAudioShadow(stuck)
+			runner := core.shadowRunner
+
+			if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+				t.Fatalf("Ingest: %v", err)
+			}
+			awaitEntered(t, stuck, 1)
+
+			withinDeadline(t, 2*time.Second, "CloseAudioShadow with the shadow still inside", core.CloseAudioShadow)
+
+			if tc.ignoreCtx {
+				// Nothing can get it back, so the goroutine is still in there - and
+				// the caller is not.
+				select {
+				case <-runner.done:
+					t.Fatal("the worker ended while the shadow it called had not returned")
+				case <-time.After(50 * time.Millisecond):
+				}
+				close(stuck.block)
+			}
+
+			select {
+			case <-runner.done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the worker goroutine outlived the shadow's return")
+			}
+			if !tc.ignoreCtx {
+				close(stuck.block)
+			}
+		})
+	}
+}
+
+// --- what the isolation costs the ingest path ------------------------------
+
+// echoShadow answers the question it was asked and does nothing else.
+//
+// A benchmark of the hand-off wants the cheapest shadow that still counts as
+// one: what is being measured is the capture, the copy and the offer, not how
+// long somebody else's parser takes.
+type echoShadow struct{}
+
+func (echoShadow) ObserveAudio(_ context.Context, batches []AudioShadowBatch) ([]AudioShadowObservation, error) {
+	out := make([]AudioShadowObservation, len(batches))
+	for i, b := range batches {
+		out[i] = AudioShadowObservation{PID: b.PID, Epoch: b.Epoch}
+	}
+	return out, nil
+}
+
+// benchChunk builds about size bytes of transport, audioPercent of it audio and
+// the rest null packets.
+//
+// Null padding rather than video, so that the difference between the two arms is
+// the audio path and nothing else. It also makes the baseline cheaper than a
+// real chunk, so the relative overhead measured here is an upper bound on what a
+// stream with video in it would see.
+func benchChunk(size int, audioPercent int) []byte {
+	packets := size / TSPacketSize
+	audioPackets := packets * audioPercent / 100
+	// 184 payload bytes per packet, 128 per AC-3 frame, and the first packet of
+	// the run loses 9 of them to the PES header.
+	frames := (audioPackets*184 - 9) / 128
+	if frames < 1 {
+		frames = 1
+	}
+	audio, _ := shadowAudioPackets(shadowAudioPID, shadowAC3Run(shadowByte6Surround, frames))
+
+	null := make([]byte, TSPacketSize)
+	null[0], null[1], null[2], null[3] = SyncByte, 0x1F, 0xFF, 0x10
+
+	out := append([]byte(nil), shadowPAT()...)
+	out = append(out, shadowPMT(0, shadowAudioPID)...)
+	sent := 0
+	for i := 0; i < packets; i++ {
+		if sent*TSPacketSize < len(audio) && i*audioPercent/100 >= sent {
+			out = append(out, audio[sent*TSPacketSize:(sent+1)*TSPacketSize]...)
+			sent++
+			continue
+		}
+		out = append(out, null...)
+	}
+	return out
+}
+
+// BenchmarkIngestAudioShadow is the price of the isolation.
+//
+// Not a threshold and deliberately not tied to any deadline: what is bounded by
+// design is that the shadow's own speed is not in here at all. What is left is a
+// copy of the chunk's audio and a channel send, and this is how big that is.
+func BenchmarkIngestAudioShadow(b *testing.B) {
+	const chunkSize = 4 << 20
+	for _, share := range []int{10, 100} {
+		chunk := benchChunk(chunkSize, share)
+
+		b.Run(fmt.Sprintf("audio=%d%%/no-shadow", share), func(b *testing.B) {
+			core := NewGoCore(1)
+			b.SetBytes(int64(len(chunk)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := core.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("audio=%d%%/async-shadow", share), func(b *testing.B) {
+			core := NewGoCore(1)
+			core.SetAudioShadow(echoShadow{})
+			defer core.CloseAudioShadow()
+			b.SetBytes(int64(len(chunk)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := core.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.StopTimer()
+			// Without this the fast run is the one where the shadow was retired
+			// early and the core stopped capturing - which is the unshadowed path
+			// wearing the shadowed arm's name.
+			if report := core.AudioShadowReport(); report.Disabled {
+				b.Fatalf("the shadow was retired during the measurement: %+v", report)
+			}
+		})
+	}
 }
