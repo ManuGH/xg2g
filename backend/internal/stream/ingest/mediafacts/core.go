@@ -449,7 +449,19 @@ func (c *GoCore) SetTargetProgram(ctx context.Context, programNumber uint16) (Pa
 // Reset discards everything read so far.
 func (c *GoCore) Reset() ParseResult {
 	target := c.targetProgramNumber
+	// The shadow is not stream state and does not die here. It belongs to whoever
+	// attached it, and a core that dropped it would leave the worker running with
+	// nothing left that could stop it.
+	//
+	// Its epoch does not go back to zero either. The epoch is the shadow's key for
+	// per-stream state, and a counter that restarts hands it a (PID, epoch) it has
+	// already seen - for a stream that no longer exists. So it carries across and
+	// turns once, which is what a reset is: everything on this core's PIDs from
+	// here on is a different elementary stream.
+	runner, epoch := c.shadowRunner, c.shadowEpoch
 	*c = *NewGoCore(target)
+	c.shadowRunner = runner
+	c.shadowEpoch = epoch + 1
 	c.events = append(c.events, Event{Kind: EventProgramIdentityChanged})
 	return c.result(0)
 }
