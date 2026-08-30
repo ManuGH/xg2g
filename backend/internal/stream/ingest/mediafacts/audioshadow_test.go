@@ -999,6 +999,51 @@ func TestAudioShadow_CloseComesBackWhileTheShadowIsStillInThere(t *testing.T) {
 	}
 }
 
+// Reset discards the stream, not the comparison. The worker is nobody else's to
+// stop, and the epoch is the shadow's key for per-stream state - restarting it
+// at zero would hand a stateful shadow a stream it thinks it already knows.
+func TestAudioShadow_ResetKeepsTheShadowAndNeverReusesAnEpoch(t *testing.T) {
+	chunk := shadowChunk()
+	core := NewGoCore(1)
+	shadow := newReplayShadow()
+	core.SetAudioShadow(shadow)
+	defer core.CloseAudioShadow()
+
+	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	awaitShadow(t, core, "the first chunk to be compared", func(r AudioShadowReport) bool {
+		return r.Compared > 0 || r.Disabled
+	})
+
+	core.Reset()
+	if core.shadowRunner == nil {
+		t.Fatal("Reset dropped the shadow's worker, which nothing else can stop")
+	}
+
+	if _, err := core.Ingest(context.Background(), int64(len(chunk)), chunk); err != nil {
+		t.Fatalf("Ingest after Reset: %v", err)
+	}
+	report := awaitShadow(t, core, "the chunk after the reset to be compared", func(r AudioShadowReport) bool {
+		return r.Compared > 1 || r.Disabled
+	})
+	if report.Disabled {
+		t.Fatalf("the shadow was retired across a reset: %+v", report)
+	}
+	if report.Mismatches != 0 {
+		t.Fatalf("mismatches across a reset: %+v", report.Recent)
+	}
+
+	batches := shadow.batchesFor(shadowAudioPID)
+	if len(batches) != 2 {
+		t.Fatalf("got %d batches, want one per chunk", len(batches))
+	}
+	if batches[1].Epoch <= batches[0].Epoch {
+		t.Fatalf("epoch %d then %d: a reset handed the shadow a key it had already used for a stream that is gone",
+			batches[0].Epoch, batches[1].Epoch)
+	}
+}
+
 // --- what the isolation costs the ingest path ------------------------------
 
 // echoShadow answers the question it was asked and does nothing else.
