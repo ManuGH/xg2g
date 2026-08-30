@@ -887,21 +887,195 @@ func TestAudioShadow_AFullQueueRetiresRatherThanSkippingAChunk(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the worker outlived the retirement; a retirement decided on the producer side never reached it")
 	}
+	// Nothing that was queued behind the retirement was carried on with. Not
+	// compared, not answered, not seen.
 	if got := blocked.enteredCount(); got != 1 {
-		t.Errorf("the shadow was reached %d times; everything queued behind the retirement was carried on with", got)
+		t.Errorf("the shadow was reached %d times after a retirement that ended the comparison", got)
 	}
-	// What was still queued is abandoned rather than caught up on. It is a run
-	// with a hole in front of it, and comparing across that hole is the thing this
-	// design refuses to do.
-	if len(runner.queue) == 0 {
-		t.Error("the queue was drained after the retirement; those batches were compared or dropped, and either would be a lie")
+	if got := core.AudioShadowReport(); got.Compared != 0 {
+		t.Errorf("%d comparisons happened after the retirement: %+v", got.Compared, got)
+	}
+	// And it was let go rather than kept. Those work items have no future - the
+	// comparison is over, nothing will ever hold them against a reference - so
+	// leaving them in the channel would be keeping several chunks of copied audio
+	// alive for as long as the core keeps the runner.
+	if n := len(runner.queue); n != 0 {
+		t.Errorf("%d work items still queued once the worker had ended; that is %d chunks of audio nothing will ever read",
+			n, n)
 	}
 	close(blocked.block)
 
-	// And a chunk after all that reaches nothing at all.
+	// And a chunk after all that reaches nothing, and puts nothing back.
 	ingest(audioShadowQueueDepth + 2)
 	if got := core.AudioShadowReport(); got.Errors != 1 || got.Batches != uint64(audioShadowQueueDepth+1) {
 		t.Errorf("work was accepted after the retirement: %+v", got)
+	}
+	if n := len(runner.queue); n != 0 {
+		t.Errorf("an offer after the retirement left %d work items in a queue nobody reads", n)
+	}
+}
+
+// The same postcondition, reached from the other side: the worker retires itself
+// while chunks are already waiting behind it.
+//
+// The queue here is not full - this is not the queue-full path. It is the
+// ordinary case of a shadow that fails once with a backlog behind it, and the
+// backlog has exactly as little future as it does after a full queue.
+func TestAudioShadow_AWorkerThatFailsWithABacklogLetsTheBacklogGo(t *testing.T) {
+	chunk := shadowChunk()
+
+	core := NewGoCore(1)
+	failing := newReplayShadow()
+	failing.block = make(chan struct{})
+	failing.err = errors.New("the shadow fell over")
+	core.SetAudioShadow(failing)
+	runner := core.shadowRunner
+	defer core.CloseAudioShadow()
+
+	// The first chunk is in the shadow's hands and stuck there.
+	if _, err := core.Ingest(context.Background(), 0, chunk); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	awaitEntered(t, failing, 1)
+
+	// Three more wait behind it, which is a backlog and not a full queue.
+	for i := 1; i < audioShadowQueueDepth; i++ {
+		if _, err := core.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk); err != nil {
+			t.Fatalf("Ingest %d: %v", i, err)
+		}
+	}
+	if got := core.AudioShadowReport(); got.Disabled {
+		t.Fatalf("retired before the shadow had failed: %+v", got)
+	}
+
+	// Now let the first call answer, with an error.
+	close(failing.block)
+
+	select {
+	case <-runner.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker outlived its own retirement")
+	}
+	if n := len(runner.queue); n != 0 {
+		t.Errorf("%d work items outlived the worker that was supposed to be the only reader of them", n)
+	}
+	if got := failing.enteredCount(); got != 1 {
+		t.Errorf("the shadow was reached %d times; the backlog was worked through after it had failed", got)
+	}
+	report := core.AudioShadowReport()
+	if !report.Disabled || report.Errors != 1 {
+		t.Errorf("a failure with a backlog behind it did not retire cleanly: %+v", report)
+	}
+	if report.Compared != 0 {
+		t.Errorf("%d comparisons survived the failure: %+v", report.Compared, report)
+	}
+}
+
+// fakeWork is a work item with nothing interesting in it, for the tests that are
+// about the queue rather than about audio.
+func fakeWork(epoch uint64) audioShadowWork {
+	owned := make([]byte, 64)
+	return audioShadowWork{
+		batches:    []AudioShadowBatch{{PID: shadowAudioPID, Epoch: epoch, Feeds: [][]byte{owned}}},
+		references: []esaudio.Observation{{}},
+	}
+}
+
+// The same invariant, pinned deterministically rather than raced for.
+//
+// The test below this one is the property; this one is the mechanism that
+// currently provides it, and it is bound to the lifecycle lock on purpose. If
+// the pairing of enqueue and retirement is ever replaced - by an atomic
+// protocol, by an in-flight-offer count - this test has to be rewritten against
+// that, not deleted. What it pins is the reason the cleanup can be trusted at
+// all: while a retirement is in progress, no offer can complete.
+func TestAudioShadow_AnOfferCannotLandWhileARetirementIsInProgress(t *testing.T) {
+	r := newAudioShadowRunner(echoShadow{})
+	defer r.Close()
+
+	// Stand exactly where a retirement stands: inside the critical section, with
+	// the flag not yet raised and the queue not yet emptied.
+	r.lifecycle.Lock()
+
+	landed := make(chan struct{})
+	go func() {
+		r.offer(fakeWork(1))
+		close(landed)
+	}()
+
+	// Generous by four orders of magnitude: an offer that is not excluded here
+	// would be done in microseconds.
+	var landedDuring bool
+	select {
+	case <-landed:
+		landedDuring = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	queuedDuring := len(r.queue)
+
+	// Finish the retirement and get out of the critical section before reporting
+	// anything. A failure raised while still holding this would deadlock the Close
+	// in the defer, and a test that hangs where it should fail says nothing.
+	r.retireLocked(true)
+	r.lifecycle.Unlock()
+	<-landed
+
+	if landedDuring {
+		t.Fatal("an offer ran to completion while a retirement was in progress - " +
+			"the check and the send are two moments, and the cleanup cannot cover what lands between them")
+	}
+	if queuedDuring != 0 {
+		t.Fatalf("%d work items landed during a retirement", queuedDuring)
+	}
+	// And the offer that was waiting found the door shut rather than a queue
+	// nobody reads.
+	if n := len(r.queue); n != 0 {
+		t.Fatalf("an offer that had been waiting for the retirement landed %d work items after it", n)
+	}
+}
+
+// A retirement decided while a producer is mid-offer must not leave that
+// producer's work behind.
+//
+// The window is real: reading the flag and sending are not one instruction, so a
+// producer can pass the check, a worker can retire and empty the queue in
+// between, and the send can land after the cleanup that was supposed to have
+// covered it. The invariant is not about who gets there first. It is about what
+// is true once both sides have finished: the queue holds nothing, and no offer
+// after the retirement can change that.
+func TestAudioShadow_NoWorkOutlivesARetirementRacedWithAnOffer(t *testing.T) {
+	const rounds = 200
+	for round := 0; round < rounds; round++ {
+		r := newAudioShadowRunner(echoShadow{})
+
+		var offers sync.WaitGroup
+		for p := 0; p < 8; p++ {
+			offers.Add(1)
+			go func() {
+				defer offers.Done()
+				for i := 0; i < audioShadowQueueDepth*2; i++ {
+					r.offer(fakeWork(uint64(i)))
+				}
+			}()
+		}
+
+		r.retire()
+		offers.Wait()
+		<-r.done
+
+		if n := len(r.queue); n != 0 {
+			t.Fatalf("round %d: %d work items survived a retirement raced with an offer", round, n)
+		}
+		// And the door stays shut. Batches is the count of what was accepted, so
+		// it standing still is the same statement as the queue being empty.
+		batches := r.batches.Load()
+		r.offer(fakeWork(9999))
+		if got := r.batches.Load(); got != batches {
+			t.Fatalf("round %d: an offer after the retirement was accepted (%d then %d)", round, batches, got)
+		}
+		if n := len(r.queue); n != 0 {
+			t.Fatalf("round %d: an offer after the retirement left %d work items behind", round, n)
+		}
 	}
 }
 
