@@ -42,10 +42,27 @@ type AudioShadowObservation struct {
 // answers what it made of them. It is asked, never obeyed: nothing it returns
 // reaches a fact, an event or the control flow of the core.
 //
-// It is also never waited for. Calls arrive on a worker of the core's own, one
-// chunk at a time and never concurrently, and however long one takes is the
-// worker's problem alone - the ingest that produced the batches has long
-// returned.
+// It is also never waited for by the ingest path. Calls arrive on a worker of
+// the core's own, one chunk at a time and never concurrently, and however long
+// one takes is the worker's problem alone - the ingest that produced the batches
+// has long returned.
+//
+// One thing is required rather than tolerated:
+//
+//	ObserveAudio MUST return when ctx is cancelled.
+//
+// This is the only lever anything has over a call in progress. Go cannot end a
+// goroutine sitting inside an interface method from the outside, so an
+// implementation that ignores its context cannot be shut down at all - not
+// bounded, not eventually, not by anyone. Everything below that says "the worker
+// ends" says it on the strength of this line.
+//
+// An implementation that reaches another process owns enforcing it locally, and
+// may not assume the peer cooperates: a sidecar that never replies, or that
+// ignores a cancellation of its own, must still not keep ObserveAudio from
+// returning. That is a socket deadline and a connection this side can tear down,
+// not a request the far end is trusted to honour. The RemoteAudioShadow of 4b.2b
+// is where that has to be proven; nothing here can prove it for it.
 type AudioShadow interface {
 	ObserveAudio(ctx context.Context, batches []AudioShadowBatch) ([]AudioShadowObservation, error)
 }
@@ -96,6 +113,24 @@ const recentMismatches = 8
 // not catch up - chunks arrive for as long as the session runs - and a deep
 // queue would only delay noticing that, while holding a copy of every chunk's
 // audio in the meantime.
+//
+// What that costs, exactly, because "bounded" on its own is not a number:
+//
+//	live work items       = audioShadowQueueDepth + 1 in the worker's hand = 5
+//	largest chunk C       = the normalizer's staging capacity, 4 MiB by default;
+//	                        it is what one egress tick can hand the ring
+//	worst-case bytes/item = every packet of the chunk carrying audio payload:
+//	                        184/188*C copied + a 24 byte slice header per feed
+//	                        (one feed per packet, 24/188*C) = 208/188*C = 1.106*C
+//	                        plus 64 bytes per stream-and-epoch in the chunk,
+//	                        which the PMT bounds and rounding already covers
+//	worst-case per core    = 5 * 1.106 * 4 MiB = 22.1 MiB
+//
+// Retained, not allocated: the allocation volume of a run is larger and is a
+// different question. This is what a core with a shadow attached can be holding
+// at one instant, and it is reached only by a stream that is audio and nothing
+// else with the worker fully stalled - at which point the next chunk retires the
+// comparison and it all becomes garbage.
 const audioShadowQueueDepth = 4
 
 // pendingAudioShadowBatch is a batch and the core's own answer to it.
@@ -132,6 +167,11 @@ type audioShadowWork struct {
 // ingest that waits on it - however briefly - has the worker's speed back inside
 // its own duration. What is left under the mutex is the mismatch ring alone,
 // which the ingest path never touches.
+//
+// The runner owns a context for the shadow's whole lifetime, and every end of
+// the comparison cancels it. That is what lets the producer side finish a
+// retirement without waiting for anything: cancelling is not a handshake, and
+// the worker is woken by its own context rather than by anybody watching it.
 type audioShadowRunner struct {
 	shadow AudioShadow
 	queue  chan audioShadowWork
@@ -143,20 +183,21 @@ type audioShadowRunner struct {
 
 	// retired is read on the capture path for every audio packet of every chunk,
 	// which is the other reason none of this is behind the mutex.
-	retired    atomic.Bool
+	retired atomic.Bool
+	// retireOnce guards the one state transition there is. Whoever reaches it
+	// first decides what the end was - a failure, a full queue, or a Close - and
+	// everyone after it adds nothing.
 	retireOnce sync.Once
 
 	mu     sync.Mutex
 	recent []AudioShadowMismatch
 
-	cancel   context.CancelFunc
-	stopOnce sync.Once
-	stop     chan struct{}
-	// done is closed when the worker goroutine has actually ended, which is not
-	// the moment Close returns: a shadow that ignores the context it was given
-	// holds the goroutine until it comes back. Nothing on the ingest path waits
-	// for this - it is how a test can tell "the caller was let go" apart from
-	// "the goroutine ended".
+	// cancel ends the shadow's context. Non-blocking, callable from anywhere, and
+	// the only thing that can reach a call already in progress.
+	cancel context.CancelFunc
+	// done is closed when the worker goroutine has ended. Close waits on it, so
+	// that "the comparison is over" and "the goroutine is gone" are the same
+	// moment for every shadow that keeps the contract above.
 	done chan struct{}
 }
 
@@ -166,31 +207,49 @@ func newAudioShadowRunner(shadow AudioShadow) *audioShadowRunner {
 		shadow: shadow,
 		queue:  make(chan audioShadowWork, audioShadowQueueDepth),
 		cancel: cancel,
-		stop:   make(chan struct{}),
 		done:   make(chan struct{}),
 	}
 	go r.run(ctx)
 	return r
 }
 
-// Close stops the runner without waiting for it.
+// Close ends the comparison and does not come back until the worker is gone.
 //
-// Bounded by construction: it signals and returns. A shadow that respects the
-// context it was given comes back at once and the goroutine ends; one that
-// ignores it ends the goroutine whenever it finally returns - and until then it
-// is a goroutine sitting in somebody else's code, not a caller being held up.
+// Cancel, then wait. The wait is what makes this a shutdown rather than an
+// announcement: without it Close would return while a goroutine of ours was
+// still inside somebody else's code, and "no leaked workers" would be a hope
+// instead of a postcondition.
+//
+// Bounded for every shadow that keeps the AudioShadow contract, and for no
+// other. One that never returns from a cancelled ObserveAudio hangs this call -
+// deliberately, because the alternative is to walk away from a goroutine that
+// cannot be accounted for and call it clean. The hang names the shadow that
+// broke the contract; the walk-away would name nothing.
+//
+// It is not on the ingest path and never becomes one: retiring the comparison
+// from a full queue cancels, and does not wait.
 func (r *audioShadowRunner) Close() {
-	r.stopOnce.Do(func() {
+	// Through the same door as a retirement, so a shutdown does not also get
+	// counted as a failure - and so a shadow erroring out on its way to the exit
+	// does not add one either. Whatever ended it first is what the report says.
+	r.retireOnce.Do(func() {
+		r.retired.Store(true)
 		r.cancel()
-		close(r.stop)
 	})
+	<-r.done
 }
 
 func (r *audioShadowRunner) run(ctx context.Context) {
 	defer close(r.done)
 	for {
+		// Checked before the select rather than left to it: once the comparison is
+		// over, what is still queued is work whose answer nobody may believe, and
+		// draining it would be a race against ctx.Done for no reason.
+		if r.retired.Load() {
+			return
+		}
 		select {
-		case <-r.stop:
+		case <-ctx.Done():
 			return
 		case work := <-r.queue:
 			r.process(ctx, work)
@@ -222,10 +281,16 @@ func (r *audioShadowRunner) offer(work audioShadowWork) {
 // stopped, and this is the reason": a shadow that failed while the queue behind
 // it filled up is one retirement. The error is counted before the flag is
 // raised, so anything that sees the comparison stopped also sees why.
+//
+// And it cancels. A retirement decided on the producer side - a full queue -
+// must reach a worker that is already inside a call, or the comparison would be
+// over while the goroutine ran on. Cancelling is how it reaches it, and
+// cancelling never blocks, which is why this is safe to call from Ingest.
 func (r *audioShadowRunner) retire() {
 	r.retireOnce.Do(func() {
 		r.errors.Add(1)
 		r.retired.Store(true)
+		r.cancel()
 	})
 }
 
