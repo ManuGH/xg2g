@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -895,6 +896,14 @@ func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t 
 func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 	var streamDials, lamedbQueries int32
 
+	// The bootstrap reserves the topology lease before it dials the receiver
+	// (LivePipelineConnector.Connect runs admission, then the dial), so the lease
+	// showing up below is not yet evidence that the dial happened. The mock
+	// announces the dial here and the test waits for that announcement, instead
+	// of reading the counter at whatever moment the lease appeared.
+	streamDialed := make(chan struct{})
+	var announceDial sync.Once
+
 	// The carrier the mock receiver claims to know: 11914 MHz vertical on Astra 19.2E,
 	// carrying transport stream 0x0888 - which is the TSID in the requested service ref.
 	const lamedb = "eDVB services /5/\n" +
@@ -910,6 +919,7 @@ func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 		}
 
 		atomic.AddInt32(&streamDials, 1)
+		announceDial.Do(func() { close(streamDialed) })
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(http.StatusOK)
 		samplePkt := make([]byte, ring.TSPacketSize)
@@ -971,7 +981,16 @@ func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 		return false
 	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11914 MHz Vertical RF parameters from the receiver service database")
 
-	// 5. The service database was read, and Enigma2 was dialed once
+	// 5. The dial the next assertion counts, once it has actually reached the mock.
+	//    A single request produces a single Connect - the session manager does not
+	//    re-dial on its own - so once the first dial is in, the count is settled.
+	select {
+	case <-streamDialed:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Enigma2 stream endpoint was never dialed (lamedb queries: %d)", atomic.LoadInt32(&lamedbQueries))
+	}
+
+	// 6. The service database was read, and Enigma2 was dialed once
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&lamedbQueries), int32(1), "receiver service database should be read for RF discovery")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&streamDials), "Enigma2 stream endpoint should be dialed once")
 }
