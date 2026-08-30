@@ -288,6 +288,14 @@ func awaitEntered(t *testing.T, s *replayShadow, want int) {
 //
 // The comparison is off the ingest path now, so "after Ingest returned" is no
 // longer "after the shadow answered". Polling a counter is what that costs.
+//
+// The predicate has to name everything the assertions afterwards depend on, and
+// not a field written earlier than them. The report is a snapshot of counters
+// the worker writes one after another: it can lag, but the fields in it never
+// contradict each other - so asking for all of them at once is a real question,
+// while asking for one and then asserting on another is a race the test would
+// lose only occasionally. The returned report is the very snapshot that
+// satisfied the predicate, with no re-read in between.
 func awaitShadow(t *testing.T, core *GoCore, what string, done func(AudioShadowReport) bool) AudioShadowReport {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -461,8 +469,12 @@ func TestAudioShadow_ADisagreementAboutTheEndedEpochIsStillFound(t *testing.T) {
 		t.Fatalf("Ingest: %v", err)
 	}
 
-	report := awaitShadow(t, core, "both epochs to be compared", func(r AudioShadowReport) bool {
-		return r.Compared >= 2 || r.Disabled
+	// Both comparisons and the disagreement in one snapshot: the mismatch is
+	// counted after the comparison it came from and recorded after that again, so
+	// a predicate that only asked about Compared would be satisfied before there
+	// was anything in Recent to look at.
+	report := awaitShadow(t, core, "both epochs compared and the disagreement recorded", func(r AudioShadowReport) bool {
+		return (r.Compared >= 2 && r.Mismatches >= 1 && len(r.Recent) >= 1) || r.Disabled
 	})
 	if report.Compared != 2 {
 		t.Fatalf("compared %d of 2 batches: %+v", report.Compared, report)
@@ -607,8 +619,11 @@ func TestAudioShadow_AMismatchNamesTheFieldsAndLeavesTheFactsAlone(t *testing.T)
 		t.Fatalf("the shadow's opinion reached the facts: %+v", got)
 	}
 
+	// Recorded, not merely compared. Compared rises before esaudio.Compare has
+	// even run, so a test that waited on it would be asserting about a mismatch
+	// the worker had not got to yet.
 	report := awaitShadow(t, core, "the mismatch to be recorded", func(r AudioShadowReport) bool {
-		return r.Compared > 0 || r.Disabled
+		return (r.Mismatches >= 1 && len(r.Recent) >= 1) || r.Disabled
 	})
 	if report.Mismatches != 1 || len(report.Recent) != 1 {
 		t.Fatalf("mismatch not recorded: %+v", report)
