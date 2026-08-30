@@ -14,6 +14,13 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	// DefaultPollInterval is the baseline polling cadence during active receiver usage.
+	DefaultPollInterval = 10 * time.Second
+	// StandbyPollInterval is the relaxed cadence used when the receiver is confirmed to be in standby and idle.
+	StandbyPollInterval = 30 * time.Second
+)
+
 // OpenWebIFPoller defines the minimal OpenWebIF client interface required for continuous background synchronization.
 type OpenWebIFPoller interface {
 	About(ctx context.Context) (*openwebif.AboutInfo, error)
@@ -30,10 +37,10 @@ type ExternalSyncPoller struct {
 	log      zerolog.Logger
 }
 
-// NewExternalSyncPoller creates a background poller with a configurable poll interval (default: 3 seconds).
+// NewExternalSyncPoller creates a background poller with a configurable poll interval (default: 10 seconds).
 func NewExternalSyncPoller(client OpenWebIFPoller, service *Service, interval time.Duration, logger zerolog.Logger) *ExternalSyncPoller {
 	if interval <= 0 {
-		interval = 3 * time.Second
+		interval = DefaultPollInterval
 	}
 	return &ExternalSyncPoller{
 		client:   client,
@@ -45,14 +52,23 @@ func NewExternalSyncPoller(client OpenWebIFPoller, service *Service, interval ti
 
 // CollectRuntimeSnapshot polls all available OpenWebIF endpoints and synthesizes a ReceiverRuntimeSnapshot with explicit evidence levels.
 func CollectRuntimeSnapshot(ctx context.Context, client OpenWebIFPoller, now time.Time) ReceiverRuntimeSnapshot {
+	snap, _ := CollectRuntimeSnapshotWithAbout(ctx, client, now)
+	return snap
+}
+
+// CollectRuntimeSnapshotWithAbout polls all available OpenWebIF endpoints, synthesizes a ReceiverRuntimeSnapshot,
+// and returns the raw AboutInfo metadata if retrieved to avoid redundant HTTP requests during topology discovery.
+func CollectRuntimeSnapshotWithAbout(ctx context.Context, client OpenWebIFPoller, now time.Time) (ReceiverRuntimeSnapshot, *openwebif.AboutInfo) {
 	snap := ReceiverRuntimeSnapshot{
 		ObservedAt:      now,
 		StandbyEvidence: EvidenceUnknown,
 		StreamPresence:  StreamPresenceUnknown,
 	}
 	if client == nil {
-		return snap
+		return snap, nil
 	}
+
+	var fetchedAbout *openwebif.AboutInfo
 
 	// 1. /api/statusinfo: Standby and status flags
 	if status, err := client.GetStatusInfo(ctx); err == nil && status != nil {
@@ -77,31 +93,34 @@ func CollectRuntimeSnapshot(ctx context.Context, client OpenWebIFPoller, now tim
 	}
 
 	// 2. /api/getcurrent: Authoritative current live service details (PIDs, exact service ref)
-	if curr, err := client.GetCurrent(ctx); err == nil && curr != nil && curr.Info.ServiceRef != "" {
-		mux, err := ParseServiceRef(curr.Info.ServiceRef)
-		var muxPtr *MultiplexID
-		var rfPlane *RFPlane
-		if err == nil {
-			muxPtr = &mux
-			rfPlane = mux.RFPlane
-		}
-		pids := make(map[string]any)
-		if curr.Info.VideoPID != nil {
-			pids["vpid"] = curr.Info.VideoPID
-		}
-		if curr.Info.AudioPID != nil {
-			pids["apid"] = curr.Info.AudioPID
-		}
-		if curr.Info.PMTPID != nil {
-			pids["pmtpid"] = curr.Info.PMTPID
-		}
-		snap.HDMIPlayback = &ObservedService{
-			ServiceRef:  curr.Info.ServiceRef,
-			ServiceName: curr.Info.ServiceName,
-			MultiplexID: muxPtr,
-			RFPlane:     rfPlane,
-			PIDs:        pids,
-			Evidence:    EvidenceObserved,
+	// ONLY query live service details if receiver is NOT in Standby (in Standby HDMI is inactive, saving redundant requests).
+	if !snap.InStandby {
+		if curr, err := client.GetCurrent(ctx); err == nil && curr != nil && curr.Info.ServiceRef != "" {
+			mux, err := ParseServiceRef(curr.Info.ServiceRef)
+			var muxPtr *MultiplexID
+			var rfPlane *RFPlane
+			if err == nil {
+				muxPtr = &mux
+				rfPlane = mux.RFPlane
+			}
+			pids := make(map[string]any)
+			if curr.Info.VideoPID != nil {
+				pids["vpid"] = curr.Info.VideoPID
+			}
+			if curr.Info.AudioPID != nil {
+				pids["apid"] = curr.Info.AudioPID
+			}
+			if curr.Info.PMTPID != nil {
+				pids["pmtpid"] = curr.Info.PMTPID
+			}
+			snap.HDMIPlayback = &ObservedService{
+				ServiceRef:  curr.Info.ServiceRef,
+				ServiceName: curr.Info.ServiceName,
+				MultiplexID: muxPtr,
+				RFPlane:     rfPlane,
+				PIDs:        pids,
+				Evidence:    EvidenceObserved,
+			}
 		}
 	}
 
@@ -137,6 +156,7 @@ func CollectRuntimeSnapshot(ctx context.Context, client OpenWebIFPoller, now tim
 
 	// 4. /api/about: Hardware tuners and streams
 	if about, err := client.About(ctx); err == nil && about != nil {
+		fetchedAbout = about
 		snap.StreamPresence = ParseStreamPresence(about.Info.Streams)
 		for i, t := range about.Info.Tuners {
 			snap.Tuners = append(snap.Tuners, ObservedTunerSlot{
@@ -165,7 +185,7 @@ func CollectRuntimeSnapshot(ctx context.Context, client OpenWebIFPoller, now tim
 		}
 	}
 
-	return snap
+	return snap, fetchedAbout
 }
 
 // resolveDemodulatorIdentity accurately maps an observed stream to the authoritative topology demodulator.
@@ -255,27 +275,24 @@ func (p *ExternalSyncPoller) SyncOnce(ctx context.Context) error {
 		return nil
 	}
 
-	// 1. Elevate topology if needed from /api/about
-	about, err := p.client.About(ctx)
-	if err == nil && about != nil {
-		if p.service.Topology().Confidence == ConfidenceDefault {
-			discovered := DiscoverTopology(about)
-			if err := p.service.UpdateTopologyWithPriority(discovered, false); err != nil {
-				p.log.Debug().Err(err).Msg("failed to update topology to observed")
-			} else {
-				p.log.Info().
-					Str("model", discovered.Model).
-					Int("inputs", len(discovered.Inputs)).
-					Int("demods", len(discovered.Demodulators)).
-					Msg("elevated receiver topology from default to observed")
-			}
+	// 1. Collect multi-endpoint evidentiary snapshot (fetches about metadata once)
+	now := time.Now()
+	snapshot, about := CollectRuntimeSnapshotWithAbout(ctx, p.client, now)
+	p.service.UpdateEvidentiarySnapshot(snapshot)
+
+	// 2. Elevate topology if needed from the fetched about metadata
+	if p.service.Topology().Confidence == ConfidenceDefault && about != nil {
+		discovered := DiscoverTopology(about)
+		if err := p.service.UpdateTopologyWithPriority(discovered, false); err != nil {
+			p.log.Debug().Err(err).Msg("failed to update topology to observed")
+		} else {
+			p.log.Info().
+				Str("model", discovered.Model).
+				Int("inputs", len(discovered.Inputs)).
+				Int("demods", len(discovered.Demodulators)).
+				Msg("elevated receiver topology from default to observed")
 		}
 	}
-
-	// 2. Collect multi-endpoint evidentiary snapshot
-	now := time.Now()
-	snapshot := CollectRuntimeSnapshot(ctx, p.client, now)
-	p.service.UpdateEvidentiarySnapshot(snapshot)
 
 	// 3. Extract external allocations using the evidentiary snapshot and update service
 	activeDemods := p.service.ActiveDemods()
@@ -316,8 +333,10 @@ func (p *ExternalSyncPoller) SyncOnce(ctx context.Context) error {
 }
 
 // Run executes the continuous background poll loop until ctx is cancelled.
+// Dynamically throttles to StandbyPollInterval when receiver is confirmed in standby and idle.
 func (p *ExternalSyncPoller) Run(ctx context.Context) {
-	ticker := time.NewTicker(p.interval)
+	currentInterval := p.interval
+	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
 
 	// Initial sync immediately
@@ -329,6 +348,22 @@ func (p *ExternalSyncPoller) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			_ = p.SyncOnce(ctx)
+
+			// Adaptive throttling: relax poll interval in standby if no active local recordings or streams
+			nextInterval := p.interval
+			snap := p.service.EvidentiarySnapshot()
+			activeDemods := p.service.ActiveDemods()
+			if snap.InStandby && len(snap.ActiveRecordings) == 0 && len(activeDemods) == 0 {
+				if nextInterval < StandbyPollInterval {
+					nextInterval = StandbyPollInterval
+				}
+			}
+
+			if nextInterval != currentInterval {
+				currentInterval = nextInterval
+				ticker.Reset(currentInterval)
+				p.log.Debug().Dur("interval", currentInterval).Msg("adjusted external sync polling interval")
+			}
 		}
 	}
 }

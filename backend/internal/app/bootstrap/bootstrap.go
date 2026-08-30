@@ -419,7 +419,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	}
 
 	if owiClient != nil && topoSvc != nil {
-		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
+		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, receivertopology.DefaultPollInterval, logger)
 		topoSvc.SetPoller(syncPoller)
 		go syncPoller.Run(ctx)
 	}
