@@ -362,10 +362,9 @@ type GoCore struct {
 	// shadow is a second observer of the same elementary stream bytes, attached
 	// for a migration and never for a decision. Everything about it is in
 	// audioshadow.go.
-	shadow        AudioShadow
+	shadowRunner  *audioShadowRunner
 	shadowEpoch   uint64
 	shadowBatches []pendingAudioShadowBatch
-	shadowReport  AudioShadowReport
 
 	// events accumulates what the chunk being ingested meant, in order.
 	events []Event
@@ -392,8 +391,8 @@ func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (Pa
 	c.events = c.events[:0]
 	// The feeds captured below point into data. They are valid for this call and
 	// no longer, so every way out of it has to drop them - the cancelled chunk
-	// half way through the loop included, which never reaches runAudioShadow at
-	// all. Cleared on the way in as well, because an earlier call that returned
+	// half way through the loop included, which never reaches handOffAudioShadow
+	// at all. Cleared on the way in as well, because an earlier call that returned
 	// through such a path is exactly what would leave something here.
 	c.clearAudioShadowBatches()
 	defer c.clearAudioShadowBatches()
@@ -413,9 +412,10 @@ func (c *GoCore) Ingest(ctx context.Context, startOffset int64, data []byte) (Pa
 		c.indexPacketLocked(data[i:i+TSPacketSize], startOffset+int64(i))
 	}
 	// After the chunk is interpreted and before the result is built, so that the
-	// feeds still point into a chunk that exists and nothing the shadow does can
-	// reach the result. It cannot fail this call: see runAudioShadow.
-	c.runAudioShadow(ctx)
+	// feeds still point into a chunk that exists. What happens here is a copy and
+	// a non-blocking offer; the comparison itself is somebody else's goroutine,
+	// and nothing about it can reach this call's duration or its result.
+	c.handOffAudioShadow()
 	return c.result(startOffset + int64(len(data))), nil
 }
 
