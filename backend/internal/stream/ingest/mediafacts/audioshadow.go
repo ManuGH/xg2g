@@ -369,18 +369,43 @@ func (r *audioShadowRunner) retireLocked(counted bool) {
 	}
 }
 
+// snapshot reads the counters in the reverse of the order the worker writes
+// them, which is the difference between a report that lags and one that lies.
+//
+// The worker writes batches, then compared, then mismatches, then the ring; and
+// errors, then the retired flag. Reading in that same order lets a snapshot
+// catch the second write of a pair without the first: Disabled true beside
+// Errors zero, which the retirement comment says cannot happen, or a mismatch
+// counted with an empty ring beside it. Reading backwards inverts that. Seeing
+// the later write now implies seeing the earlier one, so a field can only be
+// behind, never ahead of, the fields written before it.
+//
+// The statements are separate on purpose. As a struct literal the order is real
+// but invisible, and the next edit would reorder the fields for tidiness and
+// quietly take the guarantee away.
+//
+// What this does not do is make any two fields consistent for a reader that
+// wants them to be: a caller polling one field and asserting on another still
+// has to ask for both in the same snapshot. See awaitShadow in the tests.
 func (r *audioShadowRunner) snapshot() AudioShadowReport {
-	out := AudioShadowReport{
-		Batches:    r.batches.Load(),
-		Compared:   r.compared.Load(),
-		Mismatches: r.mismatches.Load(),
-		Errors:     r.errors.Load(),
-		Disabled:   r.retired.Load(),
-	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	out.Recent = append([]AudioShadowMismatch(nil), r.recent...)
-	return out
+	recent := append([]AudioShadowMismatch(nil), r.recent...)
+	r.mu.Unlock()
+
+	disabled := r.retired.Load()
+	mismatches := r.mismatches.Load()
+	compared := r.compared.Load()
+	batches := r.batches.Load()
+	errors := r.errors.Load()
+
+	return AudioShadowReport{
+		Batches:    batches,
+		Compared:   compared,
+		Mismatches: mismatches,
+		Errors:     errors,
+		Disabled:   disabled,
+		Recent:     recent,
+	}
 }
 
 // process runs one chunk's comparison.
