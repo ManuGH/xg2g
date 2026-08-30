@@ -185,11 +185,11 @@ type audioShadowWork struct {
 // waiting, and returns; whether the shadow is fast, slow, hung or broken can
 // change how much of the comparison happens, and nothing else.
 //
-// Which is why the counters are atomics rather than fields of a report behind
-// the mutex. The mutex is held while the worker records a disagreement, and an
-// ingest that waits on it - however briefly - has the worker's speed back inside
-// its own duration. What is left under the mutex is the mismatch ring alone,
-// which the ingest path never touches.
+// Which is why nothing on the ingest path is behind the report's mutex. That
+// mutex is held while the worker records a disagreement, and an ingest that
+// waited on it - however briefly - would have the worker's speed back inside its
+// own duration. What an ingest takes is lifecycle, for the length of one send,
+// and nothing else.
 //
 // The runner owns a context for the shadow's whole lifetime, and every end of
 // the comparison cancels it. That is what lets the producer side finish a
@@ -199,10 +199,12 @@ type audioShadowRunner struct {
 	shadow AudioShadow
 	queue  chan audioShadowWork
 
-	batches    atomic.Uint64
-	compared   atomic.Uint64
-	mismatches atomic.Uint64
-	errors     atomic.Uint64
+	// batches is the producer's and is published before the work it counts can be
+	// reached by anyone; compared and errors are the worker's. Atomics, so that
+	// reading the report never puts the reader inside an ingest or a comparison.
+	batches  atomic.Uint64
+	compared atomic.Uint64
+	errors   atomic.Uint64
 
 	// retired is read on the capture path for every audio packet of every chunk,
 	// which is why it is an atomic and not something the lock below has to be
@@ -221,8 +223,13 @@ type audioShadowRunner struct {
 	// speed of the shadow.
 	lifecycle sync.Mutex
 
-	mu     sync.Mutex
-	recent []AudioShadowMismatch
+	// mu guards a pair, not a ring. A disagreement that has been counted but not
+	// yet kept is a report that names a mismatch and cannot show it, so the count
+	// and the ring it counts are written under one lock and read under the same
+	// one. The ingest path never takes this.
+	mu         sync.Mutex
+	mismatches uint64
+	recent     []AudioShadowMismatch
 
 	// cancel ends the shadow's context. Non-blocking, callable from anywhere, and
 	// the only thing that can reach a call already in progress.
@@ -397,31 +404,49 @@ func (r *audioShadowRunner) retireLocked(counted bool) {
 	}
 }
 
-// snapshot reads the counters in the reverse of the order the worker writes
-// them, which is the difference between a report that lags and one that lies.
+// snapshot is one reading of what the shadow has been doing.
 //
-// The worker writes batches, then compared, then mismatches, then the ring; and
-// errors, then the retired flag. Reading in that same order lets a snapshot
-// catch the second write of a pair without the first: Disabled true beside
-// Errors zero, which the retirement comment says cannot happen, or a mismatch
-// counted with an empty ring beside it. Reading backwards inverts that. Seeing
-// the later write now implies seeing the earlier one, so a field can only be
-// behind, never ahead of, the fields written before it.
+// It may lag. What it may not do is contradict itself, and reading in the
+// reverse of the order things are written is what keeps it from doing so: seeing
+// a later write implies seeing the earlier ones, so a field can only be behind,
+// never ahead of, the fields written before it.
+//
+// Reading backwards is not on its own enough to make every pair of fields agree,
+// and claiming it is would be claiming more than this type provides. What holds
+// is exactly this, and each line is a property of how the field is written, not
+// of the order it is read in alone:
+//
+//   - Compared never exceeds Batches. A batch is counted before the work
+//     carrying it is put where the worker can reach it, so anything compared was
+//     counted first; compared is read before batches, and the later load cannot
+//     have missed what the earlier one implies.
+//   - Mismatches and Recent are one pair. They are written under mu together and
+//     read under mu together, so a counted disagreement is one the report can
+//     show. The ring is bounded and forgets, so it may hold fewer entries than
+//     the count says, but never none while the count is not zero.
+//   - Mismatches never exceeds Compared, for the same reason as the first: a
+//     comparison is counted before the disagreement it found.
+//   - A retirement that was counted shows its reason. Errors is written before
+//     the retired flag and read after Disabled.
+//
+// And what it does not say. Disabled beside Errors at zero is not a
+// contradiction and never was: a Close ends the comparison without anything
+// having gone wrong, and that is precisely what it looks like. Nor does any of
+// this make two separate calls agree - a caller polling one field and asserting
+// on another still has to ask for both in the same snapshot. See awaitShadow in
+// the tests.
 //
 // The statements are separate on purpose. As a struct literal the order is real
 // but invisible, and the next edit would reorder the fields for tidiness and
 // quietly take the guarantee away.
-//
-// What this does not do is make any two fields consistent for a reader that
-// wants them to be: a caller polling one field and asserting on another still
-// has to ask for both in the same snapshot. See awaitShadow in the tests.
 func (r *audioShadowRunner) snapshot() AudioShadowReport {
+	disabled := r.retired.Load()
+
 	r.mu.Lock()
+	mismatches := r.mismatches
 	recent := append([]AudioShadowMismatch(nil), r.recent...)
 	r.mu.Unlock()
 
-	disabled := r.retired.Load()
-	mismatches := r.mismatches.Load()
 	compared := r.compared.Load()
 	batches := r.batches.Load()
 	errors := r.errors.Load()
@@ -469,7 +494,6 @@ func (r *audioShadowRunner) process(ctx context.Context, work audioShadowWork) {
 		if len(fields) == 0 {
 			continue
 		}
-		r.mismatches.Add(1)
 		r.recordMismatch(AudioShadowMismatch{
 			PID:       o.PID,
 			Epoch:     o.Epoch,
@@ -480,9 +504,18 @@ func (r *audioShadowRunner) process(ctx context.Context, work audioShadowWork) {
 	}
 }
 
+// recordMismatch counts a disagreement and keeps it, in one moment.
+//
+// One moment because a report that has been told a mismatch happened and cannot
+// show it is a report nobody can act on: the count and the ring are what a reader
+// holds against each other, and raising the count outside this lock would leave
+// them disagreeing for as long as the worker took to get here. The ring can be
+// behind the count - it keeps the last few and forgets the rest - but it is never
+// empty while the count is not.
 func (r *audioShadowRunner) recordMismatch(m AudioShadowMismatch) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.mismatches++
 	r.recent = append(r.recent, m)
 	if len(r.recent) > recentMismatches {
 		r.recent = r.recent[len(r.recent)-recentMismatches:]

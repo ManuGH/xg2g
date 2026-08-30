@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -470,9 +471,9 @@ func TestAudioShadow_ADisagreementAboutTheEndedEpochIsStillFound(t *testing.T) {
 	}
 
 	// Both comparisons and the disagreement in one snapshot: the mismatch is
-	// counted after the comparison it came from and recorded after that again, so
-	// a predicate that only asked about Compared would be satisfied before there
-	// was anything in Recent to look at.
+	// counted and kept after the comparison it came from, so a predicate that
+	// only asked about Compared would be satisfied before there was anything in
+	// Recent to look at.
 	report := awaitShadow(t, core, "both epochs compared and the disagreement recorded", func(r AudioShadowReport) bool {
 		return (r.Compared >= 2 && r.Mismatches >= 1 && len(r.Recent) >= 1) || r.Disabled
 	})
@@ -1141,6 +1142,152 @@ func TestAudioShadow_WorkIsCountedBeforeAnythingCanReachIt(t *testing.T) {
 	}
 	if got := r.batches.Load(); got != 1 {
 		t.Fatalf("batches = %d after the hand-off, want 1 - counted once, at the hand-off", got)
+	}
+}
+
+// A counted disagreement is never one nobody can look at.
+//
+// The mechanism behind the second half of the pair, pinned the same way: the
+// count and the ring are written under one lock, so there is no moment at which
+// Mismatches has moved and Recent has not. The test stands in that lock and
+// holds the door, which turns "there is no such moment" into "and here is the
+// worker, waiting outside it, having changed nothing".
+//
+// Nothing is asserted while the lock is held. A failure raised in there would
+// deadlock the CloseAudioShadow in the defer against a worker that can never
+// finish, and a test that hangs where it should fail says nothing.
+func TestAudioShadow_ACountedMismatchIsNeverOneNobodyCanSee(t *testing.T) {
+	core := NewGoCore(1)
+	shadow := newReplayShadow()
+	// Wrong about everything, so the first chunk is a disagreement.
+	shadow.distort = func(o AudioShadowObservation) AudioShadowObservation {
+		o.Observation.Channels++
+		return o
+	}
+	core.SetAudioShadow(shadow)
+	defer core.CloseAudioShadow()
+	runner := core.shadowRunner
+
+	// Stand exactly where a disagreement is written, before the worker gets here.
+	runner.mu.Lock()
+
+	if _, err := core.Ingest(context.Background(), 0, shadowChunk()); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("Ingest: %v", err)
+	}
+	// Reached the shadow, so the comparison it answers is the next thing it does.
+	awaitEntered(t, shadow, 1)
+	// And then generously longer than comparing one batch and asking for this
+	// lock can take.
+	time.Sleep(100 * time.Millisecond)
+
+	mismatches, kept := runner.mismatches, len(runner.recent)
+	runner.mu.Unlock()
+
+	if mismatches != 0 || kept != 0 {
+		t.Fatalf("%d mismatches counted with %d kept while the ring was held shut - "+
+			"a report read at that moment names a disagreement it cannot show",
+			mismatches, kept)
+	}
+
+	// And on the other side of the lock the pair arrives together.
+	report := awaitShadow(t, core, "the disagreement to be counted and kept", func(r AudioShadowReport) bool {
+		return r.Mismatches >= 1 || r.Disabled
+	})
+	if report.Mismatches != 1 || len(report.Recent) != 1 {
+		t.Fatalf("the pair did not arrive together: %+v", report)
+	}
+}
+
+// reportViolation is one snapshot that said two things that cannot both be true.
+type reportViolation struct {
+	what   string
+	report AudioShadowReport
+}
+
+// The property the two tests above are the mechanism for, hunted for rather than
+// pinned: a reader looking at any moment of a live comparison never sees a report
+// contradicting itself.
+//
+// A snapshot is allowed to be behind. It is not allowed to have caught the second
+// write of a pair without the first, and every pair here is one the ingest path
+// and the worker write from different goroutines while this reads them.
+func TestAudioShadow_AReportNeverContradictsItself(t *testing.T) {
+	const chunks = 300
+
+	core := NewGoCore(1)
+	shadow := newReplayShadow()
+	shadow.distort = func(o AudioShadowObservation) AudioShadowObservation {
+		o.Observation.Channels++
+		return o
+	}
+	core.SetAudioShadow(shadow)
+	defer core.CloseAudioShadow()
+
+	violations := make(chan reportViolation, 1)
+	stop := make(chan struct{})
+	var sentinel sync.WaitGroup
+	sentinel.Add(1)
+	go func() {
+		defer sentinel.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			r := core.AudioShadowReport()
+			var what string
+			switch {
+			case r.Compared > r.Batches:
+				what = "more comparisons than accepted batches"
+			case r.Mismatches > r.Compared:
+				what = "more disagreements than comparisons"
+			case r.Mismatches > 0 && len(r.Recent) == 0:
+				what = "a disagreement counted with nothing kept to look at"
+			}
+			if what != "" {
+				violations <- reportViolation{what: what, report: r}
+				return
+			}
+			runtime.Gosched()
+		}
+	}()
+
+	chunk := shadowChunk()
+	for i := 0; i < chunks; i++ {
+		// Paced to keep a slot free, so this stays a test about the counters
+		// rather than one about a queue filling up and ending the comparison
+		// after four chunks. Written so it cannot underflow if the very invariant
+		// under test breaks.
+		awaitShadow(t, core, "room in the queue", func(r AudioShadowReport) bool {
+			return r.Compared+audioShadowQueueDepth > r.Batches || r.Disabled
+		})
+		if _, err := core.Ingest(context.Background(), int64(i)*int64(len(chunk)), chunk); err != nil {
+			t.Fatalf("Ingest %d: %v", i, err)
+		}
+	}
+	report := awaitShadow(t, core, "every chunk to be compared", func(r AudioShadowReport) bool {
+		return r.Compared >= chunks || r.Disabled
+	})
+
+	close(stop)
+	sentinel.Wait()
+	select {
+	case v := <-violations:
+		t.Fatalf("a snapshot said %s: %+v", v.what, v.report)
+	default:
+	}
+
+	if report.Disabled {
+		t.Fatalf("the comparison was retired during the run, so most of it was never watched: %+v", report)
+	}
+	if report.Compared != chunks || report.Mismatches != chunks {
+		t.Fatalf("compared %d and disagreed %d times over %d chunks: %+v",
+			report.Compared, report.Mismatches, chunks, report)
+	}
+	if len(report.Recent) != recentMismatches {
+		t.Fatalf("the ring holds %d of the last %d disagreements", len(report.Recent), recentMismatches)
 	}
 }
 
