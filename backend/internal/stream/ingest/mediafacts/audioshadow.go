@@ -85,6 +85,9 @@ type AudioShadowReport struct {
 	// Batches is how many stream-and-epoch runs have been accepted for
 	// comparison. Accepted, not handed over: a chunk that arrived at a full queue
 	// is not in here, and is the last thing that happens before Disabled.
+	//
+	// Counted before the work carrying it is put where the worker can reach it,
+	// which is what keeps Compared from ever running ahead of it.
 	Batches uint64
 	// Compared is how many observations were held against the core's own answer.
 	// Every batch has one, including a batch from an epoch that ended inside the
@@ -302,6 +305,11 @@ func (r *audioShadowRunner) run(ctx context.Context) {
 // producer can pass "not retired yet", a worker can retire and empty the queue
 // in between, and the send then lands in a channel that will never be read -
 // one chunk's owned audio, held for as long as the core holds the runner.
+//
+// Room is looked for rather than found out about, which is what a send inside a
+// select cannot do: there is no point between choosing the send and performing
+// it where the count could be published, and a count published after the work is
+// a count the worker's own can already have run past.
 func (r *audioShadowRunner) offer(work audioShadowWork) {
 	if r.retired.Load() {
 		return
@@ -312,15 +320,35 @@ func (r *audioShadowRunner) offer(work audioShadowWork) {
 	if r.retired.Load() {
 		return
 	}
-	select {
-	case r.queue <- work:
-		r.batches.Add(uint64(len(work.batches)))
-	default:
-		// Still holding the lock. The retirement a failed send causes has to be
-		// the same moment as the send, or the queue it empties could be refilled
+	// The room seen here is still there below. Offers are the only senders and
+	// this lock serialises them; the one thing that empties the queue behind a
+	// producer's back is a retirement, and that is under this lock too. What is
+	// left is a worker that only ever receives - so between the check and the
+	// send the queue can grow emptier, never fuller, and the send cannot block.
+	if len(r.queue) == cap(r.queue) {
+		// Still holding the lock. The retirement a full queue causes has to be
+		// the same moment as the check, or the queue it empties could be refilled
 		// by the offer immediately behind it.
 		r.retireLocked(true)
+		return
 	}
+	r.publishLocked(work)
+}
+
+// publishLocked counts the work and then hands it over, in that order.
+//
+// The order is the whole of it, which is why it is a function and not two
+// statements at the end of offer. Batches is what the report says was accepted,
+// and the worker starts raising Compared the moment it can reach the work - so a
+// count published after the send is a count that a comparison of the very work
+// it has not counted yet can already be ahead of, and the report would say more
+// comparisons happened than there was work to compare.
+//
+// The caller holds lifecycle and has established that the queue has room. The
+// send is unconditional and must not be reached without that.
+func (r *audioShadowRunner) publishLocked(work audioShadowWork) {
+	r.batches.Add(uint64(len(work.batches)))
+	r.queue <- work
 }
 
 // retire ends the comparison for good, once, whichever side noticed first.

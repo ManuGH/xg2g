@@ -1094,6 +1094,56 @@ func TestAudioShadow_NoWorkOutlivesARetirementRacedWithAnOffer(t *testing.T) {
 	}
 }
 
+// --- the report never contradicts itself -----------------------------------
+
+// Work is counted before anybody can reach it.
+//
+// The mechanism behind "Compared never exceeds Batches", pinned where the two
+// sides meet. Everything a worker does begins with the receive, so the moment
+// the work is in the channel is the moment Compared can start moving - and if
+// the count is published after that, a report read in between says fewer batches
+// were accepted than have already been compared.
+//
+// Deliberately without a worker and without a buffer. Both would take the moment
+// away: a buffered send returns immediately and the producer would be past
+// everything after it before anything could look, and a worker would take the
+// work rather than leave it where the test can ask about it. Here the producer
+// is parked in the send itself - exactly where a worker would have the work in
+// its hands - and what the report says at that instant is the whole question.
+func TestAudioShadow_WorkIsCountedBeforeAnythingCanReachIt(t *testing.T) {
+	r := &audioShadowRunner{queue: make(chan audioShadowWork)}
+
+	published := make(chan struct{})
+	go func() {
+		defer close(published)
+		// The contract publishLocked is written against. Held across a send that
+		// cannot complete here, which is a thing only this test does: in the runner
+		// the room check above it is what makes the send unable to block.
+		r.lifecycle.Lock()
+		defer r.lifecycle.Unlock()
+		r.publishLocked(fakeWork(1))
+	}()
+
+	// Generous by six orders of magnitude: reaching a send takes nanoseconds, and
+	// this one has nothing to complete against until the receive below.
+	time.Sleep(100 * time.Millisecond)
+
+	if got := r.batches.Load(); got != 1 {
+		t.Fatalf("work is reachable with %d batches counted, want 1 - a worker taking it "+
+			"now would raise Compared past Batches, and the report would claim more "+
+			"comparisons than there was work to compare", got)
+	}
+
+	work := <-r.queue
+	<-published
+	if got := len(work.batches); got != 1 {
+		t.Fatalf("the work that was handed over carries %d batches, want 1", got)
+	}
+	if got := r.batches.Load(); got != 1 {
+		t.Fatalf("batches = %d after the hand-off, want 1 - counted once, at the hand-off", got)
+	}
+}
+
 // The hand-off owns its bytes. The chunk is the caller's and is gone the moment
 // Ingest returns, so the copy is made before that - and this is the test that
 // the copy is a copy.
