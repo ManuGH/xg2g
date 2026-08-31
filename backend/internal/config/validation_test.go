@@ -655,3 +655,61 @@ func TestValidate_MonetizationAmazonMappingsRequireProviderConfig(t *testing.T) 
 		t.Fatalf("expected Monetization.Amazon.SharedSecretFile validation error, got %v", err)
 	}
 }
+
+// TestValidate_AnnotatesEnvNames pins the operator-facing half of a validation
+// failure: the message has to name the variable that actually fixes it.
+func TestValidate_AnnotatesEnvNames(t *testing.T) {
+	t.Run("field with env is annotated", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.RecordingTargetSigningKey = "too-short"
+
+		err := Validate(cfg)
+		if err == nil {
+			t.Fatal("Validate() = nil, want error for short signing key")
+		}
+		if !strings.Contains(err.Error(), "XG2G_RECORDINGS_TARGET_SIGNING_KEY") {
+			t.Errorf("error does not name the env var an operator sets: %v", err)
+		}
+		if !strings.Contains(err.Error(), "must be configured and at least 32 characters") {
+			t.Errorf("annotation dropped the original message: %v", err)
+		}
+	})
+
+	t.Run("field outside the registry is untouched", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.ForceHTTPS = true
+		cfg.TLSEnabled = false
+		cfg.TrustedProxies = ""
+
+		err := Validate(cfg)
+		if err == nil {
+			t.Fatal("Validate() = nil, want error for HTTPS without TLS")
+		}
+		if !strings.Contains(err.Error(), "HTTPS_WITHOUT_TLS") {
+			t.Fatalf("expected the forbidden-rule failure, got: %v", err)
+		}
+		if strings.Contains(err.Error(), "HTTPS_WITHOUT_TLS (env") {
+			t.Errorf("forbidden rule name is not a config field and must not be annotated: %v", err)
+		}
+	})
+
+	t.Run("multiple failures keep their separator", func(t *testing.T) {
+		cfg := baseValidationConfig()
+		cfg.RecordingTargetSigningKey = "too-short"
+		cfg.ForceHTTPS = true
+		cfg.TLSEnabled = false
+		cfg.TrustedProxies = ""
+
+		err := Validate(cfg)
+		if err == nil {
+			t.Fatal("Validate() = nil, want two errors")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "XG2G_RECORDINGS_TARGET_SIGNING_KEY") || !strings.Contains(msg, "HTTPS_WITHOUT_TLS") {
+			t.Errorf("annotation lost one of the two failures: %v", err)
+		}
+		if !strings.Contains(msg, "; ") {
+			t.Errorf("multi-error formatting lost: %v", err)
+		}
+	})
+}
