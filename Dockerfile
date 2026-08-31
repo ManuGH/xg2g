@@ -118,7 +118,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # build stays CGO_ENABLED=0, because nothing here is ever linked into the daemon.
 # Like the Go stage, this runs on the target platform, so the compile is native
 # rather than cross.
-FROM rust:1.91.0-slim-trixie AS media-core-builder
+FROM rust:1.98.0-slim-trixie AS media-core-builder
 
 WORKDIR /media-core
 # rust-toolchain.toml is deliberately not copied. Inside this stage the FROM tag
