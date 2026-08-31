@@ -26,7 +26,15 @@ import (
 // negotiation and no partial compatibility: a peer that speaks a version this
 // build does not know is refused, because acting on fields that mean something
 // else is worse than not talking at all.
-const Version uint8 = 1
+//
+// 2 adds MsgObserveAudioBatch. The bump is not bookkeeping: with no negotiation
+// and a closed message set, "the peer understands this build" is the only thing
+// the version means, and a v1 core would answer an observe request with
+// StatusUnknownMessage - a refusal that arrives one round trip late and looks
+// like a core that rejected this particular batch rather than one that cannot do
+// this at all. A peer either speaks 2 and can be asked, or it does not and is
+// refused before anything is sent.
+const Version uint8 = 2
 
 // Message types. The set is closed on purpose - it is exactly the calls
 // mediafacts.Core makes, plus the two the connection itself needs.
@@ -35,6 +43,16 @@ const (
 	MsgIngest           uint8 = 2
 	MsgSetTargetProgram uint8 = 3
 	MsgShutdown         uint8 = 4
+
+	// MsgObserveAudioBatch is the one call that is not a Core call. It carries
+	// mediafacts.AudioShadow across the same boundary: a second observer being
+	// asked what it made of bytes the authoritative side has already read.
+	//
+	// It travels on this protocol rather than one of its own because the
+	// framing, the version check, the bound and the request-id discipline are
+	// the same problems with the same answers. It does not travel on the same
+	// connection - see RemoteAudioShadow, which owns a peer of its own.
+	MsgObserveAudioBatch uint8 = 5
 )
 
 // Response status. Anything other than StatusOK means the body is a reason, not
@@ -88,8 +106,19 @@ var (
 //	                answer   u8 status
 //	shutdown        request  empty
 //	                answer   u8 status
+//	observe audio   request  u32 batches, then per batch:
+//	                           u16 pid, u64 epoch, u32 feeds,
+//	                           then per feed: u32 length, then those bytes
+//	                answer   u8 status, u32 observations, then per observation:
+//	                           u16 pid, u64 epoch, u8 channels, u8 flags,
+//	                           u8 acmod, u64 frames
 //
 // Every answer begins with a status byte. A body that does not is not an answer.
+//
+// Every width above is fixed and every integer is big-endian, including the ones
+// that hold a count. A count is the one field a decoder acts on before it has
+// read anything else, so it is the last place to carry a width that depends on
+// who compiled the reader: neither side may write a Go int or a Rust usize here.
 
 // Frame is one message, header and body.
 type Frame struct {

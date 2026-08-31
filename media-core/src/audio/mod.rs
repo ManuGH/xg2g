@@ -17,6 +17,7 @@
 
 pub mod ac3;
 pub mod observer;
+pub mod shadow;
 
 #[cfg(test)]
 mod corpus_test;
