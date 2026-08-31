@@ -98,6 +98,17 @@ func loadShadowCorpus(t *testing.T) []corpusEntry {
 	if len(entries) == 0 {
 		t.Fatal("the corpus is empty")
 	}
+	// A differential that parsed the file and found nothing to ask is a test that
+	// passes by doing nothing. The number is a floor rather than an expectation:
+	// cases get added, and this only has to notice a corpus that stopped arriving.
+	steps := 0
+	for _, e := range entries {
+		steps += len(e.steps)
+	}
+	if steps < 100 {
+		t.Fatalf("the corpus parsed to %d cases and %d feed steps; this proves nothing", len(entries), steps)
+	}
+	t.Logf("corpus: %d cases, %d feed steps", len(entries), steps)
 	return entries
 }
 
@@ -269,5 +280,70 @@ func TestShadowCorpus_ManyStreamsAndEpochsInOneCall(t *testing.T) {
 			t.Errorf("%s: the two observers disagree about %v\n  go   %+v\n  rust %+v",
 				labels[i], fields, want[i], got[i].Observation)
 		}
+	}
+}
+
+// One stream that changes its mind and changes it back.
+//
+// The corpus states each transition on its own, because that is what a corpus is
+// for. This joins them into a single elementary stream on a single PID under a
+// single epoch - stereo, then 5.1, then stereo - which is what a service doing
+// advertisements actually looks like, and which no case in the file can state on
+// its own. The expectation is the Go observer fed the identical bytes: there is
+// no third opinion to appeal to here, and there does not need to be, because
+// disagreement is the finding.
+func TestShadowCorpus_AStreamThatChangesLayoutAndChangesBack(t *testing.T) {
+	bin := requireRealCore(t)
+	corpus := loadShadowCorpus(t)
+
+	byName := make(map[string]corpusEntry, len(corpus))
+	for _, e := range corpus {
+		byName[e.name] = e
+	}
+	up, ok := byName["ac3_stereo_to_51_without_a_reset"]
+	if !ok {
+		t.Skip("the corpus no longer carries a stereo-to-5.1 case")
+	}
+	down, ok := byName["ac3_51_to_stereo_without_a_reset"]
+	if !ok {
+		t.Skip("the corpus no longer carries a 5.1-to-stereo case")
+	}
+
+	var feeds [][]byte
+	for _, s := range up.steps {
+		feeds = append(feeds, s.feed)
+	}
+	for _, s := range down.steps {
+		feeds = append(feeds, s.feed)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	shadow, err := StartAudioShadow(ctx, bin)
+	if err != nil {
+		t.Fatalf("StartAudioShadow: %v", err)
+	}
+	defer func() {
+		if err := shadow.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
+
+	reference := esaudio.NewObserver()
+	for i, feed := range feeds {
+		reference.Feed(feed)
+		got, err := shadow.ObserveAudio(ctx, []mediafacts.AudioShadowBatch{{
+			PID: 300, Epoch: 1, Feeds: [][]byte{feed},
+		}})
+		if err != nil {
+			t.Fatalf("feed %d: %v", i, err)
+		}
+		if fields := esaudio.Compare(reference.Current(), got[0].Observation); len(fields) != 0 {
+			t.Fatalf("feed %d of %d: the two observers disagree about %v\n  go   %+v\n  rust %+v",
+				i, len(feeds), fields, reference.Current(), got[0].Observation)
+		}
+	}
+	if final := reference.Current(); final.Channels != 2 {
+		t.Errorf("the stream was meant to end where it started; the reference says %+v", final)
 	}
 }
