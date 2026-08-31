@@ -274,3 +274,52 @@ func TestObserveWire_ARequestPastTheBoundIsRefusedNotTruncated(t *testing.T) {
 		t.Errorf("encoding an oversized request gave %v, want ErrFrameTooLarge", err)
 	}
 }
+
+// The widest value every field can hold, there and back.
+//
+// A fixed-width layout is only fixed if the widths are the ones both sides think
+// they are. A field that fits until it does not - an epoch past a u32, a frame
+// count past an int32, every flag at once - is the kind of disagreement that
+// shows up as a mismatch about audio rather than as a broken wire.
+func TestObserveWire_TheWidestValuesEveryFieldCanHold(t *testing.T) {
+	batches := []mediafacts.AudioShadowBatch{{
+		PID:   0x1FFF, // the largest PID a transport stream has
+		Epoch: ^uint64(0),
+		Feeds: [][]byte{{0xFF}},
+	}}
+	body, err := encodeObserveAudioRequest(batches)
+	if err != nil {
+		t.Fatalf("encode request: %v", err)
+	}
+	got, err := decodeObserveAudioRequest(body)
+	if err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got[0].PID != batches[0].PID || got[0].Epoch != batches[0].Epoch {
+		t.Errorf("batch came back as pid %d epoch %d", got[0].PID, got[0].Epoch)
+	}
+
+	want := []mediafacts.AudioShadowObservation{{
+		PID:   0x1FFF,
+		Epoch: ^uint64(0),
+		Observation: esaudio.Observation{
+			Channels:           255,
+			LFE:                true,
+			Acmod:              255,
+			HasAcmod:           true,
+			DependentSubstream: true,
+			Frames:             ^uint64(0),
+		},
+	}}
+	answer, err := encodeObserveAudioAnswer(want)
+	if err != nil {
+		t.Fatalf("encode answer: %v", err)
+	}
+	back, err := decodeObserveAudioAnswer(answer[1:])
+	if err != nil {
+		t.Fatalf("decode answer: %v", err)
+	}
+	if !reflect.DeepEqual(back, want) {
+		t.Errorf("observation came back as\n  %+v\nwant\n  %+v", back, want)
+	}
+}
