@@ -383,3 +383,44 @@ func TestShadow_ACancelledCallLeavesNoGoroutineBehind(t *testing.T) {
 		t.Errorf("goroutines went from %d to %d across 20 cancelled calls", before, after)
 	}
 }
+
+// The refusal happens before the peer is told anything at all.
+//
+// Not the same claim as the wire test beside it. That one says the encoder
+// returns ErrFrameTooLarge; this one says nothing was put on the socket while it
+// did - no MsgObserveAudioBatch, no partial frame, nothing the peer's observers
+// would have advanced over. A shadow's peer holds per-stream state, so half a
+// question asked is worse than none: everything after it is compared against a
+// peer that saw a different stream.
+func TestShadow_ARequestWhoseAnswerCannotBeFramedNeverReachesThePeer(t *testing.T) {
+	s, peer := shadowOnPipe(t)
+	batches := batchesWhoseAnswerCannotBeFramed(t)
+
+	// Both deadlines are set before the call, and both are here for the same
+	// regression: a pipe is unbuffered, so a version of this that did write would
+	// block on a peer nobody is reading, and with no deadline anywhere it would
+	// block for good. Set first because net.Pipe refuses to take a deadline once
+	// either end has closed, and the failure below closes one.
+	if err := peer.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := s.ObserveAudio(ctx, batches); !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+	}
+
+	// The failure retired the shadow, which closed its end of the pipe, so this
+	// read runs to end of stream - and what it collects is everything the peer was
+	// ever sent.
+	sent, err := io.ReadAll(peer)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("reading what the peer was sent: %v", err)
+	}
+	if len(sent) != 0 {
+		t.Errorf("the peer was sent %d bytes; the request reached the wire", len(sent))
+	}
+
+	assertRetired(t, s)
+}

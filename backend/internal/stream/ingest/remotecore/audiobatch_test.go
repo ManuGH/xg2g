@@ -323,3 +323,56 @@ func TestObserveWire_TheWidestValuesEveryFieldCanHold(t *testing.T) {
 		t.Errorf("observation came back as\n  %+v\nwant\n  %+v", back, want)
 	}
 }
+
+// batchesWhoseAnswerCannotBeFramed is the smallest question this side would ask
+// whose answer could not come back.
+//
+// The two costs are not the same. An empty batch is observeBatchOverhead to ask
+// about and observeObservationSize to answer, and the answer is the larger, so
+// there is a count where the request still fits a frame and its answer no longer
+// does. Derived from the constants rather than written out, because a number
+// typed in here would stop being that count the moment one of them changed.
+//
+// Empty batches are not what the capture path builds - it appends a feed before
+// it appends a batch, and refuses a chunk with no elementary bytes at all. They
+// are the cheapest way to construct the shape. The shape is what the encoder owes
+// an answer about, whoever hands it one.
+func batchesWhoseAnswerCannotBeFramed(t *testing.T) []mediafacts.AudioShadowBatch {
+	t.Helper()
+	const limit = MaxFrameSize - HeaderSize
+
+	// One past the largest count whose answer still fits.
+	count := (limit-1-observeCountPrefix)/observeObservationSize + 1
+	batches := make([]mediafacts.AudioShadowBatch, count)
+	for i := range batches {
+		batches[i] = mediafacts.AudioShadowBatch{PID: 1, Epoch: 1}
+	}
+
+	// Both halves of the premise, checked rather than asserted in a comment. A
+	// refusal proves what it is meant to prove only if the request was one this
+	// side would otherwise have sent.
+	if got := observeRequestSize(batches); got > limit {
+		t.Fatalf("the request itself needs %d bytes and a frame holds %d; "+
+			"a refusal here would be about the question, not the answer", got, limit)
+	}
+	if got := observeAnswerSize(len(batches)); got <= limit {
+		t.Fatalf("the answer needs %d bytes and a frame holds %d; it fits, "+
+			"so there is nothing here to refuse", got, limit)
+	}
+	return batches
+}
+
+// A request that fits, answered by one that cannot.
+//
+// Without the answer-side bound this encodes and sends. The peer is then the one
+// to find out: media-core/src/ipc.rs checks the same arithmetic and answers
+// StatusMalformed, which is the only thing it can say and the wrong thing to
+// hear. The shadow retires believing the peer could not read a request the peer
+// read perfectly well. The bound belongs on the side that chose the question.
+func TestObserveWire_ARequestWhoseAnswerCannotBeFramedIsRefused(t *testing.T) {
+	batches := batchesWhoseAnswerCannotBeFramed(t)
+
+	if _, err := encodeObserveAudioRequest(batches); !errors.Is(err, ErrFrameTooLarge) {
+		t.Errorf("encoding a request with an unframeable answer gave %v, want ErrFrameTooLarge", err)
+	}
+}

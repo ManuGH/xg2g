@@ -66,6 +66,20 @@ func observeRequestSize(batches []mediafacts.AudioShadowBatch) int {
 	return n
 }
 
+// observeAnswerSize is what the answer to a request about count batches will be.
+//
+// One observation per batch, in order, is not an assumption this makes about a
+// well-behaved peer - it is the contract RemoteAudioShadow enforces on the way
+// back, and an answer of any other length is refused there as a peer that lost
+// track of the conversation. So the size of the answer is known from the
+// question, before the question is asked.
+//
+// The leading byte is the status every answer starts with. It is counted here
+// because the bound is about the frame, and the frame carries it.
+func observeAnswerSize(count int) int {
+	return 1 + observeCountPrefix + count*observeObservationSize
+}
+
 // encodeObserveAudioRequest lays out one ObserveAudio call.
 //
 // The feeds are written one length-prefixed run at a time and never joined. That
@@ -81,6 +95,21 @@ func encodeObserveAudioRequest(batches []mediafacts.AudioShadowBatch) ([]byte, e
 	total := observeRequestSize(batches)
 	if total > MaxFrameSize-HeaderSize {
 		return nil, fmt.Errorf("%w: an observe request needs %d bytes", ErrFrameTooLarge, total)
+	}
+	// And the answer, which is the question's problem and not the peer's.
+	//
+	// A batch costs observeBatchOverhead to ask about and observeObservationSize
+	// to answer, and the answer is the larger, so a request that fits a frame can
+	// have an answer that does not. media-core/src/ipc.rs already refuses to
+	// answer one - and says in as many words that this side refuses to send it,
+	// which until now this side did not do. Asking anyway gets StatusMalformed
+	// back, and the shadow retires reading that as a peer that could not
+	// understand the request. The request was understood perfectly; it was the
+	// answer that could not be framed. Refused here, before anything is allocated
+	// or sent, it is what it actually is - a question too large to ask.
+	if answer := observeAnswerSize(len(batches)); answer > MaxFrameSize-HeaderSize {
+		return nil, fmt.Errorf("%w: an observe request for %d batches would be answered with %d bytes",
+			ErrFrameTooLarge, len(batches), answer)
 	}
 	count, err := countAsUint32(len(batches), "batches")
 	if err != nil {
@@ -174,7 +203,7 @@ func encodeObserveAudioAnswer(observations []mediafacts.AudioShadowObservation) 
 	if err != nil {
 		return nil, err
 	}
-	total := 1 + observeCountPrefix + len(observations)*observeObservationSize
+	total := observeAnswerSize(len(observations))
 	if total > MaxFrameSize-HeaderSize {
 		return nil, fmt.Errorf("%w: an observe answer needs %d bytes", ErrFrameTooLarge, total)
 	}
