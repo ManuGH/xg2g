@@ -5,6 +5,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -90,10 +92,53 @@ func Validate(cfg AppConfig) error {
 	validateEngineAndResilience(v, cfg)
 
 	if !v.IsValid() {
-		return v.Err()
+		return annotateValidationEnv(v.Err())
 	}
 
 	return nil
+}
+
+// annotateValidationEnv names the environment variable an operator actually
+// sets, next to the field path the validator reports. Without it a failure
+// reads "RecordingTargetSigningKey" and the operator has to find
+// XG2G_RECORDINGS_TARGET_SIGNING_KEY somewhere else before the daemon can
+// start.
+//
+// The lookup lives here rather than in validate.Error, because internal/config
+// imports internal/validate and not the other way round. Fields the registry
+// does not know, and fields it knows without an environment variable, are
+// passed through untouched: an annotation that cannot be trusted is worse than
+// none.
+func annotateValidationEnv(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var verr validate.ValidationError
+	if !errors.As(err, &verr) {
+		return err
+	}
+
+	registry, regErr := GetRegistry()
+	if regErr != nil {
+		return err
+	}
+
+	annotated := validate.New()
+	changed := false
+	for _, e := range verr.Errors() {
+		field := e.Field
+		if entry, ok := registry.ByField[field]; ok && entry.Env != "" {
+			field = fmt.Sprintf("%s (env %s)", field, entry.Env)
+			changed = true
+		}
+		annotated.AddError(field, e.Message, e.Value)
+	}
+	if !changed {
+		return err
+	}
+
+	return annotated.Err()
 }
 
 func validateHousehold(v *validate.Validator, cfg AppConfig) {
