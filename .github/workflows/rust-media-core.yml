@@ -79,6 +79,68 @@ jobs:
             exit 1
           }
 
+  # The one gate that runs both languages against each other.
+  #
+  # Everything else here is about the crate on its own terms, and everything in
+  # the Go CI is about Go on its own. The differential lives in between: the Go
+  # tests that speak to a real media core skip themselves when
+  # XG2G_MEDIA_CORE_BIN is unset, so without a job that sets it they are not a
+  # gate at all - they are a thing somebody can run by hand and did, once. This
+  # workflow owns the cross-language artefact, so it owns proving it.
+  #
+  # The whole package, not a -run selection. A regex here would decide today
+  # which tests count, and the real-core test added next month would quietly not
+  # be one of them.
+  differential:
+    name: Go/Rust differential
+    runs-on: ubuntu-latest
+    needs: check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Cache cargo
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # Latest stable
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            media-core/target
+          key: rust-media-core-${{ runner.os }}-${{ hashFiles('media-core/Cargo.lock', 'media-core/rust-toolchain.toml') }}
+
+      - name: Build native media core
+        working-directory: media-core
+        run: cargo build --release --locked
+
+      # Twice: once as it is, once under the race detector. The shadow's whole
+      # claim is about what a worker goroutine does while an ingest is running,
+      # and a differential that never ran with -race would be checking the
+      # answers and not the concurrency that produced them.
+      - name: Prove real Go/Rust differential
+        working-directory: backend
+        env:
+          XG2G_MEDIA_CORE_BIN: ${{ github.workspace }}/media-core/target/release/xg2g-media-core
+        run: |
+          set -euo pipefail
+          # A core that cannot be started makes every test here skip, and a
+          # skipped differential reads exactly like a passing one.
+          test -x "$XG2G_MEDIA_CORE_BIN"
+          "$XG2G_MEDIA_CORE_BIN"
+
+          go test -count=1 \
+            ./internal/stream/ingest/remotecore
+
+          go test -race -count=1 \
+            ./internal/stream/ingest/remotecore
+
   build:
     name: Release build (${{ matrix.target }})
     runs-on: ubuntu-latest
