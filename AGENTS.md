@@ -213,6 +213,40 @@ successful release is not a successful release.
 - Commits should be small, coherent, and named by intent. Do not mix a
   reviewer fix, unrelated UI work, deployment changes, and generated assets in
   one commit.
+- One branch is one subject. If the working tree holds changes that would need
+  more than one commit subject, they belong on separate branches. Do not park
+  unrelated work on whichever branch happens to be checked out — a CI change
+  and an RBAC fix sitting on `fix/onboarding-papercuts` are two lost branches,
+  not one.
+
+#### Branching base (added 2026-08-31 after the third occurrence)
+
+- Cut every branch from a freshly fetched `origin/main`, never from another
+  feature branch. A branch cut from a branch carries the parent's commits as
+  its own: it reports hundreds of commits ahead, its PR is unreviewable, and
+  the two can no longer merge independently.
+- Before the first push, run `git rev-list --count origin/main..HEAD`. If that
+  number is larger than the work actually done, the base is wrong — rebase onto
+  `origin/main` now, not after review starts.
+- The same check exposes duplicates. If `git rev-list --count B..A` is `0`,
+  branch A is fully contained in B and one of the two is redundant.
+
+#### Closing a branch out
+
+- A branch that outlives its session either has an open PR or a written note
+  saying what blocks it. A branch with no PR and no note is abandoned work that
+  drifts further from `main` every day and will not be mergeable later.
+- Delete the branch and remove its worktree as soon as its PR merges. Rebase
+  and squash merges leave the local branch reporting commits "ahead" of `main`
+  even though nothing is outstanding; confirm with
+  `git cherry origin/main <branch>` — every line prefixed `-` means every commit
+  is already in `main` and the branch is only a stale pointer.
+- Before removing a worktree, run `git status --porcelain` inside it. Agent
+  worktrees routinely hold uncommitted test files. Commit them or save a patch
+  first. Never `git worktree remove --force` a dirty tree merely to tidy up.
+- Periodically reconcile: `git branch -vv`, `git worktree list`, and
+  `gh pr list --state all` together. Anything local without a matching open PR
+  is either finished (delete it), parked (note it), or forgotten (decide).
 
 ### Deployment and safety
 
