@@ -352,25 +352,29 @@ func TestShadowProcess_TheRealCoreObservesWhatTheGoCoreObserves(t *testing.T) {
 	core.SetAudioShadow(shadow)
 	defer core.CloseAudioShadow()
 
+	// Paced, one chunk at a time. Ingest never waits for the comparison, so a
+	// loop that does not wait either fills the queue in microseconds and retires
+	// the shadow on speed alone - which is 4b.2a working exactly as intended, and
+	// says nothing at all about whether the two implementations agree. That
+	// property has its own test above, with a peer that really is stuck.
 	const chunks = 6
 	chunk := e2eChunk()
+	var report mediafacts.AudioShadowReport
 	for i := 0; i < chunks; i++ {
 		if _, err := core.Ingest(ctx, int64(i)*int64(len(chunk)), chunk); err != nil {
 			t.Fatalf("Ingest %d: %v", i, err)
 		}
-	}
-
-	deadline := time.Now().Add(10 * time.Second)
-	var report mediafacts.AudioShadowReport
-	for {
-		report = core.AudioShadowReport()
-		if report.Compared >= chunks || report.Disabled {
-			break
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			report = core.AudioShadowReport()
+			if report.Compared > uint64(i) || report.Disabled {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the Rust core compared %d of the first %d chunks: %+v", report.Compared, i+1, report)
+			}
+			time.Sleep(time.Millisecond)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the Rust core compared %d of %d chunks: %+v", report.Compared, chunks, report)
-		}
-		time.Sleep(5 * time.Millisecond)
 	}
 
 	if report.Disabled {
