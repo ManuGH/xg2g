@@ -189,6 +189,81 @@ func TestHelperProcess(t *testing.T) {
 		signal.Ignore(syscall.SIGTERM)
 		time.Sleep(10 * time.Minute)
 
+	// The shadow's adversaries. Each one answers the handshake so the shadow
+	// starts, takes exactly one observe request, and then behaves badly in one
+	// specific way. None of them ignores SIGTERM: what is being proved is that the
+	// call comes back, not that the process is stubborn - that has its own modes
+	// above.
+	case "observe-then-say-nothing":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		serveOneHandshake(c)
+		// Reads the request and answers nothing. The parent is then blocked in a
+		// read against a socket that will never carry anything again.
+		_, _ = readOneFrame(c)
+		time.Sleep(10 * time.Minute)
+
+	case "observe-then-stop-reading":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		serveOneHandshake(c)
+		// Never reads the request at all. A request larger than the socket buffer
+		// leaves the parent blocked in a write instead of a read, which is a
+		// different piece of code with the same obligation.
+		time.Sleep(10 * time.Minute)
+
+	case "observe-then-half-an-answer":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		serveOneHandshake(c)
+		f, ok := readOneFrame(c)
+		if !ok {
+			os.Exit(8)
+		}
+		// A length prefix promising a whole answer, and two bytes of it.
+		_, _ = c.Write([]byte{0x00, 0x00, 0x00, 0x40, Version, f.Type})
+		time.Sleep(10 * time.Minute)
+
+	case "observe-then-nonsense":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		defer func() { _ = c.Close() }()
+		serveOneHandshake(c)
+		f, ok := readOneFrame(c)
+		if !ok {
+			os.Exit(8)
+		}
+		// Status OK, and then a body that is not an answer: it announces four
+		// observations and carries none.
+		body := []byte{StatusOK, 0x00, 0x00, 0x00, 0x04}
+		raw, encErr := Frame{Version: Version, Type: f.Type, RequestID: f.RequestID, Body: body}.Encode()
+		if encErr != nil {
+			os.Exit(9)
+		}
+		_, _ = c.Write(raw)
+		time.Sleep(10 * time.Minute)
+
+	case "observe-then-hang-up":
+		c, err := dialHelper(sock)
+		if err != nil {
+			os.Exit(4)
+		}
+		serveOneHandshake(c)
+		_, _ = readOneFrame(c)
+		_ = c.Close()
+		os.Exit(0)
+
 	case "connect-then-die-mid-frame":
 		c, err := dialHelper(sock)
 		if err != nil {
@@ -262,6 +337,27 @@ func serveOneHandshake(c net.Conn) {
 		return
 	}
 	_, _ = c.Write(raw)
+}
+
+// readOneFrame reads one whole frame in a helper child, and says whether it did.
+func readOneFrame(c net.Conn) (Frame, bool) {
+	var lenBuf [4]byte
+	if _, err := io.ReadFull(c, lenBuf[:]); err != nil {
+		return Frame{}, false
+	}
+	n := binary.BigEndian.Uint32(lenBuf[:])
+	if n < HeaderSize || n > MaxFrameSize {
+		return Frame{}, false
+	}
+	payload := make([]byte, n)
+	if _, err := io.ReadFull(c, payload); err != nil {
+		return Frame{}, false
+	}
+	f, err := DecodeHeader(payload)
+	if err != nil {
+		return Frame{}, false
+	}
+	return f, true
 }
 
 // containsZombieOf looks for a defunct process whose parent is pid.
