@@ -75,8 +75,13 @@ fn serve(path: &str) -> std::io::Result<()> {
     let mut reader = stream.try_clone()?;
     let mut writer = BufWriter::new(stream);
 
+    // One session for the connection, because the audio shadow's observers are
+    // stateful: what a stream said in an earlier request is part of the answer to
+    // the next one. It lives and dies with this socket.
+    let mut session = ipc::Session::new();
+
     while let Some(frame) = ipc::read_frame(&mut reader)? {
-        match ipc::handle(&frame) {
+        match session.handle(&frame) {
             ipc::Outcome::Answer(body) => {
                 ipc::write_frame(&mut writer, frame.kind, frame.request_id, &body)?;
             }

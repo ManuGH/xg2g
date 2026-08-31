@@ -21,7 +21,7 @@ import (
 // two red.
 var goldenIngestAnswer = []byte{
 	0x00, 0x00, 0x00, 0x0F, // length: header 6 + body 9
-	0x01,                   // version
+	0x02,                   // version
 	0x02,                   // ingest
 	0x00, 0x00, 0x00, 0x07, // request id 7
 	0x00,                                           // status ok
