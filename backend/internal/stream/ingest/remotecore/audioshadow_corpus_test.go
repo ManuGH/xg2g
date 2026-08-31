@@ -98,15 +98,19 @@ func loadShadowCorpus(t *testing.T) []corpusEntry {
 	if len(entries) == 0 {
 		t.Fatal("the corpus is empty")
 	}
-	// A differential that parsed the file and found nothing to ask is a test that
-	// passes by doing nothing. The number is a floor rather than an expectation:
-	// cases get added, and this only has to notice a corpus that stopped arriving.
+	// A differential that parsed the file and found little to ask is a test that
+	// passes by doing almost nothing, and it looks exactly like one that worked.
+	// The file carries 47 cases and 72 feed steps today; most cases are a single
+	// feed, and the ones with more are the split-header and boundary cases. These
+	// are floors well under that, not expectations - cases get added, and the only
+	// thing this has to catch is a corpus that stopped arriving.
 	steps := 0
 	for _, e := range entries {
 		steps += len(e.steps)
 	}
-	if steps < 100 {
-		t.Fatalf("the corpus parsed to %d cases and %d feed steps; this proves nothing", len(entries), steps)
+	if len(entries) < 20 || steps < 50 {
+		t.Fatalf("the corpus parsed to %d cases and %d feed steps; that is too little to prove anything",
+			len(entries), steps)
 	}
 	t.Logf("corpus: %d cases, %d feed steps", len(entries), steps)
 	return entries
