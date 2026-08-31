@@ -27,19 +27,31 @@ func capture(t *testing.T, name string) []byte {
 // DefaultIngestDeadline, the headroom the number was chosen for is gone and this
 // says so before a stalled core starts looking like a slow one.
 func TestIngestStaysFarInsideItsDeadline(t *testing.T) {
-	// A wall-clock guard measures the parser. Under coverage it measures the
-	// counters coverage inserted into the parser, which is a different thing and
-	// not one DefaultIngestDeadline was derived from - atomic counters on every
-	// block turn the 4 MiB chunk from ~15ms into ~54ms without the parser having
-	// changed at all.
+	// A wall-clock guard measures the parser. Under instrumentation it measures
+	// what the instrumentation added to the parser, which is a different thing and
+	// not one DefaultIngestDeadline was derived from. Coverage counters on every
+	// block turn the 4 MiB chunk from ~15ms into ~54ms; the race detector, which
+	// checks shadow memory on every access, turns the same chunk into ~120ms on a
+	// development machine and ~300ms on a CI runner. The parser is unchanged in
+	// both cases.
 	//
-	// Skipping here is not a loosened gate. The property is still checked on every
-	// ordinary run and on the race job; what is dropped is a timing claim from the
-	// one run that cannot make it honestly. The alternative - raising the limit
-	// until instrumented timings fit under it - would fit the contract to the
-	// measuring instrument and leave the real headroom unguarded.
-	if testing.CoverMode() != "" {
+	// The detector has nothing to find here to trade for that: Ingest parses on the
+	// calling goroutine, over a buffer only this test holds, and neither this
+	// package nor esaudio starts a goroutine or shares state. So under -race this
+	// measurement can report a slower clock and nothing else, and skipping it costs
+	// the race runs no coverage they would otherwise have.
+	//
+	// Skipping is not a loosened gate. The property is checked on every
+	// uninstrumented run, which is the PR suite (`go test ./...`) and every plain
+	// local run; what is dropped is a timing claim from the runs that cannot make
+	// it honestly. The alternative - raising the limit until instrumented timings
+	// fit under it - would fit the contract to the measuring instrument and leave
+	// the real headroom unguarded.
+	switch {
+	case testing.CoverMode() != "":
 		t.Skip("wall-clock ingest headroom is not meaningful under coverage instrumentation")
+	case raceDetectorEnabled:
+		t.Skip("wall-clock ingest headroom is not meaningful under the race detector")
 	}
 
 	for _, name := range []string{"test_hevc_stream.ts", "verify_aac.ts", "verify_seg.ts"} {
