@@ -145,7 +145,10 @@ func encodeObserveAudioRequest(batches []mediafacts.AudioShadowBatch) ([]byte, e
 // that the format has a reader here too - a golden frame proves the bytes are
 // what was agreed, and this proves they still mean what was agreed, which are
 // different claims. The in-process peers the adversarial tests are built from
-// use it to answer honestly.
+// use it to answer honestly - which is the only thing that calls it, and why the
+// linter cannot see a caller at all: .golangci.yml sets run.tests: false.
+//
+//nolint:unused // Called only from the in-process peers in this package's tests.
 func decodeObserveAudioRequest(body []byte) ([]mediafacts.AudioShadowBatch, error) {
 	r := reader{b: body}
 	count, ok := r.uint32()
@@ -198,6 +201,12 @@ func decodeObserveAudioRequest(body []byte) ([]mediafacts.AudioShadowBatch, erro
 }
 
 // encodeObserveAudioAnswer lays out the answer to one call, status byte first.
+//
+// Production on this side never calls it either: this end asks and the peer
+// answers. It is what the in-process test peers answer with, and with
+// run.tests: false in .golangci.yml the linter sees no caller for it.
+//
+//nolint:unused // Called only from the in-process peers in this package's tests.
 func encodeObserveAudioAnswer(observations []mediafacts.AudioShadowObservation) ([]byte, error) {
 	count, err := countAsUint32(len(observations), "observations")
 	if err != nil {
@@ -215,6 +224,8 @@ func encodeObserveAudioAnswer(observations []mediafacts.AudioShadowObservation) 
 		if o.Observation.Channels < 0 || o.Observation.Channels > 255 {
 			return nil, fmt.Errorf("%w: %d channels does not fit the wire", ErrObserveMalformed, o.Observation.Channels)
 		}
+		// #nosec G115 -- Channels was range-checked to [0,255] immediately above.
+		channels := uint8(o.Observation.Channels)
 		var flags uint8
 		if o.Observation.LFE {
 			flags |= obsFlagLFE
@@ -227,7 +238,7 @@ func encodeObserveAudioAnswer(observations []mediafacts.AudioShadowObservation) 
 		}
 		out = binary.BigEndian.AppendUint16(out, o.PID)
 		out = binary.BigEndian.AppendUint64(out, o.Epoch)
-		out = append(out, uint8(o.Observation.Channels), flags, o.Observation.Acmod)
+		out = append(out, channels, flags, o.Observation.Acmod)
 		out = binary.BigEndian.AppendUint64(out, o.Observation.Frames)
 	}
 	return out, nil
@@ -287,6 +298,7 @@ func countAsUint32(n int, what string) (uint32, error) {
 	if n < 0 || int64(n) > int64(^uint32(0)) {
 		return 0, fmt.Errorf("%w: %d %s does not fit the wire", ErrObserveMalformed, n, what)
 	}
+	// #nosec G115 -- n was checked to fit uint32 immediately above.
 	return uint32(n), nil
 }
 
