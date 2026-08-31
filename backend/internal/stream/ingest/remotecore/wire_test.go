@@ -56,7 +56,12 @@ func TestWire_EncodeRefusesABodyPastTheLimit(t *testing.T) {
 
 // The real core, when there is one to talk to. Skipped rather than built here:
 // building Rust from a Go test would make every run of this package depend on a
-// toolchain it otherwise does not need. CI and the acceptance run set the path.
+// toolchain it otherwise does not need.
+//
+// The Go/Rust differential job in .github/workflows/rust-media-core.yml is what
+// sets XG2G_MEDIA_CORE_BIN, so this and every other real-core test in the package
+// are a gate rather than something somebody remembers to run. Until that job
+// existed they were neither, and the comment that used to be here said otherwise.
 func TestEndToEnd_TheRealCoreAnswersWhatItWasGiven(t *testing.T) {
 	bin := os.Getenv("XG2G_MEDIA_CORE_BIN")
 	if bin == "" {
