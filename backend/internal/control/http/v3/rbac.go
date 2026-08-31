@@ -60,22 +60,34 @@ func normalizeScopes(scopes []string) []Scope {
 	return out
 }
 
+// applyImpliedScopes expands a token's scopes to everything they stand for.
+//
+// v3:admin implies v3:status: an administrator that cannot read the system's
+// own status is a hole, not a boundary. The reverse does not hold, so a
+// monitoring token can still carry v3:status alone and see nothing else.
+//
+// Every branch that grants v3:admin grants v3:status with it. has() already
+// answers yes for the wildcards, but the set itself is logged as token_scopes
+// on a 403 - if the two disagree, the log lies about why the request failed.
 func applyImpliedScopes(set scopeSet) {
 	if set == nil {
 		return
 	}
 	if _, ok := set[ScopeAll]; ok {
 		set[ScopeV3Admin] = struct{}{}
+		set[ScopeV3Status] = struct{}{}
 		set[ScopeV3Write] = struct{}{}
 		set[ScopeV3Read] = struct{}{}
 		return
 	}
 	if _, ok := set[ScopeV3All]; ok {
 		set[ScopeV3Admin] = struct{}{}
+		set[ScopeV3Status] = struct{}{}
 		set[ScopeV3Write] = struct{}{}
 		set[ScopeV3Read] = struct{}{}
 	}
 	if _, ok := set[ScopeV3Admin]; ok {
+		set[ScopeV3Status] = struct{}{}
 		set[ScopeV3Write] = struct{}{}
 		set[ScopeV3Read] = struct{}{}
 	}
@@ -91,6 +103,7 @@ func applyImpliedScopes(set scopeSet) {
 	}
 	if _, ok := set["admin"]; ok {
 		set[ScopeV3Admin] = struct{}{}
+		set[ScopeV3Status] = struct{}{}
 		set[ScopeV3Write] = struct{}{}
 		set[ScopeV3Read] = struct{}{}
 	}
