@@ -131,3 +131,49 @@ func TestBackgroundScanPlaybackDetector_ReturnsReceiverErrorWhenAllFallbacksFail
 		t.Fatal("expected inactive playback when receiver probes fail")
 	}
 }
+
+func TestBackgroundScanPlaybackDetector_TreatsHDMIActiveAsPlayback(t *testing.T) {
+	store := &backgroundScanTestStore{}
+	receiver := &backgroundScanTestReceiver{
+		status: &openwebif.StatusInfo{InStandby: "false", IsStreaming: "false", IsRecording: "false"},
+	}
+
+	active, err := newBackgroundScanPlaybackDetector(store, receiver)(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !active {
+		t.Fatal("expected active playback when receiver is awake / active on HDMI (inStandby=false)")
+	}
+}
+
+func TestBackgroundScanPlaybackDetector_TreatsRecordingAsPlayback(t *testing.T) {
+	store := &backgroundScanTestStore{}
+	receiver := &backgroundScanTestReceiver{
+		status: &openwebif.StatusInfo{InStandby: "true", IsStreaming: "false", IsRecording: "true"},
+	}
+
+	active, err := newBackgroundScanPlaybackDetector(store, receiver)(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !active {
+		t.Fatal("expected active playback when receiver is recording (isRecording=true)")
+	}
+}
+
+func TestBackgroundScanPlaybackDetector_AllowsScanningWhenInStandbyAndIdle(t *testing.T) {
+	store := &backgroundScanTestStore{}
+	receiver := &backgroundScanTestReceiver{
+		status: &openwebif.StatusInfo{InStandby: "true", IsStreaming: "false", IsRecording: "false"},
+		about:  testAboutInfo([]openwebif.AboutTuner{}, []any{}),
+	}
+
+	active, err := newBackgroundScanPlaybackDetector(store, receiver)(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if active {
+		t.Fatal("expected idle playback (active=false) when receiver is in standby and not recording/streaming")
+	}
+}

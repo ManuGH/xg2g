@@ -80,8 +80,16 @@ func backgroundScanReceiverStreaming(ctx context.Context, receiver backgroundSca
 
 	wg.Wait()
 
-	if statusKnown, statusActive := backgroundScanParseOWIBool(statusValue(status)); statusKnown && statusActive {
-		return true, nil
+	if status != nil {
+		if statusKnown, statusActive := backgroundScanParseOWIBool(status.IsStreaming); statusKnown && statusActive {
+			return true, nil
+		}
+		if recKnown, isRecording := backgroundScanParseOWIBool(status.IsRecording); recKnown && isRecording {
+			return true, nil
+		}
+		if standbyKnown, inStandby := backgroundScanParseOWIBool(status.InStandby); standbyKnown && !inStandby {
+			return true, nil
+		}
 	}
 
 	if about != nil {
