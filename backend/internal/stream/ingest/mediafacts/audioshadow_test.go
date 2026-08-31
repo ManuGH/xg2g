@@ -1267,8 +1267,16 @@ func TestAudioShadow_AReportNeverContradictsItself(t *testing.T) {
 			t.Fatalf("Ingest %d: %v", i, err)
 		}
 	}
-	report := awaitShadow(t, core, "every chunk to be compared", func(r AudioShadowReport) bool {
-		return r.Compared >= chunks || r.Disabled
+	// Mismatches, not Compared. Every chunk here disagrees, and a disagreement is
+	// counted after the comparison that found it - so a predicate that stops at
+	// Compared stops one write short of what the assertions below read, and the
+	// last chunk's disagreement would be missing from the report often enough to
+	// matter. What the snapshot guarantees does the rest: Mismatches never exceeds
+	// Compared, which never exceeds Batches, and the ring is written under the
+	// same lock as the count - so asking for the last of them has asked for all
+	// of them.
+	report := awaitShadow(t, core, "every chunk to be compared and every disagreement kept", func(r AudioShadowReport) bool {
+		return r.Mismatches >= chunks || r.Disabled
 	})
 
 	close(stop)
