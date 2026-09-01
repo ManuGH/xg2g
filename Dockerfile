@@ -83,7 +83,7 @@ RUN npm run build
 
 # Stage 3: Build xg2g application
 # Keep in sync with go.mod (currently requires Go 1.26.5).
-FROM golang:1.26.5 AS app-builder
+FROM golang:1.27.0 AS app-builder
 ARG BUILD_VERSION
 ARG BUILD_COMMIT
 ARG BUILD_DATE
