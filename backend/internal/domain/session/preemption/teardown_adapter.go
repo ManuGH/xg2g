@@ -36,7 +36,7 @@ type DiagnosticCode string
 const (
 	DiagnosticCodeNone              DiagnosticCode = "NONE"
 	DiagnosticCodeTimeout           DiagnosticCode = "TIMEOUT"
-	DiagnosticCodeHTTPError          DiagnosticCode = "HTTP_ERROR"
+	DiagnosticCodeHTTPError         DiagnosticCode = "HTTP_ERROR"
 	DiagnosticCodeConnectionRefused DiagnosticCode = "CONNECTION_REFUSED"
 	DiagnosticCodeStateMismatch     DiagnosticCode = "STATE_MISMATCH"
 )

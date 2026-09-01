@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	ErrInvalidPreparedTeardown     = errors.New("invalid prepared teardown")
-	ErrPreparedTeardownExpired     = errors.New("prepared teardown has expired")
+	ErrInvalidPreparedTeardown      = errors.New("invalid prepared teardown")
+	ErrPreparedTeardownExpired      = errors.New("prepared teardown has expired")
 	ErrPreparedTeardownHashMismatch = errors.New("prepared teardown hash mismatch")
 )
 
@@ -306,7 +306,7 @@ func (p *TeardownPreparer) PrepareTeardown(
 		ContractHash:            contract.ContractHash,
 		TargetAllocationIDs:     sortedTargets,
 		TargetDescriptors:       descriptors,
-		TargetDescriptorsHash:  descriptorsHash,
+		TargetDescriptorsHash:   descriptorsHash,
 		SnapshotRevision:        snapshot.SnapshotRevision,
 		HardwareProfileRevision: proof.HardwareProfileRevision,
 		ConflictProofRevision:   proof.SnapshotRevision,

@@ -31,7 +31,7 @@ func NewPersistentSagaStore(dbPath string) (*PersistentSagaStore, error) {
 	}
 	if dbPath != ":memory:" {
 		dir := filepath.Dir(dbPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return nil, fmt.Errorf("failed to create database directory '%s': %w", dir, err)
 		}
 	}
@@ -149,7 +149,7 @@ func (p *PersistentSagaStore) CreateSaga(ctx context.Context, record PreemptionS
 	if err != nil {
 		return PreemptionSagaRecord{}, false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var activeID, activeState string
@@ -661,7 +661,7 @@ func (p *PersistentSagaStore) FindActiveByPreparedHash(ctx context.Context, prep
 	if err != nil {
 		return PreemptionSagaRecord{}, false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var sagaID, stateStr string
@@ -729,7 +729,7 @@ func (p *PersistentSagaStore) ListNonTerminalSagas(ctx context.Context) ([]Preem
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []PreemptionSagaRecord
 	for rows.Next() {
@@ -781,7 +781,7 @@ func (p *PersistentSagaStore) getSagaTx(ctx context.Context, tx *sql.Tx, sagaID 
 	if err != nil {
 		return PreemptionSagaRecord{}, err
 	}
-	defer transRows.Close()
+	defer func() { _ = transRows.Close() }()
 
 	for transRows.Next() {
 		var t SagaTransition

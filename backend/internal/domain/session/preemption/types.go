@@ -141,7 +141,7 @@ type ConflictResolutionProof struct {
 	HardwareProfileStatus   HardwareProfileStatus       `json:"hardwareProfileStatus"`
 	RequestedResources      []ResourceClaim             `json:"requestedResources"`
 	AllocationMappings      []AllocationResourceMapping `json:"allocationMappings"`
-	FreedResourcesByTarget  map[string][]ResourceClaim `json:"freedResourcesByTarget"`
+	FreedResourcesByTarget  map[string][]ResourceClaim  `json:"freedResourcesByTarget"`
 	EvidenceClassification  EvidenceClassification      `json:"evidenceClassification"`
 }
 
