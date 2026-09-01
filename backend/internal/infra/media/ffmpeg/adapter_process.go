@@ -975,7 +975,7 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(ctx context.Context, handle p
 		if err != nil || plStat.Size() <= 0 {
 			return stat.Size(), false
 		}
-		plContent, err := os.ReadFile(playlistPath)
+		plContent, err := os.ReadFile(playlistPath) // #nosec G304 -- playlistPath is filepath.Join(hlsDir, "index.m3u8"): a constant name under a directory this adapter built.
 		if err != nil {
 			return stat.Size(), false
 		}
