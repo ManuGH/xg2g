@@ -334,7 +334,7 @@ func (p *PersistentSagaStore) ClaimSagaExecution(
 	saga.State = StateExecutionClaimed
 	saga.Version++
 	saga.UpdatedAt = now
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = StateExecutionClaimed
 	transition.OccurredAt = now
@@ -426,7 +426,7 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, err
 	}
 
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
@@ -572,7 +572,7 @@ func (p *PersistentSagaStore) TransitionAndReleaseClaim(
 		return PreemptionSagaRecord{}, err
 	}
 
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {

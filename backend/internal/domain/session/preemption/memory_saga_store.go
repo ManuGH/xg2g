@@ -131,7 +131,7 @@ func (m *MemorySagaStore) ClaimSagaExecution(
 	saga.State = StateExecutionClaimed
 	saga.Version++
 	saga.UpdatedAt = now
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = StateExecutionClaimed
 	transition.OccurredAt = now
@@ -191,7 +191,7 @@ func (m *MemorySagaStore) CompareAndSwapState(
 	if saga.UpdatedAt.IsZero() {
 		saga.UpdatedAt = time.Now().UTC()
 	}
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
@@ -276,7 +276,7 @@ func (m *MemorySagaStore) TransitionAndReleaseClaim(
 	if saga.UpdatedAt.IsZero() {
 		saga.UpdatedAt = time.Now().UTC()
 	}
-	transition.Sequence = uint64(len(saga.History) + 1)
+	transition.Sequence = nextSequence(saga.History)
 	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
