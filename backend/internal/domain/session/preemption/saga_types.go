@@ -122,3 +122,14 @@ const (
 	RecoveryQuarantined             RecoveryDisposition = "QUARANTINED"
 	RecoveryInconsistent            RecoveryDisposition = "INCONSISTENT"
 )
+
+// nextSequence is the 1-based position of the transition about to be appended.
+//
+// The conversion is total and gosec cannot see it: len is non-negative by
+// definition, and a slice length is bounded by addressable memory, so it is
+// nowhere near what a uint64 stops holding. Written once here rather than
+// annotated at each of the six append sites, where six suppressions would be
+// six places for one of them to stop being true unnoticed.
+func nextSequence(history []SagaTransition) uint64 {
+	return uint64(len(history)) + 1 // #nosec G115 -- len is never negative.
+}
