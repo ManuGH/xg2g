@@ -154,7 +154,7 @@ func (e *PreemptionSagaEngine) RevalidateAndTransition(
 	if prepErr != nil || prepRes.Decision != DecisionApproved {
 		reason := SagaReasonTargetMutated
 		details := "live target state mutated or unverified"
-		var failureErr error = fmt.Errorf("live revalidation failed: %s", prepRes.Reason)
+		failureErr := fmt.Errorf("live revalidation failed: %s", prepRes.Reason)
 		if prepErr != nil {
 			failureErr = prepErr
 		} else if prepRes.Reason == ReasonTeardownContractExpired {

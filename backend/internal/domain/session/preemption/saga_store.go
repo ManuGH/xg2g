@@ -11,14 +11,14 @@ import (
 )
 
 var (
-	ErrSagaNotFound          = errors.New("preemption saga not found")
-	ErrSagaAlreadyExists     = errors.New("preemption saga already exists")
-	ErrSagaIdentityConflict  = errors.New("saga ID exists with conflicting contract or hash")
-	ErrDuplicateSaga         = errors.New("active saga already exists for prepared teardown hash")
-	ErrSagaVersionConflict   = errors.New("optimistic concurrency version conflict")
-	ErrFencingTokenMismatch = errors.New("fencing token mismatch or expired claim")
-	ErrReceiverClaimLocked   = errors.New("receiver is locked by another active preemption claim")
-	ErrMutationPhaseDisabled = errors.New("mutation state transitions are disabled in this phase")
+	ErrSagaNotFound           = errors.New("preemption saga not found")
+	ErrSagaAlreadyExists      = errors.New("preemption saga already exists")
+	ErrSagaIdentityConflict   = errors.New("saga ID exists with conflicting contract or hash")
+	ErrDuplicateSaga          = errors.New("active saga already exists for prepared teardown hash")
+	ErrSagaVersionConflict    = errors.New("optimistic concurrency version conflict")
+	ErrFencingTokenMismatch   = errors.New("fencing token mismatch or expired claim")
+	ErrReceiverClaimLocked    = errors.New("receiver is locked by another active preemption claim")
+	ErrMutationPhaseDisabled  = errors.New("mutation state transitions are disabled in this phase")
 	ErrInvalidStateTransition = errors.New("invalid saga state transition")
 )
 

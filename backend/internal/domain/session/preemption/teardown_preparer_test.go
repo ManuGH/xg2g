@@ -348,7 +348,7 @@ func TestValidatePreparedTeardown_HashSensitivityAndUnsortedTargets(t *testing.T
 		ContractHash:            "chash-1",
 		TargetAllocationIDs:     []string{"alloc-1", "alloc-2"},
 		TargetDescriptors:       descriptors,
-		TargetDescriptorsHash:  dHash,
+		TargetDescriptorsHash:   dHash,
 		SnapshotRevision:        "rev-1",
 		HardwareProfileRevision: "hw-1",
 		ConflictProofRevision:   "rev-1",
