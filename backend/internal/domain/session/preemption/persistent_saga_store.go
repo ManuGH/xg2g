@@ -621,18 +621,31 @@ func (p *PersistentSagaStore) QuarantineReceiverClaim(
 		return ReceiverClaim{}, fmt.Errorf("%w: saga '%s' mismatch for receiver '%s'", ErrSagaNotFound, sagaID, receiverID)
 	}
 
-	var currentSagaID, currentStatus string
-	var currentToken uint64
-	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
+	// lease_until and claim_version are read here so the answer can carry them.
+	// Incrementing the version in SQL and returning a struct that never learned
+	// the new value hands the caller a claim whose version is 0 and whose lease
+	// is the zero time - and MemorySagaStore, the other implementation of this
+	// interface, returns both correctly. Two stores disagreeing about what one
+	// call returns is worse than either answer.
+	var currentSagaID, currentStatus, currentLeaseStr string
+	var currentClaimVer, currentToken uint64
+	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, lease_until, claim_version, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(
+		&currentSagaID, &currentStatus, &currentLeaseStr, &currentClaimVer, &currentToken)
 	if err != nil || ReceiverClaimStatus(currentStatus) != ClaimStatusClaimed || currentSagaID != sagaID || currentToken != fencingToken {
 		return ReceiverClaim{}, fmt.Errorf("%w: claim mismatch for receiver '%s'", ErrFencingTokenMismatch, receiverID)
 	}
 
-	updateQuery := "UPDATE receiver_claims SET status = ?, claimed_at = ?, claim_version = claim_version + 1 WHERE receiver_id = ?"
-	_, err = tx.ExecContext(ctx, updateQuery, string(ClaimStatusQuarantined), now.Format(time.RFC3339Nano), receiverID)
+	newClaimVer := currentClaimVer + 1
+	updateQuery := "UPDATE receiver_claims SET status = ?, claimed_at = ?, claim_version = ? WHERE receiver_id = ?"
+	_, err = tx.ExecContext(ctx, updateQuery, string(ClaimStatusQuarantined), now.Format(time.RFC3339Nano), newClaimVer, receiverID)
 	if err != nil {
 		return ReceiverClaim{}, err
 	}
+
+	// Quarantine does not touch lease_until, so the row's value is what the
+	// caller should see - parsed after the update for the same reason
+	// RenewReceiverClaim parses it: the column is text.
+	currentLease, _ := time.Parse(time.RFC3339Nano, currentLeaseStr)
 
 	if err := tx.Commit(); err != nil {
 		return ReceiverClaim{}, err
@@ -643,6 +656,8 @@ func (p *PersistentSagaStore) QuarantineReceiverClaim(
 		SagaID:       sagaID,
 		Status:       ClaimStatusQuarantined,
 		ClaimedAt:    now,
+		LeaseUntil:   currentLease,
+		ClaimVersion: newClaimVer,
 		FencingToken: currentToken,
 	}, nil
 }

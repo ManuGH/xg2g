@@ -245,6 +245,16 @@ func RunUnifiedSagaStoreContractTests(t *testing.T, storeFactory func(t *testing
 		require.NoError(t, err)
 		require.Equal(t, ClaimStatusQuarantined, quarClaim.Status)
 		require.Equal(t, c1.FencingToken, quarClaim.FencingToken, "Quarantine MUST preserve the per-receiver FencingToken")
+
+		// The answer has to describe the row that was just written. Both fields
+		// were previously left at their zero values by the persistent store while
+		// the in-memory one returned them, so the same call meant different things
+		// depending on which SagaStore was behind it. Asserted here, in the shared
+		// suite, so neither implementation can drift from the other again.
+		require.Equal(t, c1.ClaimVersion+1, quarClaim.ClaimVersion,
+			"Quarantine MUST return the incremented ClaimVersion, not a zero value")
+		require.Equal(t, c1.LeaseUntil.UTC(), quarClaim.LeaseUntil.UTC(),
+			"Quarantine does not touch lease_until, so it MUST return the lease the claim already had")
 	})
 
 	t.Run("RenewReceiverClaim_ValidAndInvalidScenarios", func(t *testing.T) {
