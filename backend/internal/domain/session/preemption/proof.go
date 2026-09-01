@@ -98,14 +98,21 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 			key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
 			allocClaimMap[key] += claim.Quantity
 		}
+		// Totalled per resource before being compared, for the same reason
+		// SatisfiesResources totals both sides: allocClaimMap is already an
+		// aggregate, so checking each freed entry against it lets a proof that
+		// splits one resource across entries free more than the allocation owns.
+		freedByKey := make(map[string]int)
 		for _, freed := range mapping.FreedResources {
 			if err := ValidateResourceClaim(freed); err != nil {
 				return fmt.Errorf("%w: freed claim for '%s' invalid: %v", ErrInvalidProof, mapping.AllocationID, err)
 			}
-			key := fmt.Sprintf("%s:%s", freed.Kind, freed.Resource)
+			freedByKey[fmt.Sprintf("%s:%s", freed.Kind, freed.Resource)] += freed.Quantity
+		}
+		for key, quantity := range freedByKey {
 			ownedQty, hasClaim := allocClaimMap[key]
-			if !hasClaim || ownedQty < freed.Quantity {
-				return fmt.Errorf("%w: freed claim '%s' (qty %d) not owned by target allocation '%s' (owned %d)", ErrInvalidProof, key, freed.Quantity, mapping.AllocationID, ownedQty)
+			if !hasClaim || ownedQty < quantity {
+				return fmt.Errorf("%w: freed claim '%s' (qty %d) not owned by target allocation '%s' (owned %d)", ErrInvalidProof, key, quantity, mapping.AllocationID, ownedQty)
 			}
 		}
 	}
@@ -145,9 +152,19 @@ func SatisfiesResources(requested []ResourceClaim, freed []ResourceClaim) bool {
 		freedMap[key] += claim.Quantity
 	}
 
+	// Demand is aggregated the same way supply is. Split entries for one resource
+	// are a supported representation in this package - formatCanonicalClaimsStrict
+	// reads [{tuner-1,1},{tuner-1,1}] as [{tuner-1,2}] - so comparing each entry
+	// against the total instead of the total against the total reads two units of
+	// demand as one, and approves a plan that frees half of what was asked for.
+	requestedMap := make(map[string]int)
 	for _, claim := range requested {
 		key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
-		if freedMap[key] < claim.Quantity {
+		requestedMap[key] += claim.Quantity
+	}
+
+	for key, quantity := range requestedMap {
+		if freedMap[key] < quantity {
 			return false
 		}
 	}
