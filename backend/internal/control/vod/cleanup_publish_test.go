@@ -200,3 +200,33 @@ func TestVOD_AtomicPublish_Failure_NoFinal(t *testing.T) {
 	removeAllCalls := mockFS.GetRemoveAllCalls()
 	assert.Contains(t, removeAllCalls, "/tmp/failure-test")
 }
+
+// TestVOD_Cleanup_PrecedesFailureCallback pins the ordering the recordings self-healing
+// loop depends on: the failure callback publishes this job's terminal state, and an
+// observer may react to it by starting a retry into the same WorkDir. If the teardown
+// ran after the callback it would delete that retry's workspace, stranding it in
+// waitForRunnerArtifacts until BuildStartTimeout.
+func TestVOD_Cleanup_PrecedesFailureCallback(t *testing.T) {
+	ctx := context.Background()
+	clock := NewMockClock(time.Now())
+	mockFS := &MockFS{}
+
+	runner := NewMockRunner(errors.New("start failed"), nil)
+
+	var removedBeforeCallback bool
+	mon := NewBuildMonitor(BuildMonitorConfig{
+		JobID:  "test-cleanup-order",
+		Spec:   Spec{WorkDir: "/tmp/cleanup-order-test", OutputTemp: "output.m3u8"},
+		Runner: runner,
+		Clock:  clock,
+		FS:     mockFS,
+		OnFailed: func(jobID string, spec Spec, finalPath string, reason string) {
+			removedBeforeCallback = assert.Contains(t, mockFS.GetRemoveAllCalls(), "/tmp/cleanup-order-test")
+		},
+	})
+
+	mon.Run(ctx)
+
+	assert.True(t, removedBeforeCallback, "WorkDir must already be reclaimed when the failure callback fires")
+	assert.Len(t, mockFS.GetRemoveAllCalls(), 1, "WorkDir teardown must run exactly once")
+}
