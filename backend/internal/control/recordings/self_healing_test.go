@@ -126,6 +126,15 @@ func TestPhase4_SelfHealing_Integration(t *testing.T) {
 	assert.Equal(t, vod.ArtifactStateFailed, failedMeta.State)
 	assert.Equal(t, string(vod.ReasonTruthMismatch), failedMeta.Error)
 
+	// The retry below builds into the same cacheDir this failed build used as its
+	// WorkDir, so it is only safe once that WorkDir has been reclaimed. The monitor
+	// reclaims it before publishing FAILED, so observing FAILED above is already proof
+	// the teardown happened -- no polling needed. If that ordering ever regresses, the
+	// teardown lands inside the retry instead, deletes the runner output it waits for
+	// and strands it until BuildStartTimeout, and the assertions below read this
+	// build's stale FAILED/TruthMismatch metadata.
+	require.NoDirExists(t, cacheDir, "Failed build must reclaim its WorkDir before publishing FAILED")
+
 	// Step 3: Recordings layer polls build state; should detect TruthMismatch and invalidate truth
 	_, _, metaAfterFail, metaOk, err := recordings.LoadRecordingBuildState(ctx, hlsRoot, vodManager, serviceRef, variant)
 	require.NoError(t, err)

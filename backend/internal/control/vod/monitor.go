@@ -44,6 +44,7 @@ type BuildMonitor struct {
 	handle Handle
 
 	stopOnce    sync.Once // Ensures Stop is called at most once
+	cleanupOnce sync.Once // Ensures WorkDir teardown runs at most once
 	notifyOnce  sync.Once // Ensures completion callbacks called at most once
 	onSucceeded func(jobID string, spec Spec, finalPath string)
 	onFailed    func(jobID string, spec Spec, finalPath string, reason string)
@@ -87,6 +88,13 @@ func (m *BuildMonitor) notifyFailure(reason string) {
 	log.Debug().Str("jobId", m.jobID).Str("reason", reason).Msg("VOD monitor: notifyFailure called")
 	m.notifyOnce.Do(func() {
 		log.Debug().Str("jobId", m.jobID).Bool("hasCallback", m.onFailed != nil).Msg("VOD monitor: notifyFailure executing")
+		// Reclaim WorkDir before publishing the terminal state, not after. The callback
+		// makes this job's failure observable, and an observer may react by starting a
+		// retry into the same WorkDir; a teardown that lands afterwards deletes the
+		// retry's workspace and strands it in waitForRunnerArtifacts until
+		// BuildStartTimeout. The deferred cleanup in Run stays as the backstop for paths
+		// that never notify.
+		m.cleanup()
 		if m.onFailed != nil {
 			m.onFailed(m.jobID, m.spec, m.finalPath, reason)
 			log.Debug().Str("jobId", m.jobID).Msg("VOD monitor: failure callback completed")
@@ -281,17 +289,19 @@ func (m *BuildMonitor) runnerArtifactsReady(outputPath string) (bool, error) {
 
 // cleanup attempts to remove WorkDir on failure (best-effort).
 func (m *BuildMonitor) cleanup() {
-	status := m.GetStatus()
-	if status.State == StateSucceeded {
-		// On success, keep WorkDir or let caller decide
-		// (or optionally clean temp files, but not final output)
-		return
-	}
+	m.cleanupOnce.Do(func() {
+		status := m.GetStatus()
+		if status.State == StateSucceeded {
+			// On success, keep WorkDir or let caller decide
+			// (or optionally clean temp files, but not final output)
+			return
+		}
 
-	// On any failure/cancel, attempt to clean WorkDir
-	if m.spec.WorkDir != "" {
-		_ = m.fs.RemoveAll(m.spec.WorkDir)
-	}
+		// On any failure/cancel, attempt to clean WorkDir
+		if m.spec.WorkDir != "" {
+			_ = m.fs.RemoveAll(m.spec.WorkDir)
+		}
+	})
 }
 
 // publish atomically moves OutputTemp to FinalPath.
