@@ -143,8 +143,18 @@ type LocalAdapter struct {
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
 	// executedPlans keeps the execution-truth plan parsed from the real argv that launched for a handle.
 	executedPlans map[ports.RunHandle]ports.ExecutedFFmpegPlan
-	// generations tracks process generation counter per session ID for P6.1a correlation
+	// generations tracks the process generation counter per transcode job ID for
+	// P6.1a correlation. Unlike every other per-handle map here it deliberately
+	// OUTLIVES the process it describes: a respawn of the same job must observe
+	// generation N+1, so clearing it in removeActiveProcessLocked would reset the
+	// counter on exactly the event the correlation chain exists to describe.
+	// It is bounded by generationOrder instead — see retireGenerationsLocked.
 	generations map[string]uint64
+	// generationOrder is the eviction order for generations, least-recently-spawned
+	// first. A job is appended on its first spawn and moved to the back on every
+	// respawn, so the front of the slice is the job that has gone longest without
+	// starting a process.
+	generationOrder []string
 	// processIdentities keeps operational TranscodeProcessIdentity for active handles
 	processIdentities map[ports.RunHandle]TranscodeProcessIdentity
 	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
@@ -157,6 +167,15 @@ type LocalAdapter struct {
 }
 
 const maxCompletedProcessDetails = 128
+
+// maxTrackedGenerations bounds the per-job generation counters retained by the
+// adapter. The counter for a job that is currently running a process is never
+// evicted (see retireGenerationsLocked), so the bound can only ever drop jobs
+// with no live process — and reaching it at all takes maxTrackedGenerations
+// distinct newer jobs since that job last spawned. Past that point a respawn
+// restarts at generation 1, which duplicates a generation number in the logs
+// rather than corrupting a live correlation chain.
+const maxTrackedGenerations = 1024
 
 // NewLocalAdapter creates a new adapter instance.
 func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
@@ -314,7 +333,60 @@ func (a *LocalAdapter) registerProcessIdentity(handle ports.RunHandle, jobID str
 	gen := a.generations[jobID]
 	ident := NewProcessIdentity(jobID, gen, pid, startedAt)
 	a.processIdentities[handle] = ident
+	a.touchGenerationLocked(jobID)
+	a.retireGenerationsLocked()
 	return ident
+}
+
+// touchGenerationLocked moves jobID to the back of the eviction order, marking it
+// the most recently spawned job.
+func (a *LocalAdapter) touchGenerationLocked(jobID string) {
+	for i, id := range a.generationOrder {
+		if id == jobID {
+			a.generationOrder = append(a.generationOrder[:i], a.generationOrder[i+1:]...)
+			break
+		}
+	}
+	a.generationOrder = append(a.generationOrder, jobID)
+}
+
+// retireGenerationsLocked drops the least-recently-spawned generation counters
+// once more than maxTrackedGenerations jobs are tracked.
+//
+// The counter cannot be retired at process end — a respawn has to see N+1 — and
+// there is no single session-teardown path in the adapter that is guaranteed to
+// run for every session, so a bound is what keeps the map from growing for the
+// lifetime of the daemon. A job holding a live process is skipped rather than
+// evicted, which is what makes the bound safe for correlation: the only counters
+// that can disappear belong to jobs with nothing running to correlate. That skip
+// also means the map may briefly exceed the bound, capped by the number of
+// concurrently running processes.
+func (a *LocalAdapter) retireGenerationsLocked() {
+	if len(a.generations) <= maxTrackedGenerations {
+		return
+	}
+	live := make(map[string]struct{}, len(a.processIdentities))
+	for _, ident := range a.processIdentities {
+		live[ident.JobID] = struct{}{}
+	}
+	for len(a.generations) > maxTrackedGenerations {
+		evicted := false
+		for i, id := range a.generationOrder {
+			if _, running := live[id]; running {
+				continue
+			}
+			a.generationOrder = append(a.generationOrder[:i], a.generationOrder[i+1:]...)
+			delete(a.generations, id)
+			evicted = true
+			break
+		}
+		if !evicted {
+			// Every tracked job is running. Nothing may be dropped without
+			// resetting a live counter, so the map stays over its bound until
+			// one of them stops.
+			return
+		}
+	}
 }
 
 func (a *LocalAdapter) getProcessIdentity(handle ports.RunHandle) (TranscodeProcessIdentity, bool) {
