@@ -97,10 +97,15 @@ jobs:
         run: |
           set -euo pipefail
           SIM_NAME="iPhone 16 Pro"
-          SIM_UDID=$(xcrun simctl list devices "${SIM_NAME}" available | grep -E -m1 "${SIM_NAME}.*\([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/' || true)
+          # Anchor the name so it must be followed directly by " (": simctl matches device
+          # names by substring, so an unanchored pattern lets "iPhone 16 Pro Max" satisfy a
+          # search for "iPhone 16 Pro". On a runner carrying both, that silently binds the
+          # destination to the wrong device -- and the -z guard below never fires, because a
+          # non-empty (wrong) UDID was returned.
+          SIM_UDID=$(xcrun simctl list devices "${SIM_NAME}" available | grep -E -m1 "^[[:space:]]*${SIM_NAME} \([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/' || true)
           if [ -z "${SIM_UDID}" ]; then
-            echo "iPhone 16 Pro not found, falling back to first available iPhone"
-            SIM_UDID=$(xcrun simctl list devices available | grep -E -m1 "iPhone.*\([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/')
+            echo "${SIM_NAME} not found, falling back to first available iPhone"
+            SIM_UDID=$(xcrun simctl list devices available | grep -E -m1 "^[[:space:]]*iPhone.*\([0-9A-Fa-f-]+\)" | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/')
           fi
           echo "Selected Simulator UDID: ${SIM_UDID}"
           echo "udid=${SIM_UDID}" >> "$GITHUB_OUTPUT"
