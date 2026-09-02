@@ -241,12 +241,47 @@ successful release is not a successful release.
   even though nothing is outstanding; confirm with
   `git cherry origin/main <branch>` — every line prefixed `-` means every commit
   is already in `main` and the branch is only a stale pointer.
+- A `+` from `git cherry` is not proof that work is outstanding. It compares
+  patch IDs, and any commit whose conflicts were resolved on the way in has a
+  different patch ID from its original — so content that IS in `main` reports as
+  missing. Seen 2026-09-02: a branch reported 2 of 34 commits outstanding, and
+  both were exactly the commits whose conflicts had been resolved during the
+  split. Before acting on a `+`, grep `main` for what that commit actually
+  added. Count content, not patch IDs.
 - Before removing a worktree, run `git status --porcelain` inside it. Agent
   worktrees routinely hold uncommitted test files. Commit them or save a patch
   first. Never `git worktree remove --force` a dirty tree merely to tidy up.
 - Periodically reconcile: `git branch -vv`, `git worktree list`, and
   `gh pr list --state all` together. Anything local without a matching open PR
   is either finished (delete it), parked (note it), or forgotten (decide).
+
+#### Before merging a branch that has fallen behind
+
+- Ask first whether its work already landed by another route. A branch whose
+  headline work reached `main` independently is not merged forward, it is
+  closed. Compare tips, not the three-dot diff:
+  `git diff --shortstat origin/main <branch>`. Deletions far exceeding
+  insertions mean taking that branch would REVERT `main`. Seen 2026-09-02:
+  +8,505/−87,921 on one branch, and on another `main` had implemented the very
+  feature the branch still refused with an error.
+- `git diff --numstat origin/main <branch> -- <file>` per key file says which
+  side is ahead. A file that is byte-identical, or where the branch has fewer
+  lines, is a file the branch can no longer contribute.
+- Branch protection here is `strict: false`, so a PR may merge while far behind
+  `main` and its CI never builds the combination. Either rebase before merging
+  so CI tests what will actually land, or build and test merged `main`
+  afterwards. Do not assume a green PR proves the merge result.
+
+#### Linters do not agree across machines
+
+- CI pins its linter version. A local `golangci-lint` of a different version
+  reports different findings — seen 2026-09-02: local reported 0 issues where
+  CI reported 3 G115s. A clean local run is not a green gate.
+- When CI reports N findings of one pattern, grep the tree for the pattern
+  instead of fixing the N reported lines. Same day: CI named 3 sites,
+  `grep` found 6, and the other 3 would have failed a later run.
+- `go vet` stops at the first errors per package and does not see everything a
+  test binary will. `go test` is what proves a package with its tests compiles.
 
 ### Deployment and safety
 
