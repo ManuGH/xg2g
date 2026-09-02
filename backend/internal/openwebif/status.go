@@ -48,7 +48,10 @@ func (c *Client) About(ctx context.Context) (*AboutInfo, error) {
 		}
 		c.aboutCacheMu.RUnlock()
 
-		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// Detach from the leader's request context: this singleflight result is shared
+		// by every joined waiter, so one caller disconnecting must not cancel the
+		// upstream call for all of them. Use an independent, bounded timeout instead.
+		reqCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 
 		body, err := c.get(reqCtx, "/api/about", "about", nil)
@@ -106,7 +109,10 @@ func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 		}
 		c.statusCacheMu.RUnlock()
 
-		reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		// Detach from the leader's request context: this singleflight result is shared
+		// by every joined waiter, so one caller disconnecting must not cancel the
+		// upstream call for all of them. Use an independent, bounded timeout instead.
+		reqCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 
 		body, err := c.get(reqCtx, "/api/statusinfo", "status.info", nil)
@@ -147,7 +153,10 @@ func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 // GetCurrent fetches detailed current service information (PIDs, etc) with singleflight deduplication.
 func (c *Client) GetCurrent(ctx context.Context) (*CurrentInfo, error) {
 	val, err, _ := c.currentGroup.Do("get.current", func() (any, error) {
-		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// Detach from the leader's request context: this singleflight result is shared
+		// by every joined waiter, so one caller disconnecting must not cancel the
+		// upstream call for all of them. Use an independent, bounded timeout instead.
+		reqCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 
 		body, err := c.get(reqCtx, "/api/getcurrent", "get.current", nil)

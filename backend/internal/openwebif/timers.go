@@ -44,7 +44,10 @@ func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
 		}
 		c.timerCacheMu.RUnlock()
 
-		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// Detach from the leader's request context: this singleflight result is shared
+		// by every joined waiter, so one caller disconnecting must not cancel the
+		// upstream call for all of them. Use an independent, bounded timeout instead.
+		reqCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 
 		body, err := c.get(reqCtx, "/api/timerlist", "timers.list", nil)
