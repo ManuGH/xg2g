@@ -10,6 +10,21 @@ import (
 const (
 	defaultAboutCacheTTL  = 15 * time.Second
 	defaultStatusCacheTTL = 3 * time.Second
+
+	// maxAboutLKGAge and maxStatusLKGAge bound the last-known-good fallback served on
+	// a fetch failure. Unbounded, a single successful fetch makes every later failure
+	// return that cache forever (nothing calls InvalidateAboutCache/InvalidateStatusCache
+	// in production), and receivertopology records the result as EvidenceObserved with
+	// ObservedAt = now — reporting an unplugged receiver as freshly observed.
+	//
+	// Both payloads carry liveness, not just identity: the background-scan detector
+	// reads about.Info.Streams and about.Info.Tuners to decide whether the receiver is
+	// in use before probing it. The window is therefore one relaxed poll cycle
+	// (receivertopology.StandbyPollInterval, restated here to avoid an import cycle),
+	// after which the caller gets the error back and the evidence grade falls to
+	// EvidenceUnknown, as it did before caching was introduced.
+	maxAboutLKGAge  = 30 * time.Second
+	maxStatusLKGAge = 30 * time.Second
 )
 
 // InvalidateAboutCache clears the cached about metadata.
@@ -74,10 +89,10 @@ func (c *Client) About(ctx context.Context) (*AboutInfo, error) {
 
 	if err != nil {
 		c.aboutCacheMu.RLock()
-		if c.aboutCache != nil {
+		if age := time.Since(c.aboutCacheAt); c.aboutCache != nil && age < maxAboutLKGAge {
 			cached := *c.aboutCache
 			c.aboutCacheMu.RUnlock()
-			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF about fetch failed or timed out; serving Last-Known-Good cached about info")
+			c.loggerFor(ctx).Warn().Err(err).Dur("lkg_age", age).Msg("OpenWebIF about fetch failed or timed out; serving Last-Known-Good cached about info")
 			return &cached, nil
 		}
 		c.aboutCacheMu.RUnlock()
@@ -135,10 +150,10 @@ func (c *Client) GetStatusInfo(ctx context.Context) (*StatusInfo, error) {
 
 	if err != nil {
 		c.statusCacheMu.RLock()
-		if c.statusCache != nil {
+		if age := time.Since(c.statusCacheAt); c.statusCache != nil && age < maxStatusLKGAge {
 			cached := *c.statusCache
 			c.statusCacheMu.RUnlock()
-			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF status fetch failed or timed out; serving Last-Known-Good cached status info")
+			c.loggerFor(ctx).Warn().Err(err).Dur("lkg_age", age).Msg("OpenWebIF status fetch failed or timed out; serving Last-Known-Good cached status info")
 			return &cached, nil
 		}
 		c.statusCacheMu.RUnlock()

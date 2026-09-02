@@ -12,7 +12,16 @@ import (
 	"time"
 )
 
-const defaultTimerCacheTTL = 15 * time.Second
+const (
+	defaultTimerCacheTTL = 15 * time.Second
+
+	// maxTimerLKGAge bounds the last-known-good fallback below, for the same reason as
+	// maxAboutLKGAge/maxStatusLKGAge in status.go: receivertopology derives active and
+	// upcoming recordings from this list, so an unbounded fallback keeps reporting a
+	// recording that ended — or misses one that started — for as long as the receiver
+	// stays unreachable.
+	maxTimerLKGAge = 30 * time.Second
+)
 
 // InvalidateTimerCache clears the cached timer list (e.g. after a mutation).
 func (c *Client) InvalidateTimerCache() {
@@ -71,11 +80,11 @@ func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
 
 	if err != nil {
 		c.timerCacheMu.RLock()
-		if c.timerCache != nil {
+		if age := time.Since(c.timerCacheAt); c.timerCache != nil && age < maxTimerLKGAge {
 			cached := make([]Timer, len(c.timerCache))
 			copy(cached, c.timerCache)
 			c.timerCacheMu.RUnlock()
-			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF timer fetch failed or timed out; serving Last-Known-Good cached timers")
+			c.loggerFor(ctx).Warn().Err(err).Dur("lkg_age", age).Msg("OpenWebIF timer fetch failed or timed out; serving Last-Known-Good cached timers")
 			return cached, nil
 		}
 		c.timerCacheMu.RUnlock()
