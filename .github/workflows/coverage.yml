@@ -48,13 +48,16 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install ffmpeg
+        # Bounds an apt-mirror stall so it cannot consume the 35m job budget.
+        # Slowest install observed for this job is 94s; 5m leaves ~3x headroom.
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           if command -v ffmpeg >/dev/null 2>&1; then
             echo "ffmpeg already installed"
           else
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
+            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
           fi
           ffmpeg -version | head -n 1
 
