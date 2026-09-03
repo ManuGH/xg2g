@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -52,12 +53,40 @@ func ValidateLiveRef(serviceRef string) error {
 	}
 
 	// Whitelist: strictly allow only ASCII alphanumeric characters [0-9A-Za-z], colon ':', and underscore '_'
-	for i := 0; i < len(serviceRef); i++ {
-		b := serviceRef[i]
-		isAlphaNum := (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-		if !isAlphaNum && b != ':' && b != '_' {
+	for _, r := range serviceRef {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) || r == '/' || r == '\\' || r == '?' || r == '#' || r == 0 || r > unicode.MaxASCII {
 			return ErrInvalidLiveRef
 		}
+	}
+
+	if strings.Contains(serviceRef, "..") {
+		return ErrInvalidLiveRef
+	}
+
+	// 2. Multi-level URL decoding boundary check to eliminate double-decoding vulnerabilities
+	current := serviceRef
+	for i := 0; i < 3; i++ {
+		if !strings.Contains(current, "%") {
+			break
+		}
+		decoded, err := url.PathUnescape(current)
+		if err != nil {
+			return ErrInvalidLiveRef
+		}
+		if strings.Contains(decoded, "..") || strings.Contains(decoded, "/") || strings.Contains(decoded, "\\") ||
+			strings.Contains(decoded, "?") || strings.Contains(decoded, "#") || strings.Contains(decoded, "\x00") ||
+			strings.Contains(decoded, "\r") || strings.Contains(decoded, "\n") {
+			return ErrInvalidLiveRef
+		}
+		for _, r := range decoded {
+			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+				return ErrInvalidLiveRef
+			}
+		}
+		if decoded == current {
+			break
+		}
+		current = decoded
 	}
 
 	return nil
