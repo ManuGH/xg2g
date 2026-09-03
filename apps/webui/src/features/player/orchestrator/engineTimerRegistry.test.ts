@@ -97,16 +97,28 @@ describe('engineTimerRegistry', () => {
     await expect(promise).rejects.toThrow(/Aborted/);
   });
 
-  it('useEngineTimerRegistry hook clears all timers on unmount', () => {
+  it('cancels pending delay when clearAll() is called', async () => {
+    const registry = createEngineTimerRegistry();
+    const promise = registry.delay(500);
+
+    vi.advanceTimersByTime(200);
+    registry.clearAll();
+
+    await expect(promise).rejects.toThrow(/Aborted/);
+  });
+
+  it('useEngineTimerRegistry hook clears all timers and delays on unmount', async () => {
     const { result, unmount } = renderHook(() => useEngineTimerRegistry());
     const fn = vi.fn();
 
     result.current.setTimeout('unmount_test', fn, 500);
     expect(result.current.hasTimeout('unmount_test')).toBe(true);
+    const delayPromise = result.current.delay(500);
 
     unmount();
     vi.runAllTimers();
     expect(fn).not.toHaveBeenCalled();
+    await expect(delayPromise).rejects.toThrow(/Aborted/);
   });
 });
 

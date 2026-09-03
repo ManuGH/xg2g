@@ -570,6 +570,7 @@ export function usePlaybackEngine({
 
         replayHlsRef.current?.(nextUrl, trackedEngine);
       } catch (recoveryErr) {
+        if (recoveryErr instanceof DOMException && recoveryErr.name === 'AbortError') return;
         debugWarn('[V3Player] Decode recovery failed', recoveryErr);
         onFailure(recoveryErr);
       } finally {
