@@ -183,7 +183,14 @@ func TestHelperProcess(t *testing.T) {
 		if err := child.Start(); err != nil {
 			os.Exit(5)
 		}
-		if err := os.WriteFile(marker, []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+		// Published by rename, because the reader waits for the path to exist and
+		// then parses what it holds: os.WriteFile creates the file before it puts
+		// the pid in it, and an empty marker parses as no pid at all.
+		tmp := marker + ".part"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+			os.Exit(7)
+		}
+		if err := os.Rename(tmp, marker); err != nil {
 			os.Exit(7)
 		}
 		signal.Ignore(syscall.SIGTERM)
