@@ -155,10 +155,10 @@ func (m *Manager) SetLiveProbeSource(src LiveProbeSource) {
 	m.liveProbeSource = src
 }
 
-// serviceRefIsLive reports whether shared ingest is streaming serviceRef right
+// ServiceRefIsLive reports whether shared ingest is streaming serviceRef right
 // now. Unknown counts as not live: the guards built on it only ever withhold
 // extra receiver I/O, so a wrong "no" costs what today already costs.
-func (m *Manager) serviceRefIsLive(serviceRef string) bool {
+func (m *Manager) ServiceRefIsLive(serviceRef string) bool {
 	if m == nil || m.liveProbeSource == nil {
 		return false
 	}

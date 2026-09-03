@@ -93,10 +93,10 @@ func (l *PasswordLoginLimiter) CheckAllowed(ctx context.Context, clientIP, usern
 	var delay time.Duration
 	if username != "" {
 		if ub, exists := l.userBackoffs[username]; exists && ub.consecutiveFailures >= 3 {
-			switch {
-			case ub.consecutiveFailures == 3:
+			switch ub.consecutiveFailures {
+			case 3:
 				delay = 500 * time.Millisecond
-			case ub.consecutiveFailures == 4:
+			case 4:
 				delay = 1 * time.Second
 			default:
 				delay = 2 * time.Second
