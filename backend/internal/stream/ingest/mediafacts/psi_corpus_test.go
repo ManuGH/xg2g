@@ -453,6 +453,44 @@ func bigPAT3Section(targetPID uint16) []byte {
 	return s
 }
 
+// withSyntaxBits rewrites the two bits that fix a PAT's or PMT's syntax and
+// reseals the section, so that those bits are the only thing distinguishing it
+// from one that would be accepted.
+func withSyntaxBits(section []byte, syntaxIndicator, fixedBit byte) []byte {
+	out := cloneSlice(section)
+	out[1] &^= 0xC0
+	out[1] |= (syntaxIndicator & 0x01) << 7
+	out[1] |= (fixedBit & 0x01) << 6
+	crc := psiCRC32(out[:len(out)-4])
+	out[len(out)-4], out[len(out)-3] = byte(crc>>24), byte(crc>>16)
+	out[len(out)-2], out[len(out)-1] = byte(crc>>8), byte(crc)
+	return out
+}
+
+// patOfSize builds a PAT with enough programmes to declare `sectionLength`,
+// with the target among them. 5 header bytes + 4 per programme + 4 CRC is what
+// the field counts, so 253 programmes declare exactly the 1021 a PAT may and
+// 254 declare 1025, which it may not.
+func patOfSize(programs int, targetPID uint16) []byte {
+	entries := make([]patProgram, 0, programs)
+	entries = append(entries, patProgram{number: 1, pid: targetPID})
+	for i := 1; i < programs; i++ {
+		entries = append(entries, patProgram{number: uint16(100 + i), pid: uint16(0x0400 + i)})
+	}
+	return patSection(psiTSID, 0, 0, 0, 1, entries...)
+}
+
+// declaringLength is the first bytes of a section announcing `length` after the
+// length field, with the syntax bits a PAT is required to carry.
+func declaringLength(length int) []byte {
+	return []byte{
+		0x00,
+		0x00,
+		0xB0 | byte((length>>8)&0x0F),
+		byte(length & 0xFF),
+	}
+}
+
 // pat364Section is sized so that its first packet leaves exactly 181 bytes,
 // which puts the section after it 2 bytes from the end of the next payload -
 // the split that used to carry a section past the table_id check.
@@ -755,9 +793,9 @@ func psiRejectionCases() []psiCorpusCase {
 			done(),
 
 		psiCase("a_section_length_that_never_arrives_leaves_the_table_inactive",
-			"a header claiming 1021 more bytes waits for them and reports nothing meanwhile",
+			"1021 is the most a PAT may declare, so a header claiming it is waited for rather than refused, and reports nothing meanwhile",
 			1).
-			chunk([][]byte{psiPacketRaw(0, true, 0, []byte{0x00, 0x00, 0xB3, 0xFD}), nullPacket(0)}, nothing).
+			chunk([][]byte{psiPacketRaw(0, true, 0, declaringLength(maxPSISectionLength)), nullPacket(0)}, nothing).
 			done(),
 
 		psiCase("a_section_too_short_to_hold_its_fields_is_dropped",
@@ -773,7 +811,7 @@ func psiRejectionCases() []psiCorpusCase {
 			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{1, psiPMTPID1})
 			sec5 := patSection(psiTSID, 0, 5, 1, 1, patProgram{9, 0x0900})
 			return psiCase("a_section_numbered_outside_the_table_does_not_complete_it",
-				"two sections arrived and the table declares two, but section 1 is still missing and section 5 does not stand in for it",
+				"a section numbered 5 of a two-section table is refused, so only section 0 is here and the table is not complete",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec5)), nothing).
 				done()
@@ -839,6 +877,111 @@ func psiRejectionCases() []psiCorpusCase {
 				"fail closed: a table this PID is not read for is already non-conformant input, so its length is not trusted as navigation to whatever sits behind it",
 				1).
 				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, nothing).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A section numbering itself the sixth of two is not a member of the
+			// table it names, so the table it interrupts is unaffected by it.
+			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{1, psiPMTPID1})
+			stray := patSection(psiTSID, 0, 5, 1, 1, patProgram{9, 0x0900})
+			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{7, psiPMTPID2})
+			return psiCase("a_section_numbered_beyond_the_table_leaves_it_untouched",
+				"section_number counts from zero up to last_section_number, so one outside that range is refused before the table it is not part of can be disturbed",
+				1).
+				chunk(flatten(
+					psiPackets(0, 0, 0, sec0),
+					psiPackets(0, 1, 0, stray),
+					psiPackets(0, 2, 0, sec1)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			atTheLimit := patOfSize(253, psiPMTPID1)
+			if len(atTheLimit) != maxPSISectionBytes {
+				panic("psi corpus: 253 programmes is no longer the largest PAT")
+			}
+			return psiCase("a_pat_at_the_largest_section_it_may_declare_is_read_normally",
+				"1021 after the length field, 1024 in all: the most either table may declare, and nothing about it is unusual",
+				1).
+				chunk(psiPackets(0, 0, 0, atTheLimit), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1, 2, 3, 4, 5},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// One programme more, and the section declares 1025. Refused at the
+			// declaration, so it is never assembled - which is what makes this
+			// visible rather than a matter of how much memory was reserved.
+			tooLong := patOfSize(254, psiPMTPID2)
+			if len(tooLong) != maxPSISectionBytes+4 {
+				panic("psi corpus: 254 programmes is no longer one programme too many")
+			}
+			return psiCase("a_pat_longer_than_a_section_may_be_is_never_assembled",
+				"a section one programme past the limit is refused where it declares itself, so its bytes are never collected and its CRC never gets the chance to vouch for it",
+				1).
+				chunk(psiPackets(0, 0, 0, tooLong), nothing).
+				chunk(psiPackets(0, 6, 0, basePAT), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{6},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			return psiCase("a_section_declaring_more_than_a_pat_may_is_refused",
+				"ISO/IEC 13818-1 caps a PAT or PMT section_length at 1021 whatever the twelve-bit field could hold, and the two bits above that cap may not be set",
+				1).
+				chunk([][]byte{psiPacketRaw(0, true, 0, declaringLength(1022))}, nothing).
+				chunk([][]byte{psiPacketRaw(0, true, 1, declaringLength(1023))}, nothing).
+				chunk([][]byte{psiPacketRaw(0, true, 2, declaringLength(0x0400))}, nothing).
+				chunk([][]byte{psiPacketRaw(0, true, 3, declaringLength(0x0FFF))}, nothing).
+				chunk(psiPackets(0, 4, 0, basePAT), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{4},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The same declaration, arriving in the one shape that used to reach
+			// the assembler without the scan ever seeing it.
+			sectionA := pat364Section(psiPMTPID1)
+			illegal := declaringLength(0x0FFF)
+			payload1 := append([]byte{181}, sectionA[183:]...)
+			payload1 = append(payload1, illegal[0], illegal[1])
+			if len(payload1) != TSPacketSize-4 {
+				panic("psi corpus: the split-header payload is not a full payload")
+			}
+			return psiCase("an_impossible_length_in_a_split_header_is_refused_too",
+				"the header that says how much to collect is checked wherever it completes, so a section cannot reserve four kilobytes by arriving in two pieces",
+				1).
+				chunk([][]byte{
+					psiPackets(0, 0, 0, sectionA)[0],
+					psiPacketRaw(0, true, 1, payload1),
+					psiPacketRaw(0, false, 2, illegal[2:]),
+				}, psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			return psiCase("a_section_whose_syntax_bits_are_wrong_is_not_this_tables_section",
+				"both tables are defined with section_syntax_indicator 1 and the bit after it 0; a section saying otherwise is not one of theirs however intact its bytes are",
+				1).
+				chunk(psiPackets(0, 0, 0, withSyntaxBits(basePAT, 0, 0)), nothing).
+				chunk(psiPackets(0, 1, 0, withSyntaxBits(basePAT, 1, 1)), nothing).
+				chunk(psiPackets(0, 2, 0, basePAT), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{2},
+				}).
 				done()
 		}(),
 
@@ -1968,6 +2111,12 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_duplicate_of_a_continuation_packet_is_ignored",
 		"a_section_too_short_to_hold_its_fields_is_dropped",
 		"a_section_numbered_outside_the_table_does_not_complete_it",
+		"a_section_numbered_beyond_the_table_leaves_it_untouched",
+		"a_pat_at_the_largest_section_it_may_declare_is_read_normally",
+		"a_pat_longer_than_a_section_may_be_is_never_assembled",
+		"a_section_declaring_more_than_a_pat_may_is_refused",
+		"an_impossible_length_in_a_split_header_is_refused_too",
+		"a_section_whose_syntax_bits_are_wrong_is_not_this_tables_section",
 		"a_section_of_another_table_on_the_pat_pid_is_not_a_pat",
 		"a_section_of_another_table_split_across_packets_is_not_a_pat",
 		"an_es_entry_declaring_more_descriptors_than_the_loop_holds_is_not_read",

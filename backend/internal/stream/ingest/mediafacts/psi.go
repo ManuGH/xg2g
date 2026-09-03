@@ -37,6 +37,51 @@ const (
 	tableIDPMT = 0x02
 )
 
+// What a PAT or PMT section may declare about its own length.
+//
+// section_length is a twelve bit field, but ISO/IEC 13818-1 does not let either
+// of these tables use all of it: for both, the first two bits of the field shall
+// be '00' and the value shall not exceed 1021. So the largest section either can
+// declare is 1021 bytes after the length field, and 1024 in total.
+//
+// The field width is not the bound. Treating it as one would have this parser
+// collect four kilobytes for a section that cannot legally be longer than one,
+// on nothing better than the say-so of a stream that has already declared
+// something impossible.
+const (
+	maxPSISectionLength = 1021
+	maxPSISectionBytes  = maxPSISectionLength + 3
+)
+
+// psiSectionDeclaration reads the three bytes that open a section and reports
+// the total length they declare.
+//
+// It answers false for a declaration a PAT or PMT cannot make. Three things make
+// one impossible, and they are checked together because they are all read from
+// the same two bytes and all knowable the moment those bytes arrive:
+//
+//	section_syntax_indicator must be 1  - both tables use the long form
+//	the bit after it must be 0          - fixed by the syntax, not reserved
+//	section_length must not exceed 1021
+//
+// One helper for one question, used everywhere the question is asked: by the
+// scan that meets a header whole inside a payload, by the assembler deciding how
+// many bytes to collect, and by the completed-section check. A second definition
+// of "how long may this be" is how two paths come to disagree about it.
+func psiSectionDeclaration(prefix []byte) (int, bool) {
+	if len(prefix) < 3 {
+		return 0, false
+	}
+	if prefix[1]&0x80 == 0 || prefix[1]&0x40 != 0 {
+		return 0, false
+	}
+	length := int((uint16(prefix[1]&0x0F) << 8) | uint16(prefix[2]))
+	if length > maxPSISectionLength {
+		return 0, false
+	}
+	return length + 3, true
+}
+
 // expectedTableIDFor names the table a PID is being read for.
 func expectedTableIDFor(isPAT bool) byte {
 	if isPAT {

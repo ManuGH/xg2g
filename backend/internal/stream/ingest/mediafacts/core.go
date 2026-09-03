@@ -672,8 +672,20 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 		consumed += toTake
 
 		if len(assembler.buf) >= 3 {
-			secLen := int((uint16(assembler.buf[1]&0x0F) << 8) | uint16(assembler.buf[2]))
-			assembler.sectionLen = secLen + 3
+			full, ok := psiSectionDeclaration(assembler.buf)
+			if !ok {
+				// The header is complete and says something a PAT or PMT cannot
+				// say. It is the only thing that could tell this assembler how
+				// much to collect, so there is nothing to wait for: the section
+				// is dropped rather than reserving space on its word. The
+				// continuity counter is kept, so the next payload unit start
+				// begins a section normally.
+				assembler.buf = assembler.buf[:0]
+				assembler.sectionLen = 0
+				assembler.rawPackets = assembler.rawPackets[:0]
+				return consumed
+			}
+			assembler.sectionLen = full
 		} else {
 			return consumed
 		}
@@ -802,8 +814,13 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			break
 		}
 
-		secLen := int((uint16(payload[offset+1]&0x0F) << 8) | uint16(payload[offset+2]))
-		fullSecLen := secLen + 3
+		fullSecLen, ok := psiSectionDeclaration(payload[offset:])
+		if !ok {
+			// An impossible declaration ends the scan of this payload. What
+			// follows it cannot be located: the length that would say where is
+			// the one that has just been refused.
+			break
+		}
 
 		if avail >= fullSecLen {
 			// Complete section self-contained in this payload chunk!
@@ -838,6 +855,13 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 		return
 	}
 
+	// Defence in depth. Both paths that reach here already refused an
+	// impossible declaration before using it, and asking again costs nothing
+	// against a section that arrived some way nobody has thought of yet.
+	if _, ok := psiSectionDeclaration(table); !ok {
+		return
+	}
+
 	// Validate MPEG-2 CRC32
 	if CalculateMPEG2CRC32(table) != 0 {
 		return
@@ -851,6 +875,19 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 	version := (table[5] >> 1) & 0x1F
 	sectionNum := table[6]
 	lastSectionNum := table[7]
+
+	// A section numbers itself within its own table: 13818-1 has section_number
+	// count from zero and last_section_number name the highest, so a section
+	// claiming to be the sixth of two is not a member of the table it names.
+	//
+	// Refused before the tracker rather than collected and found wanting later.
+	// The tracker keys sections by number, so an impossible one is an extra
+	// entry the generation can never account for - and a table that was
+	// arriving correctly would stop completing because of a section that was
+	// never part of it.
+	if sectionNum > lastSectionNum {
+		return
+	}
 
 	if isPAT {
 		tableComplete := c.patTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
