@@ -42,7 +42,7 @@ func TestProfilePINHashingAndVerification(t *testing.T) {
 
 func TestVerifyPassword_ParameterBoundingDefenseInDepth(t *testing.T) {
 	// Standard valid salt (16 bytes) and hash (32 bytes) base64
-	validSalt := "c29tZXNhbHQxMjM0NTY3OA" // 16 bytes decoded
+	validSalt := "c29tZXNhbHQxMjM0NTY3OA"                      // 16 bytes decoded
 	validHash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" // 32 bytes decoded
 
 	tests := []struct {

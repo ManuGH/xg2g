@@ -19,13 +19,13 @@ const (
 
 // ValidateLiveRef strictly asserts that a service reference is a clean Enigma2 Live TV format.
 // It enforces canonical boundaries:
-// - Must be valid UTF-8
-// - Length bounded [7, 256]
-// - No leading or trailing whitespace
-// - Strictly forbids slashes (/), backslashes (\), query injections (?, #), percent-encodings (%),
-//   dots (.), null bytes, Unicode control or format characters.
-// - Must contain colons separating structural Enigma2 tokens.
-// - Every character must be an ASCII alphanumeric, colon, or underscore.
+//   - Must be valid UTF-8
+//   - Length bounded [7, 256]
+//   - No leading or trailing whitespace
+//   - Strictly forbids slashes (/), backslashes (\), query injections (?, #), percent-encodings (%),
+//     dots (.), null bytes, Unicode control or format characters.
+//   - Must contain colons separating structural Enigma2 tokens.
+//   - Every character must be an ASCII alphanumeric, colon, or underscore.
 func ValidateLiveRef(serviceRef string) error {
 	if !utf8.ValidString(serviceRef) {
 		return ErrInvalidLiveRef
