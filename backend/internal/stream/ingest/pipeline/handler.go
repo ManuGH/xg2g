@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ingeststats"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
@@ -149,6 +150,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if unescaped, err := url.PathUnescape(serviceRef); err == nil {
 		serviceRef = unescaped
+	}
+
+	if err := recordings.ValidateLiveRef(serviceRef); err != nil {
+		http.Error(w, fmt.Sprintf("invalid serviceRef: %v", err), http.StatusBadRequest)
+		return
 	}
 
 	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)

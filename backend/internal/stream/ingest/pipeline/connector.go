@@ -156,6 +156,9 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout: 0, // Continuous streaming: no ceiling on the body
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
 				DialContext: (&net.Dialer{
