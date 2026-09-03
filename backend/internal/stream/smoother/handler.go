@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 )
@@ -41,7 +41,6 @@ type Handler struct {
 	receiverHost string
 	streamPort   int
 	cfg          Config
-	client       *http.Client
 }
 
 // AttachablePipeline provides subscriber attachment into the active live ingest session.
@@ -58,7 +57,11 @@ func NewHandler(receiverBaseURL string, streamPort int, cfg Config) *Handler {
 func NewHandlerWithManager(manager *session.Manager, receiverBaseURL string, streamPort int, cfg Config) *Handler {
 	host := "10.10.55.64"
 	if receiverBaseURL != "" {
-		if u, err := url.Parse(receiverBaseURL); err == nil && u.Hostname() != "" {
+		parseTarget := receiverBaseURL
+		if !strings.Contains(parseTarget, "://") {
+			parseTarget = "http://" + parseTarget
+		}
+		if u, err := url.Parse(parseTarget); err == nil && u.Hostname() != "" {
 			host = u.Hostname()
 		}
 	}
@@ -71,12 +74,6 @@ func NewHandlerWithManager(manager *session.Manager, receiverBaseURL string, str
 		receiverHost: host,
 		streamPort:   streamPort,
 		cfg:          cfg,
-		client: &http.Client{
-			Timeout: 0, // continuous streaming
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
 	}
 }
 
@@ -101,7 +98,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Canonical Live Ref Validation (strictly forbid path traversal, slashes, control chars, query modifiers)
-	if err := recordings.ValidateLiveRef(serviceRef); err != nil {
+	if err := normalize.ValidateLiveRef(serviceRef); err != nil {
 		http.Error(w, fmt.Sprintf("invalid serviceRef: %v", err), http.StatusBadRequest)
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ManuGH/xg2g/internal/normalize"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
 
@@ -77,29 +78,11 @@ func ValidateRecordingRef(serviceRef string) error {
 }
 
 // ValidateLiveRef strictly asserts that a service reference is a Live Enigma2 structural format.
-// It explicitly denies any paths (no slashes) to prevent cross-contamination with DVR routes.
+// It delegates to the canonical normalize.ValidateLiveRef.
 func ValidateLiveRef(serviceRef string) error {
-	if !utf8.ValidString(serviceRef) {
+	if err := normalize.ValidateLiveRef(serviceRef); err != nil {
 		return ErrInvalidRecordingRef
 	}
-
-	for _, r := range serviceRef {
-		// Control chars, slashes or invalid query modifiers are forbidden in clean ETB DVB streams
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\\' || r == '?' || r == '#' || r == '/' {
-			return ErrInvalidRecordingRef
-		}
-	}
-
-	trimmedRef := strings.TrimSpace(serviceRef)
-	if trimmedRef == "" {
-		return ErrInvalidRecordingRef
-	}
-
-	// Live streams MUST contain colons for Enigma2 formatting (1:0:1:...)
-	if !strings.Contains(trimmedRef, ":") {
-		return ErrInvalidRecordingRef
-	}
-
 	return nil
 }
 

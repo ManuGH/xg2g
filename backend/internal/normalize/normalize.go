@@ -4,9 +4,64 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
+
+var ErrInvalidLiveRef = errors.New("live service reference invalid")
+
+const (
+	minLiveRefLen = 7
+	maxLiveRefLen = 256
+)
+
+// ValidateLiveRef strictly asserts that a service reference is a clean Enigma2 Live TV format.
+// It enforces canonical boundaries:
+// - Must be valid UTF-8
+// - Length bounded [7, 256]
+// - No leading or trailing whitespace
+// - Strictly forbids slashes (/), backslashes (\), query injections (?, #), percent-encodings (%),
+//   dots (.), null bytes, Unicode control or format characters.
+// - Must contain colons separating structural Enigma2 tokens.
+// - Every character must be an ASCII alphanumeric, colon, or underscore.
+func ValidateLiveRef(serviceRef string) error {
+	if !utf8.ValidString(serviceRef) {
+		return ErrInvalidLiveRef
+	}
+
+	// Length bounds
+	if len(serviceRef) < minLiveRefLen || len(serviceRef) > maxLiveRefLen {
+		return ErrInvalidLiveRef
+	}
+
+	// No leading or trailing whitespace
+	if strings.TrimSpace(serviceRef) != serviceRef {
+		return ErrInvalidLiveRef
+	}
+
+	// Must contain colons for Enigma2 formatting (1:0:1:...)
+	if !strings.Contains(serviceRef, ":") {
+		return ErrInvalidLiveRef
+	}
+
+	parts := strings.Split(serviceRef, ":")
+	if len(parts) < 4 {
+		return ErrInvalidLiveRef
+	}
+
+	// Whitelist: strictly allow only ASCII alphanumeric characters [0-9A-Za-z], colon ':', and underscore '_'
+	for i := 0; i < len(serviceRef); i++ {
+		b := serviceRef[i]
+		isAlphaNum := (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+		if !isAlphaNum && b != ':' && b != '_' {
+			return ErrInvalidLiveRef
+		}
+	}
+
+	return nil
+}
 
 // Token normalizes a string token for matching:
 // - trims Unicode whitespace + invisible edge characters

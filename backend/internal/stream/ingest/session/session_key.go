@@ -10,6 +10,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 var (
@@ -106,7 +108,7 @@ func (k SessionKey) Canonicalize() SessionKey {
 	}
 }
 
-// Validate checks whether the key contains all required fields.
+// Validate checks whether the key contains all required fields and a valid service reference.
 func (k SessionKey) Validate() error {
 	c := k.Canonicalize()
 	if c.ReceiverHost == "" {
@@ -114,6 +116,11 @@ func (k SessionKey) Validate() error {
 	}
 	if c.ServiceRef == "" {
 		return ErrInvalidServiceRef
+	}
+	if c.SourceType == "enigma2" || c.SourceType == "" {
+		if err := normalize.ValidateLiveRef(c.ServiceRef); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidServiceRef, err)
+		}
 	}
 	return nil
 }

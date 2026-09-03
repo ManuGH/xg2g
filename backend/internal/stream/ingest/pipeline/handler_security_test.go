@@ -6,6 +6,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -85,23 +86,36 @@ func TestLiveHandler_Security_ValidServiceRefAccepted(t *testing.T) {
 }
 
 func TestLiveConnector_Security_DisablesRedirects(t *testing.T) {
-	var targetHit atomic.Bool
-	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		targetHit.Store(true)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer targetSrv.Close()
+	redirectCodes := []int{
+		http.StatusMovedPermanently,  // 301
+		http.StatusFound,             // 302
+		http.StatusTemporaryRedirect, // 307
+		http.StatusPermanentRedirect, // 308
+	}
 
-	redirectSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, targetSrv.URL, http.StatusMovedPermanently)
-	}))
-	defer redirectSrv.Close()
+	for _, code := range redirectCodes {
+		t.Run(fmt.Sprintf("Status_%d", code), func(t *testing.T) {
+			var originHits, targetHits atomic.Int32
+			targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				targetHits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer targetSrv.Close()
 
-	cfg := DefaultConnectorConfig(redirectSrv.URL, 8001)
-	connector := NewLivePipelineConnector(cfg)
+			redirectSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				originHits.Add(1)
+				http.Redirect(w, r, targetSrv.URL, code)
+			}))
+			defer redirectSrv.Close()
 
-	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:1:1:1:1:0:0:0:0:")
-	_, _, err := connector.dialHTTP(context.Background(), key)
-	require.Error(t, err, "301 redirect must be rejected as an error by NewSessionPipeline or dialHTTP")
-	assert.False(t, targetHit.Load(), "redirect target must never be visited")
+			cfg := DefaultConnectorConfig(redirectSrv.URL, 8001)
+			connector := NewLivePipelineConnector(cfg)
+
+			key := session.NewSessionKey("127.0.0.1", 8001, "1:0:1:1:1:1:0:0:0:0:")
+			_, _, err := connector.dialHTTP(context.Background(), key)
+			require.Error(t, err, "%d redirect must be rejected as an error by connector", code)
+			assert.Equal(t, int32(1), originHits.Load(), "exactly 1 request to original receiver expected")
+			assert.Equal(t, int32(0), targetHits.Load(), "0 requests to redirect target expected (redirects blocked)")
+		})
+	}
 }
