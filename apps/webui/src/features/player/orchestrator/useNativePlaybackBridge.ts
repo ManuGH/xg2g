@@ -22,12 +22,14 @@ import {
 } from './observabilityFormatters';
 import { normalizePlaybackInfo } from '../contracts/normalizePlaybackInfo';
 import type { PlaybackStateSetters } from './usePlaybackStateSetters';
+import type { PlaybackAttemptToken, PlaybackEngineEventSink } from '../playbackEngineContract';
 
 export interface NativePlaybackPipeline {
   setActiveHlsEngine: PlaybackStateSetters['setActiveHlsEngine'];
   setActiveRecordingId: Dispatch<SetStateAction<string | null>>;
   setPlaybackMode: PlaybackStateSetters['setPlaybackMode'];
-  setStatus: PlaybackStateSetters['setStatus'];
+  attemptTokenRef: MutableRefObject<PlaybackAttemptToken>;
+  eventSink: PlaybackEngineEventSink;
   setTraceId: PlaybackStateSetters['setTraceId'];
   setSessionProfileReason: Dispatch<SetStateAction<string | null>>;
   setPlaybackObservability: Dispatch<SetStateAction<PlaybackObservability | null>>;
@@ -65,7 +67,8 @@ export function useNativePlaybackBridge({
     setActiveHlsEngine,
     setActiveRecordingId,
     setPlaybackMode,
-    setStatus,
+    attemptTokenRef,
+    eventSink,
     setTraceId,
     setSessionProfileReason,
     setPlaybackObservability,
@@ -100,14 +103,15 @@ export function useNativePlaybackBridge({
       setActiveRecordingId(null);
       setPlaybackMode('LIVE');
     }
-    setStatus('starting');
+    eventSink({ type: 'media.waiting', attempt: attemptTokenRef.current });
   }, [
     activeRecordingRef,
+    attemptTokenRef,
     clearPlayerError,
+    eventSink,
     setActiveHlsEngine,
     setActiveRecordingId,
     setPlaybackMode,
-    setStatus,
   ]);
 
   const syncNativePlaybackState = useCallback((nextState: HostNativePlaybackState | null) => {
@@ -141,9 +145,6 @@ export function useNativePlaybackBridge({
             recoverable: true,
             terminal: false,
           });
-          setStatus('error');
-        } else {
-          setStatus('stopped');
         }
       }
       return;
@@ -210,11 +211,27 @@ export function useNativePlaybackBridge({
 
     const mappedStatus = resolveNativePlaybackStatus(nextState);
     if (mappedStatus) {
-      setStatus(mappedStatus);
+      switch (mappedStatus) {
+        case 'playing':
+          eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
+          break;
+        case 'paused':
+          eventSink({ type: 'media.paused', attempt: attemptTokenRef.current });
+          break;
+        case 'buffering':
+        case 'starting':
+          eventSink({ type: 'media.waiting', attempt: attemptTokenRef.current });
+          break;
+        case 'ready':
+          eventSink({ type: 'media.ready', attempt: attemptTokenRef.current, engine: 'native' });
+          break;
+      }
     }
   }, [
     activeRecordingRef,
+    attemptTokenRef,
     clearPlayerError,
+    eventSink,
     isNativePlaybackHost,
     mergeSessionPlaybackTrace,
     reportPlaybackFailure,
@@ -224,7 +241,6 @@ export function useNativePlaybackBridge({
     setPlaybackMode,
     setPlaybackObservability,
     setSessionProfileReason,
-    setStatus,
     setTraceId,
   ]);
 

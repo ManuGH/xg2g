@@ -1,8 +1,8 @@
-import { createRef, useRef, useState } from 'react';
+import { createRef, useRef } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlayerChrome } from './usePlayerChrome';
-import type { HlsInstanceRef, PlayerStatus } from '../../types/v3-player';
+import type { HlsInstanceRef } from '../../types/v3-player';
 
 function HookHarness({
   shouldForceNativeMobileHls,
@@ -30,7 +30,6 @@ function HookHarness({
   const hlsRef = useRef<HlsInstanceRef>(null);
   const userPauseIntentRef = useRef(false);
   const lastDecodedRef = useRef(0);
-  const [, setStatus] = useState<PlayerStatus>('idle');
 
   const chrome = usePlayerChrome({
     autoStart: true,
@@ -44,7 +43,9 @@ function HookHarness({
     canSeek,
     startUnix: null,
     liveSeekWindow,
-    setStatus,
+    onUserPlayIntent: vi.fn(),
+    onUserPauseIntent: vi.fn(),
+    onEngineObservation: vi.fn(),
     allowNativeFullscreen: true,
     shouldForceNativeMobileHls,
     canUseDesktopWebKitFullscreen,

@@ -3,9 +3,10 @@ import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'reac
 import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
 import type { ErrorData, FragLoadedData, ManifestParsedData, LevelLoadedData } from 'hls.js';
-import type { HlsInstanceRef, PlayerStats, PlayerStatus, V3SessionStatusResponse, VideoElementRef, PlayerAudioTrack } from '../../types/v3-player';
+import type { HlsInstanceRef, PlayerStats, V3SessionStatusResponse, VideoElementRef, PlayerAudioTrack } from '../../types/v3-player';
 import type { AppError } from '../../types/errors';
 import type { PlaybackEngineErrorContext } from '../../client-ts';
+import type { PlaybackAttemptToken, PlaybackEngineEventSink } from './playbackEngineContract';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
@@ -86,19 +87,17 @@ interface UsePlaybackEngineProps {
   isTeardownRef: MutableRefObject<boolean>;
   lastDecodedRef: MutableRefObject<number>;
   playbackEpochRef: MutableRefObject<number>;
+  attemptTokenRef: MutableRefObject<PlaybackAttemptToken>;
+  eventSink: PlaybackEngineEventSink;
   linkProfileRef?: MutableRefObject<PlaybackLinkProfile>;
   t: TFunction;
   reportError: ReportErrorFn;
   waitForSessionReady: WaitForSessionReadyFn;
   shouldPreferNativeHls: PreferNativeFn;
   primePlaybackAuth?: PrimePlaybackAuthFn;
-  onPlaybackMilestone?: (milestone: 'manifest' | 'firstFrame') => void;
   runtimeProbeActive?: boolean;
   revealHoldMs?: number;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
-  setStatus: Dispatch<SetStateAction<PlayerStatus>>;
-  clearPlaybackFailure: () => void;
-  reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   dispatchPlayerAction?: (action: any) => void;
   onAudioTracksUpdated?: (tracks: PlayerAudioTrack[]) => void;
   onAudioTrackSwitched?: (trackId: number) => void;
@@ -117,21 +116,19 @@ export function usePlaybackEngine({
   isTeardownRef,
   lastDecodedRef,
   playbackEpochRef,
+  attemptTokenRef,
+  eventSink,
   linkProfileRef,
   t,
   reportError,
   waitForSessionReady,
   shouldPreferNativeHls,
   primePlaybackAuth,
-  onPlaybackMilestone,
   runtimeProbeActive = false,
   revealHoldMs,
   setStats,
-  setStatus,
-  clearPlaybackFailure,
-  reportPlaybackFailure,
   onAudioTracksUpdated,
-  onAudioTrackSwitched
+  onAudioTrackSwitched,
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
@@ -160,11 +157,16 @@ export function usePlaybackEngine({
   const networkRetryTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
-    reportPlaybackFailure(error, {
-      source: 'media-element',
-      ...options,
+    eventSink({
+      type: 'playback.failure',
+      attempt: attemptTokenRef.current,
+      error,
+      options: {
+        source: 'media-element',
+        ...options,
+      },
     });
-  }, [reportPlaybackFailure]);
+  }, [attemptTokenRef, eventSink]);
 
   const clearPendingNativeAutoplay = useCallback(() => {
     const video = videoRef.current;
@@ -180,19 +182,26 @@ export function usePlaybackEngine({
 
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
-      onPlaybackMilestone?.('manifest');
+      eventSink({
+        type: 'playback.milestone',
+        attempt: attemptTokenRef.current,
+        milestone: 'manifest',
+      });
       video.play().catch((err) => {
         debugWarn(label, err);
-        // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
-        // Mirror the hls.js path: clear the startup overlay and surface the play
-        // control instead of leaving the status pinned on 'buffering' forever.
-        setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+        const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+        eventSink({
+          type: 'autoplay.blocked',
+          attempt: attemptTokenRef.current,
+          error: err,
+          background: isHidden,
+        });
       });
     };
 
     pendingNativeAutoplayRef.current = onLoadedMetadata;
     video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-  }, [clearPendingNativeAutoplay, onPlaybackMilestone, setStatus]);
+  }, [attemptTokenRef, clearPendingNativeAutoplay, eventSink]);
 
   const startNativeHlsPlayback = useCallback((url: string, autoplayLabel: string) => {
     const video = videoRef.current;
@@ -218,15 +227,19 @@ export function usePlaybackEngine({
           return;
         }
 
-        setStatus('error');
-        reportPlaybackFailure({
-          title: err instanceof Error && err.message ? err.message : t('player.authFailed'),
-          detail: 'native_hls_auth_prime_failed',
-          retryable: false,
-          code: 'AUTH_PRIME_FAILED',
-        }, {
-          source: 'native-host',
-          code: 'AUTH_PRIME_FAILED',
+        eventSink({
+          type: 'playback.failure',
+          attempt: attemptTokenRef.current,
+          error: {
+            title: err instanceof Error && err.message ? err.message : t('player.authFailed'),
+            detail: 'native_hls_auth_prime_failed',
+            retryable: false,
+            code: 'AUTH_PRIME_FAILED',
+          },
+          options: {
+            source: 'native-host',
+            code: 'AUTH_PRIME_FAILED',
+          },
         });
         return;
       }
@@ -243,7 +256,7 @@ export function usePlaybackEngine({
       video.src = url;
       scheduleNativeAutoplay(video, autoplayLabel);
     })();
-  }, [isTeardownRef, primePlaybackAuth, reportPlaybackFailure, scheduleNativeAutoplay, sessionIdRef, setStatus, t, videoRef]);
+  }, [attemptTokenRef, eventSink, isTeardownRef, primePlaybackAuth, scheduleNativeAutoplay, sessionIdRef, t, videoRef]);
 
   const clearNativeStallRecovery = useCallback(() => {
     if (nativeStallRecoveryTimerRef.current !== null) {
@@ -553,8 +566,11 @@ export function usePlaybackEngine({
 
     decodeRecoveryInFlightRef.current = true;
     decodeRecoveryAttemptsRef.current += 1;
-    setStatus('recovering');
-    clearPlaybackFailure();
+    eventSink({
+      type: 'recovery.started',
+      attempt: attemptTokenRef.current,
+      phase: 'decode',
+    });
 
     const trackedRecoveryAttempt = decodeRecoveryAttemptsRef.current;
     void (async () => {
@@ -587,8 +603,6 @@ export function usePlaybackEngine({
           throw new Error('Recovered session missing playbackUrl');
         }
 
-        setStatus('buffering');
-        clearPlaybackFailure();
         replayHlsRef.current?.(nextUrl, trackedEngine);
       } catch (recoveryErr) {
         debugWarn('[V3Player] Decode recovery failed', recoveryErr);
@@ -600,12 +614,12 @@ export function usePlaybackEngine({
 
     return true;
   }, [
+    attemptTokenRef,
+    eventSink,
     playbackEngineContext,
     reportError,
     resetPlaybackEngine,
     sessionIdRef,
-    clearPlaybackFailure,
-    setStatus,
     waitForSessionReady
   ]);
 
@@ -652,7 +666,6 @@ export function usePlaybackEngine({
       }
 
       const started = beginSessionDecodeRecovery(4, `native_hls_${trigger}`, () => {
-        setStatus('error');
         reportMediaFailure({
           title: t('player.networkError'),
           detail: `${trigger} (native stall recovery failed)`,
@@ -666,7 +679,6 @@ export function usePlaybackEngine({
       });
 
       if (!started) {
-        setStatus('error');
         reportMediaFailure({
           title: t('player.networkError'),
           detail: `${trigger} (native stall recovery failed)`,
@@ -686,7 +698,6 @@ export function usePlaybackEngine({
     hlsRef,
     isTeardownRef,
     sessionIdRef,
-    setStatus,
     t
   ]);
 
@@ -760,7 +771,6 @@ export function usePlaybackEngine({
 
       if (attempts >= 2) {
         const started = beginSessionDecodeRecovery(4, `hlsjs_${trigger}`, () => {
-          setStatus('error');
           reportMediaFailure({
             title: t('player.networkError'),
             detail: `${trigger} (hls.js stall recovery failed)`,
@@ -773,7 +783,6 @@ export function usePlaybackEngine({
           });
         });
         if (!started) {
-          setStatus('error');
           reportMediaFailure({
             title: t('player.networkError'),
             detail: `${trigger} (hls.js stall recovery failed)`,
@@ -795,7 +804,6 @@ export function usePlaybackEngine({
     isTeardownRef,
     reportMediaFailure,
     sessionIdRef,
-    setStatus,
     t
   ]);
 
@@ -922,10 +930,21 @@ export function usePlaybackEngine({
           if (isHidden || isNotAllowed) {
             debugWarn('[V3Player] Autoplay deferred (background tab or policy restriction)', err);
             pendingHlsAutoplayRef.current = true;
+            eventSink({
+              type: 'autoplay.blocked',
+              attempt: attemptTokenRef.current,
+              error: err,
+              background: true,
+            });
             return;
           }
           debugWarn('[V3Player] Autoplay failed', err);
-          setStatus('ready');
+          eventSink({
+            type: 'autoplay.blocked',
+            attempt: attemptTokenRef.current,
+            error: err,
+            background: false,
+          });
         });
       };
       // The element-level autoplay attribute would bypass the gate (the
@@ -933,11 +952,14 @@ export function usePlaybackEngine({
       // so playback ownership moves entirely to the gated play() call.
       video.autoplay = false;
       revealHoldRef.current = true;
-      setStatus('buffering');
 
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data: ManifestParsedData) => {
-        onPlaybackMilestone?.('manifest');
+        eventSink({
+          type: 'playback.milestone',
+          attempt: attemptTokenRef.current,
+          milestone: 'manifest',
+        });
         debugLog('[V3Player] HLS Manifest Parsed', {
           levels: data.levels.length,
           audioTracks: data.audioTracks?.map((t) => ({ id: t.id, name: t.name, lang: t.lang, default: t.default, url: t.url })),
@@ -993,16 +1015,13 @@ export function usePlaybackEngine({
           }
         }
         const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
-        setStatus((prev) => {
-          if (revealHoldRef.current) {
-            return prev;
-          }
-          if (hasContent && prev === 'buffering') {
-            debugLog('[V3Player] Level Loaded with content, forcing READY state');
-            return 'ready';
-          }
-          return prev;
-        });
+        if (!revealHoldRef.current && hasContent) {
+          eventSink({
+            type: 'media.ready',
+            attempt: attemptTokenRef.current,
+            engine: 'hlsjs',
+          });
+        }
       });
 
       hls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
@@ -1123,30 +1142,33 @@ export function usePlaybackEngine({
                 debugError('[V3Player] NETWORK_ERROR 401: session recovery failed', recoveryErr);
                 hlsRef.current?.destroy();
                 hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
-                setStatus('error');
-                reportPlaybackFailure({
-                  title: recoveryErr instanceof Error && recoveryErr.message
-                    ? recoveryErr.message
-                    : presentation.title,
-                  detail: presentation.details,
-                  status: recoveryErr && typeof recoveryErr === 'object' && 'status' in recoveryErr
-                    ? (recoveryErr as { status?: number }).status
-                    : httpStatus,
-                  retryable: false,
-                  code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
-                    ? ((recoveryErr as { code?: string }).code ?? undefined)
-                    : 'AUTH_RECOVERY_FAILED',
-                }, {
-                  source: 'native-host',
-                  code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
-                    ? ((recoveryErr as { code?: string }).code ?? undefined)
-                    : 'AUTH_RECOVERY_FAILED',
+                eventSink({
+                  type: 'playback.failure',
+                  attempt: attemptTokenRef.current,
+                  error: {
+                    title: recoveryErr instanceof Error && recoveryErr.message
+                      ? recoveryErr.message
+                      : presentation.title,
+                    detail: presentation.details,
+                    status: recoveryErr && typeof recoveryErr === 'object' && 'status' in recoveryErr
+                      ? (recoveryErr as { status?: number }).status
+                      : httpStatus,
+                    retryable: false,
+                    code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
+                      ? ((recoveryErr as { code?: string }).code ?? undefined)
+                      : 'AUTH_RECOVERY_FAILED',
+                  },
+                  options: {
+                    source: 'native-host',
+                    code: recoveryErr && typeof recoveryErr === 'object' && 'code' in recoveryErr
+                      ? ((recoveryErr as { code?: string }).code ?? undefined)
+                      : 'AUTH_RECOVERY_FAILED',
+                  },
                 });
               });
               if (!started) {
                 hlsRef.current?.destroy();
                 hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
-                setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
                   detail: presentation.details,
@@ -1166,7 +1188,11 @@ export function usePlaybackEngine({
               networkRetryCount++;
               reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry', 'network', networkRetryCount);
               debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${maxNetworkRetries}, backoff ${backoffMs}ms`);
-              setStatus('recovering');
+              eventSink({
+                type: 'recovery.started',
+                attempt: attemptTokenRef.current,
+                phase: 'network',
+              });
               networkRetryTimerRef.current = window.setTimeout(() => {
                 networkRetryTimerRef.current = null;
                 // The engine may have been torn down or replaced during the
@@ -1187,7 +1213,6 @@ export function usePlaybackEngine({
               debugError(`[V3Player] NETWORK_ERROR: max retries (${maxNetworkRetries}) exhausted`);
               hlsRef.current?.destroy();
               hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
-              setStatus('error');
               reportMediaFailure({
                 title: presentation.title,
                 detail: `${presentation.details} • ${maxNetworkRetries} retries exhausted`,
@@ -1206,7 +1231,11 @@ export function usePlaybackEngine({
               mediaRecoveryAttempted = true;
               reportPlaybackWarning(PLAYBACK_WARNING_CODE_DECODER_RECOVERY, 'hlsjs_media_recovery', 'recovery', 1);
               debugWarn('[V3Player] MEDIA_ERROR: attempting single recovery');
-              setStatus('recovering');
+              eventSink({
+                type: 'recovery.started',
+                attempt: attemptTokenRef.current,
+                phase: 'decode',
+              });
               hls.recoverMediaError();
             } else {
               debugWarn('[V3Player] MEDIA_ERROR: local recovery exhausted, attempting session reattach');
@@ -1214,7 +1243,6 @@ export function usePlaybackEngine({
                 debugError('[V3Player] MEDIA_ERROR: session reattach failed, failing terminally');
                 hlsRef.current?.destroy();
                 hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
-                setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
                   detail: `${presentation.details} • media recovery failed`,
@@ -1230,7 +1258,6 @@ export function usePlaybackEngine({
                 debugError('[V3Player] MEDIA_ERROR: recovery already attempted, failing terminally');
                 hlsRef.current?.destroy();
                 hlsRef.current = null; // null the ref so pending retry/stall timers (guarded by hlsRef.current !== hls / !hls) bail instead of calling startLoad() on a destroyed instance
-                setStatus('error');
                 reportMediaFailure({
                   title: presentation.title,
                   detail: `${presentation.details} • media recovery failed`,
@@ -1250,7 +1277,6 @@ export function usePlaybackEngine({
             }
             hlsRef.current?.destroy();
             hlsRef.current = null; // null the ref so pending retry/stall timers bail instead of calling startLoad() on a destroyed instance
-            setStatus('error');
             reportMediaFailure({
               title: presentation.title,
               detail: presentation.details,
@@ -1282,7 +1308,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [attemptTokenRef, beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, sessionIdRef, setStats, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -1314,11 +1340,15 @@ export function usePlaybackEngine({
     video.load();
     video.play().catch((err) => {
       debugWarn('Autoplay failed', err);
-      // Autoplay rejected: clear the startup overlay and show the play control rather
-      // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
-      setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+      const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      eventSink({
+        type: 'autoplay.blocked',
+        attempt: attemptTokenRef.current,
+        error: err,
+        background: isHidden,
+      });
     });
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
+  }, [attemptTokenRef, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, lastDecodedRef, setStats, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1334,9 +1364,6 @@ export function usePlaybackEngine({
     const onWaiting = () => {
       if (decodeRecoveryInFlightRef.current) {
         debugLog('[V3Player] Event: waiting ignored during decode recovery');
-        return;
-      }
-      if (revealHoldRef.current) {
         return;
       }
 
@@ -1361,7 +1388,7 @@ export function usePlaybackEngine({
       cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
-      setStatus('buffering');
+      eventSink({ type: 'media.waiting', attempt: attemptTokenRef.current });
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting', 'decode');
       scheduleNativeStallRecovery(videoEl, 'waiting');
       scheduleHlsStallRecovery(videoEl, 'waiting');
@@ -1397,7 +1424,7 @@ export function usePlaybackEngine({
       cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
-      setStatus('buffering');
+      eventSink({ type: 'media.stalled', attempt: attemptTokenRef.current });
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_STALLED, 'stalled', 'decode');
       scheduleNativeStallRecovery(videoEl, 'stalled');
       scheduleHlsStallRecovery(videoEl, 'stalled');
@@ -1432,11 +1459,10 @@ export function usePlaybackEngine({
       }
 
       debugLog('[V3Player] Event: seeking -> buffering');
-      setStatus('buffering');
+      eventSink({ type: 'media.waiting', attempt: attemptTokenRef.current });
     };
 
     const onPlaying = () => {
-      onPlaybackMilestone?.('firstFrame');
       debugLog('[V3Player] Event: playing');
       clearNativeStallRecovery();
       clearHlsStallRecovery();
@@ -1485,24 +1511,28 @@ export function usePlaybackEngine({
       }
       pendingWarningRecoveryRef.current = null;
       reportedWarningKeysRef.current.clear();
+      eventSink({
+        type: 'playback.milestone',
+        attempt: attemptTokenRef.current,
+        milestone: 'firstFrame',
+      });
       if (revealHoldRef.current) {
         if (revealTimerRef.current === null) {
           const holdMs = revealHoldMs ?? 1800;
           if (holdMs <= 0) {
             revealHoldRef.current = false;
-            setStatus('playing');
+            eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
           } else {
             revealTimerRef.current = window.setTimeout(() => {
               revealTimerRef.current = null;
               revealHoldRef.current = false;
-              setStatus('playing');
+              eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
             }, holdMs);
           }
         }
       } else {
-        setStatus('playing');
+        eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
       }
-      clearPlaybackFailure();
     };
 
     const onPause = () => {
@@ -1514,7 +1544,9 @@ export function usePlaybackEngine({
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
-      setStatus((prev) => (prev === 'error' ? prev : (revealHoldRef.current ? 'buffering' : 'paused')));
+      if (!revealHoldRef.current) {
+        eventSink({ type: 'media.paused', attempt: attemptTokenRef.current });
+      }
     };
 
     const onSeeked = () => {
@@ -1523,7 +1555,11 @@ export function usePlaybackEngine({
       if (revealHoldRef.current) {
         return;
       }
-      setStatus((prev) => (prev === 'error' ? prev : (videoEl.paused ? 'paused' : 'playing')));
+      if (videoEl.paused) {
+        eventSink({ type: 'media.paused', attempt: attemptTokenRef.current });
+      } else {
+        eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
+      }
     };
 
     const onError = () => {
@@ -1571,7 +1607,6 @@ export function usePlaybackEngine({
           (safeCode === 3 || safeCode === 4);
 
         if (shouldAttemptNativeRecovery && beginSessionDecodeRecovery(safeCode, message, () => {
-          setStatus('error');
           reportMediaFailure({
             title: presentation.title,
             detail: `${presentation.details} • native recovery failed`,
@@ -1589,7 +1624,6 @@ export function usePlaybackEngine({
         void reportError('error', safeCode, message, playbackEngineContext('decode'));
       }
 
-      setStatus('error');
       reportMediaFailure({
         title: presentation.title,
         detail: presentation.details,
@@ -1620,22 +1654,18 @@ export function usePlaybackEngine({
           revealTimerRef.current = null;
         }
         revealHoldRef.current = false;
-        setStatus('playing');
+        eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
         return;
       }
       clearNativeStallRecovery();
       clearHlsStallRecovery();
-      setStatus((prev) => {
-        if (prev === 'starting' || prev === 'priming' || prev === 'building' || prev === 'buffering') return 'playing';
-        // Also un-stick the in-place recoveries (hls.js recoverMediaError /
-        // startLoad) which can leave status pinned at 'recovering' while the
-        // element decodes again. Do NOT touch the async session-reattach path
-        // (decodeRecoveryInFlightRef true): it still holds the stale source for
-        // ~850ms before teardown+replay, so flipping to 'playing' there would
-        // un-veil right before the source is swapped.
-        if (prev === 'recovering' && !decodeRecoveryInFlightRef.current) return 'playing';
-        return prev;
-      });
+      if (!decodeRecoveryInFlightRef.current) {
+        eventSink({
+          type: 'media.observation',
+          attempt: attemptTokenRef.current,
+          observation: 'playing_confirmed',
+        });
+      }
     };
 
     videoEl.addEventListener('waiting', onWaiting);
@@ -1646,7 +1676,11 @@ export function usePlaybackEngine({
     videoEl.addEventListener('pause', onPause);
     videoEl.addEventListener('timeupdate', onTimeUpdate);
     const onLoadedMetadataGeneral = () => {
-      onPlaybackMilestone?.('manifest');
+      eventSink({
+        type: 'playback.milestone',
+        attempt: attemptTokenRef.current,
+        milestone: 'manifest',
+      });
     };
     videoEl.addEventListener('loadedmetadata', onLoadedMetadataGeneral);
     videoEl.addEventListener('error', onError);
@@ -1712,7 +1746,12 @@ export function usePlaybackEngine({
         }
         videoEl.play().catch((err) => {
           debugWarn('[V3Player] Foreground pending autoplay failed', err);
-          setStatus('ready');
+          eventSink({
+            type: 'autoplay.blocked',
+            attempt: attemptTokenRef.current,
+            error: err,
+            background: false,
+          });
         });
       }
     };
@@ -1745,7 +1784,7 @@ export function usePlaybackEngine({
         }
       }
     };
-  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPlaybackFailure, clearProbeConfirmation, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [attemptTokenRef, beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, eventSink, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, t, videoRef]);
 
   // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
   // can't fire after the component unmounts. Do NOT put these in the main

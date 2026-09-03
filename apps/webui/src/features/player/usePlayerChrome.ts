@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
-import type { HlsInstanceRef, PlayerStats, PlayerStatus, SafariVideoElement, VideoElementRef } from '../../types/v3-player';
+import type { HlsInstanceRef, PlayerStats, SafariVideoElement, VideoElementRef } from '../../types/v3-player';
 import { debugLog, debugWarn } from '../../utils/logging';
 import { onHostMediaKey } from '../../lib/hostBridge';
 import { hasTouchInput } from './utils/playerHelpers';
@@ -43,7 +43,9 @@ interface UsePlayerChromeProps {
   anchorStartSec?: number;
   onSeekOffset?: (targetSeconds: number) => void;
   liveSeekWindow?: LiveSeekWindowHint | null;
-  setStatus: Dispatch<SetStateAction<PlayerStatus>>;
+  onUserPlayIntent?: () => void;
+  onUserPauseIntent?: () => void;
+  onEngineObservation?: (observation: 'canplay' | 'playing_confirmed' | 'stalled_confirmed') => void;
   allowNativeFullscreen: boolean;
   shouldForceNativeMobileHls: ForceNativeFn;
   canUseDesktopWebKitFullscreen: DesktopFullscreenFn;
@@ -142,7 +144,9 @@ export function usePlayerChrome({
   anchorStartSec = 0,
   onSeekOffset,
   liveSeekWindow,
-  setStatus,
+  onUserPlayIntent,
+  onUserPauseIntent,
+  onEngineObservation,
   allowNativeFullscreen,
   shouldForceNativeMobileHls,
   canUseDesktopWebKitFullscreen,
@@ -488,22 +492,17 @@ export function usePlayerChrome({
 
     clearAutoplayMuteIfNeeded();
     userPauseIntentRef.current = false;
-    setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
+    onUserPlayIntent?.();
     video.play().catch((err) => debugWarn('Play failed', err));
-  }, [clearAutoplayMuteIfNeeded, setStatus, userPauseIntentRef, videoRef]);
+  }, [clearAutoplayMuteIfNeeded, onUserPlayIntent, userPauseIntentRef, videoRef]);
 
   const pause = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) {
-      setStatus('paused');
-      return;
-    }
-
     userPauseIntentRef.current = true;
     video.pause();
-    setStatus('paused');
-  }, [setStatus, userPauseIntentRef, videoRef]);
+    onUserPauseIntent?.();
+  }, [onUserPauseIntent, userPauseIntentRef, videoRef]);
 
   const stop = useCallback(() => {
     const video = videoRef.current;
@@ -511,8 +510,8 @@ export function usePlayerChrome({
 
     userPauseIntentRef.current = true;
     video.pause();
-    setStatus('paused');
-  }, [setStatus, userPauseIntentRef, videoRef]);
+    onUserPauseIntent?.();
+  }, [onUserPauseIntent, userPauseIntentRef, videoRef]);
 
   const togglePlayPause = useCallback(() => {
     const video = videoRef.current;
@@ -1174,21 +1173,15 @@ export function usePlayerChrome({
         };
       });
 
-      setStatus((prev) => {
-        if (video.readyState >= 3 && !video.paused && (prev === 'buffering' || prev === 'starting' || prev === 'priming')) {
-          debugLog(`[V3Player] Monitor: readyState=${video.readyState}, forcing PLAYING`);
-          return 'playing';
-        }
-        if (video.readyState >= 3 && video.paused && (prev === 'buffering' || prev === 'starting')) {
-          debugLog(`[V3Player] Monitor: readyState=${video.readyState} (paused), forcing READY`);
-          return 'ready';
-        }
-        return prev;
-      });
+      if (video.readyState >= 3 && !video.paused) {
+        onEngineObservation?.('playing_confirmed');
+      } else if (video.readyState >= 3 && video.paused) {
+        onEngineObservation?.('canplay');
+      }
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [hlsRef, lastDecodedRef, playbackMode, setStatus, showStats, videoRef]);
+  }, [hlsRef, lastDecodedRef, onEngineObservation, playbackMode, showStats, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;

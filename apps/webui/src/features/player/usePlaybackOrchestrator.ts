@@ -59,9 +59,9 @@ import {
   createInitialPlaybackDomainState,
 } from './orchestrator/playbackMachine';
 import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
-import type { PlaybackCommand, PlaybackStopReason } from './orchestrator/playbackTypes';
+import type { PlaybackCommand, PlaybackStopReason, SessionPhase, VodStreamMode } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
-import type { VodStreamMode } from './orchestrator/playbackTypes';
+import type { PlaybackEngineEventSink } from './playbackEngineContract';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
   requestHostInputFocus,
@@ -284,6 +284,7 @@ export function usePlaybackOrchestrator(
     playbackEpochRef,
     acceptedPlaybackEpochRef,
     acceptedSessionEpochRef,
+    attemptTokenRef,
     allocatePlaybackEpoch,
     beginPlaybackAttempt,
     markPlaybackStopped,
@@ -395,7 +396,6 @@ export function usePlaybackOrchestrator(
 
   const {
     setTraceId,
-    setStatus,
     setPlaybackMode,
     setDurationSeconds,
     setVodStreamMode,
@@ -414,16 +414,106 @@ export function usePlaybackOrchestrator(
   });
 
   const onNativePlaybackConfirmed = useCallback(() => {
-    setStatus((previous) => (
-      previous === 'starting' ||
-      previous === 'priming' ||
-      previous === 'building' ||
-      previous === 'buffering' ||
-      previous === 'recovering'
-        ? 'playing'
-        : previous
-    ));
-  }, [setStatus]);
+    dispatchPlayback({
+      type: 'engine.media.playing',
+      attempt: attemptTokenRef.current,
+    });
+  }, [attemptTokenRef, dispatchPlayback]);
+
+  const handleEngineEvent = useCallback<PlaybackEngineEventSink>((event) => {
+    switch (event.type) {
+      case 'media.ready':
+        dispatchPlayback({
+          type: 'engine.media.ready',
+          attempt: event.attempt,
+          engine: event.engine,
+        });
+        break;
+      case 'media.playing':
+        dispatchPlayback({
+          type: 'engine.media.playing',
+          attempt: event.attempt,
+        });
+        break;
+      case 'media.waiting':
+        dispatchPlayback({
+          type: 'engine.media.waiting',
+          attempt: event.attempt,
+        });
+        break;
+      case 'media.stalled':
+        dispatchPlayback({
+          type: 'engine.media.stalled',
+          attempt: event.attempt,
+        });
+        break;
+      case 'media.paused':
+        dispatchPlayback({
+          type: 'engine.media.paused',
+          attempt: event.attempt,
+        });
+        break;
+      case 'autoplay.blocked':
+        dispatchPlayback({
+          type: 'engine.autoplay.blocked',
+          attempt: event.attempt,
+          error: event.error,
+          background: event.background,
+        });
+        break;
+      case 'recovery.started':
+        dispatchPlayback({
+          type: 'engine.recovery.started',
+          attempt: event.attempt,
+          phase: event.phase,
+        });
+        break;
+      case 'media.observation':
+        dispatchPlayback({
+          type: 'engine.media.observation',
+          attempt: event.attempt,
+          observation: event.observation,
+        });
+        break;
+      case 'playback.milestone':
+        handlePlaybackMilestone(event.milestone);
+        break;
+      case 'playback.failure':
+        reportPlaybackFailure(event.error, event.options);
+        break;
+    }
+  }, [dispatchPlayback, handlePlaybackMilestone, reportPlaybackFailure]);
+
+  const handleUserPlayIntent = useCallback(() => {
+    dispatchPlayback({
+      type: 'intent.user_play',
+      epoch: acceptedPlaybackEpochRef.current,
+    });
+  }, [acceptedPlaybackEpochRef, dispatchPlayback]);
+
+  const handleUserPauseIntent = useCallback(() => {
+    dispatchPlayback({
+      type: 'intent.user_pause',
+      epoch: acceptedPlaybackEpochRef.current,
+    });
+  }, [acceptedPlaybackEpochRef, dispatchPlayback]);
+
+  const handleChromeObservation = useCallback((observation: 'canplay' | 'playing_confirmed' | 'stalled_confirmed') => {
+    dispatchPlayback({
+      type: 'engine.media.observation',
+      attempt: attemptTokenRef.current,
+      observation,
+    });
+  }, [attemptTokenRef, dispatchPlayback]);
+
+  const handleSessionPhaseChanged = useCallback((phase: SessionPhase) => {
+    dispatchPlayback({
+      type: 'normative.session.phase.changed',
+      playbackEpoch: acceptedPlaybackEpochRef.current,
+      sessionEpoch: acceptedSessionEpochRef.current,
+      phase,
+    });
+  }, [acceptedPlaybackEpochRef, acceptedSessionEpochRef, dispatchPlayback]);
 
   useEffect(() => {
     if (!error?.detail) {
@@ -503,7 +593,8 @@ export function usePlaybackOrchestrator(
       setActiveHlsEngine,
       setActiveRecordingId,
       setPlaybackMode,
-      setStatus,
+      attemptTokenRef,
+      eventSink: handleEngineEvent,
       setTraceId,
       setSessionProfileReason,
       setPlaybackObservability,
@@ -562,7 +653,7 @@ export function usePlaybackOrchestrator(
     videoRef,
     setPlaybackMode,
     setDurationSeconds,
-    setStatus,
+    onSessionPhaseChanged: handleSessionPhaseChanged,
     clearPlaybackFailure,
     reportPlaybackFailure,
     readResponseBody,
@@ -772,7 +863,9 @@ export function usePlaybackOrchestrator(
         startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(targetSec * 1000));
       }
     },
-    setStatus,
+    onUserPlayIntent: handleUserPlayIntent,
+    onUserPauseIntent: handleUserPauseIntent,
+    onEngineObservation: handleChromeObservation,
     liveSeekWindow: null,
     allowNativeFullscreen: activeHlsEngine === 'native',
     shouldForceNativeMobileHls,
@@ -807,6 +900,8 @@ export function usePlaybackOrchestrator(
     isTeardownRef,
     lastDecodedRef,
     playbackEpochRef,
+    attemptTokenRef,
+    eventSink: handleEngineEvent,
     linkProfileRef,
     t,
     reportError,
@@ -814,10 +909,6 @@ export function usePlaybackOrchestrator(
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
     revealHoldMs: props.revealHoldMs,
     setStats,
-    setStatus,
-    clearPlaybackFailure,
-    reportPlaybackFailure,
-    onPlaybackMilestone: handlePlaybackMilestone,
     onAudioTracksUpdated: handleAudioTracksUpdated,
     onAudioTrackSwitched: setActiveAudioTrack,
   });
@@ -1054,19 +1145,16 @@ export function usePlaybackOrchestrator(
               throw new Error(JSON.stringify(error));
             }
             if (notifyAuthRequiredIfUnauthorizedResponse(response, 'V3Player.recordingPlaybackInfo')) {
-              setStatus('error');
               const failure = buildAuthDeniedFailure(t, 401);
               reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 403) {
-              setStatus('error');
               const failure = buildAuthDeniedFailure(t, 403);
               reportPlaybackFailure(failure.appError, failure.options);
               return;
             }
             if (response.status === 410) {
-              setStatus('error');
               const failure = buildRecordingGoneFailure(t);
               reportPlaybackFailure(failure.appError, failure.options);
               return;
@@ -1074,7 +1162,6 @@ export function usePlaybackOrchestrator(
             if (response.status === 409) {
               const retryAfterHeader = response.headers.get('Retry-After');
               const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-              setStatus('error');
               const failure = buildLeaseBusyFailure(retryAfter, t);
               reportPlaybackFailure(failure.appError, failure.options);
               return;
@@ -1083,7 +1170,12 @@ export function usePlaybackOrchestrator(
               const retryAfter = response.headers.get('Retry-After');
               if (retryAfter) {
                 const seconds = parseInt(retryAfter, 10);
-                setStatus('building');
+                dispatchPlayback({
+                  type: 'normative.session.phase.changed',
+                  playbackEpoch,
+                  sessionEpoch: 0,
+                  phase: 'building',
+                });
                 recordContractAdvisories(playbackEpoch, [{
                   code: 'recording_retry_after',
                   message: `${t('player.preparing')} (${seconds}s)`,
@@ -1129,7 +1221,6 @@ export function usePlaybackOrchestrator(
         ));
 
         if (normalizedContract.kind === 'blocked') {
-          setStatus('error');
           const failure = buildBlockedContractFailure(normalizedContract, 'recording', t);
           reportPlaybackFailure(failure.appError, failure.options);
           return;
@@ -1138,7 +1229,6 @@ export function usePlaybackOrchestrator(
         mode = normalizedContract.playback.mode;
         streamUrl = normalizedContract.playback.outputUrl ?? '';
         if (!streamUrl) {
-          setStatus('error');
           const failure = buildMissingOutputUrlFailure(t);
           reportPlaybackFailure(failure.appError, failure.options);
           return;
@@ -1176,12 +1266,14 @@ export function usePlaybackOrchestrator(
         ) {
           setResumeState(nextResume);
           setShowResumeOverlay(true);
-          setStatus('idle');
+          dispatchPlayback({
+            type: 'normative.playback.stopped',
+            epoch: playbackEpoch,
+          });
           return;
         }
       } catch (e: unknown) {
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-        setStatus('error');
         mergeSessionPlaybackTrace(extractPlaybackTrace(e));
         reportPlaybackFailure(normalizeRuntimePlaybackError(e, t('player.serverError')), {
           source: 'backend',
@@ -1195,7 +1287,6 @@ export function usePlaybackOrchestrator(
         // truth for playability, so we do not gate startup on browser-side probes.
         isTeardownRef.current = false;
         if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-        setStatus('buffering');
         setActiveHlsEngine(null);
         playDirectMp4(streamUrl);
         return;
@@ -1219,7 +1310,12 @@ export function usePlaybackOrchestrator(
             const retryAfter = res.headers.get('Retry-After');
             if (retryAfter) {
               const delay = parseInt(retryAfter, 10) * 1000;
-              setStatus('building');
+              dispatchPlayback({
+                type: 'normative.session.phase.changed',
+                playbackEpoch,
+                sessionEpoch: 0,
+                phase: 'building',
+              });
               vodRetryRef.current = window.setTimeout(() => {
                 if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
                   startRecordingPlayback(id, profileForAttempt, startOffsetMs);
@@ -1231,7 +1327,6 @@ export function usePlaybackOrchestrator(
           }
 
           if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-          setStatus('buffering');
           const engine: 'native' | 'hlsjs' = mode === 'native_hls'
             ? 'native'
             : resolvePreferredHlsEngineForCapabilities(requestCaps);
@@ -1248,7 +1343,6 @@ export function usePlaybackOrchestrator(
       reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
         source: 'backend',
       });
-      setStatus('error');
     } finally {
       if (vodFetchRef.current === abortController) vodFetchRef.current = null;
     }
@@ -1277,7 +1371,6 @@ export function usePlaybackOrchestrator(
     setCanSeek,
     setDurationSeconds,
     setStartUnix,
-    setStatus,
     setTraceId,
     setVodStreamMode,
     sleep,
@@ -1343,7 +1436,6 @@ export function usePlaybackOrchestrator(
 
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
-        setStatus('error');
         const failure = buildServiceRefRequiredFailure(t);
         reportPlaybackFailure(failure.appError, failure.options);
         return;
@@ -1432,7 +1524,6 @@ export function usePlaybackOrchestrator(
           const retryAfterHeader = liveResponse.headers.get('Retry-After');
           const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
           if (notifyAuthRequiredIfUnauthorizedResponse(liveResponse, 'V3Player.liveStreamInfo')) {
-            setStatus('error');
             reportPlaybackFailure(normalizePlayerError(liveError ?? {
               status: 401,
               title: t('player.authFailed'),
@@ -1452,7 +1543,6 @@ export function usePlaybackOrchestrator(
             return;
           }
           if (liveResponse.status === 403) {
-            setStatus('error');
             reportPlaybackFailure(normalizePlayerError(liveError ?? {
               status: 403,
               title: t('player.forbidden'),
@@ -1472,7 +1562,6 @@ export function usePlaybackOrchestrator(
             return;
           }
           if (liveResponse.status === 410) {
-            setStatus('error');
             const failure = buildSessionExpiredFailure(t);
             reportPlaybackFailure(failure.appError, failure.options);
             return;
@@ -1507,7 +1596,6 @@ export function usePlaybackOrchestrator(
         ));
 
         if (normalizedContract.kind === 'blocked') {
-          setStatus('error');
           const failure = buildBlockedContractFailure(normalizedContract, 'live', t);
           reportPlaybackFailure(failure.appError, failure.options);
           return;
@@ -1522,7 +1610,6 @@ export function usePlaybackOrchestrator(
 
         const liveDecisionToken = normalizedContract.session.decisionToken;
         if (!liveDecisionToken) {
-          setStatus('error');
           const failure = buildMissingDecisionTokenFailure(t);
           reportPlaybackFailure(failure.appError, failure.options);
           return;
@@ -1530,7 +1617,6 @@ export function usePlaybackOrchestrator(
 
         const engineDecision = resolveLiveEngineFromMode(liveMode, requestCaps, resolvePreferredHlsEngineForCapabilities);
         if ('unsupported' in engineDecision) {
-          setStatus('error');
           const failure = buildUnsupportedLiveModeFailure(liveMode, t);
           reportPlaybackFailure(failure.appError, failure.options);
           return;
@@ -1604,7 +1690,6 @@ export function usePlaybackOrchestrator(
           } catch {
             // Body parse failed – fall through with generic message
           }
-          setStatus('error');
           reportPlaybackFailure(normalizePlayerError(problemBody ?? {
             status: res.status,
             title: errorTitle,
@@ -1714,7 +1799,13 @@ export function usePlaybackOrchestrator(
         // From here the backend is tuning + spinning up the transcoder; surface
         // that as its own startup phase ('priming') so the overlay can separate
         // "connecting" from "transcoder starting" from "buffering".
-        setStatus('priming');
+        dispatchPlayback({
+          type: 'normative.session.phase.changed',
+          playbackEpoch,
+          sessionEpoch,
+          phase: 'priming',
+          requestId: intentRequestId ?? null,
+        });
         const session = await waitForSessionReady(newSessionId);
         if (!isLifecycleActive(lifecycleGeneration) || isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
           await sendStopIntent(newSessionId);
@@ -1728,7 +1819,6 @@ export function usePlaybackOrchestrator(
           phase: 'ready',
           requestId: session.requestId ?? intentRequestId ?? null,
         });
-        setStatus('ready');
         const streamUrl = session.playbackUrl;
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
@@ -1760,7 +1850,6 @@ export function usePlaybackOrchestrator(
         reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
           source: newSessionId ? 'native-host' : 'backend',
         });
-        setStatus('error');
       }
     } catch (err) {
       if (!isLifecycleActive(lifecycleGeneration)) return;
@@ -1776,7 +1865,6 @@ export function usePlaybackOrchestrator(
       reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
         source: 'orchestrator',
       });
-      setStatus('error');
     } finally {
       startIntentInFlight.current = false;
       const pendingStart = pendingStartRef.current;
@@ -1789,7 +1877,7 @@ export function usePlaybackOrchestrator(
         });
       }
     }
-  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, automaticProfileMemoryRef, linkProfileRef, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setStatus, setTraceId, sleep, token]);
+  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, automaticProfileMemoryRef, linkProfileRef, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setTraceId, sleep, token]);
 
   startStreamRef.current = startStream;
 
@@ -1983,7 +2071,10 @@ export function usePlaybackOrchestrator(
       if (!video.paused && !userPauseIntentRef.current && !hasTerminalStatus) {
         visibilityManagedPauseRef.current = true;
         video.pause();
-        setStatus('paused');
+        dispatchPlayback({
+          type: 'engine.media.paused',
+          attempt: attemptTokenRef.current,
+        });
       }
       return;
     }
@@ -1997,11 +2088,14 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    dispatchPlayback({
+      type: 'engine.media.waiting',
+      attempt: attemptTokenRef.current,
+    });
     void video.play().catch((err) => {
       debugWarn('[V3Player] Host resume play blocked', err);
     });
-  }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
+  }, [attemptTokenRef, dispatchPlayback, hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, status, videoRef]);
 
   // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
   // suspend the decoder while backgrounded and do not auto-resume inline
@@ -2072,12 +2166,15 @@ export function usePlaybackOrchestrator(
     //
     // NOTE: the live status is read through recoveryStatusRef instead of making
     // it an effect dependency. The
-    // `setStatus('paused'→'buffering')` call below would otherwise trigger a
+    // `dispatchPlayback('engine.media.waiting')` call below would otherwise trigger a
     // re-render where React cleans up the current effect (calling the cancel
     // function) before the observation timer can fire, defeating the retry loop.
     // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
     // already in deps and correctly re-runs the effect when the session is reaped.
-    setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
+    dispatchPlayback({
+      type: 'engine.media.waiting',
+      attempt: attemptTokenRef.current,
+    });
     return startResumePlaybackRecovery(video, {
       // Keep a user pause sacred even if it happens during the ~2s recovery window.
       shouldContinue: () => !userPauseIntentRef.current,
@@ -2085,7 +2182,10 @@ export function usePlaybackOrchestrator(
         if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
           // iOS blocked the programmatic resume; the play/pause control is the
           // user-gesture tap-to-resume.
-          setStatus('paused');
+          dispatchPlayback({
+            type: 'engine.media.paused',
+            attempt: attemptTokenRef.current,
+          });
         } else {
           debugWarn('[V3Player] Browser resume play blocked', err);
         }
@@ -2095,7 +2195,7 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+  }, [attemptTokenRef, dispatchPlayback, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, videoRef]);
 
   // Live unintended-pause and window-focus watchdog. When watching Live TV on desktop browsers,
   // WebKit/macOS can suspend decoding or issue a pause (e.g. window occlusion, CoreAudio route changes,
@@ -2145,13 +2245,19 @@ export function usePlaybackOrchestrator(
         }
       }
 
-      setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
+      dispatchPlayback({
+        type: 'engine.media.waiting',
+        attempt: attemptTokenRef.current,
+      });
       cancelActiveRecovery?.();
       cancelActiveRecovery = startResumePlaybackRecovery(video, {
         shouldContinue: () => !userPauseIntentRef.current,
         onBlocked: (err: unknown) => {
           if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-            setStatus('paused');
+            dispatchPlayback({
+              type: 'engine.media.paused',
+              attempt: attemptTokenRef.current,
+            });
           } else {
             debugWarn('[V3Player] Live auto-resume play blocked', err);
           }
@@ -2190,7 +2296,7 @@ export function usePlaybackOrchestrator(
       video.removeEventListener('pause', onPause);
       window.removeEventListener('focus', onFocus);
     };
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isTeardownRef, nativePlaybackState, playbackMode, setStatus, userPauseIntentRef, videoRef]);
+  }, [attemptTokenRef, dispatchPlayback, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isTeardownRef, nativePlaybackState, playbackMode, userPauseIntentRef, videoRef]);
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online
@@ -2256,12 +2362,18 @@ export function usePlaybackOrchestrator(
     // until currentTime advances, bounded; the returned cancel cleans it up if we
     // go offline again mid-recovery. The latest status is read through
     // recoveryStatusRef for the same reason documented on the foreground effect.
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    dispatchPlayback({
+      type: 'engine.media.waiting',
+      attempt: attemptTokenRef.current,
+    });
     return startResumePlaybackRecovery(video, {
       shouldContinue: () => !userPauseIntentRef.current,
       onBlocked: (err: unknown) => {
         if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-          setStatus('paused');
+          dispatchPlayback({
+            type: 'engine.media.paused',
+            attempt: attemptTokenRef.current,
+          });
         } else {
           debugWarn('[V3Player] Reconnect resume play blocked', err);
         }
@@ -2271,7 +2383,7 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [connectionLost, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
+  }, [attemptTokenRef, connectionLost, dispatchPlayback, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, videoRef]);
 
   useNetworkRecoveryWatchdog({
     apiBase,

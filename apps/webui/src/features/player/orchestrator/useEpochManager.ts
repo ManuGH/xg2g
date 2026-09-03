@@ -4,6 +4,7 @@ import type {
   PlaybackEpochState,
   PlaybackMachineEvent,
 } from './playbackTypes';
+import type { PlaybackAttemptToken } from '../playbackEngineContract';
 import type { PlayerStatus } from '../../../types/v3-player';
 
 interface UseEpochManagerArgs {
@@ -19,6 +20,7 @@ export interface EpochManager {
   sessionEpochRef: MutableRefObject<number>;
   acceptedPlaybackEpochRef: MutableRefObject<number>;
   acceptedSessionEpochRef: MutableRefObject<number>;
+  attemptTokenRef: MutableRefObject<PlaybackAttemptToken>;
   allocatePlaybackEpoch: () => number;
   beginPlaybackAttempt: (
     epoch: number,
@@ -26,6 +28,7 @@ export interface EpochManager {
     nextStatus: PlayerStatus,
     hasSessionIntent?: boolean,
     explicitProfilePinned?: boolean,
+    customAttemptId?: string,
   ) => void;
   markPlaybackStopped: (epoch: number) => void;
   allocateSessionEpoch: (playbackEpoch: number) => number;
@@ -44,6 +47,10 @@ export function useEpochManager({
   const sessionEpochRef = useRef(initialEpoch.session);
   const acceptedPlaybackEpochRef = useRef(initialEpoch.playback);
   const acceptedSessionEpochRef = useRef(initialEpoch.session);
+  const attemptTokenRef = useRef<PlaybackAttemptToken>({
+    epoch: initialEpoch.playback,
+    attemptId: `att-${initialEpoch.playback}-0`,
+  });
 
   useEffect(() => {
     acceptedPlaybackEpochRef.current = trackedEpoch.playback;
@@ -53,7 +60,12 @@ export function useEpochManager({
   const allocatePlaybackEpoch = useCallback(() => {
     playbackEpochRef.current += 1;
     sessionEpochRef.current = 0;
-    return playbackEpochRef.current;
+    const epoch = playbackEpochRef.current;
+    attemptTokenRef.current = {
+      epoch,
+      attemptId: `att-${epoch}-${Date.now()}`,
+    };
+    return epoch;
   }, []);
 
   const beginPlaybackAttempt = useCallback((
@@ -62,13 +74,17 @@ export function useEpochManager({
     nextStatus: PlayerStatus,
     hasSessionIntent = true,
     explicitProfilePinned = false,
+    customAttemptId?: string,
   ) => {
+    const attemptId = customAttemptId ?? attemptTokenRef.current.attemptId;
+    attemptTokenRef.current = { epoch, attemptId };
     onAttemptStarted?.(epoch);
     acceptedPlaybackEpochRef.current = epoch;
     acceptedSessionEpochRef.current = 0;
     dispatchPlayback({
       type: 'normative.playback.attempt.started',
       epoch,
+      attemptId,
       playbackMode: nextPlaybackMode,
       status: nextStatus,
       requestedDuration,
@@ -111,6 +127,7 @@ export function useEpochManager({
     sessionEpochRef,
     acceptedPlaybackEpochRef,
     acceptedSessionEpochRef,
+    attemptTokenRef,
     allocatePlaybackEpoch,
     beginPlaybackAttempt,
     markPlaybackStopped,

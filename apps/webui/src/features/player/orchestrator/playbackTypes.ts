@@ -15,7 +15,7 @@ export type DomainPlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 export type ContractPlaybackMode = NormalizedPlaybackMode;
 export type VodStreamMode = ContractPlaybackMode | null;
 export type ActiveHlsEngine = 'native' | 'hlsjs' | null;
-export type SessionPhase = 'idle' | 'starting' | 'ready' | 'stopped' | 'error';
+export type SessionPhase = 'idle' | 'starting' | 'priming' | 'building' | 'ready' | 'stopped' | 'error';
 export type MediaPhase = 'idle' | 'starting' | 'buffering' | 'playing' | 'paused' | 'recovering' | 'stopped' | 'error';
 
 export interface PlaybackEpochState {
@@ -57,11 +57,13 @@ export interface PlaybackFailure {
   telemetryReason: string | null;
 }
 
+import type { PlaybackAttemptToken } from '../playbackEngineContract';
 import type { RecoveryLadderState } from './recoveryLadder';
 export type PlaybackRecoveryState = RecoveryLadderState;
 
 export interface PlaybackDomainState {
   epoch: PlaybackEpochState;
+  currentAttemptId: string | null;
   traceId: string;
   status: PlayerStatus;
   playbackMode: DomainPlaybackMode;
@@ -112,6 +114,7 @@ export type PlaybackNormativeEvent =
   | {
       type: 'normative.playback.attempt.started';
       epoch: number;
+      attemptId?: string;
       playbackMode: DomainPlaybackMode;
       status: PlayerStatus;
       requestedDuration: number | null;
@@ -168,11 +171,6 @@ export type PlaybackNormativeEvent =
       type: 'normative.playback.failure.cleared';
     }
   | {
-      type: 'normative.media.status.changed';
-      epoch: number;
-      status: PlayerStatus;
-    }
-  | {
       type: 'normative.media.engine.selected';
       epoch: number;
       engine: ActiveHlsEngine;
@@ -188,6 +186,51 @@ export type PlaybackNormativeEvent =
       sessionEpoch: number;
       phase: SessionPhase;
       requestId?: string | null;
+    }
+  | {
+      type: 'engine.media.ready';
+      attempt: PlaybackAttemptToken;
+      engine: 'native' | 'hlsjs' | 'direct_mp4';
+    }
+  | {
+      type: 'engine.media.playing';
+      attempt: PlaybackAttemptToken;
+    }
+  | {
+      type: 'engine.media.waiting';
+      attempt: PlaybackAttemptToken;
+    }
+  | {
+      type: 'engine.media.stalled';
+      attempt: PlaybackAttemptToken;
+    }
+  | {
+      type: 'engine.media.paused';
+      attempt: PlaybackAttemptToken;
+    }
+  | {
+      type: 'engine.autoplay.blocked';
+      attempt: PlaybackAttemptToken;
+      error: unknown;
+      background: boolean;
+    }
+  | {
+      type: 'engine.recovery.started';
+      attempt: PlaybackAttemptToken;
+      phase: 'decode' | 'network' | 'audio';
+    }
+  | {
+      type: 'engine.media.observation';
+      attempt: PlaybackAttemptToken;
+      observation: 'canplay' | 'playing_confirmed' | 'stalled_confirmed';
+    }
+  | {
+      type: 'intent.user_play';
+      epoch: number;
+    }
+  | {
+      type: 'intent.user_pause';
+      epoch: number;
     };
 
 export type PlaybackAdvisoryEvent = {

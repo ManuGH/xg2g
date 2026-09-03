@@ -208,4 +208,172 @@ describe('playbackMachine', () => {
       failure,
     }).commands).toEqual([]);
   });
+
+  describe('Normative State Authority & Transition Matrix', () => {
+    it('engine.media.ready transitions starting/priming/buffering to ready for current attempt', () => {
+      const started = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 1,
+        attemptId: 'att-1-abc',
+        playbackMode: 'LIVE',
+        status: 'buffering',
+        requestedDuration: null,
+      });
+
+      const ready = playbackMachine(started, {
+        type: 'engine.media.ready',
+        attempt: { epoch: 1, attemptId: 'att-1-abc' },
+        engine: 'hlsjs',
+      });
+
+      expect(ready.status).toBe('ready');
+      expect(ready.activeHlsEngine).toBe('hlsjs');
+    });
+
+    it('engine events from stale attemptId or stale epoch are strictly ignored', () => {
+      const started = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 2,
+        attemptId: 'att-2-new',
+        playbackMode: 'LIVE',
+        status: 'buffering',
+        requestedDuration: null,
+      });
+
+      // Stale attemptId from previous attempt of same epoch
+      const staleAttempt = playbackMachine(started, {
+        type: 'engine.media.playing',
+        attempt: { epoch: 2, attemptId: 'att-2-old' },
+      });
+      expect(staleAttempt.status).toBe('buffering');
+
+      // Stale epoch
+      const staleEpoch = playbackMachine(started, {
+        type: 'engine.media.playing',
+        attempt: { epoch: 1, attemptId: 'att-2-new' },
+      });
+      expect(staleEpoch.status).toBe('buffering');
+    });
+
+    it('autoplay.blocked in background does NOT degrade status to ready', () => {
+      const started = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 1,
+        attemptId: 'att-bg',
+        playbackMode: 'LIVE',
+        status: 'buffering',
+        requestedDuration: null,
+      });
+
+      const blockedBg = playbackMachine(started, {
+        type: 'engine.autoplay.blocked',
+        attempt: { epoch: 1, attemptId: 'att-bg' },
+        error: new Error('NotAllowedError'),
+        background: true,
+      });
+
+      expect(blockedBg.status).toBe('buffering');
+
+      const blockedFg = playbackMachine(started, {
+        type: 'engine.autoplay.blocked',
+        attempt: { epoch: 1, attemptId: 'att-bg' },
+        error: new Error('NotAllowedError'),
+        background: false,
+      });
+
+      expect(blockedFg.status).toBe('ready');
+    });
+
+    it('media.waiting and media.stalled transition playing to buffering', () => {
+      const playing = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 1,
+        attemptId: 'att-1',
+        playbackMode: 'LIVE',
+        status: 'playing',
+        requestedDuration: null,
+      });
+
+      const waiting = playbackMachine(playing, {
+        type: 'engine.media.waiting',
+        attempt: { epoch: 1, attemptId: 'att-1' },
+      });
+      expect(waiting.status).toBe('buffering');
+
+      const stalled = playbackMachine(playing, {
+        type: 'engine.media.stalled',
+        attempt: { epoch: 1, attemptId: 'att-1' },
+      });
+      expect(stalled.status).toBe('buffering');
+    });
+
+    it('intent.user_play and intent.user_pause correctly manage user intent transitions', () => {
+      const paused = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 1,
+        attemptId: 'att-1',
+        playbackMode: 'LIVE',
+        status: 'paused',
+        requestedDuration: null,
+      });
+
+      const resumePlay = playbackMachine(paused, {
+        type: 'intent.user_play',
+        epoch: 1,
+      });
+      expect(resumePlay.status).toBe('buffering');
+
+      const pauseAgain = playbackMachine(resumePlay, {
+        type: 'intent.user_pause',
+        epoch: 1,
+      });
+      expect(pauseAgain.status).toBe('paused');
+    });
+
+    it('playback.failure does not blindly force error when recoverable', () => {
+      const playing = playbackMachine(createInitialPlaybackDomainState(), {
+        type: 'normative.playback.attempt.started',
+        epoch: 1,
+        attemptId: 'att-1',
+        playbackMode: 'LIVE',
+        status: 'playing',
+        requestedDuration: null,
+        hasSessionIntent: true,
+      });
+
+      const recoverableFailure = buildPlaybackFailure({
+        title: 'Buffer stalled',
+        code: 'BUFFER_STALLED',
+        retryable: true,
+      }, 'media-element', {
+        recoverable: true,
+        terminal: false,
+      });
+
+      const res = runPlaybackMachine(playing, {
+        type: 'normative.playback.failure.raised',
+        epoch: 1,
+        failure: recoverableFailure,
+      });
+
+      expect(res.state.status).toBe('recovering');
+
+      const terminalFailure = buildPlaybackFailure({
+        title: 'Auth failed',
+        code: 'AUTH_FAILED',
+        retryable: false,
+      }, 'native-host', {
+        recoverable: false,
+        terminal: true,
+      });
+
+      const terminalRes = runPlaybackMachine(playing, {
+        type: 'normative.playback.failure.raised',
+        epoch: 1,
+        failure: terminalFailure,
+      });
+
+      expect(terminalRes.state.status).toBe('error');
+    });
+  });
 });

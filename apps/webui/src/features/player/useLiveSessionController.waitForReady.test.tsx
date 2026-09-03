@@ -36,7 +36,7 @@ function renderController() {
       videoRef: createRef<VideoElementRef>(),
       setPlaybackMode: vi.fn(),
       setDurationSeconds: vi.fn(),
-      setStatus: vi.fn(),
+      onSessionPhaseChanged: vi.fn(),
       clearPlaybackFailure: vi.fn(),
       reportPlaybackFailure: vi.fn(),
       readResponseBody: async (res: Response) => ({ json: await res.json().catch(() => null), text: null }),

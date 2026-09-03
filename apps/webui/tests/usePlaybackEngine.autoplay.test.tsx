@@ -1,31 +1,25 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackEngine } from '../src/features/player/usePlaybackEngine';
+import type { PlaybackAttemptToken, PlaybackEngineEvent } from '../src/features/player/playbackEngineContract';
 
-function makeProps(video: HTMLVideoElement, setStatus: ReturnType<typeof vi.fn>) {
+function makeProps(video: HTMLVideoElement, eventSink: (event: PlaybackEngineEvent) => void) {
+  const attemptTokenRef = { current: { epoch: 1, attemptId: 'attempt-1' } as PlaybackAttemptToken };
   return {
     videoRef: { current: video },
     hlsRef: { current: null },
     sessionIdRef: { current: 'sess-1' },
     isTeardownRef: { current: false },
     lastDecodedRef: { current: 0 },
-    playbackEpochRef: { current: 0 },
+    playbackEpochRef: { current: 1 },
+    attemptTokenRef,
+    eventSink,
     t: ((key: string) => key) as any,
     reportError: vi.fn().mockResolvedValue(undefined),
     waitForSessionReady: vi.fn().mockResolvedValue({} as any),
     shouldPreferNativeHls: vi.fn(() => true),
     setStats: vi.fn(),
-    setStatus,
-    clearPlaybackFailure: vi.fn(),
-    reportPlaybackFailure: vi.fn(),
   } as any;
-}
-
-// The fix sets status via a functional updater: (prev) => prev === 'error' ? prev : 'ready'.
-function findFunctionalUpdater(setStatus: ReturnType<typeof vi.fn>) {
-  return setStatus.mock.calls
-    .map((call) => call[0])
-    .find((arg) => typeof arg === 'function') as ((prev: string) => string) | undefined;
 }
 
 describe('usePlaybackEngine autoplay-rejection recovery', () => {
@@ -42,11 +36,11 @@ describe('usePlaybackEngine autoplay-rejection recovery', () => {
     vi.restoreAllMocks();
   });
 
-  it('transitions buffering -> ready when direct-MP4 autoplay is rejected', async () => {
+  it('emits autoplay.blocked when direct-MP4 autoplay is rejected', async () => {
     const video = document.createElement('video');
-    const setStatus = vi.fn();
-    const { result } = renderHook(() => usePlaybackEngine(makeProps(video, setStatus)));
-    setStatus.mockClear();
+    const eventSink = vi.fn();
+    const { result } = renderHook(() => usePlaybackEngine(makeProps(video, eventSink)));
+    eventSink.mockClear();
 
     await act(async () => {
       result.current.playDirectMp4('http://example.test/recording.mp4');
@@ -55,23 +49,23 @@ describe('usePlaybackEngine autoplay-rejection recovery', () => {
     });
 
     await waitFor(() => {
-      const updater = findFunctionalUpdater(setStatus);
-      expect(updater).toBeDefined();
-      expect(updater!('buffering')).toBe('ready');
-      // Must not clobber a terminal error state.
-      expect(updater!('error')).toBe('error');
+      const blockedEvent = eventSink.mock.calls
+        .map((call) => call[0])
+        .find((evt: PlaybackEngineEvent) => evt.type === 'autoplay.blocked');
+      expect(blockedEvent).toBeDefined();
+      expect(blockedEvent.attempt).toEqual({ epoch: 1, attemptId: 'attempt-1' });
     });
   });
 
-  it('transitions buffering -> ready when native-HLS autoplay is rejected', async () => {
+  it('emits autoplay.blocked when native-HLS autoplay is rejected', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((type: string) =>
       type === 'application/vnd.apple.mpegurl' ? 'maybe' : '',
     );
 
     const video = document.createElement('video');
-    const setStatus = vi.fn();
-    const { result } = renderHook(() => usePlaybackEngine(makeProps(video, setStatus)));
-    setStatus.mockClear();
+    const eventSink = vi.fn();
+    const { result } = renderHook(() => usePlaybackEngine(makeProps(video, eventSink)));
+    eventSink.mockClear();
 
     await act(async () => {
       result.current.playHls('http://example.test/stream.m3u8', 'native');
@@ -85,9 +79,11 @@ describe('usePlaybackEngine autoplay-rejection recovery', () => {
     await waitFor(async () => {
       video.dispatchEvent(new Event('loadedmetadata'));
       await Promise.resolve();
-      const updater = findFunctionalUpdater(setStatus);
-      expect(updater).toBeDefined();
-      expect(updater!('buffering')).toBe('ready');
+      const blockedEvent = eventSink.mock.calls
+        .map((call) => call[0])
+        .find((evt: PlaybackEngineEvent) => evt.type === 'autoplay.blocked');
+      expect(blockedEvent).toBeDefined();
+      expect(blockedEvent.attempt).toEqual({ epoch: 1, attemptId: 'attempt-1' });
     });
   });
 });

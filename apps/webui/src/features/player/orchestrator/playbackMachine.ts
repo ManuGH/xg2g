@@ -1,5 +1,6 @@
 import type { AppError } from '../../../types/errors';
 import type { PlayerStatus } from '../../../types/v3-player';
+import type { PlaybackAttemptToken } from '../playbackEngineContract';
 import type {
   PlaybackCommand,
   PlaybackDomainState,
@@ -82,6 +83,7 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
       playback: 0,
       session: 0,
     },
+    currentAttemptId: null,
     traceId: '-',
     status: 'idle',
     playbackMode: 'UNKNOWN',
@@ -103,6 +105,16 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
 
 function isCurrentPlaybackEpoch(state: PlaybackDomainState, epoch: number): boolean {
   return epoch === state.epoch.playback;
+}
+
+function isCurrentAttempt(state: PlaybackDomainState, attempt: PlaybackAttemptToken): boolean {
+  if (attempt.epoch !== state.epoch.playback) {
+    return false;
+  }
+  if (state.currentAttemptId !== null && attempt.attemptId !== state.currentAttemptId) {
+    return false;
+  }
+  return true;
 }
 
 function isCurrentSessionEpoch(state: PlaybackDomainState, playbackEpoch: number, sessionEpoch: number): boolean {
@@ -127,6 +139,7 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
           playback: event.epoch,
           session: 0,
         },
+        currentAttemptId: event.attemptId ?? `att-${event.epoch}`,
         traceId: '-',
         status: event.status,
         playbackMode: event.playbackMode,
@@ -161,6 +174,7 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
           playback: event.epoch,
           session: 0,
         },
+        currentAttemptId: null,
         traceId: '-',
         status: 'stopped',
         playbackMode: 'UNKNOWN',
@@ -228,12 +242,17 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         vodStreamMode: event.vodStreamMode,
       };
 
-    case 'normative.playback.contract.resolved':
+    case 'normative.playback.contract.resolved': {
       if (!isCurrentPlaybackEpoch(state, event.epoch)) {
         return state;
       }
+      const nextStatus = event.contract.kind === 'recording' && state.status === 'building'
+        ? 'buffering'
+        : state.status;
       return {
         ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
         traceId: event.contract.requestId ?? state.traceId,
         contract: event.contract,
         vodStreamMode: event.contract.kind === 'recording'
@@ -244,20 +263,23 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         startUnix: event.contract.startUnix,
         failure: null,
       };
+    }
 
-    case 'normative.playback.failure.raised':
+    case 'normative.playback.failure.raised': {
       if (!isCurrentPlaybackEpoch(state, event.epoch)) {
         return state;
       }
+      const resolvedStatus: PlayerStatus = event.status ?? 'error';
       return {
         ...state,
-        status: event.status ?? 'error',
-        mediaPhase: statusToMediaPhase(event.status ?? 'error'),
+        status: resolvedStatus,
+        mediaPhase: statusToMediaPhase(resolvedStatus),
         sessionPhase: event.failure.class === 'auth' || event.failure.class === 'session'
           ? 'error'
           : state.sessionPhase,
         failure: event.failure,
       };
+    }
 
     case 'normative.playback.failure.cleared':
       return {
@@ -265,15 +287,154 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         failure: null,
       };
 
-    case 'normative.media.status.changed':
-      if (!isCurrentPlaybackEpoch(state, event.epoch)) {
+    case 'engine.media.ready': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      // Only transition to 'ready' if coming from starting/priming/buffering
+      const nextStatus: PlayerStatus =
+        state.status === 'starting' || state.status === 'priming' || state.status === 'buffering'
+          ? 'ready'
+          : state.status;
+      return {
+        ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
+        activeHlsEngine: event.engine === 'direct_mp4' ? null : event.engine,
+      };
+    }
+
+    case 'engine.media.playing': {
+      if (!isCurrentAttempt(state, event.attempt)) {
         return state;
       }
       return {
         ...state,
-        status: event.status,
-        mediaPhase: statusToMediaPhase(event.status),
+        status: 'playing',
+        mediaPhase: 'playing',
+        failure: null,
       };
+    }
+
+    case 'engine.media.waiting':
+    case 'engine.media.stalled': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      // If currently playing or ready, enter buffering. If already starting/priming/buffering, keep current.
+      const nextStatus: PlayerStatus =
+        state.status === 'playing' || state.status === 'ready' ? 'buffering' : state.status;
+      return {
+        ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
+      };
+    }
+
+    case 'engine.media.paused': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      if (state.status === 'stopped' || state.status === 'error' || state.status === 'idle') {
+        return state;
+      }
+      return {
+        ...state,
+        status: 'paused',
+        mediaPhase: 'paused',
+      };
+    }
+
+    case 'engine.autoplay.blocked': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      // Specification: If blocked while in background, DO NOT degrade to 'ready'. Stay in current ('buffering'/'starting').
+      // If foreground, degrade to 'ready' so user can click to play.
+      const nextStatus: PlayerStatus = event.background ? state.status : 'ready';
+      return {
+        ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
+      };
+    }
+
+    case 'engine.recovery.started': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      return {
+        ...state,
+        status: 'recovering',
+        mediaPhase: 'recovering',
+      };
+    }
+
+    case 'engine.media.observation': {
+      if (!isCurrentAttempt(state, event.attempt)) {
+        return state;
+      }
+      if (
+        event.observation === 'playing_confirmed' &&
+        (state.status === 'buffering' || state.status === 'priming' || state.status === 'starting' || state.status === 'ready')
+      ) {
+        return {
+          ...state,
+          status: 'playing',
+          mediaPhase: 'playing',
+          failure: null,
+        };
+      }
+      if (
+        event.observation === 'canplay' &&
+        (state.status === 'buffering' || state.status === 'starting' || state.status === 'priming')
+      ) {
+        return {
+          ...state,
+          status: 'ready',
+          mediaPhase: statusToMediaPhase('ready'),
+        };
+      }
+      if (
+        event.observation === 'stalled_confirmed' &&
+        (state.status === 'playing' || state.status === 'ready')
+      ) {
+        return {
+          ...state,
+          status: 'buffering',
+          mediaPhase: 'buffering',
+        };
+      }
+      return state;
+    }
+
+    case 'intent.user_play': {
+      if (!isCurrentPlaybackEpoch(state, event.epoch)) {
+        return state;
+      }
+      const nextStatus: PlayerStatus =
+        state.status === 'paused' || state.status === 'ready' ? 'buffering' : state.status;
+      return {
+        ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
+      };
+    }
+
+    case 'intent.user_pause': {
+      if (!isCurrentPlaybackEpoch(state, event.epoch)) {
+        return state;
+      }
+      const nextStatus: PlayerStatus =
+        state.status === 'playing' || state.status === 'buffering' || state.status === 'ready'
+          ? 'paused'
+          : state.status;
+      return {
+        ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
+      };
+    }
 
     case 'normative.media.engine.selected':
       if (!isCurrentPlaybackEpoch(state, event.epoch)) {
@@ -297,15 +458,26 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         sessionPhase: 'starting',
       };
 
-    case 'normative.session.phase.changed':
+    case 'normative.session.phase.changed': {
       if (!isCurrentSessionEpoch(state, event.playbackEpoch, event.sessionEpoch)) {
         return state;
       }
+      let nextStatus = state.status;
+      if (event.phase === 'priming' && (state.status === 'starting' || state.status === 'buffering')) {
+        nextStatus = 'priming';
+      } else if (event.phase === 'building' && (state.status === 'starting' || state.status === 'buffering')) {
+        nextStatus = 'building';
+      } else if (event.phase === 'ready' && (state.status === 'starting' || state.status === 'priming' || state.status === 'building')) {
+        nextStatus = 'ready';
+      }
       return {
         ...state,
+        status: nextStatus,
+        mediaPhase: statusToMediaPhase(nextStatus),
         traceId: event.requestId ?? state.traceId,
         sessionPhase: event.phase,
       };
+    }
 
     case 'advisory.signal.recorded':
       if (!isCurrentPlaybackEpoch(state, event.epoch)) {

@@ -5,7 +5,6 @@ import { createSession, getSessionEvents, type IntentRequest, type PlaybackEngin
 import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import type {
-  PlayerStatus,
   SessionCookieState,
   V3SessionHeartbeatResponse,
   V3SessionSnapshot,
@@ -39,6 +38,8 @@ const SESSION_READY_POLL_MS = 250;
 const HEARTBEAT_RETRY_INTERVAL_MS = 5_000;
 const CONNECTION_LOST_AFTER_FAILURES = 2;
 
+import type { SessionPhase } from './orchestrator/playbackTypes';
+
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ErrorBodyReader = (res: Response) => Promise<{ json: any | null; text: string | null }>;
 type PlayerErrorFactory = (message: string, details?: unknown) => Error;
@@ -50,7 +51,7 @@ interface UseLiveSessionControllerProps {
   videoRef: RefObject<VideoElementRef>;
   setPlaybackMode: Dispatch<SetStateAction<PlaybackMode>>;
   setDurationSeconds: Dispatch<SetStateAction<number | null>>;
-  setStatus: Dispatch<SetStateAction<PlayerStatus>>;
+  onSessionPhaseChanged?: (phase: SessionPhase) => void;
   clearPlaybackFailure: () => void;
   reportPlaybackFailure: (error: AppError, options?: PlaybackFailureReportOptions) => void;
   readResponseBody: ErrorBodyReader;
@@ -112,7 +113,7 @@ export function useLiveSessionController({
   videoRef,
   setPlaybackMode,
   setDurationSeconds,
-  setStatus,
+  onSessionPhaseChanged,
   clearPlaybackFailure,
   reportPlaybackFailure,
   readResponseBody,
@@ -511,9 +512,9 @@ export function useLiveSessionController({
           return session;
         }
         if (state === 'PRIMING') {
-          setStatus('priming');
+          onSessionPhaseChanged?.('priming');
         } else {
-          setStatus('starting');
+          onSessionPhaseChanged?.('starting');
         }
         if (i < Math.min(3, maxAttempts) - 1) {
           await sleep(SESSION_READY_POLL_MS);
@@ -627,7 +628,7 @@ export function useLiveSessionController({
             return true;
           }
           if (state === 'PRIMING') {
-            setStatus('priming');
+            onSessionPhaseChanged?.('priming');
           }
           return false;
         } finally {
@@ -647,7 +648,7 @@ export function useLiveSessionController({
             const stateData = event.data as { state?: string; reason?: string; reasonDetail?: string };
             const state = stateData.state;
             if (state === 'PRIMING') {
-              setStatus('priming');
+              onSessionPhaseChanged?.('priming');
             } else if (state === 'READY' || state === 'DRAINING') {
               void settleFromSessionStatus().catch((err) => {
                 if (cleanup()) reject(err);
@@ -693,7 +694,7 @@ export function useLiveSessionController({
         }
       });
     });
-  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionSnapshot, readResponseBody, setStatus, t]);
+  }, [apiBase, applySessionInfo, authHeaders, createPlayerError, fetchWithRecoveredSessionCookie, onSessionPhaseChanged, onSessionSnapshot, readResponseBody, t]);
 
   useEffect(() => {
     if (!sessionId || !heartbeatInterval) {
@@ -764,7 +765,6 @@ export function useLiveSessionController({
           stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
-          setStatus('error');
           clearPlaybackFailure();
           reportPlaybackFailure({
             title: t('player.authFailed'),
@@ -786,7 +786,6 @@ export function useLiveSessionController({
           stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
-          setStatus('error');
           clearPlaybackFailure();
           reportPlaybackFailure({
             title: t('player.forbidden'),
@@ -813,7 +812,6 @@ export function useLiveSessionController({
             stopLoop();
             clearSessionLeaseState();
             setPlaybackMode('UNKNOWN');
-            setStatus('error');
             clearPlaybackFailure();
             reportPlaybackFailure({
               title: t('player.sessionFailed'),
@@ -843,7 +841,6 @@ export function useLiveSessionController({
           stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
-          setStatus('error');
           clearPlaybackFailure();
           reportPlaybackFailure({
             title: t('player.sessionExpired') || 'Session expired. Please restart.',
@@ -865,7 +862,6 @@ export function useLiveSessionController({
           stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
-          setStatus('error');
           clearPlaybackFailure();
           reportPlaybackFailure({
             title: t('player.sessionNotFound') || 'Session no longer exists.',
@@ -900,7 +896,7 @@ export function useLiveSessionController({
       stopLoop();
       setConnectionLost(false);
     };
-  }, [apiBase, authHeaders, clearPlaybackFailure, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, reportPlaybackFailure, sessionId, setPlaybackMode, setStatus, t, videoRef]);
+  }, [apiBase, authHeaders, clearPlaybackFailure, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, reportPlaybackFailure, sessionId, setPlaybackMode, t, videoRef]);
 
   useEffect(() => {
     setClientAuthToken(token);

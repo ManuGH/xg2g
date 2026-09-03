@@ -21,7 +21,6 @@ interface UsePlaybackStateSettersArgs {
 
 export interface PlaybackStateSetters {
   setTraceId: Dispatch<SetStateAction<string>>;
-  setStatus: Dispatch<SetStateAction<PlayerStatus>>;
   setPlaybackMode: Dispatch<SetStateAction<'LIVE' | 'VOD' | 'UNKNOWN'>>;
   setDurationSeconds: Dispatch<SetStateAction<number | null>>;
   setVodStreamMode: Dispatch<SetStateAction<'direct_mp4' | 'native_hls' | 'hlsjs' | 'transcode' | null>>;
@@ -60,16 +59,6 @@ export function usePlaybackStateSetters({
       type: 'normative.playback.trace.updated',
       epoch: acceptedPlaybackEpochRef.current,
       traceId: resolvedTraceId,
-    });
-  }, [acceptedPlaybackEpochRef, dispatchPlayback, playbackStateRef]);
-
-  const setStatus = useCallback<Dispatch<SetStateAction<PlayerStatus>>>((next) => {
-    const currentStatus = playbackStateRef.current.status;
-    const resolvedStatus = typeof next === 'function' ? next(currentStatus) : next;
-    dispatchPlayback({
-      type: 'normative.media.status.changed',
-      epoch: acceptedPlaybackEpochRef.current,
-      status: resolvedStatus,
     });
   }, [acceptedPlaybackEpochRef, dispatchPlayback, playbackStateRef]);
 
@@ -196,7 +185,6 @@ export function usePlaybackStateSetters({
 
   return {
     setTraceId,
-    setStatus,
     setPlaybackMode,
     setDurationSeconds,
     setVodStreamMode,
