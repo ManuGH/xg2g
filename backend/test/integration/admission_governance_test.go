@@ -54,12 +54,14 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 				}
 			}
 
-			// Authorized consumer: smoother.Handler is allowed to consume shared ingest via h.manager.Acquire only.
-			// No other file in internal/stream/smoother is permitted to make any Acquire calls.
+			// Authorized consumer: smoother.Handler is allowed to consume shared ingest via exact h.manager.Acquire only.
+			// No other file, receiver, or field name in internal/stream/smoother is permitted to make any Acquire calls.
 			isPermittedSmootherAcquire := false
 			if strings.HasSuffix(filepath.ToSlash(path), "internal/stream/smoother/handler.go") && sel.Sel.Name == "Acquire" {
-				if subSel, ok := sel.X.(*ast.SelectorExpr); ok && (subSel.Sel.Name == "manager" || subSel.Sel.Name == "sessionMgr") {
-					isPermittedSmootherAcquire = true
+				if subSel, ok := sel.X.(*ast.SelectorExpr); ok && subSel.Sel.Name == "manager" {
+					if recv, ok2 := subSel.X.(*ast.Ident); ok2 && recv.Name == "h" {
+						isPermittedSmootherAcquire = true
+					}
 				}
 			}
 
@@ -101,5 +103,62 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 
 	if directBypassDetected {
 		t.Errorf("governance check failed: un-gated direct allocator bypass detected")
+	}
+}
+
+// TestSmoother_OutboundNetworkOwnershipForbidden verifies via AST that internal/stream/smoother
+// production files cannot own, instantiate or use any outbound HTTP client, transport, or network dialer.
+// The allowed data path is strictly: smoother -> session.Manager.Acquire -> shared ingest.
+func TestSmoother_OutboundNetworkOwnershipForbidden(t *testing.T) {
+	smootherDir := "../../internal/stream/smoother"
+	fset := token.NewFileSet()
+
+	entries, err := os.ReadDir(smootherDir)
+	if err != nil {
+		t.Fatalf("smoother directory must exist: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), "_test.go") || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+
+		filePath := filepath.Join(smootherDir, entry.Name())
+		node, err := parser.ParseFile(fset, filePath, nil, parser.AllErrors)
+		if err != nil {
+			t.Fatalf("must parse %s: %v", filePath, err)
+		}
+
+		// 1. Verify forbidden imports
+		for _, imp := range node.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			if importPath == "net" || strings.HasPrefix(importPath, "net/http/httputil") {
+				t.Errorf("%s imports forbidden network package %q: smoother must not own network connections", entry.Name(), importPath)
+			}
+		}
+
+		// 2. Inspect AST for forbidden outbound types and calls
+		ast.Inspect(node, func(n ast.Node) bool {
+			// Check forbidden selector expressions
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				// Forbid http.Client, http.Transport, http.DefaultClient
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "http" {
+					switch sel.Sel.Name {
+					case "Client", "Transport", "DefaultClient", "RoundTripper",
+						"Get", "Post", "PostForm", "Head", "NewRequest", "NewRequestWithContext":
+						t.Errorf("%s references forbidden outbound http API '%s.%s' at %s:%d",
+							entry.Name(), id.Name, sel.Sel.Name, filePath, fset.Position(sel.Pos()).Line)
+					}
+				}
+
+				// Forbid .Do(...) and .RoundTrip(...) calls
+				if sel.Sel.Name == "Do" || sel.Sel.Name == "RoundTrip" {
+					t.Errorf("%s references forbidden client call '%s' at %s:%d: smoother must not execute outbound requests",
+						entry.Name(), sel.Sel.Name, filePath, fset.Position(sel.Pos()).Line)
+				}
+			}
+
+			return true
+		})
 	}
 }
