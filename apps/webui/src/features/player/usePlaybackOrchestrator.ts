@@ -15,7 +15,6 @@ import type {
   V3SessionSnapshot,
   HlsInstanceRef,
   VideoElementRef,
-  PlayerAudioTrack,
 } from '../../types/v3-player';
 import { useLiveSessionController } from './useLiveSessionController';
 import { usePlaybackEngine } from './usePlaybackEngine';
@@ -167,24 +166,11 @@ export interface PlaybackOrchestratorActions {
   changeProfile(profile: string): void;
 }
 
+import { usePlayerAudioTracks } from './usePlayerAudioTracks';
+
 export interface UsePlaybackOrchestratorResult {
   viewState: V3PlayerViewState;
   actions: PlaybackOrchestratorActions;
-}
-
-function areAudioTrackListsEqual(current: PlayerAudioTrack[], next: PlayerAudioTrack[]): boolean {
-  return current.length === next.length && current.every((track, index) => {
-    const candidate = next[index];
-    return candidate !== undefined
-      && track.key === candidate.key
-      && track.engineIndex === candidate.engineIndex
-      && track.nativeId === candidate.nativeId
-      && track.language === candidate.language
-      && track.label === candidate.label
-      && track.kind === candidate.kind
-      && track.id === candidate.id
-      && track.name === candidate.name;
-  });
 }
 
 export function usePlaybackOrchestrator(
@@ -224,13 +210,14 @@ export function usePlaybackOrchestrator(
     bufferMs: number;
   } | null>(null);
 
-  const [audioTracks, setAudioTracks] = useState<PlayerAudioTrack[]>([]);
-  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
-  const handleAudioTracksUpdated = useCallback((nextTracks: PlayerAudioTrack[]) => {
-    setAudioTracks((currentTracks) => (
-      areAudioTrackListsEqual(currentTracks, nextTracks) ? currentTracks : nextTracks
-    ));
-  }, []);
+  const {
+    audioTracks,
+    activeAudioTrack,
+    handleAudioTracksUpdated,
+    setActiveAudioTrack,
+    changeAudioTrack,
+    resetAudioTracks,
+  } = usePlayerAudioTracks({ videoRef, hlsRef });
 
   const handleAttemptStarted = useCallback((epoch: number) => {
     sessionTimeline.beginAttempt(epoch);
@@ -964,9 +951,8 @@ export function usePlaybackOrchestrator(
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
-    setAudioTracks([]);
-    setActiveAudioTrack(-1);
-  }, [resetBridgeState, resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
+    resetAudioTracks();
+  }, [resetAudioTracks, resetBridgeState, resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
@@ -2730,18 +2716,7 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
-    changeAudioTrack(trackId: number) {
-      if (hlsRef.current) {
-        hlsRef.current.audioTrack = trackId;
-      } else if (videoRef.current && 'audioTracks' in videoRef.current) {
-        const tracks = (videoRef.current as any).audioTracks;
-        if (tracks) {
-          for (let i = 0; i < tracks.length; i++) {
-            tracks[i].enabled = (i === trackId);
-          }
-        }
-      }
-    },
+    changeAudioTrack,
     seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,

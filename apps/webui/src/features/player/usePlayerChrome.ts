@@ -5,6 +5,9 @@ import { debugLog, debugWarn } from '../../utils/logging';
 import { onHostMediaKey } from '../../lib/hostBridge';
 import { hasTouchInput } from './utils/playerHelpers';
 
+import { useDvrTimelineController, readActualSeekableBounds } from './useDvrTimelineController';
+import type { LiveSeekWindowHint } from './useDvrTimelineController';
+
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ForceNativeFn = (videoEl?: VideoElementRef) => boolean;
 type DesktopFullscreenFn = (videoEl?: VideoElementRef) => boolean;
@@ -20,13 +23,6 @@ function canUseWebKitPresentationModePiP(video: unknown): boolean {
     webkitVideo.webkitSupportsPresentationMode('picture-in-picture') === true &&
     typeof webkitVideo.webkitSetPresentationMode === 'function'
   );
-}
-
-interface LiveSeekWindowHint {
-  start: number;
-  end: number;
-  liveEdge: number | null;
-  capturedAtMs?: number;
 }
 
 interface UsePlayerChromeProps {
@@ -157,10 +153,20 @@ export function usePlayerChrome({
   onNextChannel,
   onPreviousChannel,
 }: UsePlayerChromeProps): PlayerChromeController {
+  const dvr = useDvrTimelineController({
+    videoRef,
+    playbackMode,
+    canSeek,
+    durationSeconds,
+    startUnix,
+    anchorStartSec,
+    onSeekOffset,
+    liveSeekWindow,
+    userPauseIntentRef,
+    liveEdgeSeekSafetyGapSeconds,
+  });
+
   const [showStats, setShowStats] = useState(false);
-  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
-  const [seekableStart, setSeekableStart] = useState(0);
-  const [seekableEnd, setSeekableEnd] = useState(0);
   const [isWebKitFullscreenActive, setIsWebKitFullscreenActive] = useState(false);
   const [isPip, setIsPip] = useState(false);
   const [canTogglePiP, setCanTogglePiP] = useState(false);
@@ -173,7 +179,6 @@ export function usePlayerChrome({
   const [canToggleMute, setCanToggleMute] = useState(true);
   const [canAdjustVolume, setCanAdjustVolume] = useState(true);
   const [stats, setStats] = useState<PlayerStats>(initialStats);
-  const [liveWindowClockMs, setLiveWindowClockMs] = useState(() => Date.now());
   const [nativeFullscreenPending, setNativeFullscreenPending] = useState(false);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const userExplicitlyMutedRef = useRef(false);
@@ -189,91 +194,15 @@ export function usePlayerChrome({
     return shouldForceNativeMobileHls(videoEl);
   }, [shouldForceNativeMobileHls]);
 
-  const formatClock = useCallback((value: number): string => {
-    if (!Number.isFinite(value) || value < 0) return '--:--';
-    const totalSeconds = Math.floor(value);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
-  }, []);
-
-  const formatTimeOfDay = useCallback((unixSeconds: number): string => {
-    if (!unixSeconds || unixSeconds <= 0) return '--:--:--';
-    const date = new Date(unixSeconds * 1000);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  }, []);
-
-  const normalizedLiveSeekWindow = useMemo(() => {
-    if (playbackMode !== 'LIVE' || !liveSeekWindow) {
-      return null;
-    }
-    const capturedAtMs = Number.isFinite(liveSeekWindow.capturedAtMs)
-      ? Math.max(0, liveSeekWindow.capturedAtMs as number)
-      : liveWindowClockMs;
-    const elapsedSeconds = Math.max(0, (liveWindowClockMs - capturedAtMs) / 1000);
-    const start = Number.isFinite(liveSeekWindow.start) ? Math.max(0, liveSeekWindow.start + elapsedSeconds) : 0;
-    const end = Number.isFinite(liveSeekWindow.end) ? Math.max(start, liveSeekWindow.end + elapsedSeconds) : 0;
-    const liveEdge = liveSeekWindow.liveEdge !== null && Number.isFinite(liveSeekWindow.liveEdge)
-      ? Math.max(end, liveSeekWindow.liveEdge + elapsedSeconds)
-      : end;
-    if (end <= start) {
-      return null;
-    }
-    return { start, end, liveEdge };
-  }, [liveSeekWindow, liveWindowClockMs, playbackMode]);
-
-  useEffect(() => {
-    if (playbackMode !== 'LIVE' || !liveSeekWindow) {
-      return;
-    }
-
-    setLiveWindowClockMs(Date.now());
-    const timer = window.setInterval(() => {
-      setLiveWindowClockMs(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [liveSeekWindow, playbackMode]);
-
-  const readSeekableBounds = useCallback((video: SafariVideoElement) => {
-    let start = 0;
-    let end = 0;
-    if (normalizedLiveSeekWindow) {
-      start = normalizedLiveSeekWindow.start;
-      end = normalizedLiveSeekWindow.end;
-    } else if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
-      end = durationSeconds;
-    } else if (video.seekable && video.seekable.length > 0) {
-      start = video.seekable.start(0);
-      end = video.seekable.end(video.seekable.length - 1);
-    } else if (durationSeconds && durationSeconds > 0) {
-      end = durationSeconds;
-    }
-    return { start, end };
-  }, [durationSeconds, normalizedLiveSeekWindow, playbackMode]);
-
-  const readActualSeekableBounds = useCallback((video: SafariVideoElement) => {
-    try {
-      if (!video.seekable || video.seekable.length <= 0) {
-        return null;
-      }
-
-      const start = video.seekable.start(0);
-      const end = video.seekable.end(video.seekable.length - 1);
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-        return null;
-      }
-
-      return { start, end };
-    } catch {
-      return null;
-    }
-  }, []);
+  const {
+    canRunSeekCommand,
+    seekTo,
+    seekBy,
+    refreshSeekableState,
+  } = dvr;
 
   const logNativeFullscreenProbe = useCallback((reason: string, video: SafariVideoElement) => {
-    const { start, end } = readSeekableBounds(video);
+    const { start, end } = dvr.readSeekableBounds(video);
     debugLog('[V3Player] Native fullscreen probe', {
       reason,
       playbackMode,
@@ -293,7 +222,7 @@ export function usePlayerChrome({
       videoWidth: video.videoWidth || 0,
       videoHeight: video.videoHeight || 0,
     });
-  }, [allowNativeFullscreen, canSeek, canUseDesktopWebKitFullscreen, playbackMode, readSeekableBounds]);
+  }, [allowNativeFullscreen, canSeek, canUseDesktopWebKitFullscreen, dvr, playbackMode]);
 
   const canEnterNativeFullscreenNow = useCallback((video: SafariVideoElement) => (
     video.readyState >= 1 ||
@@ -310,13 +239,13 @@ export function usePlayerChrome({
 
     const actualWindow = readActualSeekableBounds(video);
     return !!actualWindow && actualWindow.end - actualWindow.start >= 8;
-  }, [canEnterNativeFullscreenNow, playbackMode, readActualSeekableBounds]);
+  }, [canEnterNativeFullscreenNow, playbackMode]);
 
   const requiresVerifiedDesktopLiveWindow = useCallback(() => (
     playbackMode === 'LIVE' &&
-    !!normalizedLiveSeekWindow &&
-    normalizedLiveSeekWindow.end - normalizedLiveSeekWindow.start >= 8
-  ), [normalizedLiveSeekWindow, playbackMode]);
+    !!dvr.normalizedLiveSeekWindow &&
+    dvr.normalizedLiveSeekWindow.end - dvr.normalizedLiveSeekWindow.start >= 8
+  ), [dvr.normalizedLiveSeekWindow, playbackMode]);
 
   const canEnterDesktopNativeFullscreenNow = useCallback((video: SafariVideoElement) => {
     if (!canEnterNativeFullscreenNow(video)) {
@@ -328,7 +257,7 @@ export function usePlayerChrome({
 
     const actualWindow = readActualSeekableBounds(video);
     return !!actualWindow && actualWindow.end - actualWindow.start >= 8;
-  }, [canEnterNativeFullscreenNow, readActualSeekableBounds, requiresVerifiedDesktopLiveWindow]);
+  }, [canEnterNativeFullscreenNow, requiresVerifiedDesktopLiveWindow]);
 
   const flushPendingNativeFullscreen = useCallback((reason: string) => {
     const video = videoRef.current;
@@ -368,113 +297,6 @@ export function usePlayerChrome({
     shouldUseTouchWebKitFullscreen,
     videoRef,
   ]);
-
-  const refreshSeekableState = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const { start, end } = readSeekableBounds(video);
-    setSeekableStart(start);
-    setSeekableEnd(end);
-    setCurrentPlaybackTime(video.currentTime);
-  }, [readSeekableBounds, videoRef]);
-
-  const canSeekLiveWindow = playbackMode === 'LIVE' && seekableEnd > seekableStart;
-  const canRunSeekCommand = canSeek || canSeekLiveWindow;
-
-  const seekTo = useCallback((targetSeconds: number) => {
-    const video = videoRef.current;
-    if (!canRunSeekCommand) return;
-    if (!video || !Number.isFinite(targetSeconds)) return;
-
-    if (playbackMode === 'VOD') {
-      const anchor = anchorStartSec ?? 0;
-      const localTarget = targetSeconds - anchor;
-
-      let localBufferedStart = 0;
-      let localBufferedEnd = 0;
-      try {
-        if (video.seekable && video.seekable.length > 0) {
-          localBufferedStart = video.seekable.start(0);
-          localBufferedEnd = video.seekable.end(video.seekable.length - 1);
-        }
-      } catch {
-        // ignore
-      }
-
-      // Check if the seek target is within the locally buffered/transcoded HLS window
-      const isWithinLocalWindow = localBufferedEnd > localBufferedStart &&
-        localTarget >= localBufferedStart &&
-        localTarget <= Math.max(localBufferedStart, localBufferedEnd - 0.5);
-
-      if (isWithinLocalWindow) {
-        video.currentTime = Math.max(0, localTarget);
-      } else if (onSeekOffset) {
-        onSeekOffset(targetSeconds);
-        return;
-      } else {
-        video.currentTime = Math.max(0, localTarget);
-      }
-    } else {
-      let clamped = Math.max(0, targetSeconds);
-      if (seekableEnd > seekableStart) {
-        clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
-      }
-      video.currentTime = clamped;
-    }
-
-    // Live/DVR seeks land on un-buffered (transcoded) or evicted data; Safari
-    // leaves the element PAUSED after such a seek, so the picture freezes/blacks
-    // and never resumes until a manual Play. Re-assert playback intent unless
-    // the user deliberately paused. Mirrors seekWhenReady's readyState gate; the
-    // `video.paused` guard makes this a no-op on in-buffer seeks that keep
-    // playing, so it never fights the shipped isInMemorySeekTarget path.
-    if (!userPauseIntentRef.current && video.paused) {
-      const resume = () => {
-        video.play().catch((err) => debugWarn('Live seek resume play failed', err));
-      };
-      if (video.readyState >= 1) {
-        resume();
-      } else {
-        video.addEventListener('loadedmetadata', resume, { once: true });
-      }
-    }
-  }, [anchorStartSec, canRunSeekCommand, onSeekOffset, playbackMode, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
-
-  const seekBy = useCallback((deltaSeconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const currentAbs = (anchorStartSec ?? 0) + video.currentTime;
-    seekTo(currentAbs + deltaSeconds);
-  }, [anchorStartSec, seekTo, videoRef]);
-
-  // "Go LIVE": never seek to the exact edge (stalls -> black). Target a safe
-  // margin behind it, clamped into the seekable window, and resume playback.
-  const seekToLiveEdge = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || seekableEnd <= seekableStart) return;
-    const target = Math.max(seekableStart, seekableEnd - liveEdgeSeekSafetyGapSeconds);
-    seekTo(target);
-    if (video.paused) {
-      video.play().catch((err) => debugWarn('Go-live play failed', err));
-    }
-  }, [seekTo, seekableEnd, seekableStart, videoRef]);
-
-  const seekWhenReady = useCallback((target: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const doSeek = () => {
-      seekTo(target);
-      video.play().catch((err) => debugWarn('Seek play failed', err));
-    };
-
-    if (video.readyState >= 1) {
-      doSeek();
-    } else {
-      video.addEventListener('loadedmetadata', doSeek, { once: true });
-    }
-  }, [seekTo, videoRef]);
 
   const clearAutoplayMuteIfNeeded = useCallback(() => {
     const video = videoRef.current;
@@ -781,13 +603,11 @@ export function usePlayerChrome({
   }, []);
 
   const resetChromeState = useCallback(() => {
-    setSeekableStart(0);
-    setSeekableEnd(0);
-    setCurrentPlaybackTime(0);
+    dvr.resetDvrTimeline();
     setNativeFullscreenPending(false);
     pendingNativeFullscreenRef.current = false;
     appliedTouchDvrDefaultRef.current = false;
-  }, []);
+  }, [dvr]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1020,7 +840,7 @@ export function usePlayerChrome({
 
   useEffect(() => {
     void flushPendingNativeFullscreen('touch-live-window-hint');
-  }, [flushPendingNativeFullscreen, normalizedLiveSeekWindow, playbackMode]);
+  }, [dvr.normalizedLiveSeekWindow, flushPendingNativeFullscreen, playbackMode]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1028,14 +848,15 @@ export function usePlayerChrome({
       !video ||
       appliedTouchDvrDefaultRef.current ||
       !allowNativeFullscreen ||
-      !normalizedLiveSeekWindow ||
+      !dvr.normalizedLiveSeekWindow ||
       !shouldForceNativeMobileHls(video)
     ) {
       return;
     }
 
-    const liveEdge = normalizedLiveSeekWindow.liveEdge ?? normalizedLiveSeekWindow.end;
-    const windowStart = normalizedLiveSeekWindow.start;
+    const liveEdge = dvr.normalizedLiveSeekWindow?.liveEdge ?? dvr.normalizedLiveSeekWindow?.end;
+    const windowStart = dvr.normalizedLiveSeekWindow?.start ?? 0;
+    if (!liveEdge) return;
     const windowSpan = Math.max(0, liveEdge - windowStart);
     const current = video.currentTime;
 
@@ -1060,12 +881,11 @@ export function usePlayerChrome({
     }
 
     video.currentTime = target;
-    setCurrentPlaybackTime(target);
+    dvr.setCurrentPlaybackTime(target);
     appliedTouchDvrDefaultRef.current = true;
   }, [
     allowNativeFullscreen,
-    normalizedLiveSeekWindow,
-    setCurrentPlaybackTime,
+    dvr,
     shouldForceNativeMobileHls,
     videoRef,
   ]);
@@ -1365,117 +1185,16 @@ export function usePlayerChrome({
     };
   }, [containerRef, idleDelayMs]);
 
-  const windowDuration = useMemo(() => {
-    if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
-      return durationSeconds;
-    }
-    return Math.max(0, seekableEnd - seekableStart);
-  }, [playbackMode, durationSeconds, seekableEnd, seekableStart]);
-
-  const relativePosition = useMemo(() => {
-    if (playbackMode === 'VOD') {
-      const anchor = anchorStartSec ?? 0;
-      const absolutePos = anchor + Math.max(0, currentPlaybackTime - seekableStart);
-      return windowDuration > 0 ? Math.min(windowDuration, Math.max(0, absolutePos)) : absolutePos;
-    }
-    return Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
-  }, [playbackMode, anchorStartSec, currentPlaybackTime, seekableStart, windowDuration]);
-
-  const hasLiveDvrWindow = canSeekLiveWindow && windowDuration > 0;
-  const seekEnabled = canRunSeekCommand;
-  const hasSeekWindow = seekEnabled && windowDuration > 0;
-  const isLiveMode = playbackMode === 'LIVE';
-  const liveEdgePosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
-  const isAtLiveEdge = hasLiveDvrWindow && Math.abs(liveEdgePosition - currentPlaybackTime) < 2;
-  const showDvrModeButton = hasLiveDvrWindow && allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
+  const showDvrModeButton = dvr.hasLiveDvrWindow && allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
   const supportsNativeFullscreen = allowNativeFullscreen && typeof videoRef.current?.webkitEnterFullscreen === 'function';
   const canEnterNativeFullscreen = supportsNativeFullscreen && !isTouchDevice;
   const prefersDesktopNativeFullscreen = !!videoRef.current && allowNativeFullscreen && canUseDesktopWebKitFullscreen(videoRef.current);
 
-  const liveWindowStartPosition = normalizedLiveSeekWindow?.start ?? seekableStart;
-  const liveWindowEndPosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
-
-  const startTimeDisplay = playbackMode === 'LIVE'
-    ? startUnix
-      ? formatTimeOfDay(startUnix + liveWindowStartPosition)
-      : formatClock(liveWindowStartPosition)
-    : startUnix
-      ? formatTimeOfDay(startUnix)
-      : formatClock(0);
-
-  const endTimeDisplay = playbackMode === 'LIVE'
-    ? startUnix
-      ? formatTimeOfDay(startUnix + liveWindowEndPosition)
-      : formatClock(liveWindowEndPosition)
-    : startUnix
-      ? formatTimeOfDay(startUnix + windowDuration)
-      : formatClock(windowDuration);
-
-  // The playhead itself: wall-clock time-of-day (LIVE with an EPG anchor) or the
-  // window-relative clock, plus how far behind the live edge we currently are. This
-  // is what lets the timeline answer "which minute of the stream am I on", instead
-  // of only labelling the window bounds. behindLiveSeconds is 0 for VOD and at the
-  // live edge. playheadWindowPosition mirrors the slider thumb (seekableStart +
-  // relativePosition) so the readout and the thumb never disagree.
-  const playheadWindowPosition = seekableStart + relativePosition;
-  const currentTimeDisplay = playbackMode === 'LIVE'
-    ? startUnix
-      ? formatTimeOfDay(startUnix + playheadWindowPosition)
-      : formatClock(playheadWindowPosition)  // unanchored: use seekable-absolute so the
-                                              // readout and the scrubber never disagree
-    : formatClock(relativePosition);           // VOD: relative to seekableStart, matching the
-                                              // existing start/end label convention
-  const behindLiveSeconds = isLiveMode
-    ? Math.max(0, liveEdgePosition - playheadWindowPosition)
-    : 0;
-
-  useEffect(() => {
-    if (
-      typeof navigator === 'undefined' ||
-      !('mediaSession' in navigator) ||
-      typeof navigator.mediaSession.setPositionState !== 'function'
-    ) {
-      return;
-    }
-
-    const positionDuration = hasSeekWindow
-      ? windowDuration
-      : playbackMode === 'VOD' && durationSeconds && durationSeconds > 0
-        ? durationSeconds
-        : 0;
-    if (!(positionDuration > 0)) {
-      try {
-        navigator.mediaSession.setPositionState?.(undefined);
-      } catch (err) {
-        debugWarn('Media session position reset failed', err);
-      }
-      return;
-    }
-
-    const position = hasSeekWindow ? relativePosition : currentPlaybackTime;
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: positionDuration,
-        playbackRate: 1,
-        position: Math.min(positionDuration, Math.max(0, position)),
-      });
-    } catch (err) {
-      debugWarn('Media session position update failed', err);
-    }
-  }, [
-    currentPlaybackTime,
-    durationSeconds,
-    hasSeekWindow,
-    playbackMode,
-    relativePosition,
-    windowDuration,
-  ]);
-
   return {
     showStats,
-    currentPlaybackTime,
-    seekableStart,
-    seekableEnd,
+    currentPlaybackTime: dvr.currentPlaybackTime,
+    seekableStart: dvr.seekableStart,
+    seekableEnd: dvr.seekableEnd,
     supportsNativeFullscreen,
     canEnterNativeFullscreen,
     prefersDesktopNativeFullscreen,
@@ -1493,22 +1212,22 @@ export function usePlayerChrome({
     canAdjustVolume,
     stats,
     setStats,
-    windowDuration,
-    relativePosition,
-    hasSeekWindow,
-    hasLiveDvrWindow,
-    isLiveMode,
-    isAtLiveEdge,
+    windowDuration: dvr.windowDuration,
+    relativePosition: dvr.relativePosition,
+    hasSeekWindow: dvr.hasSeekWindow,
+    hasLiveDvrWindow: dvr.hasLiveDvrWindow,
+    isLiveMode: dvr.isLiveMode,
+    isAtLiveEdge: dvr.isAtLiveEdge,
     showDvrModeButton,
-    startTimeDisplay,
-    endTimeDisplay,
-    currentTimeDisplay,
-    behindLiveSeconds,
-    formatClock,
-    seekTo,
-    seekToLiveEdge,
-    seekBy,
-    seekWhenReady,
+    startTimeDisplay: dvr.startTimeDisplay,
+    endTimeDisplay: dvr.endTimeDisplay,
+    currentTimeDisplay: dvr.currentTimeDisplay,
+    behindLiveSeconds: dvr.behindLiveSeconds,
+    formatClock: dvr.formatClock,
+    seekTo: dvr.seekTo,
+    seekToLiveEdge: dvr.seekToLiveEdge,
+    seekBy: dvr.seekBy,
+    seekWhenReady: dvr.seekWhenReady,
     togglePlayPause,
     toggleFullscreen,
     enterNativeFullscreen,
