@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
+import '../src/features/player/components/V3Player';
 import { AppProvider } from '../src/context/AppContext';
 import { ROUTE_MAP } from '../src/routes';
 import { findFetchCall } from './helpers/liveFlow';

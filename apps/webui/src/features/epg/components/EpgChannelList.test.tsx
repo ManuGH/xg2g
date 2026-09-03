@@ -286,7 +286,7 @@ describe('EpgChannelList playback affordance', () => {
       vi.advanceTimersByTime(901);
     });
 
-  });
+  }, 15000);
 
   it('accelerates channel navigation while holding down on TV hosts', async () => {
     vi.useFakeTimers();

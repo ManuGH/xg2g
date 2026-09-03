@@ -1892,17 +1892,10 @@ export function usePlaybackOrchestrator(
     // advances (the only proof the decoder accepted the resume), bounded; the
     // returned cancel cleans it up if the page hides again mid-recovery.
     //
-    // NOTE: the live status is read through recoveryStatusRef instead of making
-    // it an effect dependency. The
-    // `dispatchPlayback('engine.media.waiting')` call below would otherwise trigger a
-    // re-render where React cleans up the current effect (calling the cancel
-    // function) before the observation timer can fire, defeating the retry loop.
-    // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
-    // already in deps and correctly re-runs the effect when the session is reaped.
-    dispatchPlayback({
-      type: 'engine.media.waiting',
-      attempt: attemptTokenRef.current,
-    });
+    // NOTE: We do not synthetically dispatch 'engine.media.waiting' here; if the
+    // element already has decoded/buffered frames, playback resumes seamlessly
+    // without flashing the loading veil. If buffer is genuinely absent, the media
+    // element emits its own native 'waiting' event.
     return startResumePlaybackRecovery(video, {
       // Keep a user pause sacred even if it happens during the ~2s recovery window.
       shouldContinue: () => !userPauseIntentRef.current,
@@ -1973,10 +1966,6 @@ export function usePlaybackOrchestrator(
         }
       }
 
-      dispatchPlayback({
-        type: 'engine.media.waiting',
-        attempt: attemptTokenRef.current,
-      });
       cancelActiveRecovery?.();
       cancelActiveRecovery = startResumePlaybackRecovery(video, {
         shouldContinue: () => !userPauseIntentRef.current,
@@ -2088,12 +2077,7 @@ export function usePlaybackOrchestrator(
     // action === 'play'. As in foreground recovery, a single play() right after a
     // network stall often fizzles (the element discards it), so nudge play()
     // until currentTime advances, bounded; the returned cancel cleans it up if we
-    // go offline again mid-recovery. The latest status is read through
-    // recoveryStatusRef for the same reason documented on the foreground effect.
-    dispatchPlayback({
-      type: 'engine.media.waiting',
-      attempt: attemptTokenRef.current,
-    });
+    // go offline again mid-recovery.
     return startResumePlaybackRecovery(video, {
       shouldContinue: () => !userPauseIntentRef.current,
       onBlocked: (err: unknown) => {
