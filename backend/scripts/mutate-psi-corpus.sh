@@ -61,6 +61,10 @@ PY
     printf '  ANCHOR  %-58s (source changed; mutation not applied)\n' "$name"
     broken=$((broken + 1))
     restore_one
+    # Same cleanup as the end of the function. Without it a reason set for THIS
+    # mutation outlives the early return and the next surviving mutation is
+    # reported as equivalent under a justification that was never about it.
+    unset EQUIVALENT_REASON
     return
   fi
 
