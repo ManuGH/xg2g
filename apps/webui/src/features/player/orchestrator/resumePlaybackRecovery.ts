@@ -17,6 +17,7 @@ export const RESUME_PROGRESS_EPSILON = 0.01;
 export const RESUME_OBSERVE_MS = 400; // watch this long before deciding the stream is stuck
 export const RESUME_RECOVERY_INTERVAL_MS = 250;
 export const RESUME_RECOVERY_MAX_ATTEMPTS = 8; // ~2s ceiling of nudges
+export const RESUME_BUFFERING_MAX_TICKS = 40; // ~10s ceiling while waiting for initial data (readyState < 2)
 
 // resumeStreamRecovered reports whether the stream is fine and needs no nudge:
 // it ended, or currentTime advanced past a small epsilon (the decoder is presenting
@@ -43,6 +44,7 @@ export interface ResumePlaybackRecoveryOptions {
   observeMs?: number;
   intervalMs?: number;
   maxAttempts?: number;
+  maxBufferingTicks?: number;
   onBlocked?: (err: unknown) => void;
   // shouldContinue lets the caller keep a USER pause sacred even mid-recovery: if
   // the user pauses while the loop is running, it stops on the next tick. Wire it to
@@ -64,6 +66,7 @@ export function startResumePlaybackRecovery(
   const intervalMs = options.intervalMs ?? RESUME_RECOVERY_INTERVAL_MS;
   const maxAttempts = options.maxAttempts ?? RESUME_RECOVERY_MAX_ATTEMPTS;
   let attempts = 0;
+  let bufferingTicks = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
 
@@ -79,6 +82,20 @@ export function startResumePlaybackRecovery(
       if (!alive()) {
         return;
       }
+      // If the media element has not yet buffered data for current playback position
+      // (readyState < 2), currentTime cannot advance by HTML5 spec. Do not burn
+      // decoder stall attempts against network/buffering latency.
+      const isBuffering = typeof video.readyState === 'number' && video.readyState < 2;
+      if (isBuffering) {
+        bufferingTicks += 1;
+        if (bufferingTicks >= (options.maxBufferingTicks ?? RESUME_BUFFERING_MAX_TICKS)) {
+          options.onFailed?.();
+          return;
+        }
+        nudge();
+        return;
+      }
+
       attempts += 1;
       if (resumeRecoverySettled(startTime, video.currentTime, video.ended, attempts, maxAttempts)) {
         if (!resumeStreamRecovered(startTime, video.currentTime, video.ended)) {

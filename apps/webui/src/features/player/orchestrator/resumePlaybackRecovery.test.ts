@@ -92,4 +92,28 @@ describe('startResumePlaybackRecovery (observe-first)', () => {
     vi.advanceTimersByTime(2000);
     expect(v.play).toHaveBeenCalledTimes(1); // only the synchronous first nudge
   });
+
+  it('does not count attempts while video.readyState < 2 (waiting for initial buffer on foreground return)', () => {
+    const v = { currentTime: 0, readyState: 1, ended: false, play: vi.fn(() => Promise.resolve()) } as unknown as HTMLVideoElement & {
+      play: ReturnType<typeof vi.fn>;
+      readyState: number;
+    };
+    const onFailed = vi.fn();
+    startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250, maxAttempts: 8, onFailed });
+
+    expect(v.play).toHaveBeenCalledTimes(1);
+
+    // Advance past the normal 8-attempt ceiling (400ms + 8 * 250ms = 2400ms)
+    vi.advanceTimersByTime(2400);
+
+    // Should NOT fail because readyState is 1 (< 2, waiting for data)
+    expect(onFailed).not.toHaveBeenCalled();
+
+    // Data arrives and playback starts
+    v.readyState = 4;
+    v.currentTime = 0.5;
+    vi.advanceTimersByTime(250);
+
+    expect(onFailed).not.toHaveBeenCalled();
+  });
 });

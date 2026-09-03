@@ -2038,6 +2038,9 @@ export function usePlaybackOrchestrator(
     if (wasHidden && hlsRef.current) {
       try {
         hlsRef.current.startLoad();
+        if (typeof (hlsRef.current as any).resumeBuffering === 'function') {
+          (hlsRef.current as any).resumeBuffering();
+        }
       } catch (err) {
         debugWarn('[V3Player] hls resume startLoad failed', err);
       }
@@ -2074,7 +2077,7 @@ export function usePlaybackOrchestrator(
     // function) before the observation timer can fire, defeating the retry loop.
     // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
     // already in deps and correctly re-runs the effect when the session is reaped.
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
+    setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
     return startResumePlaybackRecovery(video, {
       // Keep a user pause sacred even if it happens during the ~2s recovery window.
       shouldContinue: () => !userPauseIntentRef.current,
@@ -2134,12 +2137,15 @@ export function usePlaybackOrchestrator(
       if (hlsRef.current) {
         try {
           hlsRef.current.startLoad();
+          if (typeof (hlsRef.current as any).resumeBuffering === 'function') {
+            (hlsRef.current as any).resumeBuffering();
+          }
         } catch (err) {
           debugWarn('[V3Player] hls startLoad failed on live auto-resume', err);
         }
       }
 
-      setStatus((current) => (current === 'paused' ? 'buffering' : current));
+      setStatus((current) => (current === 'paused' || current === 'ready' ? 'buffering' : current));
       cancelActiveRecovery?.();
       cancelActiveRecovery = startResumePlaybackRecovery(video, {
         shouldContinue: () => !userPauseIntentRef.current,

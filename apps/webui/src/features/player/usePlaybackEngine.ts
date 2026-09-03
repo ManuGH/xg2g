@@ -139,6 +139,7 @@ export function usePlaybackEngine({
   const decodeRecoveryInFlightRef = useRef(false);
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
+  const pendingHlsAutoplayRef = useRef(false);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
   const revealHoldRef = useRef(false);
   const revealTimerRef = useRef<number | null>(null);
@@ -500,6 +501,7 @@ export function usePlaybackEngine({
     isTeardownRef.current = true;
     try {
       clearPendingNativeAutoplay();
+      pendingHlsAutoplayRef.current = false;
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearNetworkRetry();
@@ -802,6 +804,7 @@ export function usePlaybackEngine({
     if (!video) return;
 
     clearPendingNativeAutoplay();
+    pendingHlsAutoplayRef.current = false;
     clearNativeStallRecovery();
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
@@ -914,6 +917,13 @@ export function usePlaybackEngine({
           );
         }
         videoRef.current?.play().catch((err) => {
+          const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+          const isNotAllowed = (err as { name?: string } | null)?.name === 'NotAllowedError';
+          if (isHidden || isNotAllowed) {
+            debugWarn('[V3Player] Autoplay deferred (background tab or policy restriction)', err);
+            pendingHlsAutoplayRef.current = true;
+            return;
+          }
           debugWarn('[V3Player] Autoplay failed', err);
           setStatus('ready');
         });
@@ -1683,7 +1693,36 @@ export function usePlaybackEngine({
       }
     }
 
+    const onForegroundWaking = () => {
+      if (isTeardownRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      if (pendingHlsAutoplayRef.current && videoEl) {
+        pendingHlsAutoplayRef.current = false;
+        debugLog('[V3Player] Foreground restored; fulfilling pending autoplay');
+        if (hlsRef.current) {
+          try {
+            hlsRef.current.startLoad();
+            if (typeof (hlsRef.current as any).resumeBuffering === 'function') {
+              (hlsRef.current as any).resumeBuffering();
+            }
+          } catch (err) {
+            debugWarn('[V3Player] Pending autoplay hls resume failed', err);
+          }
+        }
+        videoEl.play().catch((err) => {
+          debugWarn('[V3Player] Foreground pending autoplay failed', err);
+          setStatus('ready');
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', onForegroundWaking);
+    window.addEventListener('focus', onForegroundWaking);
+
     return () => {
+      document.removeEventListener('visibilitychange', onForegroundWaking);
+      window.removeEventListener('focus', onForegroundWaking);
       cancelPendingReveal();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
