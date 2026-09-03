@@ -683,7 +683,16 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 				assembler.buf = assembler.buf[:0]
 				assembler.sectionLen = 0
 				assembler.rawPackets = assembler.rawPackets[:0]
-				return consumed
+				// Everything handed in is given up, not only the header bytes.
+				// The caller resumes its scan at what this returns, and there is
+				// nowhere in the rest of this payload it could resume: the
+				// length that would have said where the next section starts is
+				// the one just refused. Returning the header bytes alone would
+				// put the scan a byte or two into the body of the section that
+				// was refused, and let those bytes be read as a table_id and a
+				// length of their own - which is exactly what the scan's own
+				// rejection path breaks out of the loop to avoid.
+				return consumed + len(chunk)
 			}
 			assembler.sectionLen = full
 		} else {
