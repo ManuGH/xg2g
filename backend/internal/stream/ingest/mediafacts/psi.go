@@ -29,6 +29,22 @@ const (
 	ScrambledVerdictMinPackets = 100
 )
 
+// PSI table identifiers, ISO/IEC 13818-1 Table 2-31. Named once so the scan that
+// stops at a foreign table and the check that refuses to interpret one cannot
+// drift apart.
+const (
+	tableIDPAT = 0x00
+	tableIDPMT = 0x02
+)
+
+// expectedTableIDFor names the table a PID is being read for.
+func expectedTableIDFor(isPAT bool) byte {
+	if isPAT {
+		return tableIDPAT
+	}
+	return tableIDPMT
+}
+
 // ErrInvalidPacketSize reports data that is not 188-byte packet aligned.
 var ErrInvalidPacketSize = errors.New("data slice is not 188-byte packet aligned")
 
