@@ -46,13 +46,30 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 				return true
 			}
 
+			// Invariant: internal/stream/smoother must never act as a lease authority, reserve tuner leases, or dial directly.
+			if strings.Contains(path, "internal/stream/smoother/") && !strings.HasSuffix(path, "_test.go") {
+				if sel.Sel.Name == "ReserveStreamLeaseAtomic" || sel.Sel.Name == "AcquireTunerSlot" || sel.Sel.Name == "Dial" || sel.Sel.Name == "DialContext" {
+					directBypassDetected = true
+					t.Errorf("governance failure: smoother must never act as a tuner/lease authority or dial directly '%s' at %s:%d", sel.Sel.Name, path, fset.Position(sel.Pos()).Line)
+				}
+			}
+
+			// Authorized consumer: smoother.Handler is allowed to consume shared ingest via h.manager.Acquire only.
+			// No other file in internal/stream/smoother is permitted to make any Acquire calls.
+			isPermittedSmootherAcquire := false
+			if strings.HasSuffix(filepath.ToSlash(path), "internal/stream/smoother/handler.go") && sel.Sel.Name == "Acquire" {
+				if subSel, ok := sel.X.(*ast.SelectorExpr); ok && (subSel.Sel.Name == "manager" || subSel.Sel.Name == "sessionMgr") {
+					isPermittedSmootherAcquire = true
+				}
+			}
+
 			// Reject un-gated direct .Acquire() or .AcquireTunerSlot() calls outside authorized lease internal methods
 			if (sel.Sel.Name == "AcquireTunerSlot" || sel.Sel.Name == "Acquire") &&
 				!strings.Contains(path, "internal/pipeline/lease/") &&
 				!strings.Contains(path, "internal/domain/receiverusage/") &&
 				!strings.Contains(path, "internal/domain/session/manager/orchestrator_leases.go") &&
 				!strings.Contains(path, "internal/stream/ingest/") &&
-				!strings.Contains(path, "internal/stream/smoother/") &&
+				!isPermittedSmootherAcquire &&
 				!strings.Contains(path, "_test.go") {
 				directBypassDetected = true
 				t.Errorf("governance failure: un-gated direct lease call '%s' at %s:%d", sel.Sel.Name, path, fset.Position(sel.Pos()).Line)

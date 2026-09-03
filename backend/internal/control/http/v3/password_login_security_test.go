@@ -93,35 +93,79 @@ func TestPasswordLogin_Security_InputSizeLimits(t *testing.T) {
 	_, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
 	defer idSvc.Store().Close()
 
-	// 1. Oversized username (>64 bytes)
+	// 1a. Boundary username: exactly 64 bytes (accepted by validation, rejected with 401 as invalid credentials)
+	user64Payload, _ := json.Marshal(map[string]any{
+		"username": string(bytes.Repeat([]byte("a"), 64)),
+		"password": "validPassword123!",
+	})
+	reqUser64 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(user64Payload))
+	reqUser64.Header.Set("Content-Type", "application/json")
+	wUser64 := httptest.NewRecorder()
+	handler.ServeHTTP(wUser64, reqUser64)
+	assert.Equal(t, http.StatusUnauthorized, wUser64.Code, "64-byte username is within acceptable boundary")
+
+	// 1b. Oversized raw username: 65 bytes (rejected with 400 Bad Request)
 	hugeUserPayload, _ := json.Marshal(map[string]any{
-		"username": bytes.Repeat([]byte("a"), 65),
+		"username": string(bytes.Repeat([]byte("a"), 65)),
 		"password": "validPassword123!",
 	})
 	reqUser := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugeUserPayload))
 	reqUser.Header.Set("Content-Type", "application/json")
 	wUser := httptest.NewRecorder()
 	handler.ServeHTTP(wUser, reqUser)
-	assert.Equal(t, http.StatusBadRequest, wUser.Code)
+	assert.Equal(t, http.StatusBadRequest, wUser.Code, "65-byte raw username must be rejected")
 
-	// 2. Oversized password (>128 bytes)
+	// 1c. Raw username with huge whitespace prefix exceeding 64 bytes total (e.g. 60 spaces + "admin" = 65 bytes)
+	hugePrefixPayload, _ := json.Marshal(map[string]any{
+		"username": string(bytes.Repeat([]byte(" "), 60)) + "admin",
+		"password": "validPassword123!",
+	})
+	reqPrefix := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugePrefixPayload))
+	reqPrefix.Header.Set("Content-Type", "application/json")
+	wPrefix := httptest.NewRecorder()
+	handler.ServeHTTP(wPrefix, reqPrefix)
+	assert.Equal(t, http.StatusBadRequest, wPrefix.Code, "raw username with oversized whitespace prefix must be rejected before normalization")
+
+	// 1d. Raw username with huge whitespace suffix exceeding 64 bytes total (e.g. "admin" + 60 spaces = 65 bytes)
+	hugeSuffixPayload, _ := json.Marshal(map[string]any{
+		"username": "admin" + string(bytes.Repeat([]byte(" "), 60)),
+		"password": "validPassword123!",
+	})
+	reqSuffix := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugeSuffixPayload))
+	reqSuffix.Header.Set("Content-Type", "application/json")
+	wSuffix := httptest.NewRecorder()
+	handler.ServeHTTP(wSuffix, reqSuffix)
+	assert.Equal(t, http.StatusBadRequest, wSuffix.Code, "raw username with oversized whitespace suffix must be rejected before normalization")
+
+	// 2a. Boundary password: exactly 128 bytes (accepted by validation, rejected with 401 as invalid credentials)
+	pass128Payload, _ := json.Marshal(map[string]any{
+		"username": "alice",
+		"password": string(bytes.Repeat([]byte("p"), 128)),
+	})
+	reqPass128 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(pass128Payload))
+	reqPass128.Header.Set("Content-Type", "application/json")
+	wPass128 := httptest.NewRecorder()
+	handler.ServeHTTP(wPass128, reqPass128)
+	assert.Equal(t, http.StatusUnauthorized, wPass128.Code, "128-byte password is within acceptable boundary")
+
+	// 2b. Oversized password: 129 bytes (rejected with 400 Bad Request)
 	hugePassPayload, _ := json.Marshal(map[string]any{
 		"username": "alice",
-		"password": bytes.Repeat([]byte("p"), 129),
+		"password": string(bytes.Repeat([]byte("p"), 129)),
 	})
 	reqPass := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugePassPayload))
 	reqPass.Header.Set("Content-Type", "application/json")
 	wPass := httptest.NewRecorder()
 	handler.ServeHTTP(wPass, reqPass)
-	assert.Equal(t, http.StatusBadRequest, wPass.Code)
+	assert.Equal(t, http.StatusBadRequest, wPass.Code, "129-byte password must be rejected")
 
-	// 3. Empty fields
-	emptyPayload, _ := json.Marshal(map[string]any{"username": "   ", "password": ""})
+	// 3. Empty / Whitespace-only fields (rejected with 400 Bad Request)
+	emptyPayload, _ := json.Marshal(map[string]any{"username": "   ", "password": "validPassword123!"})
 	reqEmpty := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(emptyPayload))
 	reqEmpty.Header.Set("Content-Type", "application/json")
 	wEmpty := httptest.NewRecorder()
 	handler.ServeHTTP(wEmpty, reqEmpty)
-	assert.Equal(t, http.StatusBadRequest, wEmpty.Code)
+	assert.Equal(t, http.StatusBadRequest, wEmpty.Code, "whitespace-only username must be rejected")
 }
 
 func TestPasswordLogin_Security_UntrustedXFFSpoofingBlocked(t *testing.T) {

@@ -73,9 +73,17 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		maxLoginPasswordLen = 128
 	)
 
-	normUser := identity.NormalizeUsername(req.Username)
-	if len(normUser) == 0 || len(normUser) > maxLoginUsernameLen || len(req.Password) == 0 || len(req.Password) > maxLoginPasswordLen {
+	// Step 1: Strict raw byte limits before normalization
+	if len(req.Username) == 0 || len(req.Username) > maxLoginUsernameLen ||
+		len(req.Password) == 0 || len(req.Password) > maxLoginPasswordLen {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Input", problemcode.CodeInvalidInput, "Username and password must be valid and within length limits", nil)
+		return
+	}
+
+	// Step 2: Canonical normalization and post-normalization boundaries
+	normUser := identity.NormalizeUsername(req.Username)
+	if normUser == "" || len(normUser) > maxLoginUsernameLen {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Input", problemcode.CodeInvalidInput, "Username must not be empty after normalization and within length limits", nil)
 		return
 	}
 
