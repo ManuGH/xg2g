@@ -22,6 +22,13 @@ var (
 	ErrNoAttachAvailable = errors.New("no primed attach point available")
 )
 
+// ScrambledVerdictGrace is how long an attach keeps waiting on a stream whose
+// video is still scrambled before it calls that final. It covers a descrambler
+// re-acquiring the control word after the receiver rebuilt the program's CA PMT:
+// measured on a Vu+ with OSCam, two 1500ms ECM timeouts plus a reader reconnect,
+// about three seconds. The grace never extends the caller's own timeout.
+const ScrambledVerdictGrace = 6 * time.Second
+
 // SessionPipeline represents the unified live ingest engine for an active channel stream.
 // It pumps raw upstream reads through the 20ms StreamNormalizer into the multi-reader MasterRing.
 type SessionPipeline struct {
@@ -141,17 +148,45 @@ func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.Subscrib
 // PrimedAttachWithTimeout waits up to timeout for the first valid keyframe to arrive in the ring buffer.
 func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
 	deadline := time.Now().Add(timeout)
+
+	// "Scrambled" is a verdict about the stream, but for the first seconds of a
+	// connection it can just as well be a verdict about the clock: after the
+	// receiver rebuilds a program's CA PMT its descrambler has to re-acquire the
+	// control word, which takes seconds of ECM round trips, and every packet until
+	// then is scrambled. Failing on the first hundred of them turns a stream that
+	// is about to come up into a start that never happens.
+	scrambledDeadline := time.Now().Add(ScrambledVerdictGrace)
+	if scrambledDeadline.After(deadline) {
+		scrambledDeadline = deadline
+	}
+
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
+
+	// sawScrambled remembers that the wait was for a descrambler, so an ingest that
+	// ends during the grace is still reported as the encryption it was: the caller
+	// looking for why nothing played needs the receiver named, not "pipeline
+	// closed", which is only how this loop found out.
+	sawScrambled := false
 
 	for {
 		attach, reader, err := p.PrimedAttach()
 		if err == nil {
 			return attach, reader, nil
 		}
-		// Only "not yet" is retried. Terminal conditions (closed ring, scrambled upstream)
-		// return straight away rather than consuming the full timeout budget.
-		if !errors.Is(err, ErrNoAttachAvailable) {
+		// Only "not yet" is retried, plus a scrambled upstream for as long as the
+		// grace lasts. Everything else - a closed ring, a stream still scrambled past
+		// the grace - returns straight away rather than consuming the full budget.
+		switch {
+		case errors.Is(err, ring.ErrScrambledStream):
+			sawScrambled = true
+			if !time.Now().Before(scrambledDeadline) {
+				return ring.PrimedAttachPoint{}, nil, err
+			}
+		case !errors.Is(err, ErrNoAttachAvailable):
+			if sawScrambled {
+				return ring.PrimedAttachPoint{}, nil, ring.ErrScrambledStream
+			}
 			return ring.PrimedAttachPoint{}, nil, err
 		}
 
@@ -163,6 +198,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		case <-ctx.Done():
 			return ring.PrimedAttachPoint{}, nil, ctx.Err()
 		case <-p.doneCh:
+			if sawScrambled {
+				return ring.PrimedAttachPoint{}, nil, ring.ErrScrambledStream
+			}
 			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 		case <-ticker.C:
 		}
