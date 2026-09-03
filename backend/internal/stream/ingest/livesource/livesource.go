@@ -68,10 +68,9 @@ func (p *Provider) AcquireLiveSource(ctx context.Context, serviceRef string) (po
 		return nil, fmt.Errorf("shared ingest manager is not available yet")
 	}
 
-	key := session.NewSessionKey(p.receiverHost, p.streamPort, serviceRef)
-	key.TargetProgram = targetProgramFromServiceRef(serviceRef)
-	if err := key.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid service reference %q: %w", serviceRef, err)
+	key, err := p.sessionKey(serviceRef)
+	if err != nil {
+		return nil, err
 	}
 
 	lease, err := manager.Acquire(ctx, key)

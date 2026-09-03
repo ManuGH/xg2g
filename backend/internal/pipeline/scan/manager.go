@@ -38,6 +38,12 @@ const (
 	defaultProbeTimeout  = 15 * time.Second
 	extendedProbeTimeout = 20 * time.Second
 
+	// ingestSnapshotBudget bounds taking the probe's bytes off the shared ingest:
+	// the upstream connect plus the head read, with room for the largest head an
+	// extended probe asks for. It is held under the per-serviceRef capability lock,
+	// so it has to be finite for the same reason the probe timeouts are.
+	ingestSnapshotBudget = 25 * time.Second
+
 	extendedProbeAnalyzeDuration = 15 * time.Second
 	extendedProbeSizeBytes       = 8 << 20
 
@@ -47,6 +53,13 @@ const (
 )
 
 var errLifecycleContextNotAttached = errors.New("scan: lifecycle context not attached")
+
+// ErrIngestSnapshotUnavailable reports that the shared ingest could not hand a
+// probe any bytes - a busy tuner, a refused connection, a stream that never
+// arrived. It is deliberately distinct from a probe that ran and failed: this one
+// says nothing about what the channel carries, so it must not be written to the
+// capability store as a failure and lock the channel out of scanning for a day.
+var ErrIngestSnapshotUnavailable = errors.New("scan: shared ingest snapshot unavailable")
 
 var resolveM3UHTTPClient = &http.Client{
 	Timeout: resolveM3UTimeout,
@@ -106,6 +119,50 @@ type Manager struct {
 	// Phase 2: Production-Grade Robustness
 	ActivePlaybackFn        func(ctx context.Context) (bool, error)
 	consecutiveFailureCount int32
+
+	// liveProbeSource is where a probe gets its bytes from. When it is set, no
+	// probe opens a receiver connection of its own - see LiveProbeSource.
+	liveProbeSource LiveProbeSource
+}
+
+// LiveProbeSource hands a prober the head of the shared ingest for a service, so
+// probing costs no receiver connection of its own.
+//
+// A second connection to a service the receiver is already streaming is not free:
+// when either connection closes, Enigma2 rebuilds the CA PMT for that program and
+// the rebuild drops descrambling for the session that is still running. That is
+// how a targeted probe took a live session down mid-playback. Probing through the
+// shared ingest removes the second connection entirely - the probe and the
+// playback coalesce onto the one upstream - and a probe of a service nobody is
+// watching passes the same tuner admission as every other consumer instead of
+// going around it.
+type LiveProbeSource interface {
+	// SnapshotHead writes the head of the shared ingest for serviceRef to a file
+	// and returns its path with a func that removes it. minBytes is how much of the
+	// head the prober wants; zero asks for the source's default.
+	SnapshotHead(ctx context.Context, serviceRef string, minBytes int) (path string, release func(), err error)
+	// IsLive reports whether shared ingest currently holds a connection for serviceRef.
+	IsLive(serviceRef string) bool
+}
+
+// SetLiveProbeSource wires the shared ingest as the source of probe bytes. It is
+// optional: without it the manager probes receiver URLs as before, which is the
+// path the tests and any deployment without a shared ingest take.
+func (m *Manager) SetLiveProbeSource(src LiveProbeSource) {
+	if m == nil {
+		return
+	}
+	m.liveProbeSource = src
+}
+
+// serviceRefIsLive reports whether shared ingest is streaming serviceRef right
+// now. Unknown counts as not live: the guards built on it only ever withhold
+// extra receiver I/O, so a wrong "no" costs what today already costs.
+func (m *Manager) serviceRefIsLive(serviceRef string) bool {
+	if m == nil || m.liveProbeSource == nil {
+		return false
+	}
+	return m.liveProbeSource.IsLive(serviceRef)
 }
 
 func NewManager(store CapabilityStore, m3uPath string, e2Client *enigma2.Client) *Manager {

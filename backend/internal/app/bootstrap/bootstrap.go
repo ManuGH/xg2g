@@ -260,13 +260,21 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	// serves, so both must hold the one manager. The live route builds it when its
 	// router is built, which is after this point, so the provider resolves it on
 	// first use rather than being handed a nil here.
+	liveSources := livesource.NewLazyProvider(
+		s.LiveSessionManager,
+		cfg.Enigma2.BaseURL,
+		cfg.Enigma2.StreamPort,
+	)
 	if adapter, ok := mediaPipeline.(*ffmpeg.LocalAdapter); ok {
-		adapter.LiveSources = livesource.NewLazyProvider(
-			s.LiveSessionManager,
-			cfg.Enigma2.BaseURL,
-			cfg.Enigma2.StreamPort,
-		)
+		adapter.LiveSources = liveSources
 	}
+
+	// And the capability probes read the same ingest. They used to resolve a
+	// receiver stream URL and open it themselves, which put a second connection on
+	// a service the ingest was already streaming; when that second connection
+	// closed, the receiver rebuilt the CA PMT for the program and stopped
+	// descrambling for the session still playing it.
+	v3Scan.SetLiveProbeSource(liveSources)
 
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:                v3Bus,

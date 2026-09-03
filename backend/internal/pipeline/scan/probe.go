@@ -50,9 +50,13 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 
 	existingCap, existingFound := m.store.Get(serviceRef)
 	probeURL := channel.URL
-	resolved := false
+	// A live probe source means the bytes come off the shared ingest and ffprobe
+	// never sees a URL, so resolving one is a receiver round trip for a string that
+	// is then discarded - and one that logs the receiver credentials while it is at
+	// it.
+	resolved := m.liveProbeSource != nil
 
-	if m.e2Client != nil {
+	if m.e2Client != nil && !resolved {
 		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, serviceRef)
 		cancel()
@@ -126,6 +130,12 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 		if ctx.Err() != nil {
 			return existingCap, existingFound, err
 		}
+		// Same for an ingest that could not hand over bytes: a busy tuner or a
+		// receiver that refused the connection is a fact about this moment, not about
+		// what the channel carries, and it must not lock the channel out for a day.
+		if errors.Is(err, ErrIngestSnapshotUnavailable) {
+			return existingCap, existingFound, err
+		}
 		cap := m.mergeFailedAttempt(existingCap, existingFound, serviceRef, channel.Name, now, err)
 		m.store.Update(cap)
 		return cap, true, err
@@ -140,8 +150,11 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 // Enigma2-resolved URL when available, else the (optionally resolved) M3U URL.
 func (m *Manager) resolveProbeURL(ctx context.Context, ch m3u.Channel, sRef string) string {
 	probeURL := ch.URL
-	resolved := false
-	if m.e2Client != nil && sRef != "" {
+	// Nothing to resolve when the bytes come off the shared ingest: the probe never
+	// sees a URL, and resolving one would be a receiver round trip for a string
+	// that is then discarded.
+	resolved := m.liveProbeSource != nil
+	if m.e2Client != nil && sRef != "" && !resolved {
 		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, sRef)
 		cancel()
@@ -379,7 +392,41 @@ func compareStrictAdditiveFloat(base, candidate float64, added *bool) bool {
 	}
 }
 
+// probeThroughIngest probes the head of the shared ingest instead of a receiver
+// URL. It reports handled=false when no live probe source is wired, which is the
+// caller's signal to take the URL path; with one wired it is the only path, so a
+// snapshot that cannot be taken is answered as a failed probe rather than by
+// opening a receiver connection beside the ingest.
+func (m *Manager) probeThroughIngest(ctx context.Context, serviceRef string, opts infra.ProbeOptions, timeout time.Duration) (*vod.StreamInfo, string, bool, error) {
+	if m == nil || m.liveProbeSource == nil || strings.TrimSpace(serviceRef) == "" {
+		return nil, "", false, nil
+	}
+
+	// The extended budget asks ffprobe to read more of the stream, so it has to be
+	// given more of the stream: probing a bigger budget against the same short head
+	// re-reads the same bytes and can only repeat the first answer.
+	snapCtx, cancel := context.WithTimeout(ctx, ingestSnapshotBudget)
+	path, release, err := m.liveProbeSource.SnapshotHead(snapCtx, serviceRef, int(opts.ProbeSizeBytes))
+	cancel()
+	if err != nil {
+		log.L().Warn().Err(err).Str("sref", serviceRef).Msg("scan: shared ingest snapshot unavailable; not opening a second receiver connection")
+		return nil, "", true, fmt.Errorf("%w for %s: %v", ErrIngestSnapshotUnavailable, serviceRef, err)
+	}
+	defer release()
+
+	res, err := m.runProbeAttempt(ctx, path, opts, timeout)
+	return res, path, true, err
+}
+
 func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalURL, initialProbeURL string, opts infra.ProbeOptions, timeout time.Duration) (*vod.StreamInfo, string, error) {
+	// Shared ingest first, and then exclusively: the URL fallbacks below all dial
+	// the receiver, and a second connection to a service it is already streaming is
+	// what makes it drop descrambling for that program when either side closes.
+	// There is nothing to fall back to that would not reintroduce exactly that.
+	if res, path, handled, err := m.probeThroughIngest(ctx, serviceRef, opts, timeout); handled {
+		return res, path, err
+	}
+
 	initialProbeURL = strings.TrimSpace(initialProbeURL)
 	if initialProbeURL == "" {
 		initialProbeURL = strings.TrimSpace(originalURL)

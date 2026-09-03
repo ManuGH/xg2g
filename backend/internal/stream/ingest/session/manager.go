@@ -148,6 +148,25 @@ func (m *Manager) removeSession(s *Session) {
 	}
 }
 
+// HasSession reports whether a session for key is registered - starting, active
+// or in warm hold. It answers "is the receiver already streaming this service for
+// us", which is what a caller has to know before it considers opening a
+// connection of its own.
+func (m *Manager) HasSession(key SessionKey) bool {
+	if m == nil {
+		return false
+	}
+	if err := key.Validate(); err != nil {
+		return false
+	}
+	key = key.Canonicalize()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.sessions[key]
+	return ok
+}
+
 // ActiveCount returns the number of active, starting, or holding sessions currently registered.
 func (m *Manager) ActiveCount() int {
 	m.mu.Lock()

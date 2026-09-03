@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -130,7 +131,12 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			m.status.ScannedChannels = scanned
 			m.mu.Unlock()
 
-			if err != nil {
+			if errors.Is(err, ErrIngestSnapshotUnavailable) {
+				// The ingest could not hand over bytes, so no probe ran. Writing that
+				// down as a channel failure would lock this channel out of scanning for
+				// 24h over a busy tuner.
+				log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: skipped channel; shared ingest had no bytes to probe")
+			} else if err != nil {
 				log.L().Warn().Err(err).Str("sref", sRef).Msg("scan: probe failed")
 				m.store.Update(m.mergeFailedAttempt(existingCap, found, sRef, ch.Name, time.Now(), err))
 				if !fromStore {
