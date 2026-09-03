@@ -61,6 +61,7 @@ import {
 import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
 import type { PlaybackCommand, PlaybackStopReason, SessionPhase, VodStreamMode } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
+import { useEngineTimerRegistry } from './orchestrator/engineTimerRegistry';
 import type { PlaybackEngineEventSink } from './playbackEngineContract';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
@@ -359,6 +360,7 @@ export function usePlaybackOrchestrator(
   const activeLiveSessionIdRef = useRef<string | null>(null);
   const automaticProfileMemoryRef = useRef(createAutomaticProfileMemory());
   const linkProfileRef = useRef<PlaybackLinkProfile>('stable');
+  const timerRegistry = useEngineTimerRegistry();
 
   const isLifecycleActive = useCallback((generation: number): boolean => (
     !disposedRef.current && lifecycleGenerationRef.current === generation
@@ -539,9 +541,9 @@ export function usePlaybackOrchestrator(
     });
   }, []);
 
-  const sleep = useCallback((ms: number): Promise<void> => (
-    new Promise(resolve => setTimeout(resolve, ms))
-  ), []);
+  const sleep = useCallback((ms: number, signal?: AbortSignal): Promise<void> => (
+    timerRegistry.delay(ms, signal)
+  ), [timerRegistry]);
 
   const resolvePreferredHlsEngine = useCallback((): 'native' | 'hlsjs' => {
     const hlsJsSupported = Hls.isSupported();
@@ -902,6 +904,7 @@ export function usePlaybackOrchestrator(
     playbackEpochRef,
     attemptTokenRef,
     eventSink: handleEngineEvent,
+    timerRegistry,
     linkProfileRef,
     t,
     reportError,
@@ -988,6 +991,7 @@ export function usePlaybackOrchestrator(
     clearVodRetry();
     clearVodFetch();
     clearPlaybackSelection();
+    timerRegistry.clearAll();
     if (hasNativePlayback) {
       stopNativePlayback();
     }
@@ -1001,6 +1005,7 @@ export function usePlaybackOrchestrator(
     nativePlaybackState,
     sendStopIntent,
     sessionIdRef,
+    timerRegistry,
     videoRef,
   ]);
 
@@ -1027,6 +1032,7 @@ export function usePlaybackOrchestrator(
     clearPlaybackSelection();
     clearVodRetry();
     clearVodFetch();
+    timerRegistry.clearAll();
     if (hadNativePlayback) {
       stopNativePlayback();
     }

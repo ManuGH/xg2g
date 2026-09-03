@@ -7,6 +7,7 @@ import type { HlsInstanceRef, PlayerStats, V3SessionStatusResponse, VideoElement
 import type { AppError } from '../../types/errors';
 import type { PlaybackEngineErrorContext } from '../../client-ts';
 import type { PlaybackAttemptToken, PlaybackEngineEventSink } from './playbackEngineContract';
+import { createEngineTimerRegistry, type EngineTimerRegistry } from './orchestrator/engineTimerRegistry';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
@@ -89,6 +90,7 @@ interface UsePlaybackEngineProps {
   playbackEpochRef: MutableRefObject<number>;
   attemptTokenRef: MutableRefObject<PlaybackAttemptToken>;
   eventSink: PlaybackEngineEventSink;
+  timerRegistry?: EngineTimerRegistry;
   linkProfileRef?: MutableRefObject<PlaybackLinkProfile>;
   t: TFunction;
   reportError: ReportErrorFn;
@@ -126,10 +128,14 @@ export function usePlaybackEngine({
   primePlaybackAuth,
   runtimeProbeActive = false,
   revealHoldMs,
+  timerRegistry,
   setStats,
   onAudioTracksUpdated,
   onAudioTrackSwitched,
 }: UsePlaybackEngineProps): PlaybackEngineController {
+  const internalTimerRegistryRef = useRef<EngineTimerRegistry | null>(null);
+  const timers = timerRegistry ?? (internalTimerRegistryRef.current ??= createEngineTimerRegistry());
+
   const lastHlsUrlRef = useRef<string | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
   const replayHlsRef = useRef<((url: string, engine?: PlaybackEngineName) => void) | null>(null);
@@ -137,24 +143,17 @@ export function usePlaybackEngine({
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
   const pendingHlsAutoplayRef = useRef(false);
-  const nativeStallRecoveryTimerRef = useRef<number | null>(null);
   const revealHoldRef = useRef(false);
-  const revealTimerRef = useRef<number | null>(null);
-  const hlsStallRecoveryTimerRef = useRef<number | null>(null);
   const hlsStallRecoveryAttemptsRef = useRef(0);
   const reportedPlayingSessionRef = useRef<string | null>(null);
   const reportedWarningKeysRef = useRef<Map<string, number>>(new Map());
   const pendingWarningRecoveryRef = useRef<{ code: number; message: string } | null>(null);
   const reportedProbeStartedSessionRef = useRef<string | null>(null);
   const reportedProbeConfirmedSessionRef = useRef<string | null>(null);
-  const probeConfirmationTimerRef = useRef<number | null>(null);
   const activeHlsRenderProbeSessionRef = useRef<string | null>(null);
   const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
-  const hlsRenderProbeTimerRef = useRef<number | null>(null);
-  const hlsRenderHeartbeatTimerRef = useRef<number | null>(null);
   const hlsRenderHeartbeatSessionRef = useRef<string | null>(null);
   const lastHlsRenderSnapshotRef = useRef<HlsRenderProbeSnapshot | null>(null);
-  const networkRetryTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
     eventSink({
@@ -259,47 +258,25 @@ export function usePlaybackEngine({
   }, [attemptTokenRef, eventSink, isTeardownRef, primePlaybackAuth, scheduleNativeAutoplay, sessionIdRef, t, videoRef]);
 
   const clearNativeStallRecovery = useCallback(() => {
-    if (nativeStallRecoveryTimerRef.current !== null) {
-      window.clearTimeout(nativeStallRecoveryTimerRef.current);
-      nativeStallRecoveryTimerRef.current = null;
-    }
-  }, []);
+    timers.clearTimeout('nativeStallRecovery');
+  }, [timers]);
 
   const clearHlsStallRecovery = useCallback(() => {
-    if (hlsStallRecoveryTimerRef.current !== null) {
-      window.clearTimeout(hlsStallRecoveryTimerRef.current);
-      hlsStallRecoveryTimerRef.current = null;
-    }
-  }, []);
+    timers.clearTimeout('hlsStallRecovery');
+  }, [timers]);
 
   const clearProbeConfirmation = useCallback(() => {
-    if (probeConfirmationTimerRef.current !== null) {
-      window.clearTimeout(probeConfirmationTimerRef.current);
-      probeConfirmationTimerRef.current = null;
-    }
-  }, []);
-
-  const clearNetworkRetry = useCallback(() => {
-    if (networkRetryTimerRef.current !== null) {
-      window.clearTimeout(networkRetryTimerRef.current);
-      networkRetryTimerRef.current = null;
-    }
-  }, []);
+    timers.clearTimeout('probeConfirmation');
+  }, [timers]);
 
   const clearHlsRenderProbe = useCallback((resetCompleted: boolean = false) => {
-    if (hlsRenderProbeTimerRef.current !== null) {
-      window.clearTimeout(hlsRenderProbeTimerRef.current);
-      hlsRenderProbeTimerRef.current = null;
-    }
+    timers.clearTimeout('hlsRenderProbe');
     // The heartbeat must survive transient events (waiting/stalled/seeking
     // clear the probe with resetCompleted=false) — it is the instrument that
     // observes exactly those stalls. Only a real teardown/session switch
     // (resetCompleted=true) stops it.
     if (resetCompleted) {
-      if (hlsRenderHeartbeatTimerRef.current !== null) {
-        window.clearInterval(hlsRenderHeartbeatTimerRef.current);
-        hlsRenderHeartbeatTimerRef.current = null;
-      }
+      timers.clearInterval('hlsRenderHeartbeat');
       hlsRenderHeartbeatSessionRef.current = null;
       lastHlsRenderSnapshotRef.current = null;
     }
@@ -307,7 +284,7 @@ export function usePlaybackEngine({
     if (resetCompleted) {
       completedHlsRenderProbeSessionRef.current = null;
     }
-  }, []);
+  }, [timers]);
 
   const bufferedAheadSeconds = useCallback((videoEl: NonNullable<VideoElementRef>): number => {
     if (!videoEl.buffered.length) {
@@ -383,21 +360,16 @@ export function usePlaybackEngine({
     // must not depend on the probe completing). dt/df against the previous
     // beat expose buffer drain, frame drops, and playhead stalls.
     if (hlsRenderHeartbeatSessionRef.current !== trackedSessionId) {
-      if (hlsRenderHeartbeatTimerRef.current !== null) {
-        window.clearInterval(hlsRenderHeartbeatTimerRef.current);
-      }
+      timers.clearInterval('hlsRenderHeartbeat');
       hlsRenderHeartbeatSessionRef.current = trackedSessionId;
       lastHlsRenderSnapshotRef.current = captureHlsRenderProbeSnapshot(videoEl);
-      hlsRenderHeartbeatTimerRef.current = window.setInterval(() => {
+      timers.setInterval('hlsRenderHeartbeat', () => {
         if (
           isTeardownRef.current ||
           sessionIdRef.current !== trackedSessionId ||
           lastHlsEngineRef.current !== 'hlsjs'
         ) {
-          if (hlsRenderHeartbeatTimerRef.current !== null) {
-            window.clearInterval(hlsRenderHeartbeatTimerRef.current);
-            hlsRenderHeartbeatTimerRef.current = null;
-          }
+          timers.clearInterval('hlsRenderHeartbeat');
           hlsRenderHeartbeatSessionRef.current = null;
           lastHlsRenderSnapshotRef.current = null;
           return;
@@ -429,8 +401,7 @@ export function usePlaybackEngine({
       playbackEngineContext('decode', { engine: 'hlsjs' }),
     );
 
-    hlsRenderProbeTimerRef.current = window.setTimeout(() => {
-      hlsRenderProbeTimerRef.current = null;
+    timers.setTimeout('hlsRenderProbe', () => {
       if (
         isTeardownRef.current ||
         sessionIdRef.current !== trackedSessionId ||
@@ -451,7 +422,7 @@ export function usePlaybackEngine({
         playbackEngineContext('decode', { engine: 'hlsjs' }),
       );
     }, HLSJS_RENDER_PROBE_MS);
-  }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, playbackEngineContext, reportError, sessionIdRef]);
+  }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, playbackEngineContext, reportError, sessionIdRef, timers]);
 
   const reportPlaybackWarning = useCallback((
     code: number,
@@ -512,39 +483,33 @@ export function usePlaybackEngine({
 
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
-    try {
-      clearPendingNativeAutoplay();
-      pendingHlsAutoplayRef.current = false;
-      clearNativeStallRecovery();
-      clearHlsStallRecovery();
-      clearNetworkRetry();
-      hlsStallRecoveryAttemptsRef.current = 0;
-      lastHlsUrlRef.current = null;
-      lastHlsEngineRef.current = 'auto';
-      reportedPlayingSessionRef.current = null;
-      reportedProbeStartedSessionRef.current = null;
-      reportedProbeConfirmedSessionRef.current = null;
-      reportedWarningKeysRef.current.clear();
-      pendingWarningRecoveryRef.current = null;
-      clearProbeConfirmation();
-      clearHlsRenderProbe(true);
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.removeAttribute('src');
-        videoRef.current.load();
-      }
-      onAudioTracksUpdated?.([]);
-      onAudioTrackSwitched?.(-1);
-    } finally {
-      window.setTimeout(() => {
-        isTeardownRef.current = false;
-      }, 50);
+    clearPendingNativeAutoplay();
+    pendingHlsAutoplayRef.current = false;
+    timers.clearAll();
+    hlsStallRecoveryAttemptsRef.current = 0;
+    lastHlsUrlRef.current = null;
+    lastHlsEngineRef.current = 'auto';
+    reportedPlayingSessionRef.current = null;
+    reportedProbeStartedSessionRef.current = null;
+    reportedProbeConfirmedSessionRef.current = null;
+    reportedWarningKeysRef.current.clear();
+    pendingWarningRecoveryRef.current = null;
+    activeHlsRenderProbeSessionRef.current = null;
+    completedHlsRenderProbeSessionRef.current = null;
+    hlsRenderHeartbeatSessionRef.current = null;
+    lastHlsRenderSnapshotRef.current = null;
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, videoRef]);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.removeAttribute('src');
+      videoRef.current.load();
+    }
+    onAudioTracksUpdated?.([]);
+    onAudioTrackSwitched?.(-1);
+  }, [clearPendingNativeAutoplay, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, timers, videoRef]);
 
   const beginSessionDecodeRecovery = useCallback((
     code: number,
@@ -579,7 +544,7 @@ export function usePlaybackEngine({
           engine: trackedEngine === 'auto' ? 'unknown' : trackedEngine,
           recoveryAttempt: trackedRecoveryAttempt,
         }));
-        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        await timers.delay(750);
 
         if (sessionIdRef.current !== trackedSessionId) {
           return;
@@ -592,7 +557,7 @@ export function usePlaybackEngine({
         }
 
         resetPlaybackEngine();
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        await timers.delay(100);
 
         if (sessionIdRef.current !== trackedSessionId) {
           return;
@@ -620,6 +585,7 @@ export function usePlaybackEngine({
     reportError,
     resetPlaybackEngine,
     sessionIdRef,
+    timers,
     waitForSessionReady
   ]);
 
@@ -629,7 +595,7 @@ export function usePlaybackEngine({
   ) => {
     if (
       decodeRecoveryInFlightRef.current ||
-      nativeStallRecoveryTimerRef.current !== null ||
+      timers.hasTimeout('nativeStallRecovery') ||
       hlsRef.current ||
       !sessionIdRef.current ||
       !lastHlsUrlRef.current ||
@@ -642,9 +608,7 @@ export function usePlaybackEngine({
     const startingTime = videoEl.currentTime;
     const startingSrc = videoEl.currentSrc;
 
-    nativeStallRecoveryTimerRef.current = window.setTimeout(() => {
-      nativeStallRecoveryTimerRef.current = null;
-
+    timers.setTimeout('nativeStallRecovery', () => {
       if (
         isTeardownRef.current ||
         decodeRecoveryInFlightRef.current ||
@@ -698,7 +662,8 @@ export function usePlaybackEngine({
     hlsRef,
     isTeardownRef,
     sessionIdRef,
-    t
+    t,
+    timers
   ]);
 
   const scheduleHlsStallRecovery = useCallback((
@@ -707,7 +672,7 @@ export function usePlaybackEngine({
   ) => {
     if (
       decodeRecoveryInFlightRef.current ||
-      hlsStallRecoveryTimerRef.current !== null ||
+      timers.hasTimeout('hlsStallRecovery') ||
       !hlsRef.current ||
       !sessionIdRef.current ||
       !lastHlsUrlRef.current ||
@@ -719,9 +684,7 @@ export function usePlaybackEngine({
 
     const startingTime = videoEl.currentTime;
 
-    hlsStallRecoveryTimerRef.current = window.setTimeout(() => {
-      hlsStallRecoveryTimerRef.current = null;
-
+    timers.setTimeout('hlsStallRecovery', () => {
       const hls = hlsRef.current;
       if (
         isTeardownRef.current ||
@@ -804,23 +767,22 @@ export function usePlaybackEngine({
     isTeardownRef,
     reportMediaFailure,
     sessionIdRef,
-    t
+    t,
+    timers
   ]);
 
   const playHls = useCallback((url: string, engine: PlaybackEngineName = 'auto') => {
     const video = videoRef.current;
     if (!video) return;
 
+    isTeardownRef.current = false;
     clearPendingNativeAutoplay();
     pendingHlsAutoplayRef.current = false;
     clearNativeStallRecovery();
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
     revealHoldRef.current = false;
-    if (revealTimerRef.current !== null) {
-      window.clearTimeout(revealTimerRef.current);
-      revealTimerRef.current = null;
-    }
+    timers.clearTimeout('revealHold');
     video.playbackRate = 1;
     hlsStallRecoveryAttemptsRef.current = 0;
     lastDecodedRef.current = 0;
@@ -869,9 +831,7 @@ export function usePlaybackEngine({
       // can only come from waiting: hold play() until a small buffer target
       // exists (or a cap elapses). VOD playlists open the gate immediately.
       let slowBuildActive = false;
-      let slowBuildTimer: number | null = null;
       let startGateOpen = false;
-      let startGateTimer: number | null = null;
       const bufferedAheadSeconds = (): number => {
         const gateVideo = videoRef.current;
         if (!gateVideo || gateVideo.buffered.length === 0) {
@@ -885,10 +845,7 @@ export function usePlaybackEngine({
           return;
         }
         slowBuildActive = false;
-        if (slowBuildTimer !== null) {
-          window.clearTimeout(slowBuildTimer);
-          slowBuildTimer = null;
-        }
+        timers.clearTimeout('slowBuild');
         const rateVideo = videoRef.current;
         if (rateVideo && hlsRef.current === hls && rateVideo.playbackRate !== 1) {
           rateVideo.playbackRate = 1;
@@ -903,10 +860,7 @@ export function usePlaybackEngine({
           return;
         }
         startGateOpen = true;
-        if (startGateTimer !== null) {
-          window.clearTimeout(startGateTimer);
-          startGateTimer = null;
-        }
+        timers.clearTimeout('startGate');
         if (hlsRef.current !== hls) {
           return;
         }
@@ -919,7 +873,8 @@ export function usePlaybackEngine({
         ) {
           slowBuildActive = true;
           gateVideo.playbackRate = HLS_STARTUP_POLICY.slowBuildPlaybackRate;
-          slowBuildTimer = window.setTimeout(
+          timers.setTimeout(
+            'slowBuild',
             () => restorePlaybackRate('timeout'),
             HLS_STARTUP_POLICY.slowBuildMaxMs,
           );
@@ -985,7 +940,8 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        startGateTimer = window.setTimeout(
+        timers.setTimeout(
+          'startGate',
           () => openStartGate('timeout'),
           HLS_STARTUP_POLICY.timeoutMs,
         );
@@ -1193,8 +1149,7 @@ export function usePlaybackEngine({
                 attempt: attemptTokenRef.current,
                 phase: 'network',
               });
-              networkRetryTimerRef.current = window.setTimeout(() => {
-                networkRetryTimerRef.current = null;
+              timers.setTimeout('networkRetry', () => {
                 // The engine may have been torn down or replaced during the
                 // backoff window; calling startLoad() on a destroyed instance
                 // throws and pins it in memory.
@@ -1324,11 +1279,9 @@ export function usePlaybackEngine({
     }
     const video = videoRef.current;
     if (!video) return;
+    isTeardownRef.current = false;
     revealHoldRef.current = false;
-    if (revealTimerRef.current !== null) {
-      window.clearTimeout(revealTimerRef.current);
-      revealTimerRef.current = null;
-    }
+    timers.clearTimeout('revealHold');
     video.playbackRate = 1;
 
     lastHlsUrlRef.current = null;
@@ -1348,17 +1301,14 @@ export function usePlaybackEngine({
         background: isHidden,
       });
     });
-  }, [attemptTokenRef, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, lastDecodedRef, setStats, videoRef]);
+  }, [attemptTokenRef, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, lastDecodedRef, setStats, timers, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     const cancelPendingReveal = () => {
-      if (revealTimerRef.current !== null) {
-        window.clearTimeout(revealTimerRef.current);
-        revealTimerRef.current = null;
-      }
+      timers.clearTimeout('revealHold');
     };
 
     const onWaiting = () => {
@@ -1494,7 +1444,7 @@ export function usePlaybackEngine({
         reportedProbeConfirmedSessionRef.current !== trackedSessionId
       ) {
         clearProbeConfirmation();
-        probeConfirmationTimerRef.current = window.setTimeout(() => {
+        timers.setTimeout('probeConfirmation', () => {
           if (sessionIdRef.current !== trackedSessionId) {
             return;
           }
@@ -1517,14 +1467,13 @@ export function usePlaybackEngine({
         milestone: 'firstFrame',
       });
       if (revealHoldRef.current) {
-        if (revealTimerRef.current === null) {
+        if (!timers.hasTimeout('revealHold')) {
           const holdMs = revealHoldMs ?? 1800;
           if (holdMs <= 0) {
             revealHoldRef.current = false;
             eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
           } else {
-            revealTimerRef.current = window.setTimeout(() => {
-              revealTimerRef.current = null;
+            timers.setTimeout('revealHold', () => {
               revealHoldRef.current = false;
               eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
             }, holdMs);
@@ -1649,10 +1598,7 @@ export function usePlaybackEngine({
       }
       if (revealHoldRef.current) {
         // The video is demonstrably advancing, break the hold immediately
-        if (revealTimerRef.current !== null) {
-          window.clearTimeout(revealTimerRef.current);
-          revealTimerRef.current = null;
-        }
+        timers.clearTimeout('revealHold');
         revealHoldRef.current = false;
         eventSink({ type: 'media.playing', attempt: attemptTokenRef.current });
         return;
@@ -1787,18 +1733,12 @@ export function usePlaybackEngine({
   }, [attemptTokenRef, beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, eventSink, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, t, videoRef]);
 
   // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
-  // can't fire after the component unmounts. Do NOT put these in the main
-  // useEffect cleanup above — that effect re-runs when deps change and would
-  // clear timers mid-recovery, breaking the hls.js network retry test.
+  // can't fire after the component unmounts.
   useEffect(() => {
     return () => {
-      clearNetworkRetry();
-      clearNativeStallRecovery();
-      clearHlsStallRecovery();
-      clearProbeConfirmation();
-      clearHlsRenderProbe(true);
+      timers.clearAll();
     };
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation]);
+  }, [timers]);
 
   return {
     resetPlaybackEngine,
