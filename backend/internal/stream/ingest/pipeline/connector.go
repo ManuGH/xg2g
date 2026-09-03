@@ -223,6 +223,7 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 
 	// The pipeline derives its own cancellable context; the parent is deliberately detached from
 	// the connect context so ingest survives the connect deadline.
+	pipeline.SetLabel(key.ServiceRef)
 	pipeline.Start(context.WithoutCancel(ctx), upstream)
 
 	return &PipelineStreamWrapper{

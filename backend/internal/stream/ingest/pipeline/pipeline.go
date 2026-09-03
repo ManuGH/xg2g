@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
@@ -48,6 +49,16 @@ type SessionPipeline struct {
 	// coalesce onto a shared pipeline, and a second observer would time a stream
 	// that had already been running from the moment its second viewer arrived.
 	observeOnce sync.Once
+
+	// label names the service this ingest carries, for the log line that reports
+	// how the upstream ended.
+	label string
+}
+
+// SetLabel names the service this pipeline ingests. It is only used for logging
+// and must be set before Start.
+func (p *SessionPipeline) SetLabel(label string) {
+	p.label = label
 }
 
 // ObserveOnce runs fn at most once for this pipeline.
@@ -85,6 +96,8 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 	ctx, cancel := context.WithCancel(ctx)
 	p.cancelFunc = cancel
 
+	started := time.Now()
+
 	go func() {
 		defer close(p.doneCh)
 		defer func() { _ = upstream.Close() }()
@@ -92,6 +105,23 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 		defer p.norm.Close()
 
 		err := p.norm.Run(ctx, upstream)
+
+		// The end of the upstream is the end of every session reading it, and until
+		// this line it was the one event in that chain nobody wrote down: subscribers
+		// saw a closed ring, FFmpeg saw a closed stdin, and the session reported
+		// R_PROCESS_ENDED without anything saying whether the receiver had gone away
+		// or we had let go.
+		evt := log.L().Info().
+			Str("component", "ingest").
+			Str("service", p.label).
+			Dur("uptime", time.Since(started)).
+			Int64("ingested_bytes", p.ring.Head()).
+			Bool("clean_eof", err == nil || errors.Is(err, io.EOF))
+		if err != nil && !errors.Is(err, io.EOF) {
+			evt = evt.AnErr("upstream_error", err)
+		}
+		evt.Msg("ingest upstream ended")
+
 		p.runErrMu.Lock()
 		p.runErr = err
 		p.runErrMu.Unlock()

@@ -116,12 +116,33 @@ func (s *boundedStartupSpool) run(maxBytes int) {
 		metrics.DecActiveAvsyncSpools()
 		if s.adapter != nil {
 			dc := s.adapter.GetDiagnosticContext(s.sessionID)
-			s.adapter.Logger.Info().
+
+			// Why the producer stopped is the whole question when a session ends as
+			// R_PROCESS_ENDED: FFmpeg exits cleanly on a closed stdin either way, so
+			// without the read error here the log cannot tell an upstream that went
+			// away from a teardown of our own. dc.Reason answers for the session, not
+			// for this loop.
+			s.mu.Lock()
+			readErr := s.err
+			total := s.totalBytes
+			closedByConsumer := s.state == stateClosed
+			s.mu.Unlock()
+			if errors.Is(readErr, errSpoolLimit) {
+				readErr = nil
+			}
+
+			evt := s.adapter.Logger.Info().
 				Str("session_id", dc.SessionID).
 				Str("generation_id", dc.GenerationID).
 				Str("reason", dc.Reason).
 				Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
-				Msg("avsync_spool_producer_exited")
+				Int("spooled_bytes", total).
+				Bool("closed_by_consumer", closedByConsumer).
+				Bool("upstream_eof", errors.Is(readErr, io.EOF))
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				evt = evt.AnErr("upstream_error", readErr)
+			}
+			evt.Msg("avsync_spool_producer_exited")
 		}
 	}()
 	for {
