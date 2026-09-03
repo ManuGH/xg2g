@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,4 +152,51 @@ func TestPasswordLogin_Security_UntrustedXFFSpoofingBlocked(t *testing.T) {
 	handler.ServeHTTP(w11, req11)
 
 	assert.Equal(t, http.StatusTooManyRequests, w11.Code, "untrusted XFF must NOT bypass per-IP rate limiter")
+}
+
+func TestPasswordLogin_Security_ContextAwareBackoff(t *testing.T) {
+	limiter := v3.NewPasswordLoginLimiter()
+	// Record 3 failures for user "charlie" to trigger backoff delay
+	for i := 0; i < 3; i++ {
+		limiter.RecordFailure("10.0.0.1", "charlie")
+	}
+
+	// Create context with very short timeout (10ms)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := limiter.CheckAllowed(ctx, "10.0.0.1", "charlie")
+	duration := time.Since(start)
+
+	// Invariant: must abort on context cancellation and not wait out the full 500ms backoff
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, duration < 100*time.Millisecond, "must abort immediately on context cancellation")
+}
+
+func TestPasswordLogin_Security_AccountBackoffAcrossIPs(t *testing.T) {
+	limiter := v3.NewPasswordLoginLimiter()
+
+	// 3 failures across 3 different IPs for the same account "victim_user"
+	limiter.RecordFailure("192.168.1.1", "victim_user")
+	limiter.RecordFailure("192.168.1.2", "victim_user")
+	limiter.RecordFailure("192.168.1.3", "victim_user")
+
+	// 4th request from a 4th IP "192.168.1.4" experiences the backoff delay (capped, never hard lockout)
+	start := time.Now()
+	err := limiter.CheckAllowed(context.Background(), "192.168.1.4", "victim_user")
+	duration := time.Since(start)
+
+	require.NoError(t, err)
+	assert.True(t, duration >= 400*time.Millisecond, "account-wide backoff must apply across multiple attacker IPs")
+
+	// Upon successful login, the account backoff is reset
+	limiter.RecordSuccess("192.168.1.4", "victim_user")
+
+	startPostSuccess := time.Now()
+	errPostSuccess := limiter.CheckAllowed(context.Background(), "192.168.1.5", "victim_user")
+	durationPostSuccess := time.Since(startPostSuccess)
+
+	require.NoError(t, errPostSuccess)
+	assert.True(t, durationPostSuccess < 50*time.Millisecond, "success resets account backoff state")
 }

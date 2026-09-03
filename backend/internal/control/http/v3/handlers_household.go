@@ -79,9 +79,10 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	normUser := strings.ToLower(req.Username)
 	clientIP := s.exposureClientKey(r, s.cfg)
 	limiter := s.getPasswordLoginLimiter()
-	if err := limiter.CheckAllowed(r.Context(), clientIP, req.Username); err != nil {
+	if err := limiter.CheckAllowed(r.Context(), clientIP, normUser); err != nil {
 		if errors.Is(err, ErrLoginRateLimited) {
 			w.Header().Set("Retry-After", "60")
 			writeRegisteredProblem(w, r, http.StatusTooManyRequests, "auth/rate_limited", "Rate Limit Exceeded", problemcode.CodeRateLimitExceeded, "Password login rate limit exceeded. Please try again later.", nil)
@@ -99,13 +100,13 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 			writeRegisteredProblem(w, r, http.StatusTooManyRequests, "auth/busy", "Authentication Busy", problemcode.CodeRateLimitExceeded, "Authentication service is busy. Please try again shortly.", nil)
 			return
 		}
-		limiter.RecordFailure(clientIP, req.Username)
+		limiter.RecordFailure(clientIP, normUser)
 		log.FromContext(r.Context()).Warn().Err(err).Str("username", req.Username).Str("client_ip", clientIP).Msg("password login failed")
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_credentials", "Invalid Credentials", problemcode.CodeUnauthorized, "Invalid username or password", nil)
 		return
 	}
 
-	limiter.RecordSuccess(clientIP, req.Username)
+	limiter.RecordSuccess(clientIP, normUser)
 	s.setSessionCookieDirect(w, r, res.SessionID, res.ExpiresAt)
 
 	w.Header().Set("Content-Type", "application/json")

@@ -994,3 +994,48 @@ func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&lamedbQueries), int32(1), "receiver service database should be read for RF discovery")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&streamDials), "Enigma2 stream endpoint should be dialed once")
 }
+
+// TestPublicExposureMatrix_LiveAndSmoothRoutes verifies the real router-level authentication boundary
+// for /api/v3/stream/live/*, /api/v3/stream/smooth/*, and /api/v3/stream/prepare.
+func TestPublicExposureMatrix_LiveAndSmoothRoutes(t *testing.T) {
+	cfg := config.AppConfig{
+		DataDir:        t.TempDir(),
+		APIToken:       "secret-token-32-chars-long-security",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    "http://127.0.0.1:8001",
+			StreamPort: 8001,
+		},
+	}
+
+	server := mustNewServer(t, cfg, config.NewManager(""))
+	handler := server.Handler()
+
+	ref := "1:0:19:132F:3EF:1:C00000:0:0:0:"
+
+	// 1. GET /api/v3/stream/live/* without any Authorization or Playback ticket
+	reqLive := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+ref, nil)
+	wLive := httptest.NewRecorder()
+	handler.ServeHTTP(wLive, reqLive)
+
+	// Invariant: MUST NOT be 401 Unauthorized. (Returns 502 Bad Gateway because upstream mock is absent)
+	assert.NotEqual(t, http.StatusUnauthorized, wLive.Code, "/api/v3/stream/live/* does not require Authorization header")
+	assert.Equal(t, http.StatusBadGateway, wLive.Code, "/api/v3/stream/live/* reaches stream handler directly")
+
+	// 2. GET /api/v3/stream/smooth/* without any Authorization or Playback ticket
+	reqSmooth := httptest.NewRequest(http.MethodGet, "/api/v3/stream/smooth/"+ref, nil)
+	wSmooth := httptest.NewRecorder()
+	handler.ServeHTTP(wSmooth, reqSmooth)
+
+	// Invariant: MUST NOT be 401 Unauthorized. (Returns 502 Bad Gateway because upstream mock is absent)
+	assert.NotEqual(t, http.StatusUnauthorized, wSmooth.Code, "/api/v3/stream/smooth/* does not require Authorization header")
+	assert.Equal(t, http.StatusBadGateway, wSmooth.Code, "/api/v3/stream/smooth/* reaches smoother handler directly")
+
+	// 3. POST /api/v3/stream/prepare without Authorization header
+	reqPrepare := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare?sref="+ref, nil)
+	wPrepare := httptest.NewRecorder()
+	handler.ServeHTTP(wPrepare, reqPrepare)
+
+	// Invariant: MUST be 401 Unauthorized or 403 Forbidden (prepare route is explicitly scoped and authenticated)
+	assert.True(t, wPrepare.Code == http.StatusUnauthorized || wPrepare.Code == http.StatusForbidden, "/api/v3/stream/prepare requires authentication")
+}

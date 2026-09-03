@@ -89,4 +89,67 @@ func TestAuthenticateWithPassword_TimingProtectionAndConcurrencyLimit(t *testing
 		assert.Equal(t, int32(concurrentRequests), completedCount.Load(), "all requests must be handled")
 		t.Logf("Concurrency test finished: %d total, %d shed as ErrAuthBusy", completedCount.Load(), busyCount.Load())
 	})
+
+	// 3. Concurrency Limit on Unknown Users (proves dummy hash path is throttled by the same semaphore):
+	t.Run("Argon2ConcurrencyLimit_UnknownUsers", func(t *testing.T) {
+		const concurrentRequests = 20
+		var wg sync.WaitGroup
+		var busyCount atomic.Int32
+		var completedCount atomic.Int32
+
+		for i := 0; i < concurrentRequests; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				reqCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+				defer cancel()
+
+				_, err := svc.AuthenticateWithPassword(reqCtx, "unknown_user_test", "WrongPassword123!")
+				if err != nil {
+					if err == identity.ErrAuthBusy {
+						busyCount.Add(1)
+					}
+					completedCount.Add(1)
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		assert.Equal(t, int32(concurrentRequests), completedCount.Load(), "all requests must be handled")
+		t.Logf("Unknown users concurrency: %d total, %d shed as ErrAuthBusy", completedCount.Load(), busyCount.Load())
+	})
+
+	// 4. Concurrency Limit on Mixed Load (known vs unknown users):
+	t.Run("Argon2ConcurrencyLimit_MixedLoad", func(t *testing.T) {
+		const concurrentRequests = 20
+		var wg sync.WaitGroup
+		var busyCount atomic.Int32
+		var completedCount atomic.Int32
+
+		for i := 0; i < concurrentRequests; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				reqCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+				defer cancel()
+
+				targetUser := "admin"
+				if idx%2 == 0 {
+					targetUser = "random_attacker_user"
+				}
+
+				_, err := svc.AuthenticateWithPassword(reqCtx, targetUser, "WrongPassword123!")
+				if err != nil {
+					if err == identity.ErrAuthBusy {
+						busyCount.Add(1)
+					}
+					completedCount.Add(1)
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		assert.Equal(t, int32(concurrentRequests), completedCount.Load(), "all requests must be handled")
+		t.Logf("Mixed load concurrency: %d total, %d shed as ErrAuthBusy", completedCount.Load(), busyCount.Load())
+	})
 }

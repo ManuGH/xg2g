@@ -180,6 +180,12 @@ func TestP6_1b_BrowserDownswitchAgainstLiveSpike(t *testing.T) {
 		t.Skipf("Playwright harness script not found at %s, skipping test", nodeHarnessPath)
 	}
 
+	checkBrowserCmd := exec.Command(nodeBin, "--input-type=module", "-e", "import { chromium } from 'playwright'; import fs from 'fs'; if (!fs.existsSync(chromium.executablePath())) process.exit(1);")
+	checkBrowserCmd.Dir = filepath.Join(repoRoot, "e2e")
+	if err := checkBrowserCmd.Run(); err != nil {
+		t.Skip("Playwright Chromium browser executable not installed, skipping browser downswitch E2E test")
+	}
+
 	outDir := t.TempDir()
 
 	// 1. Launch Live Continuous FFmpeg Dual-Rendition Stream

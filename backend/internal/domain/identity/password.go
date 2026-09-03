@@ -60,19 +60,23 @@ const (
 
 // VerifyPassword verifies a plain text password against an Argon2id encoded hash string.
 func VerifyPassword(password, encodedHash string) bool {
-	if password == "" || encodedHash == "" {
+	if password == "" || encodedHash == "" || len(encodedHash) > 512 {
 		return false
 	}
 
 	parts := strings.Split(encodedHash, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" {
+	// Strict PHC structure: $argon2id$v=19$m=...,t=...,p=...$salt$hash -> 6 elements, parts[0] == ""
+	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
 		return false
 	}
 
 	var version int
+	if n, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || n != 1 || version != argon2.Version {
+		return false
+	}
+
 	var memory, time, threads uint32
-	_, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads)
-	if err != nil {
+	if n, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads); err != nil || n != 3 {
 		return false
 	}
 
@@ -97,9 +101,8 @@ func VerifyPassword(password, encodedHash string) bool {
 		return false
 	}
 
-	_ = version // Unused
-
 	hashLength := uint32(len(expectedHash)) // #nosec G115 -- expectedHash is bounded to maxArgonKeyLen above.
+	// threads is guaranteed <= maxArgonParallelism (4) <= 255, byte(threads) cannot truncate
 	computedHash := argon2.IDKey([]byte(password), salt, time, memory, byte(threads), hashLength)
 
 	return subtle.ConstantTimeCompare(computedHash, expectedHash) == 1

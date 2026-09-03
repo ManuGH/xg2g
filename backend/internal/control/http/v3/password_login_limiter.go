@@ -98,10 +98,8 @@ func (l *PasswordLoginLimiter) CheckAllowed(ctx context.Context, clientIP, usern
 				delay = 500 * time.Millisecond
 			case ub.consecutiveFailures == 4:
 				delay = 1 * time.Second
-			case ub.consecutiveFailures == 5:
-				delay = 2 * time.Second
 			default:
-				delay = 3 * time.Second
+				delay = 2 * time.Second
 			}
 		}
 	}

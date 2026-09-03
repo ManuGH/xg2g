@@ -169,3 +169,74 @@ func TestSmootherHandler_Security_AdmissionDeniedFailsClosed(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, w.Code, "admission rejection must fail-closed with 502")
 	assert.Equal(t, int32(1), conn.dials.Load(), "only 1 dial attempt made")
 }
+
+func TestSmootherHandler_Security_SlowConsumerIsolation(t *testing.T) {
+	// Small ring (64KB) so that an unreading consumer will quickly experience ring overrun
+	masterRing := ring.NewMasterRing(64 * 1024)
+	pipe := &mockPipeline{ring: masterRing}
+
+	conn := &mockConnector{
+		dialFn: func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+			pr, pw := io.Pipe()
+			go func() {
+				<-ctx.Done()
+				_ = pw.Close()
+			}()
+			return &mockPipelineHolder{ReadCloser: pr, pipe: pipe}, nil
+		},
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), conn)
+	smootherHandler := smoother.NewHandlerWithManager(mgr, "127.0.0.1", 8001, smoother.DefaultConfig())
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:1:283D:3FB:1:C00000:0:0:0:")
+	key.TargetProgram = 0x283D
+
+	// 1. Live subscriber acquires directly from the manager
+	liveSess, err := mgr.Acquire(context.Background(), key)
+	require.NoError(t, err)
+	defer liveSess.Release()
+
+	// Live subscriber creates its reader
+	liveReader := masterRing.NewSubscriberReader(0)
+	defer liveReader.Close()
+
+	// 2. Smoother subscriber connects via HTTP handler with context
+	ctxSmooth, cancelSmooth := context.WithCancel(context.Background())
+	reqSmooth := httptest.NewRequest(http.MethodGet, "/api/v3/stream/smooth/1:0:1:283D:3FB:1:C00000:0:0:0:", nil).WithContext(ctxSmooth)
+
+	wSmooth := httptest.NewRecorder()
+	smoothDone := make(chan struct{})
+	go func() {
+		defer close(smoothDone)
+		smootherHandler.ServeHTTP(wSmooth, reqSmooth)
+	}()
+
+	// 3. Upstream writer writes 200KB of TS data (multiple times the ring buffer capacity)
+	packet := make([]byte, 188)
+	packet[0] = 0x47
+	for i := 0; i < 1000; i++ {
+		n, err := masterRing.Push(context.Background(), packet)
+		require.NoError(t, err)
+		assert.Equal(t, 188, n)
+
+		// Live subscriber reads continuously
+		buf := make([]byte, 188)
+		_, _ = liveReader.Read(buf)
+	}
+
+	// 4. Invariant: Live subscriber reads smoothly, masterRing.Push never stalled.
+	// 5. Cancel the smoother client (simulating disconnect or slow consumer abort)
+	cancelSmooth()
+	select {
+	case <-smoothDone:
+	case <-time.After(1 * time.Second):
+		t.Fatal("smoother HTTP handler did not exit after client disconnect")
+	}
+
+	// 6. Invariant: Upstream dial count is still 1, session is NOT closed because live subscriber is still active!
+	assert.Equal(t, int32(1), conn.dials.Load(), "dial count remains exactly 1")
+	// Live reader can still read from master ring
+	_, err = masterRing.Push(context.Background(), packet)
+	assert.NoError(t, err, "master ring remains writable for remaining live subscriber")
+}

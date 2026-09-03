@@ -5,6 +5,7 @@
 package identity_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/domain/identity"
@@ -88,6 +89,51 @@ func TestVerifyPassword_ParameterBoundingDefenseInDepth(t *testing.T) {
 		{
 			name:       "MalformedParams",
 			hashString: "$argon2id$v=19$garbage$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "WrongVersionLower",
+			hashString: "$argon2id$v=18$m=19456,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "WrongVersionHigher",
+			hashString: "$argon2id$v=20$m=19456,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "MissingLeadingDollar",
+			hashString: "argon2id$v=19$m=19456,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "ExtraFields",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$" + validSalt + "$" + validHash + "$extra",
+			wantValid:  false,
+		},
+		{
+			name:       "TooFewFields",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$" + validSalt,
+			wantValid:  false,
+		},
+		{
+			name:       "OversizedPHCString",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$" + validSalt + "$" + validHash + strings.Repeat("A", 500),
+			wantValid:  false,
+		},
+		{
+			name:       "MalformedBase64Salt",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$invalid!base64!salt$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "MalformedBase64Hash",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$" + validSalt + "$invalid!base64!hash",
+			wantValid:  false,
+		},
+		{
+			name:       "ThreadOverflow",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=999$" + validSalt + "$" + validHash,
 			wantValid:  false,
 		},
 	}
