@@ -74,6 +74,25 @@ mutate "accept a completed section of any table" table.rs \
 mutate "act on a table announced for later" table.rs \
   'if section[5] & 0x01 != 1 {' 'if false {'
 
+mutate "collect a section that numbers itself beyond its own table" table.rs \
+  'if section_number > last_section_number {
+            return None;
+        }' 'if false {
+            return None;
+        }'
+
+mutate "let a PAT or PMT declare the whole twelve-bit length" table.rs \
+  'if length > MAX_SECTION_LENGTH {' 'if length > 0x0FFF {'
+
+mutate "stop requiring the long section syntax" table.rs \
+  'if prefix[1] & 0x80 == 0 || prefix[1] & 0x40 != 0 {' 'if prefix[1] & 0x40 != 0 {'
+
+mutate "stop requiring the fixed zero bit" table.rs \
+  'if prefix[1] & 0x80 == 0 || prefix[1] & 0x40 != 0 {' 'if prefix[1] & 0x80 == 0 {'
+
+mutate "resume the scan inside a section whose length was refused" assembler.rs \
+  'return consumed + chunk.len();' 'return consumed;'
+
 mutate "call a table complete before all its sections are here" table.rs \
   '        let wanted = usize::from(last_section_number) + 1;
         if generation.sections.len() != wanted {

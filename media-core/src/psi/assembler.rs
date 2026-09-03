@@ -158,12 +158,12 @@ impl SectionAssembler {
             if payload[at] != expected_table_id {
                 break;
             }
-            let section_len =
-                (usize::from(payload[at + 1] & 0x0F) << 8) | usize::from(payload[at + 2]);
-            let full = section_len + 3;
-            // section_length is twelve bits wide, so a section can never claim
-            // more than this and no untrusted length reaches an allocation.
-            debug_assert!(full <= super::table::MAX_SECTION_LEN);
+            let Some(full) = super::table::declaration(&payload[at..]) else {
+                // An impossible declaration ends the scan of this payload. What
+                // follows it cannot be located: the length that would say where
+                // is the one that has just been refused.
+                break;
+            };
             if available >= full {
                 completed.push(Completed {
                     bytes: payload[at..at + full].to_vec(),
@@ -201,8 +201,23 @@ impl SectionAssembler {
             if self.buf.len() < 3 {
                 return consumed;
             }
-            let section_len = (usize::from(self.buf[1] & 0x0F) << 8) | usize::from(self.buf[2]);
-            self.section_len = section_len + 3;
+            let Some(full) = super::table::declaration(&self.buf) else {
+                // The header is complete and says something a PAT or PMT cannot
+                // say. It is the only thing that could tell this assembler how
+                // much to collect, so there is nothing to wait for: the section
+                // is dropped rather than reserving space on its word.
+                self.discard_section();
+                // Everything handed in is given up, not only the header bytes.
+                // The caller resumes its scan at what this returns, and there is
+                // nowhere in the rest of this payload it could resume: the
+                // length that would say where the next section starts is the one
+                // just refused. Returning the header bytes alone would put the
+                // scan a byte or two into the body of the section that was
+                // refused, and let those bytes be read as a table_id and a
+                // length of their own.
+                return consumed + chunk.len();
+            };
+            self.section_len = full;
         }
 
         if self.section_len > 0 && self.buf.len() < self.section_len {
