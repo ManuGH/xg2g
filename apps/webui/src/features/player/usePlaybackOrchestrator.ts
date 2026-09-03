@@ -96,6 +96,7 @@ import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
+import { decideLiveAutoResume } from './orchestrator/liveAutoResume';
 import {
   shouldWatchForNetworkRecovery,
   useNetworkRecoveryWatchdog,
@@ -2092,6 +2093,98 @@ export function usePlaybackOrchestrator(
       },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+
+  // Live unintended-pause and window-focus watchdog. When watching Live TV on desktop browsers,
+  // WebKit/macOS can suspend decoding or issue a pause (e.g. window occlusion, CoreAudio route changes,
+  // or App Nap). On macOS desktop, switching apps or window occlusion does NOT fire visibilitychange,
+  // so the hidden->visible edge never runs. If the user did not deliberately hit pause
+  // (!userPauseIntentRef.current), re-assert playback so live broadcast never silently freezes.
+  useEffect(() => {
+    if (hostEnvironment.isTv) {
+      return;
+    }
+    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelActiveRecovery: (() => void) | null = null;
+
+    const attemptLiveResume = (triggerReason: string) => {
+      if (isTeardownRef.current || hasTerminalStatus) {
+        return;
+      }
+      const action = decideLiveAutoResume({
+        isLiveMode: playbackMode === 'LIVE',
+        isPaused: video.paused,
+        userPaused: userPauseIntentRef.current,
+        hasTerminal: hasTerminalStatus,
+      });
+
+      if (action !== 'play') {
+        return;
+      }
+
+      debugWarn(`[V3Player] Live TV paused without user intent (${triggerReason}); re-asserting playback`);
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.startLoad();
+        } catch (err) {
+          debugWarn('[V3Player] hls startLoad failed on live auto-resume', err);
+        }
+      }
+
+      setStatus((current) => (current === 'paused' ? 'buffering' : current));
+      cancelActiveRecovery?.();
+      cancelActiveRecovery = startResumePlaybackRecovery(video, {
+        shouldContinue: () => !userPauseIntentRef.current,
+        onBlocked: (err: unknown) => {
+          if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
+            setStatus('paused');
+          } else {
+            debugWarn('[V3Player] Live auto-resume play blocked', err);
+          }
+        },
+        onFailed: () => {
+          debugWarn('[V3Player] Live auto-resume failed to advance, retrying session');
+          void handleRetry();
+        },
+      });
+    };
+
+    const onPause = () => {
+      if (userPauseIntentRef.current || hasTerminalStatus || playbackMode !== 'LIVE') {
+        return;
+      }
+      if (pauseDebounceTimer) {
+        clearTimeout(pauseDebounceTimer);
+      }
+      pauseDebounceTimer = setTimeout(() => {
+        attemptLiveResume('element_pause_event');
+      }, 150);
+    };
+
+    const onFocus = () => {
+      attemptLiveResume('window_focus');
+    };
+
+    video.addEventListener('pause', onPause);
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      if (pauseDebounceTimer) {
+        clearTimeout(pauseDebounceTimer);
+      }
+      cancelActiveRecovery?.();
+      video.removeEventListener('pause', onPause);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isTeardownRef, nativePlaybackState, playbackMode, setStatus, userPauseIntentRef, videoRef]);
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online
