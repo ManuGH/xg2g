@@ -1,6 +1,6 @@
 module github.com/ManuGH/xg2g
 
-go 1.26.5
+go 1.26.8
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0

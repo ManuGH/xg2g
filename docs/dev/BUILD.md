@@ -6,7 +6,7 @@ This document captures the technical requirements and targets for building and d
 
 | Component | Policy / Requirement |
 | :--- | :--- |
-| **Go** | Source of Truth: `backend/go.mod`. Required minimum version: `1.26.5`; default pinned toolchain: `go1.26.5`. |
+| **Go** | Source of Truth: `backend/go.mod`. Required minimum version: `1.26.8`; default pinned toolchain: `go1.26.8`. |
 | **FFmpeg** | Required for HLS/transcoding. Pinned runtime version: `8.1.2`. |
 | **Docker** | Required for containerized build/deploy. Supports `buildx`. |
 | **Make** | Used as the orchestration layer for all dev tasks. |

@@ -18,7 +18,7 @@ record earlier states and must not be used as current deployment instructions.
 | :--- | :--- |
 | Server host | Linux `amd64` or `arm64` with systemd |
 | Container runtime | Docker Engine with the Compose v2 plugin |
-| Backend | Go 1.26.5, one OCI image with pinned FFmpeg |
+| Backend | Go 1.26.8, one OCI image with pinned FFmpeg |
 | WebUI | React/Vite under `apps/webui`, built and embedded into the backend image |
 | API | Versioned `/api/v3`, generated from `backend/api/openapi.yaml` |
 | Production supervisor | `xg2g.service` → canonical Compose resolver |
@@ -131,7 +131,7 @@ health check. See [Backup & Restore](../ops/BACKUP_RESTORE.md) and the
 | `docs/` | Active contracts plus clearly dated historical evidence |
 | `mk/` | Root Make workflow implementation |
 
-Go is pinned to 1.26.5 and Node.js to 24. Use `mise install` or the
+Go is pinned to 1.26.8 and Node.js to 24. Use `mise install` or the
 devcontainer, then `make doctor`. `make ci-pr` is the authoritative local PR
 bundle and `make pre-push` is the required cheap guard before every push.
 

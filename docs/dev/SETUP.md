@@ -4,7 +4,7 @@
 
 | Tool | Version | Notes |
 | :--- | :--- | :--- |
-| **Go** | 1.26.5 | Pinned exactly in `backend/go.mod`, `mise.toml`, and `mk/variables.mk` |
+| **Go** | 1.26.8 | Pinned exactly in `backend/go.mod`, `mise.toml`, and `mk/variables.mk` |
 | **Node.js** | 24 LTS | Pinned in `.node-version`, `.nvmrc`, and `mise.toml` |
 | **Docker** | Recent | Required for container builds and integration tests |
 | **Make** | GNU Make | Build orchestration |

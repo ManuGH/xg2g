@@ -16,7 +16,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.26.5
+GOTOOLCHAIN ?= go1.26.8
 export GOTOOLCHAIN
 export GOWORK := off
 
