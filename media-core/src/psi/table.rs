@@ -12,9 +12,50 @@ use std::collections::BTreeMap;
 /// eight-byte header, four bytes of CRC, and nothing in between.
 pub(crate) const MIN_SECTION_LEN: usize = 12;
 
-/// The largest a section can be, from `section_length` being twelve bits: three
-/// header bytes ahead of the field plus the 4093 it can name.
-pub(crate) const MAX_SECTION_LEN: usize = 3 + 0x0FFF;
+/// The most a PAT or PMT section may declare after its length field.
+///
+/// `section_length` is a twelve bit field, but ISO/IEC 13818-1 does not let
+/// either of these tables use all of it: for both, the first two bits of the
+/// field shall be `00` and the value shall not exceed 1021. The field width is
+/// not the bound, and treating it as one would have this parser collect four
+/// kilobytes for a section that cannot legally be longer than one - on nothing
+/// better than the say-so of a stream that has already declared something
+/// impossible.
+pub(crate) const MAX_SECTION_LENGTH: usize = 1021;
+
+/// The most a PAT or PMT section can be in total.
+pub(crate) const MAX_SECTION_BYTES: usize = MAX_SECTION_LENGTH + 3;
+
+/// Reads the three bytes that open a section and reports the total length they
+/// declare.
+///
+/// `None` for a declaration a PAT or PMT cannot make. Three things make one
+/// impossible, and they are asked together because they are read from the same
+/// two bytes and all knowable the moment those bytes arrive:
+///
+/// - `section_syntax_indicator` must be 1, since both tables use the long form
+/// - the bit after it must be 0, fixed by the syntax rather than reserved
+/// - `section_length` must not exceed 1021
+///
+/// One helper for one question, asked everywhere it comes up: by the scan that
+/// meets a header whole inside a payload, by the assembler deciding how many
+/// bytes to collect, and by the completed-section check. A second definition of
+/// "how long may this be" is how two paths come to disagree about it.
+pub(crate) fn declaration(prefix: &[u8]) -> Option<usize> {
+    if prefix.len() < 3 {
+        return None;
+    }
+    if prefix[1] & 0x80 == 0 || prefix[1] & 0x40 != 0 {
+        return None;
+    }
+    let length = (usize::from(prefix[1] & 0x0F) << 8) | usize::from(prefix[2]);
+    if length > MAX_SECTION_LENGTH {
+        return None;
+    }
+    let total = length + 3;
+    debug_assert!(total <= MAX_SECTION_BYTES);
+    Some(total)
+}
 
 /// The fields of a section header this parser reads.
 pub(crate) struct SectionHeader {
@@ -36,8 +77,10 @@ impl SectionHeader {
     ///
     /// - it is long enough to hold the fields that will be read,
     /// - it is the table this PID is being read for,
+    /// - it declares a length and a syntax those tables may declare,
     /// - its bytes are intact,
-    /// - it is in force rather than announced for later.
+    /// - it is in force rather than announced for later,
+    /// - it numbers itself inside the table it names.
     ///
     /// The table check is here, on the completed section, and not only where a
     /// header happens to be scanned inside one payload: a section whose first
@@ -51,6 +94,10 @@ impl SectionHeader {
         if section[0] != expected_table_id {
             return None;
         }
+        // Defence in depth. Both paths that reach here refused an impossible
+        // declaration before acting on it, and asking again costs nothing
+        // against a section that arrived some way nobody has thought of yet.
+        declaration(section)?;
         if crc::mpeg2(section) != 0 {
             return None;
         }
@@ -60,11 +107,24 @@ impl SectionHeader {
         if section[5] & 0x01 != 1 {
             return None;
         }
+        let section_number = section[6];
+        let last_section_number = section[7];
+        // A section numbers itself within its own table: 13818-1 has
+        // section_number count from zero and last_section_number name the
+        // highest, so a section claiming to be the sixth of two is not a member
+        // of the table it names. Refused here rather than collected and found
+        // wanting later - the tracker keys sections by number, so an impossible
+        // one is an entry the generation can never account for, and a table
+        // arriving correctly would stop completing because of a section that
+        // was never part of it.
+        if section_number > last_section_number {
+            return None;
+        }
         Some(Self {
             id_extension: (u16::from(section[3]) << 8) | u16::from(section[4]),
             version: (section[5] >> 1) & 0x1F,
-            section_number: section[6],
-            last_section_number: section[7],
+            section_number,
+            last_section_number,
         })
     }
 

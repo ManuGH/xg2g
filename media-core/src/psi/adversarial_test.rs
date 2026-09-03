@@ -11,7 +11,7 @@
 //! need one to have an answer, it asserts only that the answer is refusal.
 
 use super::crc;
-use super::table::{MAX_SECTION_LEN, MIN_SECTION_LEN};
+use super::table::{MAX_SECTION_BYTES, MAX_SECTION_LENGTH, MIN_SECTION_LEN};
 use super::{IngestError, PsiCore, TS_PACKET_LEN};
 
 // --- builders -------------------------------------------------------------
@@ -261,13 +261,42 @@ fn sections_that_cannot_be_read_are_refused() {
 
 #[test]
 fn section_lengths_at_and_past_their_bounds_are_survived() {
-    // section_length is twelve bits, so this is the largest a section can claim.
+    // The largest either table may declare: waited for, not refused.
     let claims_the_maximum = {
-        let mut payload = vec![0x00, 0x00, 0xB0 | 0x0F, 0xFF];
+        let mut payload = vec![
+            0x00,
+            0x00,
+            0xB0 | u8::try_from((MAX_SECTION_LENGTH >> 8) & 0x0F).expect("masked"),
+            u8::try_from(MAX_SECTION_LENGTH & 0xFF).expect("masked"),
+        ];
         payload.resize(TS_PACKET_LEN - 4, 0x00);
         ts_packet(0, true, 0, 0x00, &payload)
     };
-    assert_eq!(MAX_SECTION_LEN, 3 + 0x0FFF);
+    assert_eq!(MAX_SECTION_BYTES, 1024);
+
+    // One more than that: refused where it declares itself.
+    let claims_one_too_many = {
+        let over = MAX_SECTION_LENGTH + 1;
+        ts_packet(
+            0,
+            true,
+            0,
+            0xFF,
+            &[
+                0x00,
+                0x00,
+                0xB0 | u8::try_from((over >> 8) & 0x0F).expect("masked"),
+                u8::try_from(over & 0xFF).expect("masked"),
+            ],
+        )
+    };
+
+    // The whole twelve-bit field, which these tables may not use.
+    let claims_the_field_width = ts_packet(0, true, 0, 0xFF, &[0x00, 0x00, 0xBF, 0xFF]);
+
+    // The long-form syntax bit clear, and the bit that must be zero set.
+    let wrong_syntax = ts_packet(0, true, 0, 0xFF, &[0x00, 0x00, 0x30, 0x0D]);
+    let fixed_bit_set = ts_packet(0, true, 0, 0xFF, &[0x00, 0x00, 0xF0, 0x0D]);
 
     // A length of zero names a section shorter than its own header.
     let claims_nothing = ts_packet(0, true, 0, 0xFF, &[0x00, 0x00, 0xB0, 0x00]);
@@ -277,6 +306,13 @@ fn section_lengths_at_and_past_their_bounds_are_survived() {
 
     for (what, packet) in [
         ("a section claiming the maximum length", claims_the_maximum),
+        ("a section claiming one byte too many", claims_one_too_many),
+        (
+            "a section claiming the whole field width",
+            claims_the_field_width,
+        ),
+        ("a section that is not the long form", wrong_syntax),
+        ("a section with the fixed bit set", fixed_bit_set),
         ("a section claiming no length", claims_nothing),
         ("a pointer field past the payload", pointer_past_the_end),
     ] {
@@ -304,48 +340,57 @@ fn a_table_is_not_read_until_every_section_of_it_is_here() {
     assert_eq!(outcome.facts.pmt_pid, 256);
 }
 
-/// A section numbered outside the table is collected like any other, and the
-/// generation then holds more sections than the table declares - so it stops
-/// completing, and goes on not completing even once the section that was
-/// genuinely missing arrives. Only a new generation clears it.
+/// A section numbering itself beyond the table it names is not a member of that
+/// table, so the table it interrupts is unaffected by it - the sections already
+/// collected stay collected and the one that was genuinely missing still
+/// completes it.
 ///
-/// Verified against the Go reference before being asserted here: both
-/// implementations do exactly this. The corpus states the first half of it
-/// (`a_section_numbered_outside_the_table_does_not_complete_it`) and not the
-/// second, so this test is Rust-side coverage of shared behaviour rather than a
-/// semantic of its own.
+/// This replaces a test that asserted the opposite. Both implementations used to
+/// collect such a section, and the tracker keys sections by number, so the extra
+/// entry made the generation's count permanently wrong and the table never
+/// completed again. Writing this parser is what surfaced it; it was settled and
+/// repaired on the Go side first, and this is the corrected contract.
 #[test]
-fn a_stray_section_number_holds_the_generation_until_a_new_one_starts() {
+fn a_section_numbered_beyond_its_table_leaves_that_table_alone() {
     let mut core = PsiCore::new(1);
-    for (what, packets) in [
-        (
-            "section 0 of 2",
-            psi_packets(0, 0, &pat_section(0, 0, 1, &[(1, 256)])),
-        ),
-        (
-            "a section numbered 5",
-            psi_packets(0, 1, &pat_section(0, 5, 1, &[(9, 0x0900)])),
-        ),
-        (
-            "section 1 of 2",
-            psi_packets(0, 2, &pat_section(0, 1, 1, &[(9, 0x0900)])),
-        ),
-    ] {
-        let outcome = core.ingest(0, &chunk_of(&packets)).expect("aligned");
-        assert_eq!(outcome.facts.pmt_pid, 0, "the table completed after {what}");
-    }
+    let strays = [
+        pat_section(0, 5, 1, &[(9, 0x0900)]),
+        pat_section(0, 255, 1, &[(9, 0x0901)]),
+        pat_section(0, 2, 1, &[(9, 0x0902)]),
+    ];
 
-    // A new version is a new generation, and the stray does not travel with it.
-    for packets in [
-        psi_packets(0, 3, &pat_section(1, 0, 1, &[(1, 256)])),
-        psi_packets(0, 4, &pat_section(1, 1, 1, &[(9, 0x0900)])),
-    ] {
-        core.ingest(0, &chunk_of(&packets)).expect("aligned");
+    let mut cc = 0u8;
+    let push = |core: &mut PsiCore, section: &[u8], cc: &mut u8| {
+        let outcome = core
+            .ingest(0, &chunk_of(&psi_packets(0, *cc, section)))
+            .expect("aligned");
+        *cc = (*cc + 1) & 0x0F;
+        outcome
+    };
+
+    push(&mut core, &pat_section(0, 0, 1, &[(1, 256)]), &mut cc);
+    for stray in &strays {
+        let outcome = push(&mut core, stray, &mut cc);
+        assert_eq!(
+            outcome.facts.pmt_pid, 0,
+            "a stray section completed the table"
+        );
+        assert!(
+            outcome.events.is_empty(),
+            "a stray section changed the programme"
+        );
     }
-    let outcome = core.ingest(0, &[]).expect("aligned");
+    let outcome = push(&mut core, &pat_section(0, 1, 1, &[(9, 0x0900)]), &mut cc);
     assert_eq!(
         outcome.facts.pmt_pid, 256,
-        "a new generation did not recover"
+        "the table did not complete once its own missing section arrived"
+    );
+    // The strays left nothing behind: the raw table is the two sections that
+    // belong to it, and neither stray packet is among them.
+    assert_eq!(
+        outcome.active.pat.len(),
+        2,
+        "the raw table carries a section that is not its own"
     );
 }
 
