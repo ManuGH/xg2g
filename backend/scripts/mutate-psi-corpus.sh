@@ -122,12 +122,39 @@ mutate "miss a PMT version change" "$CORE" \
   'isChanged := !c.hasPMTVersion || version != c.pmtVersion || progNum != c.pmtProgramNumber' \
   'isChanged := !c.hasPMTVersion'
 
+EQUIVALENT_REASON="since the program-number acceptance check, progNum always equals selectedProgramNumber here, and every change to selectedProgramNumber goes through forgetPMTIdentityLocked and so clears hasPMTVersion - the first term always fires first. The condition is kept as the guard that would still hold if the acceptance check above it were ever removed"
 mutate "miss a PMT program number change" "$CORE" \
   'isChanged := !c.hasPMTVersion || version != c.pmtVersion || progNum != c.pmtProgramNumber' \
   'isChanged := !c.hasPMTVersion || version != c.pmtVersion'
 
-mutate "do not follow the PMT PID when the PAT moves it" "$CORE" \
-  'if c.pmtPID != matchedPID {' 'if false {'
+mutate "accept a PMT whichever program it names" "$CORE" \
+  'if progNum != c.selectedProgramNumber {
+			return
+		}' 'if false {
+			return
+		}'
+
+mutate "let a foreign PMT reach the tracker before it is refused" "$CORE" \
+  'if progNum != c.selectedProgramNumber {
+			return
+		}
+
+		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)' \
+  'tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
+		if progNum != c.selectedProgramNumber {
+			return
+		}'
+
+mutate "do not record which program an unnamed target selected" "$CORE" \
+  '					matchedPID, matchedProgram = progPID, progNum
+					break
+				}' '					matchedPID = progPID
+					break
+				}'
+
+mutate "treat the selection as the PMT PID alone" "$CORE" \
+  'if c.pmtPID != matchedPID || c.selectedProgramNumber != matchedProgram {' \
+  'if c.pmtPID != matchedPID {'
 
 mutate "keep the program number and version behind a false HasPMT" "$CORE" \
   'c.hasPMTVersion = false

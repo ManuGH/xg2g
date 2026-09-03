@@ -295,8 +295,18 @@ type GoCore struct {
 	pmtVersion          uint8
 	pmtProgramNumber    uint16
 	pmtPID              uint16
-	videoPID            uint16
-	videoCodec          VideoCodec
+	// selectedProgramNumber is the program the PAT chose, held beside the PID it
+	// chose it on. The two are one decision - a PAT entry names a program and the
+	// PID its table is carried on together - so they are kept and given up
+	// together, and a PMT on that PID has to agree with this number before it can
+	// describe this program.
+	//
+	// Parser state, not product state: it is what the routing expects, not what
+	// the stream has been found to be. What the stream turned out to be is
+	// pmtProgramNumber, and it is only set from a section that agreed with this.
+	selectedProgramNumber uint16
+	videoPID              uint16
+	videoCodec            VideoCodec
 
 	// Stateful Video Parsing & Keyframe Indexing
 	currentPESOffset int64
@@ -437,6 +447,7 @@ func (c *GoCore) SetTargetProgram(ctx context.Context, programNumber uint16) (Pa
 		c.patVersion = 0
 		c.forgetPMTIdentityLocked()
 		c.pmtPID = 0
+		c.selectedProgramNumber = 0
 		c.patAssembler.reset()
 		c.pmtAssembler.reset()
 		c.patTracker.reset()
@@ -849,6 +860,7 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 
 		// Full PAT Table Generation Complete: scan all sections for target program
 		matchedPID := uint16(0)
+		matchedProgram := uint16(0)
 		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
 			sData := c.patTracker.sections[sIdx]
 			if len(sData) < 12 {
@@ -864,11 +876,11 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 
 				if c.targetProgramNumber > 0 {
 					if progNum == c.targetProgramNumber {
-						matchedPID = progPID
+						matchedPID, matchedProgram = progPID, progNum
 						break
 					}
 				} else {
-					matchedPID = progPID
+					matchedPID, matchedProgram = progPID, progNum
 					break
 				}
 			}
@@ -886,32 +898,59 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 			}
 		}
 
-		if matchedPID > 0 {
-			if !c.hasPMTVersion || c.pmtPID != matchedPID || !c.hasPATVersion || c.patVersion != version {
-				if c.pmtPID != matchedPID {
-					c.pmtPID = matchedPID
-					c.pmtAssembler.reset()
-					c.pmtTracker.reset()
-					c.forgetPMTIdentityLocked()
-					c.resetProgramStateLocked()
-				}
+		if matchedPID == 0 {
+			// A complete, current PAT that does not name the target is the
+			// transport saying the program is not here. Holding on to the PID it
+			// used to be on would leave the core reading a table for a program
+			// this PAT does not carry.
+			if c.pmtPID != 0 {
+				c.dropProgramSelectionLocked()
 			}
-			c.hasPATVersion = true
-			c.patVersion = version
-
-			// Build deduplicated rawPATPackets from all sections 0..lastSectionNum
-			var allPATPackets [][]byte
-			for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-				for _, pkt := range c.patTracker.rawPackets[sIdx] {
-					if !containsPacket(allPATPackets, pkt) {
-						allPATPackets = append(allPATPackets, cloneSlice(pkt))
-					}
-				}
-			}
-			c.rawPATPackets = allPATPackets
+			return
 		}
+
+		// The selection changes when either half of it does. The outer condition
+		// this replaces could never be false when the inner one was true, so it
+		// decided nothing; what it hid is that a PID which stays the same while
+		// the program on it changes - possible whenever no target is named - is
+		// still a different selection.
+		if c.pmtPID != matchedPID || c.selectedProgramNumber != matchedProgram {
+			c.pmtPID = matchedPID
+			c.selectedProgramNumber = matchedProgram
+			c.pmtAssembler.reset()
+			c.pmtTracker.reset()
+			c.forgetPMTIdentityLocked()
+			c.resetProgramStateLocked()
+		}
+
+		c.hasPATVersion = true
+		c.patVersion = version
+
+		// Build deduplicated rawPATPackets from all sections 0..lastSectionNum
+		var allPATPackets [][]byte
+		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
+			for _, pkt := range c.patTracker.rawPackets[sIdx] {
+				if !containsPacket(allPATPackets, pkt) {
+					allPATPackets = append(allPATPackets, cloneSlice(pkt))
+				}
+			}
+		}
+		c.rawPATPackets = allPATPackets
 	} else {
 		progNum := (uint16(table[3]) << 8) | uint16(table[4])
+
+		// The PAT chose a program and the PID its table is on together, so a
+		// section on that PID naming a different program is not this program's
+		// table. Refused here, before the tracker, and not after it completes:
+		// addSection restarts the collected set whenever the version or the
+		// last_section_number differs, so letting a foreign section in would let
+		// another program's PMT discard the sections already gathered for this
+		// one - a table that is being assembled correctly, destroyed by one that
+		// was never going to be accepted.
+		if progNum != c.selectedProgramNumber {
+			return
+		}
+
 		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
 		if !tableComplete {
 			return
@@ -1029,6 +1068,27 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 //
 // Not folded into resetProgramStateLocked: that runs after the new identity has
 // been recorded, and clearing there would wipe the values just assigned.
+// dropProgramSelectionLocked gives up the PAT's choice of program and PID, and
+// everything downstream of it.
+//
+// HasPAT goes with it. It never meant "a PAT arrived" - it is only ever set
+// where a PAT named the target - so leaving it standing after a PAT that does
+// not name the target would be the same half-fact as a program number surviving
+// the program: a field describing something that has been given up. The raw PAT
+// goes for the same reason; it is a preamble for a program no longer being
+// followed.
+func (c *GoCore) dropProgramSelectionLocked() {
+	c.pmtPID = 0
+	c.selectedProgramNumber = 0
+	c.hasPATVersion = false
+	c.patVersion = 0
+	c.rawPATPackets = nil
+	c.pmtAssembler.reset()
+	c.pmtTracker.reset()
+	c.forgetPMTIdentityLocked()
+	c.resetProgramStateLocked()
+}
+
 func (c *GoCore) forgetPMTIdentityLocked() {
 	c.hasPMTVersion = false
 	c.pmtVersion = 0

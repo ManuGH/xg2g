@@ -133,7 +133,19 @@ func createMultiProgramPAT(prog1, pmt1, prog2, pmt2 uint16) []byte {
 	return pkt
 }
 
+// createMultiPacketPMTWithVersion builds a PMT for program 1. Every caller but
+// one follows program 1, which is what the PATs in these tests name.
 func createMultiPacketPMTWithVersion(pmtPID uint16, videoPID uint16, isHEVC bool, hasVideo bool, version uint8, currentNext uint8) [][]byte {
+	return createMultiPacketPMTForProgram(1, pmtPID, videoPID, isHEVC, hasVideo, version, currentNext)
+}
+
+// createMultiPacketPMTForProgram names the program the table is for.
+//
+// It used to be hardcoded to 1, so a PMT built for the PID a PAT gave to program
+// 2 still declared program 1. The parser ignored the mismatch, so the fixture
+// worked; it no longer does, because a PMT that names another program is not
+// this program's table.
+func createMultiPacketPMTForProgram(programNumber uint16, pmtPID uint16, videoPID uint16, isHEVC bool, hasVideo bool, version uint8, currentNext uint8) [][]byte {
 	streamType := byte(0x1B) // H.264
 	if isHEVC {
 		streamType = 0x24 // H.265
@@ -144,7 +156,7 @@ func createMultiPacketPMTWithVersion(pmtPID uint16, videoPID uint16, isHEVC bool
 		pmtSection = []byte{
 			0x02,       // table_id = 2 (PMT)
 			0xB0, 0x17, // section_syntax + length = 23 (3+23=26 bytes total)
-			0x00, 0x01, // program_number = 1
+			byte(programNumber >> 8), byte(programNumber & 0xFF), // program_number
 			0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01), // version + current_next
 			0x00, 0x00, // section 0 / last 0
 			0xE0 | byte((videoPID>>8)&0x1F), byte(videoPID & 0xFF), // PCR PID = videoPID
@@ -167,7 +179,7 @@ func createMultiPacketPMTWithVersion(pmtPID uint16, videoPID uint16, isHEVC bool
 		pmtSection = []byte{
 			0x02,       // table_id = 2 (PMT)
 			0xB0, 0x12, // section length = 18 (total 21 bytes)
-			0x00, 0x01, // program_number = 1
+			byte(programNumber >> 8), byte(programNumber & 0xFF), // program_number
 			0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01),
 			0x00, 0x00,
 			0xE0, 0x55, // PCR PID = 85
@@ -891,7 +903,8 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.facts.PMTPID)
 	}
 
-	for _, pkt := range createMultiPacketPMTWithVersion(200, 512, true, true, 0, 1) {
+	// Program 2's table, on the PID the PAT gave program 2, naming program 2.
+	for _, pkt := range createMultiPacketPMTForProgram(2, 200, 512, true, true, 0, 1) {
 		_, _ = r.Push(context.Background(), pkt)
 	}
 

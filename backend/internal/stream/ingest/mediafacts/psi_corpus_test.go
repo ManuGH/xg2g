@@ -836,15 +836,9 @@ func psiRejectionCases() []psiCorpusCase {
 			payload := append([]byte{0x00}, foreignTableSection(0x42, psiPMTPID2)...)
 			payload = append(payload, patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1})...)
 			return psiCase("a_foreign_table_ends_the_scan_of_the_payload_it_is_in",
-				"the scan stops at the first section that is not the table this PID is read for, and does not step over it to the one behind",
+				"fail closed: a table this PID is not read for is already non-conformant input, so its length is not trusted as navigation to whatever sits behind it",
 				1).
 				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, nothing).
-				noting("This pins that the scan STOPS rather than skipping the foreign section and " +
-					"continuing. Sections are self-delimiting, so stepping over one and reading the " +
-					"PAT behind it would also be defensible and is arguably closer to 13818-1. The " +
-					"reference has always stopped; that has not been adjudicated. Kept as a case " +
-					"because the scan-level table_id check is otherwise unobservable now that the " +
-					"completed-section check refuses the foreign section anyway.").
 				done()
 		}(),
 
@@ -961,17 +955,13 @@ func psiLifecycleCases() []psiCorpusCase {
 			a := full(0, []uint16{psiAudioPID1}, oneTrack)
 			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
 			b := full(0, []uint16{psiAudioPID1}, oneTrack)
-			b.programNumber = 7
-			b.events, b.patPackets, b.pmtPackets = identity(1), []int{0}, []int{2}
-			return psiCase("a_pmt_naming_another_program_number_on_the_same_pid_is_taken_as_a_change",
-				"the program number in the section differs from the one the PAT pointed here for",
+			b.events, b.patPackets, b.pmtPackets = noEvents, []int{0}, []int{1}
+			return psiCase("a_pmt_naming_another_program_number_on_the_same_pid_is_not_this_program",
+				"the PAT chose a program and the PID together, so a section on that PID for a different program changes nothing at all",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), a).
 				chunk(psiPackets(psiPMTPID1, 1, 0,
 					pmtSection(7, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID), ac3One)), b).
-				noting("The reference accepts a PMT whose program_number is not the one the PAT " +
-					"routed to this PID, and reports that number as the program identity. Whether a " +
-					"PMT for another program should instead be ignored has not been decided.").
 				done()
 		}(),
 
@@ -1007,6 +997,176 @@ func psiLifecycleCases() []psiCorpusCase {
 				chunk(psiPackets(0, 1, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
 					events: identity(1), patPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The PMT for another program arrives first, on the PID this program's
+			// table is carried on. It must leave nothing behind at all - not a
+			// fact, not an event, not a raw packet - and the real one after it
+			// must then be read as if it had come first.
+			foreign := pmtSection(2, psiVideoPID2, 0, 0, 0, 1, nil, esH264(psiVideoPID2))
+			mine := pmtV(0, esH264(psiVideoPID), ac3One)
+			return psiCase("a_pmt_for_another_program_is_ignored_and_the_real_one_still_arrives",
+				"a named target: the foreign table changes nothing, and the program's own table is accepted afterwards as normal",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, foreign)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0},
+				}).
+				chunk(psiPackets(psiPMTPID1, 1, 0, mine), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// Same rule with no target named: the program the PAT chose is what a
+			// PMT has to agree with, and "whichever program came first" is a
+			// selection like any other.
+			pat := patSection(psiTSID, 0, 0, 0, 1,
+				patProgram{7, psiPMTPID1}, patProgram{9, psiPMTPID2})
+			foreign := pmtSection(9, psiVideoPID2, 0, 0, 0, 1, nil, esH264(psiVideoPID2))
+			mine := pmtSection(7, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID), ac3One)
+			return psiCase("an_auto_selected_program_still_refuses_a_pmt_for_a_different_one",
+				"with no target named the selection is program 7, and a PMT for program 9 on its PID is as foreign as any other",
+				0).
+				chunk(flatten(psiPackets(0, 0, 0, pat), psiPackets(psiPMTPID1, 0, 0, foreign)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0},
+				}).
+				chunk(psiPackets(psiPMTPID1, 1, 0, mine), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 7, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// Two programs routed to one PID. Only the selected one may be read
+			// off it, so the PID alone can never be what makes a table ours.
+			pat := patSection(psiTSID, 0, 0, 0, 1,
+				patProgram{1, psiPMTPID1}, patProgram{2, psiPMTPID1})
+			foreign := pmtSection(2, psiVideoPID2, 0, 0, 0, 1, nil, esH264(psiVideoPID2))
+			mine := pmtV(0, esH264(psiVideoPID), ac3One)
+			return psiCase("two_programs_on_one_pmt_pid_leave_only_the_selected_one_active",
+				"the PID is shared, so agreement about the program number is the only thing that makes a table this program's",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, pat),
+					psiPackets(psiPMTPID1, 0, 0, foreign),
+					psiPackets(psiPMTPID1, 1, 0, mine)), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The case the ordering of the check exists for. A foreign PMT
+			// arriving between two sections of this program's table declares a
+			// different last_section_number, so letting it reach the tracker
+			// would restart the collected set and destroy section 0 - a table
+			// being assembled correctly, discarded by one that was never going to
+			// be accepted.
+			mine0 := pmtSection(1, psiVideoPID, 0, 0, 1, 1, nil, esH264(psiVideoPID))
+			foreign := pmtSection(2, psiVideoPID2, 0, 0, 0, 1, nil, esH264(psiVideoPID2))
+			mine1 := pmtSection(1, psiVideoPID, 0, 1, 1, 1, nil, ac3One)
+			return psiCase("a_foreign_pmt_between_two_sections_does_not_destroy_the_table_being_assembled",
+				"the program number is checked before the section reaches the tracker, so a table that will be refused cannot discard one that will not",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT),
+					psiPackets(psiPMTPID1, 0, 0, mine0),
+					psiPackets(psiPMTPID1, 1, 0, foreign),
+					psiPackets(psiPMTPID1, 2, 0, mine1)), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1, 3},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A foreign PMT carrying the same version as the one in force. Same
+			// version and same last_section_number means the tracker would not
+			// restart but overwrite the slot, which is the quieter way to lose a
+			// table.
+			mine := pmtSection(1, psiVideoPID, 3, 0, 0, 1, nil, esH264(psiVideoPID), ac3One)
+			foreign := pmtSection(2, psiVideoPID2, 3, 0, 0, 1, nil, esH264(psiVideoPID2))
+			established := psiExpect{
+				hasPAT: true, hasPMT: true, pmtVersion: 3, programNumber: 1, pmtPID: psiPMTPID1,
+				videoPID: psiVideoPID, videoCodec: CodecH264,
+				audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+			}
+			after := established
+			after.events = noEvents
+			return psiCase("a_foreign_pmt_sharing_the_version_in_force_is_still_ignored",
+				"a matching version is not a claim to be this program; nothing about the table in force moves",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, mine)), established).
+				chunk(psiPackets(psiPMTPID1, 1, 0, foreign), after).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The PMT PID stays exactly where it was while the program on it
+			// changes - which only an unnamed target can do. The selection is the
+			// pair, so it moved, and the PMT that used to be ours is now foreign.
+			patV0 := patSection(psiTSID, 0, 0, 0, 1, patProgram{7, psiPMTPID1})
+			patV1 := patSection(psiTSID, 1, 0, 0, 1, patProgram{3, psiPMTPID1})
+			pmt7 := pmtSection(7, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID), ac3One)
+			pmt3 := pmtSection(3, psiVideoPID2, 0, 0, 0, 1, nil, esH264(psiVideoPID2))
+			return psiCase("a_new_program_on_the_same_pmt_pid_is_a_new_selection",
+				"the program and the PID are one choice, so the PID staying put does not mean the choice did",
+				0).
+				chunk(flatten(psiPackets(0, 0, 0, patV0), psiPackets(psiPMTPID1, 0, 0, pmt7)), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 7, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				}).
+				chunk(psiPackets(0, 1, 0, patV1), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{2},
+				}).
+				chunk(psiPackets(psiPMTPID1, 1, 0, pmt7), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: noEvents, patPackets: []int{2},
+				}).
+				chunk(psiPackets(psiPMTPID1, 2, 0, pmt3), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 3, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID2, videoCodec: CodecH264,
+					events: identity(1), patPackets: []int{2}, pmtPackets: []int{4},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A later PAT that no longer carries the program. The selection is
+			// given up, and so is everything that only meant anything because of
+			// it - including HasPAT, which is only ever set where a PAT named the
+			// target.
+			gone := patSection(psiTSID, 1, 0, 0, 1, patProgram{5, psiPMTPID2})
+			return psiCase("a_pat_that_no_longer_names_the_target_gives_the_selection_up",
+				"the transport says the program is not here any more, and holding its old PID would leave the core reading a table for a program this PAT does not carry",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				}).
+				chunk(psiPackets(0, 1, 0, gone), psiExpect{
+					videoCodec: CodecUnknown, events: identity(1),
 				}).
 				done()
 		}(),
@@ -1817,7 +1977,14 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_new_pmt_version_on_the_same_pid_is_a_new_program_identity",
 		"a_pmt_version_wrapping_from_31_to_0_is_still_a_change",
 		"the_same_table_delivered_again_is_not_a_change",
-		"a_pmt_naming_another_program_number_on_the_same_pid_is_taken_as_a_change",
+		"a_pmt_naming_another_program_number_on_the_same_pid_is_not_this_program",
+		"a_pmt_for_another_program_is_ignored_and_the_real_one_still_arrives",
+		"an_auto_selected_program_still_refuses_a_pmt_for_a_different_one",
+		"two_programs_on_one_pmt_pid_leave_only_the_selected_one_active",
+		"a_foreign_pmt_between_two_sections_does_not_destroy_the_table_being_assembled",
+		"a_foreign_pmt_sharing_the_version_in_force_is_still_ignored",
+		"a_pat_that_no_longer_names_the_target_gives_the_selection_up",
+		"a_new_program_on_the_same_pmt_pid_is_a_new_selection",
 		"a_new_pat_moves_the_program_to_another_pmt_pid",
 		"a_missing_section_prevents_the_table_from_activating",
 		"a_carousel_repeat_of_one_section_keeps_the_table_complete",
