@@ -318,10 +318,27 @@ func hasAudioDescriptor(descriptors []byte) bool {
 	return false
 }
 
+// NullPID is the packet identifier reserved for stuffing; nothing that carries
+// an elementary stream ever uses it.
+const NullPID = 0x1FFF
+
+// canCarryElementaryStream reports whether a PID could name an elementary stream
+// at all.
+//
+// PID 0 is the PAT and 0x1FFF is the null packet. A PMT entry naming either is
+// malformed: no payload is ever routed to such a stream, and nothing watches it
+// for descrambling, so a declaration on one describes something that cannot
+// exist. It is refused once, where a stream is accepted, rather than filtered
+// out of one of the lists afterwards - filtering one list and not the others is
+// how audioPIDs and audioTracks came to disagree about which streams there are.
+func canCarryElementaryStream(pid uint16) bool {
+	return pid != 0 && pid != NullPID
+}
+
+// appendPID adds a PID that has already been accepted, keeping the PMT's order
+// and adding it once. It does not decide admissibility; canCarryElementaryStream
+// does, at the point of acceptance.
 func appendPID(list []uint16, pid uint16) []uint16 {
-	if pid == 0 || pid == 0x1FFF {
-		return list
-	}
 	for _, existing := range list {
 		if existing == pid {
 			return list

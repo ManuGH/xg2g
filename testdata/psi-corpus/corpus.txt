@@ -637,15 +637,14 @@ case descriptors_the_parser_does_not_know_are_stepped_over
   psi pat=0 pmt=1
 end
 
-case audio_declared_on_a_reserved_pid_is_not_a_stream_that_can_be_watched
-  desc the null PID and PID 0 can never carry an elementary stream, so neither becomes an audio PID
-  note audioPIDs excludes PID 0 and the null PID; audioTracks does not. So the track list offers two streams that the PID list says are not there, and that nothing will ever route payload to or watch for descrambling. Which of the two lists is right has not been decided - appendPID filters, appendAudioTrack does not.
+case audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all
+  desc PID 0 is the PAT and 0x1FFF is stuffing, so a track on either would be one nothing ever routes payload to; the PIDs next to them are ordinary streams
   init target=1
-  chunk 474000100000b00d0001c100000001e100e8f95e7dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100100002b03f0001c10000e101f0001be101f00006fffff00a0a04646575006a02800206e000f00a0a04656e67006a02800206e102f00a0a04667261006a0280028fa1d15effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-  facts through=376 hasPAT=1 hasPMT=1 pmtVersion=0 programNumber=1 pmtPID=256 videoPID=257 videoCodec=h264 audioPIDs=258
-  track pid=8191 streamType=6 codec=ac3 lang=deu channels=2 multichannel=0 componentType=2 hasComponentType=1
-  track pid=0 streamType=6 codec=ac3 lang=eng channels=2 multichannel=0 componentType=2 hasComponentType=1
-  track pid=258 streamType=6 codec=ac3 lang=fra channels=2 multichannel=0 componentType=2 hasComponentType=1
+  chunk 474000100000b00d0001c100000001e100e8f95e7dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100100002b05d0001c10000e101f0001be101f00006fffff00a0a04646575006a02800206e001f00a0a04656e67006a02800206e000f00a0a046e6c64006a02800206fffef00a0a04667261006a02800206e102f00a0a04737061006a028002479cc399ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+  facts through=376 hasPAT=1 hasPMT=1 pmtVersion=0 programNumber=1 pmtPID=256 videoPID=257 videoCodec=h264 audioPIDs=1,8190,258
+  track pid=1 streamType=6 codec=ac3 lang=eng channels=2 multichannel=0 componentType=2 hasComponentType=1
+  track pid=8190 streamType=6 codec=ac3 lang=fra channels=2 multichannel=0 componentType=2 hasComponentType=1
+  track pid=258 streamType=6 codec=ac3 lang=spa channels=2 multichannel=0 componentType=2 hasComponentType=1
   events identity identity
   psi pat=0 pmt=1
 end
