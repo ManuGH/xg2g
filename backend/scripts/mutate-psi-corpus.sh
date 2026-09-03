@@ -202,6 +202,11 @@ mutate "count a multichannel declaration as six channels" "$PARSE" \
 mutate "report no language instead of und" "$PARSE" \
   'return "und"' 'return ""'
 
+mutate "call the ATSC enhanced stream type plain AC-3 again" "$PARSE" \
+  '		return "eac3"
+	case 0x06:' '		return "ac3"
+	case 0x06:'
+
 # Findings 4's three shapes: no guard at all, and each of the two lists keeping a
 # guard the other lost. The third is expressible only because the mutation moves
 # the append outside the accepted branch - in the source both lists are built

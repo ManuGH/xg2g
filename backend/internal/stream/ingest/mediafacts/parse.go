@@ -520,8 +520,15 @@ func AudioCodecFromStreamType(streamType byte, descriptors []byte) string {
 		return "mp2"
 	case 0x0F, 0x11, 0x1C:
 		return "aac"
-	case 0x81, 0x87:
+	case 0x81:
 		return "ac3"
+	case 0x87:
+		// ATSC A/52 registers 0x81 for AC-3 and 0x87 for Enhanced AC-3. Both were
+		// reported as "ac3", which put a name on the track that the elementary
+		// stream contradicts - and it overrode a mapping that was already right:
+		// audiotopology's CodecFromDVBStreamType answers EAC3 for 0x87, but only
+		// reaches the decision when the PMT names no codec at all.
+		return "eac3"
 	case 0x06:
 		for i := 0; i+2 <= len(descriptors); {
 			tag := descriptors[i]

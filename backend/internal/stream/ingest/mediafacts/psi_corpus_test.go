@@ -1412,6 +1412,27 @@ func psiElementaryStreamCases() []psiCorpusCase {
 				videoPID: psiVideoPID, videoCodec: CodecH264,
 				audioPIDs: []uint16{psiAudioPID1, psiAudioPID2},
 				tracks: []psiTrackExpect{
+					{pid: psiAudioPID1, streamType: 0x81, codec: "ac3", lang: "eng"},
+					{pid: psiAudioPID2, streamType: 0x87, codec: "eac3", lang: "deu"},
+				},
+				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+			}
+			return psiCase("the_atsc_stream_types_tell_ac3_and_eac3_apart",
+				"A/52 registers 0x81 for AC-3 and 0x87 for Enhanced AC-3, so the stream type names the codec on its own and the two are not the same codec",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
+					pmtV(0, esH264(psiVideoPID),
+						pmtStream{streamType: 0x81, pid: psiAudioPID1, descriptors: descLanguage("eng", 0x00)},
+						pmtStream{streamType: 0x87, pid: psiAudioPID2, descriptors: descLanguage("deu", 0x00)}))), w).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			w := psiExpect{
+				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+				videoPID: psiVideoPID, videoCodec: CodecH264,
+				audioPIDs: []uint16{psiAudioPID1, psiAudioPID2},
+				tracks: []psiTrackExpect{
 					{pid: psiAudioPID1, streamType: 0x06, codec: "ac3", lang: "und"},
 					{pid: psiAudioPID2, streamType: 0x06, codec: "eac3", lang: "und"},
 				},
@@ -1820,6 +1841,7 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"one_pid_keeps_its_number_and_changes_codec",
 		"several_audio_streams_keep_the_order_the_table_gives_them",
 		"descriptors_the_parser_does_not_know_are_stepped_over",
+		"the_atsc_stream_types_tell_ac3_and_eac3_apart",
 		"a_registration_descriptor_is_enough_to_name_the_codec",
 		"private_data_without_an_audio_descriptor_is_not_audio",
 		"audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all",

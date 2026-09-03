@@ -649,6 +649,17 @@ case audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all
   psi pat=0 pmt=1
 end
 
+case the_atsc_stream_types_tell_ac3_and_eac3_apart
+  desc A/52 registers 0x81 for AC-3 and 0x87 for Enhanced AC-3, so the stream type names the codec on its own and the two are not the same codec
+  init target=1
+  chunk 474000100000b00d0001c100000001e100e8f95e7dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100100002b0280001c10000e101f0001be101f00081e102f0060a04656e670087e103f0060a04646575002642d40fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+  facts through=376 hasPAT=1 hasPMT=1 pmtVersion=0 programNumber=1 pmtPID=256 videoPID=257 videoCodec=h264 audioPIDs=258,259
+  track pid=258 streamType=129 codec=ac3 lang=eng channels=0 multichannel=0 componentType=0 hasComponentType=0
+  track pid=259 streamType=135 codec=eac3 lang=deu channels=0 multichannel=0 componentType=0 hasComponentType=0
+  events identity identity
+  psi pat=0 pmt=1
+end
+
 case a_registration_descriptor_is_enough_to_name_the_codec
   desc private-data streams registered as AC-3 or E-AC-3 are audio even with no codec descriptor
   init target=1
