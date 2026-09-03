@@ -129,6 +129,18 @@ mutate "miss a PMT program number change" "$CORE" \
 mutate "do not follow the PMT PID when the PAT moves it" "$CORE" \
   'if c.pmtPID != matchedPID {' 'if false {'
 
+mutate "keep the program number and version behind a false HasPMT" "$CORE" \
+  'c.hasPMTVersion = false
+	c.pmtVersion = 0
+	c.pmtProgramNumber = 0' 'c.hasPMTVersion = false'
+
+mutate "let a later PAT section re-choose an auto-selected program" "$CORE" \
+  '			if matchedPID > 0 {
+				break
+			}' '			if matchedPID > 0 && c.targetProgramNumber > 0 {
+				break
+			}'
+
 mutate "let the last video stream win instead of the first" "$CORE" \
   'if c.videoPID == 0 {' 'if true {' 3
 

@@ -434,7 +434,8 @@ func (c *GoCore) SetTargetProgram(ctx context.Context, programNumber uint16) (Pa
 	if c.targetProgramNumber != programNumber {
 		c.targetProgramNumber = programNumber
 		c.hasPATVersion = false
-		c.hasPMTVersion = false
+		c.patVersion = 0
+		c.forgetPMTIdentityLocked()
 		c.pmtPID = 0
 		c.patAssembler.reset()
 		c.pmtAssembler.reset()
@@ -871,7 +872,16 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 					break
 				}
 			}
-			if matchedPID > 0 && c.targetProgramNumber > 0 {
+			// The first match over the whole table wins, and "first" is the
+			// table's own order: sections by section_number ascending - which is
+			// how they are walked, not the order they arrived in - and within a
+			// section the order the entries are listed.
+			//
+			// This used to stop early only when a target had been named, so an
+			// unnamed target re-chose in every section and the last section's
+			// first programme won. A selection is a selection; a later section
+			// does not get to overwrite it.
+			if matchedPID > 0 {
 				break
 			}
 		}
@@ -882,7 +892,7 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 					c.pmtPID = matchedPID
 					c.pmtAssembler.reset()
 					c.pmtTracker.reset()
-					c.hasPMTVersion = false
+					c.forgetPMTIdentityLocked()
 					c.resetProgramStateLocked()
 				}
 			}
@@ -1002,6 +1012,25 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 		c.rawPMTPackets = allPMTPackets
 	}
 }
+
+// forgetPMTIdentityLocked drops everything the current PMT said about which
+// programme this is.
+//
+// HasPMT, the programme number and the table version are one fact - what the PMT
+// in force says - so they are given up together. Leaving the number and the
+// version behind a false HasPMT is how Facts came to describe a programme that
+// had already been discarded, and it happened on two different triggers: a
+// target change, and a PAT moving the programme to another PMT PID. Both call
+// this, so there is one answer to what "no PMT" means rather than two.
+//
+// Not folded into resetProgramStateLocked: that runs after the new identity has
+// been recorded, and clearing there would wipe the values just assigned.
+func (c *GoCore) forgetPMTIdentityLocked() {
+	c.hasPMTVersion = false
+	c.pmtVersion = 0
+	c.pmtProgramNumber = 0
+}
+
 func (c *GoCore) resetProgramStateLocked() {
 	c.videoPID = 0
 	c.videoCodec = CodecUnknown

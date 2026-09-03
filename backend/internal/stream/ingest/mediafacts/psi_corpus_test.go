@@ -995,6 +995,23 @@ func psiLifecycleCases() []psiCorpusCase {
 		}(),
 
 		func() psiCorpusCase {
+			pmtV9 := pmtSection(1, psiVideoPID, 9, 0, 0, 1, nil, esH264(psiVideoPID))
+			return psiCase("a_pat_that_moves_the_pmt_pid_forgets_the_old_program_identity",
+				"the same fact as a target switch, reached the other way: no PMT means no program number and no version, whatever named the new PID",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV9)), psiExpect{
+					hasPAT: true, hasPMT: true, pmtVersion: 9, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				}).
+				chunk(psiPackets(0, 1, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
 			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{9, 0x0900})
 			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{1, psiPMTPID1})
 			return psiCase("a_missing_section_prevents_the_table_from_activating",
@@ -1104,6 +1121,45 @@ func psiSelectionCases() []psiCorpusCase {
 				}).
 			done(),
 
+		func() psiCorpusCase {
+			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{3, psiPMTPID3})
+			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{5, psiPMTPID2})
+			return psiCase("a_target_of_zero_takes_the_first_program_of_the_whole_table",
+				"first means the table's own order - sections by section_number, entries as listed - and a later section does not get to re-choose",
+				0).
+				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec1)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID3, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{0, 0x0010})
+			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{7, psiPMTPID2}, patProgram{9, psiPMTPID3})
+			return psiCase("a_target_of_zero_reaches_into_a_later_section_when_the_first_names_only_the_nit",
+				"a section that names no service is not a reason to stop looking, and the NIT is not a service",
+				0).
+				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec1)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{3, psiPMTPID3})
+			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{5, psiPMTPID2})
+			return psiCase("sections_delivered_out_of_order_are_read_in_section_number_order",
+				"the table is assembled before it is read, so which packet arrived first decides neither the program nor the order of the raw table",
+				0).
+				chunk(flatten(psiPackets(0, 0, 0, sec1), psiPackets(0, 1, 0, sec0)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID3, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{1, 0},
+				}).
+				done()
+		}(),
+
 		psiCase("switching_the_target_program_discards_everything_about_the_old_one",
 			"a zap to another service on the same transport keeps no fact from the service left behind",
 			1).
@@ -1112,40 +1168,25 @@ func psiSelectionCases() []psiCorpusCase {
 				videoPID: psiVideoPID, videoCodec: CodecH264,
 				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
 			}).
-			target(2, psiExpect{programNumber: 1, videoCodec: CodecUnknown, events: identity(1)}).
+			target(2, psiExpect{videoCodec: CodecUnknown, events: identity(1)}).
 			chunk(flatten(psiPackets(0, 1, 0, multiPAT), psiPackets(psiPMTPID2, 0, 0, pmt2)), psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 2, pmtPID: psiPMTPID2,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
 				events: identity(2), patPackets: []int{2}, pmtPackets: []int{3},
 			}).
-			noting("programNumber still reports the program that was just discarded, because " +
-				"SetTargetProgram clears neither pmtProgramNumber nor pmtVersion. See the " +
-				"stale-fact case below; this line records the defect, it does not bless it.").
 			done(),
 
 		func() psiCorpusCase {
 			pmtV9 := pmtSection(1, psiVideoPID, 9, 0, 0, 1, nil, esH264(psiVideoPID))
-			return psiCase("a_target_switch_leaves_the_old_program_number_and_version_behind",
-				"the fields SetTargetProgram does not clear, stated on their own so the defect is not hidden inside a longer case",
+			return psiCase("a_target_switch_forgets_the_program_number_and_version",
+				"HasPMT, the program number and the table version are one fact, so a discarded program takes all three with it",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, multiPAT), psiPackets(psiPMTPID1, 0, 0, pmtV9)), psiExpect{
 					hasPAT: true, hasPMT: true, pmtVersion: 9, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
 				}).
-				target(2, psiExpect{
-					pmtVersion: 9, programNumber: 1, videoCodec: CodecUnknown,
-					events: identity(1),
-				}).
-				noting("DEFECT, recorded not blessed. SetTargetProgram documents that changing the " +
-					"target discards everything read about the previous program, and it clears HasPAT, " +
-					"HasPMT, the PMT PID and every stream fact - but not pmtProgramNumber and not " +
-					"pmtVersion. So Facts reports programNumber=1 and pmtVersion=9 for a program that " +
-					"has been discarded, while HasPMT is false. Reset() clears both, so the two paths " +
-					"disagree. No current consumer reads either field without checking HasPMT first, " +
-					"which is why this is latent rather than live. It must be settled in a Go-reference " +
-					"PR before a Rust PSI parser is written against these lines, or the Rust core will " +
-					"be made to reproduce a stale value on purpose.").
+				target(2, psiExpect{videoCodec: CodecUnknown, events: identity(1)}).
 				done()
 		}(),
 
@@ -1765,7 +1806,11 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_pat_without_the_target_program_names_no_pmt_pid",
 		"program_number_zero_is_the_network_information_table",
 		"switching_the_target_program_discards_everything_about_the_old_one",
-		"a_target_switch_leaves_the_old_program_number_and_version_behind",
+		"a_target_switch_forgets_the_program_number_and_version",
+		"a_pat_that_moves_the_pmt_pid_forgets_the_old_program_identity",
+		"a_target_of_zero_takes_the_first_program_of_the_whole_table",
+		"a_target_of_zero_reaches_into_a_later_section_when_the_first_names_only_the_nit",
+		"sections_delivered_out_of_order_are_read_in_section_number_order",
 		"setting_the_target_to_the_program_already_followed_changes_nothing",
 		// elementary streams and descriptors
 		"every_video_stream_type_the_pmt_can_declare",
@@ -1850,6 +1895,52 @@ func TestPSI_TheCoreConsumesExactlyWhatItIsGiven(t *testing.T) {
 	}
 	if got := res.ProcessedThroughOffset; got != 0 {
 		t.Errorf("SetTargetProgram reported through %d, want 0", got)
+	}
+}
+
+// TestPSI_ResetAndATargetSwitchAgreeAboutWhatIsForgotten holds the two ways a
+// core is told the programme it was following is gone to the same answer.
+//
+// Not corpus material: Reset is deliberately absent from the Core interface, so
+// no second implementation is asked to have it. The invariant it protects is
+// still worth a test, because the two paths drifted once already - Reset rebuilt
+// the whole core and so cleared the programme number and the table version,
+// while SetTargetProgram cleared neither, and Facts described a discarded
+// programme behind a false HasPMT.
+func TestPSI_ResetAndATargetSwitchAgreeAboutWhatIsForgotten(t *testing.T) {
+	pat := patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1}, patProgram{2, psiPMTPID2})
+	pmt := pmtSection(1, psiVideoPID, 9, 0, 0, 1, nil, esH264(psiVideoPID))
+
+	followingProgramOne := func() *GoCore {
+		c := NewGoCore(1)
+		if _, err := c.Ingest(context.Background(), 0,
+			chunkOf(flatten(psiPackets(0, 0, 0, pat), psiPackets(psiPMTPID1, 0, 0, pmt))...)); err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if f := c.Snapshot(); !f.HasPMT || f.ProgramNumber != 1 || f.PMTVersion != 9 {
+			t.Fatalf("setup did not establish the programme: %+v", f)
+		}
+		return c
+	}
+
+	switched, err := followingProgramOne().SetTargetProgram(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("set target: %v", err)
+	}
+	reset := followingProgramOne().Reset()
+
+	for _, tc := range []struct {
+		what  string
+		facts Facts
+	}{
+		{"SetTargetProgram", switched.Facts},
+		{"Reset", reset.Facts},
+	} {
+		if tc.facts.HasPMT || tc.facts.ProgramNumber != 0 || tc.facts.PMTVersion != 0 {
+			t.Errorf("after %s: HasPMT=%v ProgramNumber=%d PMTVersion=%d; all three describe the "+
+				"PMT in force and there is none, so all three must be zero",
+				tc.what, tc.facts.HasPMT, tc.facts.ProgramNumber, tc.facts.PMTVersion)
+		}
 	}
 }
 
