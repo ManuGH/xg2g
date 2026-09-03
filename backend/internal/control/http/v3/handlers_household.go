@@ -68,6 +68,17 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const (
+		maxLoginUsernameLen = 64
+		maxLoginPasswordLen = 128
+	)
+
+	req.Username = strings.TrimSpace(req.Username)
+	if len(req.Username) == 0 || len(req.Username) > maxLoginUsernameLen || len(req.Password) == 0 || len(req.Password) > maxLoginPasswordLen {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Input", problemcode.CodeInvalidInput, "Username and password must be valid and within length limits", nil)
+		return
+	}
+
 	clientIP := s.exposureClientKey(r, s.cfg)
 	limiter := s.getPasswordLoginLimiter()
 	if err := limiter.CheckAllowed(r.Context(), clientIP, req.Username); err != nil {

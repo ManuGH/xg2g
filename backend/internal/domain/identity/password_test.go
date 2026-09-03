@@ -39,3 +39,63 @@ func TestProfilePINHashingAndVerification(t *testing.T) {
 	assert.False(t, identity.VerifyProfilePIN("9999", pinHash))
 	assert.False(t, identity.VerifyProfilePIN("", pinHash))
 }
+
+func TestVerifyPassword_ParameterBoundingDefenseInDepth(t *testing.T) {
+	// Standard valid salt (16 bytes) and hash (32 bytes) base64
+	validSalt := "c29tZXNhbHQxMjM0NTY3OA" // 16 bytes decoded
+	validHash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" // 32 bytes decoded
+
+	tests := []struct {
+		name       string
+		hashString string
+		wantValid  bool
+	}{
+		{
+			name:       "ExorbitantMemoryDoS",
+			hashString: "$argon2id$v=19$m=4294967295,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "TooSmallMemory",
+			hashString: "$argon2id$v=19$m=1024,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "ExorbitantIterationsDoS",
+			hashString: "$argon2id$v=19$m=19456,t=1000,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "ZeroIterations",
+			hashString: "$argon2id$v=19$m=19456,t=0,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "ExorbitantThreadsDoS",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=255$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "ShortSalt",
+			hashString: "$argon2id$v=19$m=19456,t=2,p=1$c2hvcnQ$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "InvalidScheme",
+			hashString: "$bcrypt$v=19$m=19456,t=2,p=1$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+		{
+			name:       "MalformedParams",
+			hashString: "$argon2id$v=19$garbage$" + validSalt + "$" + validHash,
+			wantValid:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := identity.VerifyPassword("anyPassword123!", tc.hashString)
+			assert.Equal(t, tc.wantValid, res, "hash with invalid parameters must fail-closed")
+		})
+	}
+}

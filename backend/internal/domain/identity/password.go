@@ -45,6 +45,19 @@ func HashPassword(password string) (string, error) {
 	return encoded, nil
 }
 
+const (
+	maxArgonMemory      uint32 = 64 * 1024 // 64 MiB maximum allowed memory
+	minArgonMemory      uint32 = 8 * 1024  // 8 MiB minimum allowed memory
+	maxArgonIterations  uint32 = 10        // 10 maximum iterations
+	minArgonIterations  uint32 = 1         // 1 minimum iteration
+	maxArgonParallelism uint32 = 4         // 4 threads maximum
+	minArgonParallelism uint32 = 1         // 1 thread minimum
+	minArgonSaltLen     int    = 16        // 16 bytes minimum salt
+	maxArgonSaltLen     int    = 64        // 64 bytes maximum salt
+	minArgonKeyLen      int    = 16        // 16 bytes minimum key
+	maxArgonKeyLen      int    = 64        // 64 bytes maximum key
+)
+
 // VerifyPassword verifies a plain text password against an Argon2id encoded hash string.
 func VerifyPassword(password, encodedHash string) bool {
 	if password == "" || encodedHash == "" {
@@ -63,19 +76,30 @@ func VerifyPassword(password, encodedHash string) bool {
 		return false
 	}
 
+	// Defense-in-depth: enforce strict bounds on Argon2 parameters to prevent DoS via corrupted/manipulated persistence
+	if memory < minArgonMemory || memory > maxArgonMemory {
+		return false
+	}
+	if time < minArgonIterations || time > maxArgonIterations {
+		return false
+	}
+	if threads < minArgonParallelism || threads > maxArgonParallelism {
+		return false
+	}
+
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil || len(salt) == 0 {
+	if err != nil || len(salt) < minArgonSaltLen || len(salt) > maxArgonSaltLen {
 		return false
 	}
 
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil || len(expectedHash) == 0 || len(expectedHash) > 1024 {
+	if err != nil || len(expectedHash) < minArgonKeyLen || len(expectedHash) > maxArgonKeyLen {
 		return false
 	}
 
 	_ = version // Unused
 
-	hashLength := uint32(len(expectedHash)) // #nosec G115 -- expectedHash is bounded to 1024 bytes above.
+	hashLength := uint32(len(expectedHash)) // #nosec G115 -- expectedHash is bounded to maxArgonKeyLen above.
 	computedHash := argon2.IDKey([]byte(password), salt, time, memory, byte(threads), hashLength)
 
 	return subtle.ConstantTimeCompare(computedHash, expectedHash) == 1

@@ -84,3 +84,71 @@ func TestPasswordLogin_Security_EnumerationAndRateLimiting(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, w11.Code)
 	assert.Equal(t, "60", w11.Header().Get("Retry-After"))
 }
+
+func TestPasswordLogin_Security_InputSizeLimits(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "pwd_login_input.sqlite")
+
+	_, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
+	defer idSvc.Store().Close()
+
+	// 1. Oversized username (>64 bytes)
+	hugeUserPayload, _ := json.Marshal(map[string]any{
+		"username": bytes.Repeat([]byte("a"), 65),
+		"password": "validPassword123!",
+	})
+	reqUser := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugeUserPayload))
+	reqUser.Header.Set("Content-Type", "application/json")
+	wUser := httptest.NewRecorder()
+	handler.ServeHTTP(wUser, reqUser)
+	assert.Equal(t, http.StatusBadRequest, wUser.Code)
+
+	// 2. Oversized password (>128 bytes)
+	hugePassPayload, _ := json.Marshal(map[string]any{
+		"username": "alice",
+		"password": bytes.Repeat([]byte("p"), 129),
+	})
+	reqPass := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(hugePassPayload))
+	reqPass.Header.Set("Content-Type", "application/json")
+	wPass := httptest.NewRecorder()
+	handler.ServeHTTP(wPass, reqPass)
+	assert.Equal(t, http.StatusBadRequest, wPass.Code)
+
+	// 3. Empty fields
+	emptyPayload, _ := json.Marshal(map[string]any{"username": "   ", "password": ""})
+	reqEmpty := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(emptyPayload))
+	reqEmpty.Header.Set("Content-Type", "application/json")
+	wEmpty := httptest.NewRecorder()
+	handler.ServeHTTP(wEmpty, reqEmpty)
+	assert.Equal(t, http.StatusBadRequest, wEmpty.Code)
+}
+
+func TestPasswordLogin_Security_UntrustedXFFSpoofingBlocked(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "pwd_login_xff.sqlite")
+
+	_, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
+	defer idSvc.Store().Close()
+
+	wrongPayload, _ := json.Marshal(map[string]any{"username": "alice", "password": "wrong"})
+
+	// An attacker sends 10 requests from remote addr 1.2.3.4:1234 but sets fake X-Forwarded-For headers
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(wrongPayload))
+		req.RemoteAddr = "1.2.3.4:1234"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "8.8.8.8, 9.9.9.9") // Spoofed headers
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+	}
+
+	// 11th request from the same RemoteAddr with another spoofed header must be rate limited!
+	req11 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(wrongPayload))
+	req11.RemoteAddr = "1.2.3.4:1234"
+	req11.Header.Set("Content-Type", "application/json")
+	req11.Header.Set("X-Forwarded-For", "10.10.10.10")
+	w11 := httptest.NewRecorder()
+	handler.ServeHTTP(w11, req11)
+
+	assert.Equal(t, http.StatusTooManyRequests, w11.Code, "untrusted XFF must NOT bypass per-IP rate limiter")
+}
