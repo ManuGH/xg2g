@@ -5,7 +5,7 @@ import type { VideoElementRef, V3SessionHeartbeatResponse, V3SessionStatusRespon
 import type { AppError } from '../../../types/errors';
 import type { PlaybackFailureReportOptions } from '../semantics/playbackFailureSemantics';
 import { debugError, debugLog, debugWarn } from '../../../utils/logging';
-import { HEARTBEAT_REQUEST_TIMEOUT_MS, timeoutSignal } from '../utils/requestTimeout';
+import { HEARTBEAT_REQUEST_TIMEOUT_MS } from '../utils/requestTimeout';
 
 export const HEARTBEAT_RETRY_INTERVAL_MS = 5_000;
 export const CONNECTION_LOST_AFTER_FAILURES = 2;
@@ -68,6 +68,7 @@ export function useSessionHeartbeat({
     let cancelled = false;
     let consecutiveFailures = 0;
     let currentDelayMs = safeIntervalMs;
+    const lifecycleAbort = new AbortController();
 
     const stopLoop = () => {
       cancelled = true;
@@ -75,6 +76,7 @@ export function useSessionHeartbeat({
         window.clearTimeout(timerId);
         timerId = null;
       }
+      lifecycleAbort.abort();
     };
 
     const schedule = (delayMs: number) => {
@@ -100,13 +102,24 @@ export function useSessionHeartbeat({
         1000,
         Math.min(currentDelayMs, safeIntervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS),
       );
+
+      const beatAbort = new AbortController();
+      const timeoutId = window.setTimeout(() => {
+        beatAbort.abort(new DOMException('Timeout', 'TimeoutError'));
+      }, heartbeatRequestTimeoutMs);
+
+      const onLifecycleAbort = () => {
+        beatAbort.abort(new DOMException('Aborted', 'AbortError'));
+      };
+      lifecycleAbort.signal.addEventListener('abort', onLifecycleAbort, { once: true });
+
       try {
         const { response: res } = await fetchWithRecoveredSessionCookie(
           'useSessionHeartbeat.heartbeat',
           () => fetch(`${apiBase}/sessions/${trackedSessionId}/heartbeat`, {
             method: 'POST',
             headers: authHeaders(true),
-            signal: timeoutSignal(heartbeatRequestTimeoutMs),
+            signal: beatAbort.signal,
           })
         );
 
@@ -158,7 +171,7 @@ export function useSessionHeartbeat({
           }
         } else if (res.status === 200) {
           const data: V3SessionHeartbeatResponse = await res.json();
-          if (sessionIdRef.current !== trackedSessionId) {
+          if (cancelled || sessionIdRef.current !== trackedSessionId) {
             return;
           }
           if (!data.acknowledged || !data.leaseExpiresAt || data.sessionId !== trackedSessionId) {
@@ -187,6 +200,9 @@ export function useSessionHeartbeat({
           setLeaseExpiresAt(data.leaseExpiresAt);
           debugLog('[V3Player][Heartbeat] Lease extended:', data.leaseExpiresAt);
           void refreshSessionSnapshot(trackedSessionId);
+          if (cancelled || sessionIdRef.current !== trackedSessionId) {
+            return;
+          }
           consecutiveFailures = 0;
           setConnectionLost(false);
           schedule(safeIntervalMs);
@@ -237,9 +253,12 @@ export function useSessionHeartbeat({
           noteUnreachable();
         }
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || sessionIdRef.current !== trackedSessionId) return;
         debugError('[V3Player][Heartbeat] Network error:', err);
         noteUnreachable();
+      } finally {
+        window.clearTimeout(timeoutId);
+        lifecycleAbort.signal.removeEventListener('abort', onLifecycleAbort);
       }
     };
 

@@ -1019,7 +1019,11 @@ export function usePlaybackOrchestrator(
     }
     if (hadActivePlayback) {
       resetPlaybackEngine();
-      await sleep(75);
+      try {
+        await sleep(75);
+      } catch {
+        return;
+      }
     }
     if (activeSessionId) {
       await sendStopIntent(activeSessionId);
@@ -1076,6 +1080,7 @@ export function usePlaybackOrchestrator(
     automaticProfileMemoryRef,
     vodFetchRef,
     vodRetryRef,
+    timerRegistry,
     setActiveRecordingId,
     setCapabilitySnapshot,
     setTraceId,

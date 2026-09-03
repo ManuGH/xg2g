@@ -27,7 +27,7 @@ export interface UsePlayerAudioTracksResult {
   activeAudioTrack: number;
   handleAudioTracksUpdated: (nextTracks: PlayerAudioTrack[]) => void;
   setActiveAudioTrack: Dispatch<SetStateAction<number>>;
-  changeAudioTrack: (trackId: number) => void;
+  changeAudioTrack: (trackIdentifier: PlayerAudioTrack | number) => void;
   resetAudioTracks: () => void;
 }
 
@@ -44,19 +44,31 @@ export function usePlayerAudioTracks({
     ));
   }, []);
 
-  const changeAudioTrack = useCallback((trackId: number) => {
+  const changeAudioTrack = useCallback((trackIdentifier: PlayerAudioTrack | number) => {
+    const targetTrack = typeof trackIdentifier === 'object' && trackIdentifier !== null
+      ? trackIdentifier
+      : audioTracks.find((t) => t.id === trackIdentifier)
+        ?? audioTracks.find((t) => t.engineIndex === trackIdentifier)
+        ?? null;
+
     if (hlsRef.current) {
-      hlsRef.current.audioTrack = trackId;
+      const hlsIndex = targetTrack ? targetTrack.engineIndex : (typeof trackIdentifier === 'number' ? trackIdentifier : 0);
+      hlsRef.current.audioTrack = hlsIndex;
     } else if (videoRef.current && 'audioTracks' in videoRef.current) {
       const tracks = (videoRef.current as any).audioTracks;
       if (tracks) {
         for (let i = 0; i < tracks.length; i++) {
-          tracks[i].enabled = (i === trackId);
+          const nativeTrack = tracks[i];
+          const matchesNativeId = Boolean(targetTrack?.nativeId && nativeTrack.id === targetTrack.nativeId);
+          const matchesEngineIndex = targetTrack?.engineIndex !== undefined ? i === targetTrack.engineIndex : false;
+          const fallbackMatchesNumber = typeof trackIdentifier === 'number' && i === trackIdentifier && !targetTrack?.nativeId;
+          nativeTrack.enabled = Boolean(matchesNativeId || matchesEngineIndex || fallbackMatchesNumber);
         }
       }
     }
-    setActiveAudioTrack(trackId);
-  }, [hlsRef, videoRef]);
+    const nextActiveId = targetTrack ? targetTrack.id : (typeof trackIdentifier === 'number' ? trackIdentifier : -1);
+    setActiveAudioTrack(nextActiveId);
+  }, [audioTracks, hlsRef, videoRef]);
 
   const resetAudioTracks = useCallback(() => {
     setAudioTracks([]);

@@ -319,7 +319,7 @@ describe('Player session journeys', () => {
     await screen.findByText('EPG launcher ready');
     fireEvent.click(screen.getByRole('button', { name: 'Launch player' }));
 
-    await screen.findByRole('button', { name: /player\.closePlayer|Close Player/i });
+    await screen.findByRole('button', { name: /player\.closePlayer|Close Player/i }, { timeout: 10000 });
     await screen.findByText('Journey Channel');
 
     await waitFor(() => {

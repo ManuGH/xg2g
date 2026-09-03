@@ -86,6 +86,8 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
 
   const hasInterval = (name: string): boolean => intervals.has(name);
 
+  const delays = new Set<{ cancel: () => void }>();
+
   const clearAll = (): void => {
     for (const id of timeouts.values()) {
       window.clearTimeout(id);
@@ -96,6 +98,11 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
       window.clearInterval(id);
     }
     intervals.clear();
+
+    for (const entry of Array.from(delays)) {
+      entry.cancel();
+    }
+    delays.clear();
   };
 
   const delay = (delayMs: number, signal?: AbortSignal): Promise<void> => {
@@ -104,21 +111,32 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
     }
     return new Promise<void>((resolve, reject) => {
       let timerId: number | undefined;
+      const cleanup = () => {
+        if (signal) {
+          signal.removeEventListener('abort', onAbort);
+        }
+        delays.delete(delayEntry);
+      };
+
       const onAbort = () => {
         if (timerId !== undefined) {
           window.clearTimeout(timerId);
         }
+        cleanup();
         reject(new DOMException('Aborted', 'AbortError'));
       };
+
+      const delayEntry = {
+        cancel: onAbort,
+      };
+      delays.add(delayEntry);
 
       if (signal) {
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
       timerId = window.setTimeout(() => {
-        if (signal) {
-          signal.removeEventListener('abort', onAbort);
-        }
+        cleanup();
         resolve();
       }, delayMs);
     });

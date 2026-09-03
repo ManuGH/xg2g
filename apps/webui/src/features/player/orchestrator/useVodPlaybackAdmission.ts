@@ -34,8 +34,11 @@ import { buildContractState } from './contractErrors';
 import type { AppError } from '../../../types/errors';
 import type { PlaybackFailureReportOptions } from '../semantics/playbackFailureSemantics';
 
+import type { EngineTimerRegistry } from './engineTimerRegistry';
+
 export interface UseVodPlaybackAdmissionProps {
   apiBase: string;
+  timerRegistry: EngineTimerRegistry;
   explicitProfile: string;
   ensureSessionCookie: () => Promise<void>;
   allocatePlaybackEpoch: () => number;
@@ -104,6 +107,7 @@ export function useVodPlaybackAdmission({
   automaticProfileMemoryRef,
   vodFetchRef,
   vodRetryRef,
+  timerRegistry,
   setActiveRecordingId,
   setCapabilitySnapshot,
   setTraceId,
@@ -374,7 +378,8 @@ export function useVodPlaybackAdmission({
                 sessionEpoch: 0,
                 phase: 'building',
               });
-              vodRetryRef.current = window.setTimeout(() => {
+              vodRetryRef.current = timerRegistry.setTimeout('vodRetry', () => {
+                vodRetryRef.current = null;
                 if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
                   void startRecordingPlaybackRef.current?.(id, profileForAttempt, startOffsetMs);
                 }
@@ -396,6 +401,7 @@ export function useVodPlaybackAdmission({
       }
     } catch (err: unknown) {
       if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       debugError(err);
       mergeSessionPlaybackTrace(extractPlaybackTrace(err));
       reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
