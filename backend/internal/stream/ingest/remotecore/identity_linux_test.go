@@ -67,6 +67,11 @@ func startGroup(t *testing.T, args ...string) *exec.Cmd {
 // the test would be racing the shell: a TERM that arrives before the trap is in
 // place takes the default action, and the descendant dies quietly instead of
 // recording anything.
+//
+// The record itself is published by rename. The shell's > creates and truncates
+// before printf writes, so a handler that wrote the marker in place would put an
+// empty file at that path first, and a reader watching for the path to exist can
+// win that race and read nothing.
 func leaderWithARecordingDescendant(t *testing.T) (script, marker, ready string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -75,7 +80,7 @@ func leaderWithARecordingDescendant(t *testing.T) (script, marker, ready string)
 	ready = filepath.Join(dir, "ready")
 	body := "#!/bin/sh\n" +
 		"# $1: where the descendant records the signal. $2: its handler is armed.\n" +
-		"( trap 'printf reached > \"$1\"; exit 0' TERM\n" +
+		"( trap 'printf reached > \"${1}.part\"; mv \"${1}.part\" \"$1\"; exit 0' TERM\n" +
 		"  : > \"$2\"\n" +
 		"  sleep 300 & wait ) &\n" +
 		"exit 0\n"
@@ -86,6 +91,12 @@ func leaderWithARecordingDescendant(t *testing.T) (script, marker, ready string)
 }
 
 // waitForFile blocks until path exists, or fails the test.
+//
+// Existence is the whole observation, so a marker whose content is then read has
+// to arrive complete or not at all - written somewhere else and renamed into
+// place. A marker written straight to its path is observable, and empty, from
+// the moment it is created. A marker that only signals by existing - the ready
+// handshake below is written with `: >` and holds nothing - has nothing to tear.
 func waitForFile(t *testing.T, path, what string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
