@@ -480,6 +480,24 @@ func patOfSize(programs int, targetPID uint16) []byte {
 	return patSection(psiTSID, 0, 0, 0, 1, entries...)
 }
 
+// continuationPackets carries `body` on `pid` as packets with no payload unit
+// start, which is how the rest of a section that began in an earlier packet
+// arrives.
+func continuationPackets(pid uint16, startCC uint8, body []byte) [][]byte {
+	var out [][]byte
+	cc := startCC
+	for len(body) > 0 {
+		take := TSPacketSize - 4
+		if take > len(body) {
+			take = len(body)
+		}
+		out = append(out, psiPacketRaw(pid, false, cc, body[:take]))
+		body = body[take:]
+		cc = (cc + 1) & 0x0F
+	}
+	return out
+}
+
 // declaringLength is the first bytes of a section announcing `length` after the
 // length field, with the syntax bits a PAT is required to carry.
 func declaringLength(length int) []byte {
@@ -949,23 +967,64 @@ func psiRejectionCases() []psiCorpusCase {
 		}(),
 
 		func() psiCorpusCase {
-			// The same declaration, arriving in the one shape that used to reach
-			// the assembler without the scan ever seeing it.
+			// The same impossible length, arriving in the one shape that reaches
+			// the assembler without the scan ever seeing the header.
+			//
+			// declaringLength's first byte is a pointer field, so the header
+			// itself is bytes 1..3 of it: splitting after byte 2 leaves the
+			// assembler completing [table_id, flags, length-low] and refusing it
+			// for its length. Splitting one byte earlier would leave the flags
+			// byte at 0x00 and the section would be refused for its syntax bits
+			// instead, proving the wrong thing.
 			sectionA := pat364Section(psiPMTPID1)
 			illegal := declaringLength(0x0FFF)
 			payload1 := append([]byte{181}, sectionA[183:]...)
-			payload1 = append(payload1, illegal[0], illegal[1])
+			payload1 = append(payload1, illegal[1], illegal[2])
 			if len(payload1) != TSPacketSize-4 {
 				panic("psi corpus: the split-header payload is not a full payload")
 			}
+			// Behind the refused header sits a section that would be accepted if
+			// anything went looking for it. Nothing may: the length that would
+			// say where the next section starts is the one just refused, so the
+			// rest of this payload has no locatable content at all.
+			smuggled := patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})
+			continuation := append(cloneSlice(illegal[3:]), smuggled...)
+
 			return psiCase("an_impossible_length_in_a_split_header_is_refused_too",
-				"the header that says how much to collect is checked wherever it completes, so a section cannot reserve four kilobytes by arriving in two pieces",
+				"the header that says how much to collect is checked wherever it completes, and what follows a refused one is not scanned for a section it cannot locate",
 				1).
 				chunk([][]byte{
 					psiPackets(0, 0, 0, sectionA)[0],
 					psiPacketRaw(0, true, 1, payload1),
-					psiPacketRaw(0, false, 2, illegal[2:]),
+					psiPacketRaw(0, false, 2, continuation),
 				}, psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The oversized PAT again, this time with its header split across the
+			// packet boundary. A bound taken from the field width rather than
+			// from what a PAT may declare would collect all 1028 bytes here,
+			// find an intact CRC, and follow the programme it names - so the
+			// difference between the two bounds is a programme selected or not,
+			// on the path where the scan never sees the header.
+			sectionA := pat364Section(psiPMTPID1)
+			tooLong := patOfSize(254, psiPMTPID2)
+			payload1 := append([]byte{181}, sectionA[183:]...)
+			payload1 = append(payload1, tooLong[0], tooLong[1])
+			if len(payload1) != TSPacketSize-4 {
+				panic("psi corpus: the split-header payload is not a full payload")
+			}
+			return psiCase("a_split_header_declaring_too_long_a_section_is_never_assembled",
+				"the same section one programme past the limit, arriving so that only the assembler ever sees its header, is refused there too and its remaining packets find nothing to continue",
+				1).
+				chunk(append([][]byte{
+					psiPackets(0, 0, 0, sectionA)[0],
+					psiPacketRaw(0, true, 1, payload1),
+				}, continuationPackets(0, 2, tooLong[2:])...), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
 					events: identity(1), patPackets: []int{0, 1},
 				}).
@@ -2116,6 +2175,7 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_pat_longer_than_a_section_may_be_is_never_assembled",
 		"a_section_declaring_more_than_a_pat_may_is_refused",
 		"an_impossible_length_in_a_split_header_is_refused_too",
+		"a_split_header_declaring_too_long_a_section_is_never_assembled",
 		"a_section_whose_syntax_bits_are_wrong_is_not_this_tables_section",
 		"a_section_of_another_table_on_the_pat_pid_is_not_a_pat",
 		"a_section_of_another_table_split_across_packets_is_not_a_pat",

@@ -108,6 +108,9 @@ mutate "collect a section that numbers itself beyond its own table" "$CORE" \
 		return
 	}'
 
+mutate "resume the scan inside a section whose length was refused" "$CORE" \
+  'return consumed + len(chunk)' 'return consumed'
+
 mutate "let a PAT or PMT declare the whole twelve-bit length" "$PSI" \
   'if length > maxPSISectionLength {' 'if length > 0x0FFF {'
 
