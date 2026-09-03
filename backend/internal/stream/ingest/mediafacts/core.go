@@ -780,12 +780,13 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			break
 		}
 
-		tableID := payload[offset]
-		expectedTableID := byte(0x00)
-		if !isPAT {
-			expectedTableID = 0x02
-		}
-		if tableID != expectedTableID {
+		// A table_id that is not the one this PID is being read for ends the
+		// scan: whatever follows belongs to another table, and its section
+		// length cannot be trusted to say where the next one of ours begins.
+		// This is where the scan stops; whether a section is ACCEPTED is
+		// decided once, on the completed section, so that a section assembled
+		// across packets cannot reach interpretation without the same check.
+		if payload[offset] != expectedTableIDFor(isPAT) {
 			break
 		}
 
@@ -809,6 +810,19 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 }
 func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPackets [][]byte) {
 	if len(table) < 12 {
+		return
+	}
+
+	// The table this section claims to be, checked here rather than only where a
+	// section header happens to be scanned whole inside one payload.
+	//
+	// A section whose first bytes land at the very end of a packet is stashed by
+	// the assembler before the scan reaches its table_id, and used to arrive here
+	// unexamined - so an SDT section split that way was interpreted as a PAT and
+	// moved the programme to another PMT PID. The CRC does not discriminate
+	// between tables; it only says the bytes are intact. Both paths end here, so
+	// this is the one place where being the wrong table is refused.
+	if table[0] != expectedTableIDFor(isPAT) {
 		return
 	}
 
@@ -911,10 +925,23 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 				esStart := 12 + progInfoLen
 				esEnd := len(sData) - 4
 
-				for i := esStart; i+5 <= esEnd && i < len(sData); {
+				for i := esStart; i+5 <= esEnd; {
 					st := sData[i]
 					elemPID := ((uint16(sData[i+1]) & 0x1F) << 8) | uint16(sData[i+2])
 					esInfoLen := int((uint16(sData[i+3]&0x0F) << 8) | uint16(sData[i+4]))
+
+					// The entry has to fit inside the elementary stream loop, which
+					// ends where the CRC begins. An entry that declares more than is
+					// there is not an entry: its own length is the only thing that
+					// says where the next one starts, so nothing after it can be
+					// located either, and the walk ends rather than reading past the
+					// bound. Bounding this by len(sData) instead handed the section's
+					// own CRC to the descriptor parser, which was enough to invent an
+					// audio track the PMT never declared.
+					if i+5+esInfoLen > esEnd {
+						break
+					}
+					descriptors := sData[i+5 : i+5+esInfoLen]
 
 					switch st {
 					case 0x1B: // H.264 / AVC
@@ -937,10 +964,6 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 						// than stopped at the video entry: the audio streams that
 						// follow it are needed to tell "video descrambled, audio did
 						// not" apart from "nothing descrambled".
-						descriptors := []byte(nil)
-						if dStart := i + 5; dStart+esInfoLen <= len(sData) {
-							descriptors = sData[dStart : dStart+esInfoLen]
-						}
 						if isAudioStreamType(st, descriptors) {
 							c.audioPIDs = appendPID(c.audioPIDs, elemPID)
 							codec := AudioCodecFromStreamType(st, descriptors)

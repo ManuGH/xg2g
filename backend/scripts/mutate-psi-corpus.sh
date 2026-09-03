@@ -148,8 +148,15 @@ mutate "ignore a continuity counter gap" "$CORE" \
 mutate "ignore the pointer field and start at the payload" "$CORE" \
   'offset = 1 + pointerField' 'offset = 1'
 
-mutate "accept any table_id where the header is scanned" "$CORE" \
-  'if tableID != expectedTableID {' 'if tableID != expectedTableID && false {'
+mutate "do not stop the scan at a table this PID is not read for" "$CORE" \
+  'if payload[offset] != expectedTableIDFor(isPAT) {' \
+  'if payload[offset] != expectedTableIDFor(isPAT) && false {'
+
+mutate "interpret a completed section without checking which table it is" "$CORE" \
+  'if table[0] != expectedTableIDFor(isPAT) {' 'if table[0] != expectedTableIDFor(isPAT) && false {'
+
+mutate "bound an ES entry by the section instead of the elementary stream loop" "$CORE" \
+  'if i+5+esInfoLen > esEnd {' 'if i+5+esInfoLen > len(sData) {'
 
 EQUIVALENT_REASON="the PAT and PMT scans each re-check len(sData) < 12 per section, so for every section the packet scanner can deliver the early guard changes nothing observable"
 mutate "accept a section too short to hold its fields" "$CORE" \

@@ -453,6 +453,71 @@ func bigPAT3Section(targetPID uint16) []byte {
 	return s
 }
 
+// pat364Section is sized so that its first packet leaves exactly 181 bytes,
+// which puts the section after it 2 bytes from the end of the next payload -
+// the split that used to carry a section past the table_id check.
+func pat364Section(targetPID uint16) []byte {
+	programs := []patProgram{{1, targetPID}}
+	for i := 0; i < 87; i++ {
+		programs = append(programs, patProgram{number: uint16(100 + i), pid: uint16(0x0400 + i)})
+	}
+	s := patSection(psiTSID, 0, 0, 0, 1, programs...)
+	if len(s) != 364 {
+		panic("psi corpus: the split-header PAT is no longer 364 bytes")
+	}
+	return s
+}
+
+// foreignTableSection is well formed in every respect except that it announces
+// another table. Its CRC is recomputed so that only the table_id distinguishes
+// it from a PAT that would move the programme to a different PMT PID.
+func foreignTableSection(tableID byte, pmtPID uint16) []byte {
+	s := patSection(psiTSID, 1, 0, 0, 1, patProgram{1, pmtPID})
+	s[0] = tableID
+	crc := psiCRC32(s[:len(s)-4])
+	s[len(s)-4], s[len(s)-3] = byte(crc>>24), byte(crc>>16)
+	s[len(s)-2], s[len(s)-1] = byte(crc>>8), byte(crc)
+	return s
+}
+
+// pmtOverreachingESInfo is a PMT whose last elementary stream entry declares
+// four descriptor bytes that are not inside the elementary stream loop: the
+// four bytes after it are the section's own CRC.
+//
+// The CRC is steered until it begins with a descriptor tag the parser accepts,
+// so that a bound of len(sData) and a bound of esEnd give visibly different
+// answers. Without that collision both bounds agree that there is no track, and
+// the case would not tell them apart.
+func pmtOverreachingESInfo() []byte {
+	for filler := 0; filler < 1<<20; filler++ {
+		pi := []byte{0x09, 0x03, byte(filler >> 16), byte(filler >> 8), byte(filler)}
+		sec := pmtSection(1, psiVideoPID, 0, 0, 0, 1, pi,
+			esH264(psiVideoPID),
+			esAC3(psiAudioPID1, descAC3(0x02)),
+		)
+		// Drop the four descriptor bytes, leave ES_info_length claiming them, and
+		// shrink section_length so the section is otherwise well formed.
+		out := append(cloneSlice(sec[:len(sec)-8]), 0, 0, 0, 0)
+		secLen := len(out) - 3
+		out[1] = 0xB0 | byte((secLen>>8)&0x0F)
+		out[2] = byte(secLen)
+		crc := psiCRC32(out[:len(out)-4])
+		out[len(out)-4], out[len(out)-3] = byte(crc>>24), byte(crc>>16)
+		out[len(out)-2], out[len(out)-1] = byte(crc>>8), byte(crc)
+
+		switch byte(crc >> 24) {
+		case descriptorAC3, descriptorEnhAC3, descriptorDTS, descriptorAAC, descriptorDTSHD:
+		default:
+			continue
+		}
+		if byte(crc>>16) > 2 {
+			continue
+		}
+		return out
+	}
+	panic("psi corpus: no section CRC that reads as a descriptor tag")
+}
+
 // shortValidCRCSection is 11 bytes: one short of the 12 the parser needs to read
 // the fields it reads, but with a correct CRC and a last_section_number of 0, so
 // that the length check is the only thing standing between it and a PAT scan
@@ -726,6 +791,60 @@ func psiRejectionCases() []psiCorpusCase {
 				"a valid CRC says the bytes are intact, not that they are the table this PID is being read for",
 				1).
 				chunk(psiPackets(0, 0, 0, fake), nothing).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			sectionA := pat364Section(psiPMTPID1)
+			fake := foreignTableSection(0x42, psiPMTPID2)
+			payload1 := append([]byte{181}, sectionA[183:]...)
+			payload1 = append(payload1, fake[:2]...)
+			if len(payload1) != TSPacketSize-4 {
+				panic("psi corpus: the split-header payload is not a full payload")
+			}
+			return psiCase("a_section_of_another_table_split_across_packets_is_not_a_pat",
+				"the table_id of a section whose header arrived in two packets is checked on the completed section, not skipped because the scan never saw it",
+				1).
+				chunk([][]byte{
+					psiPackets(0, 0, 0, sectionA)[0],
+					psiPacketRaw(0, true, 1, payload1),
+					psiPacketRaw(0, false, 2, fake[2:]),
+				}, psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			return psiCase("an_es_entry_declaring_more_descriptors_than_the_loop_holds_is_not_read",
+				"an entry that runs past the elementary stream loop ends the walk; the section's own CRC bytes are not its descriptors",
+				1).
+				chunk(flatten(
+					psiPackets(0, 0, 0, patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1})),
+					psiPackets(psiPMTPID1, 0, 0, pmtOverreachingESInfo())), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A foreign section standing in front of a real one, both whole inside
+			// the same payload.
+			payload := append([]byte{0x00}, foreignTableSection(0x42, psiPMTPID2)...)
+			payload = append(payload, patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1})...)
+			return psiCase("a_foreign_table_ends_the_scan_of_the_payload_it_is_in",
+				"the scan stops at the first section that is not the table this PID is read for, and does not step over it to the one behind",
+				1).
+				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, nothing).
+				noting("This pins that the scan STOPS rather than skipping the foreign section and " +
+					"continuing. Sections are self-delimiting, so stepping over one and reading the " +
+					"PAT behind it would also be defensible and is arguably closer to 13818-1. The " +
+					"reference has always stopped; that has not been adjudicated. Kept as a case " +
+					"because the scan-level table_id check is otherwise unobservable now that the " +
+					"completed-section check refuses the foreign section anyway.").
 				done()
 		}(),
 
@@ -1628,6 +1747,9 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_section_too_short_to_hold_its_fields_is_dropped",
 		"a_section_numbered_outside_the_table_does_not_complete_it",
 		"a_section_of_another_table_on_the_pat_pid_is_not_a_pat",
+		"a_section_of_another_table_split_across_packets_is_not_a_pat",
+		"an_es_entry_declaring_more_descriptors_than_the_loop_holds_is_not_read",
+		"a_foreign_table_ends_the_scan_of_the_payload_it_is_in",
 		"the_same_counter_with_different_bytes_resets_assembly",
 		// table lifecycle
 		"a_new_pmt_version_on_the_same_pid_is_a_new_program_identity",
