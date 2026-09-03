@@ -101,6 +101,23 @@ mutate "accept a section whose CRC is wrong" "$CORE" \
 mutate "accept a section that is not yet current" "$CORE" \
   'if currentNext != 1 {' 'if currentNext != 1 && false {'
 
+mutate "collect a section that numbers itself beyond its own table" "$CORE" \
+  'if sectionNum > lastSectionNum {
+		return
+	}' 'if false {
+		return
+	}'
+
+mutate "let a PAT or PMT declare the whole twelve-bit length" "$PSI" \
+  'if length > maxPSISectionLength {' 'if length > 0x0FFF {'
+
+mutate "stop requiring the long section syntax" "$PSI" \
+  'if prefix[1]&0x80 == 0 || prefix[1]&0x40 != 0 {' 'if prefix[1]&0x40 != 0 {'
+
+mutate "stop requiring the fixed zero bit" "$PSI" \
+  'if prefix[1]&0x80 == 0 || prefix[1]&0x40 != 0 {' 'if prefix[1]&0x80 == 0 {'
+
+EQUIVALENT_REASON="since a section numbering itself beyond its own table is refused before the tracker, every stored section number is inside 0..last_section_number - so a count of last+1 already implies each slot is filled, and the per-slot loop cannot be the check that fails. It is kept as the guard that would still hold if the numbering check above it were ever removed"
 mutate "activate a table with a section still missing" "$PSI" \
   'if _, ok := t.sections[i]; !ok {
 				return false
