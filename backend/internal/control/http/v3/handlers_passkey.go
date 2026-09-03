@@ -43,6 +43,15 @@ func (s *Server) SetIdentityService(svc *identity.Service) {
 	s.identityService = svc
 }
 
+func (s *Server) getPasswordLoginLimiter() *PasswordLoginLimiter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.passwordLoginLimiter == nil {
+		s.passwordLoginLimiter = NewPasswordLoginLimiter()
+	}
+	return s.passwordLoginLimiter
+}
+
 // PasskeyRegisterStart handles POST /api/v3/auth/passkey/register/start
 func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()

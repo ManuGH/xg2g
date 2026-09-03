@@ -25,10 +25,12 @@ var (
 	ErrNoCredentialsAvailable = errors.New("no passkey credentials available for user")
 	ErrChallengeExpired       = errors.New("passkey challenge expired or not found")
 	ErrInvalidSessionToken    = errors.New("invalid session token")
+	ErrAuthBusy               = errors.New("authentication service busy")
 )
 
 const (
 	maxConcurrentChallenges = 1000
+	maxConcurrentArgon2     = 4
 )
 
 type Config struct {
@@ -49,6 +51,9 @@ type Service struct {
 	mu          sync.RWMutex
 	challenges  map[string]webauthn.SessionData
 	stopCleanup chan struct{}
+
+	argon2Sem chan struct{}
+	dummyHash string
 }
 
 func NewService(cfg Config, s Store) *Service {
@@ -68,12 +73,15 @@ func NewService(cfg Config, s Store) *Service {
 		cfg.PasskeyChallengeTTL = 5 * time.Minute
 	}
 
+	dummyHash, _ := HashPassword("constant-time-dummy-password-salt")
 	svc := &Service{
 		cfg:         cfg,
 		store:       s,
 		now:         func() time.Time { return time.Now().UTC() },
 		challenges:  make(map[string]webauthn.SessionData),
 		stopCleanup: make(chan struct{}),
+		argon2Sem:   make(chan struct{}, maxConcurrentArgon2),
+		dummyHash:   dummyHash,
 	}
 	svc.startCleanupLoop()
 	return svc
@@ -1085,16 +1093,29 @@ func (s *Service) RedeemInvitationWithPassword(ctx context.Context, inviteCode, 
 func (s *Service) AuthenticateWithPassword(ctx context.Context, username, password string) (*AuthSessionResponse, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	user, err := s.store.GetUserByUsername(ctx, username)
-	if err != nil {
-		return nil, ErrInvalidPassword
+
+	targetHash := s.dummyHash
+	userFound := false
+	if err == nil && user != nil {
+		if hash, err := s.store.GetAccountPasswordHash(ctx, user.ID); err == nil && hash != "" {
+			targetHash = hash
+			userFound = true
+		}
 	}
 
-	hash, err := s.store.GetAccountPasswordHash(ctx, user.ID)
-	if err != nil || hash == "" {
-		return nil, ErrInvalidPassword
+	// Concurrency limiter bounds concurrent Argon2id verifications to prevent CPU/memory exhaustion.
+	select {
+	case s.argon2Sem <- struct{}{}:
+		defer func() { <-s.argon2Sem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(500 * time.Millisecond):
+		return nil, ErrAuthBusy
 	}
 
-	if !VerifyPassword(password, hash) {
+	// Constant-time execution: Argon2id is ALWAYS evaluated, preventing timing-based username enumeration.
+	valid := VerifyPassword(password, targetHash)
+	if !userFound || !valid {
 		return nil, ErrInvalidPassword
 	}
 

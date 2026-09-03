@@ -66,6 +66,7 @@ type Server struct {
 	householdUnlockStore household.UnlockStore
 	householdUnlockTTL   time.Duration
 	identityService      *identity.Service
+	passwordLoginLimiter *PasswordLoginLimiter
 
 	// Security
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
