@@ -974,7 +974,11 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 						// than stopped at the video entry: the audio streams that
 						// follow it are needed to tell "video descrambled, audio did
 						// not" apart from "nothing descrambled".
-						if isAudioStreamType(st, descriptors) {
+						// One decision, for one stream: either this entry is an audio
+						// elementary stream that could exist, or it is nothing. The
+						// PID list, the track list and the observers are all built
+						// inside this branch so they cannot describe different sets.
+						if isAudioStreamType(st, descriptors) && canCarryElementaryStream(elemPID) {
 							c.audioPIDs = appendPID(c.audioPIDs, elemPID)
 							codec := AudioCodecFromStreamType(st, descriptors)
 							lang := LanguageFromDescriptors(descriptors)

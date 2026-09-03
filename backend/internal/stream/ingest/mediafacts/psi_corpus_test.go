@@ -1378,31 +1378,31 @@ func psiElementaryStreamCases() []psiCorpusCase {
 		}(),
 
 		func() psiCorpusCase {
+			// The invalid PIDs are placed before, between and after the valid
+			// ones, and the valid ones include both neighbours of the reserved
+			// values, so neither the rejection nor the ordering can be an
+			// accident of where an entry happened to sit.
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				audioPIDs: []uint16{psiAudioPID1},
+				audioPIDs: []uint16{0x0001, 0x1FFE, psiAudioPID1},
 				tracks: []psiTrackExpect{
-					{pid: 0x1FFF, streamType: 0x06, codec: "ac3", lang: "deu",
-						channels: 2, componentType: 0x02, hasComponentType: true},
-					{pid: 0x0000, streamType: 0x06, codec: "ac3", lang: "eng",
-						channels: 2, componentType: 0x02, hasComponentType: true},
-					trackAC3(psiAudioPID1, "fra", 0x02, 2, false),
+					trackAC3(0x0001, "eng", 0x02, 2, false),
+					trackAC3(0x1FFE, "fra", 0x02, 2, false),
+					trackAC3(psiAudioPID1, "spa", 0x02, 2, false),
 				},
 				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
 			}
-			return psiCase("audio_declared_on_a_reserved_pid_is_not_a_stream_that_can_be_watched",
-				"the null PID and PID 0 can never carry an elementary stream, so neither becomes an audio PID",
+			return psiCase("audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all",
+				"PID 0 is the PAT and 0x1FFF is stuffing, so a track on either would be one nothing ever routes payload to; the PIDs next to them are ordinary streams",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
 					pmtV(0, esH264(psiVideoPID),
 						esAC3(0x1FFF, descs(descLanguage("deu", 0x00), descAC3(0x02))),
-						esAC3(0x0000, descs(descLanguage("eng", 0x00), descAC3(0x02))),
-						esAC3(psiAudioPID1, descs(descLanguage("fra", 0x00), descAC3(0x02)))))), w).
-				noting("audioPIDs excludes PID 0 and the null PID; audioTracks does not. So the track " +
-					"list offers two streams that the PID list says are not there, and that nothing " +
-					"will ever route payload to or watch for descrambling. Which of the two lists is " +
-					"right has not been decided - appendPID filters, appendAudioTrack does not.").
+						esAC3(0x0001, descs(descLanguage("eng", 0x00), descAC3(0x02))),
+						esAC3(0x0000, descs(descLanguage("nld", 0x00), descAC3(0x02))),
+						esAC3(0x1FFE, descs(descLanguage("fra", 0x00), descAC3(0x02))),
+						esAC3(psiAudioPID1, descs(descLanguage("spa", 0x00), descAC3(0x02)))))), w).
 				done()
 		}(),
 
@@ -1822,7 +1822,7 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"descriptors_the_parser_does_not_know_are_stepped_over",
 		"a_registration_descriptor_is_enough_to_name_the_codec",
 		"private_data_without_an_audio_descriptor_is_not_audio",
-		"audio_declared_on_a_reserved_pid_is_not_a_stream_that_can_be_watched",
+		"audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all",
 		"an_ac3_descriptor_can_carry_no_usable_channel_count",
 	} {
 		if !names[required] {
@@ -1940,6 +1940,73 @@ func TestPSI_ResetAndATargetSwitchAgreeAboutWhatIsForgotten(t *testing.T) {
 			t.Errorf("after %s: HasPMT=%v ProgramNumber=%d PMTVersion=%d; all three describe the "+
 				"PMT in force and there is none, so all three must be zero",
 				tc.what, tc.facts.HasPMT, tc.facts.ProgramNumber, tc.facts.PMTVersion)
+		}
+	}
+}
+
+// TestPSI_TheAudioStreamsAgreeAboutWhichStreamsThereAre holds the three places a
+// declared audio stream is recorded to one set.
+//
+// AudioPIDs and AudioTracks are both in Facts, but the observers are not: they
+// are internal state that decides which elementary streams are actually read.
+// All three are built from one PMT entry, and they drifted once already - the
+// PID list filtered the reserved PIDs and the track list did not, so the tracks
+// offered two streams the PID list said were not there.
+func TestPSI_TheAudioStreamsAgreeAboutWhichStreamsThereAre(t *testing.T) {
+	pat := patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1})
+	pmt := pmtSection(1, psiVideoPID, 0, 0, 0, 1, nil,
+		esH264(psiVideoPID),
+		esAC3(0x1FFF, descs(descLanguage("deu", 0x00), descAC3(0x02))),
+		esAC3(0x0001, descs(descLanguage("eng", 0x00), descAC3(0x02))),
+		esAC3(0x0000, descs(descLanguage("nld", 0x00), descAC3(0x02))),
+		esAC3(0x1FFE, descs(descLanguage("fra", 0x00), descAC3(0x02))),
+		esMP2(psiAudioPID2, descs(descLanguage("ita", 0x00))),
+	)
+
+	c := NewGoCore(1)
+	res, err := c.Ingest(context.Background(), 0,
+		chunkOf(flatten(psiPackets(0, 0, 0, pat), psiPackets(psiPMTPID1, 0, 0, pmt))...))
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	pidSet := map[uint16]bool{}
+	for _, p := range res.Facts.AudioPIDs {
+		pidSet[p] = true
+	}
+	trackSet := map[uint16]bool{}
+	for _, tr := range res.Facts.AudioTracks {
+		trackSet[tr.PID] = true
+	}
+	if len(pidSet) != len(trackSet) {
+		t.Errorf("AudioPIDs names %d streams and AudioTracks names %d", len(pidSet), len(trackSet))
+	}
+	for pid := range trackSet {
+		if !pidSet[pid] {
+			t.Errorf("PID %d has a track but is not an audio PID", pid)
+		}
+		if !canCarryElementaryStream(pid) {
+			t.Errorf("PID %d cannot carry an elementary stream and must not have been accepted", pid)
+		}
+	}
+	for pid := range pidSet {
+		if !trackSet[pid] {
+			t.Errorf("PID %d is an audio PID but has no track", pid)
+		}
+	}
+
+	// The observers follow the accepted tracks, and only the codecs whose frame
+	// headers this path reads. An observer on anything else would be reading an
+	// elementary stream nobody declared.
+	for pid := range c.audioObservers {
+		if !trackSet[pid] {
+			t.Errorf("PID %d has an observer but no accepted track", pid)
+		}
+	}
+	for _, tr := range res.Facts.AudioTracks {
+		_, hasObserver := c.audioObservers[tr.PID]
+		if want := observableAudioCodec(tr.Codec); hasObserver != want {
+			t.Errorf("PID %d codec %q: observer=%v, want %v", tr.PID, tr.Codec, hasObserver, want)
 		}
 	}
 }

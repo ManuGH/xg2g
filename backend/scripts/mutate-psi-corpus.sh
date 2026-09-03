@@ -202,8 +202,29 @@ mutate "count a multichannel declaration as six channels" "$PARSE" \
 mutate "report no language instead of und" "$PARSE" \
   'return "und"' 'return ""'
 
-mutate "let a PID of 0x1FFF become an audio stream" "$PARSE" \
-  'if pid == 0 || pid == 0x1FFF {' 'if false {'
+# Findings 4's three shapes: no guard at all, and each of the two lists keeping a
+# guard the other lost. The third is expressible only because the mutation moves
+# the append outside the accepted branch - in the source both lists are built
+# inside one decision, which is what stops them drifting.
+mutate "accept an audio stream on a PID that cannot carry one" "$CORE" \
+  'if isAudioStreamType(st, descriptors) && canCarryElementaryStream(elemPID) {' \
+  'if isAudioStreamType(st, descriptors) {'
+
+mutate "guard the PID list but not the track list" "$CORE" \
+  'if isAudioStreamType(st, descriptors) && canCarryElementaryStream(elemPID) {
+							c.audioPIDs = appendPID(c.audioPIDs, elemPID)' \
+  'if isAudioStreamType(st, descriptors) {
+							if canCarryElementaryStream(elemPID) {
+								c.audioPIDs = appendPID(c.audioPIDs, elemPID)
+							}'
+
+mutate "guard the track list but not the PID list" "$CORE" \
+  'if isAudioStreamType(st, descriptors) && canCarryElementaryStream(elemPID) {
+							c.audioPIDs = appendPID(c.audioPIDs, elemPID)' \
+  'if isAudioStreamType(st, descriptors) {
+							c.audioPIDs = appendPID(c.audioPIDs, elemPID)
+						}
+						if isAudioStreamType(st, descriptors) && canCarryElementaryStream(elemPID) {'
 
 mutate "read the AC-3 component type without its presence flag" "$PARSE" \
   'if len(body) < 2 || body[0]&ac3ComponentTypeFlagBit == 0 {' 'if len(body) < 2 {'
