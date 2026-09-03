@@ -200,3 +200,63 @@ func TestPasswordLogin_Security_AccountBackoffAcrossIPs(t *testing.T) {
 	require.NoError(t, errPostSuccess)
 	assert.True(t, durationPostSuccess < 50*time.Millisecond, "success resets account backoff state")
 }
+
+func TestPasswordLogin_Security_UsernameCanonicalizationParity(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "pwd_login_canon.sqlite")
+
+	_, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
+	defer idSvc.Store().Close()
+
+	// Create user "admin"
+	adminUser := &identity.User{
+		ID:          "usr_admin",
+		Username:    "admin",
+		DisplayName: "Admin",
+		Role:        identity.RoleAdmin,
+		CreatedAt:   time.Now().UTC(),
+	}
+	require.NoError(t, idSvc.Store().PutUser(context.Background(), adminUser))
+	hash, err := identity.HashPassword("CorrectPassword123!")
+	require.NoError(t, err)
+	require.NoError(t, idSvc.Store().PutAccountPassword(context.Background(), adminUser.ID, hash, time.Now().UTC()))
+
+	variants := []string{
+		"admin",
+		"Admin",
+		"ADMIN",
+		" admin",
+		"admin ",
+		"  AdMiN  ",
+	}
+
+	// Verify identity.NormalizeUsername produces identical canonical value for all variants
+	for _, v := range variants {
+		assert.Equal(t, "admin", identity.NormalizeUsername(v), "variant %q must normalize to canonical admin", v)
+	}
+
+	// Make 3 failed login attempts with 3 different casing/whitespace variants from different IPs
+	for i := 0; i < 3; i++ {
+		payload, _ := json.Marshal(map[string]any{"username": variants[i], "password": "WrongPassword!"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(payload))
+		req.RemoteAddr = "198.51.100." + string(rune('1'+i)) + ":1234"
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	}
+
+	// The 4th attempt uses yet another variant from a 4th IP.
+	// It MUST hit the account backoff bucket (>400ms delay) proving no rate-limit bypass via whitespace or casing.
+	start := time.Now()
+	payload4, _ := json.Marshal(map[string]any{"username": variants[3], "password": "WrongPassword!"})
+	req4 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/login/password", bytes.NewReader(payload4))
+	req4.RemoteAddr = "198.51.100.4:1234"
+	req4.Header.Set("Content-Type", "application/json")
+	w4 := httptest.NewRecorder()
+	handler.ServeHTTP(w4, req4)
+	duration := time.Since(start)
+
+	assert.Equal(t, http.StatusUnauthorized, w4.Code)
+	assert.True(t, duration >= 400*time.Millisecond, "all variants must hit the same account backoff bucket (elapsed: %v)", duration)
+}

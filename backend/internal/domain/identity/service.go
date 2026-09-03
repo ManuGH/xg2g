@@ -1027,7 +1027,7 @@ func (s *Service) CreateInvitation(ctx context.Context, createdByUserID string, 
 // RedeemInvitationWithPassword redeems a 1-time invitation using a username and Argon2id password.
 func (s *Service) RedeemInvitationWithPassword(ctx context.Context, inviteCode, username, displayName, password string) (*AuthSessionResponse, error) {
 	inviteCode = strings.TrimSpace(inviteCode)
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = NormalizeUsername(username)
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
 		displayName = username
@@ -1091,7 +1091,7 @@ func (s *Service) RedeemInvitationWithPassword(ctx context.Context, inviteCode, 
 
 // AuthenticateWithPassword authenticates a user via Argon2id password hash.
 func (s *Service) AuthenticateWithPassword(ctx context.Context, username, password string) (*AuthSessionResponse, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = NormalizeUsername(username)
 	user, err := s.store.GetUserByUsername(ctx, username)
 
 	targetHash := s.dummyHash

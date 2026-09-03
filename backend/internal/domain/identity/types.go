@@ -105,9 +105,15 @@ type User struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// NormalizeUsername returns the canonical representation of a username.
+// It trims surrounding whitespace and converts to lowercase.
+func NormalizeUsername(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
 func (u User) Normalize() (User, error) {
 	u.ID = strings.TrimSpace(u.ID)
-	u.Username = strings.ToLower(strings.TrimSpace(u.Username))
+	u.Username = NormalizeUsername(u.Username)
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	if u.ID == "" {
 		return User{}, ErrInvalidUserID

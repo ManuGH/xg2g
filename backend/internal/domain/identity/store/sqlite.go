@@ -434,7 +434,7 @@ func (s *SQLiteStore) GetUser(ctx context.Context, id string) (*identity.User, e
 }
 
 func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*identity.User, error) {
-	normUser := strings.ToLower(strings.TrimSpace(username))
+	normUser := identity.NormalizeUsername(username)
 	row := s.db.QueryRowContext(ctx, `SELECT id, username, display_name, role, created_at, updated_at FROM users WHERE username = ?`, normUser)
 	var u identity.User
 	var roleStr string

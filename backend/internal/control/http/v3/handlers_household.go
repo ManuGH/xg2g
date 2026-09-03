@@ -73,13 +73,12 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		maxLoginPasswordLen = 128
 	)
 
-	req.Username = strings.TrimSpace(req.Username)
-	if len(req.Username) == 0 || len(req.Username) > maxLoginUsernameLen || len(req.Password) == 0 || len(req.Password) > maxLoginPasswordLen {
+	normUser := identity.NormalizeUsername(req.Username)
+	if len(normUser) == 0 || len(normUser) > maxLoginUsernameLen || len(req.Password) == 0 || len(req.Password) > maxLoginPasswordLen {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Input", problemcode.CodeInvalidInput, "Username and password must be valid and within length limits", nil)
 		return
 	}
 
-	normUser := strings.ToLower(req.Username)
 	clientIP := s.exposureClientKey(r, s.cfg)
 	limiter := s.getPasswordLoginLimiter()
 	if err := limiter.CheckAllowed(r.Context(), clientIP, normUser); err != nil {
@@ -93,7 +92,7 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := svc.AuthenticateWithPassword(r.Context(), req.Username, req.Password)
+	res, err := svc.AuthenticateWithPassword(r.Context(), normUser, req.Password)
 	if err != nil {
 		if errors.Is(err, identity.ErrAuthBusy) {
 			w.Header().Set("Retry-After", "5")
@@ -101,7 +100,7 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		limiter.RecordFailure(clientIP, normUser)
-		log.FromContext(r.Context()).Warn().Err(err).Str("username", req.Username).Str("client_ip", clientIP).Msg("password login failed")
+		log.FromContext(r.Context()).Warn().Err(err).Str("username", normUser).Str("client_ip", clientIP).Msg("password login failed")
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_credentials", "Invalid Credentials", problemcode.CodeUnauthorized, "Invalid username or password", nil)
 		return
 	}
