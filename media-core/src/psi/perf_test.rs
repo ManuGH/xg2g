@@ -54,6 +54,22 @@ fn seal(mut body: Vec<u8>) -> Vec<u8> {
     body
 }
 
+/// Checks that a hand-written section says how long it actually is.
+///
+/// The length byte of these fixtures is written out rather than computed, and a
+/// wrong one is not visible from the outside: the section is simply refused, the
+/// transport benchmarks the reject path instead of the parse path, and the
+/// upper-bound assertions hold trivially at zero.
+fn assert_length_field_matches(section: &[u8]) {
+    let declared = (usize::from(section[1] & 0x0F) << 8) | usize::from(section[2]);
+    assert_eq!(
+        declared + 3,
+        section.len(),
+        "section declares {declared} after its length field but is {} bytes",
+        section.len()
+    );
+}
+
 fn pat(version: u8) -> Vec<u8> {
     seal(vec![
         0x00,
@@ -75,7 +91,7 @@ fn pmt(version: u8) -> Vec<u8> {
     seal(vec![
         0x02,
         0xB0,
-        0x1C,
+        0x21,
         0x00,
         0x01,
         0xC0 | ((version & 0x1F) << 1) | 1,
@@ -232,6 +248,8 @@ fn measure(name: &str, build: fn(usize) -> Vec<u8>) {
 
 #[test]
 fn interpreting_a_chunk_stays_far_inside_what_a_caller_would_wait() {
+    assert_length_field_matches(&pat(0));
+    assert_length_field_matches(&pmt(0));
     println!(
         "PSI parse cost, one Ingest per timing ({} build, budget {:?}):",
         if cfg!(debug_assertions) {
