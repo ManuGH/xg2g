@@ -81,8 +81,21 @@ mutate "collect a section that numbers itself beyond its own table" table.rs \
             return None;
         }'
 
+mutate "let a PAT declare less than its own syntax costs" table.rs \
+  'pub(crate) const MIN_PAT_SECTION_LENGTH: usize = 9;' \
+  'pub(crate) const MIN_PAT_SECTION_LENGTH: usize = 0;'
+
+mutate "give a PMT the shorter floor a PAT has" table.rs \
+  'pub(crate) const MIN_PMT_SECTION_LENGTH: usize = 13;' \
+  'pub(crate) const MIN_PMT_SECTION_LENGTH: usize = 9;'
+
+mutate "keep the section in flight after refusing its declaration" assembler.rs \
+  '                self.discard_section();
+                // Everything handed in is given up' \
+  '                // Everything handed in is given up'
+
 mutate "let a PAT or PMT declare the whole twelve-bit length" table.rs \
-  'if length > MAX_SECTION_LENGTH {' 'if length > 0x0FFF {'
+  'length > MAX_SECTION_LENGTH {' 'length > 0x0FFF {'
 
 mutate "stop requiring the long section syntax" table.rs \
   'if prefix[1] & 0x80 == 0 || prefix[1] & 0x40 != 0 {' 'if prefix[1] & 0x40 != 0 {'

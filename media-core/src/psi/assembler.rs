@@ -37,6 +37,17 @@ pub(crate) struct SectionAssembler {
 }
 
 impl SectionAssembler {
+    /// What this assembler is holding: buffered bytes, the section length it is
+    /// waiting for, and packets kept for a section not yet emitted.
+    ///
+    /// Exposed for the one test that has to see that an impossible declaration
+    /// left nothing behind. That defect never moved a fact, so a test comparing
+    /// facts would have watched it happen and reported nothing.
+    #[cfg(test)]
+    pub(super) fn retained(&self) -> (usize, usize, usize) {
+        (self.buf.len(), self.section_len, self.raw_packets.len())
+    }
+
     /// Forgets everything, the continuity counter included.
     ///
     /// Used where the stream itself has become untrustworthy: after a
@@ -121,7 +132,7 @@ impl SectionAssembler {
                         self.reset();
                         return completed;
                     };
-                    self.feed(&payload[1..end], packet, &mut completed);
+                    self.feed(expected_table_id, &payload[1..end], packet, &mut completed);
                     if !self.buf.is_empty() {
                         // The bytes before the pointer were supposed to finish
                         // the section in flight and did not, so it never will.
@@ -137,7 +148,7 @@ impl SectionAssembler {
             // Continuation bytes with nothing to continue.
             return completed;
         } else {
-            at = self.feed(payload, packet, &mut completed);
+            at = self.feed(expected_table_id, payload, packet, &mut completed);
         }
 
         while at < payload.len() {
@@ -158,7 +169,7 @@ impl SectionAssembler {
             if payload[at] != expected_table_id {
                 break;
             }
-            let Some(full) = super::table::declaration(&payload[at..]) else {
+            let Some(full) = super::table::declaration(expected_table_id, &payload[at..]) else {
                 // An impossible declaration ends the scan of this payload. What
                 // follows it cannot be located: the length that would say where
                 // is the one that has just been refused.
@@ -182,8 +193,20 @@ impl SectionAssembler {
     }
 
     /// Adds `chunk` to the section in flight, completing it if it fits, and
-    /// returns how many bytes were taken.
-    fn feed(&mut self, chunk: &[u8], packet: &[u8], completed: &mut Vec<Completed>) -> usize {
+    /// returns how many bytes were taken - or, when the header completes into a
+    /// declaration the expected table cannot make, the whole input.
+    ///
+    /// What the assembler holds is given up entirely in that case. The defect
+    /// this closes was not a wrong fact: a section declaring nothing after its
+    /// length field left three bytes here that neither phase could act on, and
+    /// every later packet on the PID was then retained.
+    fn feed(
+        &mut self,
+        expected_table_id: u8,
+        chunk: &[u8],
+        packet: &[u8],
+        completed: &mut Vec<Completed>,
+    ) -> usize {
         if chunk.is_empty() {
             return 0;
         }
@@ -201,7 +224,7 @@ impl SectionAssembler {
             if self.buf.len() < 3 {
                 return consumed;
             }
-            let Some(full) = super::table::declaration(&self.buf) else {
+            let Some(full) = super::table::declaration(expected_table_id, &self.buf) else {
                 // The header is complete and says something a PAT or PMT cannot
                 // say. It is the only thing that could tell this assembler how
                 // much to collect, so there is nothing to wait for: the section
