@@ -498,6 +498,17 @@ func continuationPackets(pid uint16, startCC uint8, body []byte) [][]byte {
 	return out
 }
 
+// pmt364Section mirrors pat364Section on the PMT path: a section whose first
+// packet leaves exactly 181 bytes, so a pointer field puts what follows it two
+// bytes from the end of the next payload.
+func pmt364Section(programNumber uint16) []byte {
+	s := pmtSection(programNumber, psiVideoPID, 0, 0, 0, 1, descUnknown(0x09, 346))
+	if len(s) != 364 {
+		panic("psi corpus: the split-header PMT is no longer 364 bytes")
+	}
+	return s
+}
+
 // declaringLength is the first bytes of a section announcing `length` after the
 // length field, with the syntax bits a PAT is required to carry.
 func declaringLength(length int) []byte {
@@ -1040,6 +1051,156 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk(psiPackets(0, 2, 0, basePAT), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
 					events: identity(1), patPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A length below what the table's own syntax costs is not a short
+			// table, it is an impossible declaration - so it is not something to
+			// navigate by either. The section standing behind it in the same
+			// payload would be accepted if anything went looking, and nothing may.
+			payload := append([]byte{0x00}, 0x00, 0xB0, 0x00)
+			payload = append(payload, patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID2})...)
+			return psiCase("an_impossible_length_ends_the_payload_it_was_found_in",
+				"a PAT cannot declare fewer than 9 bytes after its length field, and the length of a section that cannot exist does not say where the next one starts",
+				1).
+				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, nothing).
+				chunk(psiPackets(0, 1, 0, basePAT), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The same impossible declaration, completed by the assembler rather
+			// than met whole by the scan. This is the shape that used to leave
+			// three bytes in the assembler that no branch could ever emit or
+			// drop, after which every further packet on the PID was retained.
+			sectionA := pat364Section(psiPMTPID1)
+			stub := []byte{0x00, 0xB0, 0x00}
+			payload1 := append([]byte{181}, sectionA[183:]...)
+			payload1 = append(payload1, stub[0], stub[1])
+			if len(payload1) != TSPacketSize-4 {
+				panic("psi corpus: the split-header payload is not a full payload")
+			}
+			filler := make([]byte, 0, TSPacketSize-4)
+			for len(filler)+len(stub) <= TSPacketSize-4 {
+				filler = append(filler, stub...)
+			}
+			held := psiExpect{
+				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+				events: identity(1), patPackets: []int{0, 1},
+			}
+			after := psiExpect{
+				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+				events: noEvents, patPackets: []int{0, 1},
+			}
+			return psiCase("a_zero_length_split_header_leaves_nothing_to_continue",
+				"the header completes in the assembler, is refused there, and the packets that follow it find no section in flight to add themselves to",
+				1).
+				chunk([][]byte{
+					psiPackets(0, 0, 0, sectionA)[0],
+					psiPacketRaw(0, true, 1, payload1),
+					psiPacketRaw(0, false, 2, stub[2:]),
+				}, held).
+				chunk([][]byte{
+					psiPacketRaw(0, false, 3, filler),
+					psiPacketRaw(0, false, 4, filler),
+					psiPacketRaw(0, false, 5, filler),
+				}, after).
+				chunk(psiPackets(0, 6, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{6},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A PAT with no programmes at all declares exactly 9. It is a table,
+			// and a table this short is what makes the floor a floor rather than
+			// a threshold one higher.
+			empty := patSection(psiTSID, 0, 0, 1, 1)
+			if len(empty) != minPATSectionLength+3 {
+				panic("psi corpus: an empty PAT is no longer the shortest one")
+			}
+			carrying := patSection(psiTSID, 0, 1, 1, 1, patProgram{1, psiPMTPID1})
+			return psiCase("a_pat_at_its_shortest_possible_length_is_still_a_table",
+				"nine bytes after the length field is the least a PAT can be, so a section declaring exactly that is read and completes the table it belongs to",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, empty), psiPackets(0, 1, 0, carrying)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0, 1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// A PMT with no elementary streams declares exactly 13, which is more
+			// than a PAT's floor: the two tables have different fixed parts and
+			// so different minimum lengths.
+			empty := pmtSection(1, psiVideoPID, 0, 0, 0, 1, nil)
+			if len(empty) != minPMTSectionLength+3 {
+				panic("psi corpus: an empty PMT is no longer the shortest one")
+			}
+			return psiCase("a_pmt_at_its_shortest_possible_length_is_still_a_table",
+				"thirteen after the length field is the least a PMT can be, and a programme with nothing in it is a programme",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, empty)), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoCodec: CodecUnknown,
+					events:     identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// Twelve is a length a PAT may declare and a PMT may not. The floor
+			// belongs to the table, not to PSI in general.
+			return psiCase("a_pmt_shorter_than_its_own_syntax_is_refused_where_a_pat_would_pass",
+				"a PMT carries a PCR PID and a program_info_length a PAT does not, so twelve bytes after the length field is enough for one table and not the other",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT),
+					[][]byte{psiPacketRaw(psiPMTPID1, true, 0, []byte{0x00, 0x02, 0xB0, 0x0C})}), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patPackets: []int{0},
+				}).
+				chunk(psiPackets(psiPMTPID1, 1, 0, pmtSection(1, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID))), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The wedge on the selected PMT PID. The PAT's choice must survive it
+			// and the programme's own table must still be readable afterwards.
+			sectionA := pmt364Section(1)
+			stub := []byte{0x02, 0xB0, 0x00}
+			payload1 := append([]byte{181}, sectionA[183:]...)
+			payload1 = append(payload1, stub[0], stub[1])
+			if len(payload1) != TSPacketSize-4 {
+				panic("psi corpus: the split-header PMT payload is not a full payload")
+			}
+			return psiCase("a_zero_length_split_header_on_the_pmt_pid_leaves_the_selection_intact",
+				"the same refusal on the programme's own PID: the PAT's choice stands, nothing is left in flight, and the table that follows is read normally",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT),
+					[][]byte{
+						psiPackets(psiPMTPID1, 0, 0, sectionA)[0],
+						psiPacketRaw(psiPMTPID1, true, 1, payload1),
+						psiPacketRaw(psiPMTPID1, false, 2, stub[2:]),
+					}), psiExpect{
+					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
+					videoCodec: CodecUnknown,
+					events:     identity(2), patPackets: []int{0}, pmtPackets: []int{1, 2},
+				}).
+				chunk(psiPackets(psiPMTPID1, 3, 0, pmtSection(1, psiVideoPID, 1, 0, 0, 1, nil, esH264(psiVideoPID))), psiExpect{
+					hasPAT: true, hasPMT: true, pmtVersion: 1, programNumber: 1, pmtPID: psiPMTPID1,
+					videoPID: psiVideoPID, videoCodec: CodecH264,
+					events: identity(1), patPackets: []int{0}, pmtPackets: []int{4},
 				}).
 				done()
 		}(),
@@ -2169,6 +2330,12 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"an_exact_duplicate_packet_is_ignored",
 		"a_duplicate_of_a_continuation_packet_is_ignored",
 		"a_section_too_short_to_hold_its_fields_is_dropped",
+		"an_impossible_length_ends_the_payload_it_was_found_in",
+		"a_zero_length_split_header_leaves_nothing_to_continue",
+		"a_pat_at_its_shortest_possible_length_is_still_a_table",
+		"a_pmt_at_its_shortest_possible_length_is_still_a_table",
+		"a_pmt_shorter_than_its_own_syntax_is_refused_where_a_pat_would_pass",
+		"a_zero_length_split_header_on_the_pmt_pid_leaves_the_selection_intact",
 		"a_section_numbered_outside_the_table_does_not_complete_it",
 		"a_section_numbered_beyond_the_table_leaves_it_untouched",
 		"a_pat_at_the_largest_section_it_may_declare_is_read_normally",
@@ -2407,6 +2574,85 @@ func TestPSI_TheAudioStreamsAgreeAboutWhichStreamsThereAre(t *testing.T) {
 			t.Errorf("PID %d codec %q: observer=%v, want %v", tr.PID, tr.Codec, hasObserver, want)
 		}
 	}
+}
+
+// TestPSI_AnImpossibleDeclarationLeavesNoStateBehind holds the assembler to the
+// property the corpus cannot see.
+//
+// The defect this pins was not a wrong fact. A section declaring a length its
+// table cannot have was collected: the header phase filled the buffer to three
+// bytes and set the section length to three, and neither phase can act on
+// `len(buf) == sectionLen` - the first wants fewer than three bytes, the second
+// wants fewer than the section length. Nothing could then emit or discard it,
+// and every later packet on that PID appended to the stale buffer and pushed a
+// whole 188-byte copy of itself into the raw packet list. One byte and one
+// packet retained per packet, indefinitely, on input nobody has to be trusted
+// for.
+//
+// Facts never moved while that happened, so a test comparing facts would have
+// watched it and reported nothing. This reads the assembler directly.
+func TestPSI_AnImpossibleDeclarationLeavesNoStateBehind(t *testing.T) {
+	sectionA := pat364Section(psiPMTPID1)
+	stub := []byte{0x00, 0xB0, 0x00} // a PAT declaring nothing after its length
+	payload1 := append([]byte{181}, sectionA[183:]...)
+	payload1 = append(payload1, stub[0], stub[1])
+
+	c := NewGoCore(1)
+	ctx := context.Background()
+	if _, err := c.Ingest(ctx, 0, chunkOf(
+		psiPackets(0, 0, 0, sectionA)[0],
+		psiPacketRaw(0, true, 1, payload1),
+		psiPacketRaw(0, false, 2, stub[2:]),
+	)); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	empty := func(t *testing.T, when string) {
+		t.Helper()
+		if n := len(c.patAssembler.buf); n != 0 {
+			t.Fatalf("%s: assembler holds %d bytes of a section it can never finish", when, n)
+		}
+		if n := c.patAssembler.sectionLen; n != 0 {
+			t.Fatalf("%s: assembler is still waiting for a %d byte section", when, n)
+		}
+		if n := len(c.patAssembler.rawPackets); n != 0 {
+			t.Fatalf("%s: assembler is holding %d packets for a section that was refused", when, n)
+		}
+	}
+	empty(t, "after the refused declaration")
+
+	// The packets that follow carry valid three-byte declarations, so the scan
+	// walks them and reaches the last byte with too little left to be a header -
+	// the branch that used to append to whatever was stuck in the buffer.
+	filler := make([]byte, 0, TSPacketSize-4)
+	for len(filler)+len(stub) <= TSPacketSize-4 {
+		filler = append(filler, stub...)
+	}
+	for round := 0; round < 1000; round++ {
+		// #nosec G115 -- masked to four bits on the next line
+		cc := uint8((3 + round) & 0x0F)
+		if _, err := c.Ingest(ctx, 0, psiPacketRaw(0, false, cc, filler)); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+		if round%100 == 0 || round == 999 {
+			empty(t, fmt.Sprintf("after %d continuation packets", round+1))
+		}
+	}
+
+	// And the PID is still usable: a payload unit start is read normally.
+	res, err := c.Ingest(ctx, 0, chunkOf(psiPackets(0, 0, 0, basePATForRegression())...))
+	if err != nil {
+		t.Fatalf("recovery ingest: %v", err)
+	}
+	if res.Facts.PMTPID != uint16(psiPMTPID2) {
+		t.Fatalf("after the refusal the PID stopped working: PMT PID %d", res.Facts.PMTPID)
+	}
+}
+
+// basePATForRegression is a PAT naming a different PMT PID, so recovery is
+// visible rather than indistinguishable from what came before.
+func basePATForRegression() []byte {
+	return patSection(psiTSID, 2, 0, 0, 1, patProgram{1, psiPMTPID2})
 }
 
 // TestPSI_TheCoreRefusesWhatItCannotInterpret pins the two ways a call fails

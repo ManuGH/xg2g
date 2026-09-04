@@ -69,7 +69,11 @@ PY
   fi
 
   local out
-  out=$(go test "$PKG" -run 'TestPSICorpus_TheGoCoreMeetsTheAuthoredExpectations' 2>&1)
+  # The corpus and the contract tests both pin invariants a mutation can break.
+  # Running only the corpus would let a mutation survive because the test that
+  # would have caught it was never asked - which is how the assembler's bounded
+  # state went unpinned until it was mutated.
+  out=$(go test "$PKG" -run 'TestPSICorpus_TheGoCoreMeetsTheAuthoredExpectations|TestPSI_' 2>&1)
   local rc=$?
   restore_one
 
@@ -111,8 +115,25 @@ mutate "collect a section that numbers itself beyond its own table" "$CORE" \
 mutate "resume the scan inside a section whose length was refused" "$CORE" \
   'return consumed + len(chunk)' 'return consumed'
 
+mutate "let a PAT declare less than its own syntax costs" "$PSI" \
+  '	minPATSectionLength = 9' '	minPATSectionLength = 0'
+
+mutate "give a PMT the shorter floor a PAT has" "$PSI" \
+  '	minPMTSectionLength = 13' '	minPMTSectionLength = 9'
+
+mutate "keep the section in flight after refusing its declaration" "$CORE" \
+  '				assembler.buf = assembler.buf[:0]
+				assembler.sectionLen = 0
+				assembler.rawPackets = assembler.rawPackets[:0]' \
+  '				_ = assembler'
+
+mutate "keep the packets of a section whose declaration was refused" "$CORE" \
+  '				assembler.rawPackets = assembler.rawPackets[:0]
+				// Everything handed in is given up' \
+  '				// Everything handed in is given up'
+
 mutate "let a PAT or PMT declare the whole twelve-bit length" "$PSI" \
-  'if length > maxPSISectionLength {' 'if length > 0x0FFF {'
+  'length > maxPSISectionLength {' 'length > 0x0FFF {'
 
 mutate "stop requiring the long section syntax" "$PSI" \
   'if prefix[1]&0x80 == 0 || prefix[1]&0x40 != 0 {' 'if prefix[1]&0x40 != 0 {'
