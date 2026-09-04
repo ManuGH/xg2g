@@ -36,7 +36,7 @@ mod corpus_test;
 mod perf_test;
 
 use assembler::SectionAssembler;
-use table::{SectionHeader, TableTracker};
+use table::{SectionHeader, TABLE_ID_PAT, TABLE_ID_PMT, TableTracker};
 
 pub use descriptors::ChannelDeclaration;
 pub use pmt::{AudioTrack, VideoCodec};
@@ -49,12 +49,6 @@ pub const SYNC_BYTE: u8 = 0x47;
 
 /// The PID the programme association table is carried on.
 const PAT_PID: u16 = 0x0000;
-
-/// The table identifier of a programme association section.
-const TABLE_ID_PAT: u8 = 0x00;
-
-/// The table identifier of a programme map section.
-const TABLE_ID_PMT: u8 = 0x02;
 
 /// Why a chunk was refused.
 ///
@@ -247,6 +241,13 @@ impl PsiCore {
             self.reset_program_state();
         }
         self.outcome(0)
+    }
+
+    /// What the two section assemblers are holding. See
+    /// [`SectionAssembler::retained`].
+    #[cfg(test)]
+    pub(super) fn retained(&self) -> [(usize, usize, usize); 2] {
+        [self.pat_assembler.retained(), self.pmt_assembler.retained()]
     }
 
     /// The PID the PAT named, or 0 while none has been.
