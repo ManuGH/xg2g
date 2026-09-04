@@ -672,7 +672,7 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 		consumed += toTake
 
 		if len(assembler.buf) >= 3 {
-			full, ok := psiSectionDeclaration(assembler.buf)
+			full, ok := psiSectionDeclaration(isPAT, assembler.buf)
 			if !ok {
 				// The header is complete and says something a PAT or PMT cannot
 				// say. It is the only thing that could tell this assembler how
@@ -823,7 +823,7 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			break
 		}
 
-		fullSecLen, ok := psiSectionDeclaration(payload[offset:])
+		fullSecLen, ok := psiSectionDeclaration(isPAT, payload[offset:])
 		if !ok {
 			// An impossible declaration ends the scan of this payload. What
 			// follows it cannot be located: the length that would say where is
@@ -867,7 +867,7 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 	// Defence in depth. Both paths that reach here already refused an
 	// impossible declaration before using it, and asking again costs nothing
 	// against a section that arrived some way nobody has thought of yet.
-	if _, ok := psiSectionDeclaration(table); !ok {
+	if _, ok := psiSectionDeclaration(isPAT, table); !ok {
 		return
 	}
 
