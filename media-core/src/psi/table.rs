@@ -204,11 +204,18 @@ impl TableTracker {
         generation.sections.insert(section_number, section.to_vec());
         generation.packets.insert(section_number, packets.to_vec());
 
-        // Two questions, and the count is asked first because it is the one a
-        // section numbered outside the table fails: such a section is collected
-        // like any other, so a table that was complete stops being complete
-        // while a stray number is held. Only once the count matches is each slot
-        // actually looked for.
+        // Every section admitted here has already been held to
+        //
+        //     section_number <= last_section_number
+        //
+        // by SectionHeader::read, so one numbering itself outside its own table
+        // never reaches this map. A generation holding exactly
+        // last_section_number+1 distinct numbers is therefore complete over
+        // 0..=last: there is nowhere else those numbers could have come from.
+        //
+        // The per-slot check below is kept anyway. It is redundant under that
+        // admission rule and would be the thing still standing if the rule were
+        // ever removed, which is the only kind of redundancy worth paying for.
         let wanted = usize::from(last_section_number) + 1;
         if generation.sections.len() != wanted {
             return false;
@@ -220,8 +227,8 @@ impl TableTracker {
     ///
     /// Order is the table's, never arrival's: the sections of a table say where
     /// they belong, and a transport that sends them out of order is describing
-    /// the same programme. Only the numbers the table declares are walked, so a
-    /// section numbered outside it is never read even while it is held.
+    /// the same programme. Only the declared range `0..=last_section_number` is
+    /// walked, and admission guarantees nothing is stored outside it.
     pub(crate) fn sections(&self) -> Vec<&[u8]> {
         let mut out = Vec::new();
         if let Some(generation) = &self.in_flight {
