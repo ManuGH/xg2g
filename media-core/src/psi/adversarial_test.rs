@@ -119,6 +119,18 @@ fn chunk_of(packets: &[Vec<u8>]) -> Vec<u8> {
     packets.iter().flat_map(|p| p.iter().copied()).collect()
 }
 
+/// A PAT sized so its first packet leaves exactly 181 bytes, which lets a
+/// pointer field put what follows two bytes from the end of the next payload.
+fn pat_of_364_bytes() -> Vec<u8> {
+    let mut programs = vec![(1u16, 256u16)];
+    for i in 0..87u16 {
+        programs.push((100 + i, 0x0400 + i));
+    }
+    let s = pat_section(0, 0, 0, &programs);
+    assert_eq!(s.len(), 364, "the split-header PAT is no longer 364 bytes");
+    s
+}
+
 /// A core already following programme 1 on PID 256.
 fn following_program_one() -> (PsiCore, usize) {
     let mut core = PsiCore::new(1);
@@ -561,6 +573,140 @@ fn a_descriptor_longer_than_its_block_ends_the_walk_without_reading_on() {
         outcome.facts.audio_tracks[0].language, "und",
         "a descriptor that does not fit was read anyway"
     );
+}
+
+/// An impossible declaration must leave the assembler empty, and keep it empty
+/// however many packets follow.
+///
+/// The defect this pins was not a wrong fact. A section declaring nothing after
+/// its length field was collected: the header phase filled the buffer to three
+/// bytes and set the section length to three, and neither phase can act on
+/// `len(buf) == section_len` - the first wants fewer than three bytes, the
+/// second fewer than the section length. Nothing could emit or discard it, and
+/// every later packet on that PID appended to the stale buffer and pushed a
+/// whole 188-byte copy of itself into the packet list. One byte and one packet
+/// retained per packet, indefinitely, on input nobody has to be trusted for.
+///
+/// Facts never moved while that happened, which is why the shared corpus cannot
+/// see this and why the check reads the assembler directly. Found by review of
+/// this parser, settled on the Go reference first, and held here to the same
+/// contract: a PAT may not declare fewer than 9 bytes, a PMT fewer than 13.
+#[test]
+fn an_impossible_declaration_leaves_the_assembler_empty_and_keeps_it_empty() {
+    let section_a = pat_of_364_bytes();
+    let stub = [0x00u8, 0xB0, 0x00]; // a PAT declaring nothing after its length
+    let mut payload1 = vec![181u8];
+    payload1.extend_from_slice(&section_a[183..]);
+    payload1.extend_from_slice(&stub[..2]);
+    assert_eq!(payload1.len(), TS_PACKET_LEN - 4);
+
+    let mut core = PsiCore::new(1);
+    core.ingest(
+        0,
+        &chunk_of(&[
+            psi_packets(0, 0, &section_a)[0].clone(),
+            ts_packet(0, true, 1, 0xFF, &payload1),
+            ts_packet(0, false, 2, 0xFF, &stub[2..]),
+        ]),
+    )
+    .expect("aligned");
+
+    let empty = |core: &PsiCore, when: &str| {
+        for (which, held) in ["PAT", "PMT"].iter().zip(core.retained()) {
+            assert_eq!(
+                held,
+                (0, 0, 0),
+                "{when}: the {which} assembler holds {} bytes, waits for {}, and keeps {} packets \
+                 for a section that was refused",
+                held.0,
+                held.1,
+                held.2
+            );
+        }
+    };
+    empty(&core, "after the refused declaration");
+
+    // The packets that follow carry valid three-byte declarations, so the scan
+    // walks them and reaches the last byte with too little left to be a header -
+    // the branch that used to append to whatever was stuck in the buffer.
+    let mut filler = Vec::with_capacity(TS_PACKET_LEN - 4);
+    while filler.len() + stub.len() <= TS_PACKET_LEN - 4 {
+        filler.extend_from_slice(&stub);
+    }
+    for round in 0..1000usize {
+        let cc = u8::try_from((3 + round) & 0x0F).expect("masked to four bits");
+        core.ingest(0, &ts_packet(0, false, cc, 0xFF, &filler))
+            .expect("aligned");
+        if round % 100 == 0 || round == 999 {
+            empty(&core, "after continuation packets");
+        }
+    }
+
+    // And the PID still works: a payload unit start is read normally.
+    let recovery = pat_section(2, 0, 0, &[(1, 512)]);
+    let outcome = core
+        .ingest(0, &chunk_of(&psi_packets(0, 0, &recovery)))
+        .expect("aligned");
+    assert_eq!(
+        outcome.facts.pmt_pid, 512,
+        "the PID stopped working after the refusal"
+    );
+}
+
+/// Twelve bytes after the length field is a length a PAT may declare and a PMT
+/// may not: the PMT carries a PCR PID and a `program_info_length` the PAT does
+/// not, so their floors differ.
+///
+/// The section built here is intact in every other way - correct `table_id`,
+/// correct syntax bits, a CRC that checks out - so the only thing standing
+/// between it and being accepted as this programme's table is the floor. Under a
+/// PAT-sized floor it is accepted and `has_pmt` becomes true.
+#[test]
+fn a_pmt_declaring_a_length_only_a_pat_may_use_is_refused() {
+    let (mut core, _) = following_program_one();
+
+    // table_id 0x02, section_length 12, programme 1, current, section 0 of 0.
+    let mut body = vec![
+        0x02u8, 0xB0, 0x0C, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0,
+    ];
+    let crc = crc::mpeg2(&body);
+    body.extend_from_slice(&crc.to_be_bytes());
+    assert_eq!(body.len(), 15, "a section_length of 12 is 15 bytes in all");
+    assert_eq!(
+        crc::mpeg2(&body),
+        0,
+        "the stub has to be intact, or it proves nothing"
+    );
+
+    let outcome = core
+        .ingest(0, &chunk_of(&psi_packets(256, 0, &body)))
+        .expect("aligned");
+    assert!(
+        !outcome.facts.has_pmt,
+        "a PMT shorter than its own mandatory syntax was accepted as this programme's table"
+    );
+    assert_eq!(outcome.facts.program_number, 0);
+
+    // And the real table is still readable afterwards.
+    let good = pmt_section(
+        1,
+        0,
+        0,
+        0,
+        &[Es {
+            stream_type: 0x1B,
+            pid: 257,
+            descriptors: vec![],
+        }],
+    );
+    let outcome = core
+        .ingest(0, &chunk_of(&psi_packets(256, 1, &good)))
+        .expect("aligned");
+    assert!(
+        outcome.facts.has_pmt,
+        "the PID stopped working after the refusal"
+    );
+    assert_eq!(outcome.facts.video_pid, 257);
 }
 
 // --- segmentation ---------------------------------------------------------

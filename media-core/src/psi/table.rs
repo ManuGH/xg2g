@@ -12,6 +12,33 @@ use std::collections::BTreeMap;
 /// eight-byte header, four bytes of CRC, and nothing in between.
 pub(crate) const MIN_SECTION_LEN: usize = 12;
 
+/// The table identifier of a programme association section.
+pub(crate) const TABLE_ID_PAT: u8 = 0x00;
+
+/// The table identifier of a programme map section.
+pub(crate) const TABLE_ID_PMT: u8 = 0x02;
+
+/// The least a PAT may declare after its length field.
+///
+/// What its own mandatory syntax costs, counted from that field:
+/// `transport_stream_id` 2, version and `current_next` 1, `section_number` 1,
+/// `last_section_number` 1, CRC 4.
+pub(crate) const MIN_PAT_SECTION_LENGTH: usize = 9;
+
+/// The least a PMT may declare, which is more: it carries a `PCR_PID` and a
+/// `program_info_length` a PAT does not, so 12 is a length one table may declare
+/// and the other may not.
+pub(crate) const MIN_PMT_SECTION_LENGTH: usize = 13;
+
+/// What the expected table's own syntax costs.
+const fn min_section_length(expected_table_id: u8) -> usize {
+    if expected_table_id == TABLE_ID_PAT {
+        MIN_PAT_SECTION_LENGTH
+    } else {
+        MIN_PMT_SECTION_LENGTH
+    }
+}
+
 /// The most a PAT or PMT section may declare after its length field.
 ///
 /// `section_length` is a twelve bit field, but ISO/IEC 13818-1 does not let
@@ -29,19 +56,25 @@ pub(crate) const MAX_SECTION_BYTES: usize = MAX_SECTION_LENGTH + 3;
 /// Reads the three bytes that open a section and reports the total length they
 /// declare.
 ///
-/// `None` for a declaration a PAT or PMT cannot make. Three things make one
+/// `None` for a declaration the expected table cannot make. Four things make one
 /// impossible, and they are asked together because they are read from the same
 /// two bytes and all knowable the moment those bytes arrive:
 ///
 /// - `section_syntax_indicator` must be 1, since both tables use the long form
 /// - the bit after it must be 0, fixed by the syntax rather than reserved
+/// - `section_length` must reach what that table's own syntax costs
 /// - `section_length` must not exceed 1021
+///
+/// The floor is not a check for zero. It is what makes the exact-equality that
+/// once wedged the assembler impossible: with a floor of at least nine, filling
+/// the three header bytes always leaves the buffer short of the section length,
+/// so the fill phase always has something left to do.
 ///
 /// One helper for one question, asked everywhere it comes up: by the scan that
 /// meets a header whole inside a payload, by the assembler deciding how many
 /// bytes to collect, and by the completed-section check. A second definition of
 /// "how long may this be" is how two paths come to disagree about it.
-pub(crate) fn declaration(prefix: &[u8]) -> Option<usize> {
+pub(crate) fn declaration(expected_table_id: u8, prefix: &[u8]) -> Option<usize> {
     if prefix.len() < 3 {
         return None;
     }
@@ -49,7 +82,7 @@ pub(crate) fn declaration(prefix: &[u8]) -> Option<usize> {
         return None;
     }
     let length = (usize::from(prefix[1] & 0x0F) << 8) | usize::from(prefix[2]);
-    if length > MAX_SECTION_LENGTH {
+    if length < min_section_length(expected_table_id) || length > MAX_SECTION_LENGTH {
         return None;
     }
     let total = length + 3;
@@ -77,7 +110,7 @@ impl SectionHeader {
     ///
     /// - it is long enough to hold the fields that will be read,
     /// - it is the table this PID is being read for,
-    /// - it declares a length and a syntax those tables may declare,
+    /// - it declares a length and a syntax that table may declare,
     /// - its bytes are intact,
     /// - it is in force rather than announced for later,
     /// - it numbers itself inside the table it names.
@@ -97,7 +130,7 @@ impl SectionHeader {
         // Defence in depth. Both paths that reach here refused an impossible
         // declaration before acting on it, and asking again costs nothing
         // against a section that arrived some way nobody has thought of yet.
-        declaration(section)?;
+        declaration(expected_table_id, section)?;
         if crc::mpeg2(section) != 0 {
             return None;
         }
