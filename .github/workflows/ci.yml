@@ -116,13 +116,17 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Install ffmpeg for full verification suite
+        # Run 33599181411 stalled here for 21m37s on an unresponsive apt mirror,
+        # burning the 25m job budget and cancelling an otherwise passing suite.
+        # Slowest healthy install for this job is 89s; 5m leaves ~3x headroom.
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           if command -v ffmpeg >/dev/null 2>&1; then
             echo "ffmpeg already installed"
           else
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
+            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
           fi
           ffmpeg -version | head -n 1
 
