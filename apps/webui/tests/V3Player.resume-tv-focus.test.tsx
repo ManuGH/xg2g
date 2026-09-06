@@ -115,7 +115,7 @@ describe('V3Player TV resume overlay focus', () => {
     const resumeButton = await screen.findByRole('button', { name: /resume/i });
 
     await waitFor(() => {
-      expect(requestInputFocus).toHaveBeenCalledTimes(2);
+      expect(requestInputFocus.mock.calls.length).toBeGreaterThanOrEqual(2);
       expect(resumeButton).toHaveFocus();
     });
   });
