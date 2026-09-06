@@ -11,7 +11,10 @@
 //! need one to have an answer, it asserts only that the answer is refusal.
 
 use super::crc;
-use super::table::{MAX_SECTION_BYTES, MAX_SECTION_LENGTH, MIN_SECTION_LEN};
+use super::table::{
+    MAX_ACTIVE_PSI_BYTES, MAX_ACTIVE_TABLE_BYTES, MAX_SECTION_BYTES, MAX_SECTION_LENGTH,
+    MAX_SECTIONS_PER_TABLE, MIN_SECTION_LEN,
+};
 use super::{IngestError, PsiCore, TS_PACKET_LEN};
 
 // --- builders -------------------------------------------------------------
@@ -397,12 +400,12 @@ fn a_section_numbered_beyond_its_table_leaves_that_table_alone() {
         outcome.facts.pmt_pid, 256,
         "the table did not complete once its own missing section arrived"
     );
-    // The strays left nothing behind: the raw table is the two sections that
-    // belong to it, and neither stray packet is among them.
+    // The strays left nothing behind: the table in force is the two sections
+    // that belong to it, and neither stray is among them.
     assert_eq!(
-        outcome.active.pat.len(),
+        outcome.active.pat_sections.len(),
         2,
-        "the raw table carries a section that is not its own"
+        "the table in force carries a section that is not its own"
     );
 }
 
@@ -489,12 +492,15 @@ fn a_pmt_for_another_programme_leaves_the_table_being_assembled_alone() {
     assert_eq!(outcome.facts.program_number, 1);
     assert_eq!(outcome.facts.video_pid, 257, "section 0 was lost");
     assert_eq!(outcome.facts.audio_pids, vec![258], "section 1 was lost");
-    for packet in &outcome.active.pmt {
+    assert!(
+        !outcome.active.pmt_sections.contains(&foreign),
+        "a refused table's section reached the PMT in force"
+    );
+    for section in &outcome.active.pmt_sections {
         assert!(
-            !chunk_of(&psi_packets(256, 1, &foreign))
-                .windows(TS_PACKET_LEN)
-                .any(|w| w == packet),
-            "a refused table's packet reached the active PMT"
+            section.len() <= MAX_SECTION_BYTES,
+            "the PMT in force holds {} bytes in one section",
+            section.len()
         );
     }
 }
@@ -615,12 +621,11 @@ fn an_impossible_declaration_leaves_the_assembler_empty_and_keeps_it_empty() {
         for (which, held) in ["PAT", "PMT"].iter().zip(core.retained()) {
             assert_eq!(
                 held,
-                (0, 0, 0),
-                "{when}: the {which} assembler holds {} bytes, waits for {}, and keeps {} packets \
-                 for a section that was refused",
+                (0, 0),
+                "{when}: the {which} assembler holds {} bytes and waits for {} \
+                 after a section that was refused",
                 held.0,
-                held.1,
-                held.2
+                held.1
             );
         }
     };
@@ -661,6 +666,11 @@ fn an_impossible_declaration_leaves_the_assembler_empty_and_keeps_it_empty() {
 /// correct syntax bits, a CRC that checks out - so the only thing standing
 /// between it and being accepted as this programme's table is the floor. Under a
 /// PAT-sized floor it is accepted and `has_pmt` becomes true.
+///
+/// The refusal itself is now a case of the same name in the shared corpus, so
+/// both implementations are held to it rather than only this one. What is left
+/// here that the corpus case does not cover is the second half: that the PID
+/// goes on working, and the programme's real table is read afterwards.
 #[test]
 fn a_pmt_declaring_a_length_only_a_pat_may_use_is_refused() {
     let (mut core, _) = following_program_one();
@@ -819,12 +829,12 @@ fn arbitrary_bytes_never_panic_and_never_grow_without_bound() {
                 "track list grew without bound"
             );
             assert!(
-                outcome.active.pat.len() <= 256,
-                "raw PAT grew without bound"
+                outcome.active.pat_sections.len() <= MAX_SECTIONS_PER_TABLE,
+                "the PAT in force grew past the sections a table may have"
             );
             assert!(
-                outcome.active.pmt.len() <= 256,
-                "raw PMT grew without bound"
+                outcome.active.pmt_sections.len() <= MAX_SECTIONS_PER_TABLE,
+                "the PMT in force grew past the sections a table may have"
             );
             assert!(outcome.events.len() <= 4096, "events grew without bound");
         }
@@ -875,4 +885,210 @@ fn every_single_byte_mutation_of_a_good_stream_is_survived() {
             assert!(outcome.facts.audio_pids.len() <= 64);
         }
     }
+}
+
+// --- what the tables in force may cost ------------------------------------
+
+/// Delivers a section one payload byte at a time.
+///
+/// Each packet carries an adaptation field that eats the rest of the payload, so
+/// the transport spends 188 bytes to move one byte of table. That is legal - a
+/// sender may fragment as finely as it likes - and it is the cheapest way to ask
+/// a parser to hold a lot of memory for very little table.
+///
+/// The first packet carries two payload bytes rather than one, the pointer field
+/// and the section's first byte, because a payload unit start carrying only a
+/// pointer field begins no section. That is existing behaviour and only decides
+/// where the adversary starts.
+fn starved_packets(pid: u16, start_cc: u8, section: &[u8]) -> Vec<Vec<u8>> {
+    let mut payloads: Vec<Vec<u8>> = vec![vec![0x00, section[0]]];
+    payloads.extend(section[1..].iter().map(|b| vec![*b]));
+
+    let mut out = Vec::with_capacity(payloads.len());
+    let mut cc = start_cc;
+    for (index, payload) in payloads.iter().enumerate() {
+        let mut packet = vec![0x00; TS_PACKET_LEN];
+        packet[0] = 0x47;
+        packet[1] = u8::try_from((pid >> 8) & 0x1F).expect("masked");
+        if index == 0 {
+            packet[1] |= 0x40;
+        }
+        packet[2] = u8::try_from(pid & 0xFF).expect("masked");
+        packet[3] = 0x30 | (cc & 0x0F); // adaptation field, then payload
+        cc = (cc + 1) & 0x0F;
+
+        let start = TS_PACKET_LEN - payload.len();
+        packet[4] = u8::try_from(start - 5).expect("an adaptation field fits a byte");
+        packet[5] = 0x00;
+        for byte in &mut packet[6..start] {
+            *byte = 0xFF;
+        }
+        packet[start..].copy_from_slice(payload);
+        out.push(packet);
+    }
+    out
+}
+
+/// The largest PAT that may be declared: 253 programmes is 1024 bytes.
+fn largest_pat(pmt_pid: u16) -> Vec<u8> {
+    let programs: Vec<(u16, u16)> = (0..253)
+        .map(|i| {
+            if i == 0 {
+                (1, pmt_pid)
+            } else {
+                (u16::try_from(i + 100).expect("small"), 0x0900)
+            }
+        })
+        .collect();
+    let section = pat_section(0, 0, 0, &programs);
+    assert_eq!(
+        section.len(),
+        MAX_SECTION_BYTES,
+        "253 programmes is no longer the largest PAT"
+    );
+    section
+}
+
+/// The central R8 claim, as a differential between two deliveries of one table.
+///
+/// A PAT sent in six packets and the same PAT sent one payload byte at a time
+/// are the same PAT. Before this, the second cost hundreds of retained packets
+/// for a table of 1024 bytes, because the packets that carried it were part of
+/// the answer - so the sender chose how much memory this core spent.
+#[test]
+fn transport_fragmentation_does_not_change_what_is_held() {
+    let section = largest_pat(256);
+
+    let mut normal = PsiCore::new(1);
+    let normal_out = normal
+        .ingest(0, &chunk_of(&psi_packets(0, 0, &section)))
+        .expect("packet aligned");
+
+    let mut starved = PsiCore::new(1);
+    let starved_packets = starved_packets(0, 0, &section);
+    let starved_out = starved
+        .ingest(0, &chunk_of(&starved_packets))
+        .expect("packet aligned");
+
+    assert_eq!(
+        starved_packets.len(),
+        section.len(),
+        "the adversary did not starve the delivery"
+    );
+    assert_eq!(
+        normal_out.facts.pmt_pid, starved_out.facts.pmt_pid,
+        "the two deliveries chose different PMT PIDs"
+    );
+    assert_eq!(
+        normal_out.active.pat_sections, starved_out.active.pat_sections,
+        "the same PAT delivered two ways is held as two different tables"
+    );
+    assert_eq!(
+        normal.retained_bytes(),
+        starved.retained_bytes(),
+        "a starved delivery still costs more than a normal one: fragmentation is amplifying state"
+    );
+}
+
+/// Finding #11 itself: not one delivery, but the carousel repeating.
+#[test]
+fn a_carousel_of_starved_tables_stays_bounded() {
+    let section = largest_pat(256);
+    let mut core = PsiCore::new(1);
+    let mut first = 0usize;
+
+    for round in 0..40u8 {
+        core.ingest(0, &chunk_of(&starved_packets(0, round & 0x0F, &section)))
+            .expect("packet aligned");
+        let held = core.retained_bytes();
+        if round == 0 {
+            first = held;
+        } else {
+            assert_eq!(
+                held, first,
+                "round {round} retains {held} bytes, round 1 retained {first}"
+            );
+        }
+        if round == 39 {
+            println!("starved 1024-byte PAT, 40 carousel rounds: {held} bytes retained");
+        }
+    }
+
+    // What one single-section table may cost: the tracker's copy of the
+    // generation being assembled, the copy held as the table in force, and the
+    // one packet kept to recognise a carousel duplicate. Nothing here scales
+    // with how the sender chose to cut it up.
+    let bound = 2 * MAX_SECTION_BYTES + TS_PACKET_LEN;
+    assert!(
+        first <= bound,
+        "one PAT section costs {first} retained bytes, past the {bound} a section may cost"
+    );
+}
+
+/// The ceiling, written down where a change to either bound will fail it.
+#[test]
+fn active_psi_is_bounded_by_what_the_tables_may_be() {
+    assert_eq!(MAX_SECTION_BYTES, 1024, "a section is 1024 bytes at most");
+    assert_eq!(
+        MAX_SECTIONS_PER_TABLE, 256,
+        "a table has 256 sections at most"
+    );
+    assert_eq!(
+        MAX_ACTIVE_TABLE_BYTES,
+        256 * 1024,
+        "one active table is 256 KiB"
+    );
+    assert_eq!(MAX_ACTIVE_PSI_BYTES, 512 * 1024, "ActivePsi is 512 KiB");
+}
+
+/// The largest generation the syntax allows, delivered in full.
+///
+/// Rust reaches this through `0..=last_section_number`, a `RangeInclusive`,
+/// which ends where the Go reference's `u8` counter wrapped and span forever.
+/// The table is delivered here anyway: the bound is the claim, not the loop.
+#[test]
+fn a_table_using_every_number_it_may_completes_and_stays_bounded() {
+    let mut core = PsiCore::new(1);
+    let mut packets = Vec::new();
+    let mut sections = Vec::new();
+    let mut cc = 0u8;
+
+    for n in 0..MAX_SECTIONS_PER_TABLE {
+        let number = u8::try_from(n).expect("n < 256");
+        let programs = if n == MAX_SECTIONS_PER_TABLE - 1 {
+            [(1u16, 256u16)]
+        } else {
+            [(9u16, 0x0900u16)]
+        };
+        let section = pat_section(0, number, 255, &programs);
+        packets.extend(psi_packets(0, cc, &section));
+        sections.push(section);
+        cc = (cc + 1) & 0x0F;
+    }
+
+    let outcome = core
+        .ingest(0, &chunk_of(&packets))
+        .expect("packet aligned")
+        .clone();
+    assert_eq!(
+        outcome.facts.pmt_pid, 256,
+        "a complete 256-section PAT did not name the target"
+    );
+    assert_eq!(
+        outcome.active.pat_sections, sections,
+        "the table in force is not the 256 sections delivered"
+    );
+    assert!(
+        core.retained_bytes() <= MAX_ACTIVE_PSI_BYTES,
+        "the largest legal table retains {} bytes, past the {MAX_ACTIVE_PSI_BYTES} bound",
+        core.retained_bytes()
+    );
+
+    let before = core.retained_bytes();
+    core.ingest(0, &chunk_of(&packets)).expect("packet aligned");
+    assert_eq!(
+        core.retained_bytes(),
+        before,
+        "a repeat of the same 256-section table grew the retained state"
+    );
 }

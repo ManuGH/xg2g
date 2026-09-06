@@ -53,6 +53,25 @@ pub(crate) const MAX_SECTION_LENGTH: usize = 1021;
 /// The most a PAT or PMT section can be in total.
 pub(crate) const MAX_SECTION_BYTES: usize = MAX_SECTION_LENGTH + 3;
 
+/// What the tables in force can cost, derived from the bounds above rather than
+/// chosen.
+///
+/// `section_number` is one byte and a section is admitted only when it numbers
+/// itself within its own table, so a table is at most 256 sections; each of them
+/// is at most [`MAX_SECTION_BYTES`]. Nothing here is a policy - change either
+/// bound and these follow.
+///
+/// They are stated as bytes of table rather than as a packet count on purpose.
+/// How many transport packets a sender used to deliver a section is the sender's
+/// choice, and it is not something this core retains.
+pub(crate) const MAX_SECTIONS_PER_TABLE: usize = 256;
+
+/// The most one table in force may cost: 256 KiB.
+pub(crate) const MAX_ACTIVE_TABLE_BYTES: usize = MAX_SECTIONS_PER_TABLE * MAX_SECTION_BYTES;
+
+/// The most a PAT and a PMT together may cost: 512 KiB.
+pub(crate) const MAX_ACTIVE_PSI_BYTES: usize = 2 * MAX_ACTIVE_TABLE_BYTES;
+
 /// Reads the three bytes that open a section and reports the total length they
 /// declare.
 ///
@@ -189,9 +208,13 @@ struct Generation {
     /// The last section number every section of it declares.
     last_section_number: u8,
     /// Sections by section number.
+    ///
+    /// Keyed by number, so a section arriving twice replaces itself and a
+    /// generation cannot grow past the 256 numbers a section may have. The
+    /// packets that carried them are not part of a table's identity and are not
+    /// kept: what a sender does with adaptation fields is transport, and a
+    /// tracker that stored it would let the sender choose how much is held.
     sections: BTreeMap<u8, Vec<u8>>,
-    /// The packets each section arrived in.
-    packets: BTreeMap<u8, Vec<Vec<u8>>>,
 }
 
 impl TableTracker {
@@ -212,7 +235,6 @@ impl TableTracker {
         section_number: u8,
         last_section_number: u8,
         section: &[u8],
-        packets: &[Vec<u8>],
     ) -> bool {
         let restart = match &self.in_flight {
             Some(generation) => {
@@ -226,7 +248,6 @@ impl TableTracker {
                 version,
                 last_section_number,
                 sections: BTreeMap::new(),
-                packets: BTreeMap::new(),
             });
         }
 
@@ -235,7 +256,6 @@ impl TableTracker {
             .as_mut()
             .expect("a generation was just put in place");
         generation.sections.insert(section_number, section.to_vec());
-        generation.packets.insert(section_number, packets.to_vec());
 
         // Every section admitted here has already been held to
         //
@@ -274,22 +294,29 @@ impl TableTracker {
         out
     }
 
-    /// Every packet of the completed table, in `section_number` order, each listed
-    /// once however many sections it carried.
-    pub(crate) fn packets(&self) -> Vec<Vec<u8>> {
-        let mut out: Vec<Vec<u8>> = Vec::new();
-        if let Some(generation) = &self.in_flight {
-            for number in 0..=generation.last_section_number {
-                let Some(packets) = generation.packets.get(&number) else {
-                    continue;
-                };
-                for packet in packets {
-                    if !out.contains(packet) {
-                        out.push(packet.clone());
-                    }
-                }
-            }
-        }
+    /// The sections of the completed table as the caller's own copies.
+    ///
+    /// What the core keeps as the table in force outlives the generation it came
+    /// from - a later version restarts the tracker while the old table is still
+    /// the one being handed out - so it must not be a view onto anything the
+    /// tracker can replace.
+    pub(crate) fn owned_sections(&self) -> Vec<Vec<u8>> {
+        let out: Vec<Vec<u8>> = self.sections().into_iter().map(<[u8]>::to_vec).collect();
+        // The bounds this type promises, checked where it makes the promise
+        // rather than only written down beside it. Both follow from admission:
+        // a section numbering itself outside its own table never reaches the
+        // map, and no section longer than MAX_SECTION_BYTES is ever declared.
+        debug_assert!(out.len() <= MAX_SECTIONS_PER_TABLE);
+        debug_assert!(out.iter().map(Vec::len).sum::<usize>() <= MAX_ACTIVE_TABLE_BYTES);
         out
+    }
+
+    /// The bytes this tracker is holding, for the tests that measure retention
+    /// rather than facts.
+    #[cfg(test)]
+    pub(super) fn retained(&self) -> usize {
+        self.in_flight
+            .as_ref()
+            .map_or(0, |g| g.sections.values().map(Vec::len).sum())
     }
 }
