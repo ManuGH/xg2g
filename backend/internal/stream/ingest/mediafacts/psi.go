@@ -81,6 +81,24 @@ const (
 	maxPSISectionBytes  = maxPSISectionLength + 3
 )
 
+// What the tables in force can cost, derived from the two bounds above rather
+// than chosen.
+//
+// section_number is one byte and a section is accepted only when it numbers
+// itself within its own table, so a table is at most 256 sections; each of them
+// is at most maxPSISectionBytes. Nothing here is a policy: change either bound
+// and these follow.
+//
+// They are the bound on what this package retains for a caller, which is why
+// they are stated as bytes of table rather than as a packet count. How many
+// transport packets a sender used to deliver a section is the sender's choice
+// and is not retained.
+const (
+	maxSectionsPerTable = 256
+	maxActiveTableBytes = maxSectionsPerTable * maxPSISectionBytes
+	maxActivePSIBytes   = 2 * maxActiveTableBytes
+)
+
 // minPSISectionLength is what the expected table's own syntax costs.
 func minPSISectionLength(isPAT bool) int {
 	if isPAT {
@@ -171,13 +189,22 @@ func CalculateMPEG2CRC32(data []byte) uint32 {
 	return crc
 }
 
+// psiStreamAssembler joins one section out of the packets carrying it.
+//
+// It holds the section being assembled and nothing about how it arrived. The
+// packets are the transport's segmentation of a section; once their bytes are in
+// buf they have said everything they had to say, and keeping them would make
+// this parser's memory a function of how finely a sender chose to fragment.
+//
+// lastPacket is the one exception and is bounded at one packet: an exact
+// byte-for-byte repeat of the packet just seen is a carousel duplicate rather
+// than a continuity error, and telling those apart needs the previous packet.
 type psiStreamAssembler struct {
 	buf        []byte
 	sectionLen int
 	lastCC     uint8
 	hasCC      bool
 	lastPacket []byte
-	rawPackets [][]byte
 }
 
 func (s *psiStreamAssembler) reset() {
@@ -185,35 +212,36 @@ func (s *psiStreamAssembler) reset() {
 	s.sectionLen = 0
 	s.hasCC = false
 	s.lastPacket = nil
-	s.rawPackets = s.rawPackets[:0]
 }
 
+// tableSectionTracker collects the sections of one generation of one table.
+//
+// Keyed by section_number, so a section that arrives twice replaces itself and
+// a generation cannot grow past the 256 numbers a section may have. What it
+// holds is the accepted section bytes; the packets that carried them are not
+// part of a table's identity and are not kept.
 type tableSectionTracker struct {
 	inFlightVersion uint8
 	hasInFlight     bool
 	lastSectionNum  uint8
 	sections        map[uint8][]byte
-	rawPackets      map[uint8][][]byte
 }
 
 func (t *tableSectionTracker) reset() {
 	t.hasInFlight = false
 	t.lastSectionNum = 0
 	t.sections = make(map[uint8][]byte)
-	t.rawPackets = make(map[uint8][][]byte)
 }
 
-func (t *tableSectionTracker) addSection(version uint8, sectionNum uint8, lastSectionNum uint8, sectionBytes []byte, packets [][]byte) bool {
+func (t *tableSectionTracker) addSection(version uint8, sectionNum uint8, lastSectionNum uint8, sectionBytes []byte) bool {
 	if !t.hasInFlight || t.inFlightVersion != version || t.lastSectionNum != lastSectionNum {
 		t.inFlightVersion = version
 		t.hasInFlight = true
 		t.lastSectionNum = lastSectionNum
 		t.sections = make(map[uint8][]byte)
-		t.rawPackets = make(map[uint8][][]byte)
 	}
 
 	t.sections[sectionNum] = cloneSlice(sectionBytes)
-	t.rawPackets[sectionNum] = cloneSliceList(packets)
 
 	if len(t.sections) == int(lastSectionNum)+1 {
 		// Counted in int, not in a uint8.
@@ -233,6 +261,26 @@ func (t *tableSectionTracker) addSection(version uint8, sectionNum uint8, lastSe
 		return true
 	}
 	return false
+}
+
+// generation returns the sections of the table that has just completed, in the
+// order the table numbers them rather than the order they arrived in.
+//
+// The copies are the caller's. The tracker replaces a slot's slice rather than
+// writing through it, so aliasing would be safe today - but what the core keeps
+// as the table in force outlives the generation it came from, and it must not be
+// something a later section could reach.
+//
+// The count is kept in int, for the reason given on the completeness check
+// above: a uint8 counter bounded by last_section_number cannot end when that
+// value is 255.
+func (t *tableSectionTracker) generation(lastSectionNum uint8) [][]byte {
+	out := make([][]byte, 0, int(lastSectionNum)+1)
+	for n := 0; n <= int(lastSectionNum); n++ {
+		// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+		out = append(out, cloneSlice(t.sections[uint8(n)]))
+	}
+	return out
 }
 
 type StreamScrambling struct {
@@ -263,3 +311,12 @@ func cloneSliceList(in [][]byte) [][]byte {
 	}
 	return out
 }
+
+// MaxSectionBytes is the largest a PAT or PMT section may be, and
+// MaxSectionsPerTable the most sections one table may have. Exported because a
+// caller that has to deliver the tables needs the same bound this package holds
+// itself to, and two copies of a number are how two bounds come to differ.
+const (
+	MaxSectionBytes     = maxPSISectionBytes
+	MaxSectionsPerTable = maxSectionsPerTable
+)
