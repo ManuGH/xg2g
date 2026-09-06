@@ -219,19 +219,36 @@ type ParseResult struct {
 	// Facts is the state after the chunk.
 	Facts Facts
 
-	// PSI carries the raw tables for a caller that has to deliver them, unparsed,
-	// ahead of an entry point.
+	// PSI carries the tables in force for a caller that has to deliver them,
+	// uninterpreted, ahead of an entry point.
 	PSI ActivePSI
 }
 
-// ActivePSI is the raw PAT and PMT packets of the current program.
+// ActivePSI is the accepted PAT and PMT sections of the current program.
 //
-// The core parses these; it hands the bytes back anyway because the subscriber
-// preamble is a transport concern and reconstructing it would mean parsing PSI a
-// second time, in a second place, with a second answer.
+// Each entry is one complete section, exactly as accepted: table_id through
+// CRC_32, byte for byte. The core parses these and hands the bytes back anyway,
+// because the subscriber preamble is a transport concern and re-deriving it
+// would mean parsing PSI a second time, in a second place, with a second answer.
+//
+// What is deliberately not here is the transport packets the sections arrived
+// in. How many packets a sender used to carry a section is its own choice, and
+// the same table can be sent in six packets or in a thousand one-byte ones. Both
+// mean the same PAT, so both must leave the same state behind; retaining the
+// packets made the memory this core holds a function of the sender's
+// fragmentation instead of the table's content. A caller that needs transport
+// packets makes them from these bytes - see the ring's PSI packetizer - and the
+// bound on what is kept here follows from the syntax rather than from a limit
+// somebody picked:
+//
+//	a section is at most 1024 bytes and a table at most 256 sections
+//	so each of these lists is at most 256 KiB, and ActivePSI at most 512 KiB
+//
+// Sections are in the order the table numbers them, section_number ascending,
+// which is also the order they must be delivered in.
 type ActivePSI struct {
-	PAT [][]byte
-	PMT [][]byte
+	PATSections [][]byte
+	PMTSections [][]byte
 }
 
 // Facts is what the core knows about the stream right now.
@@ -287,14 +304,17 @@ type GoCore struct {
 	pmtAssembler        psiStreamAssembler
 	patTracker          tableSectionTracker
 	pmtTracker          tableSectionTracker
-	rawPATPackets       [][]byte
-	rawPMTPackets       [][]byte
-	hasPATVersion       bool
-	patVersion          uint8
-	hasPMTVersion       bool
-	pmtVersion          uint8
-	pmtProgramNumber    uint16
-	pmtPID              uint16
+	// activePATSections and activePMTSections are the tables in force: the
+	// sections of the last generation that completed and was accepted, copied out
+	// of the tracker so a later in-flight generation cannot reach them.
+	activePATSections [][]byte
+	activePMTSections [][]byte
+	hasPATVersion     bool
+	patVersion        uint8
+	hasPMTVersion     bool
+	pmtVersion        uint8
+	pmtProgramNumber  uint16
+	pmtPID            uint16
 	// selectedProgramNumber is the program the PAT chose, held beside the PID it
 	// chose it on. The two are one decision - a PAT entry names a program and the
 	// PID its table is carried on together - so they are kept and given up
@@ -452,7 +472,7 @@ func (c *GoCore) SetTargetProgram(ctx context.Context, programNumber uint16) (Pa
 		c.pmtAssembler.reset()
 		c.patTracker.reset()
 		c.pmtTracker.reset()
-		c.rawPATPackets = nil
+		c.activePATSections = nil
 		c.resetProgramStateLocked()
 	}
 	return c.result(0), nil
@@ -490,7 +510,10 @@ func (c *GoCore) result(through int64) ParseResult {
 }
 
 func (c *GoCore) activePSI() ActivePSI {
-	return ActivePSI{PAT: cloneSliceList(c.rawPATPackets), PMT: cloneSliceList(c.rawPMTPackets)}
+	return ActivePSI{
+		PATSections: cloneSliceList(c.activePATSections),
+		PMTSections: cloneSliceList(c.activePMTSections),
+	}
 }
 
 // Snapshot returns what the core knows about the stream right now.
@@ -652,7 +675,7 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 	// input, and agreement on a different input is not agreement.
 	c.captureAudioShadowFeedLocked(pid, es, obs)
 }
-func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte, pkt []byte) int {
+func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte) int {
 	if len(chunk) == 0 {
 		return 0
 	}
@@ -667,7 +690,6 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 			toTake = needHeader
 		}
 		assembler.buf = append(assembler.buf, chunk[:toTake]...)
-		assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
 		chunk = chunk[toTake:]
 		consumed += toTake
 
@@ -682,7 +704,6 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 				// begins a section normally.
 				assembler.buf = assembler.buf[:0]
 				assembler.sectionLen = 0
-				assembler.rawPackets = assembler.rawPackets[:0]
 				// Everything handed in is given up, not only the header bytes.
 				// The caller resumes its scan at what this returns, and there is
 				// nowhere in the rest of this payload it could resume: the
@@ -708,16 +729,12 @@ func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAsse
 			toTake = needed
 		}
 		assembler.buf = append(assembler.buf, chunk[:toTake]...)
-		if consumed == 0 { // Not added in Phase 1 for this packet
-			assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
-		}
 		consumed += toTake
 
 		if len(assembler.buf) >= assembler.sectionLen {
-			c.processCompletePSISectionLocked(isPAT, assembler.buf[:assembler.sectionLen], assembler.rawPackets)
+			c.processCompletePSISectionLocked(isPAT, assembler.buf[:assembler.sectionLen])
 			assembler.buf = assembler.buf[:0]
 			assembler.sectionLen = 0
-			assembler.rawPackets = assembler.rawPackets[:0]
 		}
 	}
 
@@ -771,12 +788,11 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 					assembler.reset()
 					return
 				}
-				c.feedBytesToAssemblerLocked(isPAT, assembler, payload[1:1+toTake], pkt)
+				c.feedBytesToAssemblerLocked(isPAT, assembler, payload[1:1+toTake])
 				if len(assembler.buf) > 0 {
 					// Still incomplete after pointer field: missing data, discard
 					assembler.buf = assembler.buf[:0]
 					assembler.sectionLen = 0
-					assembler.rawPackets = assembler.rawPackets[:0]
 				}
 			}
 			offset = 1 + pointerField
@@ -784,13 +800,12 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			// Case B: pointerField == 0. Discard any unfinished prior section
 			assembler.buf = assembler.buf[:0]
 			assembler.sectionLen = 0
-			assembler.rawPackets = assembler.rawPackets[:0]
 			offset = 1
 		}
 	} else {
 		// pusi == false: continue in-flight section
 		if len(assembler.buf) > 0 {
-			consumed := c.feedBytesToAssemblerLocked(isPAT, assembler, payload, pkt)
+			consumed := c.feedBytesToAssemblerLocked(isPAT, assembler, payload)
 			offset = consumed
 		} else {
 			return
@@ -809,7 +824,6 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			// Fragmented section header (1-2 bytes) spanning into next packet!
 			assembler.buf = append(assembler.buf, payload[offset:]...)
 			assembler.sectionLen = 0
-			assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
 			break
 		}
 
@@ -834,7 +848,7 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 		if avail >= fullSecLen {
 			// Complete section self-contained in this payload chunk!
 			sectionBytes := payload[offset : offset+fullSecLen]
-			c.processCompletePSISectionLocked(isPAT, sectionBytes, [][]byte{cloneSlice(pkt)})
+			c.processCompletePSISectionLocked(isPAT, sectionBytes)
 			offset += fullSecLen
 			continue
 		}
@@ -842,11 +856,10 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 		// Section spans across to next TS packet
 		assembler.buf = append(assembler.buf, payload[offset:]...)
 		assembler.sectionLen = fullSecLen
-		assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
 		break
 	}
 }
-func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPackets [][]byte) {
+func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte) {
 	if len(table) < 12 {
 		return
 	}
@@ -899,17 +912,18 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 	}
 
 	if isPAT {
-		tableComplete := c.patTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
+		tableComplete := c.patTracker.addSection(version, sectionNum, lastSectionNum, table)
 		if !tableComplete {
 			return
 		}
 
-		// Full PAT Table Generation Complete: scan all sections for target program
+		// Full PAT Table Generation Complete: scan all sections for target program.
+		// Taken out of the tracker once, in section_number order, and used both to
+		// choose the programme and - if one is chosen - as the table in force.
+		sections := c.patTracker.generation(lastSectionNum)
 		matchedPID := uint16(0)
 		matchedProgram := uint16(0)
-		for n := 0; n <= int(lastSectionNum); n++ {
-			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
-			sData := c.patTracker.sections[uint8(n)]
+		for _, sData := range sections {
 			if len(sData) < 12 {
 				continue
 			}
@@ -972,18 +986,7 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 
 		c.hasPATVersion = true
 		c.patVersion = version
-
-		// Build deduplicated rawPATPackets from all sections 0..lastSectionNum
-		var allPATPackets [][]byte
-		for n := 0; n <= int(lastSectionNum); n++ {
-			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
-			for _, pkt := range c.patTracker.rawPackets[uint8(n)] {
-				if !containsPacket(allPATPackets, pkt) {
-					allPATPackets = append(allPATPackets, cloneSlice(pkt))
-				}
-			}
-		}
-		c.rawPATPackets = allPATPackets
+		c.activePATSections = sections
 	} else {
 		progNum := (uint16(table[3]) << 8) | uint16(table[4])
 
@@ -999,10 +1002,12 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 			return
 		}
 
-		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
+		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table)
 		if !tableComplete {
 			return
 		}
+
+		sections := c.pmtTracker.generation(lastSectionNum)
 
 		// Full PMT Table Generation Complete
 		isChanged := !c.hasPMTVersion || version != c.pmtVersion || progNum != c.pmtProgramNumber
@@ -1012,10 +1017,8 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 			c.pmtProgramNumber = progNum
 			c.resetProgramStateLocked()
 
-			// Scan elementary streams across all sections 0..lastSectionNum
-			for n := 0; n <= int(lastSectionNum); n++ {
-				// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
-				sData := c.pmtTracker.sections[uint8(n)]
+			// Scan elementary streams across all sections, in section_number order
+			for _, sData := range sections {
 				if len(sData) < 12 {
 					continue
 				}
@@ -1092,17 +1095,9 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 			}
 		}
 
-		// Build deduplicated rawPMTPackets from all sections 0..lastSectionNum
-		var allPMTPackets [][]byte
-		for n := 0; n <= int(lastSectionNum); n++ {
-			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
-			for _, pkt := range c.pmtTracker.rawPackets[uint8(n)] {
-				if !containsPacket(allPMTPackets, pkt) {
-					allPMTPackets = append(allPMTPackets, cloneSlice(pkt))
-				}
-			}
-		}
-		c.rawPMTPackets = allPMTPackets
+		// Set after the elementary stream scan above, which runs only when the
+		// identity changed and clears program state as it goes - including this.
+		c.activePMTSections = sections
 	}
 }
 
@@ -1132,7 +1127,7 @@ func (c *GoCore) dropProgramSelectionLocked() {
 	c.selectedProgramNumber = 0
 	c.hasPATVersion = false
 	c.patVersion = 0
-	c.rawPATPackets = nil
+	c.activePATSections = nil
 	c.pmtAssembler.reset()
 	c.pmtTracker.reset()
 	c.forgetPMTIdentityLocked()
@@ -1155,7 +1150,7 @@ func (c *GoCore) resetProgramStateLocked() {
 	c.pesHasVPS = false
 	c.annexBState = 0xFFFFFFFF
 	c.expectingNALByte = false
-	c.rawPMTPackets = nil
+	c.activePMTSections = nil
 	c.scrambledVideoPackets = 0
 	c.clearVideoPackets = 0
 	c.scrambledAudioPackets = 0
@@ -1501,14 +1496,6 @@ func (c *GoCore) scrambledVideoConfirmedLocked() bool {
 // no observation rather than a guessed one.
 func observableAudioCodec(codec string) bool {
 	return codec == esaudio.CodecAC3 || codec == esaudio.CodecEAC3
-}
-func containsPacket(list [][]byte, pkt []byte) bool {
-	for _, existing := range list {
-		if bytes.Equal(existing, pkt) {
-			return true
-		}
-	}
-	return false
 }
 func appendAudioTrack(list []AudioTrackInfo, track AudioTrackInfo) []AudioTrackInfo {
 	for i, existing := range list {

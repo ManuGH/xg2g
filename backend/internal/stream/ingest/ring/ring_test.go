@@ -249,15 +249,30 @@ func TestMasterRing_MultiPacketPATPMT_Assembly(t *testing.T) {
 		t.Fatalf("unexpected video details: vPID=%d, vCodec=%v", vPID, vCodec)
 	}
 
+	// Both tables were sent split across two packets each, behind adaptation
+	// fields large enough to leave ten bytes of section in the first. The
+	// preamble is not those four packets: the sections are small enough to fit
+	// one packet each, and the ring packetizes what the tables say rather than
+	// replaying how they happened to arrive.
 	preamble := r.PATPMTPreamble()
-	if len(preamble) != 4*TSPacketSize {
-		t.Fatalf("expected preamble length %d, got %d", 4*TSPacketSize, len(preamble))
+	if len(preamble) != 2*TSPacketSize {
+		t.Fatalf("expected a packet for each table, got %d bytes", len(preamble))
 	}
-	if !bytes.Equal(preamble[:2*TSPacketSize], append(patPackets[0], patPackets[1]...)) {
-		t.Fatalf("PAT portion mismatch in preamble")
+	if preamble[1]&0x40 == 0 || preamble[TSPacketSize+1]&0x40 == 0 {
+		t.Fatal("each table's packet must start its section")
 	}
-	if !bytes.Equal(preamble[2*TSPacketSize:], append(pmtPackets[0], pmtPackets[1]...)) {
-		t.Fatalf("PMT portion mismatch in preamble")
+	if got := (uint16(preamble[1]&0x1F) << 8) | uint16(preamble[2]); got != 0 {
+		t.Fatalf("the PAT is on PID %d, want 0", got)
+	}
+	if got := (uint16(preamble[TSPacketSize+1]&0x1F) << 8) | uint16(preamble[TSPacketSize+2]); got != pmtPID {
+		t.Fatalf("the PMT is on PID %d, want %d", got, pmtPID)
+	}
+
+	// And it says the same thing the four packets said.
+	replayed := replayPreamble(t, preamble, 0)
+	if replayed.Facts.PMTPID != pmtPID || replayed.Facts.VideoPID != videoPID {
+		t.Fatalf("the preamble replays to PMT PID %d and video PID %d",
+			replayed.Facts.PMTPID, replayed.Facts.VideoPID)
 	}
 }
 
@@ -1030,13 +1045,22 @@ func TestMasterRing_MultiSectionPAT_TargetOnlyInSection1(t *testing.T) {
 		t.Fatalf("expected pmtPID=300 from Section 1, got %d", r.facts.PMTPID)
 	}
 
-	// Verify PAT preamble contains both Section 0 and Section 1 TS packets
+	// The preamble must carry the whole table, not only the section that named
+	// the target: a subscriber that got section 1 alone would be reading a PAT
+	// that says the transport has one programme in it.
 	preamble := r.PATPMTPreamble()
-	if len(preamble) < 2*TSPacketSize {
-		t.Fatalf("preamble must contain at least 2 PAT packets, got %d", len(preamble))
+	if len(preamble) != 2*TSPacketSize {
+		t.Fatalf("a two-section PAT packetizes to 2 packets, got %d bytes", len(preamble))
 	}
-	if !bytes.Equal(preamble[:TSPacketSize], pkt0) || !bytes.Equal(preamble[TSPacketSize:2*TSPacketSize], pkt1) {
-		t.Fatalf("preamble must contain both Section 0 and Section 1 packets")
+	if !sameSections(r.activePSI.PATSections, [][]byte{sec0, sec1}) {
+		t.Fatal("the ring holds something other than the two sections it was given")
+	}
+	replayed := replayPreamble(t, preamble, 30)
+	if !sameSections(replayed.PSI.PATSections, [][]byte{sec0, sec1}) {
+		t.Fatal("replaying the preamble does not produce both sections")
+	}
+	if replayed.Facts.PMTPID != 300 {
+		t.Fatalf("the replayed table names PMT PID %d, want 300", replayed.Facts.PMTPID)
 	}
 }
 
@@ -1260,10 +1284,27 @@ func TestMasterRing_MultipleSectionsSamePacket_PreambleDoesNotDuplicatePacket(t 
 		t.Fatalf("expected pmtPID=200, got %d", r.facts.PMTPID)
 	}
 
-	// Preamble must contain the packet EXACTLY ONCE (188 bytes), not duplicated (376 bytes)
+	// Two sections arrived in one packet. The preamble is sized by the table,
+	// not by the packet: each section starts its own packet, so this is two.
+	//
+	// The property being held here is that nothing is counted twice - which used
+	// to need a de-duplication pass over carrier packets, and now needs nothing,
+	// because sections are held by section_number and a number appears once.
 	preamble := r.PATPMTPreamble()
-	if len(preamble) != TSPacketSize {
-		t.Fatalf("expected deduplicated preamble length %d, got %d", TSPacketSize, len(preamble))
+	if len(preamble) != 2*TSPacketSize {
+		t.Fatalf("two sections packetize to 2 packets, got %d bytes", len(preamble))
+	}
+	if !sameSections(r.activePSI.PATSections, [][]byte{sec0, sec1}) {
+		t.Fatal("the ring holds something other than the two sections in that packet")
+	}
+	if replayed := replayPreamble(t, preamble, 20); replayed.Facts.PMTPID != 200 {
+		t.Fatalf("the preamble replays to PMT PID %d, want 200", replayed.Facts.PMTPID)
+	}
+
+	// The same packet again must not grow it.
+	_, _ = r.Push(context.Background(), pkt)
+	if again := r.PATPMTPreamble(); len(again) != len(preamble) {
+		t.Fatalf("a repeat of the same packet took the preamble from %d to %d bytes", len(preamble), len(again))
 	}
 }
 

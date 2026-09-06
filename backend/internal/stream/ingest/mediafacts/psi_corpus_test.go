@@ -50,7 +50,7 @@ var updatePSICorpus = flag.Bool("update-psi-corpus", false, "rewrite the checked
 // psiCorpusPath is the shared location both languages read.
 const psiCorpusPath = "../../../../../testdata/psi-corpus/corpus.txt"
 
-const psiCorpusFormatVersion = 1
+const psiCorpusFormatVersion = 2
 
 // --- expectation shapes ---------------------------------------------------
 
@@ -82,13 +82,22 @@ type psiExpect struct {
 	// payload, which is why the field records every event rather than filtering.
 	events []string
 
-	// patPackets and pmtPackets are the indices, into the case's own packet
-	// sequence, of the packets expected in ActivePSI. The comparison is on the
-	// bytes at those indices, so this is an exact check written compactly: a
-	// case's packet N is bytes [188*N, 188*N+188) of its chunks concatenated.
-	patPackets []int
-	pmtPackets []int
+	// patSections and pmtSections are the sections expected in ActivePSI, in the
+	// order the table numbers them. Each is the exact accepted section -
+	// table_id through CRC_32 - and they are written as the very fixture values
+	// the case fed in, so an expectation says which table the core must be
+	// holding rather than what the core happened to produce.
+	//
+	// The transport packets those sections arrived in are deliberately not part
+	// of the expectation. The same section delivered in six packets and in a
+	// thousand is the same table, and a corpus that recorded the packets would
+	// have made those two inputs look like different results.
+	patSections [][]byte
+	pmtSections [][]byte
 }
+
+// sects reads as a list of sections at an authoring site.
+func sects(s ...[]byte) [][]byte { return s }
 
 type psiStepKind uint8
 
@@ -631,7 +640,7 @@ func psiAssemblyCases() []psiCorpusCase {
 	return []psiCorpusCase{
 		func() psiCorpusCase {
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(2), []int{0}, []int{1}
+			w.events, w.patSections, w.pmtSections = identity(2), sects(basePAT), sects(basePMT)
 			return psiCase("pat_then_pmt_in_one_chunk",
 				"the PAT names the PMT PID and the PMT names the streams; each is one identity change",
 				1).
@@ -642,10 +651,10 @@ func psiAssemblyCases() []psiCorpusCase {
 		func() psiCorpusCase {
 			afterPAT := psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: identity(1), patPackets: []int{0},
+				events: identity(1), patSections: sects(basePAT),
 			}
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(1), []int{0}, []int{1}
+			w.events, w.patSections, w.pmtSections = identity(1), sects(basePAT), sects(basePMT)
 			return psiCase("pat_and_pmt_arrive_in_separate_chunks",
 				"a chunk boundary between the two tables changes nothing about either",
 				1).
@@ -655,37 +664,40 @@ func psiAssemblyCases() []psiCorpusCase {
 		}(),
 
 		func() psiCorpusCase {
+			split := bigPATSection(0, psiPMTPID1)
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(2), []int{0, 1}, []int{2}
+			w.events, w.patSections, w.pmtSections = identity(2), sects(split), sects(basePMT)
 			return psiCase("a_pat_section_split_across_two_packets",
-				"a 192-byte PAT is joined from both packets, and both are kept as the raw table",
+				"a 192-byte PAT is joined from both packets, and the table in force is the one section they carried",
 				1).
 				chunk(flatten(
-					psiPackets(0, 0, 0, bigPATSection(0, psiPMTPID1)),
+					psiPackets(0, 0, 0, split),
 					psiPackets(psiPMTPID1, 0, 0, basePMT)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			split := bigPMTSection(0)
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(2), []int{0}, []int{1, 2}
+			w.events, w.patSections, w.pmtSections = identity(2), sects(basePAT), sects(split)
 			return psiCase("a_pmt_section_split_across_two_packets",
-				"a PMT with a large program_info block spans two packets and both are the raw table",
+				"a PMT with a large program_info block spans two packets and is one section either way",
 				1).
 				chunk(flatten(
 					psiPackets(0, 0, 0, basePAT),
-					psiPackets(psiPMTPID1, 0, 0, bigPMTSection(0))), w).
+					psiPackets(psiPMTPID1, 0, 0, split)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
-			pmtPkts := psiPackets(psiPMTPID1, 0, 0, bigPMTSection(0))
+			spanning := bigPMTSection(0)
+			pmtPkts := psiPackets(psiPMTPID1, 0, 0, spanning)
 			afterFirst := psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: identity(1), patPackets: []int{0},
+				events: identity(1), patSections: sects(basePAT),
 			}
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(1), []int{0}, []int{1, 2}
+			w.events, w.patSections, w.pmtSections = identity(1), sects(basePAT), sects(spanning)
 			return psiCase("a_section_spans_the_chunk_boundary",
 				"half a PMT in one chunk and half in the next is the same table as one chunk carrying both",
 				1).
@@ -711,30 +723,31 @@ func psiAssemblyCases() []psiCorpusCase {
 				1).
 				chunk([][]byte{first, second}, psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
-					events: identity(2), patPackets: []int{1},
+					events: identity(2), patSections: sects(sectionB),
 				}).
 				done()
 		}(),
 
 		func() psiCorpusCase {
 			// Two sections of one PAT inside a single packet. The table activates
-			// on the second, and the packet is listed once, not twice.
+			// on the second, and both sections are the table in force.
 			secA := patSection(psiTSID, 0, 0, 1, 1, patProgram{9, 0x0900})
 			secB := patSection(psiTSID, 0, 1, 1, 1, patProgram{1, psiPMTPID1})
 			payload := append([]byte{0x00}, append(secA, secB...)...)
 
 			return psiCase("two_complete_sections_in_one_packet",
-				"both sections of a two-section PAT in one packet complete the table, and the packet is not listed twice",
+				"both sections of a two-section PAT in one packet complete the table, and both are held",
 				1).
 				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(secA, secB),
 				}).
 				done()
 		}(),
 
 		func() psiCorpusCase {
-			pkts := psiPackets(0, 0, 0, bigPAT3Section(psiPMTPID1))
+			threePacket := bigPAT3Section(psiPMTPID1)
+			pkts := psiPackets(0, 0, 0, threePacket)
 			if len(pkts) != 3 {
 				panic("psi corpus: expected a three-packet PAT")
 			}
@@ -743,8 +756,47 @@ func psiAssemblyCases() []psiCorpusCase {
 				1).
 				chunk([][]byte{pkts[0], pkts[1], pkts[1], pkts[2]}, psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1, 3},
+					events: identity(1), patSections: sects(threePacket),
 				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The same section twice: once packetized the way a transport does,
+			// once one payload byte per packet behind an adaptation field that
+			// eats the rest. Both are legal deliveries of the same table.
+			//
+			// The two `psi` lines in the file are identical and the two `chunk`
+			// lines are nothing alike, which is the claim: the packetization is
+			// the sender's, the table is the transport's, and only the second is
+			// state. Recording the packets instead - as version 1 of this file
+			// did - made these two inputs look like different results and made
+			// this parser's memory the sender's choice.
+			w := psiExpect{
+				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+				events: identity(1), patSections: sects(basePAT),
+			}
+			again := w
+			again.events = noEvents
+			return psiCase("the_same_pat_delivered_one_byte_per_packet_is_the_same_table",
+				"how finely a sender fragments a section is transport, so a starved delivery of a table already in force changes nothing about it",
+				1).
+				chunk(psiPackets(0, 0, 0, basePAT), w).
+				chunk(starvedPackets(0, 1, basePAT), again).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The same on the programme's own PID.
+			w := baseFacts
+			w.events, w.patSections, w.pmtSections = identity(2), sects(basePAT), sects(basePMT)
+			again := w
+			again.events = noEvents
+			return psiCase("the_same_pmt_delivered_one_byte_per_packet_is_the_same_table",
+				"the same invariance for the PMT: a starved delivery of the table in force leaves the streams and the sections exactly as they were",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, basePMT)), w).
+				chunk(starvedPackets(psiPMTPID1, 1, basePMT), again).
 				done()
 		}(),
 
@@ -764,7 +816,7 @@ func psiAssemblyCases() []psiCorpusCase {
 
 		func() psiCorpusCase {
 			w := baseFacts
-			w.events, w.patPackets, w.pmtPackets = identity(2), []int{1}, []int{2}
+			w.events, w.patSections, w.pmtSections = identity(2), sects(basePAT), sects(basePMT)
 			return psiCase("a_pmt_packet_before_any_pat_is_ignored",
 				"until a PAT names the PMT PID, a packet on it is just another elementary stream",
 				1).
@@ -777,6 +829,25 @@ func psiAssemblyCases() []psiCorpusCase {
 }
 
 // --- group B: what a section has to be before it counts -------------------
+
+// pmtDeclaringTwelve builds a section that is a PMT in every respect except
+// its length. Twelve after the length field is enough for a PAT's fixed part
+// and one byte short of a PMT's, so where the two bytes after
+// last_section_number would carry a PCR PID there is only room for one and a
+// half, and program_info_length has nowhere to be at all.
+func pmtDeclaringTwelve(programNumber uint16) []byte {
+	s := []byte{
+		tableIDPMT,
+		0xB0, 0x0C, // syntax indicator set, the bit after it clear, length 12
+		byte(programNumber >> 8), byte(programNumber & 0xFF),
+		0xC1,       // reserved, version 0, current_next 1
+		0x00,       // section_number
+		0x00,       // last_section_number
+		0xE0, 0x00, // as much of a PCR PID as twelve bytes leaves room for
+		0xF0, // and the first byte of a program_info_length that cannot fit
+	}
+	return appendCRC(s)
+}
 
 func corruptLastByte(section []byte) []byte {
 	out := cloneSlice(section)
@@ -795,7 +866,7 @@ func psiRejectionCases() []psiCorpusCase {
 	return []psiCorpusCase{
 		func() psiCorpusCase {
 			w := accepted
-			w.patPackets = []int{1}
+			w.patSections = sects(basePAT)
 			return psiCase("a_section_with_a_bad_crc_is_ignored",
 				"a corrupted section is not a table, and the good one after it still is",
 				1).
@@ -806,7 +877,7 @@ func psiRejectionCases() []psiCorpusCase {
 
 		func() psiCorpusCase {
 			w := accepted
-			w.patPackets = []int{1}
+			w.patSections = sects(basePAT)
 			return psiCase("a_section_marked_not_current_is_ignored",
 				"current_next_indicator=0 describes a table that is not in force yet",
 				1).
@@ -878,21 +949,22 @@ func psiRejectionCases() []psiCorpusCase {
 					psiPacketRaw(0, false, 2, fake[2:]),
 				}, psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sectionA),
 				}).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			overreaching := pmtOverreachingESInfo()
 			return psiCase("an_es_entry_declaring_more_descriptors_than_the_loop_holds_is_not_read",
 				"an entry that runs past the elementary stream loop ends the walk; the section's own CRC bytes are not its descriptors",
 				1).
 				chunk(flatten(
-					psiPackets(0, 0, 0, patSection(psiTSID, 0, 0, 0, 1, patProgram{1, psiPMTPID1})),
-					psiPackets(psiPMTPID1, 0, 0, pmtOverreachingESInfo())), psiExpect{
+					psiPackets(0, 0, 0, basePAT),
+					psiPackets(psiPMTPID1, 0, 0, overreaching)), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events: identity(2), patSections: sects(basePAT), pmtSections: sects(overreaching),
 				}).
 				done()
 		}(),
@@ -923,7 +995,7 @@ func psiRejectionCases() []psiCorpusCase {
 					psiPackets(0, 1, 0, stray),
 					psiPackets(0, 2, 0, sec1)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 2},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -938,7 +1010,7 @@ func psiRejectionCases() []psiCorpusCase {
 				1).
 				chunk(psiPackets(0, 0, 0, atTheLimit), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1, 2, 3, 4, 5},
+					events: identity(1), patSections: sects(atTheLimit),
 				}).
 				done()
 		}(),
@@ -957,7 +1029,7 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk(psiPackets(0, 0, 0, tooLong), nothing).
 				chunk(psiPackets(0, 6, 0, basePAT), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{6},
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				done()
 		}(),
@@ -972,7 +1044,7 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk([][]byte{psiPacketRaw(0, true, 3, declaringLength(0x0FFF))}, nothing).
 				chunk(psiPackets(0, 4, 0, basePAT), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{4},
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				done()
 		}(),
@@ -1010,7 +1082,7 @@ func psiRejectionCases() []psiCorpusCase {
 					psiPacketRaw(0, false, 2, continuation),
 				}, psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sectionA),
 				}).
 				done()
 		}(),
@@ -1037,7 +1109,7 @@ func psiRejectionCases() []psiCorpusCase {
 					psiPacketRaw(0, true, 1, payload1),
 				}, continuationPackets(0, 2, tooLong[2:])...), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sectionA),
 				}).
 				done()
 		}(),
@@ -1050,7 +1122,7 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk(psiPackets(0, 1, 0, withSyntaxBits(basePAT, 1, 1)), nothing).
 				chunk(psiPackets(0, 2, 0, basePAT), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{2},
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				done()
 		}(),
@@ -1068,7 +1140,7 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk([][]byte{psiPacketRaw(0, true, 0, payload)}, nothing).
 				chunk(psiPackets(0, 1, 0, basePAT), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{1},
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				done()
 		}(),
@@ -1089,13 +1161,14 @@ func psiRejectionCases() []psiCorpusCase {
 			for len(filler)+len(stub) <= TSPacketSize-4 {
 				filler = append(filler, stub...)
 			}
+			recovered := patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})
 			held := psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: identity(1), patPackets: []int{0, 1},
+				events: identity(1), patSections: sects(sectionA),
 			}
 			after := psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: noEvents, patPackets: []int{0, 1},
+				events: noEvents, patSections: sects(sectionA),
 			}
 			return psiCase("a_zero_length_split_header_leaves_nothing_to_continue",
 				"the header completes in the assembler, is refused there, and the packets that follow it find no section in flight to add themselves to",
@@ -1110,9 +1183,9 @@ func psiRejectionCases() []psiCorpusCase {
 					psiPacketRaw(0, false, 4, filler),
 					psiPacketRaw(0, false, 5, filler),
 				}, after).
-				chunk(psiPackets(0, 6, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})), psiExpect{
+				chunk(psiPackets(0, 6, 0, recovered), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{6},
+					events: identity(1), patSections: sects(recovered),
 				}).
 				done()
 		}(),
@@ -1131,7 +1204,7 @@ func psiRejectionCases() []psiCorpusCase {
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, empty), psiPackets(0, 1, 0, carrying)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(empty, carrying),
 				}).
 				done()
 		}(),
@@ -1150,7 +1223,7 @@ func psiRejectionCases() []psiCorpusCase {
 				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, empty)), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoCodec: CodecUnknown,
-					events:     identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events:     identity(2), patSections: sects(basePAT), pmtSections: sects(empty),
 				}).
 				done()
 		}(),
@@ -1158,18 +1231,50 @@ func psiRejectionCases() []psiCorpusCase {
 		func() psiCorpusCase {
 			// Twelve is a length a PAT may declare and a PMT may not. The floor
 			// belongs to the table, not to PSI in general.
+			real := pmtSection(1, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID))
 			return psiCase("a_pmt_shorter_than_its_own_syntax_is_refused_where_a_pat_would_pass",
 				"a PMT carries a PCR PID and a program_info_length a PAT does not, so twelve bytes after the length field is enough for one table and not the other",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT),
 					[][]byte{psiPacketRaw(psiPMTPID1, true, 0, []byte{0x00, 0x02, 0xB0, 0x0C})}), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(basePAT),
 				}).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtSection(1, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID))), psiExpect{
+				chunk(psiPackets(psiPMTPID1, 1, 0, real), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
-					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+					events: identity(1), patSections: sects(basePAT), pmtSections: sects(real),
+				}).
+				done()
+		}(),
+
+		func() psiCorpusCase {
+			// The floor, proved by a section that nothing else can refuse.
+			//
+			// The case above feeds three header bytes and no body, so it is
+			// refused before a CRC could be computed - which leaves the floor
+			// itself resting on a fixture's own arithmetic rather than on
+			// anything observable. This one is a whole section: the right
+			// table_id, the right syntax bits, a section_number inside its own
+			// table, current_next set, and a CRC that checks out. The only thing
+			// wrong with it is that a PMT cannot be twelve bytes long.
+			//
+			// So if the floor moved to a PAT's nine, this section would be
+			// accepted and the programme would report a PMT. Nothing else here
+			// would notice.
+			stub := pmtDeclaringTwelve(1)
+			if len(stub) != 15 {
+				panic("psi corpus: the twelve-byte PMT stub is not fifteen bytes")
+			}
+			if CalculateMPEG2CRC32(stub) != 0 {
+				panic("psi corpus: the twelve-byte PMT stub must have a valid CRC")
+			}
+			return psiCase("a_pmt_declaring_a_length_only_a_pat_may_use_is_refused",
+				"a complete section with an intact CRC on the right PID, refused for its length alone: nine is a PAT's floor and a PMT's floor is thirteen",
+				1).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, stub)), psiExpect{
+					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				done()
 		}(),
@@ -1184,6 +1289,7 @@ func psiRejectionCases() []psiCorpusCase {
 			if len(payload1) != TSPacketSize-4 {
 				panic("psi corpus: the split-header PMT payload is not a full payload")
 			}
+			afterwards := pmtSection(1, psiVideoPID, 1, 0, 0, 1, nil, esH264(psiVideoPID))
 			return psiCase("a_zero_length_split_header_on_the_pmt_pid_leaves_the_selection_intact",
 				"the same refusal on the programme's own PID: the PAT's choice stands, nothing is left in flight, and the table that follows is read normally",
 				1).
@@ -1195,12 +1301,12 @@ func psiRejectionCases() []psiCorpusCase {
 					}), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoCodec: CodecUnknown,
-					events:     identity(2), patPackets: []int{0}, pmtPackets: []int{1, 2},
+					events:     identity(2), patSections: sects(basePAT), pmtSections: sects(sectionA),
 				}).
-				chunk(psiPackets(psiPMTPID1, 3, 0, pmtSection(1, psiVideoPID, 1, 0, 0, 1, nil, esH264(psiVideoPID))), psiExpect{
+				chunk(psiPackets(psiPMTPID1, 3, 0, afterwards), psiExpect{
 					hasPAT: true, hasPMT: true, pmtVersion: 1, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
-					events: identity(1), patPackets: []int{0}, pmtPackets: []int{4},
+					events: identity(1), patSections: sects(basePAT), pmtSections: sects(afterwards),
 				}).
 				done()
 		}(),
@@ -1214,7 +1320,7 @@ func psiRejectionCases() []psiCorpusCase {
 		func() psiCorpusCase {
 			sectionA := bigPATSection(0, psiPMTPID1)
 			w := accepted
-			w.patPackets = []int{2}
+			w.patSections = sects(basePAT)
 			return psiCase("a_continuity_gap_aborts_an_in_flight_section",
 				"a jump in continuity_counter means the missing packet may have carried section bytes",
 				1).
@@ -1227,9 +1333,10 @@ func psiRejectionCases() []psiCorpusCase {
 		}(),
 
 		func() psiCorpusCase {
-			pkts := psiPackets(0, 0, 0, bigPATSection(0, psiPMTPID1))
+			repeated := bigPATSection(0, psiPMTPID1)
+			pkts := psiPackets(0, 0, 0, repeated)
 			w := accepted
-			w.patPackets = []int{0, 2}
+			w.patSections = sects(repeated)
 			return psiCase("an_exact_duplicate_packet_is_ignored",
 				"a repeated packet with the repeated counter is the transport saying the same thing twice, not a discontinuity",
 				1).
@@ -1240,7 +1347,7 @@ func psiRejectionCases() []psiCorpusCase {
 		func() psiCorpusCase {
 			pkts := psiPackets(0, 0, 0, bigPATSection(0, psiPMTPID1))
 			w := accepted
-			w.patPackets = []int{3}
+			w.patSections = sects(basePAT)
 			return psiCase("the_same_counter_with_different_bytes_resets_assembly",
 				"one counter value cannot describe two different packets, so what was in flight is unusable",
 				1).
@@ -1276,90 +1383,102 @@ func psiLifecycleCases() []psiCorpusCase {
 
 	return []psiCorpusCase{
 		func() psiCorpusCase {
+			was := pmtV(0, esH264(psiVideoPID), ac3One)
+			now := pmtV(1, esH264(psiVideoPID), ac3One, ac3Two)
 			a := full(0, []uint16{psiAudioPID1}, oneTrack)
-			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
+			a.events, a.patSections, a.pmtSections = identity(2), sects(basePAT), sects(was)
 			b := full(1, []uint16{psiAudioPID1, psiAudioPID2}, twoTracks)
-			b.events, b.patPackets, b.pmtPackets = identity(1), []int{0}, []int{2}
+			b.events, b.patSections, b.pmtSections = identity(1), sects(basePAT), sects(now)
 			return psiCase("a_new_pmt_version_on_the_same_pid_is_a_new_program_identity",
 				"the version is the stream's own statement that the table changed",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), a).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(1, esH264(psiVideoPID), ac3One, ac3Two)), b).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, was)), a).
+				chunk(psiPackets(psiPMTPID1, 1, 0, now), b).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			last := pmtV(31, esH264(psiVideoPID), ac3One)
+			wrapped := pmtV(0, esH264(psiVideoPID), ac3One)
 			a := full(31, []uint16{psiAudioPID1}, oneTrack)
-			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
+			a.events, a.patSections, a.pmtSections = identity(2), sects(basePAT), sects(last)
 			b := full(0, []uint16{psiAudioPID1}, oneTrack)
-			b.events, b.patPackets, b.pmtPackets = identity(1), []int{0}, []int{2}
+			b.events, b.patSections, b.pmtSections = identity(1), sects(basePAT), sects(wrapped)
 			return psiCase("a_pmt_version_wrapping_from_31_to_0_is_still_a_change",
 				"the version is five bits and wraps; 0 after 31 is the next table, not the first one again",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(31, esH264(psiVideoPID), ac3One))), a).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(0, esH264(psiVideoPID), ac3One)), b).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, last)), a).
+				chunk(psiPackets(psiPMTPID1, 1, 0, wrapped), b).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID), ac3One)
 			a := full(0, []uint16{psiAudioPID1}, oneTrack)
-			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
+			a.events, a.patSections, a.pmtSections = identity(2), sects(basePAT), sects(pmt)
+			// The repeat is delivered in different packets, with different
+			// continuity counters, and leaves exactly the same tables behind. That
+			// is the point: the packets were never what was being held.
 			b := full(0, []uint16{psiAudioPID1}, oneTrack)
-			b.events, b.patPackets, b.pmtPackets = noEvents, []int{2}, []int{3}
+			b.events, b.patSections, b.pmtSections = noEvents, sects(basePAT), sects(pmt)
 			return psiCase("the_same_table_delivered_again_is_not_a_change",
 				"a carousel repeats every table on a schedule; a repeat must not look like a new program",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), a).
-				chunk(flatten(psiPackets(0, 1, 0, basePAT), psiPackets(psiPMTPID1, 1, 0, pmtV(0, esH264(psiVideoPID), ac3One))), b).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), a).
+				chunk(flatten(psiPackets(0, 1, 0, basePAT), psiPackets(psiPMTPID1, 1, 0, pmt)), b).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID), ac3One)
 			a := full(0, []uint16{psiAudioPID1}, oneTrack)
-			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
+			a.events, a.patSections, a.pmtSections = identity(2), sects(basePAT), sects(pmt)
 			b := full(0, []uint16{psiAudioPID1}, oneTrack)
-			b.events, b.patPackets, b.pmtPackets = noEvents, []int{0}, []int{1}
+			b.events, b.patSections, b.pmtSections = noEvents, sects(basePAT), sects(pmt)
 			return psiCase("a_pmt_naming_another_program_number_on_the_same_pid_is_not_this_program",
 				"the PAT chose a program and the PID together, so a section on that PID for a different program changes nothing at all",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), a).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), a).
 				chunk(psiPackets(psiPMTPID1, 1, 0,
 					pmtSection(7, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID), ac3One)), b).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID), ac3One)
+			moved := patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})
 			a := full(0, []uint16{psiAudioPID1}, oneTrack)
-			a.events, a.patPackets, a.pmtPackets = identity(2), []int{0}, []int{1}
+			a.events, a.patSections, a.pmtSections = identity(2), sects(basePAT), sects(pmt)
 			b := psiExpect{
 				hasPAT: true, hasPMT: true, pmtVersion: 0, programNumber: 1,
 				pmtPID: psiPMTPID2, videoPID: psiVideoPID, videoCodec: CodecH264,
 				audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-				events: identity(2), patPackets: []int{2}, pmtPackets: []int{3},
+				events: identity(2), patSections: sects(moved), pmtSections: sects(pmt),
 			}
 			return psiCase("a_new_pat_moves_the_program_to_another_pmt_pid",
 				"the PMT PID is a property of the PAT, and following it discards everything the old one said",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), a).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), a).
 				chunk(flatten(
-					psiPackets(0, 1, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})),
-					psiPackets(psiPMTPID2, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), b).
+					psiPackets(0, 1, 0, moved),
+					psiPackets(psiPMTPID2, 0, 0, pmt)), b).
 				done()
 		}(),
 
 		func() psiCorpusCase {
 			pmtV9 := pmtSection(1, psiVideoPID, 9, 0, 0, 1, nil, esH264(psiVideoPID))
+			moved := patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})
 			return psiCase("a_pat_that_moves_the_pmt_pid_forgets_the_old_program_identity",
 				"the same fact as a target switch, reached the other way: no PMT means no program number and no version, whatever named the new PID",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV9)), psiExpect{
 					hasPAT: true, hasPMT: true, pmtVersion: 9, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmtV9),
 				}).
-				chunk(psiPackets(0, 1, 0, patSection(psiTSID, 1, 0, 0, 1, patProgram{1, psiPMTPID2})), psiExpect{
+				chunk(psiPackets(0, 1, 0, moved), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{2},
+					events: identity(1), patSections: sects(moved),
 				}).
 				done()
 		}(),
@@ -1376,13 +1495,13 @@ func psiLifecycleCases() []psiCorpusCase {
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, foreign)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(basePAT),
 				}).
 				chunk(psiPackets(psiPMTPID1, 1, 0, mine), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+					events: identity(1), patSections: sects(basePAT), pmtSections: sects(mine),
 				}).
 				done()
 		}(),
@@ -1400,13 +1519,13 @@ func psiLifecycleCases() []psiCorpusCase {
 				0).
 				chunk(flatten(psiPackets(0, 0, 0, pat), psiPackets(psiPMTPID1, 0, 0, foreign)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(pat),
 				}).
 				chunk(psiPackets(psiPMTPID1, 1, 0, mine), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 7, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(1), patPackets: []int{0}, pmtPackets: []int{2},
+					events: identity(1), patSections: sects(pat), pmtSections: sects(mine),
 				}).
 				done()
 		}(),
@@ -1427,7 +1546,7 @@ func psiLifecycleCases() []psiCorpusCase {
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{2},
+					events: identity(2), patSections: sects(pat), pmtSections: sects(mine),
 				}).
 				done()
 		}(),
@@ -1452,7 +1571,7 @@ func psiLifecycleCases() []psiCorpusCase {
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1, 3},
+					events: identity(2), patSections: sects(basePAT), pmtSections: sects(mine0, mine1),
 				}).
 				done()
 		}(),
@@ -1468,7 +1587,7 @@ func psiLifecycleCases() []psiCorpusCase {
 				hasPAT: true, hasPMT: true, pmtVersion: 3, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
 				audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(mine),
 			}
 			after := established
 			after.events = noEvents
@@ -1495,20 +1614,20 @@ func psiLifecycleCases() []psiCorpusCase {
 					hasPAT: true, hasPMT: true, programNumber: 7, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events: identity(2), patSections: sects(patV0), pmtSections: sects(pmt7),
 				}).
 				chunk(psiPackets(0, 1, 0, patV1), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{2},
+					events: identity(1), patSections: sects(patV1),
 				}).
 				chunk(psiPackets(psiPMTPID1, 1, 0, pmt7), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: noEvents, patPackets: []int{2},
+					events: noEvents, patSections: sects(patV1),
 				}).
 				chunk(psiPackets(psiPMTPID1, 2, 0, pmt3), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 3, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID2, videoCodec: CodecH264,
-					events: identity(1), patPackets: []int{2}, pmtPackets: []int{4},
+					events: identity(1), patSections: sects(patV1), pmtSections: sects(pmt3),
 				}).
 				done()
 		}(),
@@ -1519,14 +1638,15 @@ func psiLifecycleCases() []psiCorpusCase {
 			// it - including HasPAT, which is only ever set where a PAT named the
 			// target.
 			gone := patSection(psiTSID, 1, 0, 0, 1, patProgram{5, psiPMTPID2})
+			pmt := pmtV(0, esH264(psiVideoPID), ac3One)
 			return psiCase("a_pat_that_no_longer_names_the_target_gives_the_selection_up",
 				"the transport says the program is not here any more, and holding its old PID would leave the core reading a table for a program this PAT does not carry",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), ac3One))), psiExpect{
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), psiExpect{
 					hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: []uint16{psiAudioPID1}, tracks: oneTrack,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 				}).
 				chunk(psiPackets(0, 1, 0, gone), psiExpect{
 					videoCodec: CodecUnknown, events: identity(1),
@@ -1544,7 +1664,7 @@ func psiLifecycleCases() []psiCorpusCase {
 					psiExpect{videoCodec: CodecUnknown, events: noEvents}).
 				chunk(psiPackets(0, 1, 0, sec1), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -1552,16 +1672,20 @@ func psiLifecycleCases() []psiCorpusCase {
 		func() psiCorpusCase {
 			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{9, 0x0900})
 			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{1, psiPMTPID1})
+			// The repeat replaces section 0's slot and the table is republished.
+			// Both steps expect the same two sections in section_number order,
+			// which is the whole claim: a carousel repeat is not a change, and
+			// which packet a section arrived in is not part of what is held.
 			return psiCase("a_carousel_repeat_of_one_section_keeps_the_table_complete",
-				"section 0 arriving again replaces its slot; the table stays complete and its raw packets follow the replacement",
+				"section 0 arriving again replaces its slot and the table stays complete and unchanged",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec1)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				chunk(psiPackets(0, 2, 0, sec0), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: noEvents, patPackets: []int{2, 1},
+					events: noEvents, patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -1571,21 +1695,24 @@ func psiLifecycleCases() []psiCorpusCase {
 			sec1v0 := patSection(psiTSID, 0, 1, 1, 1, patProgram{1, psiPMTPID1})
 			sec0v1 := patSection(psiTSID, 1, 0, 1, 1, patProgram{9, 0x0900})
 			sec1v1 := patSection(psiTSID, 1, 1, 1, 1, patProgram{1, psiPMTPID2})
+			// While v1 is half delivered the tracker already holds v1's section 0.
+			// What is expected here is still both v0 sections: the table in force
+			// is a copy, not a window onto the generation being assembled.
 			held := psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: noEvents, patPackets: []int{0, 1},
+				events: noEvents, patSections: sects(sec0v0, sec1v0),
 			}
 			return psiCase("a_new_version_restarts_the_section_set_without_dropping_the_old_table",
 				"a half-delivered new version is not yet a table, and the one in force stays in force until it is",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, sec0v0), psiPackets(0, 1, 0, sec1v0)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sec0v0, sec1v0),
 				}).
 				chunk(psiPackets(0, 2, 0, sec0v1), held).
 				chunk(psiPackets(0, 3, 0, sec1v1), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{2, 3},
+					events: identity(1), patSections: sects(sec0v1, sec1v1),
 				}).
 				done()
 		}(),
@@ -1599,6 +1726,12 @@ func psiSelectionCases() []psiCorpusCase {
 	pmt2 := pmtSection(2, psiVideoPID, 0, 0, 0, 1, nil, esH264(psiVideoPID))
 	multiPAT := patSection(psiTSID, 0, 0, 0, 1,
 		patProgram{5, 0x0500}, patProgram{1, psiPMTPID1}, patProgram{2, psiPMTPID2})
+	withoutTheTarget := patSection(psiTSID, 0, 0, 0, 1,
+		patProgram{5, 0x0500}, patProgram{9, 0x0900})
+	nitFirst := patSection(psiTSID, 0, 0, 0, 1,
+		patProgram{0, 0x0010}, patProgram{1, psiPMTPID1})
+	nitThenTwo := patSection(psiTSID, 0, 0, 0, 1,
+		patProgram{0, 0x0010}, patProgram{3, psiPMTPID3}, patProgram{1, psiPMTPID1})
 
 	return []psiCorpusCase{
 		psiCase("the_target_program_is_selected_out_of_several",
@@ -1606,41 +1739,38 @@ func psiSelectionCases() []psiCorpusCase {
 			1).
 			chunk(psiPackets(0, 0, 0, multiPAT), psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: identity(1), patPackets: []int{0},
+				events: identity(1), patSections: sects(multiPAT),
 			}).
 			done(),
 
 		psiCase("a_pat_without_the_target_program_names_no_pmt_pid",
 			"a PAT that does not carry the program asked for is not a PAT for this stream",
 			1).
-			chunk(psiPackets(0, 0, 0, patSection(psiTSID, 0, 0, 0, 1,
-				patProgram{5, 0x0500}, patProgram{9, 0x0900})),
+			chunk(psiPackets(0, 0, 0, withoutTheTarget),
 				psiExpect{videoCodec: CodecUnknown, events: noEvents}).
 			chunk(psiPackets(0, 1, 0, multiPAT), psiExpect{
 				hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-				events: identity(1), patPackets: []int{1},
+				events: identity(1), patSections: sects(multiPAT),
 			}).
 			done(),
 
 		psiCase("program_number_zero_is_the_network_information_table",
 			"entry 0 of a PAT points at the NIT, and following it would tune to a table instead of a service",
 			1).
-			chunk(psiPackets(0, 0, 0, patSection(psiTSID, 0, 0, 0, 1,
-				patProgram{0, 0x0010}, patProgram{1, psiPMTPID1})),
+			chunk(psiPackets(0, 0, 0, nitFirst),
 				psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID1, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(nitFirst),
 				}).
 			done(),
 
 		psiCase("a_target_of_zero_follows_the_first_program_the_pat_names",
 			"asked for no program in particular, the core takes the first real one and still skips the NIT",
 			0).
-			chunk(psiPackets(0, 0, 0, patSection(psiTSID, 0, 0, 0, 1,
-				patProgram{0, 0x0010}, patProgram{3, psiPMTPID3}, patProgram{1, psiPMTPID1})),
+			chunk(psiPackets(0, 0, 0, nitThenTwo),
 				psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID3, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0},
+					events: identity(1), patSections: sects(nitThenTwo),
 				}).
 			done(),
 
@@ -1652,7 +1782,7 @@ func psiSelectionCases() []psiCorpusCase {
 				0).
 				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec1)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID3, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -1665,7 +1795,7 @@ func psiSelectionCases() []psiCorpusCase {
 				0).
 				chunk(flatten(psiPackets(0, 0, 0, sec0), psiPackets(0, 1, 0, sec1)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID2, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{0, 1},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -1674,11 +1804,11 @@ func psiSelectionCases() []psiCorpusCase {
 			sec0 := patSection(psiTSID, 0, 0, 1, 1, patProgram{3, psiPMTPID3})
 			sec1 := patSection(psiTSID, 0, 1, 1, 1, patProgram{5, psiPMTPID2})
 			return psiCase("sections_delivered_out_of_order_are_read_in_section_number_order",
-				"the table is assembled before it is read, so which packet arrived first decides neither the program nor the order of the raw table",
+				"the table is assembled before it is read, so which packet arrived first decides neither the program nor the order the sections are held in",
 				0).
 				chunk(flatten(psiPackets(0, 0, 0, sec1), psiPackets(0, 1, 0, sec0)), psiExpect{
 					hasPAT: true, pmtPID: psiPMTPID3, videoCodec: CodecUnknown,
-					events: identity(1), patPackets: []int{1, 0},
+					events: identity(1), patSections: sects(sec0, sec1),
 				}).
 				done()
 		}(),
@@ -1689,13 +1819,13 @@ func psiSelectionCases() []psiCorpusCase {
 			chunk(flatten(psiPackets(0, 0, 0, multiPAT), psiPackets(psiPMTPID1, 0, 0, pmt1)), psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(multiPAT), pmtSections: sects(pmt1),
 			}).
 			target(2, psiExpect{videoCodec: CodecUnknown, events: identity(1)}).
 			chunk(flatten(psiPackets(0, 1, 0, multiPAT), psiPackets(psiPMTPID2, 0, 0, pmt2)), psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 2, pmtPID: psiPMTPID2,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				events: identity(2), patPackets: []int{2}, pmtPackets: []int{3},
+				events: identity(2), patSections: sects(multiPAT), pmtSections: sects(pmt2),
 			}).
 			done(),
 
@@ -1707,7 +1837,7 @@ func psiSelectionCases() []psiCorpusCase {
 				chunk(flatten(psiPackets(0, 0, 0, multiPAT), psiPackets(psiPMTPID1, 0, 0, pmtV9)), psiExpect{
 					hasPAT: true, hasPMT: true, pmtVersion: 9, programNumber: 1, pmtPID: psiPMTPID1,
 					videoPID: psiVideoPID, videoCodec: CodecH264,
-					events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+					events: identity(2), patSections: sects(multiPAT), pmtSections: sects(pmtV9),
 				}).
 				target(2, psiExpect{videoCodec: CodecUnknown, events: identity(1)}).
 				done()
@@ -1719,12 +1849,12 @@ func psiSelectionCases() []psiCorpusCase {
 			chunk(flatten(psiPackets(0, 0, 0, multiPAT), psiPackets(psiPMTPID1, 0, 0, pmt1)), psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(multiPAT), pmtSections: sects(pmt1),
 			}).
 			target(1, psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				events: noEvents, patPackets: []int{0}, pmtPackets: []int{1},
+				events: noEvents, patSections: sects(multiPAT), pmtSections: sects(pmt1),
 			}).
 			done(),
 	}
@@ -1737,11 +1867,11 @@ func psiElementaryStreamCases() []psiCorpusCase {
 	pmtV := func(version uint8, streams ...pmtStream) []byte {
 		return pmtSection(1, psiVideoPID, version, 0, 0, 1, nil, streams...)
 	}
-	video := func(version uint8, pid uint16, codec VideoCodec, step int) psiExpect {
+	video := func(version uint8, pid uint16, codec VideoCodec, pmt []byte) psiExpect {
 		return psiExpect{
 			hasPAT: true, hasPMT: true, pmtVersion: version, programNumber: 1,
 			pmtPID: psiPMTPID1, videoPID: pid, videoCodec: codec,
-			events: identity(1), patPackets: []int{0}, pmtPackets: []int{step},
+			events: identity(1), patSections: sects(basePAT), pmtSections: sects(pmt),
 		}
 	}
 
@@ -1754,52 +1884,60 @@ func psiElementaryStreamCases() []psiCorpusCase {
 			c := psiCase("every_video_stream_type_the_pmt_can_declare",
 				"H.264, both HEVC stream types, MPEG-2 and MPEG-1 each name a codec; the PID follows the table",
 				1)
-			first := video(0, psiVideoPID, CodecH264, 1)
+			h264 := pmtV(0, esH264(psiVideoPID))
+			hevc24 := pmtV(1, esHEVC(psiVideoPID))
+			hevc27 := pmtV(2, pmtStream{streamType: 0x27, pid: psiVideoPID})
+			mpeg2 := pmtV(3, esMPEG2(psiVideoPID))
+			mpeg1 := pmtV(4, pmtStream{streamType: 0x01, pid: psiVideoPID})
+			first := video(0, psiVideoPID, CodecH264, h264)
 			first.events = identity(2)
 			c.chunk(flatten(psiPackets(0, 0, 0, basePAT),
-				psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID)))), first)
-			c.chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(1, esHEVC(psiVideoPID))),
-				video(1, psiVideoPID, CodecH265, 2))
-			c.chunk(psiPackets(psiPMTPID1, 2, 0, pmtV(2, pmtStream{streamType: 0x27, pid: psiVideoPID})),
-				video(2, psiVideoPID, CodecH265, 3))
-			c.chunk(psiPackets(psiPMTPID1, 3, 0, pmtV(3, esMPEG2(psiVideoPID))),
-				video(3, psiVideoPID, CodecMPEG2, 4))
-			c.chunk(psiPackets(psiPMTPID1, 4, 0, pmtV(4, pmtStream{streamType: 0x01, pid: psiVideoPID})),
-				video(4, psiVideoPID, CodecMPEG2, 5))
+				psiPackets(psiPMTPID1, 0, 0, h264)), first)
+			c.chunk(psiPackets(psiPMTPID1, 1, 0, hevc24),
+				video(1, psiVideoPID, CodecH265, hevc24))
+			c.chunk(psiPackets(psiPMTPID1, 2, 0, hevc27),
+				video(2, psiVideoPID, CodecH265, hevc27))
+			c.chunk(psiPackets(psiPMTPID1, 3, 0, mpeg2),
+				video(3, psiVideoPID, CodecMPEG2, mpeg2))
+			c.chunk(psiPackets(psiPMTPID1, 4, 0, mpeg1),
+				video(4, psiVideoPID, CodecMPEG2, mpeg1))
 			return c.done()
 		}(),
 
 		func() psiCorpusCase {
-			first := video(0, psiVideoPID, CodecH264, 1)
+			was := pmtV(0, esH264(psiVideoPID))
+			moved := pmtV(1, esH264(psiVideoPID2))
+			first := video(0, psiVideoPID, CodecH264, was)
 			first.events = identity(2)
 			return psiCase("the_video_pid_moves_with_the_table",
 				"a new PMT version can put the video on another PID, and the old one stops being video",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT),
-					psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID)))), first).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(1, esH264(psiVideoPID2))),
-					video(1, psiVideoPID2, CodecH264, 2)).
+					psiPackets(psiPMTPID1, 0, 0, was)), first).
+				chunk(psiPackets(psiPMTPID1, 1, 0, moved),
+					video(1, psiVideoPID2, CodecH264, moved)).
 				done()
 		}(),
 
 		func() psiCorpusCase {
-			first := video(0, psiVideoPID, CodecH264, 1)
+			twoVideo := pmtV(0, esH264(psiVideoPID), esHEVC(psiVideoPID2))
+			first := video(0, psiVideoPID, CodecH264, twoVideo)
 			first.events = identity(2)
 			return psiCase("the_first_video_stream_in_the_table_is_the_one_followed",
 				"a program with two video streams is followed on the first the table names",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT),
-					psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), esHEVC(psiVideoPID2)))), first).
+					psiPackets(psiPMTPID1, 0, 0, twoVideo)), first).
 				done()
 		}(),
 
 		func() psiCorpusCase {
-			withAudio := func(version uint8, step int, pids []uint16, tracks []psiTrackExpect, events int) psiExpect {
+			withAudio := func(version uint8, pmt []byte, pids []uint16, tracks []psiTrackExpect, events int) psiExpect {
 				return psiExpect{
 					hasPAT: true, hasPMT: true, pmtVersion: version, programNumber: 1,
 					pmtPID: psiPMTPID1, videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: pids, tracks: tracks,
-					events: identity(events), patPackets: []int{0}, pmtPackets: []int{step},
+					events: identity(events), patSections: sects(basePAT), pmtSections: sects(pmt),
 				}
 			}
 			one := []psiTrackExpect{trackAC3(psiAudioPID1, "deu", 0x02, 2, false)}
@@ -1808,23 +1946,25 @@ func psiElementaryStreamCases() []psiCorpusCase {
 				{pid: psiAudioPID2, streamType: 0x06, codec: "eac3", lang: "eng",
 					multichannel: true, componentType: 0x85, hasComponentType: true},
 			}
+			onlyOne := pmtV(0, esH264(psiVideoPID), esAC3(psiAudioPID1, ac3Stereo))
+			added := pmtV(1, esH264(psiVideoPID),
+				esAC3(psiAudioPID1, ac3Stereo), esAC3(psiAudioPID2, eac3Multi))
+			removed := pmtV(2, esH264(psiVideoPID), esAC3(psiAudioPID2, eac3Multi))
 			return psiCase("an_audio_stream_is_added_and_then_removed",
 				"the track set is whatever the current table says, and a stream that left leaves nothing behind",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT),
-					psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), esAC3(psiAudioPID1, ac3Stereo)))),
-					withAudio(0, 1, []uint16{psiAudioPID1}, one, 2)).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(1, esH264(psiVideoPID),
-					esAC3(psiAudioPID1, ac3Stereo), esAC3(psiAudioPID2, eac3Multi))),
-					withAudio(1, 2, []uint16{psiAudioPID1, psiAudioPID2}, two, 1)).
-				chunk(psiPackets(psiPMTPID1, 2, 0, pmtV(2, esH264(psiVideoPID),
-					esAC3(psiAudioPID2, eac3Multi))),
-					withAudio(2, 3, []uint16{psiAudioPID2}, []psiTrackExpect{two[1]}, 1)).
+					psiPackets(psiPMTPID1, 0, 0, onlyOne)),
+					withAudio(0, onlyOne, []uint16{psiAudioPID1}, one, 2)).
+				chunk(psiPackets(psiPMTPID1, 1, 0, added),
+					withAudio(1, added, []uint16{psiAudioPID1, psiAudioPID2}, two, 1)).
+				chunk(psiPackets(psiPMTPID1, 2, 0, removed),
+					withAudio(2, removed, []uint16{psiAudioPID2}, []psiTrackExpect{two[1]}, 1)).
 				done()
 		}(),
 
 		func() psiCorpusCase {
-			base := func(version uint8, step int, tracks []psiTrackExpect, events int) psiExpect {
+			base := func(version uint8, pmt []byte, tracks []psiTrackExpect, events int) psiExpect {
 				pids := make([]uint16, 0, len(tracks))
 				for _, t := range tracks {
 					pids = append(pids, t.pid)
@@ -1833,22 +1973,28 @@ func psiElementaryStreamCases() []psiCorpusCase {
 					hasPAT: true, hasPMT: true, pmtVersion: version, programNumber: 1,
 					pmtPID: psiPMTPID1, videoPID: psiVideoPID, videoCodec: CodecH264,
 					audioPIDs: pids, tracks: tracks,
-					events: identity(events), patPackets: []int{0}, pmtPackets: []int{step},
+					events: identity(events), patSections: sects(basePAT), pmtSections: sects(pmt),
 				}
 			}
+			asAC3 := pmtV(0, esH264(psiVideoPID), esAC3(psiAudioPID1, ac3Stereo))
+			asMP2 := pmtV(1, esH264(psiVideoPID), esMP2(psiAudioPID1, descs(descLanguage("deu", 0x00))))
 			return psiCase("one_pid_keeps_its_number_and_changes_codec",
 				"the same PID carrying MPEG audio after AC-3 is a different elementary stream, not a renamed one",
 				1).
 				chunk(flatten(psiPackets(0, 0, 0, basePAT),
-					psiPackets(psiPMTPID1, 0, 0, pmtV(0, esH264(psiVideoPID), esAC3(psiAudioPID1, ac3Stereo)))),
-					base(0, 1, []psiTrackExpect{trackAC3(psiAudioPID1, "deu", 0x02, 2, false)}, 2)).
-				chunk(psiPackets(psiPMTPID1, 1, 0, pmtV(1, esH264(psiVideoPID),
-					esMP2(psiAudioPID1, descs(descLanguage("deu", 0x00))))),
-					base(1, 2, []psiTrackExpect{{pid: psiAudioPID1, streamType: 0x03, codec: "mp2", lang: "deu"}}, 1)).
+					psiPackets(psiPMTPID1, 0, 0, asAC3)),
+					base(0, asAC3, []psiTrackExpect{trackAC3(psiAudioPID1, "deu", 0x02, 2, false)}, 2)).
+				chunk(psiPackets(psiPMTPID1, 1, 0, asMP2),
+					base(1, asMP2, []psiTrackExpect{{pid: psiAudioPID1, streamType: 0x03, codec: "mp2", lang: "deu"}}, 1)).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esAC3(psiAudioPID2, eac3Multi),
+				esAC3(psiAudioPID1, ac3Stereo),
+				esAAC(0x0104, aacStereo),
+				esMP2(0x0105, nil))
 			tracks := []psiTrackExpect{
 				{pid: psiAudioPID2, streamType: 0x06, codec: "eac3", lang: "eng",
 					multichannel: true, componentType: 0x85, hasComponentType: true},
@@ -1862,21 +2008,23 @@ func psiElementaryStreamCases() []psiCorpusCase {
 				videoPID: psiVideoPID, videoCodec: CodecH264,
 				audioPIDs: []uint16{psiAudioPID2, psiAudioPID1, 0x0104, 0x0105},
 				tracks:    tracks,
-				events:    identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events:    identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("several_audio_streams_keep_the_order_the_table_gives_them",
 				"E-AC-3, AC-3, AAC and MPEG audio in one program, each with its own declaration, in table order",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esAC3(psiAudioPID2, eac3Multi),
-						esAC3(psiAudioPID1, ac3Stereo),
-						esAAC(0x0104, aacStereo),
-						esMP2(0x0105, nil)))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esAC3(psiAudioPID1, descs(
+					descUnknown(0x52, 1),
+					descLanguage("deu", 0x00),
+					descUnknown(0xFF, 3),
+					descAC3(0x02),
+					descUnknown(0x0E, 2))))
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
@@ -1884,23 +2032,22 @@ func psiElementaryStreamCases() []psiCorpusCase {
 				tracks: []psiTrackExpect{
 					trackAC3(psiAudioPID1, "deu", 0x02, 2, false),
 				},
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("descriptors_the_parser_does_not_know_are_stepped_over",
 				"an unknown tag between the ones that matter must not end the descriptor walk",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esAC3(psiAudioPID1, descs(
-							descUnknown(0x52, 1),
-							descLanguage("deu", 0x00),
-							descUnknown(0xFF, 3),
-							descAC3(0x02),
-							descUnknown(0x0E, 2)))))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esAC3(0x1FFF, descs(descLanguage("deu", 0x00), descAC3(0x02))),
+				esAC3(0x0001, descs(descLanguage("eng", 0x00), descAC3(0x02))),
+				esAC3(0x0000, descs(descLanguage("nld", 0x00), descAC3(0x02))),
+				esAC3(0x1FFE, descs(descLanguage("fra", 0x00), descAC3(0x02))),
+				esAC3(psiAudioPID1, descs(descLanguage("spa", 0x00), descAC3(0x02))))
 			// The invalid PIDs are placed before, between and after the valid
 			// ones, and the valid ones include both neighbours of the reserved
 			// values, so neither the rejection nor the ordering can be an
@@ -1914,22 +2061,19 @@ func psiElementaryStreamCases() []psiCorpusCase {
 					trackAC3(0x1FFE, "fra", 0x02, 2, false),
 					trackAC3(psiAudioPID1, "spa", 0x02, 2, false),
 				},
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("audio_declared_on_a_pid_that_cannot_carry_a_stream_is_not_declared_at_all",
 				"PID 0 is the PAT and 0x1FFF is stuffing, so a track on either would be one nothing ever routes payload to; the PIDs next to them are ordinary streams",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esAC3(0x1FFF, descs(descLanguage("deu", 0x00), descAC3(0x02))),
-						esAC3(0x0001, descs(descLanguage("eng", 0x00), descAC3(0x02))),
-						esAC3(0x0000, descs(descLanguage("nld", 0x00), descAC3(0x02))),
-						esAC3(0x1FFE, descs(descLanguage("fra", 0x00), descAC3(0x02))),
-						esAC3(psiAudioPID1, descs(descLanguage("spa", 0x00), descAC3(0x02)))))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				pmtStream{streamType: 0x81, pid: psiAudioPID1, descriptors: descLanguage("eng", 0x00)},
+				pmtStream{streamType: 0x87, pid: psiAudioPID2, descriptors: descLanguage("deu", 0x00)})
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
@@ -1938,19 +2082,19 @@ func psiElementaryStreamCases() []psiCorpusCase {
 					{pid: psiAudioPID1, streamType: 0x81, codec: "ac3", lang: "eng"},
 					{pid: psiAudioPID2, streamType: 0x87, codec: "eac3", lang: "deu"},
 				},
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("the_atsc_stream_types_tell_ac3_and_eac3_apart",
 				"A/52 registers 0x81 for AC-3 and 0x87 for Enhanced AC-3, so the stream type names the codec on its own and the two are not the same codec",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						pmtStream{streamType: 0x81, pid: psiAudioPID1, descriptors: descLanguage("eng", 0x00)},
-						pmtStream{streamType: 0x87, pid: psiAudioPID2, descriptors: descLanguage("deu", 0x00)}))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esAC3(psiAudioPID1, descRegistration("AC-3")),
+				esAC3(psiAudioPID2, descRegistration("EAC3")))
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
@@ -1959,34 +2103,35 @@ func psiElementaryStreamCases() []psiCorpusCase {
 					{pid: psiAudioPID1, streamType: 0x06, codec: "ac3", lang: "und"},
 					{pid: psiAudioPID2, streamType: 0x06, codec: "eac3", lang: "und"},
 				},
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("a_registration_descriptor_is_enough_to_name_the_codec",
 				"private-data streams registered as AC-3 or E-AC-3 are audio even with no codec descriptor",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esAC3(psiAudioPID1, descRegistration("AC-3")),
-						esAC3(psiAudioPID2, descRegistration("EAC3"))))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esPrivate(psiAudioPID1, descs(descLanguage("deu", 0x00), descUnknown(0x56, 2))))
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("private_data_without_an_audio_descriptor_is_not_audio",
 				"subtitles and teletext share stream type 0x06 with AC-3 and must not be watched as programme audio",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esPrivate(psiAudioPID1, descs(descLanguage("deu", 0x00), descUnknown(0x56, 2)))))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 
 		func() psiCorpusCase {
+			pmt := pmtV(0, esH264(psiVideoPID),
+				esAC3(psiAudioPID1, descs(descLanguage("deu", 0x00), descAC3(0x0F))),
+				esAC3(psiAudioPID2, descs(descLanguage("deu", 0x00), descAC3NoComponentType())),
+				esAC3(0x0106, descs(descLanguage("deu", 0x00), descAC3FlagClear())))
 			w := psiExpect{
 				hasPAT: true, hasPMT: true, programNumber: 1, pmtPID: psiPMTPID1,
 				videoPID: psiVideoPID, videoCodec: CodecH264,
@@ -1997,16 +2142,12 @@ func psiElementaryStreamCases() []psiCorpusCase {
 					{pid: psiAudioPID2, streamType: 0x06, codec: "ac3", lang: "deu"},
 					{pid: 0x0106, streamType: 0x06, codec: "ac3", lang: "deu"},
 				},
-				events: identity(2), patPackets: []int{0}, pmtPackets: []int{1},
+				events: identity(2), patSections: sects(basePAT), pmtSections: sects(pmt),
 			}
 			return psiCase("an_ac3_descriptor_can_carry_no_usable_channel_count",
 				"a reserved component type, an absent one, and one the presence flag denies are all silence on the subject",
 				1).
-				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0,
-					pmtV(0, esH264(psiVideoPID),
-						esAC3(psiAudioPID1, descs(descLanguage("deu", 0x00), descAC3(0x0F))),
-						esAC3(psiAudioPID2, descs(descLanguage("deu", 0x00), descAC3NoComponentType())),
-						esAC3(0x0106, descs(descLanguage("deu", 0x00), descAC3FlagClear()))))), w).
+				chunk(flatten(psiPackets(0, 0, 0, basePAT), psiPackets(psiPMTPID1, 0, 0, pmt)), w).
 				done()
 		}(),
 	}
@@ -2036,14 +2177,6 @@ func casePackets(c psiCorpusCase) [][]byte {
 	var out [][]byte
 	for i := 0; i+TSPacketSize <= len(all); i += TSPacketSize {
 		out = append(out, all[i:i+TSPacketSize])
-	}
-	return out
-}
-
-func packetsAt(packets [][]byte, indices []int) [][]byte {
-	out := make([][]byte, 0, len(indices))
-	for _, i := range indices {
-		out = append(out, packets[i])
 	}
 	return out
 }
@@ -2107,40 +2240,24 @@ func psiBit(b bool) int {
 	return 0
 }
 
-func psiPacketsLine(pat, pmt [][]byte, packets [][]byte) string {
-	return fmt.Sprintf("pat=%s pmt=%s", psiIndexList(pat, packets), psiIndexList(pmt, packets))
-}
-
-// psiIndexList names each raw packet by where it came from in the case's own
-// packet sequence. A packet the case never contained is reported as bytes, which
-// is what an implementation inventing a preamble would produce.
-func psiIndexList(got [][]byte, packets [][]byte) string {
-	parts := make([]string, 0, len(got))
-	for _, g := range got {
-		idx := -1
-		for i, p := range packets {
-			if string(p) == string(g) {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			parts = append(parts, "!"+hex.EncodeToString(g))
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%d", idx))
-	}
-	return strings.Join(parts, ",")
+// psiSectionsLineOf renders what the core is actually holding, in the same form
+// the expectation is written in, so a disagreement shows both sides as bytes.
+func psiSectionsLineOf(psi ActivePSI) string {
+	return fmt.Sprintf("pat=%s pmt=%s", psiSectionList(psi.PATSections), psiSectionList(psi.PMTSections))
 }
 
 func wantPSILine(w psiExpect) string {
-	return fmt.Sprintf("pat=%s pmt=%s", psiIntList(w.patPackets), psiIntList(w.pmtPackets))
+	return fmt.Sprintf("pat=%s pmt=%s", psiSectionList(w.patSections), psiSectionList(w.pmtSections))
 }
 
-func psiIntList(in []int) string {
+// psiSectionList renders the sections of one table, comma separated, each as its
+// own exact bytes. Long, and deliberately so: a hash would compare equal for
+// reasons a reader could not check, and the file is the artefact two
+// implementations are held to.
+func psiSectionList(in [][]byte) string {
 	parts := make([]string, 0, len(in))
-	for _, v := range in {
-		parts = append(parts, fmt.Sprintf("%d", v))
+	for _, s := range in {
+		parts = append(parts, hex.EncodeToString(s))
 	}
 	return strings.Join(parts, ",")
 }
@@ -2149,7 +2266,6 @@ func psiIntList(in []int) string {
 // stopping at the first, so a semantic change shows its whole shape at once.
 func runPSICase(t *testing.T, c psiCorpusCase) {
 	t.Helper()
-	packets := casePackets(c)
 	core := NewGoCore(c.initial)
 	ctx := context.Background()
 	offset := int64(0)
@@ -2191,7 +2307,7 @@ func runPSICase(t *testing.T, c psiCorpusCase) {
 		if names := eventNames(got.Events); strings.Join(names, " ") != strings.Join(step.want.events, " ") {
 			bad = append(bad, "  events got  ["+strings.Join(names, " ")+"]\n  events want ["+strings.Join(step.want.events, " ")+"]")
 		}
-		if line := psiPacketsLine(got.PSI.PAT, got.PSI.PMT, packets); line != wantPSILine(step.want) {
+		if line := psiSectionsLineOf(got.PSI); line != wantPSILine(step.want) {
 			bad = append(bad, "  psi got  "+line+"\n  psi want "+wantPSILine(step.want))
 		}
 		if len(bad) > 0 {
@@ -2257,13 +2373,20 @@ func renderPSICorpus(cases []psiCorpusCase) string {
 	b.WriteString("#   facts ...     the scalar facts after that call, and ProcessedThroughOffset\n")
 	b.WriteString("#   track ...     one line per audio track, in the order the PMT declares them\n")
 	b.WriteString("#   events ...    the event kinds that call produced, in order\n")
-	b.WriteString("#   psi ...       the raw ActivePSI packets, named by their index in the case's\n")
-	b.WriteString("#                 own packet sequence: packet N is bytes [188N, 188N+188) of the\n")
-	b.WriteString("#                 case's chunks concatenated\n")
+	b.WriteString("#   psi ...       the tables in force after that call: every accepted section,\n")
+	b.WriteString("#                 comma separated, section_number ascending, each as its exact\n")
+	b.WriteString("#                 bytes from table_id through CRC_32\n")
 	b.WriteString("#\n")
-	b.WriteString("# Chunk boundaries are part of the case: a section assembler carries a partial\n")
-	b.WriteString("# section across a call, so the same packets cut differently are a different\n")
-	b.WriteString("# input.\n")
+	b.WriteString("# What a `psi` line does not name is the transport packets the sections arrived\n")
+	b.WriteString("# in. Version 1 of this file recorded those, which made the same table sent in\n")
+	b.WriteString("# six packets and in a thousand look like different results - and made the\n")
+	b.WriteString("# memory a parser holds a function of how finely the sender chose to fragment.\n")
+	b.WriteString("# A conforming core retains the sections and packetizes them again when a\n")
+	b.WriteString("# caller has to deliver them.\n")
+	b.WriteString("#\n")
+	b.WriteString("# Chunk boundaries are still part of the case: a section assembler carries a\n")
+	b.WriteString("# partial section across a call, so the same packets cut differently are a\n")
+	b.WriteString("# different input.\n")
 	b.WriteString("#\n")
 	b.WriteString("# No case carries video elementary stream payload, so no case produces a random\n")
 	b.WriteString("# access point. Video facts here are the ones the PMT alone declares.\n")
@@ -2320,6 +2443,8 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_section_spans_the_chunk_boundary",
 		"a_non_zero_pointer_field_completes_the_previous_section",
 		"two_complete_sections_in_one_packet",
+		"the_same_pat_delivered_one_byte_per_packet_is_the_same_table",
+		"the_same_pmt_delivered_one_byte_per_packet_is_the_same_table",
 		// what a section has to be
 		"a_section_with_a_bad_crc_is_ignored",
 		"a_section_marked_not_current_is_ignored",
@@ -2335,6 +2460,7 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 		"a_pat_at_its_shortest_possible_length_is_still_a_table",
 		"a_pmt_at_its_shortest_possible_length_is_still_a_table",
 		"a_pmt_shorter_than_its_own_syntax_is_refused_where_a_pat_would_pass",
+		"a_pmt_declaring_a_length_only_a_pat_may_use_is_refused",
 		"a_zero_length_split_header_on_the_pmt_pid_leaves_the_selection_intact",
 		"a_section_numbered_outside_the_table_does_not_complete_it",
 		"a_section_numbered_beyond_the_table_leaves_it_untouched",
@@ -2396,13 +2522,11 @@ func TestPSICorpus_CoversWhatItClaimsTo(t *testing.T) {
 	}
 }
 
-// TestPSICorpus_EveryCaseIsPacketAligned holds the corpus to the shape its own
-// raw-PSI expectations assume: packet N is bytes [188N, 188N+188) of the case's
-// chunks concatenated. A chunk that was not packet aligned would silently
-// renumber every index after it.
+// TestPSICorpus_EveryCaseIsPacketAligned holds the corpus to the shape the core
+// is given: whole transport packets. A chunk that was not packet aligned would
+// be describing an input the caller never produces.
 func TestPSICorpus_EveryCaseIsPacketAligned(t *testing.T) {
 	for _, c := range psiCorpusCases() {
-		total := 0
 		for i, s := range c.steps {
 			if s.kind != psiStepChunk {
 				continue
@@ -2410,14 +2534,31 @@ func TestPSICorpus_EveryCaseIsPacketAligned(t *testing.T) {
 			if len(s.chunk)%TSPacketSize != 0 {
 				t.Errorf("%s step %d: chunk of %d bytes is not packet aligned", c.name, i+1, len(s.chunk))
 			}
-			total += len(s.chunk)
 		}
-		packets := total / TSPacketSize
+	}
+}
+
+// TestPSICorpus_EveryExpectedSectionIsOneASectionCouldBe checks the
+// expectations against the bounds the contract derives, so a case cannot claim
+// the core holds something the core is not allowed to hold. It reads the
+// authored fixtures, not the core - if these two ever disagree it is a case that
+// is wrong, not an implementation.
+func TestPSICorpus_EveryExpectedSectionIsOneASectionCouldBe(t *testing.T) {
+	for _, c := range psiCorpusCases() {
 		for i, s := range c.steps {
-			for _, idx := range append(append([]int(nil), s.want.patPackets...), s.want.pmtPackets...) {
-				if idx < 0 || idx >= packets {
-					t.Errorf("%s step %d: packet index %d is outside the case's %d packets",
-						c.name, i+1, idx, packets)
+			for name, table := range map[string][][]byte{
+				"pat": s.want.patSections,
+				"pmt": s.want.pmtSections,
+			} {
+				if len(table) > MaxSectionsPerTable {
+					t.Errorf("%s step %d: %s expects %d sections, more than a table may have",
+						c.name, i+1, name, len(table))
+				}
+				for j, sec := range table {
+					if len(sec) < 3 || len(sec) > MaxSectionBytes {
+						t.Errorf("%s step %d: %s section %d is %d bytes, which no section may be",
+							c.name, i+1, name, j, len(sec))
+					}
 				}
 			}
 		}
@@ -2584,10 +2725,10 @@ func TestPSI_TheAudioStreamsAgreeAboutWhichStreamsThereAre(t *testing.T) {
 // bytes and set the section length to three, and neither phase can act on
 // `len(buf) == sectionLen` - the first wants fewer than three bytes, the second
 // wants fewer than the section length. Nothing could then emit or discard it,
-// and every later packet on that PID appended to the stale buffer and pushed a
-// whole 188-byte copy of itself into the raw packet list. One byte and one
-// packet retained per packet, indefinitely, on input nobody has to be trusted
-// for.
+// and every later packet on that PID appended to the stale buffer. One byte
+// retained per packet, indefinitely, on input nobody has to be trusted for -
+// and, before the carrier packets left this parser, a whole 188-byte copy of
+// each of them too.
 //
 // Facts never moved while that happened, so a test comparing facts would have
 // watched it and reported nothing. This reads the assembler directly.
@@ -2607,6 +2748,7 @@ func TestPSI_AnImpossibleDeclarationLeavesNoStateBehind(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 
+	retained0 := retainedPSIBytes(c)
 	empty := func(t *testing.T, when string) {
 		t.Helper()
 		if n := len(c.patAssembler.buf); n != 0 {
@@ -2615,8 +2757,11 @@ func TestPSI_AnImpossibleDeclarationLeavesNoStateBehind(t *testing.T) {
 		if n := c.patAssembler.sectionLen; n != 0 {
 			t.Fatalf("%s: assembler is still waiting for a %d byte section", when, n)
 		}
-		if n := len(c.patAssembler.rawPackets); n != 0 {
-			t.Fatalf("%s: assembler is holding %d packets for a section that was refused", when, n)
+		// And nothing anywhere else grew either. The buffer emptying while some
+		// other part of the core collected the packets instead would be the same
+		// defect wearing a different field name.
+		if n := retainedPSIBytes(c); n != retained0 {
+			t.Fatalf("%s: the core retains %d bytes of PSI, was %d", when, n, retained0)
 		}
 	}
 	empty(t, "after the refused declaration")

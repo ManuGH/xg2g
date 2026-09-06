@@ -17,18 +17,26 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1   # backend/
 
 PKG=./internal/stream/ingest/mediafacts
+RINGPKG=./internal/stream/ingest/ring
 CORE=internal/stream/ingest/mediafacts/core.go
 PARSE=internal/stream/ingest/mediafacts/parse.go
 PSI=internal/stream/ingest/mediafacts/psi.go
+# The ring turns the sections the core keeps back into transport packets. It is
+# mutated here rather than in a harness of its own because it is the other half
+# of one contract: the core may only stop retaining the sender's packets if what
+# replaces them delivers the same tables.
+RING=internal/stream/ingest/ring/psipreamble.go
 
 BACKUP=$(mktemp -d)
 cp "$CORE" "$BACKUP/core.go"
 cp "$PARSE" "$BACKUP/parse.go"
 cp "$PSI" "$BACKUP/psi.go"
+cp "$RING" "$BACKUP/psipreamble.go"
 restore() {
   cp "$BACKUP/core.go" "$CORE"
   cp "$BACKUP/parse.go" "$PARSE"
   cp "$BACKUP/psi.go" "$PSI"
+  cp "$BACKUP/psipreamble.go" "$RING"
   rm -rf "$BACKUP"
 }
 trap restore EXIT
@@ -68,13 +76,21 @@ PY
     return
   fi
 
-  local out
+  local out rc
   # The corpus and the contract tests both pin invariants a mutation can break.
   # Running only the corpus would let a mutation survive because the test that
   # would have caught it was never asked - which is how the assembler's bounded
   # state went unpinned until it was mutated.
+  #
+  # The ring's preamble tests run for every mutation too, not only for the ones
+  # that touch the ring: a core that quietly dropped a section would still have
+  # to get past the replay.
   out=$(go test "$PKG" -run 'TestPSICorpus_TheGoCoreMeetsTheAuthoredExpectations|TestPSI_' 2>&1)
-  local rc=$?
+  rc=$?
+  if [ $rc -eq 0 ]; then
+    out=$(go test "$RINGPKG" -run 'TestPreamble_|TestPacketizePSISections|TestMasterRing_MultiPacketPATPMT_Assembly|TestMasterRing_MultiSectionPAT_TargetOnlyInSection1|TestMasterRing_MultipleSectionsSamePacket' 2>&1)
+    rc=$?
+  fi
   restore_one
 
   if [ $rc -eq 0 ]; then
@@ -124,13 +140,16 @@ mutate "give a PMT the shorter floor a PAT has" "$PSI" \
 mutate "keep the section in flight after refusing its declaration" "$CORE" \
   '				assembler.buf = assembler.buf[:0]
 				assembler.sectionLen = 0
-				assembler.rawPackets = assembler.rawPackets[:0]' \
-  '				_ = assembler'
-
-mutate "keep the packets of a section whose declaration was refused" "$CORE" \
-  '				assembler.rawPackets = assembler.rawPackets[:0]
 				// Everything handed in is given up' \
-  '				// Everything handed in is given up'
+  '				_ = assembler
+				// Everything handed in is given up'
+
+# There is no longer a mutation that makes the assembler keep the packets a
+# refused section arrived in, because there is no longer a field to keep them
+# in. That is the point of R8 and not a gap in this harness: the retention is
+# gone structurally rather than guarded by a test. What is still mutable - the
+# section bytes themselves surviving a refusal - is the mutation above and the
+# one at the end of this file, and both are killed.
 
 mutate "let a PAT or PMT declare the whole twelve-bit length" "$PSI" \
   'length > maxPSISectionLength {' 'length > 0x0FFF {'
@@ -143,9 +162,9 @@ mutate "stop requiring the fixed zero bit" "$PSI" \
 
 EQUIVALENT_REASON="since a section numbering itself beyond its own table is refused before the tracker, every stored section number is inside 0..last_section_number - so a count of last+1 already implies each slot is filled, and the per-slot loop cannot be the check that fails. It is kept as the guard that would still hold if the numbering check above it were ever removed"
 mutate "activate a table with a section still missing" "$PSI" \
-  'if _, ok := t.sections[i]; !ok {
+  'if _, ok := t.sections[uint8(n)]; !ok {
 				return false
-			}' 'if _, ok := t.sections[i]; !ok {
+			}' 'if _, ok := t.sections[uint8(n)]; !ok {
 				_ = ok
 			}'
 
@@ -180,8 +199,8 @@ mutate "let a foreign PMT reach the tracker before it is refused" "$CORE" \
 			return
 		}
 
-		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)' \
-  'tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table, rawPackets)
+		tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table)' \
+  'tableComplete := c.pmtTracker.addSection(version, sectionNum, lastSectionNum, table)
 		if progNum != c.selectedProgramNumber {
 			return
 		}'
@@ -217,7 +236,7 @@ mutate "treat a duplicate packet as new data" "$CORE" \
 				// Exact byte-for-byte duplicate TS packet: silently ignore
 				return
 			}' \
-  'if false {
+  'if bytes.Equal(pkt, assembler.lastPacket) && false {
 				// Exact byte-for-byte duplicate TS packet: silently ignore
 				return
 			}'
@@ -311,6 +330,59 @@ mutate "stop the descriptor walk at the first unknown tag" "$PARSE" \
 			return false
 		case descriptorAC3, descriptorEnhAC3, descriptorDTS, descriptorAAC, descriptorDTSHD:
 			return true'
+
+# --- R8: the tables in force are sections, not the packets that carried them --
+
+mutate "keep the bytes of a section that was refused for its length" "$CORE" \
+  '				assembler.buf = assembler.buf[:0]
+				assembler.sectionLen = 0
+				// Everything handed in is given up, not only the header bytes.' \
+  '				assembler.sectionLen = 0
+				// Everything handed in is given up, not only the header bytes.'
+
+mutate "publish the generation being assembled as the table in force" "$CORE" \
+  'PATSections: cloneSliceList(c.activePATSections),' \
+  'PATSections: cloneSliceList(c.patTracker.generation(c.patTracker.lastSectionNum)),'
+
+mutate "drop the last section when copying a completed generation" "$PSI" \
+  '	out := make([][]byte, 0, int(lastSectionNum)+1)
+	for n := 0; n <= int(lastSectionNum); n++ {' \
+  '	out := make([][]byte, 0, int(lastSectionNum)+1)
+	for n := 0; n < int(lastSectionNum); n++ {'
+
+mutate "hold a table's sections in the reverse of the order it numbers them" "$PSI" \
+  '	for n := 0; n <= int(lastSectionNum); n++ {
+		// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+		out = append(out, cloneSlice(t.sections[uint8(n)]))' \
+  '	for n := int(lastSectionNum); n >= 0; n-- {
+		// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+		out = append(out, cloneSlice(t.sections[uint8(n)]))'
+
+mutate "count a table's sections in a counter its own numbering can overflow" "$PSI" \
+  '		for n := 0; n <= int(lastSectionNum); n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			if _, ok := t.sections[uint8(n)]; !ok {' \
+  '		for n := uint8(0); n <= lastSectionNum; n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			if _, ok := t.sections[n]; !ok {'
+
+mutate "start a section without the pointer field that says where it begins" "$RING" \
+  '				body[0] = 0x00
+				body = body[1:]' \
+  '				body[0] = 0x00'
+
+mutate "mark every packet as starting a section" "$RING" \
+  '				pusi = false' '				_ = pusi'
+
+mutate "leave the continuity counter where it was" "$RING" \
+  '			cc = (cc + 1) & 0x0F' '			cc = cc + 0'
+
+mutate "pad a section's last packet with zero bytes instead of stuffing" "$RING" \
+  '				body[i] = 0xFF' '				body[i] = 0x00'
+
+mutate "emit a section too long to be one" "$RING" \
+  'if len(section) < psiSectionHeaderBytes || len(section) > mediafacts.MaxSectionBytes {' \
+  'if len(section) < psiSectionHeaderBytes {'
 
 echo
 echo "killed:     $killed"

@@ -115,9 +115,10 @@ type MasterRing struct {
 	// chunk is ingested, so a cache cannot be stale between chunks.
 	facts mediafacts.Facts
 
-	// activePSI is the raw PAT/PMT the core last parsed, kept because the
-	// subscriber delivers those packets ahead of an entry point. Interpretation is
-	// the core's; delivery is the ring's, and neither parses them twice.
+	// activePSI is the PAT/PMT sections the core last accepted, kept because the
+	// subscriber is delivered those tables ahead of an entry point. Interpretation
+	// is the core's; packetizing them for delivery is the ring's, and neither
+	// parses them twice.
 	activePSI mediafacts.ActivePSI
 }
 
@@ -456,13 +457,7 @@ func (r *MasterRing) PrimedAttachPoint() PrimedAttachPoint {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	var preamble []byte
-	for _, pkt := range r.activePSI.PAT {
-		preamble = append(preamble, pkt...)
-	}
-	for _, pkt := range r.activePSI.PMT {
-		preamble = append(preamble, pkt...)
-	}
+	preamble := r.patpmtPreambleLocked()
 
 	var kfOffset int64
 	var hasKf bool
@@ -506,7 +501,7 @@ func (r *MasterRing) latestKeyframeOffsetLocked() (int64, bool) {
 	return latest, true
 }
 
-// PATPMTPreamble returns concatenated raw PAT and PMT TS packets across all active sections.
+// PATPMTPreamble returns the active PAT and PMT, packetized for delivery.
 func (r *MasterRing) PATPMTPreamble() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -516,12 +511,12 @@ func (r *MasterRing) PATPMTPreamble() []byte {
 // patpmtPreambleLocked builds the active topology preamble for callers already
 // holding r.mu. See latestKeyframeOffsetLocked for why the split exists.
 func (r *MasterRing) patpmtPreambleLocked() []byte {
-	var preamble []byte
-	for _, pkt := range r.activePSI.PAT {
-		preamble = append(preamble, pkt...)
-	}
-	for _, pkt := range r.activePSI.PMT {
-		preamble = append(preamble, pkt...)
+	preamble := packetizePSISections(patPID, r.activePSI.PATSections)
+	// The PMT's PID is the one the PAT named for this program. Without it there
+	// is no PID to put the sections on, and PID 0 - the zero value - is the PAT's
+	// own; emitting them there would deliver a PMT as if it were a PAT.
+	if r.facts.PMTPID != patPID {
+		preamble = append(preamble, packetizePSISections(r.facts.PMTPID, r.activePSI.PMTSections)...)
 	}
 	return preamble
 }
