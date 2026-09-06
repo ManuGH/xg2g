@@ -53,7 +53,7 @@ enum AppState: Equatable, Sendable {
 /// Top-level sections in the Broadcast Console.
 enum Tab: String, CaseIterable, Identifiable, Sendable {
     case liveTV = "Live TV"
-    case guide = "Programm"
+    case guide = "TV-Guide"
     case recordings = "Aufnahmen"
     case timers = "Timer"
     case settings = "Einstellungen"
@@ -63,7 +63,7 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
     var systemImage: String {
         switch self {
         case .liveTV: return "tv"
-        case .guide: return "calendar.badge.clock"
+        case .guide: return "rectangle.split.3x1"
         case .recordings: return "play.rectangle.on.rectangle"
         case .timers: return "clock"
         case .settings: return "gearshape"
@@ -135,7 +135,7 @@ final class AppModel {
 
     private var address: ServerAddress?
     private var identity: ServerIdentity?
-    private var channelRepository: ChannelRepository?
+    var channelRepository: ChannelRepository?
     private var recordingsRepository: RecordingsRepository?
     private var timersRepository: TimersRepository?
     private var playback: PlaybackCoordinator?
@@ -974,10 +974,26 @@ final class AppModel {
 
     func loadInitialData() async {
         await loadBouquets()
-        await loadChannels()
+        if bouquetChannelsCache["all"] == nil {
+            if channels.isEmpty {
+                await loadChannels()
+            } else {
+                Task { [weak self] in
+                    await self?.prewarmAllChannelsCache()
+                }
+            }
+        }
         await loadRecordings()
         await loadTimers()
         lastDataRefreshTime = Date()
+    }
+
+    /// Pre-warms the full channels cache in background so switching to 'Alle Sender' or 'Favoriten' is instant.
+    func prewarmAllChannelsCache() async {
+        guard let channelRepository, bouquetChannelsCache["all"] == nil else { return }
+        if let all = try? await channelRepository.channels(bouquet: nil) {
+            bouquetChannelsCache["all"] = all
+        }
     }
 
     /// Called when the app returns from background/suspended state.
@@ -1009,13 +1025,13 @@ final class AppModel {
         let targets = channels.map(\.serviceRef)
         if !targets.isEmpty {
             if let updated = try? await channelRepository.nowNext(for: targets) {
-                schedule = updated
+                schedule.merge(updated) { _, new in new }
             }
         }
 
         // 2. Refresh full EPG schedule
         if let epgUpdated = try? await channelRepository.epgSchedule(bouquet: selectedBouquet?.name) {
-            fullEpg = epgUpdated
+            fullEpg.merge(epgUpdated) { _, new in new }
         }
 
         lastDataRefreshTime = Date()
@@ -1029,23 +1045,48 @@ final class AppModel {
         }
     }
 
+    static let allChannelsBouquetID = "xg2g_all_channels"
+
     func loadBouquets() async {
         guard let channelRepository else { return }
         do {
             bouquets = try await channelRepository.bouquets()
+            let savedBouquetID = UserDefaults.standard.string(forKey: "selectedBouquetID")
+            if selectedBouquet == nil {
+                if savedBouquetID == Self.allChannelsBouquetID {
+                    await selectBouquet(nil)
+                } else if savedBouquetID == Self.favoritesBouquetID {
+                    await selectBouquet(ChannelBouquet(id: Self.favoritesBouquetID, name: "Favoriten"))
+                } else if let savedBouquetID, let saved = bouquets.first(where: { $0.id == savedBouquetID }) {
+                    await selectBouquet(saved)
+                } else if let first = bouquets.first {
+                    await selectBouquet(first)
+                } else {
+                    await selectBouquet(nil)
+                }
+            }
         } catch {
             // Bouquets are optional metadata; failure does not block the channel list
         }
     }
 
-    @ObservationIgnored private var bouquetChannelsCache: [String: [Channel]] = [:]
+    @ObservationIgnored var bouquetChannelsCache: [String: [Channel]] = [:]
 
     func selectBouquet(_ bouquet: ChannelBouquet?) async {
         selectedBouquet = bouquet
+        if let id = bouquet?.id {
+            UserDefaults.standard.set(id, forKey: "selectedBouquetID")
+        } else {
+            UserDefaults.standard.set(Self.allChannelsBouquetID, forKey: "selectedBouquetID")
+        }
         guard let bouquet, bouquet.id != Self.favoritesBouquetID else {
             // "Alle Sender" (nil) or "Favoriten" filter locally in memory in 0ms
-            if bouquet == nil, let all = bouquetChannelsCache["all"], channels.count != all.count {
-                channels = all
+            if let all = bouquetChannelsCache["all"] {
+                if channels.count != all.count || channels != all {
+                    channels = all
+                }
+            } else {
+                await loadChannels()
             }
             return
         }
@@ -1053,6 +1094,10 @@ final class AppModel {
         // Instant switch if this bouquet was already loaded
         if let cached = bouquetChannelsCache[bouquet.id] {
             channels = cached
+            let uncachedRefs = cached.map(\.serviceRef).filter { schedule[$0] == nil }
+            if !uncachedRefs.isEmpty {
+                Task { await refreshSchedule(for: uncachedRefs) }
+            }
             return
         }
 
@@ -1080,8 +1125,8 @@ final class AppModel {
             async let epgTask = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
 
             let (newSchedule, newEpg) = await (nowNextTask, epgTask)
-            schedule = newSchedule
-            fullEpg = newEpg
+            schedule.merge(newSchedule) { _, new in new }
+            fullEpg.merge(newEpg) { _, new in new }
             lastDataRefreshTime = Date()
         } catch {
             handle(error)
@@ -1348,6 +1393,9 @@ final class AppModel {
         bouquets = []
         recordings = []
         timers = []
+        bouquetChannelsCache.removeAll()
+        schedule.removeAll()
+        fullEpg.removeAll()
         lastError = nil
     }
 

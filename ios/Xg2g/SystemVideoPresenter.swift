@@ -62,6 +62,7 @@ public final class SystemVideoPresenter: NSObject {
     /// full almost all the time. Roughly 1.5 of 50 fields per second survived,
     /// which is what a stuttering picture looks like from the inside.
     private var pendingSamples: [CMSampleBuffer] = []
+    private var lastEnqueuedPTS: CMTime = .invalid
     private let _atomicPendingCount = OSAllocatedUnfairLock(initialState: 0)
     private var isRequestingData = false
 
@@ -375,7 +376,15 @@ public final class SystemVideoPresenter: NSObject {
             // recover.
             droppedCount += 1
         } else {
-            pendingSamples.append(sample)
+            // Keep pendingSamples strictly sorted by presentation timestamp (monotonic PTS order).
+            // Asynchronous Metal completion handlers and main queue dispatches can cause adjacent
+            // 20ms fields to complete slightly out of sequence.
+            let samplePTS = pts.seconds
+            let insertIdx = pendingSamples.firstIndex { s in
+                let sPTS = CMSampleBufferGetPresentationTimeStamp(s)
+                return sPTS.isValid && sPTS.seconds > samplePTS
+            } ?? pendingSamples.count
+            pendingSamples.insert(sample, at: insertIdx)
             let count = pendingSamples.count
             _atomicPendingCount.withLock { $0 = count }
         }
@@ -441,14 +450,26 @@ public final class SystemVideoPresenter: NSObject {
                 return
             }
             readyTrue += 1
-            renderer.enqueue(pendingSamples.removeFirst())
+            let nextSample = pendingSamples.removeFirst()
+            let nextPTS = CMSampleBufferGetPresentationTimeStamp(nextSample)
+            if nextPTS.isValid && lastEnqueuedPTS.isValid && nextPTS.seconds < lastEnqueuedPTS.seconds - 0.005 {
+                // Out-of-order sample detected: dropping to protect display layer from presentation judder
+                droppedCount += 1
+                let dropLog = "[SystemVideo] ⚠️ Dropping out-of-order sample @ PTS \(String(format: "%.3f", nextPTS.seconds))s (last enqueued: \(String(format: "%.3f", lastEnqueuedPTS.seconds))s)"
+                TelemetryServer.shared.log(dropLog)
+            } else {
+                if nextPTS.isValid {
+                    lastEnqueuedPTS = nextPTS
+                }
+                renderer.enqueue(nextSample)
+                enqueuedCount += 1
+                if awaitingImmediateHandoff {
+                    awaitingImmediateHandoff = false
+                    onFirstFieldPresentedImmediately?()
+                }
+            }
             let count = pendingSamples.count
             _atomicPendingCount.withLock { $0 = count }
-            enqueuedCount += 1
-            if awaitingImmediateHandoff {
-                awaitingImmediateHandoff = false
-                onFirstFieldPresentedImmediately?()
-            }
         }
 
         if isRequestingData {
@@ -496,6 +517,7 @@ public final class SystemVideoPresenter: NSObject {
     public func flush(generation: Int) {
         currentGeneration = generation
         pendingSamples.removeAll(keepingCapacity: true)
+        lastEnqueuedPTS = .invalid
         _atomicPendingCount.withLock { $0 = 0 }
         if isRequestingData {
             displayLayer.sampleBufferRenderer.stopRequestingMediaData()

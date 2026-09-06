@@ -26,7 +26,7 @@ struct DVRTimer: Identifiable, Equatable, Sendable {
     }
 
     var isRunning: Bool {
-        state.lowercased() == "running" || state.lowercased() == "active"
+        state.lowercased() == "recording" || state.lowercased() == "running" || state.lowercased() == "active"
     }
 }
 

@@ -20,7 +20,8 @@ struct GuideView: View {
     @Bindable var model: AppModel
     @Environment(\.horizontalSizeClass) private var sizeClass
 
-    @State private var mode: GuideMode = .onAir
+    @AppStorage("guideDisplayMode") private var storedMode: String = GuideMode.grid.rawValue
+    @AppStorage("guideShowSpotlight") private var showSpotlight: Bool = true
     @State private var selectedDayOffset: Int = 0
     @State private var anchor: GuideAnchor = .now
     @State private var selectedGenre: EpgGenre = .all
@@ -28,9 +29,30 @@ struct GuideView: View {
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
 
+    private var currentMode: GuideMode {
+        if storedMode == "Zeitschiene" {
+            return .channels
+        }
+        return GuideMode(rawValue: storedMode) ?? .grid
+    }
+
+    private var modeBinding: Binding<GuideMode> {
+        Binding(
+            get: { currentMode },
+            set: { storedMode = $0.rawValue }
+        )
+    }
+
     /// Built by `rebuildProjection`, never by `body`.
     @State private var projection: GuideProjection = .empty
     @State private var hasBuiltProjection = false
+
+    private var contentBottomPadding: CGFloat {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        return model.playbackManager.presentationMode == .miniplayer
+            ? (isPad ? 96 : 140)
+            : (isPad ? 24 : 80)
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,10 +60,7 @@ struct GuideView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    if mode != .onAir {
-                        windowBar
-                    }
-
+                    windowBar
                     content
                 }
 
@@ -56,7 +75,14 @@ struct GuideView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { bouquetMenu }
                 ToolbarItem(placement: .principal) { modePicker }
-                ToolbarItem(placement: .topBarTrailing) { genreMenu }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
+                        if currentMode == .grid {
+                            spotlightToggle
+                        }
+                        genreMenu
+                    }
+                }
             }
             .searchable(text: $guideSearchText, prompt: "Sendung oder Sender suchen…")
             .sheet(item: $selectedDetail) { payload in
@@ -85,21 +111,15 @@ struct GuideView: View {
     /// a reader makes here, so it takes the most prominent slot rather than
     /// sitting in a third row of chips.
     private var modePicker: some View {
-        Picker("Darstellung", selection: $mode.animation(.easeInOut(duration: 0.2))) {
+        Picker("Darstellung", selection: modeBinding.animation(.easeInOut(duration: 0.2))) {
             ForEach(GuideMode.allCases) { mode in
                 Label(mode.rawValue, systemImage: mode.symbol).tag(mode)
             }
         }
         .pickerStyle(.segmented)
-        .frame(maxWidth: 320)
-        .onChange(of: mode) { _, newValue in
+        .frame(maxWidth: 240)
+        .onChange(of: storedMode) { _, _ in
             triggerHaptic(.light)
-            // "Jetzt" is always today and always the current moment; carrying a
-            // day or anchor selection into it would be a lie.
-            if newValue == .onAir {
-                selectedDayOffset = 0
-                anchor = .now
-            }
         }
     }
 
@@ -249,6 +269,20 @@ struct GuideView: View {
         .accessibilityLabel("Genre: \(selectedGenre.rawValue)")
     }
 
+    private var spotlightToggle: some View {
+        Button {
+            triggerHaptic(.light)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showSpotlight.toggle()
+            }
+        } label: {
+            Image(systemName: showSpotlight ? "info.circle.fill" : "info.circle")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(showSpotlight ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
+        }
+        .accessibilityLabel(showSpotlight ? "Vorschau-Banner ausblenden" : "Vorschau-Banner einblenden")
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -271,91 +305,59 @@ struct GuideView: View {
         } else {
             // One clock for every live element on screen, ticking twice a minute.
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                switch mode {
-                case .onAir:
-                    onAirList(now: context.date)
-                case .timeline:
-                    timelineList(now: context.date)
+                switch currentMode {
                 case .grid:
                     GuideGrid(
                         projection: projection,
                         now: context.date,
+                        bottomPadding: contentBottomPadding,
                         onOpen: { entry in
                             selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show)
                         },
                         onPlay: { channel in
                             triggerHaptic(.light)
                             model.playingChannel = channel
+                        },
+                        onRecord: { show, channel in
+                            record(show, on: channel)
                         }
                     )
+                case .channels:
+                    channelCardList(now: context.date)
                 }
             }
         }
     }
 
-    private func onAirList(now: Date) -> some View {
+    private func channelCardList(now: Date) -> some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(projection.onAir) { entry in
-                    GuideShowRow(
-                        channel: entry.channel,
-                        show: entry.show,
+            LazyVStack(spacing: 12) {
+                ForEach(projection.channels) { schedule in
+                    InteractiveChannelCard(
+                        channel: schedule.channel,
+                        shows: schedule.shows,
                         now: now,
-                        // This list is ordered by channel, so the leading column
-                        // is the channel number.
-                        leading: .channelNumber,
-                        onOpen: { selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show) },
+                        isFavorite: model.isFavorite(schedule.channel),
+                        bouquetName: model.selectedBouquet?.name,
                         onPlay: {
                             triggerHaptic(.light)
-                            model.playingChannel = entry.channel
+                            model.playingChannel = schedule.channel
                         },
-                        onRecord: { record(entry.show, on: entry.channel) }
-                    )
-                    .padding(.horizontal, 16)
-
-                    Divider()
-                        .background(Theme.Colors.borderSubtle)
-                        .padding(.leading, 16)
-                }
-            }
-            .safeAreaPadding(.bottom, 80)
-        }
-        .refreshable { await model.refreshLiveContent() }
-    }
-
-    private func timelineList(now: Date) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(projection.slots) { slot in
-                    Section {
-                        ForEach(slot.entries) { entry in
-                            GuideShowRow(
-                                channel: entry.channel,
-                                show: entry.show,
-                                now: now,
-                                onOpen: { selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show) },
-                                onPlay: {
-                                    triggerHaptic(.light)
-                                    model.playingChannel = entry.channel
-                                },
-                                onRecord: { record(entry.show, on: entry.channel) }
-                            )
-                            .padding(.horizontal, 16)
-
-                            Divider()
-                                .background(Theme.Colors.borderSubtle)
-                                .padding(.leading, 16)
+                        onToggleFavorite: {
+                            model.toggleFavorite(schedule.channel)
+                        },
+                        onShowInfo: { show in
+                            selectedDetail = ProgramDetailPayload(channel: schedule.channel, entry: show)
+                        },
+                        onRecord: { show in
+                            record(show, on: schedule.channel)
                         }
-                    } header: {
-                        GuideSlotHeader(
-                            start: slot.start,
-                            count: slot.entries.count,
-                            isCurrent: isCurrentSlot(slot, now: now)
-                        )
-                    }
+                    )
                 }
             }
-            .safeAreaPadding(.bottom, 80)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .safeAreaPadding(.bottom, contentBottomPadding)
         }
         .refreshable { await model.refreshLiveContent() }
     }
@@ -428,7 +430,7 @@ struct GuideView: View {
     }
 
     private var inputs: GuideInputs {
-        let tracksClock = mode == .onAir || (selectedDayOffset == 0 && anchor == .now)
+        let tracksClock = selectedDayOffset == 0 && anchor == .now
         return GuideInputs(
             dayOffset: selectedDayOffset,
             anchor: anchor,
@@ -454,7 +456,7 @@ struct GuideView: View {
         let channels = model.filteredChannels
         let epg = model.fullEpg
         let dayOffset = selectedDayOffset
-        let currentAnchor = mode == .onAir ? GuideAnchor.now : anchor
+        let currentAnchor = anchor
         let genre = selectedGenre
         let query = guideSearchText
         let now = Date.now
@@ -483,10 +485,6 @@ struct GuideView: View {
         selectedDayOffset == 0
             ? GuideAnchor.allCases
             : GuideAnchor.allCases.filter { $0 != .now }
-    }
-
-    private func isCurrentSlot(_ slot: GuideSlot, now: Date) -> Bool {
-        now >= slot.start && now < slot.start.addingTimeInterval(1800)
     }
 
     private var emptyTitle: String {

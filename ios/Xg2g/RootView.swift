@@ -165,44 +165,18 @@ struct iPadSidebar: View {
 
     var body: some View {
         List {
-            Section("Mediathek") {
-                ForEach(Tab.allCases) { tab in
-                    let isSelected = model.selectedTab == tab
-                    Button {
-                        triggerHaptic(.light)
-                        model.selectedTab = tab
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(
-                                systemName: tab.systemImage,
-                                backgroundColor: isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated
-                            )
+            Section("Fernsehen") {
+                sidebarButton(for: .liveTV)
+                sidebarButton(for: .guide)
+            }
 
-                            Text(tab.rawValue)
-                                .font(.system(size: 15, weight: isSelected ? .bold : .medium))
-                                .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+            Section("Mediathek & DVR") {
+                sidebarButton(for: .recordings)
+                sidebarButton(for: .timers)
+            }
 
-                            Spacer()
-
-                            if isSelected {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Theme.Colors.accentAction)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                        .padding(.horizontal, 4)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(
-                        isSelected
-                            ? RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Theme.Gradients.sidebarActiveSelection)
-                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.Colors.accentAction.opacity(0.3), lineWidth: 1))
-                            : nil
-                    )
-                }
+            Section("System") {
+                sidebarButton(for: .settings)
             }
 
             if (model.selectedTab == .liveTV || model.selectedTab == .guide) && !model.bouquets.isEmpty {
@@ -325,6 +299,45 @@ struct iPadSidebar: View {
         .background(Theme.Colors.bgBase.ignoresSafeArea())
         .navigationSplitViewColumnWidth(min: 270, ideal: 300, max: 360)
         .navigationTitle("xg2g TV")
+    }
+
+    @ViewBuilder
+    private func sidebarButton(for tab: Tab) -> some View {
+        let isSelected = model.selectedTab == tab
+        Button {
+            triggerHaptic(.light)
+            model.selectedTab = tab
+        } label: {
+            HStack(spacing: 12) {
+                SettingsIconBadge(
+                    systemName: tab.systemImage,
+                    backgroundColor: isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated
+                )
+
+                Text(tab.rawValue)
+                    .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                    .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.Colors.accentAction)
+                }
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            isSelected
+                ? RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.Gradients.sidebarActiveSelection)
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.Colors.accentAction.opacity(0.3), lineWidth: 1))
+                : nil
+        )
     }
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {

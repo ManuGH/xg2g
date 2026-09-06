@@ -31,25 +31,51 @@ internal class NativeDeviceAuthTransport(
         deviceGrantId: String,
         deviceGrant: String
     ): RefreshedDeviceSession = withContext(Dispatchers.IO) {
-        Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/session")
+        Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/refresh")
         val request = buildNativeDeviceSessionRequest(uiBaseUrl, deviceGrantId, deviceGrant, dpopProvider)
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: ""
+            val body = response.body.string()
             if (!response.isSuccessful) {
                 throw IOException("Refresh session failed with HTTP ${response.code}: $body")
             }
             val json = JSONObject(body)
-            val expiresSec = json.optLong("expiresInSeconds", 86400L)
+            val expiresSec = if (json.has("expires_in")) {
+                json.optLong("expires_in", 86400L)
+            } else {
+                json.optLong("expiresInSeconds", 86400L)
+            }
             val nowMs = System.currentTimeMillis()
 
             val endpoints = parseServerEndpoints(json.optJSONArray("publishedEndpoints"))
+            val accessToken = if (json.has("access_token")) {
+                json.optString("access_token", "")
+            } else {
+                json.optString("accessToken", "")
+            }
+            val rotatedGrant = if (json.has("refresh_token")) {
+                json.optString("refresh_token")
+            } else {
+                json.optString("rotatedDeviceGrant")
+            }.takeIf { !it.isNullOrBlank() }
+
+            val deviceId = if (json.has("device_id")) {
+                json.optString("device_id")
+            } else {
+                json.optString("rotatedDeviceGrantId")
+            }.takeIf { !it.isNullOrBlank() }
+
+            val sessionId = if (json.has("accessSessionId")) {
+                json.optString("accessSessionId", "")
+            } else {
+                json.optString("device_id", "")
+            }
 
             RefreshedDeviceSession(
-                accessSessionId = json.optString("accessSessionId", ""),
-                accessToken = json.optString("accessToken", ""),
+                accessSessionId = sessionId,
+                accessToken = accessToken,
                 accessTokenExpiresAtEpochMs = nowMs + (expiresSec * 1000L),
-                rotatedDeviceGrantId = json.optString("rotatedDeviceGrantId").takeIf { !it.isNullOrBlank() },
-                rotatedDeviceGrant = json.optString("rotatedDeviceGrant").takeIf { !it.isNullOrBlank() },
+                rotatedDeviceGrantId = deviceId,
+                rotatedDeviceGrant = rotatedGrant,
                 policyVersion = json.optString("policyVersion").takeIf { !it.isNullOrBlank() },
                 endpoints = endpoints
             )
@@ -71,10 +97,9 @@ internal fun buildNativeDeviceSessionRequest(
     deviceGrant: String,
     dpopProvider: DPoPProvider
 ): Request {
-    val refreshUrl = apiV3Url(uiBaseUrl, "auth", "device", "session")
+    val refreshUrl = apiV3Url(uiBaseUrl, "auth", "device", "refresh")
     val jsonBody = JSONObject()
-        .put("deviceGrantId", deviceGrantId)
-        .put("deviceGrant", deviceGrant)
+        .put("refresh_token", deviceGrant)
         .toString()
         .toRequestBody("application/json; charset=utf-8".toMediaType())
 

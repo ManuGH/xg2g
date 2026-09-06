@@ -312,6 +312,15 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                     if leadMs < Self.underrunThresholdMs {
                         underrunCount += 1
                     }
+                    if leadMs < -40.0 {
+                        // Master clock outran the stream (e.g. socket burst stall).
+                        // Re-anchor clock immediately to this buffer's PTS so audio can play
+                        // without enduring persistent silence and dropped buffers.
+                        synchronizer.setRate(1.0, time: pts)
+                        let resyncLog = "[AudioRenderer] 🔄 Dynamic clock recovery: lead \(String(format: "%.0f", leadMs))ms < -40ms -> re-anchored clock to PTS \(String(format: "%.3f", pts.seconds))s"
+                        print(resyncLog)
+                        TelemetryServer.shared.log(resyncLog)
+                    }
                 }
             }
 

@@ -110,7 +110,7 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
       return Promise.reject(new DOMException('Aborted', 'AbortError'));
     }
     return new Promise<void>((resolve, reject) => {
-      let timerId: number | undefined;
+      const timerRef: { id?: number } = {};
       const cleanup = () => {
         if (signal) {
           signal.removeEventListener('abort', onAbort);
@@ -119,8 +119,8 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
       };
 
       const onAbort = () => {
-        if (timerId !== undefined) {
-          window.clearTimeout(timerId);
+        if (timerRef.id !== undefined) {
+          window.clearTimeout(timerRef.id);
         }
         cleanup();
         reject(new DOMException('Aborted', 'AbortError'));
@@ -135,7 +135,7 @@ export function createEngineTimerRegistry(): EngineTimerRegistry {
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
-      timerId = window.setTimeout(() => {
+      timerRef.id = window.setTimeout(() => {
         cleanup();
         resolve();
       }, delayMs);

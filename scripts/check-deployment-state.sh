@@ -72,6 +72,11 @@ manifest_value() {
 probe_environment production xg2g 8088
 probe_environment staging xg2g-staging 8089
 
+caddy_published="$(docker port xg2g-staging-caddy 8089/tcp 2>/dev/null | paste -sd, - || true)"
+printf 'staging.caddy_published=%s\n' "${caddy_published}"
+port_8089_listeners="$(ss -H -tlnp 'sport = :8089' 2>/dev/null | awk '{print $4}' | paste -sd, - || true)"
+printf 'staging.port_8089_listeners=%s\n' "${port_8089_listeners}"
+
 if [[ "$(manifest_value schema)" == "2" ]]; then
   printf 'manifest.mode=%s\n' "$(manifest_value mode)"
   printf 'manifest.commit=%s\n' "$(manifest_value commit)"
@@ -100,6 +105,8 @@ staging_sha="$(value_for "${evidence}" staging.binary_sha256)"
 staging_image_id="$(value_for "${evidence}" staging.image_id)"
 staging_binary_mount="$(value_for "${evidence}" staging.binary_mount)"
 staging_published="$(value_for "${evidence}" staging.published)"
+staging_caddy_published="$(value_for "${evidence}" staging.caddy_published)"
+staging_port_8089_listeners="$(value_for "${evidence}" staging.port_8089_listeners)"
 manifest_mode="$(value_for "${evidence}" manifest.mode)"
 manifest_commit="$(value_for "${evidence}" manifest.commit)"
 manifest_sha="$(value_for "${evidence}" manifest.sha256)"
@@ -120,6 +127,12 @@ printf 'staging.binary_sha256=%s\n' "${staging_sha}"
 printf 'staging.image_id=%s\n' "${staging_image_id}"
 printf 'staging.binary_override=%s\n' "${staging_binary_mount:-none}"
 printf 'staging.published=%s\n' "${staging_published}"
+if [[ -n "${staging_caddy_published}" ]]; then
+  printf 'staging.caddy_published=%s\n' "${staging_caddy_published}"
+fi
+if [[ -n "${staging_port_8089_listeners}" ]]; then
+  printf 'staging.port_8089_listeners=%s\n' "${staging_port_8089_listeners}"
+fi
 printf 'staging.health=%s/%s/%s\n' "${staging_container}" "${staging_health}" "${staging_endpoint}"
 printf 'staging.manifest_mode=%s\n' "${manifest_mode}"
 
@@ -131,6 +144,13 @@ printf 'staging.manifest_mode=%s\n' "${manifest_mode}"
   die "production port 8088 is not loopback-only"
 [[ "${staging_published}" == *127.0.0.1:* || "${staging_published}" == *"[::1]:"* || "${staging_published}" == *10.10.55.14:* ]] ||
   die "staging port 8089 is not loopback-only"
+if [[ -n "${staging_port_8089_listeners}" ]]; then
+  for listener in $(tr ',' ' ' <<<"${staging_port_8089_listeners}"); do
+    if [[ "${listener}" == "0.0.0.0:8089" || "${listener}" == "[::]:8089" || "${listener}" == "*:8089" ]]; then
+      printf 'staging.warning=staging port 8089 is listening on all interfaces (%s); review AGENTS.md loopback/LAN proxy guidance\n' "${listener}"
+    fi
+  done
+fi
 [[ "${production_sha}" =~ ^[0-9a-f]{64}$ ]] || die "production binary hash is unavailable"
 [[ "${staging_sha}" =~ ^[0-9a-f]{64}$ ]] || die "staging binary hash is unavailable"
 

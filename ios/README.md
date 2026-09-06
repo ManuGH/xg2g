@@ -36,11 +36,11 @@ playback policy, no.
 | 1 | Project skeleton, server target resolution, unit tests, Swift 6 | done |
 | 2A | `ServerOrigin`, `ServerAddress`, `ServerIdentity`, URL consolidation, attack cases | done |
 | 2A | `CredentialStore`, `DeviceKeyStore`, `APIClient` | done — **2A closed** |
-| 2B | Native device auth: pairing, session refresh, DPoP via Secure Enclave | open |
-| 2C | Native app shell: SwiftUI navigation, app state, setup, base layout | open |
-| 2D | First real screen (bouquets / channel list) against a live backend | open |
-| 3 | Playback: `AVPlayer`, intents/sessions/heartbeat, PiP, background audio, now-playing — plus `ios_native` in the backend | open |
-| 4 | EPG, timers, recordings | open |
+| 2B | Native device auth: pairing, session refresh, DPoP via Secure Enclave | done |
+| 2C | Native app shell: SwiftUI navigation, app state, setup, base layout | done |
+| 2D | First real screen (bouquets / channel list) against a live backend | done |
+| 3 | Playback: Native TS demuxer, Metal/VideoToolbox pipeline, audio renderer, intents/sessions, PiP, AirPlay, NowPlaying | done |
+| 4 | EPG (Guide), timers, recordings, offline downloads | done |
 | 5 | tvOS | open |
 | 6 | Mac Catalyst | open |
 

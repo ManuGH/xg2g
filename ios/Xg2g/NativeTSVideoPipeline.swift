@@ -278,7 +278,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// is on screen at once — it is 400 ms longer holding that first picture.
     /// When true, enables the two-phase early motion experiment with explicit audio buffer
     /// pruning and milestone recovery telemetry.
-    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = true
+    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = false
 
     private static let audioPreRollSeconds: Double = 0.9
     private static let videoOnlyCushionSeconds: Double = 0.8
@@ -496,7 +496,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var firstAccessUnitTime: CFTimeInterval = 0
 
     /// Ceiling on how long the gate may hold pictures back during initial startup ONLY.
-    private static let decodeGateTimeout: Double = 2.0
+    private static let decodeGateTimeout: Double = 3.5
 
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
@@ -1513,7 +1513,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     ///
     /// One second covers the worst measured gap with room to spare and costs
     /// that much tuning latency, against the 3.2 s it replaces.
-    private static let videoPreRollSeconds: Double = 1.0
+    private static let videoPreRollSeconds: Double = 0.45
 
     /// When the pre-roll began, so the wait for a first picture can be bounded.
     private var preRollStartTime: CFTimeInterval = 0
@@ -1566,7 +1566,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if !isAudioClockStarted {
             if let first = firstAudioPTS {
                 // If a stray packet arrived at t0 with a radically different timestamp (> 2.0s jump), reset
-                if abs(pts.seconds - first.seconds) > 2.0 {
+                if audioBuffersPreRolledCount <= 5 && abs(pts.seconds - first.seconds) > 2.0 {
                     firstAudioPTS = pts
                     audioBuffersPreRolledCount = 1
                     audioRenderer.flush()
@@ -1594,7 +1594,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             // never gets it - so anchoring on it alone meant a preparation could not
             // choose a start anchor at all and was never committable.
             if let videoPTS = firstVideoFieldPTS ?? firstDecodedPicturePTS {
-                let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : Self.videoPreRollSeconds
+                let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : min(Self.videoPreRollSeconds, Self.audioPreRollSeconds * 0.7)
 
                 let effectiveAudioPreRoll: Double
                 if Self.enableEarlyMotionExperiment {
@@ -1611,15 +1611,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
                 let audioCeiling = pts.seconds - effectiveAudioPreRoll
                 // Controlled Shrink-to-Live:
-                // When we have decoded video frames up to audioCeiling (latest audio PTS - target cushion),
-                // we anchor directly on audioCeiling. This sheds the 500-1200ms GOP startup backlog
-                // and locks the playback clock to the target live lead immediately without pitch distortion.
-                let anchorSeconds: Double
-                if latestVideoPTS.isValid && latestVideoPTS.seconds >= audioCeiling {
-                    anchorSeconds = max(videoPTS.seconds, audioCeiling)
-                } else {
-                    anchorSeconds = min(videoPTS.seconds, audioCeiling)
+                // We anchor directly on audioCeiling (latest audio PTS - target cushion) to lock the playback
+                // clock to the desired live lead (850-900ms). To ensure video is available from this anchor,
+                // the ceiling must not precede the first decoded picture.
+                guard audioCeiling >= videoPTS.seconds else {
+                    noteAnchorRejected(
+                        reason: "audio ceiling (\(String(format: "%.3f", audioCeiling))s) precedes first decoded picture (\(String(format: "%.3f", videoPTS.seconds))s)",
+                        anchorSeconds: audioCeiling,
+                        firstAudio: firstPTS.seconds,
+                        cushion: effectiveAudioPreRoll
+                    )
+                    return
                 }
+                let anchorSeconds = audioCeiling
 
                 // Anchoring before the first audio we hold would start the clock
                 // in a region no track can serve.
@@ -1649,13 +1653,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
 
                 anchorPTS = CMTime(seconds: anchorSeconds, preferredTimescale: 90_000)
-                if anchorSeconds >= audioCeiling - 0.001 && anchorSeconds > videoPTS.seconds + 0.001 {
-                    anchorSource = "shrink-to-live target (\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms lead)"
-                } else if anchorSeconds >= videoPTS.seconds - 0.001 {
-                    anchorSource = "first picture"
-                } else {
-                    anchorSource = "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
-                }
+                anchorSource = "shrink-to-live target (\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms lead)"
             } else if tsParser.videoPID == nil {
                 anchorPTS = firstPTS
                 anchorSource = "audio only, no video service"
@@ -1680,14 +1678,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             } else {
                 effectiveAudioPreRoll = Self.audioPreRollSeconds
             }
-            // Recorded as soon as the anchor is final, whether or not the clock starts
-            // here. It is what a commit needs: the instant picture and audio share, so
-            // the commit itself has nothing left to decide.
-            commitAnchor = anchorPTS
-            completeRecoveryIfNeeded()
 
             let buffered = pts.seconds - anchorPTS.seconds
-            let minRequiredAudioLead = Self.enableEarlyMotionExperiment ? min(effectiveAudioPreRoll, 0.25) : 0.35
+            let minRequiredAudioLead = Self.enableEarlyMotionExperiment ? min(effectiveAudioPreRoll, 0.25) : 0.50
             guard buffered >= minRequiredAudioLead else {
                 noteAnchorRejected(
                     reason: "only \(String(format: "%.0f", buffered * 1000))ms of audio ahead of anchor (\(String(format: "%.0f", minRequiredAudioLead * 1000))ms required)",
@@ -1698,76 +1691,80 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 return
             }
 
+            // Recorded ONLY once the anchor and cushions are fully proven.
+            commitAnchor = anchorPTS
+            completeRecoveryIfNeeded()
+
             let zapId = currentZapId
-                if Self.enableEarlyMotionExperiment {
-                    let pruneResult = self.audioRenderer.pruneBuffersBefore(time: anchorPTS)
-                    let lastPrunedStr = pruneResult.lastPrunedPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
-                    let firstKeptStr = pruneResult.firstKeptPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
-                    let pruneLog = "[EARLY-EXP] ✂️ Zap #\(zapId) Anchor: \(String(format: "%.3f", anchorPTS.seconds))s | Pruned: \(pruneResult.prunedCount) buffers (last pruned: \(lastPrunedStr)s) | First kept: \(firstKeptStr)s | Remaining audio lead: \(String(format: "%.0f", pruneResult.remainingLeadMs))ms"
-                    print(pruneLog)
-                    logger.notice("\(pruneLog, privacy: .public)")
-                    TelemetryServer.shared.log(pruneLog)
+            if Self.enableEarlyMotionExperiment {
+                let pruneResult = self.audioRenderer.pruneBuffersBefore(time: anchorPTS)
+                let lastPrunedStr = pruneResult.lastPrunedPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
+                let firstKeptStr = pruneResult.firstKeptPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
+                let pruneLog = "[EARLY-EXP] ✂️ Zap #\(zapId) Anchor: \(String(format: "%.3f", anchorPTS.seconds))s | Pruned: \(pruneResult.prunedCount) buffers (last pruned: \(lastPrunedStr)s) | First kept: \(firstKeptStr)s | Remaining audio lead: \(String(format: "%.0f", pruneResult.remainingLeadMs))ms"
+                print(pruneLog)
+                logger.notice("\(pruneLog, privacy: .public)")
+                TelemetryServer.shared.log(pruneLog)
 
-                    self.scheduleEarlyMotionMilestones(zapId: zapId, anchorPTS: anchorPTS)
+                self.scheduleEarlyMotionMilestones(zapId: zapId, anchorPTS: anchorPTS)
+            }
+
+            // Only the session that owns the surface starts a clock. A prepared one
+            // records its anchor here and is started by the commit instead, which is
+            // what keeps it silent and invisible until then.
+            guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
+            audioRenderer.setAudible(true)
+            audioRenderer.setRate(1.0, time: anchorPTS)
+            isAudioClockStarted = true
+            // Paused until this instant, as far as PiP is concerned.
+            notePlaybackStateChanged()
+            let skippedMs = (anchorPTS.seconds - firstPTS.seconds) * 1000.0
+            let videoCushionMs = latestVideoPTS.isValid
+                ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
+                : Double.nan
+            let clockLog = "[ZAP-#\(zapId)-LOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
+            print(clockLog)
+            logger.notice("\(clockLog, privacy: .public)")
+            TelemetryServer.shared.log(clockLog)
+
+            // How long the viewer spent looking at a still picture. Nothing
+            // measured this: the figure that used to mean "motion" now means
+            // "the first field went up", and the distance between them is
+            // exactly what the cushion costs.
+            let motionMs = sessionState.mutate { state -> Double? in
+                guard state.requestStartTime > 0 else { return nil }
+                return (CACurrentMediaTime() - state.requestStartTime) * 1000.0
+            }
+
+            telemetry.mutate {
+                $0.isAudioMasterClockActive = true
+                if let motionMs = motionMs, $0.ttfpMotionMs == 0 {
+                    $0.ttfpMotionMs = motionMs
                 }
+            }
 
-                // Only the session that owns the surface starts a clock. A prepared one
-                // records its anchor here and is started by the commit instead, which is
-                // what keeps it silent and invisible until then.
-                guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
-                audioRenderer.setAudible(true)
-                audioRenderer.setRate(1.0, time: anchorPTS)
-                isAudioClockStarted = true
-                // Paused until this instant, as far as PiP is concerned.
-                notePlaybackStateChanged()
-                let skippedMs = (anchorPTS.seconds - firstPTS.seconds) * 1000.0
-                let videoCushionMs = latestVideoPTS.isValid
-                    ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
-                    : Double.nan
-                let clockLog = "[ZAP-#\(zapId)-LOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
-                print(clockLog)
-                logger.notice("\(clockLog, privacy: .public)")
-                TelemetryServer.shared.log(clockLog)
+            if let motionMs = motionMs {
+                // The clock can be ready before the first field exists, in
+                // which case the picture arrives already moving and there is
+                // no still frame to account for.
+                let visibleMs = telemetry.snapshot().ttfpVisibleMs
+                let held = visibleMs > 0
+                    ? "picture held still for \(String(format: "%.1f", motionMs - visibleMs))ms waiting for the audio cushion"
+                    : "clock was ready before the first field, nothing held"
+                let motionLog = "[1080i50-TTFP] ▶️ Motion starts at \(String(format: "%.1f", motionMs))ms | \(held)"
+                print(motionLog)
+                logger.notice("\(motionLog, privacy: .public)")
+                TelemetryServer.shared.log(motionLog)
+            }
 
-                // How long the viewer spent looking at a still picture. Nothing
-                // measured this: the figure that used to mean "motion" now means
-                // "the first field went up", and the distance between them is
-                // exactly what the cushion costs.
-                let motionMs = sessionState.mutate { state -> Double? in
-                    guard state.requestStartTime > 0 else { return nil }
-                    return (CACurrentMediaTime() - state.requestStartTime) * 1000.0
-                }
-
-                telemetry.mutate {
-                    $0.isAudioMasterClockActive = true
-                    if let motionMs = motionMs, $0.ttfpMotionMs == 0 {
-                        $0.ttfpMotionMs = motionMs
-                    }
-                }
-
-                if let motionMs = motionMs {
-                    // The clock can be ready before the first field exists, in
-                    // which case the picture arrives already moving and there is
-                    // no still frame to account for.
-                    let visibleMs = telemetry.snapshot().ttfpVisibleMs
-                    let held = visibleMs > 0
-                        ? "picture held still for \(String(format: "%.1f", motionMs - visibleMs))ms waiting for the audio cushion"
-                        : "clock was ready before the first field, nothing held"
-                    let motionLog = "[1080i50-TTFP] ▶️ Motion starts at \(String(format: "%.1f", motionMs))ms | \(held)"
-                    print(motionLog)
-                    logger.notice("\(motionLog, privacy: .public)")
-                    TelemetryServer.shared.log(motionLog)
-                }
-
-                // Anchoring on the first picture means the clock *starts* at its
-                // timestamp, and a boundary observer needs a crossing to fire —
-                // so the metric it feeds stayed at zero for exactly the tunes
-                // this is meant to measure. Due at rate-change time counts as
-                // visible.
-                if let videoPTS = firstVideoFieldPTS, anchorPTS >= videoPTS {
-                    removeFirstPictureObserver()
-                    recordFirstPictureVisible()
-                }
+            // Anchoring on the first picture means the clock *starts* at its
+            // timestamp, and a boundary observer needs a crossing to fire —
+            // so the metric it feeds stayed at zero for exactly the tunes
+            // this is meant to measure. Due at rate-change time counts as
+            // visible.
+            if let videoPTS = firstVideoFieldPTS, anchorPTS >= videoPTS {
+                removeFirstPictureObserver()
+                recordFirstPictureVisible()
+            }
         }
     }
 

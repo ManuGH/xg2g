@@ -26,23 +26,19 @@ enum GuideAnchor: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// How the guide is presented. Each mode answers a different question, which is
-/// why all three exist rather than one being a variant of another.
+/// How the guide is presented: 2D multi-channel grid (`grid`) or expandable channel cards (`channels`).
 enum GuideMode: String, CaseIterable, Identifiable, Sendable {
-    /// "What is on right now?" — one row per channel, live progress.
-    case onAir = "Jetzt"
-    /// "What is coming up?" — programmes grouped into half-hour slots.
-    case timeline = "Zeitschiene"
     /// "What does the evening look like?" — channels × time, blocks to scale.
     case grid = "Raster"
+    /// "What is running on each channel?" — expandable WebUI channel cards.
+    case channels = "Sender"
 
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
-        case .onAir: return "dot.radiowaves.left.and.right"
-        case .timeline: return "list.bullet.indent"
         case .grid: return "rectangle.split.3x1"
+        case .channels: return "list.bullet"
         }
     }
 }

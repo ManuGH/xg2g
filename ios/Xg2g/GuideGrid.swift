@@ -33,39 +33,57 @@ struct GuideGrid: View {
 
     let projection: GuideProjection
     let now: Date
+    var bottomPadding: CGFloat = 80
     let onOpen: (GuideEntry) -> Void
     let onPlay: (Channel) -> Void
+    var onRecord: (NowNext.Entry, Channel) -> Void = { _, _ in }
+
+    @AppStorage("guideShowSpotlight") private var showSpotlight: Bool = true
+    @State private var selectedEntry: GuideEntry?
 
     @State private var horizontalOffset: CGFloat = 0
     @State private var dragAnchor: CGFloat = 0
     @State private var viewportWidth: CGFloat = 0
     @State private var hasCentredOnNow = false
 
+    private var effectiveSelectedEntry: GuideEntry? {
+        if let selected = selectedEntry,
+           let schedule = projection.channels.first(where: { $0.channel.id == selected.channel.id }),
+           schedule.shows.contains(where: { $0.id == selected.show.id }) {
+            return selected
+        }
+        if let onAir = projection.onAir.first {
+            return onAir
+        }
+        if let firstSchedule = projection.channels.first, let firstShow = firstSchedule.shows.first {
+            return GuideEntry(channel: firstSchedule.channel, show: firstShow)
+        }
+        return nil
+    }
+
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var pointsPerMinute: CGFloat {
+        isPad ? 3.5 : 4.5
+    }
+
+    private var channelColumnWidth: CGFloat {
+        isPad ? 92 : 78
+    }
+
+    private var rowHeight: CGFloat {
+        isPad ? 64 : 70
+    }
+
     private enum Metrics {
-        /// 3 pt per minute: about 100 minutes of a phone screen, which is what
-        /// makes this read as a schedule — at 4 pt only a single hour fitted and
-        /// two ruler marks were the most that could ever be on screen at once,
-        /// so the eye had nothing to measure a block against.
-        ///
-        /// The cost is paid by the shortest programmes: a 15-minute bulletin is
-        /// 43 pt rather than 58, which is one shrunken line of title and no room
-        /// for a clock reading. `horizontalPadding` and the title's scale factor
-        /// below are sized for exactly that block.
-        static let pointsPerMinute: CGFloat = 3.0
-        static let rowHeight: CGFloat = 62
         static let rowSpacing: CGFloat = 4
-        static let channelColumnWidth: CGFloat = 92
         static let rulerHeight: CGFloat = 32
         static let blockSpacing: CGFloat = 2
-        /// The caret that marks "now" on the ruler. A shape rather than a
-        /// second clock reading, so no fixed tick has to be suppressed to make
-        /// room for it.
         static let nowMarkerSize: CGFloat = 9
-        /// How far left of the viewport edge "now" is parked when the grid opens.
         static let nowLeadIn: CGFloat = 56
-        /// A pinned title stops sliding here so it cannot leave its own block:
-        /// enough for a two-word stub, no more.
-        static let minTitleWidth: CGFloat = 58
+        static let minTitleWidth: CGFloat = 42
     }
 
     // MARK: - Geometry
@@ -75,11 +93,11 @@ struct GuideGrid: View {
     }
 
     private var timelineWidth: CGFloat {
-        max(totalMinutes * Metrics.pointsPerMinute, 1)
+        max(totalMinutes * pointsPerMinute, 1)
     }
 
     private var timelineViewport: CGFloat {
-        max(viewportWidth - Metrics.channelColumnWidth, 1)
+        max(viewportWidth - channelColumnWidth, 1)
     }
 
     private var maxPan: CGFloat {
@@ -95,7 +113,7 @@ struct GuideGrid: View {
     }
 
     private func tickX(_ index: Int) -> CGFloat {
-        CGFloat(index) * 30 * Metrics.pointsPerMinute
+        CGFloat(index) * 30 * pointsPerMinute
     }
 
     /// Emphasis has to come from the clock, not from the tick's position in the
@@ -116,12 +134,12 @@ struct GuideGrid: View {
     }
 
     private func xPosition(for date: Date) -> CGFloat {
-        CGFloat(date.timeIntervalSince(projection.windowStart) / 60) * Metrics.pointsPerMinute
+        CGFloat(date.timeIntervalSince(projection.windowStart) / 60) * pointsPerMinute
     }
 
     private func width(for show: NowNext.Entry) -> CGFloat {
         let minutes = CGFloat(visibleEnd(of: show).timeIntervalSince(visibleStart(of: show)) / 60)
-        return max(minutes * Metrics.pointsPerMinute - Metrics.blockSpacing, 18)
+        return max(minutes * pointsPerMinute - Metrics.blockSpacing, 28)
     }
 
     /// Where a block is *drawn* from, which is not where the programme started.
@@ -156,29 +174,36 @@ struct GuideGrid: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(projection.channels) { schedule in
-                        gridRow(schedule)
-                    }
-                } header: {
-                    rulerRow
-                }
+        VStack(spacing: 0) {
+            if showSpotlight, let entry = effectiveSelectedEntry {
+                spotlightBanner(for: entry)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
-            // Same clearance the two list modes give the tab bar; without it the
-            // last channel row sits underneath it.
-            .safeAreaPadding(.bottom, 80)
-        }
-        .background(Theme.Colors.bgBase)
-        .overlay(alignment: .topLeading) {
-            // Static divider between the pinned column and the timeline. Drawn
-            // once here rather than per row so it reads as one continuous edge.
-            Rectangle()
-                .fill(Theme.Colors.borderElevated)
-                .frame(width: 1)
-                .offset(x: Metrics.channelColumnWidth)
-                .allowsHitTesting(false)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(projection.channels) { schedule in
+                            gridRow(schedule)
+                        }
+                    } header: {
+                        rulerRow
+                    }
+                }
+                // Same clearance the list modes give the tab bar; without it the
+                // last channel row sits underneath it.
+                .safeAreaPadding(.bottom, bottomPadding)
+            }
+            .background(Theme.Colors.bgBase)
+            .overlay(alignment: .topLeading) {
+                // Static divider between the pinned column and the timeline. Drawn
+                // once here rather than per row so it reads as one continuous edge.
+                Rectangle()
+                    .fill(Theme.Colors.borderElevated)
+                    .frame(width: 1)
+                    .offset(x: channelColumnWidth)
+                    .allowsHitTesting(false)
+            }
         }
         .background {
             GeometryReader { proxy in
@@ -195,6 +220,159 @@ struct GuideGrid: View {
             }
         }
         .simultaneousGesture(panGesture)
+    }
+
+    // MARK: - Spotlight Inspector
+
+    @ViewBuilder
+    private func spotlightBanner(for entry: GuideEntry) -> some View {
+        let isLive = entry.show.progress(at: now) != nil
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Title
+                    Text(entry.show.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+
+                    // Meta: LIVE badge, Time range, Channel name & logo, Progress
+                    HStack(spacing: 6) {
+                        if isLive {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 5, height: 5)
+                                Text("LIVE")
+                                    .font(.system(size: 9, weight: .heavy))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.Colors.statusError, in: Capsule())
+                        }
+
+                        Text(entry.show.formattedTimeRange)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(isLive ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
+
+                        Text("•")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+
+                        HStack(spacing: 4) {
+                            ChannelLogo(url: entry.channel.logoURL, name: entry.channel.name, size: 14)
+                            Text(entry.channel.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                        }
+
+                        if let progress = entry.show.progress(at: now) {
+                            Text("• \(Int(progress * 100))%")
+                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.accentLive)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                // Close / dismiss button
+                Button {
+                    triggerHaptic(.light)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showSpotlight = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.Colors.textTertiary.opacity(0.85))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Vorschau schließen")
+            }
+
+            // Synopsis / Description
+            if let desc = entry.show.description, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(desc)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+
+            // Actions row: Ansehen, Aufnehmen, Details
+            HStack(spacing: 8) {
+                Button {
+                    triggerHaptic(.light)
+                    onPlay(entry.channel)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(isLive ? "Live ansehen" : "Sender starten")
+                            .font(.system(size: 11.5, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Theme.Colors.accentAction, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    triggerHaptic(.medium)
+                    onRecord(entry.show, entry.channel)
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Theme.Colors.statusError)
+                            .frame(width: 7, height: 7)
+                        Text("Aufnehmen")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.Colors.surfaceElevated, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    triggerHaptic(.light)
+                    onOpen(entry)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Details")
+                            .font(.system(size: 11.5, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.Colors.surfaceElevated, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            Theme.Colors.surfaceElevated.opacity(0.92)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Colors.borderElevated)
+                .frame(height: 1)
+        }
     }
 
     /// Horizontal panning. `simultaneousGesture` so the vertical scroll view
@@ -238,37 +416,54 @@ struct GuideGrid: View {
 
             ZStack(alignment: .topLeading) {
                 halfHourRules
-                    .frame(width: timelineWidth, height: Metrics.rowHeight)
+                    .frame(width: timelineWidth, height: rowHeight)
 
                 ForEach(schedule.shows) { show in
+                    let isSelected: Bool = {
+                        guard showSpotlight, let selected = effectiveSelectedEntry else { return false }
+                        return selected.show.id == show.id && selected.channel.id == schedule.channel.id
+                    }()
                     GuideGridBlock(
                         show: show,
                         channelName: schedule.channel.name,
                         isLive: show.progress(at: now) != nil,
+                        isSelected: isSelected,
                         width: width(for: show),
-                        height: Metrics.rowHeight,
+                        height: rowHeight,
                         titleInset: titleInset(for: show)
                     )
                     .offset(x: xPosition(for: visibleStart(of: show)))
                     .onTapGesture {
-                        onOpen(GuideEntry(channel: schedule.channel, show: show))
+                        let entry = GuideEntry(channel: schedule.channel, show: show)
+                        if showSpotlight {
+                            if selectedEntry?.id == entry.id {
+                                onOpen(entry)
+                            } else {
+                                triggerHaptic(.light)
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    selectedEntry = entry
+                                }
+                            }
+                        } else {
+                            onOpen(entry)
+                        }
                     }
                 }
 
                 if isNowInWindow {
                     Rectangle()
                         .fill(Theme.Colors.accentLive)
-                        .frame(width: 2, height: Metrics.rowHeight)
+                        .frame(width: 2, height: rowHeight)
                         .offset(x: xPosition(for: now))
                         .allowsHitTesting(false)
                 }
             }
-            .frame(width: timelineWidth, height: Metrics.rowHeight, alignment: .topLeading)
+            .frame(width: timelineWidth, height: rowHeight, alignment: .topLeading)
             .offset(x: horizontalOffset)
-            .frame(width: timelineViewport, height: Metrics.rowHeight, alignment: .leading)
+            .frame(width: timelineViewport, height: rowHeight, alignment: .leading)
             .clipped()
         }
-        .frame(height: Metrics.rowHeight)
+        .frame(height: rowHeight)
         .padding(.bottom, Metrics.rowSpacing)
     }
 
@@ -289,7 +484,7 @@ struct GuideGrid: View {
                     .truncationMode(.tail)
                     .padding(.horizontal, 4)
             }
-            .frame(width: Metrics.channelColumnWidth, height: Metrics.rowHeight)
+            .frame(width: channelColumnWidth, height: rowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -314,7 +509,7 @@ struct GuideGrid: View {
     private var rulerRow: some View {
         HStack(spacing: 0) {
             Theme.Colors.bgBase
-                .frame(width: Metrics.channelColumnWidth, height: Metrics.rulerHeight)
+                .frame(width: channelColumnWidth, height: Metrics.rulerHeight)
 
             ZStack(alignment: .topLeading) {
                 Theme.Colors.bgBase
@@ -330,6 +525,18 @@ struct GuideGrid: View {
                 }
 
                 if isNowInWindow {
+                    // Exact time badge (like in media_1788492472556.png)
+                    Text(Self.rulerFormatter.string(from: now))
+                        .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Theme.Colors.accentLive, in: Capsule())
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                        .offset(x: xPosition(for: now) - 20, y: 3)
+                        .allowsHitTesting(false)
+
                     NowCaret(size: Metrics.nowMarkerSize)
                         .offset(x: xPosition(for: now) - Metrics.nowMarkerSize / 2,
                                 y: Metrics.rulerHeight - Metrics.nowMarkerSize)
@@ -363,6 +570,7 @@ private struct GuideGridBlock: View {
     let show: NowNext.Entry
     let channelName: String
     let isLive: Bool
+    var isSelected: Bool = false
     let width: CGFloat
     let height: CGFloat
     /// Set by the grid while the block is panned past the viewport's left edge:
@@ -372,7 +580,7 @@ private struct GuideGridBlock: View {
     /// A 15-minute block is 43 pt wide, so 8 pt each side spends over a third of
     /// it on air. Narrow blocks buy the title that space back.
     private var horizontalPadding: CGFloat {
-        width < 72 ? 4 : 8
+        width < 55 ? 3 : (width < 90 ? 5 : 8)
     }
 
     private var contentWidth: CGFloat {
@@ -382,30 +590,19 @@ private struct GuideGridBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(show.title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
-                .lineLimit(2)
-                // Shrink before breaking: in a narrow block SwiftUI splits the
-                // one word that does not fit across both lines, and "Garfie/ld"
-                // reads as a typo rather than as a title. 0.70 is what a
-                // single-word title needs to survive the narrowest block the
-                // grid draws: "Garfield" at 12 pt is ~50 pt, the block leaves 35.
-                .minimumScaleFactor(0.70)
+                .lineLimit(3)
+                .minimumScaleFactor(0.65)
                 .allowsTightening(true)
                 .truncationMode(.tail)
                 .multilineTextAlignment(.leading)
 
-            // Start only. The block's right edge already states the end, and a
-            // full range in every block put eleven digits into each one — twenty
-            // blocks of scattered clock readings competing with the ruler that is
-            // supposed to be doing this job.
-            //
-            // Measured against what is left after the inset, not the block: a
-            // pinned title must not push the clock reading out of view.
-            if contentWidth > 46 {
+            // Start time
+            if contentWidth > 38 && height >= 64 {
                 Text(show.formattedStartTime)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(isLive ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
+                    .font(.system(size: 9.5, weight: (isSelected || isLive) ? .bold : .medium, design: .monospaced))
+                    .foregroundStyle(isSelected ? Theme.Colors.statusError : (isLive ? Theme.Colors.accentLive : Theme.Colors.textTertiary))
                     .monospacedDigit()
                     .lineLimit(1)
             }
@@ -414,22 +611,27 @@ private struct GuideGridBlock: View {
         }
         .padding(.leading, horizontalPadding + titleInset)
         .padding(.trailing, horizontalPadding)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .frame(width: width, height: height, alignment: .topLeading)
         .background(
-            isLive ? Theme.Colors.accentLive.opacity(0.14) : Theme.Colors.surfaceElevated,
+            isSelected
+                ? Theme.Colors.statusError.opacity(0.18)
+                : (isLive ? Theme.Colors.accentLive.opacity(0.14) : Theme.Colors.surfaceElevated),
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(
-                    isLive ? Theme.Colors.accentLive.opacity(0.55) : Theme.Colors.borderSubtle,
-                    lineWidth: isLive ? 1 : 0.5
+                    isSelected
+                        ? Theme.Colors.statusError
+                        : (isLive ? Theme.Colors.accentLive.opacity(0.55) : Theme.Colors.borderSubtle),
+                    lineWidth: isSelected ? 2.5 : (isLive ? 1 : 0.5)
                 )
         )
+        .shadow(color: isSelected ? Theme.Colors.statusError.opacity(0.4) : .clear, radius: 4, x: 0, y: 0)
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)")
+        .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)\(isSelected ? ", ausgewählt" : "")")
     }
 }
 
@@ -452,6 +654,11 @@ private struct NowCaret: View {
         .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
+}
+
+@MainActor
+private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    Haptics.shared.impact(style)
 }
 
 #if DEBUG

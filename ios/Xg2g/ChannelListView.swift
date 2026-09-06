@@ -12,9 +12,16 @@ private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
 struct ChannelListView: View {
 
     @Bindable var model: AppModel
+    @ObservedObject private var playbackManager: PlaybackManager
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
+    @AppStorage("channelListLayout") private var layoutMode: String = "compact"
+
+    init(model: AppModel) {
+        self.model = model
+        self._playbackManager = ObservedObject(wrappedValue: model.playbackManager)
+    }
 
     var body: some View {
         NavigationStack {
@@ -26,24 +33,27 @@ struct ChannelListView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             // 🔴 Jetzt Live
-                            let isNow = model.selectedTimeFilter == .now && model.selectedGenre == .all
+                            let isAll = (model.selectedBouquet?.id != AppModel.favoritesBouquetID) && model.selectedGenre == .all
                             Button {
                                 triggerHaptic(.light)
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                                     model.selectedTimeFilter = .now
                                     model.selectedGenre = .all
+                                    if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
+                                        Task { await model.selectBouquet(nil) }
+                                    }
                                 }
                             } label: {
                                 HStack(spacing: 5) {
                                     PulsingLiveDot(size: 6)
                                     Text("Jetzt Live")
-                                        .font(.system(size: 13, weight: isNow ? .bold : .medium))
+                                        .font(.system(size: 13, weight: isAll ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
-                                .background(isNow ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
-                                .foregroundStyle(isNow ? Theme.Colors.bgBase : Theme.Colors.textPrimary)
-                                .overlay { if !isNow { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
+                                .background(isAll ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
+                                .foregroundStyle(isAll ? Theme.Colors.bgBase : Theme.Colors.textPrimary)
+                                .overlay { if !isAll { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
 
@@ -74,50 +84,6 @@ struct ChannelListView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-
-                            // 🍿 20:15
-                            let isPrime = model.selectedTimeFilter == .primeTimeTonight
-                            Button {
-                                triggerHaptic(.light)
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    model.selectedTimeFilter = .primeTimeTonight
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "popcorn.fill")
-                                        .font(.system(size: 11))
-                                    Text("20:15")
-                                        .font(.system(size: 13, weight: isPrime ? .bold : .medium))
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background(isPrime ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
-                                .foregroundStyle(isPrime ? Color.white : Theme.Colors.textPrimary)
-                                .overlay { if !isPrime { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
-                            }
-                            .buttonStyle(.plain)
-
-                            // 🌙 22:00
-                            let isLate = model.selectedTimeFilter == .lateNightTonight
-                            Button {
-                                triggerHaptic(.light)
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                    model.selectedTimeFilter = .lateNightTonight
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "moon.fill")
-                                        .font(.system(size: 11))
-                                    Text("22:00")
-                                        .font(.system(size: 13, weight: isLate ? .bold : .medium))
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background(isLate ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
-                                .foregroundStyle(isLate ? Color.white : Theme.Colors.textPrimary)
-                                .overlay { if !isLate { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
-                            }
-                            .buttonStyle(.plain)
 
                             Divider()
                                 .frame(height: 18)
@@ -173,154 +139,159 @@ struct ChannelListView: View {
                             Spacer()
                         } else {
                             let isRegular = sizeClass == .regular
+                            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+                            let isCompact = layoutMode == "compact"
+                            let bottomPadding: CGFloat = playbackManager.presentationMode == .miniplayer
+                                ? (isPad ? 96 : 140)
+                                : (isPad ? 24 : 80)
+
                             ScrollView {
-                                VStack(spacing: 16) {
-                                    // 1. Favorite Spotlight Hero Banner (strictly only for favorite channels)
-                                    if let spotlight = spotlightItem {
-                                        GoogleSpotlightHero(
-                                            channel: spotlight.channel,
-                                            entry: spotlight.entry,
-                                            model: model,
-                                            onPlay: {
-                                                model.playingChannel = spotlight.channel
-                                            },
-                                            onShowInfo: {
-                                                selectedDetail = ProgramDetailPayload(channel: spotlight.channel, entry: spotlight.entry)
-                                            },
-                                            onRecord: {
-                                                Task {
-                                                    let ok = await model.scheduleProgramTimer(channel: spotlight.channel, entry: spotlight.entry)
-                                                    if ok {
-                                                        triggerHaptic(.medium)
-                                                        withAnimation {
-                                                            recordConfirmationMessage = "„\(spotlight.entry.title)“ programmiert"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-
-                                    // 2. Favorites Quick Rail (if not already viewing the favorites bouquet)
-                                    if model.selectedBouquet?.id != AppModel.favoritesBouquetID && !model.favoriteChannels.isEmpty && model.searchQuery.isEmpty {
-                                        FavoritesQuickRail(
-                                            channels: model.favoriteChannels,
-                                            model: model,
-                                            onPlay: { channel in
-                                                model.playingChannel = channel
-                                            },
-                                            onShowInfo: { channel, entry in
-                                                selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
-                                            }
-                                        )
-                                    }
-
-                                    // 3. Recently Played Rail ("ZULETZT GESPIELT" - Sleek Glass Cards)
-                                    if !model.recentChannels.isEmpty && model.searchQuery.isEmpty {
-                                        RecentlyWatchedRail(
-                                            channels: model.recentChannels,
-                                            model: model,
-                                            onPlay: { channel in
-                                                model.playingChannel = channel
-                                            },
-                                            onShowInfo: { channel, entry in
-                                                selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
-                                            }
-                                        )
-                                    }
-
-                                    // 3. Station Grid Header
-                                    HStack {
+                                VStack(spacing: 12) {
+                                    // Station Header with Channel Count & View Switcher (Kompakt vs Magazin)
+                                    HStack(spacing: 8) {
                                         Text(model.selectedBouquet?.name ?? "Alle Sender")
                                             .font(.headline.weight(.bold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
 
-                                        Spacer()
-
-                                        Text("\(currentChannels.count) Sender")
+                                        Text("\(currentChannels.count)")
                                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.textTertiary)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2)
+                                            .background(Theme.Colors.surfaceElevated, in: Capsule())
+
+                                        Spacer()
+
+                                        // View Switcher Segment (Kompakt vs Magazin)
+                                        HStack(spacing: 2) {
+                                            Button {
+                                                triggerHaptic(.light)
+                                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                                    layoutMode = "compact"
+                                                }
+                                            } label: {
+                                                Image(systemName: "list.bullet")
+                                                    .font(.system(size: 12, weight: isCompact ? .bold : .medium))
+                                                    .foregroundStyle(isCompact ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
+                                                    .frame(width: 32, height: 26)
+                                                    .background(isCompact ? Theme.Colors.surfaceElevated : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            Button {
+                                                triggerHaptic(.light)
+                                                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                                    layoutMode = "magazine"
+                                                }
+                                            } label: {
+                                                Image(systemName: "rectangle.grid.1x2")
+                                                    .font(.system(size: 12, weight: !isCompact ? .bold : .medium))
+                                                    .foregroundStyle(!isCompact ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
+                                                    .frame(width: 32, height: 26)
+                                                    .background(!isCompact ? Theme.Colors.surfaceElevated : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(2)
+                                        .background(Theme.Colors.surfaceElevated.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.6))
                                     }
                                     .padding(.horizontal, 2)
+                                    .padding(.bottom, 2)
 
-                                    // 4. Responsive Channel Cards Grid (Optimized for Widescreen Landscape & Portrait)
-                                    LazyVGrid(
-                                        columns: [
-                                            GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 12)
-                                        ],
-                                        spacing: 12
-                                    ) {
-                                        ForEach(currentChannels) { channel in
-                                            ChannelRow(
-                                                channel: channel,
-                                                nowNext: model.schedule[channel.serviceRef],
-                                                fullSchedule: model.fullEpg[channel.serviceRef] ?? [],
-                                                previewHours: model.epgPreviewHours,
-                                                timeFilter: model.selectedTimeFilter,
-                                                targetShow: model.show(for: channel, at: model.selectedTimeFilter),
-                                                isFavorite: model.isFavorite(channel),
-                                                onPlay: {
-                                                    model.playingChannel = channel
-                                                },
-                                                onShowInfo: { entry in
-                                                    selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
-                                                },
-                                                onRecord: { entry in
-                                                    Task {
-                                                        let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
-                                                        if success {
-                                                            triggerHaptic(.medium)
-                                                            withAnimation {
-                                                                recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                                            }
+                                    if isCompact {
+                                        // MARK: - Compact Zapping Channel List (adaptive on iPad)
+                                        if isRegular {
+                                            LazyVGrid(
+                                                columns: [
+                                                    GridItem(.adaptive(minimum: 340, maximum: 540), spacing: 10)
+                                                ],
+                                                spacing: 10
+                                            ) {
+                                                ForEach(currentChannels) { channel in
+                                                    CompactChannelRow(
+                                                        channel: channel,
+                                                        nowNext: model.schedule[channel.serviceRef],
+                                                        timeFilter: model.selectedTimeFilter,
+                                                        targetShow: model.show(for: channel, at: model.selectedTimeFilter),
+                                                        isFavorite: model.isFavorite(channel),
+                                                        onPlay: {
+                                                            model.playingChannel = channel
+                                                        },
+                                                        onShowInfo: { entry in
+                                                            selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                                                        },
+                                                        onRecord: { entry in
+                                                            scheduleTimer(for: channel, entry: entry)
                                                         }
-                                                    }
-                                                }
-                                            )
-                                            .contextMenu {
-                                                Button {
-                                                    model.playingChannel = channel
-                                                } label: {
-                                                    Label("Live schauen", systemImage: "play.fill")
-                                                }
-
-                                                if let now = model.schedule[channel.serviceRef]?.now {
-                                                    Button {
-                                                        selectedDetail = ProgramDetailPayload(channel: channel, entry: now)
-                                                    } label: {
-                                                        Label("Sendungsdetails", systemImage: "info.circle")
-                                                    }
-
-                                                    Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: now) }
-                                                    } label: {
-                                                        Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
-                                                    }
-                                                }
-
-                                                if let next = model.schedule[channel.serviceRef]?.next {
-                                                    Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: next) }
-                                                    } label: {
-                                                        Label("„\(next.title)“ aufnehmen", systemImage: "record.circle")
-                                                    }
-                                                }
-
-                                                Button {
-                                                    model.toggleFavorite(channel)
-                                                } label: {
-                                                    Label(
-                                                        model.isFavorite(channel) ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen",
-                                                        systemImage: model.isFavorite(channel) ? "star.slash" : "star"
                                                     )
+                                                    .contextMenu {
+                                                        channelContextMenu(for: channel)
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            LazyVStack(spacing: 8) {
+                                                ForEach(currentChannels) { channel in
+                                                    CompactChannelRow(
+                                                        channel: channel,
+                                                        nowNext: model.schedule[channel.serviceRef],
+                                                        timeFilter: model.selectedTimeFilter,
+                                                        targetShow: model.show(for: channel, at: model.selectedTimeFilter),
+                                                        isFavorite: model.isFavorite(channel),
+                                                        onPlay: {
+                                                            model.playingChannel = channel
+                                                        },
+                                                        onShowInfo: { entry in
+                                                            selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                                                        },
+                                                        onRecord: { entry in
+                                                            scheduleTimer(for: channel, entry: entry)
+                                                        }
+                                                    )
+                                                    .contextMenu {
+                                                        channelContextMenu(for: channel)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // MARK: - Magazine EPG Cards Grid
+                                        LazyVGrid(
+                                            columns: [
+                                                GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 12)
+                                            ],
+                                            spacing: 12
+                                        ) {
+                                            ForEach(currentChannels) { channel in
+                                                ChannelRow(
+                                                    channel: channel,
+                                                    nowNext: model.schedule[channel.serviceRef],
+                                                    fullSchedule: model.fullEpg[channel.serviceRef] ?? [],
+                                                    previewHours: model.epgPreviewHours,
+                                                    timeFilter: model.selectedTimeFilter,
+                                                    targetShow: model.show(for: channel, at: model.selectedTimeFilter),
+                                                    isFavorite: model.isFavorite(channel),
+                                                    onPlay: {
+                                                        model.playingChannel = channel
+                                                    },
+                                                    onShowInfo: { entry in
+                                                        selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                                                    },
+                                                    onRecord: { entry in
+                                                        scheduleTimer(for: channel, entry: entry)
+                                                    }
+                                                )
+                                                .contextMenu {
+                                                    channelContextMenu(for: channel)
                                                 }
                                             }
                                         }
                                     }
                                 }
                                 .padding(.horizontal, isRegular ? 20 : 12)
-                                .padding(.vertical, 12)
-                                .safeAreaPadding(.bottom, 80)
+                                .padding(.vertical, 10)
+                                .safeAreaPadding(.bottom, bottomPadding)
                             }
                             .refreshable {
                                 await model.refreshLiveContent()
@@ -454,21 +425,222 @@ struct ChannelListView: View {
                     }
                 )
             }
+            .onAppear {
+                model.selectedTimeFilter = .now
+            }
         }
     }
 
-    // MARK: - Spotlight Hero Item (Only Favorites!)
-    private var spotlightItem: (channel: Channel, entry: NowNext.Entry)? {
-        guard model.searchQuery.isEmpty else { return nil }
+    private func scheduleTimer(for channel: Channel, entry: NowNext.Entry) {
+        Task {
+            let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
+            if success {
+                triggerHaptic(.medium)
+                withAnimation {
+                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                }
+            }
+        }
+    }
 
-        // STRICTLY ONLY favorite channels
-        for channel in model.favoriteChannels {
-            if let show = model.show(for: channel, at: model.selectedTimeFilter) {
-                return (channel, show)
+    @ViewBuilder
+    private func channelContextMenu(for channel: Channel) -> some View {
+        Button {
+            model.playingChannel = channel
+        } label: {
+            Label("Live schauen", systemImage: "play.fill")
+        }
+
+        if let now = model.schedule[channel.serviceRef]?.now {
+            Button {
+                selectedDetail = ProgramDetailPayload(channel: channel, entry: now)
+            } label: {
+                Label("Sendungsdetails", systemImage: "info.circle")
+            }
+
+            Button {
+                scheduleTimer(for: channel, entry: now)
+            } label: {
+                Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
             }
         }
 
-        return nil
+        if let next = model.schedule[channel.serviceRef]?.next {
+            Button {
+                scheduleTimer(for: channel, entry: next)
+            } label: {
+                Label("„\(next.title)“ aufnehmen", systemImage: "record.circle")
+            }
+        }
+
+        Button {
+            model.toggleFavorite(channel)
+        } label: {
+            Label(
+                model.isFavorite(channel) ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen",
+                systemImage: model.isFavorite(channel) ? "star.slash" : "star"
+            )
+        }
+    }
+}
+
+// MARK: - Compact Channel Row (High-Density Zapping List - 8 to 10 channels visible on screen)
+
+struct CompactChannelRow: View {
+
+    let channel: Channel
+    let nowNext: NowNext?
+    var timeFilter: AppModel.TimeFilter = .now
+    var targetShow: NowNext.Entry? = nil
+    var isFavorite: Bool = false
+    var onPlay: () -> Void = {}
+    var onShowInfo: (NowNext.Entry) -> Void = { _ in }
+    var onRecord: (NowNext.Entry) -> Void = { _ in }
+
+    var body: some View {
+        let displayedShow = targetShow ?? nowNext?.now
+
+        Button {
+            triggerHaptic(.light)
+            onPlay()
+        } label: {
+            HStack(spacing: 12) {
+                // 1. Channel Number + Logo
+                HStack(spacing: 7) {
+                    if let number = channel.number {
+                        Text(number)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                            .frame(minWidth: 22, alignment: .trailing)
+                    }
+
+                    ChannelLogo(url: channel.logoURL, name: channel.name, size: 34)
+                }
+
+                // 2. Channel & Current Show Info
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(channel.name)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+
+                        if isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.yellow)
+                        }
+
+                        Spacer(minLength: 4)
+
+                        if let show = displayedShow {
+                            if timeFilter == .now, let remaining = show.remainingMinutes(at: .now) {
+                                HStack(spacing: 4) {
+                                    PulsingLiveDot(size: 4)
+                                    Text("noch \(remaining)m")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.accentLive)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.Colors.accentLive.opacity(0.12), in: Capsule())
+                            } else {
+                                Text(show.formattedTimeRange)
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                        }
+                    }
+
+                    if let show = displayedShow {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Text(show.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineLimit(1)
+
+                                Spacer(minLength: 4)
+
+                                Text(show.formattedTimeRange)
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+
+                            // Live Progress Bar (Full Width)
+                            if timeFilter == .now, let fraction = show.progress(at: .now) {
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.10))
+                                            .frame(height: 2.5)
+
+                                        Capsule()
+                                            .fill(Theme.Colors.accentLive)
+                                            .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(fraction))), height: 2.5)
+                                    }
+                                }
+                                .frame(height: 2.5)
+                            }
+                        }
+
+                        // OpenWebif-Style Next Show ("DANACH:")
+                        if timeFilter == .now, let next = nowNext?.next {
+                            HStack(spacing: 5) {
+                                Text("DANACH:")
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                                Text(next.formattedStartTime)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+
+                                Text(next.title)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                    .lineLimit(1)
+
+                                Spacer()
+
+                                Text("(\(next.durationMinutes)m)")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                            .padding(.top, 1)
+                        }
+                    } else {
+                        Text("Keine Programminformationen")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                }
+
+                // 3. Info Button
+                if let show = displayedShow {
+                    Button {
+                        triggerHaptic(.light)
+                        onShowInfo(show)
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .padding(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.Colors.surfaceElevated.opacity(0.55))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.6)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

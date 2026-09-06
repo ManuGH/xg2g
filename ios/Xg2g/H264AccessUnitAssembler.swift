@@ -255,10 +255,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         if let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) {
             let nalStart = startCodeOffset + prefixLen
             if nalStart < streamBuffer.count {
-                var nalData = Data(streamBuffer[nalStart..<streamBuffer.count])
-                while nalData.count > 0 && nalData.last == 0 {
-                    nalData.removeLast()
-                }
+                let nalData = Data(streamBuffer[nalStart..<streamBuffer.count])
                 if !nalData.isEmpty {
                     handleNALUnit(nalData)
                 }
@@ -292,10 +289,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
                 break
             }
 
-            var nalData = Data(streamBuffer[nalStart..<nextStartCodeOffset])
-            while nalData.count > 0 && nalData.last == 0 {
-                nalData.removeLast()
-            }
+            let nalData = Data(streamBuffer[nalStart..<nextStartCodeOffset])
             if !nalData.isEmpty {
                 handleNALUnit(nalData)
             }

@@ -48,6 +48,8 @@ type CreateProfileRequest struct {
 	Name            string   `json:"name"`
 	AvatarURL       string   `json:"avatarUrl,omitempty"`
 	IsChild         bool     `json:"isChild"`
+	Kind            string   `json:"kind,omitempty"`
+	MaxFSK          *int     `json:"maxFsk,omitempty"`
 	AllowedBouquets []string `json:"allowedBouquets,omitempty"`
 	BlockedChannels []string `json:"blockedChannels,omitempty"`
 	MaturityLevel   int      `json:"maturityLevel,omitempty"`
@@ -192,11 +194,16 @@ func (s *Server) RedeemInvitation(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// CreateProfile handles POST /api/v3/profiles
+// CreateProfile handles POST /api/v3/profiles (legacy compatibility)
 func (s *Server) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	if scopes, ok := s.RequestScopes(r); ok && !scopes.allows([]Scope{ScopeV3Admin}) {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Admin scope required", nil)
 		return
 	}
 
@@ -212,7 +219,13 @@ func (s *Server) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, pol, err := svc.CreateProfile(r.Context(), principal.ID, req.Name, req.AvatarURL, req.IsChild, req.AllowedBouquets, req.BlockedChannels, req.MaturityLevel, req.ExitPIN)
+	isChild := req.IsChild || req.Kind == "child"
+	maturity := req.MaturityLevel
+	if req.MaxFSK != nil {
+		maturity = *req.MaxFSK
+	}
+
+	prof, pol, err := svc.CreateProfile(r.Context(), principal.ID, req.Name, req.AvatarURL, isChild, req.AllowedBouquets, req.BlockedChannels, maturity, req.ExitPIN)
 	if err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Failed to Create Profile", problemcode.CodeInvalidInput, err.Error(), nil)
 		return
@@ -256,8 +269,11 @@ func (s *Server) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	profID := chi.URLParam(r, "id")
+	if profID == "" {
+		profID = chi.URLParam(r, "profileId")
+	}
 	prof, pol, err := svc.Store().GetProfile(r.Context(), profID)
-	if err != nil {
+	if err != nil || prof == nil {
 		writeRegisteredProblem(w, r, http.StatusNotFound, "system/not_found", "Profile Not Found", problemcode.CodeNotFound, "Profile not found", nil)
 		return
 	}
@@ -269,15 +285,18 @@ func (s *Server) GetProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateProfile handles PUT /api/v3/profiles/{id}
-func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+func (s *Server) updateProfileWithID(w http.ResponseWriter, r *http.Request, profID string) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
 		return
 	}
 
-	profID := chi.URLParam(r, "id")
+	if scopes, ok := s.RequestScopes(r); ok && !scopes.allows([]Scope{ScopeV3Admin}) {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Admin scope required", nil)
+		return
+	}
+
 	if strings.TrimSpace(profID) == "" {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Profile ID required", nil)
 		return
@@ -301,9 +320,19 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if req.AvatarURL != "" {
 		prof.AvatarURL = req.AvatarURL
 	}
-	prof.IsChild = req.IsChild
-	if req.MaturityLevel > 0 {
-		prof.MaxParentalRating = req.MaturityLevel
+	if req.Kind == "child" {
+		prof.IsChild = true
+	} else if req.Kind == "adult" {
+		prof.IsChild = false
+	} else {
+		prof.IsChild = req.IsChild
+	}
+	maturity := req.MaturityLevel
+	if req.MaxFSK != nil {
+		maturity = *req.MaxFSK
+	}
+	if maturity > 0 {
+		prof.MaxParentalRating = maturity
 	}
 
 	if pol == nil {
@@ -311,8 +340,14 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			ProfileID: profID,
 		}
 	}
-	if req.MaturityLevel > 0 {
-		pol.MaturityLevel = req.MaturityLevel
+	if maturity > 0 {
+		pol.MaturityLevel = maturity
+	}
+	if req.AllowedBouquets != nil {
+		pol.AllowedBouquets = req.AllowedBouquets
+	}
+	if req.BlockedChannels != nil {
+		pol.BlockedChannels = req.BlockedChannels
 	}
 	if req.ExitPIN != "" {
 		h, _ := identity.HashProfilePIN(req.ExitPIN)
@@ -325,10 +360,16 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"profile": prof,
-		"policy":  pol,
-	})
+	_ = json.NewEncoder(w).Encode(toHouseholdProfile(*prof, pol))
+}
+
+// UpdateProfile handles PUT /api/v3/profiles/{id}
+func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	profID := chi.URLParam(r, "id")
+	if profID == "" {
+		profID = chi.URLParam(r, "profileId")
+	}
+	s.updateProfileWithID(w, r, profID)
 }
 
 // DeleteProfile handles DELETE /api/v3/profiles/{id}
@@ -339,7 +380,15 @@ func (s *Server) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if scopes, ok := s.RequestScopes(r); ok && !scopes.allows([]Scope{ScopeV3Admin}) {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Admin scope required", nil)
+		return
+	}
+
 	profID := chi.URLParam(r, "id")
+	if profID == "" {
+		profID = chi.URLParam(r, "profileId")
+	}
 	if err := svc.Store().DeleteProfile(r.Context(), profID); err != nil {
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to delete profile", nil)
 		return
@@ -373,6 +422,79 @@ func (s *Server) GetEffectivePermissions(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(eff)
 }
 
+func toHouseholdProfile(p identity.Profile, pol *identity.ProfilePolicy) HouseholdProfile {
+	kind := Adult
+	if p.IsChild {
+		kind = Child
+	}
+	allowedBouquets := []string{}
+	if pol != nil && pol.AllowedBouquets != nil {
+		allowedBouquets = pol.AllowedBouquets
+	}
+	allowedServiceRefs := []string{}
+	favoriteServiceRefs := []string{}
+	var maxFsk *int
+	if pol != nil && pol.MaturityLevel > 0 {
+		maxFsk = &pol.MaturityLevel
+	} else if p.MaxParentalRating > 0 {
+		maxFsk = &p.MaxParentalRating
+	}
+	dvrPlayback := true
+	dvrManage := true
+	settings := true
+	if p.IsChild {
+		dvrPlayback = false
+		dvrManage = false
+		settings = false
+	}
+	if pol != nil {
+		dvrPlayback = pol.DVRAllowed
+	}
+	return HouseholdProfile{
+		Id:                  p.ID,
+		Name:                p.Name,
+		Kind:                kind,
+		MaxFsk:              maxFsk,
+		AllowedBouquets:     allowedBouquets,
+		AllowedServiceRefs:  allowedServiceRefs,
+		FavoriteServiceRefs: favoriteServiceRefs,
+		Permissions: HouseholdProfilePermissions{
+			DvrManage:   dvrManage,
+			DvrPlayback: dvrPlayback,
+			Settings:    settings,
+		},
+	}
+}
+
+func domainHouseholdToContract(p household.Profile) HouseholdProfile {
+	allowedBouquets := p.AllowedBouquets
+	if allowedBouquets == nil {
+		allowedBouquets = []string{}
+	}
+	allowedServiceRefs := p.AllowedServiceRefs
+	if allowedServiceRefs == nil {
+		allowedServiceRefs = []string{}
+	}
+	favoriteServiceRefs := p.FavoriteServiceRefs
+	if favoriteServiceRefs == nil {
+		favoriteServiceRefs = []string{}
+	}
+	return HouseholdProfile{
+		Id:                  p.ID,
+		Name:                p.Name,
+		Kind:                HouseholdProfileKind(p.Kind),
+		MaxFsk:              p.MaxFSK,
+		AllowedBouquets:     allowedBouquets,
+		AllowedServiceRefs:  allowedServiceRefs,
+		FavoriteServiceRefs: favoriteServiceRefs,
+		Permissions: HouseholdProfilePermissions{
+			DvrManage:   p.Permissions.DVRManage,
+			DvrPlayback: p.Permissions.DVRPlayback,
+			Settings:    p.Permissions.Settings,
+		},
+	}
+}
+
 // OpenAPI HouseholdServerInterface implementations
 func (s *Server) GetHouseholdProfiles(w http.ResponseWriter, r *http.Request, params GetHouseholdProfilesParams) {
 	if s.householdService != nil && s.getIdentityService() == nil {
@@ -381,11 +503,35 @@ func (s *Server) GetHouseholdProfiles(w http.ResponseWriter, r *http.Request, pa
 			writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to list profiles", nil)
 			return
 		}
+		result := make([]HouseholdProfile, 0, len(profs))
+		for _, p := range profs {
+			result = append(result, domainHouseholdToContract(p))
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(profs)
+		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
-	s.ListProfiles(w, r)
+
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	profs, err := svc.Store().ListProfilesByHousehold(r.Context(), "default_household")
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to list profiles", nil)
+		return
+	}
+
+	result := make([]HouseholdProfile, 0, len(profs))
+	for _, p := range profs {
+		_, pol, _ := svc.Store().GetProfile(r.Context(), p.ID)
+		result = append(result, toHouseholdProfile(p, pol))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, params PostHouseholdProfilesParams) {
@@ -402,10 +548,48 @@ func (s *Server) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, p
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(created)
+		_ = json.NewEncoder(w).Encode(domainHouseholdToContract(created))
 		return
 	}
-	s.CreateProfile(w, r)
+
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	if scopes, ok := s.RequestScopes(r); ok && !scopes.allows([]Scope{ScopeV3Admin}) {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Admin scope required", nil)
+		return
+	}
+
+	principal := s.resolveRequestPrincipal(r)
+	if principal == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	var req CreateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "Failed to parse JSON body", nil)
+		return
+	}
+
+	isChild := req.IsChild || req.Kind == "child"
+	maturity := req.MaturityLevel
+	if req.MaxFSK != nil {
+		maturity = *req.MaxFSK
+	}
+
+	prof, pol, err := svc.CreateProfile(r.Context(), principal.ID, req.Name, req.AvatarURL, isChild, req.AllowedBouquets, req.BlockedChannels, maturity, req.ExitPIN)
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Failed to Create Profile", problemcode.CodeInvalidInput, err.Error(), nil)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(toHouseholdProfile(*prof, pol))
 }
 
 func (s *Server) DeleteHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params DeleteHouseholdProfileParams) {
@@ -417,7 +601,22 @@ func (s *Server) DeleteHouseholdProfile(w http.ResponseWriter, r *http.Request, 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.DeleteProfile(w, r)
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	if scopes, ok := s.RequestScopes(r); ok && !scopes.allows([]Scope{ScopeV3Admin}) {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Admin scope required", nil)
+		return
+	}
+
+	if err := svc.Store().DeleteProfile(r.Context(), profileId); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to delete profile", nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params PutHouseholdProfileParams) {
@@ -435,10 +634,10 @@ func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, pro
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(updated)
+		_ = json.NewEncoder(w).Encode(domainHouseholdToContract(updated))
 		return
 	}
-	s.CreateProfile(w, r)
+	s.updateProfileWithID(w, r, profileId)
 }
 
 func (s *Server) GetAccessPolicy(w http.ResponseWriter, r *http.Request) {

@@ -13,13 +13,11 @@ import (
 
 // handwrittenRoute is one v3 route that is not generated from the OpenAPI contract.
 type handwrittenRoute struct {
-	method  string
-	pattern string
-	handler http.HandlerFunc
-	// authenticated wraps the handler in authMiddleware. The chi construction path used to
-	// express this with a route group; going through the registrar contract requires an
-	// explicit per-route wrap, which behaves identically and survives both paths.
-	authenticated bool
+	method         string
+	pattern        string
+	handler        http.HandlerFunc
+	authenticated  bool
+	requiredScopes []Scope
 }
 
 // handwrittenRoutes is the single source of truth for every v3 route that is not generated
@@ -37,73 +35,69 @@ type handwrittenRoute struct {
 func handwrittenRoutes(svc *Server) []handwrittenRoute {
 	return []handwrittenRoute{
 		// Identity and passkey
-		{http.MethodGet, "/auth/status", svc.AuthStatus, false},
-		{http.MethodPost, "/auth/passkey/login/start", svc.PasskeyLoginStart, false},
-		{http.MethodPost, "/auth/passkey/login/finish", svc.PasskeyLoginFinish, false},
-		{http.MethodPost, "/auth/passkey/register/start", svc.PasskeyRegisterStart, false},
-		{http.MethodPost, "/auth/passkey/register/finish", svc.PasskeyRegisterFinish, false},
-		{http.MethodPost, "/auth/recovery", svc.RecoveryLogin, false},
-		{http.MethodPost, "/auth/login/password", svc.PasswordLogin, false},
+		{http.MethodGet, "/auth/status", svc.AuthStatus, false, nil},
+		{http.MethodPost, "/auth/passkey/login/start", svc.PasskeyLoginStart, false, nil},
+		{http.MethodPost, "/auth/passkey/login/finish", svc.PasskeyLoginFinish, false, nil},
+		{http.MethodPost, "/auth/passkey/register/start", svc.PasskeyRegisterStart, false, nil},
+		{http.MethodPost, "/auth/passkey/register/finish", svc.PasskeyRegisterFinish, false, nil},
+		{http.MethodPost, "/auth/recovery", svc.RecoveryLogin, false, nil},
+		{http.MethodPost, "/auth/login/password", svc.PasswordLogin, false, nil},
 
 		// Android / native device grant (RFC 9449 sender-constrained enrollment)
-		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false},
-		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false},
+		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false, nil},
+		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false, nil},
+		{http.MethodPost, "/auth/device/session", svc.DeviceSessionCompat, false, nil},
 		// /auth/device/refresh is not listed here: it is declared in
 		// api/openapi.yaml and registered from the generated route catalog.
 
 		// Authenticated, unlike the two above: a device proves who it is with
 		// its live DPoP credential, and the handler revokes exactly that
 		// device.
-		{http.MethodPost, "/auth/device/revoke", svc.DeviceSelfRevoke, true},
+		{http.MethodPost, "/auth/device/revoke", svc.DeviceSelfRevoke, true, nil},
 
 		// Invitations
-		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false},
-		{http.MethodPost, "/auth/invitations", svc.CreateInvitation, true},
+		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false, nil},
+		{http.MethodPost, "/auth/invitations", svc.CreateInvitation, true, []Scope{ScopeV3Admin}},
 
 		// Session and credential management
-		{http.MethodGet, "/auth/passkeys", svc.ListPasskeys, true},
-		{http.MethodDelete, "/auth/passkeys/{id}", svc.DeletePasskey, true},
-		{http.MethodPost, "/auth/sessions/revoke-others", svc.RevokeOtherSessions, true},
-		{http.MethodPost, "/auth/bootstrap/acknowledge-recovery", svc.AcknowledgeRecovery, true},
-		{http.MethodPost, "/sessions/revoke-user-sessions", svc.RevokeUserSessions, true},
-		{http.MethodGet, "/auth/effective-permissions", svc.GetEffectivePermissions, true},
+		{http.MethodGet, "/auth/passkeys", svc.ListPasskeys, true, []Scope{ScopeV3Read}},
+		{http.MethodDelete, "/auth/passkeys/{id}", svc.DeletePasskey, true, []Scope{ScopeV3Admin}},
+		{http.MethodPost, "/auth/sessions/revoke-others", svc.RevokeOtherSessions, true, []Scope{ScopeV3Write}},
+		{http.MethodPost, "/auth/bootstrap/acknowledge-recovery", svc.AcknowledgeRecovery, true, []Scope{ScopeV3Admin}},
+		{http.MethodPost, "/sessions/revoke-user-sessions", svc.RevokeUserSessions, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/auth/effective-permissions", svc.GetEffectivePermissions, true, []Scope{ScopeV3Read}},
 
-		// Profiles
-		{http.MethodGet, "/profiles", svc.ListProfiles, true},
-		{http.MethodPost, "/profiles", svc.CreateProfile, true},
-		{http.MethodGet, "/profiles/{id}", svc.GetProfile, true},
-		{http.MethodPut, "/profiles/{id}", svc.UpdateProfile, true},
-		{http.MethodDelete, "/profiles/{id}", svc.DeleteProfile, true},
+		// Profiles (legacy endpoints; /household/profiles is declared in OpenAPI)
+		{http.MethodGet, "/profiles", svc.ListProfiles, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/profiles", svc.CreateProfile, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/profiles/{id}", svc.GetProfile, true, []Scope{ScopeV3Read}},
+		{http.MethodPut, "/profiles/{id}", svc.UpdateProfile, true, []Scope{ScopeV3Admin}},
+		{http.MethodDelete, "/profiles/{id}", svc.DeleteProfile, true, []Scope{ScopeV3Admin}},
 
 		// Household policies and approvals
-		{http.MethodGet, "/household/policies/access", svc.GetAccessPolicy, true},
-		{http.MethodPost, "/household/policies/access", svc.CreateAccessPolicy, true},
-		{http.MethodPost, "/household/policies/access/revoke", svc.RevokeAccessPolicy, true},
-		{http.MethodGet, "/household/approvals", svc.ListApprovalRequests, true},
-		{http.MethodPost, "/household/approvals", svc.CreateApprovalRequest, true},
-		{http.MethodPost, "/household/approvals/{id}/approve", svc.ApproveApprovalRequest, true},
-		{http.MethodPost, "/household/approvals/{id}/deny", svc.DenyApprovalRequest, true},
-		{http.MethodGet, "/household/resource-policy", svc.GetHouseholdResourcePolicy, true},
-		{http.MethodPut, "/household/resource-policy", svc.PutHouseholdResourcePolicy, true},
-		{http.MethodGet, "/household/devices", svc.ListHouseholdDevices, true},
-		{http.MethodPost, "/household/devices/{id}/revoke", svc.RevokeHouseholdDevice, true},
-		{http.MethodGet, "/household/members", svc.ListHouseholdMembers, true},
-		{http.MethodPost, "/household/members/invite", svc.CreateInvitation, true},
-		{http.MethodDelete, "/household/members/{id}", svc.RemoveHouseholdMember, true},
-		{http.MethodGet, "/household/profiles", svc.ListProfiles, true},
-		{http.MethodPost, "/household/profiles", svc.CreateProfile, true},
-		{http.MethodGet, "/household/profiles/{id}", svc.GetProfile, true},
-		{http.MethodPut, "/household/profiles/{id}", svc.UpdateProfile, true},
-		{http.MethodDelete, "/household/profiles/{id}", svc.DeleteProfile, true},
+		{http.MethodGet, "/household/policies/access", svc.GetAccessPolicy, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/household/policies/access", svc.CreateAccessPolicy, true, []Scope{ScopeV3Admin}},
+		{http.MethodPost, "/household/policies/access/revoke", svc.RevokeAccessPolicy, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/household/approvals", svc.ListApprovalRequests, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/household/approvals", svc.CreateApprovalRequest, true, []Scope{ScopeV3Write}},
+		{http.MethodPost, "/household/approvals/{id}/approve", svc.ApproveApprovalRequest, true, []Scope{ScopeV3Admin}},
+		{http.MethodPost, "/household/approvals/{id}/deny", svc.DenyApprovalRequest, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/household/resource-policy", svc.GetHouseholdResourcePolicy, true, []Scope{ScopeV3Read}},
+		{http.MethodPut, "/household/resource-policy", svc.PutHouseholdResourcePolicy, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/household/devices", svc.ListHouseholdDevices, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/household/devices/{id}/revoke", svc.RevokeHouseholdDevice, true, []Scope{ScopeV3Admin}},
+		{http.MethodGet, "/household/members", svc.ListHouseholdMembers, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/household/members/invite", svc.CreateInvitation, true, []Scope{ScopeV3Admin}},
+		{http.MethodDelete, "/household/members/{id}", svc.RemoveHouseholdMember, true, []Scope{ScopeV3Admin}},
 
 		// Notifications
-		{http.MethodGet, "/notifications", svc.ListNotifications, true},
-		{http.MethodGet, "/notifications/stream", svc.StreamNotifications, true},
-		{http.MethodPost, "/notifications/mark-read", svc.MarkNotificationRead, true},
-		{http.MethodPost, "/notifications/mark-all-read", svc.MarkAllNotificationsRead, true},
-		{http.MethodDelete, "/notifications/{id}", svc.DeleteNotification, true},
-		{http.MethodGet, "/notifications/vapid-key", svc.GetVAPIDPublicKey, true},
-		{http.MethodPost, "/notifications/push-subscriptions", svc.SavePushSubscription, true},
+		{http.MethodGet, "/notifications", svc.ListNotifications, true, []Scope{ScopeV3Read}},
+		{http.MethodGet, "/notifications/stream", svc.StreamNotifications, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/notifications/mark-read", svc.MarkNotificationRead, true, []Scope{ScopeV3Write}},
+		{http.MethodPost, "/notifications/mark-all-read", svc.MarkAllNotificationsRead, true, []Scope{ScopeV3Write}},
+		{http.MethodDelete, "/notifications/{id}", svc.DeleteNotification, true, []Scope{ScopeV3Write}},
+		{http.MethodGet, "/notifications/vapid-key", svc.GetVAPIDPublicKey, true, []Scope{ScopeV3Read}},
+		{http.MethodPost, "/notifications/push-subscriptions", svc.SavePushSubscription, true, []Scope{ScopeV3Write}},
 	}
 }
 
@@ -130,6 +124,9 @@ func registerHandwrittenRoutes(registrar RouteRegistrar, svc *Server) error {
 
 	for _, route := range handwrittenRoutes(svc) {
 		var handler http.Handler = route.handler
+		if len(route.requiredScopes) > 0 {
+			handler = svc.ScopeMiddleware(route.requiredScopes...)(handler)
+		}
 		if route.authenticated {
 			handler = svc.authMiddleware(handler)
 		}

@@ -34,7 +34,7 @@ class NativeDeviceAuthTransportTest {
             dpopProvider = dpop
         )
 
-        val expectedUrl = "https://example.com/api/v3/auth/device/session"
+        val expectedUrl = "https://example.com/api/v3/auth/device/refresh"
         assertEquals(expectedUrl, request.url.toString())
         assertEquals("test-dpop-proof", request.header("DPoP"))
         assertEquals("https://example.com", request.header("Origin"))

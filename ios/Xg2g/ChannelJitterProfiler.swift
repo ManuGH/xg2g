@@ -61,7 +61,7 @@ public final class ChannelJitterProfiler: @unchecked Sendable {
     public static let safetyMarginMs: Double = 150.0
 
     /// Global low-latency target lead override for step testing (e.g. 0.50 -> 0.35 -> 0.25 -> 0.15).
-    public nonisolated(unsafe) static var targetLiveLeadOverrideSeconds: Double? = 0.50
+    public nonisolated(unsafe) static var targetLiveLeadOverrideSeconds: Double? = nil
     /// The rate at which stall history loses weight. Used both for decaying a stale
     /// worst-stall observation and for walking the cushion down over stall-free zaps,
     /// so the two directions move at the same pace.

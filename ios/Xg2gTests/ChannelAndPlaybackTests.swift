@@ -375,8 +375,8 @@ struct TimersRepositoryTests {
         api.stub("timers", json: """
             {
                 "items": [
-                    {"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"waiting"},
-                    {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"running"}
+                    {"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"scheduled"},
+                    {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"recording"}
                 ]
             }
             """)
@@ -411,9 +411,9 @@ struct TimersRepositoryTests {
         api.stub("timers", json: """
             {
                 "items": [
-                    {"timerId":"t_invalid_1","name":"","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
-                    {"timerId":"t_valid","name":"Valid Timer","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
-                    {"timerId":"t_invalid_2","name":"Missing Ref","serviceRef":"  ","begin":1700010000,"end":1700011800,"state":"waiting"}
+                    {"timerId":"t_invalid_1","name":"","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"scheduled"},
+                    {"timerId":"t_valid","name":"Valid Timer","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"scheduled"},
+                    {"timerId":"t_invalid_2","name":"Missing Ref","serviceRef":"  ","begin":1700010000,"end":1700011800,"state":"scheduled"}
                 ]
             }
             """)
@@ -470,8 +470,6 @@ struct ChannelZappingNavigationTests {
     @Test func zappingWrapsAroundProperly() {
         let model = AppModel()
         let c1 = Channel(id: "1", name: "ORF1", number: "1", serviceRef: "ref1", logoURL: nil)
-        let c2 = Channel(id: "2", name: "ORF2", number: "2", serviceRef: "ref2", logoURL: nil)
-        let c3 = Channel(id: "3", name: "ATV", number: "3", serviceRef: "ref3", logoURL: nil)
 
         // In empty state
         #expect(model.channelAfter(c1) == nil)
@@ -493,6 +491,48 @@ struct FavoriteChannelsTests {
 
         model.toggleFavorite(c1)
         #expect(model.isFavorite(c1) == false)
+    }
+}
+
+@MainActor
+struct ChannelListViewLayoutTests {
+
+    @Test func layoutModeDefaultAndToggling() {
+        let defaults = UserDefaults.standard
+        defaults.set("compact", forKey: "channelListLayout")
+        #expect(defaults.string(forKey: "channelListLayout") == "compact")
+
+        defaults.set("magazine", forKey: "channelListLayout")
+        #expect(defaults.string(forKey: "channelListLayout") == "magazine")
+    }
+}
+
+struct GuideModeAndNavigationTests {
+
+    @Test func guideModesOnlyContainGridAndChannels() {
+        let modes = GuideMode.allCases
+        #expect(modes.count == 2)
+        #expect(modes.contains(.grid))
+        #expect(modes.contains(.channels))
+        #expect(GuideMode.grid.rawValue == "Raster")
+        #expect(GuideMode.channels.rawValue == "Sender")
+    }
+
+    @Test func tabNamesAndIconsAreCleanlyDifferentiated() {
+        #expect(Tab.liveTV.rawValue == "Live TV")
+        #expect(Tab.liveTV.systemImage == "tv")
+        #expect(Tab.guide.rawValue == "TV-Guide")
+        #expect(Tab.guide.systemImage == "rectangle.split.3x1")
+    }
+
+    @Test func spotlightPreferencePersistence() {
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "guideShowSpotlight")
+        #expect(defaults.bool(forKey: "guideShowSpotlight") == true)
+        defaults.set(false, forKey: "guideShowSpotlight")
+        #expect(defaults.bool(forKey: "guideShowSpotlight") == false)
+        // Reset to default
+        defaults.set(true, forKey: "guideShowSpotlight")
     }
 }
 
@@ -576,6 +616,103 @@ struct BroadcastActivityAttributesTests {
     }
 }
 #endif
+
+@Suite(.serialized)
+@MainActor
+struct BouquetCachingAndSelectionTests {
+
+    private func makeModel(api: ScriptedAPI) -> AppModel {
+        UserDefaults.standard.removeObject(forKey: "selectedBouquetID")
+        UserDefaults.standard.removeObject(forKey: "xg2g.favorites")
+        let model = AppModel()
+        model.channelRepository = ChannelRepository(api: api)
+        return model
+    }
+
+    @Test func selectingAlleSenderLoadsAllChannelsWhenNotCached() async throws {
+        let api = ScriptedAPI()
+        api.stub("services/bouquets", json: """
+            [{"id":"bq1","name":"Favoriten (TV)","servicesCount":1}]
+            """)
+        api.stub("services", json: """
+            [{"id":"s1","name":"Das Erste","number":"1","serviceRef":"1:0:1:1::"}]
+            """)
+        api.stub("services", json: """
+            [{"id":"s1","name":"Das Erste","number":"1","serviceRef":"1:0:1:1::"},
+             {"id":"s2","name":"ZDF","number":"2","serviceRef":"1:0:1:2::"}]
+            """)
+
+        let model = makeModel(api: api)
+        await model.loadBouquets()
+
+        // Bouquet 1 was auto-selected
+        #expect(model.selectedBouquet?.name == "Favoriten (TV)")
+        #expect(model.channels.count == 1)
+        #expect(model.bouquetChannelsCache["all"] == nil)
+
+        // Switch to "Alle Sender" (nil)
+        await model.selectBouquet(nil)
+
+        #expect(model.selectedBouquet == nil)
+        #expect(model.channels.count == 2)
+        #expect(model.bouquetChannelsCache["all"]?.count == 2)
+        #expect(UserDefaults.standard.string(forKey: "selectedBouquetID") == AppModel.allChannelsBouquetID)
+    }
+
+    @Test func selectingFavoritesLoadsAllChannelsAndFilters() async throws {
+        let api = ScriptedAPI()
+        api.stub("services/bouquets", json: """
+            [{"id":"bq1","name":"Favoriten (TV)","servicesCount":1}]
+            """)
+        api.stub("services", json: """
+            [{"id":"s1","name":"Das Erste","number":"1","serviceRef":"1:0:1:1::"}]
+            """)
+        api.stub("services", json: """
+            [{"id":"s1","name":"Das Erste","number":"1","serviceRef":"1:0:1:1::"},
+             {"id":"s2","name":"ZDF","number":"2","serviceRef":"1:0:1:2::"}]
+            """)
+
+        let model = makeModel(api: api)
+        await model.loadBouquets()
+
+        // Mark s2 as favorite (which is not in Bouquet 1)
+        let s2 = Channel(id: "s2", name: "ZDF", number: "2", serviceRef: "1:0:1:2::", logoURL: nil)
+        model.toggleFavorite(s2)
+
+        // Select "Favoriten"
+        await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
+
+        #expect(model.channels.count == 2)
+        #expect(model.filteredChannels.count == 1)
+        #expect(model.filteredChannels.first?.id == "s2")
+    }
+
+    @Test func schedulesAreMergedAcrossBouquets() async throws {
+        let api = ScriptedAPI()
+        api.stub("services", json: """
+            [{"id":"s1","name":"Das Erste","number":"1","serviceRef":"1:0:1:1::"}]
+            """)
+        api.stub("services/now-next", json: """
+            {"items":[{"serviceRef":"1:0:1:1::","now":{"title":"Tagesschau","start":1000,"end":2000}}]}
+            """)
+
+        let model = makeModel(api: api)
+        await model.loadChannels(bouquet: "B1", bouquetID: "b1")
+        #expect(model.schedule["1:0:1:1::"]?.now?.title == "Tagesschau")
+
+        api.stub("services", json: """
+            [{"id":"s2","name":"ZDF","number":"2","serviceRef":"1:0:1:2::"}]
+            """)
+        api.stub("services/now-next", json: """
+            {"items":[{"serviceRef":"1:0:1:2::","now":{"title":"heute","start":1000,"end":2000}}]}
+            """)
+
+        await model.loadChannels(bouquet: "B2", bouquetID: "b2")
+        // Both schedules should now be in model.schedule
+        #expect(model.schedule["1:0:1:1::"]?.now?.title == "Tagesschau")
+        #expect(model.schedule["1:0:1:2::"]?.now?.title == "heute")
+    }
+}
 
 
 

@@ -1043,6 +1043,7 @@ export function usePlaybackOrchestrator(
     sleep,
     isNativePlaybackHost,
     nativePlaybackState,
+    timerRegistry,
   ]);
 
   const prepareForNextPlaybackAttempt = useCallback(async (

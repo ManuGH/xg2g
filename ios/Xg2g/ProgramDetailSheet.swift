@@ -345,14 +345,10 @@ struct ExpandableRerunCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header Row (Tap to expand/collapse full episode synopsis)
-            Button {
-                triggerHaptic(.light)
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 12) {
+            // Header Row: Compact & Clickable to toggle details
+            HStack(spacing: 10) {
+                // Tappable info area
+                HStack(spacing: 10) {
                     ChannelLogo(url: rerun.channel.logoURL, name: rerun.channel.name, size: 36)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -370,39 +366,89 @@ struct ExpandableRerunCard: View {
                                 .foregroundStyle(Theme.Colors.accentAction)
                         }
 
-                        if let desc = rerun.entry.description, !desc.isEmpty {
-                            Text(desc)
-                                .font(.caption)
+                        HStack(spacing: 6) {
+                            Text("\(rerun.entry.formattedTimeRange) (\(rerun.entry.durationMinutes) Min)")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textSecondary)
-                                .lineLimit(isExpanded ? nil : 1)
-                        } else {
-                            Text(rerun.entry.title)
-                                .font(.caption)
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .lineLimit(1)
+
+                            if let desc = rerun.entry.description, !desc.isEmpty {
+                                Text("•")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                                Text(desc)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .padding(12)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+                .onTapGesture {
+                    triggerHaptic(.light)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        isExpanded.toggle()
+                    }
+                }
 
-            // Expanded Details & Description
+                Spacer()
+
+                // Quick Record Button (compact 1-click timer)
+                Button {
+                    triggerHaptic(.medium)
+                    Task {
+                        isRecording = true
+                        onRecord(rerun.entry)
+                        try? await Task.sleep(for: .milliseconds(400))
+                        isRecording = false
+                        recordSuccess = true
+                    }
+                } label: {
+                    if isRecording {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.mini)
+                            .tint(Theme.Colors.accentAction)
+                            .frame(width: 28, height: 28)
+                    } else if recordSuccess {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Theme.Colors.statusSuccess)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: "record.circle")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Theme.Colors.statusError)
+                            .frame(width: 28, height: 28)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                // Expand/Collapse Chevron Indicator
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .frame(width: 20, height: 28)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        triggerHaptic(.light)
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            isExpanded.toggle()
+                        }
+                    }
+            }
+            .padding(12)
+
+            // Expanded Details & Description (only rendered once when unfolded)
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
                     Divider()
                         .background(Theme.Colors.borderSubtle)
                         .padding(.horizontal, 12)
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Text(rerun.entry.title)
                                 .font(.system(size: 14, weight: .bold))
@@ -412,7 +458,7 @@ struct ExpandableRerunCard: View {
 
                             Text("\(rerun.entry.formattedTimeRange) (\(rerun.entry.durationMinutes) Min)")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .foregroundStyle(Theme.Colors.accentAction)
                         }
 
                         if let desc = rerun.entry.description, !desc.isEmpty {

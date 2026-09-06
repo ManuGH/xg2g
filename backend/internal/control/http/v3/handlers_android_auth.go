@@ -233,3 +233,91 @@ func deviceGrantResponse(grant *identity.DeviceGrantResult) DeviceGrantResponse 
 		Scope:        grant.Scope,
 	}
 }
+
+// DeviceSessionCompat provides backward compatibility for legacy Android/clients
+// that call POST /api/v3/auth/device/session instead of /api/v3/auth/device/refresh.
+func (s *Server) DeviceSessionCompat(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
+		return
+	}
+
+	dpopHeader := r.Header.Get("DPoP")
+	if dpopHeader == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, "missing DPoP proof header", nil)
+		return
+	}
+
+	validator := s.getDPoPValidator()
+	now := time.Now().UTC()
+	proofClaims, err := validator.ValidateProof(r, dpopHeader, "", now)
+	if err != nil {
+		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during legacy device session refresh")
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
+		return
+	}
+
+	var req struct {
+		DeviceGrantID string `json:"deviceGrantId"`
+		DeviceGrant   string `json:"deviceGrant"`
+		RefreshToken  string `json:"refresh_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Refresh Token", problemcode.CodeInvalidInput, "Malformed request body", nil)
+		return
+	}
+
+	token := req.RefreshToken
+	if token == "" {
+		token = req.DeviceGrant
+	}
+	if token == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Refresh Token", problemcode.CodeInvalidInput, "Missing or invalid refresh_token or deviceGrant payload", nil)
+		return
+	}
+
+	grantRes, err := svc.RotateDeviceRefreshToken(r.Context(), token, proofClaims.JWKThumbprint)
+	if err != nil {
+		if errors.Is(err, identity.ErrRefreshTokenReplay) {
+			log.FromContext(r.Context()).Error().
+				Str("jkt", proofClaims.JWKThumbprint).
+				Msg("refresh token replay detected! device grant family revoked")
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_grant", "Invalid Grant", problemcode.CodeUnauthorized, "Refresh token replay detected; device grant family revoked", nil)
+			return
+		}
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_grant", "Invalid Grant", problemcode.CodeUnauthorized, "Device refresh token invalid or revoked", nil)
+		return
+	}
+
+	// Credentials must never be cached, by a proxy or by the client.
+	w.Header().Set("Cache-Control", "no-store, no-cache, private")
+	w.Header().Set("Pragma", "no-cache")
+
+	resp := struct {
+		TokenType                   string `json:"token_type"`
+		AccessToken                 string `json:"access_token"`
+		RefreshToken                string `json:"refresh_token"`
+		ExpiresIn                   int32  `json:"expires_in"`
+		DeviceId                    string `json:"device_id"`
+		Scope                       string `json:"scope"`
+		DeviceID                    string `json:"deviceId"`
+		RotatedDeviceGrantID        string `json:"rotatedDeviceGrantId,omitempty"`
+		RotatedDeviceGrant          string `json:"rotatedDeviceGrant,omitempty"`
+		AccessSessionID             string `json:"accessSessionId"`
+		AccessTokenExpiresInSeconds int32  `json:"expiresInSeconds"`
+	}{
+		TokenType:                   grantRes.TokenType,
+		AccessToken:                 grantRes.AccessToken,
+		RefreshToken:                grantRes.RefreshToken,
+		ExpiresIn:                   contractInt32(grantRes.ExpiresIn),
+		DeviceId:                    grantRes.DeviceID,
+		Scope:                       grantRes.Scope,
+		DeviceID:                    grantRes.DeviceID,
+		RotatedDeviceGrantID:        grantRes.DeviceID,
+		RotatedDeviceGrant:          grantRes.RefreshToken,
+		AccessSessionID:             grantRes.DeviceID,
+		AccessTokenExpiresInSeconds: contractInt32(grantRes.ExpiresIn),
+	}
+	writeJSON(w, http.StatusOK, resp)
+}

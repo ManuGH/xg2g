@@ -709,6 +709,7 @@ func TestProductionLiveRoute_UsesTopologyAdmissionBeforeDial(t *testing.T) {
 
 	// 3. Request Channel 1 via real router -> Must succeed and dial Enigma2
 	req1 := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	req1.Header.Set("Authorization", "Bearer test-token")
 	rr1 := httptest.NewRecorder()
 
 	doneCh := make(chan struct{})
@@ -723,6 +724,7 @@ func TestProductionLiveRoute_UsesTopologyAdmissionBeforeDial(t *testing.T) {
 
 	// 4. Request Channel 2 (different transponder TSID 0x3FB) via real router -> Must fail admission
 	req2 := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:283D:3FB:1:C00000:0:0:0:", nil)
+	req2.Header.Set("Authorization", "Bearer test-token")
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
 
@@ -764,7 +766,9 @@ func TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease(t *testing.T
 	topologytest.SeedService(t, topoSvc)
 
 	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    mockReceiver.URL,
 			StreamPort: 8001,
@@ -775,6 +779,7 @@ func TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease(t *testing.T
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
 	go handler.ServeHTTP(rr, req)
@@ -818,7 +823,9 @@ func TestProductionLiveRoute_FailClosed_WhenTopologyMissing(t *testing.T) {
 	defer mockReceiver.Close()
 
 	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    mockReceiver.URL,
 			StreamPort: 8001,
@@ -830,6 +837,7 @@ func TestProductionLiveRoute_FailClosed_WhenTopologyMissing(t *testing.T) {
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -867,7 +875,9 @@ func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t 
 	topoSvc.SetResolver(nil)
 
 	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    mockReceiver.URL,
 			StreamPort: 8001,
@@ -878,6 +888,7 @@ func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t 
 	handler := server.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -952,7 +963,9 @@ func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 	topoSvc.SetResolver(registry)
 
 	cfg := config.AppConfig{
-		DataDir: t.TempDir(),
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{string(v3.ScopeV3Read)},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    mockReceiver.URL,
 			StreamPort: 8001,
@@ -965,6 +978,7 @@ func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
 	// 3. Request a channel the registry has never seen
 	dynamicServiceRef := "1:0:19:9999:888:1:C00000:0:0:0:"
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+dynamicServiceRef, nil)
+	req.Header.Set("Authorization", "Bearer test-token")
 	rr := httptest.NewRecorder()
 
 	go handler.ServeHTTP(rr, req)
@@ -1018,18 +1032,30 @@ func TestPublicExposureMatrix_LiveAndSmoothRoutes(t *testing.T) {
 	wLive := httptest.NewRecorder()
 	handler.ServeHTTP(wLive, reqLive)
 
-	// Invariant: MUST NOT be 401 Unauthorized. (Returns 502 Bad Gateway because upstream mock is absent)
-	assert.NotEqual(t, http.StatusUnauthorized, wLive.Code, "/api/v3/stream/live/* does not require Authorization header")
-	assert.Equal(t, http.StatusBadGateway, wLive.Code, "/api/v3/stream/live/* reaches stream handler directly")
+	// Invariant: MUST be 401 Unauthorized. (Raw stream routes must authenticate before tuner allocation)
+	assert.Equal(t, http.StatusUnauthorized, wLive.Code, "/api/v3/stream/live/* requires authentication")
+
+	// 1b. GET /api/v3/stream/live/* WITH valid Bearer token -> reaches stream handler
+	reqLiveAuth := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+ref, nil)
+	reqLiveAuth.Header.Set("Authorization", "Bearer secret-token-32-chars-long-security")
+	wLiveAuth := httptest.NewRecorder()
+	handler.ServeHTTP(wLiveAuth, reqLiveAuth)
+	assert.Equal(t, http.StatusBadGateway, wLiveAuth.Code, "/api/v3/stream/live/* with auth reaches stream handler")
 
 	// 2. GET /api/v3/stream/smooth/* without any Authorization or Playback ticket
 	reqSmooth := httptest.NewRequest(http.MethodGet, "/api/v3/stream/smooth/"+ref, nil)
 	wSmooth := httptest.NewRecorder()
 	handler.ServeHTTP(wSmooth, reqSmooth)
 
-	// Invariant: MUST NOT be 401 Unauthorized. (Returns 502 Bad Gateway because upstream mock is absent)
-	assert.NotEqual(t, http.StatusUnauthorized, wSmooth.Code, "/api/v3/stream/smooth/* does not require Authorization header")
-	assert.Equal(t, http.StatusBadGateway, wSmooth.Code, "/api/v3/stream/smooth/* reaches smoother handler directly")
+	// Invariant: MUST be 401 Unauthorized. (Raw smooth routes must authenticate before tuner allocation)
+	assert.Equal(t, http.StatusUnauthorized, wSmooth.Code, "/api/v3/stream/smooth/* requires authentication")
+
+	// 2b. GET /api/v3/stream/smooth/* WITH valid Bearer token -> reaches smoother handler
+	reqSmoothAuth := httptest.NewRequest(http.MethodGet, "/api/v3/stream/smooth/"+ref, nil)
+	reqSmoothAuth.Header.Set("Authorization", "Bearer secret-token-32-chars-long-security")
+	wSmoothAuth := httptest.NewRecorder()
+	handler.ServeHTTP(wSmoothAuth, reqSmoothAuth)
+	assert.Equal(t, http.StatusBadGateway, wSmoothAuth.Code, "/api/v3/stream/smooth/* with auth reaches smoother handler")
 
 	// 3. POST /api/v3/stream/prepare without Authorization header
 	reqPrepare := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare?sref="+ref, nil)

@@ -165,13 +165,13 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
 	s.liveSessionMgr = liveSessionMgr
 	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
-	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
+	if err := readAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)
 	}
 
 	// Experimental TS Burst-Smoothing Proxy route for lab & client A/B testing (coalesced via shared ingest)
 	smootherHandler := smoother.NewHandlerWithManager(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())
-	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
+	if err := readAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register smooth stream route: %w", err)
 	}
 

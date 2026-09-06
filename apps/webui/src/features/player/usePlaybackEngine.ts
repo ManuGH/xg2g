@@ -1264,7 +1264,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [attemptTokenRef, beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, sessionIdRef, setStats, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [attemptTokenRef, beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, sessionIdRef, setStats, shouldPreferNativeHls, startNativeHlsPlayback, t, timers, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -1302,7 +1302,7 @@ export function usePlaybackEngine({
         background: isHidden,
       });
     });
-  }, [attemptTokenRef, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, lastDecodedRef, setStats, timers, videoRef]);
+  }, [attemptTokenRef, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, eventSink, hlsRef, isTeardownRef, lastDecodedRef, setStats, timers, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1731,7 +1731,7 @@ export function usePlaybackEngine({
         }
       }
     };
-  }, [attemptTokenRef, beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, eventSink, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, t, videoRef]);
+  }, [attemptTokenRef, beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearProbeConfirmation, eventSink, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, t, timers, videoRef]);
 
   // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
   // can't fire after the component unmounts.

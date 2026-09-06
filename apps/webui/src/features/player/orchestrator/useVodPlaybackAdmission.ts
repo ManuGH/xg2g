@@ -449,6 +449,7 @@ export function useVodPlaybackAdmission({
     setVodStreamMode,
     sleep,
     t,
+    timerRegistry,
     vodFetchRef,
     vodRetryRef,
   ]);
