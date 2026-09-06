@@ -907,8 +907,9 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 		// Full PAT Table Generation Complete: scan all sections for target program
 		matchedPID := uint16(0)
 		matchedProgram := uint16(0)
-		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-			sData := c.patTracker.sections[sIdx]
+		for n := 0; n <= int(lastSectionNum); n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			sData := c.patTracker.sections[uint8(n)]
 			if len(sData) < 12 {
 				continue
 			}
@@ -974,8 +975,9 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 
 		// Build deduplicated rawPATPackets from all sections 0..lastSectionNum
 		var allPATPackets [][]byte
-		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-			for _, pkt := range c.patTracker.rawPackets[sIdx] {
+		for n := 0; n <= int(lastSectionNum); n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			for _, pkt := range c.patTracker.rawPackets[uint8(n)] {
 				if !containsPacket(allPATPackets, pkt) {
 					allPATPackets = append(allPATPackets, cloneSlice(pkt))
 				}
@@ -1011,8 +1013,9 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 			c.resetProgramStateLocked()
 
 			// Scan elementary streams across all sections 0..lastSectionNum
-			for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-				sData := c.pmtTracker.sections[sIdx]
+			for n := 0; n <= int(lastSectionNum); n++ {
+				// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+				sData := c.pmtTracker.sections[uint8(n)]
 				if len(sData) < 12 {
 					continue
 				}
@@ -1091,8 +1094,9 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte, rawPa
 
 		// Build deduplicated rawPMTPackets from all sections 0..lastSectionNum
 		var allPMTPackets [][]byte
-		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-			for _, pkt := range c.pmtTracker.rawPackets[sIdx] {
+		for n := 0; n <= int(lastSectionNum); n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			for _, pkt := range c.pmtTracker.rawPackets[uint8(n)] {
 				if !containsPacket(allPMTPackets, pkt) {
 					allPMTPackets = append(allPMTPackets, cloneSlice(pkt))
 				}

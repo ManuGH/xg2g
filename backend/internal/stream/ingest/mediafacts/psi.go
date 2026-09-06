@@ -216,8 +216,17 @@ func (t *tableSectionTracker) addSection(version uint8, sectionNum uint8, lastSe
 	t.rawPackets[sectionNum] = cloneSliceList(packets)
 
 	if len(t.sections) == int(lastSectionNum)+1 {
-		for i := uint8(0); i <= lastSectionNum; i++ {
-			if _, ok := t.sections[i]; !ok {
+		// Counted in int, not in a uint8.
+		//
+		// last_section_number may be 255, and 255 is also the largest value a
+		// uint8 counter can hold: incrementing past the last section wraps it to
+		// zero, the bound is met again, and this walk never ends. A table using
+		// all 256 numbers it is allowed is entirely legal, so nothing upstream
+		// refuses it and nothing downstream is ever reached - the loop spins
+		// holding the caller's lock, on ordinary input.
+		for n := 0; n <= int(lastSectionNum); n++ {
+			// #nosec G115 -- n is bounded by lastSectionNum, itself a uint8
+			if _, ok := t.sections[uint8(n)]; !ok {
 				return false
 			}
 		}
