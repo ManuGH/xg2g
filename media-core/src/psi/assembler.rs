@@ -5,17 +5,19 @@
 //! Getting whole PSI sections back out of 188-byte packets.
 //!
 //! One of these follows one PSI PID. It owns the continuity counter for that
-//! PID, the bytes of a section that has not finished arriving, and the packets
-//! those bytes came from - the last because a subscriber is handed the original
-//! packets rather than a re-encoded table, so the transport it joins is the one
-//! that was broadcast.
+//! PID and the bytes of a section that has not finished arriving, and nothing
+//! about how those bytes were carried.
+//!
+//! The packets are the transport's segmentation of a section. Once their bytes
+//! are in the buffer they have said everything they had to say, and keeping
+//! them would make this parser's memory a function of how finely a sender chose
+//! to fragment: the same 1024-byte table can be sent in six packets or in a
+//! thousand, and both mean the same table.
 
-/// A section that has arrived in full, with the packets it came from.
+/// A section that has arrived in full.
 pub(crate) struct Completed {
     /// The section, from its `table_id` through its CRC.
     pub(crate) bytes: Vec<u8>,
-    /// Every packet that carried part of it, in arrival order.
-    pub(crate) packets: Vec<Vec<u8>>,
 }
 
 /// Section assembly for one PSI PID.
@@ -31,21 +33,36 @@ pub(crate) struct SectionAssembler {
     has_cc: bool,
     /// The last packet accepted, kept whole so an exact repeat can be told from
     /// a different packet that reuses the counter.
+    ///
+    /// The one packet this type retains, and bounded at one: telling a carousel
+    /// duplicate from a continuity error needs the previous packet and nothing
+    /// further back.
     last_packet: Vec<u8>,
-    /// The packets the bytes in `buf` came from.
-    raw_packets: Vec<Vec<u8>>,
 }
 
 impl SectionAssembler {
-    /// What this assembler is holding: buffered bytes, the section length it is
-    /// waiting for, and packets kept for a section not yet emitted.
+    /// Every byte this assembler is holding, and the section length it is
+    /// waiting for.
     ///
-    /// Exposed for the one test that has to see that an impossible declaration
-    /// left nothing behind. That defect never moved a fact, so a test comparing
-    /// facts would have watched it happen and reported nothing.
+    /// Exposed for the tests that have to see the memory rather than the facts.
+    /// Neither defect this pins ever moved a fact: an impossible declaration
+    /// wedged bytes here that nothing could emit, and retaining carrier packets
+    /// let a sender decide how much was held. A test comparing facts would have
+    /// watched both happen and reported nothing.
     #[cfg(test)]
-    pub(super) fn retained(&self) -> (usize, usize, usize) {
-        (self.buf.len(), self.section_len, self.raw_packets.len())
+    pub(super) fn retained(&self) -> (usize, usize) {
+        (self.buf.len(), self.section_len)
+    }
+
+    /// Every byte this assembler holds, the duplicate-detection packet included.
+    ///
+    /// Kept apart from [`Self::retained`] because the two answer different
+    /// questions: that one asks whether a section was left in flight and must be
+    /// able to read zero, this one accounts for memory and never can - one
+    /// packet is always held once a packet has been seen, and that is the bound.
+    #[cfg(test)]
+    pub(super) fn retained_bytes(&self) -> usize {
+        self.buf.len() + self.last_packet.len()
     }
 
     /// Forgets everything, the continuity counter included.
@@ -59,7 +76,6 @@ impl SectionAssembler {
         self.section_len = 0;
         self.has_cc = false;
         self.last_packet.clear();
-        self.raw_packets.clear();
     }
 
     /// Drops the section in flight but keeps following the PID.
@@ -71,7 +87,6 @@ impl SectionAssembler {
     fn discard_section(&mut self) {
         self.buf.clear();
         self.section_len = 0;
-        self.raw_packets.clear();
     }
 
     /// Takes one packet's payload and returns the sections it completed, in the
@@ -132,7 +147,7 @@ impl SectionAssembler {
                         self.reset();
                         return completed;
                     };
-                    self.feed(expected_table_id, &payload[1..end], packet, &mut completed);
+                    self.feed(expected_table_id, &payload[1..end], &mut completed);
                     if !self.buf.is_empty() {
                         // The bytes before the pointer were supposed to finish
                         // the section in flight and did not, so it never will.
@@ -148,7 +163,7 @@ impl SectionAssembler {
             // Continuation bytes with nothing to continue.
             return completed;
         } else {
-            at = self.feed(expected_table_id, payload, packet, &mut completed);
+            at = self.feed(expected_table_id, payload, &mut completed);
         }
 
         while at < payload.len() {
@@ -163,7 +178,6 @@ impl SectionAssembler {
                 // nothing to do but keep these and wait.
                 self.buf.extend_from_slice(&payload[at..]);
                 self.section_len = 0;
-                self.raw_packets.push(packet.to_vec());
                 break;
             }
             if payload[at] != expected_table_id {
@@ -178,14 +192,12 @@ impl SectionAssembler {
             if available >= full {
                 completed.push(Completed {
                     bytes: payload[at..at + full].to_vec(),
-                    packets: vec![packet.to_vec()],
                 });
                 at += full;
                 continue;
             }
             self.buf.extend_from_slice(&payload[at..]);
             self.section_len = full;
-            self.raw_packets.push(packet.to_vec());
             break;
         }
 
@@ -199,12 +211,11 @@ impl SectionAssembler {
     /// What the assembler holds is given up entirely in that case. The defect
     /// this closes was not a wrong fact: a section declaring nothing after its
     /// length field left three bytes here that neither phase could act on, and
-    /// every later packet on the PID was then retained.
+    /// every later packet on the PID then added to them.
     fn feed(
         &mut self,
         expected_table_id: u8,
         chunk: &[u8],
-        packet: &[u8],
         completed: &mut Vec<Completed>,
     ) -> usize {
         if chunk.is_empty() {
@@ -218,7 +229,6 @@ impl SectionAssembler {
         if self.buf.len() < 3 {
             let take = chunk.len().min(3 - self.buf.len());
             self.buf.extend_from_slice(&chunk[..take]);
-            self.raw_packets.push(packet.to_vec());
             chunk = &chunk[take..];
             consumed += take;
             if self.buf.len() < 3 {
@@ -246,15 +256,10 @@ impl SectionAssembler {
         if self.section_len > 0 && self.buf.len() < self.section_len {
             let take = chunk.len().min(self.section_len - self.buf.len());
             self.buf.extend_from_slice(&chunk[..take]);
-            if consumed == 0 {
-                // Not already recorded by the header phase for this packet.
-                self.raw_packets.push(packet.to_vec());
-            }
             consumed += take;
             if self.buf.len() >= self.section_len {
                 completed.push(Completed {
                     bytes: self.buf[..self.section_len].to_vec(),
-                    packets: self.raw_packets.clone(),
                 });
                 self.discard_section();
             }

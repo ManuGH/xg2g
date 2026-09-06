@@ -116,17 +116,32 @@ pub struct PsiFacts {
     pub audio_tracks: Vec<AudioTrack>,
 }
 
-/// The raw packets of the tables in force.
+/// The accepted sections of the tables in force.
 ///
-/// The core parses these and hands the bytes back anyway, because a subscriber
-/// joining mid-stream is given the tables as they were broadcast. Rebuilding
-/// them would mean encoding PSI in a second place, with a second answer.
+/// Each entry is one complete section exactly as accepted: `table_id` through
+/// CRC, byte for byte. The core parses these and hands the bytes back anyway,
+/// because a subscriber joining mid-stream is given the tables ahead of the
+/// stream, and re-deriving them would mean encoding PSI in a second place with
+/// a second answer.
+///
+/// What is deliberately not here is the transport packets the sections arrived
+/// in. The same table can be sent in six packets or in a thousand one-byte
+/// ones; both mean the same table, so both must leave the same state behind.
+/// Retaining the packets made the memory held a function of the sender's
+/// fragmentation rather than of the table's content, and the bound follows from
+/// the syntax instead:
+///
+/// - a section is at most 1024 bytes and a table at most 256 sections
+/// - so each list is at most 256 KiB, and an `ActivePsi` at most 512 KiB
+///
+/// Sections are in the order the table numbers them, `section_number`
+/// ascending, which is also the order they must be delivered in.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ActivePsi {
-    /// The packets of the PAT in force.
-    pub pat: Vec<Vec<u8>>,
-    /// The packets of the PMT in force.
-    pub pmt: Vec<Vec<u8>>,
+    /// The accepted sections of the PAT in force.
+    pub pat_sections: Vec<Vec<u8>>,
+    /// The accepted sections of the PMT in force.
+    pub pmt_sections: Vec<Vec<u8>>,
 }
 
 /// What one call meant.
@@ -174,10 +189,11 @@ pub struct PsiCore {
     /// The programme number it declared.
     pmt_program_number: u16,
 
-    /// The raw packets of the PAT in force.
-    raw_pat: Vec<Vec<u8>>,
-    /// The raw packets of the PMT in force.
-    raw_pmt: Vec<Vec<u8>>,
+    /// The accepted sections of the PAT in force, copied out of the tracker so
+    /// a later in-flight generation cannot reach them.
+    active_pat_sections: Vec<Vec<u8>>,
+    /// The accepted sections of the PMT in force.
+    active_pmt_sections: Vec<Vec<u8>>,
 
     /// What the PMT in force said the programme is made of.
     streams: pmt::Streams,
@@ -237,7 +253,7 @@ impl PsiCore {
             self.pmt_assembler.reset();
             self.pat_tracker.reset();
             self.pmt_tracker.reset();
-            self.raw_pat.clear();
+            self.active_pat_sections.clear();
             self.reset_program_state();
         }
         self.outcome(0)
@@ -246,8 +262,27 @@ impl PsiCore {
     /// What the two section assemblers are holding. See
     /// [`SectionAssembler::retained`].
     #[cfg(test)]
-    pub(super) fn retained(&self) -> [(usize, usize, usize); 2] {
+    pub(super) fn retained(&self) -> [(usize, usize); 2] {
         [self.pat_assembler.retained(), self.pmt_assembler.retained()]
+    }
+
+    /// Every byte this core is holding on account of PSI.
+    ///
+    /// The corpus cannot see this. It compares facts and the tables in force,
+    /// and a core that also kept a copy of every packet it had ever been given
+    /// would agree with it on all of them - which is what this parser used to
+    /// do. So the memory is stated as a number and held to a bound.
+    #[cfg(test)]
+    pub(super) fn retained_bytes(&self) -> usize {
+        let assemblers = self.pat_assembler.retained_bytes() + self.pmt_assembler.retained_bytes();
+        let trackers = self.pat_tracker.retained() + self.pmt_tracker.retained();
+        let active: usize = self
+            .active_pat_sections
+            .iter()
+            .chain(&self.active_pmt_sections)
+            .map(Vec::len)
+            .sum();
+        assemblers + trackers + active
     }
 
     /// The PID the PAT named, or 0 while none has been.
@@ -262,6 +297,17 @@ impl PsiCore {
 
     /// Builds the answer for the call that is ending.
     fn outcome(&self, processed_through: i64) -> Outcome {
+        // What the two tables together may cost, checked where they are handed
+        // out. Not a policy: a section is at most 1024 bytes and a table at most
+        // 256 sections, so this follows.
+        debug_assert!(
+            self.active_pat_sections
+                .iter()
+                .chain(&self.active_pmt_sections)
+                .map(Vec::len)
+                .sum::<usize>()
+                <= table::MAX_ACTIVE_PSI_BYTES
+        );
         Outcome {
             processed_through,
             events: self.events.clone(),
@@ -277,8 +323,8 @@ impl PsiCore {
                 audio_tracks: self.streams.audio_tracks.clone(),
             },
             active: ActivePsi {
-                pat: self.raw_pat.clone(),
-                pmt: self.raw_pmt.clone(),
+                pat_sections: self.active_pat_sections.clone(),
+                pmt_sections: self.active_pmt_sections.clone(),
             },
         }
     }
@@ -324,32 +370,31 @@ impl PsiCore {
             self.pmt_assembler.accept(packet, pusi, payload, expected)
         };
         for section in completed {
-            self.accept_section(is_pat, &section.bytes, &section.packets);
+            self.accept_section(is_pat, &section.bytes);
         }
     }
 
     /// Decides whether a completed section describes this stream, and reads it
     /// if it does.
-    fn accept_section(&mut self, is_pat: bool, section: &[u8], packets: &[Vec<u8>]) {
+    fn accept_section(&mut self, is_pat: bool, section: &[u8]) {
         let expected = if is_pat { TABLE_ID_PAT } else { TABLE_ID_PMT };
         let Some(header) = SectionHeader::read(section, expected) else {
             return;
         };
         if is_pat {
-            self.accept_pat_section(&header, section, packets);
+            self.accept_pat_section(&header, section);
         } else {
-            self.accept_pmt_section(&header, section, packets);
+            self.accept_pmt_section(&header, section);
         }
     }
 
     /// Collects a PAT section and, once the table is whole, chooses a programme.
-    fn accept_pat_section(&mut self, header: &SectionHeader, section: &[u8], packets: &[Vec<u8>]) {
+    fn accept_pat_section(&mut self, header: &SectionHeader, section: &[u8]) {
         if !self.pat_tracker.add(
             header.version,
             header.section_number,
             header.last_section_number,
             section,
-            packets,
         ) {
             return;
         }
@@ -378,12 +423,12 @@ impl PsiCore {
         }
         self.has_pat_version = true;
         self.pat_version = header.version;
-        self.raw_pat = self.pat_tracker.packets();
+        self.active_pat_sections = self.pat_tracker.owned_sections();
     }
 
     /// Collects a PMT section for the selected programme, and reads the table
     /// once it is whole.
-    fn accept_pmt_section(&mut self, header: &SectionHeader, section: &[u8], packets: &[Vec<u8>]) {
+    fn accept_pmt_section(&mut self, header: &SectionHeader, section: &[u8]) {
         // The PAT chose a programme and the PID its table is on together, so a
         // section on that PID naming a different programme is not this
         // programme's table.
@@ -400,7 +445,6 @@ impl PsiCore {
             header.section_number,
             header.last_section_number,
             section,
-            packets,
         ) {
             return;
         }
@@ -415,7 +459,7 @@ impl PsiCore {
             self.reset_program_state();
             self.streams = pmt::interpret(&self.pmt_tracker.sections());
         }
-        self.raw_pmt = self.pmt_tracker.packets();
+        self.active_pmt_sections = self.pmt_tracker.owned_sections();
     }
 
     /// Gives up everything the current PMT said about which programme this is.
@@ -440,7 +484,7 @@ impl PsiCore {
         self.selection = None;
         self.has_pat_version = false;
         self.pat_version = 0;
-        self.raw_pat.clear();
+        self.active_pat_sections.clear();
         self.pmt_assembler.reset();
         self.pmt_tracker.reset();
         self.forget_pmt_identity();
@@ -453,7 +497,7 @@ impl PsiCore {
     /// reports that the programme's identity changed and nothing more.
     fn reset_program_state(&mut self) {
         self.streams = pmt::Streams::default();
-        self.raw_pmt.clear();
+        self.active_pmt_sections.clear();
         self.events.push(PsiEvent::ProgramIdentityChanged);
     }
 }

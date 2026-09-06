@@ -130,7 +130,6 @@ mutate "let a foreign PMT reach the tracker before it is refused" mod.rs \
             header.section_number,
             header.last_section_number,
             section,
-            packets,
         ) {
             return;
         }' \
@@ -139,7 +138,6 @@ mutate "let a foreign PMT reach the tracker before it is refused" mod.rs \
             header.section_number,
             header.last_section_number,
             section,
-            packets,
         );
         if header.id_extension != self.selected_program_number() {
             return;
@@ -161,6 +159,37 @@ mutate "bound an elementary stream entry by the section, not the loop" pmt.rs \
 mutate "stop the descriptor walk at the first tag it does not know" descriptors.rs \
   '            tag::REGISTRATION => {' '            _ => return false,
             tag::REGISTRATION => {'
+
+# --- R8: the tables in force are sections, not the packets that carried them --
+
+mutate "publish the generation being assembled as the table in force" mod.rs \
+  'pat_sections: self.active_pat_sections.clone(),' \
+  'pat_sections: self.pat_tracker.owned_sections(),'
+
+mutate "drop the last section when copying a completed generation" table.rs \
+  '            for number in 0..=generation.last_section_number {' \
+  '            for number in 0..generation.last_section_number {'
+
+mutate "hold a table's sections in the reverse of the order it numbers them" table.rs \
+  '            for number in 0..=generation.last_section_number {
+                if let Some(section) = generation.sections.get(&number) {
+                    out.push(section.as_slice());
+                }
+            }' \
+  '            for number in (0..=generation.last_section_number).rev() {
+                if let Some(section) = generation.sections.get(&number) {
+                    out.push(section.as_slice());
+                }
+            }'
+
+mutate "keep the bytes of a section that was refused for its length" assembler.rs \
+  '    fn discard_section(&mut self) {
+        self.buf.clear();
+        self.section_len = 0;
+    }' \
+  '    fn discard_section(&mut self) {
+        self.section_len = 0;
+    }'
 
 echo
 echo "killed:   $killed"

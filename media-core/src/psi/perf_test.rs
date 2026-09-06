@@ -224,8 +224,8 @@ fn measure(name: &str, build: fn(usize) -> Vec<u8>) {
             // Read something out so the call cannot be optimised away, and check
             // the state stayed bounded while it ran.
             assert!(outcome.facts.audio_pids.len() <= 8);
-            assert!(outcome.active.pat.len() <= 8);
-            assert!(outcome.active.pmt.len() <= 8);
+            assert!(outcome.active.pat_sections.len() <= 8);
+            assert!(outcome.active.pmt_sections.len() <= 8);
         }
 
         timings.sort_unstable();

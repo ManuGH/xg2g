@@ -13,19 +13,19 @@
 //! exactly is a corpus that would silently check less than it claims to, and a
 //! test that checks three cases and passes is worse than one that fails.
 
-use super::{ChannelDeclaration, PsiCore, PsiEvent, TS_PACKET_LEN};
+use super::{ChannelDeclaration, PsiCore, PsiEvent};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// The format version this reader understands.
-const FORMAT_VERSION: &str = "1";
+const FORMAT_VERSION: &str = "2";
 
 /// The number of cases the corpus had when this reader was written.
 ///
 /// A floor rather than an equality so cases added later run without a change
 /// here, and a floor at all so a reader bug that finds three cases cannot pass.
-const MINIMUM_CASES: usize = 63;
+const MINIMUM_CASES: usize = 79;
 
 fn corpus_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/psi-corpus/corpus.txt")
@@ -54,8 +54,12 @@ struct Expect {
     audio_pids: Vec<u16>,
     tracks: Vec<ExpectTrack>,
     events: Vec<String>,
-    pat_packets: Vec<usize>,
-    pmt_packets: Vec<usize>,
+    /// The accepted sections of each table in force, in `section_number` order,
+    /// each as its exact bytes. Version 1 of the corpus named the packets the
+    /// sections arrived in; version 2 names the sections, because the
+    /// packetization is the sender's and the table is not.
+    pat_sections: Vec<Vec<u8>>,
+    pmt_sections: Vec<Vec<u8>>,
 }
 
 /// One expected audio track line.
@@ -220,12 +224,41 @@ fn apply_track(expect: &mut Expect, rest: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Reads the `psi` line naming which packets the active tables are.
+/// Reads the `psi` line naming the sections of the tables in force.
 fn apply_psi(expect: &mut Expect, rest: &str) -> Result<(), String> {
     let values = take_fields(rest, &["pat", "pmt"])?;
-    expect.pat_packets = parse_list(&values[0])?;
-    expect.pmt_packets = parse_list(&values[1])?;
+    expect.pat_sections = parse_section_list(&values[0])?;
+    expect.pmt_sections = parse_section_list(&values[1])?;
     Ok(())
+}
+
+/// Reads a comma-separated list of sections, each as hex.
+///
+/// A section shorter than a header or longer than one may be is refused here
+/// rather than compared: the corpus would be describing a table that cannot
+/// exist, and a reader that accepted it would be agreeing with a damaged file.
+fn parse_section_list(text: &str) -> Result<Vec<Vec<u8>>, String> {
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for field in text.split(',') {
+        let section = parse_hex(field)?;
+        if section.len() < 3 || section.len() > super::table::MAX_SECTION_BYTES {
+            return Err(format!(
+                "a section of {} bytes, which no section may be",
+                section.len()
+            ));
+        }
+        out.push(section);
+    }
+    if out.len() > super::table::MAX_SECTIONS_PER_TABLE {
+        return Err(format!(
+            "{} sections, more than a table may have",
+            out.len()
+        ));
+    }
+    Ok(out)
 }
 
 /// The corpus reader, one line at a time.
@@ -437,20 +470,6 @@ fn parse_corpus(text: &str) -> Result<Vec<Case>, String> {
     reader.finish()
 }
 
-/// The case's own packet sequence: every chunk concatenated, cut into packets.
-/// The raw PSI expectations index into it.
-fn case_packets(case: &Case) -> Vec<Vec<u8>> {
-    let mut all = Vec::new();
-    for step in &case.steps {
-        if let Call::Chunk(bytes) = &step.call {
-            all.extend_from_slice(bytes);
-        }
-    }
-    all.chunks_exact(TS_PACKET_LEN)
-        .map(<[u8]>::to_vec)
-        .collect()
-}
-
 fn render_track(
     pid: u16,
     stream_type: u8,
@@ -481,38 +500,18 @@ fn render_expected_track(t: &ExpectTrack) -> String {
     )
 }
 
-/// Names each raw packet by where it came from in the case's packet sequence, so
-/// a disagreement reads as an index rather than as 188 bytes of hex. A packet the
-/// case never contained is reported as bytes, which is what a reconstructed
-/// preamble would produce.
-fn render_packets(packets: &[Vec<u8>], sequence: &[Vec<u8>]) -> String {
-    packets
+/// Writes a table's sections the way the corpus does, so a disagreement is read
+/// against the file rather than against a description of it.
+fn render_sections(sections: &[Vec<u8>]) -> String {
+    sections
         .iter()
-        .map(|packet| {
-            sequence
-                .iter()
-                .position(|candidate| candidate == packet)
-                .map_or_else(|| unplaced(packet), |index| index.to_string())
+        .map(|section| {
+            let mut out = String::with_capacity(section.len() * 2);
+            for byte in section {
+                write!(out, "{byte:02x}").expect("writing to a String cannot fail");
+            }
+            out
         })
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-/// A packet the case never contained, written out in full: that is what a
-/// reconstructed preamble rather than a forwarded one would look like.
-fn unplaced(packet: &[u8]) -> String {
-    let mut out = String::with_capacity(1 + packet.len() * 2);
-    out.push('!');
-    for byte in packet {
-        write!(out, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    out
-}
-
-fn render_indices(indices: &[usize]) -> String {
-    indices
-        .iter()
-        .map(usize::to_string)
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -520,10 +519,10 @@ fn render_indices(indices: &[usize]) -> String {
 /// Everything one call has to get right, compared exactly.
 ///
 /// Nothing is sorted or normalised before comparison: where order is part of the
-/// contract - the audio lists follow the table, events follow the stream, raw
-/// packets follow `section_number` - sorting would hide precisely the
+/// contract - the audio lists follow the table, events follow the stream,
+/// sections follow `section_number` - sorting would hide precisely the
 /// disagreements worth finding.
-fn compare(outcome: &super::Outcome, expect: &Expect, sequence: &[Vec<u8>]) -> Vec<String> {
+fn compare(outcome: &super::Outcome, expect: &Expect) -> Vec<String> {
     let mut bad = Vec::new();
 
     let got_facts = format!(
@@ -595,13 +594,13 @@ fn compare(outcome: &super::Outcome, expect: &Expect, sequence: &[Vec<u8>]) -> V
 
     let got_psi = format!(
         "pat={} pmt={}",
-        render_packets(&outcome.active.pat, sequence),
-        render_packets(&outcome.active.pmt, sequence)
+        render_sections(&outcome.active.pat_sections),
+        render_sections(&outcome.active.pmt_sections)
     );
     let want_psi = format!(
         "pat={} pmt={}",
-        render_indices(&expect.pat_packets),
-        render_indices(&expect.pmt_packets)
+        render_sections(&expect.pat_sections),
+        render_sections(&expect.pmt_sections)
     );
     if got_psi != want_psi {
         bad.push(format!("  psi got  {got_psi}\n  psi want {want_psi}"));
@@ -635,7 +634,6 @@ fn the_rust_core_answers_the_shared_corpus() {
     let mut failures: Vec<String> = Vec::new();
 
     for case in &cases {
-        let sequence = case_packets(case);
         let mut core = PsiCore::new(case.initial_target);
         let mut offset = 0i64;
 
@@ -652,7 +650,7 @@ fn the_rust_core_answers_the_shared_corpus() {
                 Call::Target(program) => core.set_target_program(*program),
             };
 
-            let bad = compare(&outcome, &step.expect, &sequence);
+            let bad = compare(&outcome, &step.expect);
             if !bad.is_empty() {
                 failures.push(format!(
                     "{} step {} of {}:\n{}",
@@ -694,7 +692,7 @@ fn the_corpus_carries_no_unadjudicated_semantics() {
 
 #[test]
 fn the_corpus_reader_refuses_what_it_cannot_read_exactly() {
-    let good = "version 1\n\
+    let good = "version 2\n\
                 case a\n  desc d\n  init target=1\n  chunk 47\n  facts through=1 hasPAT=0 hasPMT=0 \
                 pmtVersion=0 programNumber=0 pmtPID=0 videoPID=0 videoCodec=unknown audioPIDs=\n  \
                 events\n  psi pat= pmt=\nend\n";
@@ -709,8 +707,9 @@ fn the_corpus_reader_refuses_what_it_cannot_read_exactly() {
         ("odd hex", good.replace("chunk 47", "chunk 475")),
         ("field without a value", good.replace("hasPAT=0", "hasPAT")),
         ("two facts lines", good.replace("  events\n", "  facts through=1 hasPAT=0 hasPMT=0 pmtVersion=0 programNumber=0 pmtPID=0 videoPID=0 videoCodec=unknown audioPIDs=\n  events\n")),
-        ("unsupported version", good.replace("version 1", "version 2")),
-        ("no version", good.replace("version 1\n", "")),
+        ("a version this reader does not know", good.replace("version 2", "version 3")),
+        ("the version this reader replaced", good.replace("version 2", "version 1")),
+        ("no version", good.replace("version 2\n", "")),
         ("case inside a case", good.replace("  desc d", "case b")),
         ("call with no expectation", good.replace("  facts through=1 hasPAT=0 hasPMT=0 pmtVersion=0 programNumber=0 pmtPID=0 videoPID=0 videoCodec=unknown audioPIDs=\n", "")),
         ("trailing text after end", good.replace("end\n", "end now\n")),
@@ -718,6 +717,13 @@ fn the_corpus_reader_refuses_what_it_cannot_read_exactly() {
         ("not a number", good.replace("init target=1", "init target=x")),
         ("bad boolean", good.replace("hasPAT=0", "hasPAT=2")),
         ("psi before events", good.replace("  events\n  psi pat= pmt=\n", "  psi pat= pmt=\n  events\n")),
+        ("a psi section in odd-length hex", good.replace("psi pat= pmt=", "psi pat=00b00 pmt=")),
+        ("a psi section that is not hex", good.replace("psi pat= pmt=", "psi pat=00b0zz pmt=")),
+        ("a psi section too short to be one", good.replace("psi pat= pmt=", "psi pat=00b0 pmt=")),
+        (
+            "a psi section longer than a section may be",
+            good.replace("psi pat= pmt=", &format!("psi pat={} pmt=", "00".repeat(super::table::MAX_SECTION_BYTES + 1))),
+        ),
     ] {
         assert!(
             parse_corpus(&text).is_err(),
