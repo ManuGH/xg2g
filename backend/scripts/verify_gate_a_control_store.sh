@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Gate A: Control Layer Store Purity Check
 # ADR-014 Phase 1 - Ensures internal/control cannot directly access domain stores
 #
@@ -17,7 +17,10 @@ VIOLATIONS_FOUND=0
 # These are production files that still hold direct store integration today.
 LEGACY_ALLOWLIST_REGEX='^internal/control/http/v3/(server|handlers_sessions|sessions_heartbeat)\.go$'
 
-mapfile -t CONTROL_GO_FILES < <(
+CONTROL_GO_FILES=()
+while IFS= read -r file; do
+    [ -n "$file" ] && CONTROL_GO_FILES+=("$file")
+done < <(
     git ls-files 'internal/control/**/*.go' \
         | grep -vE '_test\.go$' \
         | grep -vE "$LEGACY_ALLOWLIST_REGEX" \

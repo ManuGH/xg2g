@@ -21,6 +21,10 @@ BASELINE=(
   "github.com/ManuGH/xg2g/internal/control"
   "github.com/ManuGH/xg2g/internal/pipeline"
   "github.com/ManuGH/xg2g/internal/testutil"
+  # Intentional: WIP subsystems and planned integrations
+  "github.com/ManuGH/xg2g/internal/domain/session/preemption"
+  "github.com/ManuGH/xg2g/internal/staging"
+  "github.com/ManuGH/xg2g/internal/stream/ingest/remotecore"
   # Known orphans — candidates for removal (verify no codegen/reflection use first).
   "github.com/ManuGH/xg2g/internal/auth"
   "github.com/ManuGH/xg2g/internal/control/http/v3/types"

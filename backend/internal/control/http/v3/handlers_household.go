@@ -320,11 +320,12 @@ func (s *Server) updateProfileWithID(w http.ResponseWriter, r *http.Request, pro
 	if req.AvatarURL != "" {
 		prof.AvatarURL = req.AvatarURL
 	}
-	if req.Kind == "child" {
+	switch req.Kind {
+	case "child":
 		prof.IsChild = true
-	} else if req.Kind == "adult" {
+	case "adult":
 		prof.IsChild = false
-	} else {
+	default:
 		prof.IsChild = req.IsChild
 	}
 	maturity := req.MaturityLevel

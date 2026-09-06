@@ -16,12 +16,13 @@ set -euo pipefail
 # - Go 1.25 stdlib modernization: maps (maps.Copy in intent_client_request),
 #   slices (slices.Backward, slices.Contains, slices.ContainsFunc, slices.Sort)
 # - llhls: internal/hls/llhls for EXT-X-PART / blocking-reload playlist synthesis (#629)
+# - v3.9.7: identity, webauthn, deviceauth, household, entitlements, dvr domain packages
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}/backend"
 
-MAX_V3_FANOUT="${MAX_V3_FANOUT:-104}"
+MAX_V3_FANOUT="${MAX_V3_FANOUT:-115}"
 ACTUAL_IMPORTS_RAW="$(go list -f '{{join .Imports "\n"}}' ./internal/control/http/v3 | sort)"
 mapfile -t ACTUAL_IMPORTS <<< "${ACTUAL_IMPORTS_RAW}"
 ACTUAL_V3_FANOUT="${#ACTUAL_IMPORTS[@]}"

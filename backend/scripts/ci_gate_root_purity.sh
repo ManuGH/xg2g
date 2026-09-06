@@ -57,6 +57,7 @@ ALLOWLIST=(
     "backend/"
     "hack/"
     "ios/"
+    "media-core/"
     "scripts/"
 
     # Test fixtures (canonical location enforced by ci/check-test-assets-location.sh)

@@ -48,7 +48,7 @@ func TestHandleMonitor_ContextCancelKillsProcess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", "sleep 10")
+	cmd := exec.CommandContext(ctx, "sh", "-c", "exec sleep 10")
 	procgroup.Set(cmd)
 	stderr, err := cmd.StderrPipe()
 	require.NoError(t, err)
