@@ -375,15 +375,39 @@ export function createPlaybackController(
           intentReqController.abort();
         }, httpRequestTimeoutMs);
 
+        let postHandledInLoop = false;
+        const postPromise = transport.postStartIntent({
+          body: intentBody,
+          signal: intentReqController.signal,
+        });
+
+        // Retain an explicit result-processing continuation on the original submitted POST:
+        // If this request returns an accepted session after executeLiveStartup timed out or
+        // abandoned it, route it through handleObsoleteSession without activating playback.
+        postPromise.then(
+          (lateRes) => {
+            clearTimeout(intentReqTimer);
+            if (postHandledInLoop) {
+              return;
+            }
+            const lateSessionId = (lateRes?.data as any)?.sessionId?.trim() || null;
+            if (lateSessionId) {
+              handleObsoleteSession(lateSessionId);
+              flushPendingAdoptionCandidates();
+            }
+          },
+          () => {
+            clearTimeout(intentReqTimer);
+          },
+        );
+
         try {
           startRes = await raceWithSignal(
-            transport.postStartIntent({
-              body: intentBody,
-              signal: intentReqController.signal,
-            }),
+            postPromise,
             intentReqController.signal,
             'Start intent request timed out',
           );
+          postHandledInLoop = true;
         } finally {
           clearTimeout(intentReqTimer);
         }

@@ -1246,5 +1246,62 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
       expect(t.postStopIntent).not.toHaveBeenCalled();
     });
+
+    it('cleans an accepted response that arrives after the individual POST timeout', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(result).toEqual({ status: 'cancelled', reason: 'timeout' });
+      expect(c.getInFlightStartsCount()).toBe(0);
+      d.resolve(accepted('late-S'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'late-S' }));
+      expect(t.waitForReady).not.toHaveBeenCalled();
+    });
+
+    it('holds a response arriving after individual POST timeout for a newer eligible adopter', async () => {
+      const aDeferred = defer<StartIntentResult>();
+      const bDeferred = defer<StartIntentResult>();
+      let callCount = 0;
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockImplementation(async () => {
+          callCount++;
+          return callCount === 1 ? aDeferred.promise : bDeferred.promise;
+        }),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let aResult: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { aResult = r; }, (e) => { aResult = e; });
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(aResult).toEqual({ status: 'cancelled', reason: 'timeout' });
+      expect(c.getInFlightStartsCount()).toBe(0);
+
+      // Start attempt B
+      let bResult: any = null;
+      void c.startLive({ serviceRef: 'B' }).then((r) => { bResult = r; }, (e) => { bResult = e; });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Attempt A's raw POST returns late-S after A's individual timeout
+      aDeferred.resolve(accepted('late-S'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Must be held as candidate for eligible B
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+      expect(c.getPendingAdoptionCandidatesCount()).toBe(1);
+
+      // Attempt B returns the same session late-S
+      bDeferred.resolve(accepted('late-S'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bResult?.status).toBe('ready');
+      expect(c.getActiveSessionId()).toBe('late-S');
+      expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
   });
 });
