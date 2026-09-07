@@ -320,23 +320,26 @@ export function createPlaybackController(
         typeof params.requestedDuration === 'number' ? params.requestedDuration : undefined,
       );
 
-      const intentReqController = new AbortController();
-      const intentReqTimer = setTimeout(() => {
-        intentReqController.abort();
-      }, startSettlementTimeoutMs);
+      let startRes!: StartIntentResult;
+      for (let retryCount = 0; ; retryCount++) {
+        const intentReqController = new AbortController();
+        const intentReqTimer = setTimeout(() => {
+          intentReqController.abort();
+        }, startSettlementTimeoutMs);
 
-      let startRes: StartIntentResult;
-      try {
-        startRes = await transport.postStartIntent({
-          body: intentBody,
-          signal: intentReqController.signal,
-        });
-      } finally {
-        clearTimeout(intentReqTimer);
-      }
+        try {
+          startRes = await transport.postStartIntent({
+            body: intentBody,
+            signal: intentReqController.signal,
+          });
+        } finally {
+          clearTimeout(intentReqTimer);
+        }
 
-      // Handle 409 Conflict with one retry after 2s backoff
-      if (startRes.status === 409) {
+        if (startRes.status !== 409 || retryCount >= MAX_LEASE_CONFLICT_RETRIES) {
+          break;
+        }
+
         if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
           if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
           inFlightStarts.delete(attempt.attemptId);
@@ -344,32 +347,30 @@ export function createPlaybackController(
           return;
         }
 
-        const retryTimer = setTimeout(() => {}, 2000);
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const t = setTimeout(resolve, 2000);
-            attempt.abortController.signal.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(t);
-                reject(new DOMException('Aborted', 'AbortError'));
-              },
-              { once: true },
-            );
-          });
+        const retryAfterHeader = startRes.headers?.get ? startRes.headers.get('Retry-After') : null;
+        const retrySec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const waitMs = Number.isFinite(retrySec) && retrySec > 0
+          ? Math.min(retrySec * 1_000, MAX_LEASE_CONFLICT_WAIT_MS)
+          : DEFAULT_LEASE_CONFLICT_WAIT_MS;
 
-          if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
-            inFlightStarts.delete(attempt.attemptId);
-            flushPendingAdoptionCandidates();
+        await new Promise<void>((resolve) => {
+          if (attempt.abortController.signal.aborted) {
+            resolve();
             return;
           }
+          const timer = setTimeout(resolve, waitMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          attempt.abortController.signal.addEventListener('abort', onAbort, { once: true });
+        });
 
-          startRes = await transport.postStartIntent({
-            body: intentBody,
-            signal: attempt.abortController.signal,
-          });
-        } finally {
-          clearTimeout(retryTimer);
+        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
+          if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
+          inFlightStarts.delete(attempt.attemptId);
+          flushPendingAdoptionCandidates();
+          return;
         }
       }
 

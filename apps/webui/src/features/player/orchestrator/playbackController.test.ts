@@ -943,5 +943,109 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       await vi.advanceTimersByTimeAsync(10_001);
       expect(c.getInFlightStartsCount()).toBe(0);
     });
+
+    function conflict(seconds?: string) {
+      const headers = new Headers();
+      if (seconds !== undefined) {
+        headers.set('Retry-After', seconds);
+      }
+      return { status: 409, data: {}, headers };
+    }
+
+    it('honors the server Retry-After before submitting the next start', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' }).catch(() => {});
+      await vi.advanceTimersByTimeAsync(2_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(2);
+    });
+
+    it('allows recovery after two conflicts within the existing retry budget', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('1'))
+          .mockResolvedValueOnce(conflict('1'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then(
+        (r) => { result = r; },
+        (e) => { result = e; },
+      );
+      await vi.advanceTimersByTimeAsync(4_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(3);
+      expect(result?.status).toBe('ready');
+    });
+
+    it('keeps an already submitted retry independent of local cancellation', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('1'))
+          .mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' }).catch(() => {});
+      await vi.advanceTimersByTimeAsync(2_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(2);
+      const retrySignal = (t.postStartIntent as any).mock.calls[1]![0].signal;
+      await c.stop();
+      expect(retrySignal.aborted).toBe(false);
+    });
+
+    it('falls back to 1s when Retry-After is absent or invalid', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict())
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' }).catch(() => {});
+      await vi.advanceTimersByTimeAsync(500);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(2);
+    });
+
+    it('caps Retry-After at 5s when server requests longer delay', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('10'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' }).catch(() => {});
+      await vi.advanceTimersByTimeAsync(4_900);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(2);
+    });
+
+    it('exhausts retries and rejects when receiving 409 past the retry limit', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValue(conflict('1')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let error: any = null;
+      void c.startLive({ serviceRef: 'A' }).catch((e) => { error = e; });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(4);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toMatch(/409/);
+    });
   });
 });
