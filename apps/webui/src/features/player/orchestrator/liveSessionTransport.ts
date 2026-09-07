@@ -54,6 +54,27 @@ export interface DefaultLiveSessionTransportOptions {
   fetchFn?: typeof fetch;
 }
 
+function raceWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (val) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(val);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 export function createDefaultLiveSessionTransport({
   apiBase,
   authHeaders,
@@ -120,70 +141,89 @@ export function createDefaultLiveSessionTransport({
         }
 
         const pollController = new AbortController();
-        const pollTimer = setTimeout(() => pollController.abort(), requestTimeoutMs);
+        const remainingBudget = Math.max(0, deadline - Date.now());
+        const pollTimeoutMs = Math.min(requestTimeoutMs, remainingBudget);
+        const pollTimer = setTimeout(() => pollController.abort(), pollTimeoutMs);
+
         const onAbort = () => pollController.abort();
         signal?.addEventListener('abort', onAbort);
 
-        let res: Response;
         try {
-          res = await fetchFn(`${apiBase}/sessions/${sessionId}`, {
+          const res = await fetchFn(`${apiBase}/sessions/${sessionId}`, {
             headers: authHeaders(false),
             signal: pollController.signal,
           });
-        } catch (_err) {
+
+          if (res.status === 401 || res.status === 403) {
+            throw new Error(`Session authorization failed (HTTP ${res.status})`);
+          }
+
+          if (res.status === 410) {
+            let reason = 'expired';
+            try {
+              const problem = await raceWithSignal(res.json(), pollController.signal);
+              reason = problem?.reason || problem?.state || reason;
+            } catch {
+              // body parse fallback
+            }
+            throw new Error(`Session ${sessionId} expired or gone: ${reason}`);
+          }
+
+          if (res.ok) {
+            let data: any;
+            try {
+              data = await raceWithSignal(res.json(), pollController.signal);
+            } catch (parseErr) {
+              if (signal?.aborted || pollController.signal.aborted) {
+                throw parseErr;
+              }
+              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+              continue;
+            }
+
+            const state = data?.state;
+            if (
+              state === 'FAILED' ||
+              state === 'STOPPED' ||
+              state === 'CANCELLED' ||
+              state === 'STOPPING'
+            ) {
+              const reason = data?.reason ? ` (${data.reason})` : '';
+              throw new Error(`Session ${sessionId} reached terminal state ${state}${reason}`);
+            }
+
+            if ((state === 'READY' || state === 'DRAINING') && (data?.playbackUrl || data?.streamUrl)) {
+              return {
+                sessionId,
+                playbackUrl: data.playbackUrl ?? data.streamUrl,
+                requestId: data.requestId,
+                mode: data.mode,
+                heartbeatIntervalSeconds: data.heartbeatIntervalSeconds,
+                leaseExpiresAt: data.leaseExpiresAt,
+              };
+            }
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        } catch (err) {
           if (signal?.aborted) {
             throw new DOMException('Aborted', 'AbortError');
           }
+          if (err instanceof Error && (
+            err.message.includes('Session authorization failed') ||
+            err.message.includes('expired or gone') ||
+            err.message.includes('reached terminal state')
+          )) {
+            throw err;
+          }
+          if (Date.now() >= deadline) {
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-          continue;
         } finally {
           clearTimeout(pollTimer);
           signal?.removeEventListener('abort', onAbort);
         }
-
-        if (res.status === 401 || res.status === 403) {
-          throw new Error(`Session authorization failed (HTTP ${res.status})`);
-        }
-
-        if (res.status === 410) {
-          let reason = 'expired';
-          try {
-            const problem = await res.json();
-            reason = problem?.reason || problem?.state || reason;
-          } catch {
-            // body parse fallback
-          }
-          throw new Error(`Session ${sessionId} expired or gone: ${reason}`);
-        }
-
-        if (res.ok) {
-          let data: any;
-          try {
-            data = await res.json();
-          } catch {
-            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-            continue;
-          }
-
-          const state = data?.state;
-          if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED') {
-            const reason = data?.reason ? ` (${data.reason})` : '';
-            throw new Error(`Session ${sessionId} reached terminal state ${state}${reason}`);
-          }
-
-          if ((state === 'READY' || state === 'DRAINING') && (data?.playbackUrl || data?.streamUrl)) {
-            return {
-              sessionId,
-              playbackUrl: data.playbackUrl ?? data.streamUrl,
-              requestId: data.requestId,
-              mode: data.mode,
-              heartbeatIntervalSeconds: data.heartbeatIntervalSeconds,
-              leaseExpiresAt: data.leaseExpiresAt,
-            };
-          }
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
       throw new Error(`Timeout waiting for session readiness: ${sessionId}`);
     },

@@ -230,4 +230,40 @@ describe('createDefaultLiveSessionTransport', () => {
       transport.postStopIntent({ sessionId: 'sess-stop' }),
     ).resolves.toBeUndefined();
   });
+
+  it('bounds readiness response-body reading and preserves cancellation', async () => {
+    vi.useFakeTimers();
+    try {
+      const bodyPromise = new Promise(() => {});
+      const abort = new AbortController();
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: () => bodyPromise,
+      });
+      const transport = createDefaultLiveSessionTransport({
+        apiBase,
+        authHeaders,
+        fetchFn: fetchMock as unknown as typeof fetch,
+      });
+      let settled = false;
+      void transport
+        .waitForReady({ sessionId: 'S', budgetMs: 1_000, signal: abort.signal })
+        .then(
+          () => {
+            settled = true;
+          },
+          () => {
+            settled = true;
+          },
+        );
+      await vi.advanceTimersByTimeAsync(0);
+      abort.abort();
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(fetchMock.mock.calls[0]![1].signal.aborted).toBe(true);
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

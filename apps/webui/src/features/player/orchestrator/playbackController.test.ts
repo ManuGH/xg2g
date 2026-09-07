@@ -784,5 +784,104 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(result).toEqual({ status: 'cancelled', reason: 'user_stop' });
     });
+
+    it('stops B while the previous stop of A is still pending', async () => {
+      const d = defer<void>();
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(accepted('A'))
+          .mockResolvedValueOnce(accepted('B')),
+        postStopIntent: vi.fn().mockResolvedValue(undefined).mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      await c.startLive({ serviceRef: 'A' });
+      void c.stop();
+      await c.startLive({ serviceRef: 'B' });
+      void c.stop();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'B' }));
+    });
+
+    it('does not stop adopted S when obsolete readiness rejects', async () => {
+      const d = defer<SessionReadyResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('S')),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({ sessionId, playbackUrl: '/hls/index.m3u8' })),
+      });
+      (t.waitForReady as any).mockReturnValueOnce(d.promise);
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      await c.startLive({ serviceRef: 'B' });
+      d.reject(new DOMException('Aborted', 'AbortError'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+      expect(c.getActiveSessionId()).toBe('S');
+    });
+
+    it('does not stop B after a timed-out A returns the same S late', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValueOnce(d.promise).mockResolvedValue(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(10_001);
+      await c.startLive({ serviceRef: 'B' });
+      d.resolve(accepted('S'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
+
+    it('does not age out S while a newer eligible C may still adopt it', async () => {
+      const a = defer<StartIntentResult>();
+      const b = defer<StartIntentResult>();
+      const cc = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockReturnValueOnce(a.promise)
+          .mockReturnValueOnce(b.promise)
+          .mockReturnValueOnce(cc.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      void c.startLive({ serviceRef: 'B' });
+      await vi.advanceTimersByTimeAsync(0);
+      a.resolve(accepted('S'));
+      await vi.advanceTimersByTimeAsync(9_000);
+      void c.startLive({ serviceRef: 'C' });
+      await vi.advanceTimersByTimeAsync(1_001);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
+
+    it('rejects denied preflight without submitting a start intent', async () => {
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { mode: 'deny', decision: { mode: 'deny' } },
+          headers: new Headers(),
+        } satisfies StreamInfoResult),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      await c.startLive({ serviceRef: 'A' }).catch(() => {});
+      expect(t.postStartIntent).not.toHaveBeenCalled();
+    });
+
+    it('uses the normalized live playback mode in the start request', async () => {
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { mode: 'direct_stream', playbackDecisionToken: 'token', decision: { mode: 'direct_stream' } },
+          headers: new Headers(),
+        } satisfies StreamInfoResult),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      await c.startLive({ serviceRef: 'A', capabilities: { preferredHlsEngine: 'hlsjs' } as any });
+      expect((t.postStartIntent as any).mock.calls[0]![0].body.params.playback_mode).toBe('hlsjs');
+    });
   });
 });

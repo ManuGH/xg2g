@@ -158,7 +158,8 @@ export function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null):
     out.push('hevc');
   }
 
-  if (snapshot.videoCodecs.includes('h264') || out.length === 0) {
+  const videoCodecs = Array.isArray(snapshot.videoCodecs) ? snapshot.videoCodecs : [];
+  if (videoCodecs.includes('h264') || out.length === 0) {
     out.push('h264');
   }
 

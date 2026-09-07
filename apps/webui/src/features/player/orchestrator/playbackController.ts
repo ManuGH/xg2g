@@ -16,6 +16,8 @@ import type {
   SessionReadyResult,
   StartIntentResult,
 } from './liveSessionTransport';
+import { normalizePlaybackInfo } from '../contracts/normalizePlaybackInfo';
+import { buildLiveIntentBody } from './startupHelpers';
 import type { PlayerStatus } from '../../../types/v3-player';
 
 export interface StartLiveParams {
@@ -123,11 +125,10 @@ export function createPlaybackController(
   const inFlightStarts = new Map<string, InFlightStart>();
   const stoppingSessionIds = new Set<string>();
   const activeStopPromises = new Map<string, Promise<void>>();
-  const MAX_STOPPING_SESSION_IDS = 100;
+  const inFlightStopPromises = new Map<number, Promise<void>>();
   const pendingAdoptionCandidates = new Map<string, { sessionId: string; heldAt: number }>();
 
   let isDisposed = false;
-  let currentStopPromise: Promise<void> | null = null;
 
   function hasEligibleInFlightStarts(): boolean {
     for (const start of inFlightStarts.values()) {
@@ -145,12 +146,6 @@ export function createPlaybackController(
     }
 
     stoppingSessionIds.add(sessionId);
-    if (stoppingSessionIds.size > MAX_STOPPING_SESSION_IDS) {
-      const oldest = stoppingSessionIds.values().next().value;
-      if (oldest) {
-        stoppingSessionIds.delete(oldest);
-      }
-    }
     pendingAdoptionCandidates.delete(sessionId);
 
     const stopController = new AbortController();
@@ -162,9 +157,9 @@ export function createPlaybackController(
         resolve();
       }, stopRequestTimeoutMs);
 
-      transport
-        .postStopIntent({ sessionId, signal: stopController.signal })
-        .then(
+      Promise.resolve(
+        transport.postStopIntent({ sessionId, signal: stopController.signal }),
+      ).then(
           () => {
             if (timer) clearTimeout(timer);
             resolve();
@@ -184,16 +179,6 @@ export function createPlaybackController(
   }
 
   function flushPendingAdoptionCandidates(): void {
-    const now = Date.now();
-    for (const [sessionId, candidate] of pendingAdoptionCandidates.entries()) {
-      if (now - candidate.heldAt >= startSettlementTimeoutMs) {
-        pendingAdoptionCandidates.delete(sessionId);
-        if (sessionId !== activeSessionId) {
-          void retireAndStopSession(sessionId);
-        }
-      }
-    }
-
     if (hasEligibleInFlightStarts()) {
       return;
     }
@@ -283,41 +268,59 @@ export function createPlaybackController(
 
       // 2. Intent payload shaping & 409 conflict retries
       const preflightData = preflightRes.data as Record<string, unknown> | null;
-      const decisionToken =
-        typeof preflightData?.playbackDecisionToken === 'string'
-          ? preflightData.playbackDecisionToken
-          : typeof (preflightData?.decision as Record<string, unknown>)?.playbackDecisionToken === 'string'
-            ? ((preflightData!.decision as Record<string, unknown>).playbackDecisionToken as string)
-            : undefined;
+      const hasPreflightContract = Boolean(
+        preflightData &&
+        typeof preflightData === 'object' &&
+        (preflightData.mode || preflightData.decision || preflightData.playbackDecisionToken)
+      );
 
-      const liveMode =
-        typeof (preflightData?.playback as Record<string, unknown>)?.mode === 'string'
-          ? ((preflightData!.playback as Record<string, unknown>).mode as string)
-          : typeof preflightData?.mode === 'string'
-            ? preflightData.mode
-            : undefined;
+      let intentBody: unknown;
 
-      const intentParams: Record<string, string> = {};
-      if (liveMode) {
-        intentParams.playback_mode = liveMode;
-      }
-      if (typeof params.requestedDuration === 'number') {
-        intentParams.dvr_window_sec = String(params.requestedDuration);
-      }
-      if (capabilities && typeof capabilities === 'object') {
-        const caps = capabilities as Record<string, unknown>;
-        if (typeof caps.preferredHlsEngine === 'string' && caps.preferredHlsEngine) {
-          intentParams.preferred_hls_engine = caps.preferredHlsEngine;
+      if (hasPreflightContract && preflightData) {
+        const caps = (capabilities ?? {}) as Record<string, unknown>;
+        const preferredHlsEngine =
+          caps.preferredHlsEngine === 'native' || caps.preferredHlsEngine === 'hlsjs'
+            ? caps.preferredHlsEngine
+            : 'hlsjs';
+
+        const normalized = normalizePlaybackInfo(preflightData, {
+          surface: 'live',
+          preferredHlsEngine,
+        });
+
+        if (normalized.kind === 'blocked') {
+          throw new Error(normalized.failure.message || 'Playback blocked');
         }
-      }
 
-      const intentBody: Record<string, unknown> = {
-        type: 'stream.start',
-        serviceRef,
-        ...(decisionToken ? { playbackDecisionToken: decisionToken } : {}),
-        ...(capabilities ? { client: capabilities } : {}),
-        ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {}),
-      };
+        const liveMode = normalized.playback.mode;
+        const decisionToken = normalized.session.decisionToken;
+
+        if (decisionToken) {
+          intentBody = buildLiveIntentBody(
+            serviceRef,
+            decisionToken,
+            caps as any,
+            liveMode,
+            typeof params.requestedDuration === 'number' ? params.requestedDuration : undefined,
+          );
+        } else {
+          intentBody = {
+            type: 'stream.start',
+            serviceRef,
+            ...(capabilities ? { client: capabilities } : {}),
+            params: {
+              playback_mode: liveMode,
+              ...(typeof params.requestedDuration === 'number' ? { dvr_window_sec: String(params.requestedDuration) } : {}),
+            },
+          };
+        }
+      } else {
+        intentBody = {
+          type: 'stream.start',
+          serviceRef,
+          ...(capabilities ? { client: capabilities } : {}),
+        };
+      }
 
       const intentReqController = new AbortController();
       const intentReqTimer = setTimeout(() => {
@@ -393,7 +396,9 @@ export function createPlaybackController(
       // Invariant: If settlement deadline already elapsed, S cannot be activated!
       if (attempt.ineligibleForAdoption) {
         inFlightStarts.delete(attempt.attemptId);
-        void retireAndStopSession(returnedSessionId);
+        if (returnedSessionId && returnedSessionId !== activeSessionId) {
+          void retireAndStopSession(returnedSessionId);
+        }
         flushPendingAdoptionCandidates();
         return;
       }
@@ -475,10 +480,16 @@ export function createPlaybackController(
       flushPendingAdoptionCandidates();
 
       if (returnedSessionId) {
-        if (activeSessionId === returnedSessionId) {
-          activeSessionId = null;
+        if (attempt.cancelled || attempt.ineligibleForAdoption) {
+          if (activeSessionId !== returnedSessionId) {
+            void retireAndStopSession(returnedSessionId);
+          }
+        } else {
+          if (activeSessionId === returnedSessionId) {
+            activeSessionId = null;
+          }
+          void retireAndStopSession(returnedSessionId);
         }
-        void retireAndStopSession(returnedSessionId);
       }
 
       if (!attempt.cancelled && !attempt.settled) {
@@ -559,18 +570,18 @@ export function createPlaybackController(
     reason: PlaybackStopReason | string = 'user_stop',
     notifyClose: boolean = false,
   ): Promise<void> {
-    if (currentStopPromise) {
-      return currentStopPromise;
+    const stopEpoch = playbackEpoch;
+    const existing = inFlightStopPromises.get(stopEpoch);
+    if (existing) {
+      return existing;
     }
 
     const currentStatus = runtime.getState().status;
     if ((currentStatus === 'stopped' || currentStatus === 'idle') && !activeSessionId && !currentAttempt) {
-      return;
+      return Promise.resolve();
     }
 
     const doStop = async () => {
-      const stopEpoch = playbackEpoch;
-
       // 1. Synchronous attempt invalidation & prompt promise settle
       if (currentAttempt && !currentAttempt.settled) {
         currentAttempt.cancelled = true;
@@ -618,10 +629,11 @@ export function createPlaybackController(
       });
     };
 
-    currentStopPromise = doStop().finally(() => {
-      currentStopPromise = null;
+    const promise = doStop().finally(() => {
+      inFlightStopPromises.delete(stopEpoch);
     });
-    return currentStopPromise;
+    inFlightStopPromises.set(stopEpoch, promise);
+    return promise;
   }
 
   function dispose(): void {
