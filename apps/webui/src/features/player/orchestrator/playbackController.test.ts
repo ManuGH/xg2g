@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPlaybackController } from './playbackController';
+import { createPlaybackController, parseSessionId } from './playbackController';
 import type {
   LiveSessionTransport,
   SessionReadyResult,
@@ -1303,5 +1303,149 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
       expect(t.postStopIntent).not.toHaveBeenCalled();
     });
+
+    function trackUnhandledRejections(): { unhandled: unknown[]; cleanup: () => void } {
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      const nodeProcess = (globalThis as unknown as { process?: { on: (event: string, cb: (...args: unknown[]) => void) => void; off: (event: string, cb: (...args: unknown[]) => void) => void } }).process;
+      if (nodeProcess?.on) {
+        nodeProcess.on('unhandledRejection', onUnhandled);
+      }
+      return {
+        unhandled,
+        cleanup: () => {
+          if (nodeProcess?.off) {
+            nodeProcess.off('unhandledRejection', onUnhandled);
+          }
+        },
+      };
+    }
+
+    it('handles timely malformed session response without unhandled rejection and rejects public promise', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId: 42 },
+          headers: new Headers(),
+        }),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      const { unhandled, cleanup } = trackUnhandledRejections();
+      try {
+        await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
+          'Start failed with status 200 or missing sessionId',
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(unhandled).toEqual([]);
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('handles timely whitespace-only session response without unhandled rejection and rejects public promise', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId: '   ' },
+          headers: new Headers(),
+        }),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      const { unhandled, cleanup } = trackUnhandledRejections();
+      try {
+        await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
+          'Start failed with status 200 or missing sessionId',
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(unhandled).toEqual([]);
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('handles late malformed session response after individual timeout without unhandled rejection', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      const { unhandled, cleanup } = trackUnhandledRejections();
+      try {
+        let result: any = null;
+        void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+        await vi.advanceTimersByTimeAsync(10_001);
+        expect(result).toEqual({ status: 'cancelled', reason: 'timeout' });
+        expect(c.getInFlightStartsCount()).toBe(0);
+
+        d.resolve({ status: 200, data: { sessionId: 42 }, headers: new Headers() } as any);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(unhandled).toEqual([]);
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('handles late whitespace-only session response after individual timeout without unhandled rejection', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      const { unhandled, cleanup } = trackUnhandledRejections();
+      try {
+        let result: any = null;
+        void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+        await vi.advanceTimersByTimeAsync(10_001);
+        expect(result).toEqual({ status: 'cancelled', reason: 'timeout' });
+        expect(c.getInFlightStartsCount()).toBe(0);
+
+        d.resolve({ status: 200, data: { sessionId: '   ' }, headers: new Headers() } as any);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(unhandled).toEqual([]);
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('timely valid response establishes foreground ownership without premature obsolete handling', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('timely-S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      const res = await c.startLive({ serviceRef: 'A' });
+      expect(res.status).toBe('ready');
+      expect(c.getActiveSessionId()).toBe('timely-S');
+      expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('parseSessionId', () => {
+  it('parses valid non-empty string and trims it', () => {
+    expect(parseSessionId({ sessionId: 'session-123' })).toBe('session-123');
+    expect(parseSessionId({ sessionId: '  session-abc  ' })).toBe('session-abc');
+  });
+
+  it('returns null for empty string or whitespace-only string', () => {
+    expect(parseSessionId({ sessionId: '' })).toBeNull();
+    expect(parseSessionId({ sessionId: '   ' })).toBeNull();
+  });
+
+  it('returns null for non-string values or missing property', () => {
+    expect(parseSessionId(null)).toBeNull();
+    expect(parseSessionId(undefined)).toBeNull();
+    expect(parseSessionId(123)).toBeNull();
+    expect(parseSessionId('string')).toBeNull();
+    expect(parseSessionId(true)).toBeNull();
+    expect(parseSessionId({})).toBeNull();
+    expect(parseSessionId({ sessionId: 42 })).toBeNull();
+    expect(parseSessionId({ sessionId: null })).toBeNull();
+    expect(parseSessionId({ sessionId: undefined })).toBeNull();
+    expect(parseSessionId({ sessionId: {} })).toBeNull();
   });
 });

@@ -97,6 +97,18 @@ export const MAX_LEASE_CONFLICT_RETRIES = 3;
 export const DEFAULT_LEASE_CONFLICT_WAIT_MS = 1_000;
 export const MAX_LEASE_CONFLICT_WAIT_MS = 5_000;
 
+export function parseSessionId(data: unknown): string | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const raw = (data as { sessionId?: unknown }).sessionId;
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function raceWithSignal<T>(
   promise: Promise<T>,
   signal: AbortSignal,
@@ -370,12 +382,13 @@ export function createPlaybackController(
 
       let startRes!: StartIntentResult;
       for (let retryCount = 0; ; retryCount++) {
+        let foregroundWaiting = true;
         const intentReqController = new AbortController();
         const intentReqTimer = setTimeout(() => {
+          foregroundWaiting = false;
           intentReqController.abort();
         }, httpRequestTimeoutMs);
 
-        let postHandledInLoop = false;
         const postPromise = transport.postStartIntent({
           body: intentBody,
           signal: intentReqController.signal,
@@ -387,10 +400,10 @@ export function createPlaybackController(
         postPromise.then(
           (lateRes) => {
             clearTimeout(intentReqTimer);
-            if (postHandledInLoop) {
+            if (foregroundWaiting) {
               return;
             }
-            const lateSessionId = (lateRes?.data as any)?.sessionId?.trim() || null;
+            const lateSessionId = parseSessionId(lateRes?.data);
             if (lateSessionId) {
               handleObsoleteSession(lateSessionId);
               flushPendingAdoptionCandidates();
@@ -399,7 +412,9 @@ export function createPlaybackController(
           () => {
             clearTimeout(intentReqTimer);
           },
-        );
+        ).catch(() => {
+          // Explicitly handle any unexpected error on detached continuation
+        });
 
         try {
           startRes = await raceWithSignal(
@@ -407,7 +422,9 @@ export function createPlaybackController(
             intentReqController.signal,
             'Start intent request timed out',
           );
-          postHandledInLoop = true;
+        } catch (err) {
+          foregroundWaiting = false;
+          throw err;
         } finally {
           clearTimeout(intentReqTimer);
         }
@@ -456,7 +473,7 @@ export function createPlaybackController(
         clearTimeout(attempt.settlementTimer);
       }
 
-      returnedSessionId = (startRes.data as any)?.sessionId?.trim() || null;
+      returnedSessionId = parseSessionId(startRes.data);
 
       if (isDisposed) {
         inFlightStarts.delete(attempt.attemptId);
