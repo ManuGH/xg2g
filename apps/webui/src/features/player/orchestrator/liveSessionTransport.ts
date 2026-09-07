@@ -276,7 +276,13 @@ export function createDefaultLiveSessionTransport({
               state === 'STOPPING'
             ) {
               const reason = data?.reason ? ` (${data.reason})` : '';
-              throw new Error(`Session ${sessionId} reached terminal state ${state}${reason}`);
+              throw new PlaybackHttpError(
+                `Session ${sessionId} reached terminal state ${state}${reason}`,
+                410,
+                data,
+                res.headers,
+                sessionId,
+              );
             }
 
             if ((state === 'READY' || state === 'DRAINING') && (data?.playbackUrl || data?.streamUrl)) {

@@ -1673,6 +1673,35 @@ export function usePlaybackOrchestrator(
           return;
         }
 
+        if (
+          err instanceof Error &&
+          (err.message.includes('LEASE_BUSY') ||
+            err.message.includes(t('player.leaseBusy')))
+        ) {
+          reportPlaybackFailure(
+            normalizePlayerError(
+              {
+                status: 410,
+                title: t('player.leaseBusy'),
+              },
+              {
+                fallbackTitle: t('player.leaseBusy'),
+                status: 410,
+                retryable: true,
+              },
+            ),
+            {
+              source: 'backend',
+              failureClass: 'session',
+              code: 'LEASE_BUSY',
+              retryable: true,
+              recoverable: false,
+            },
+          );
+          setStatus('error');
+          return;
+        }
+
         reportPlaybackFailure(
           normalizeRuntimePlaybackError(err, t('player.streamFailed')),
           {
