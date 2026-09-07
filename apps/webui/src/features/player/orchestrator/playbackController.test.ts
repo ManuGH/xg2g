@@ -1473,6 +1473,7 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         waitForReady: vi.fn().mockResolvedValue({
           sessionId: 's-invalid-lease',
           playbackUrl: 'http://localhost/stream.m3u8',
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
           // missing heartbeatIntervalSeconds
         }),
       });
@@ -1480,13 +1481,63 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
 
       await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
-        /readiness contract violation: missing valid heartbeat interval/,
+        /readiness contract violation: invalid lease metadata/,
       );
 
       expect(c.getActiveSessionId()).toBeNull();
       expect(t.postStopIntent).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 's-invalid-lease' }),
       );
+      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+    });
+
+    it('reaps session and rejects if ready LIVE session has heartbeatIntervalSeconds=5 but leaseExpiresAt is missing', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('s-no-lease')),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 's-no-lease',
+          playbackUrl: 'http://localhost/stream.m3u8',
+          heartbeatIntervalSeconds: 5,
+          // missing leaseExpiresAt
+        }),
+      });
+
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+
+      await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
+        /readiness contract violation: invalid lease metadata/,
+      );
+
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.postStopIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's-no-lease' }),
+      );
+      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+    });
+
+    it('reaps session and rejects if ready session from startLive returns unexpected mode RECORDING', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('s-recording')),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 's-recording',
+          mode: 'RECORDING',
+          playbackUrl: 'http://localhost/stream.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
+        }),
+      });
+
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+
+      await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
+        /returned unexpected mode RECORDING/,
+      );
+
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.postStopIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's-recording' }),
+      );
+      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
     });
   });
 });

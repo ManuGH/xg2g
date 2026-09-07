@@ -232,7 +232,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
           response(200, {
             state: 'READY',
             playbackUrl: '/live.m3u8',
-            heartbeatIntervalSeconds: 1
+            heartbeatIntervalSeconds: 1,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         );
       }
@@ -346,7 +347,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
               response(200, {
                 state: 'READY',
                 playbackUrl,
-                heartbeatIntervalSeconds: 1
+                heartbeatIntervalSeconds: 1,
+                leaseExpiresAt: '2026-09-07T22:00:00Z',
               })
             );
           }
@@ -357,7 +359,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
             response(200, {
               state: 'READY',
               playbackUrl,
-              heartbeatIntervalSeconds: 1
+              heartbeatIntervalSeconds: 1,
+              leaseExpiresAt: '2026-09-07T22:00:00Z',
             })
           );
         }
@@ -476,7 +479,8 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
           json: async () => ({
             state: 'READY',
             playbackUrl: '/live.m3u8',
-            heartbeatIntervalSeconds: 1
+            heartbeatIntervalSeconds: 1,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }

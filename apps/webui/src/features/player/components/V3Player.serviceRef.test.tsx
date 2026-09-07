@@ -642,7 +642,8 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: 'http://example.com/live-1.m3u8',
-          heartbeatIntervalSeconds: 600
+          heartbeatIntervalSeconds: 600,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         }));
       }
       if (url.includes('/sessions/sid-live-2') && !url.includes('/heartbeat')) {
@@ -651,7 +652,8 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: 'http://example.com/live-2.m3u8',
-          heartbeatIntervalSeconds: 600
+          heartbeatIntervalSeconds: 600,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         }));
       }
       return Promise.resolve(response(200, {}));
@@ -750,7 +752,8 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: 'http://example.com/background-live.m3u8',
-          heartbeatIntervalSeconds: 600
+          heartbeatIntervalSeconds: 600,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         }));
       }
       return Promise.resolve(response(200, {}));
@@ -968,7 +971,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live-recover.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1065,7 +1069,8 @@ describe('V3Player ServiceRef Input', () => {
           state: 'READY',
           mode: 'LIVE',
           playbackUrl: '/api/v3/sessions/sid-live-prime-1/hls/index.m3u8',
-          heartbeatIntervalSeconds: 600
+          heartbeatIntervalSeconds: 600,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         }, String(url)));
       }
       return Promise.resolve(response(200, {}, String(url)));
@@ -1343,7 +1348,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1417,7 +1423,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live2.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1496,7 +1503,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live3.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1568,7 +1576,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live-tu.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1651,7 +1660,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live-sk.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }
@@ -1736,7 +1746,8 @@ describe('V3Player ServiceRef Input', () => {
             state: 'READY',
             mode: 'LIVE',
             playbackUrl: 'http://example.com/live4.m3u8',
-            heartbeatIntervalSeconds: 600
+            heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           })
         });
       }

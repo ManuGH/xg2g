@@ -215,6 +215,7 @@ function installPlayerFetchMock(scenario: PlayerFetchScenario = {}) {
         state: 'READY',
         playbackUrl: '/live.m3u8',
         heartbeatIntervalSeconds: 1,
+        leaseExpiresAt: '2026-09-07T22:00:00Z',
       });
     }
 

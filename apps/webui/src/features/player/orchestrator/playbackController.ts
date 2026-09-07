@@ -645,24 +645,25 @@ export function createPlaybackController(
         return;
       }
 
-      // Validate live lease contract before adoption
-      const isLiveSession = readySession.mode === 'LIVE' || !readySession.mode;
-      if (isLiveSession) {
-        const hasValidHeartbeat =
-          typeof readySession.heartbeatIntervalSeconds === 'number' &&
-          Number.isFinite(readySession.heartbeatIntervalSeconds) &&
-          readySession.heartbeatIntervalSeconds > 0;
-        const hasInvalidLease =
-          readySession.leaseExpiresAt !== undefined &&
-          readySession.leaseExpiresAt !== null &&
-          (typeof readySession.leaseExpiresAt !== 'string' ||
-            readySession.leaseExpiresAt.trim().length === 0);
+      if (readySession.mode && readySession.mode !== 'LIVE') {
+        throw new Error(
+          `Live session ${returnedSessionId} returned unexpected mode ${readySession.mode}`,
+        );
+      }
 
-        if (!hasValidHeartbeat || hasInvalidLease) {
-          throw new Error(
-            `Live session ${returnedSessionId} readiness contract violation: missing valid heartbeat interval`,
-          );
-        }
+      // Validate live lease contract before adoption
+      const hasValidHeartbeat =
+        typeof readySession.heartbeatIntervalSeconds === 'number' &&
+        Number.isFinite(readySession.heartbeatIntervalSeconds) &&
+        readySession.heartbeatIntervalSeconds > 0;
+      const hasValidLeaseExpiry =
+        typeof readySession.leaseExpiresAt === 'string' &&
+        readySession.leaseExpiresAt.trim().length > 0;
+
+      if (!hasValidHeartbeat || !hasValidLeaseExpiry) {
+        throw new Error(
+          `Live session ${returnedSessionId} readiness contract violation: invalid lease metadata`,
+        );
       }
 
       runtime.dispatch({

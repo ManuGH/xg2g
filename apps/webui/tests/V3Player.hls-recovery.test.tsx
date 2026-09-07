@@ -123,7 +123,8 @@ describe('V3Player hls.js decode recovery', () => {
           return jsonResponse(url, 200, {
             state: 'READY',
             playbackUrl,
-            heartbeatIntervalSeconds: 1
+            heartbeatIntervalSeconds: 1,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
           });
         }
         if (sessionStatusCalls === 2) {
@@ -132,7 +133,8 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeatIntervalSeconds: 1
+          heartbeatIntervalSeconds: 1,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         });
       }
 
@@ -245,7 +247,8 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeatIntervalSeconds: 1
+          heartbeatIntervalSeconds: 1,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         });
       }
 
@@ -374,7 +377,8 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeatIntervalSeconds: 1
+          heartbeatIntervalSeconds: 1,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         });
       }
 
@@ -512,7 +516,8 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeatIntervalSeconds: 1
+          heartbeatIntervalSeconds: 1,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         });
       }
 
@@ -637,7 +642,8 @@ describe('V3Player hls.js decode recovery', () => {
         return jsonResponse(url, 200, {
           state: 'READY',
           playbackUrl,
-          heartbeatIntervalSeconds: 1
+          heartbeatIntervalSeconds: 1,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
         });
       }
 

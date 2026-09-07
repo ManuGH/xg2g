@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { StrictMode, Suspense, useLayoutEffect, useState } from 'react';
+import { StrictMode, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackController } from './usePlaybackController';
@@ -355,5 +355,163 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
     });
 
     expect(executed).toHaveLength(0);
+  });
+
+  it('handles startLive initiated inside effect across StrictMode double-mount simulation', async () => {
+    let callCount = 0;
+    const stopCalls: string[] = [];
+    const transport: LiveSessionTransport = {
+      fetchStreamInfo: vi.fn().mockResolvedValue({
+        status: 200,
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token-default',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'token-default' },
+        },
+        headers: new Headers(),
+      }),
+      postStartIntent: vi.fn().mockImplementation(async () => {
+        callCount++;
+        return {
+          status: 200,
+          data: { sessionId: `s${callCount}` },
+          headers: new Headers(),
+        };
+      }),
+      waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+        sessionId,
+        playbackUrl: `http://test/${sessionId}.m3u8`,
+        heartbeatIntervalSeconds: 5,
+        leaseExpiresAt: '2026-09-07T22:00:00Z',
+      })),
+      postStopIntent: vi.fn().mockImplementation(async ({ sessionId }) => {
+        stopCalls.push(sessionId);
+      }),
+    };
+
+    let controllerRef: any = null;
+
+    function TestComponent() {
+      const { controller } = usePlaybackController(
+        transport,
+        createInitialState,
+        () => {},
+      );
+      controllerRef = controller;
+
+      useEffect(() => {
+        void controller.startLive({ serviceRef: 'live-channel' });
+      }, [controller]);
+
+      return <div>Active</div>;
+    }
+
+    await act(async () => {
+      render(
+        <StrictMode>
+          <TestComponent />
+        </StrictMode>,
+      );
+    });
+
+    expect(controllerRef).not.toBeNull();
+    // In React StrictMode, effect runs in pass 1 and is immediately torn down by cleanup 1 (dispose),
+    // cleanly aborting pass 1 during preflight before start intent network request.
+    // Pass 2 runs after activate(), establishing the active live session without leaks or orphan collisions.
+    expect(callCount).toBe(1);
+    expect(controllerRef.getActiveSessionId()).toBe('s1');
+    expect(controllerRef.getInFlightStartsCount()).toBe(0);
+  });
+
+  it('handles in-flight session when component unmounts and re-mounts while waiting for ready', async () => {
+    let callCount = 0;
+    const stopCalls: string[] = [];
+    let resolveReadyS1!: (value: any) => void;
+    const readyS1Promise = new Promise((resolve) => {
+      resolveReadyS1 = resolve;
+    });
+
+    const transport: LiveSessionTransport = {
+      fetchStreamInfo: vi.fn().mockResolvedValue({
+        status: 200,
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token-default',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'token-default' },
+        },
+        headers: new Headers(),
+      }),
+      postStartIntent: vi.fn().mockImplementation(async () => {
+        callCount++;
+        return {
+          status: 200,
+          data: { sessionId: `s${callCount}` },
+          headers: new Headers(),
+        };
+      }),
+      waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => {
+        if (sessionId === 's1') {
+          await readyS1Promise;
+        }
+        return {
+          sessionId,
+          playbackUrl: `http://test/${sessionId}.m3u8`,
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
+        };
+      }),
+      postStopIntent: vi.fn().mockImplementation(async ({ sessionId }) => {
+        stopCalls.push(sessionId);
+      }),
+    };
+
+    let controllerRef: any = null;
+
+    function TestComponent() {
+      const { controller } = usePlaybackController(
+        transport,
+        createInitialState,
+        () => {},
+      );
+      controllerRef = controller;
+
+      useEffect(() => {
+        void controller.startLive({ serviceRef: 'live-channel' });
+      }, [controller]);
+
+      return <div>Active</div>;
+    }
+
+    let unmountFn!: () => void;
+    await act(async () => {
+      const rendered = render(<TestComponent />);
+      unmountFn = rendered.unmount;
+    });
+
+    // Wait for pass 1 to execute preflight and postStartIntent
+    await vi.waitFor(() => {
+      expect(callCount).toBe(1);
+    });
+
+    // Unmount the component while pass 1 is waiting for ready: controller.dispose() is called
+    await act(async () => {
+      unmountFn();
+      // Now s1 was adopted or in-flight when unmount happened; resolve its ready promise
+      resolveReadyS1({});
+    });
+
+    // Re-mount the component: controller.activate() and new pass starts
+    await act(async () => {
+      render(<TestComponent />);
+    });
+
+    await vi.waitFor(() => {
+      expect(callCount).toBe(2);
+      expect(controllerRef.getActiveSessionId()).toBe('s2');
+    });
+
+    expect(controllerRef.getInFlightStartsCount()).toBe(0);
+    // Orphan session s1 must have been stopped
+    expect(stopCalls).toContain('s1');
   });
 });
