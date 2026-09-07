@@ -53,7 +53,18 @@ func TestAcceptance_AFullChunkRoundTripsInsideTheDeadline(t *testing.T) {
 	}
 	defer func() { _ = core.Close() }()
 
-	chunk := make([]byte, normalizer.DefaultConfig().StagingBufferCapacity)
+	// Whole packets, which is the only shape a core is ever given: MasterRing
+	// refuses anything else before the core is reached, and both GoCore and the
+	// Rust core refuse it themselves.
+	//
+	// The staging buffer's default capacity is 4 MiB, which is not a multiple of
+	// 188 - it is a memory size, not a packet count. Measuring with it unrounded
+	// timed a chunk the ring cannot produce, and only ran at all because the v2
+	// peer answered by counting bytes rather than reading them. With something
+	// behind the socket actually parsing, this is the first version of this
+	// measurement that measures the thing it names.
+	capacity := normalizer.DefaultConfig().StagingBufferCapacity
+	chunk := make([]byte, capacity/mediafacts.TSPacketSize*mediafacts.TSPacketSize)
 	const rounds = 200
 
 	// Not measured: the first exchange also pays for whatever the core does once.
