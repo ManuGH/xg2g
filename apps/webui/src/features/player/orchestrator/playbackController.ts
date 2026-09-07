@@ -587,7 +587,14 @@ export function createPlaybackController(
         inFlightStarts.delete(attempt.attemptId);
         if (!attempt.cancelled && !attempt.settled) {
           attempt.settled = true;
-          attempt.rejectPublic(new Error(`Start failed with status ${startRes.status} or missing sessionId`));
+          attempt.rejectPublic(
+            new PlaybackHttpError(
+              `Start failed with status ${startRes.status} or missing sessionId`,
+              startRes.status,
+              startRes.data,
+              startRes.headers,
+            ),
+          );
         }
         flushPendingAdoptionCandidates();
         return;

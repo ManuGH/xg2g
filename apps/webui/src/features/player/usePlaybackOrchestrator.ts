@@ -1520,6 +1520,38 @@ export function usePlaybackOrchestrator(
           if (err.traceId) {
             mergeSessionPlaybackTrace({ requestId: err.traceId });
           }
+        }
+
+        if (
+          err instanceof Error &&
+          (err.message.includes('missing sessionId') ||
+            err.message.includes('missing or invalid sessionId'))
+        ) {
+          const reqId = err instanceof PlaybackHttpError ? err.requestId : undefined;
+          reportPlaybackFailure(
+            normalizePlayerError(
+              {
+                title: t('player.sessionFailed'),
+                detail: 'Intent response missing or invalid sessionId.',
+                requestId: reqId,
+              },
+              {
+                fallbackTitle: t('player.sessionFailed'),
+              },
+            ),
+            {
+              source: 'backend',
+              failureClass: 'session',
+              code: 'MALFORMED_INTENT',
+              retryable: false,
+              recoverable: false,
+            },
+          );
+          setStatus('error');
+          return;
+        }
+
+        if (err instanceof PlaybackHttpError) {
 
           if (err.status === 401 || err.status === 403) {
             if (err.status === 401) {

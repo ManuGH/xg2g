@@ -147,6 +147,52 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     });
   });
 
+  it('renders session failed surface when intent response returns 202 without sessionId', async () => {
+    const response = (
+      status: number,
+      body: Record<string, unknown> = {},
+      headers: Record<string, string> = {}
+    ) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      url: 'http://localhost/api/v3/intents',
+      headers: {
+        get: (key: string) => headers[key] ?? headers[key.toLowerCase()] ?? null
+      },
+      json: async () => body,
+      text: async () => JSON.stringify(body)
+    });
+
+    (globalThis.fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/live/stream-info')) {
+        return Promise.resolve(
+          response(200, {
+            mode: 'hlsjs',
+            requestId: 'live-decision-no-session',
+            playbackDecisionToken: 'live-token-no-session',
+            decision: { reasons: ['direct_stream_match'] }
+          })
+        );
+      }
+
+      if (url.includes('/intents')) {
+        const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+        if (parsed?.type === 'stream.start') {
+          return Promise.resolve(response(202, { status: 'accepted' }));
+        }
+        return Promise.resolve(response(200, {})); // stream.stop
+      }
+
+      return Promise.resolve(response(200, {}));
+    });
+
+    render(<V3Player autoStart={true} channel={{ id: 'ch-no-session', serviceRef: '1:0:1:nosess...' } as any} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/player\.sessionFailed|Session failed/i)).toBeInTheDocument();
+    });
+  });
+
   it('handles 401/403 Authentication Failure', async () => {
     (sdk.postRecordingPlaybackInfo as any).mockResolvedValue({
       error: { title: 'Unauthorized' },
