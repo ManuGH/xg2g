@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
@@ -145,6 +146,18 @@ type Core interface {
 	// is never asked again. That includes a result that is well-formed but
 	// incomplete, because a core that consumed less than it was given has moved
 	// past bytes the caller is about to throw away.
+	//
+	// A successful return is not by itself a result a caller may commit. The
+	// result says what it covers, and a caller may act only on the fields that
+	// coverage includes - see ParseCoverage. The two questions are separate:
+	//
+	//	did the call succeed          the error
+	//	is the answer complete enough  the coverage
+	//
+	// MasterRing requires ParseCoverageComplete before committing anything. A
+	// narrower result exists to let a second implementation be compared against
+	// this one during the media-core migration, and cannot be committed as
+	// stream truth.
 	Ingest(ctx context.Context, startOffset int64, data []byte) (ParseResult, error)
 
 	// SetTargetProgram selects which program of a multi-program transport is
@@ -202,8 +215,65 @@ type Event struct {
 	Joinable bool
 }
 
+// ParseCoverage says how much of a ParseResult is authoritative.
+//
+// It exists because a core may legitimately answer about part of what this
+// package describes. During the media-core migration the Rust core reads PSI and
+// nothing else: its PAT and PMT answers are real, and its RandomAccess,
+// Scrambling and parameter-set fields are not answers at all - they are the
+// fields of a struct nobody filled in.
+//
+// Without this the two are indistinguishable. A caller reading Facts.RandomAccess
+// from a PSI-only result would find a zero value that means "no entry point
+// seen", which is a statement, when the truth is "this core was never asked".
+// Absence has to be said out loud, because the zero value of every field this
+// package has is also a legitimate value of that field.
+//
+// So the zero value here is Unknown and fails closed. A result that never had a
+// coverage set is not a complete result that forgot to say so; it is a result
+// from something that does not know about this field, and a caller that requires
+// completeness must refuse it.
+type ParseCoverage uint8
+
+const (
+	// ParseCoverageUnknown is the zero value: a result whose coverage was never
+	// stated. Nothing may be read from it.
+	ParseCoverageUnknown ParseCoverage = iota
+
+	// ParseCoveragePSIOnly means the PSI-scoped fields are authoritative and the
+	// rest are absent: ProcessedThroughOffset, the PSI events, the PAT and PMT
+	// facts, the audio declarations and ActivePSI. Everything else in Facts is
+	// unfilled and must not be read.
+	ParseCoveragePSIOnly
+
+	// ParseCoverageComplete means every field of ParseResult is an answer. This
+	// is what GoCore returns and what a caller committing stream truth requires.
+	ParseCoverageComplete
+)
+
+// String names the coverage for an error message. Deliberately not a Stringer
+// over a range check: an unknown numeric value is reported as itself, because a
+// wire decoder that let one through is exactly what this would be diagnosing.
+func (c ParseCoverage) String() string {
+	switch c {
+	case ParseCoverageUnknown:
+		return "unknown"
+	case ParseCoveragePSIOnly:
+		return "psi-only"
+	case ParseCoverageComplete:
+		return "complete"
+	default:
+		return fmt.Sprintf("ParseCoverage(%d)", uint8(c))
+	}
+}
+
 // ParseResult is what one chunk meant.
 type ParseResult struct {
+	// Coverage says which of the fields below are answers. A caller must read no
+	// field this does not cover, and a caller committing stream truth must
+	// require ParseCoverageComplete - see the Core contract.
+	Coverage ParseCoverage
+
 	// ProcessedThroughOffset is the offset one past the last byte interpreted. A
 	// core that consumed less than it was given must say so here; the caller
 	// rejects the chunk rather than committing bytes whose meaning it does not
@@ -222,6 +292,11 @@ type ParseResult struct {
 	// PSI carries the tables in force for a caller that has to deliver them,
 	// uninterpreted, ahead of an entry point.
 	PSI ActivePSI
+}
+
+// Covers reports whether every field of a ParseResult is an answer.
+func (r ParseResult) Covers(want ParseCoverage) bool {
+	return r.Coverage == want
 }
 
 // ActivePSI is the accepted PAT and PMT sections of the current program.
@@ -502,6 +577,11 @@ func (c *GoCore) result(through int64) ParseResult {
 	events := make([]Event, len(c.events))
 	copy(events, c.events)
 	return ParseResult{
+		// This core reads everything this package describes, so every field
+		// below is an answer. Stated on every result rather than assumed by the
+		// caller: what changed in the migration is that a core answering about
+		// less than this now exists.
+		Coverage:               ParseCoverageComplete,
 		ProcessedThroughOffset: through,
 		Events:                 events,
 		Facts:                  c.Snapshot(),
