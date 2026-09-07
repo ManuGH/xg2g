@@ -140,9 +140,8 @@ export function createPlaybackController(
   }
 
   function retireAndStopSession(sessionId: string): Promise<void> {
-    const existing = activeStopPromises.get(sessionId);
-    if (existing) {
-      return existing;
+    if (stoppingSessionIds.has(sessionId)) {
+      return activeStopPromises.get(sessionId) ?? Promise.resolve();
     }
 
     stoppingSessionIds.add(sessionId);
@@ -160,22 +159,46 @@ export function createPlaybackController(
       Promise.resolve(
         transport.postStopIntent({ sessionId, signal: stopController.signal }),
       ).then(
-          () => {
-            if (timer) clearTimeout(timer);
-            resolve();
-          },
-          () => {
-            // Best effort: remote stop failure does not block client teardown
-            if (timer) clearTimeout(timer);
-            resolve();
-          },
-        );
+        () => {
+          if (timer) clearTimeout(timer);
+          resolve();
+        },
+        () => {
+          // Best effort: remote stop failure does not block client teardown
+          if (timer) clearTimeout(timer);
+          resolve();
+        },
+      );
     }).finally(() => {
       activeStopPromises.delete(sessionId);
     });
 
     activeStopPromises.set(sessionId, promise);
     return promise;
+  }
+
+  function handleObsoleteSession(sessionId: string | null | undefined): void {
+    if (!sessionId) {
+      return;
+    }
+
+    if (stoppingSessionIds.has(sessionId)) {
+      return;
+    }
+
+    if (sessionId === activeSessionId) {
+      return;
+    }
+
+    if (hasEligibleInFlightStarts()) {
+      pendingAdoptionCandidates.set(sessionId, {
+        sessionId,
+        heldAt: Date.now(),
+      });
+      return;
+    }
+
+    void retireAndStopSession(sessionId);
   }
 
   function flushPendingAdoptionCandidates(): void {
@@ -266,61 +289,36 @@ export function createPlaybackController(
         throw new Error(`Preflight failed with status ${preflightRes.status}`);
       }
 
-      // 2. Intent payload shaping & 409 conflict retries
-      const preflightData = preflightRes.data as Record<string, unknown> | null;
-      const hasPreflightContract = Boolean(
-        preflightData &&
-        typeof preflightData === 'object' &&
-        (preflightData.mode || preflightData.decision || preflightData.playbackDecisionToken)
-      );
+      // 2. Normalize preflight contract & shape intent payload
+      const caps = (capabilities ?? {}) as Record<string, unknown>;
+      const preferredHlsEngine =
+        caps.preferredHlsEngine === 'native' || caps.preferredHlsEngine === 'hlsjs'
+          ? caps.preferredHlsEngine
+          : 'hlsjs';
 
-      let intentBody: unknown;
+      const normalized = normalizePlaybackInfo(preflightRes.data, {
+        surface: 'live',
+        preferredHlsEngine,
+      });
 
-      if (hasPreflightContract && preflightData) {
-        const caps = (capabilities ?? {}) as Record<string, unknown>;
-        const preferredHlsEngine =
-          caps.preferredHlsEngine === 'native' || caps.preferredHlsEngine === 'hlsjs'
-            ? caps.preferredHlsEngine
-            : 'hlsjs';
-
-        const normalized = normalizePlaybackInfo(preflightData, {
-          surface: 'live',
-          preferredHlsEngine,
-        });
-
-        if (normalized.kind === 'blocked') {
-          throw new Error(normalized.failure.message || 'Playback blocked');
-        }
-
-        const liveMode = normalized.playback.mode;
-        const decisionToken = normalized.session.decisionToken;
-
-        if (decisionToken) {
-          intentBody = buildLiveIntentBody(
-            serviceRef,
-            decisionToken,
-            caps as any,
-            liveMode,
-            typeof params.requestedDuration === 'number' ? params.requestedDuration : undefined,
-          );
-        } else {
-          intentBody = {
-            type: 'stream.start',
-            serviceRef,
-            ...(capabilities ? { client: capabilities } : {}),
-            params: {
-              playback_mode: liveMode,
-              ...(typeof params.requestedDuration === 'number' ? { dvr_window_sec: String(params.requestedDuration) } : {}),
-            },
-          };
-        }
-      } else {
-        intentBody = {
-          type: 'stream.start',
-          serviceRef,
-          ...(capabilities ? { client: capabilities } : {}),
-        };
+      if (normalized.kind === 'blocked') {
+        throw new Error(normalized.failure.message || 'Playback blocked');
       }
+
+      const liveMode = normalized.playback.mode;
+      const decisionToken = normalized.session.decisionToken;
+
+      if (!decisionToken) {
+        throw new Error('Playback preflight did not provide a decision token');
+      }
+
+      const intentBody = buildLiveIntentBody(
+        serviceRef,
+        decisionToken,
+        caps as any,
+        liveMode,
+        typeof params.requestedDuration === 'number' ? params.requestedDuration : undefined,
+      );
 
       const intentReqController = new AbortController();
       const intentReqTimer = setTimeout(() => {
@@ -337,30 +335,38 @@ export function createPlaybackController(
         clearTimeout(intentReqTimer);
       }
 
-      for (let retry = 0; retry < MAX_LEASE_CONFLICT_RETRIES && startRes.status === 409; retry++) {
-        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) break;
-        const retryAfterHeader = startRes.headers.get('Retry-After');
-        const retrySec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 0;
-        const waitMs = Number.isFinite(retrySec) && retrySec > 0
-          ? Math.min(retrySec * 1_000, MAX_LEASE_CONFLICT_WAIT_MS)
-          : DEFAULT_LEASE_CONFLICT_WAIT_MS;
+      // Handle 409 Conflict with one retry after 2s backoff
+      if (startRes.status === 409) {
+        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
+          if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
+          inFlightStarts.delete(attempt.attemptId);
+          flushPendingAdoptionCandidates();
+          return;
+        }
 
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, waitMs);
-          attempt.abortController.signal.addEventListener('abort', () => {
-            clearTimeout(timer);
-            resolve();
-          });
-        });
-
-        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) break;
-
-        const retryController = new AbortController();
-        const retryTimer = setTimeout(() => retryController.abort(), startSettlementTimeoutMs);
+        const retryTimer = setTimeout(() => {}, 2000);
         try {
+          await new Promise<void>((resolve, reject) => {
+            const t = setTimeout(resolve, 2000);
+            attempt.abortController.signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(t);
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true },
+            );
+          });
+
+          if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
+            inFlightStarts.delete(attempt.attemptId);
+            flushPendingAdoptionCandidates();
+            return;
+          }
+
           startRes = await transport.postStartIntent({
             body: intentBody,
-            signal: retryController.signal,
+            signal: attempt.abortController.signal,
           });
         } finally {
           clearTimeout(retryTimer);
@@ -376,10 +382,8 @@ export function createPlaybackController(
       returnedSessionId = (startRes.data as any)?.sessionId?.trim() || null;
 
       if (isDisposed) {
-        if (returnedSessionId) {
-          void retireAndStopSession(returnedSessionId);
-        }
         inFlightStarts.delete(attempt.attemptId);
+        handleObsoleteSession(returnedSessionId);
         return;
       }
 
@@ -388,16 +392,6 @@ export function createPlaybackController(
         if (!attempt.cancelled && !attempt.settled) {
           attempt.settled = true;
           attempt.rejectPublic(new Error(`Start failed with status ${startRes.status} or missing sessionId`));
-        }
-        flushPendingAdoptionCandidates();
-        return;
-      }
-
-      // Invariant: If settlement deadline already elapsed, S cannot be activated!
-      if (attempt.ineligibleForAdoption) {
-        inFlightStarts.delete(attempt.attemptId);
-        if (returnedSessionId && returnedSessionId !== activeSessionId) {
-          void retireAndStopSession(returnedSessionId);
         }
         flushPendingAdoptionCandidates();
         return;
@@ -414,21 +408,11 @@ export function createPlaybackController(
         return;
       }
 
-      // Case: Obsolete attempt returned (superseded / cancelled)
-      if (attempt.cancelled) {
+      // If attempt is obsolete (ineligible for adoption, cancelled, or settled)
+      if (attempt.ineligibleForAdoption || attempt.cancelled || attempt.settled) {
         inFlightStarts.delete(attempt.attemptId);
-        if (returnedSessionId === activeSessionId) {
-          flushPendingAdoptionCandidates();
-          return;
-        }
-        if (hasEligibleInFlightStarts()) {
-          pendingAdoptionCandidates.set(returnedSessionId, {
-            sessionId: returnedSessionId,
-            heldAt: Date.now(),
-          });
-        } else {
-          void retireAndStopSession(returnedSessionId);
-        }
+        handleObsoleteSession(returnedSessionId);
+        flushPendingAdoptionCandidates();
         return;
       }
 
@@ -457,10 +441,8 @@ export function createPlaybackController(
         return;
       }
 
-      if (attempt.cancelled) {
-        if (activeSessionId !== returnedSessionId) {
-          void retireAndStopSession(returnedSessionId);
-        }
+      if (attempt.cancelled || attempt.ineligibleForAdoption || attempt.settled) {
+        handleObsoleteSession(returnedSessionId);
         return;
       }
 
@@ -480,10 +462,8 @@ export function createPlaybackController(
       flushPendingAdoptionCandidates();
 
       if (returnedSessionId) {
-        if (attempt.cancelled || attempt.ineligibleForAdoption) {
-          if (activeSessionId !== returnedSessionId) {
-            void retireAndStopSession(returnedSessionId);
-          }
+        if (attempt.cancelled || attempt.ineligibleForAdoption || attempt.settled) {
+          handleObsoleteSession(returnedSessionId);
         } else {
           if (activeSessionId === returnedSessionId) {
             activeSessionId = null;
@@ -543,6 +523,10 @@ export function createPlaybackController(
 
     attempt.settlementTimer = setTimeout(() => {
       attempt.ineligibleForAdoption = true;
+      inFlightStarts.delete(attemptId);
+      if (currentAttempt === attempt) {
+        currentAttempt = null;
+      }
       flushPendingAdoptionCandidates();
       if (!attempt.settled) {
         attempt.settled = true;

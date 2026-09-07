@@ -67,7 +67,11 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
     return {
       fetchStreamInfo: vi.fn().mockResolvedValue({
         status: 200,
-        data: {},
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token-default',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'token-default' },
+        },
         headers: new Headers(),
       } satisfies StreamInfoResult),
 
@@ -882,6 +886,62 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
       await c.startLive({ serviceRef: 'A', capabilities: { preferredHlsEngine: 'hlsjs' } as any });
       expect((t.postStartIntent as any).mock.calls[0]![0].body.params.playback_mode).toBe('hlsjs');
+    });
+
+    it('holds late S from expired A while eligible B is still awaiting its reply', async () => {
+      const a = defer<StartIntentResult>();
+      const b = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockReturnValueOnce(a.promise)
+          .mockReturnValueOnce(b.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'same' });
+      await vi.advanceTimersByTimeAsync(10_001);
+      void c.startLive({ serviceRef: 'same' }).catch(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      a.resolve(accepted('S'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
+
+    it.each([null, {}, { requestId: 'broken-response' }])(
+      'rejects malformed preflight %j before any start intent',
+      async (data) => {
+        const t = createMockTransport({
+          fetchStreamInfo: vi.fn().mockResolvedValue({ status: 200, data, headers: new Headers() } as any),
+        });
+        const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+        await c.startLive({ serviceRef: 'A' }).catch(() => {});
+        expect(t.postStartIntent).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not repeat a completed stop when obsolete readiness later completes', async () => {
+      const d = defer<SessionReadyResult>();
+      const t = createMockTransport({
+        waitForReady: vi.fn().mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      await c.stop();
+      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+      d.resolve({ sessionId: 'S', playbackUrl: '/hls/index.m3u8' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires timed-out protocol entries even if transport never settles', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValue(defer().promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(c.getInFlightStartsCount()).toBe(0);
     });
   });
 });
