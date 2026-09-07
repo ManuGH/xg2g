@@ -120,8 +120,54 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
       </StrictMode>,
     );
 
-    // In StrictMode, child's useLayoutEffect runs and dispatches synchronously.
-    expect(executed.length).toBeGreaterThanOrEqual(1);
+    // In StrictMode, child's useLayoutEffect runs on mount, unmounts, and runs on remount.
+    // Each dispatch of intent.stop.requested produces 3 teardown commands (6 total).
+    // Both setups must execute synchronously.
+    expect(executed).toHaveLength(6);
+    expect(executed[0]!.type).toBe('command.timeline.end_attempt');
+    expect(executed[3]!.type).toBe('command.timeline.end_attempt');
+  });
+
+  it('updates command executor dynamically without losing controller instance', () => {
+    const transport = createDummyTransport();
+    const firstLog: string[] = [];
+    const secondLog: string[] = [];
+
+    function TestComponent({ useSecond }: { useSecond: boolean }) {
+      const { dispatch } = usePlaybackController(
+        transport,
+        createInitialState,
+        useSecond
+          ? () => secondLog.push('second')
+          : () => firstLog.push('first'),
+      );
+
+      return (
+        <button
+          onClick={() =>
+            dispatch({
+              type: 'intent.stop.requested',
+              epoch: 1,
+              reason: 'user_stop',
+              notifyClose: false,
+            })
+          }
+        >
+          Dispatch
+        </button>
+      );
+    }
+
+    const { rerender } = render(<TestComponent useSecond={false} />);
+    screen.getByRole('button', { name: 'Dispatch' }).click();
+    expect(firstLog).toEqual(['first', 'first', 'first']);
+    expect(secondLog).toEqual([]);
+
+    // Rerender with new executor
+    rerender(<TestComponent useSecond={true} />);
+    screen.getByRole('button', { name: 'Dispatch' }).click();
+    expect(firstLog).toEqual(['first', 'first', 'first']);
+    expect(secondLog).toEqual(['second', 'second', 'second']);
   });
 
   it('calls controller.dispose on real component unmount', () => {
@@ -150,37 +196,55 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
     expect(disposeSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves controller across Suspense hiding and revealing', async () => {
+  it('preserves controller across Suspense hiding and revealing when owner is inside boundary', async () => {
     const transport = createDummyTransport();
     let controllerRef: any = null;
     let setSuspendedFn: ((s: boolean) => void) | null = null;
+    const executed: PlaybackCommand[] = [];
 
     let resolveSuspendingPromise: () => void;
     const suspendingPromise = new Promise<void>((r) => {
       resolveSuspendingPromise = r;
     });
 
-    function MaybeSuspendingComponent({ suspended }: { suspended: boolean }) {
+    function SuspendingOwner({ suspended }: { suspended: boolean }) {
+      const { controller, dispatch } = usePlaybackController(
+        transport,
+        createInitialState,
+        (cmd) => executed.push(cmd),
+      );
+      controllerRef = controller;
+
       if (suspended) {
         throw suspendingPromise;
       }
-      return <div>Content</div>;
+
+      return (
+        <div>
+          <span>Content</span>
+          <button
+            onClick={() =>
+              dispatch({
+                type: 'intent.stop.requested',
+                epoch: 1,
+                reason: 'user_stop',
+                notifyClose: false,
+              })
+            }
+          >
+            Stop
+          </button>
+        </div>
+      );
     }
 
     function App() {
       const [suspended, setSuspended] = useState(false);
       setSuspendedFn = setSuspended;
 
-      const { controller } = usePlaybackController(
-        transport,
-        createInitialState,
-        () => {},
-      );
-      controllerRef = controller;
-
       return (
         <Suspense fallback={<div>Loading...</div>}>
-          <MaybeSuspendingComponent suspended={suspended} />
+          <SuspendingOwner suspended={suspended} />
         </Suspense>
       );
     }
@@ -191,7 +255,7 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
 
     expect(screen.getByText('Content')).toBeInTheDocument();
 
-    // Suspend
+    // Suspend: SuspendingOwner throws inside Suspense
     act(() => {
       setSuspendedFn!(true);
     });
@@ -208,5 +272,9 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
 
     expect(screen.getByText('Content')).toBeInTheDocument();
     expect(disposeSpy).not.toHaveBeenCalled();
+
+    // Dispatching after reveal must execute commands synchronously
+    screen.getByRole('button', { name: 'Stop' }).click();
+    expect(executed.length).toBeGreaterThanOrEqual(1);
   });
 });

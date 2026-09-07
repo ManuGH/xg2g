@@ -111,17 +111,67 @@ export function createDefaultLiveSessionTransport({
 
     async waitForReady({ sessionId, signal, budgetMs = 60_000 }) {
       const deadline = Date.now() + budgetMs;
+      const pollIntervalMs = 500;
+      const requestTimeoutMs = 5_000;
+
       while (Date.now() < deadline) {
         if (signal?.aborted) {
           throw new DOMException('Aborted', 'AbortError');
         }
-        const res = await fetchFn(`${apiBase}/sessions/${sessionId}/status`, {
-          headers: authHeaders(false),
-          signal,
-        });
+
+        const pollController = new AbortController();
+        const pollTimer = setTimeout(() => pollController.abort(), requestTimeoutMs);
+        const onAbort = () => pollController.abort();
+        signal?.addEventListener('abort', onAbort);
+
+        let res: Response;
+        try {
+          res = await fetchFn(`${apiBase}/sessions/${sessionId}`, {
+            headers: authHeaders(false),
+            signal: pollController.signal,
+          });
+        } catch (_err) {
+          if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+          }
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          continue;
+        } finally {
+          clearTimeout(pollTimer);
+          signal?.removeEventListener('abort', onAbort);
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`Session authorization failed (HTTP ${res.status})`);
+        }
+
+        if (res.status === 410) {
+          let reason = 'expired';
+          try {
+            const problem = await res.json();
+            reason = problem?.reason || problem?.state || reason;
+          } catch {
+            // body parse fallback
+          }
+          throw new Error(`Session ${sessionId} expired or gone: ${reason}`);
+        }
+
         if (res.ok) {
-          const data: any = await res.json();
-          if (data?.phase === 'ready' || data?.status === 'ready' || data?.playbackUrl) {
+          let data: any;
+          try {
+            data = await res.json();
+          } catch {
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+            continue;
+          }
+
+          const state = data?.state;
+          if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED') {
+            const reason = data?.reason ? ` (${data.reason})` : '';
+            throw new Error(`Session ${sessionId} reached terminal state ${state}${reason}`);
+          }
+
+          if ((state === 'READY' || state === 'DRAINING') && (data?.playbackUrl || data?.streamUrl)) {
             return {
               sessionId,
               playbackUrl: data.playbackUrl ?? data.streamUrl,
@@ -132,7 +182,8 @@ export function createDefaultLiveSessionTransport({
             };
           }
         }
-        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
       throw new Error(`Timeout waiting for session readiness: ${sessionId}`);
     },
@@ -142,7 +193,7 @@ export function createDefaultLiveSessionTransport({
         ...authHeaders(true),
         'Content-Type': 'application/json',
       };
-      await fetchFn(`${apiBase}/intents`, {
+      const res = await fetchFn(`${apiBase}/intents`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -151,6 +202,9 @@ export function createDefaultLiveSessionTransport({
         }),
         signal,
       });
+      if (!res.ok) {
+        throw new Error(`Stop intent failed with HTTP ${res.status}`);
+      }
     },
   };
 }

@@ -687,4 +687,102 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
     expect(stoppedIds).toContain('session-B');
     expect(stoppedIds).not.toContain('session-C');
   });
+
+  describe('Codex Review Invariant & Regression Contracts', () => {
+    function accepted(sessionId: string) {
+      return { status: 200, data: { sessionId }, headers: new Headers() };
+    }
+
+    it('settles the public start promise at its deadline', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValue(defer().promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let settled = false;
+      void c.startLive({ serviceRef: 'A' }).then(() => { settled = true; }, () => { settled = true; });
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(settled).toBe(true);
+    });
+
+    it('keeps a submitted intent independent from local cancellation', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValue(defer().promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      const signal = (t.postStartIntent as any).mock.calls[0]![0].signal;
+      await c.stop();
+      expect(signal.aborted).toBe(false);
+    });
+
+    it('does not adopt a late accepted response after dispose', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockReturnValue(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      c.dispose();
+      d.resolve(accepted('S'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.waitForReady).not.toHaveBeenCalled();
+      expect(t.postStopIntent).toHaveBeenCalled();
+    });
+
+    it('cleans an already ready previous session when switching channels', async () => {
+      const t = createMockTransport();
+      (t.postStartIntent as any)
+        .mockResolvedValueOnce(accepted('A'))
+        .mockResolvedValueOnce(accepted('B'));
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      await c.startLive({ serviceRef: 'A' });
+      await c.startLive({ serviceRef: 'B' });
+      expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'A' }));
+    });
+
+    it('does not stop the adopted session when obsolete readiness completes', async () => {
+      const d = defer<SessionReadyResult>();
+      const t = createMockTransport({
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({ sessionId, playbackUrl: '/hls/index.m3u8' })),
+      });
+      (t.waitForReady as any).mockReturnValueOnce(d.promise);
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      void c.startLive({ serviceRef: 'A' });
+      await vi.advanceTimersByTimeAsync(0);
+      await c.startLive({ serviceRef: 'B' });
+      d.resolve({ sessionId: 'session-default-1', playbackUrl: '/hls/index.m3u8' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+      expect(c.getActiveSessionId()).toBe('session-default-1');
+    });
+
+    it('waits for the remote response or stop budget before stop settles', async () => {
+      const d = defer<void>();
+      const t = createMockTransport({
+        postStopIntent: vi.fn().mockReturnValue(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      await c.startLive({ serviceRef: 'A' });
+      let settled = false;
+      void c.stop().then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+    });
+
+    it('settles a pending readiness start when disposed', async () => {
+      const t = createMockTransport({
+        waitForReady: vi.fn().mockReturnValue(defer().promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(0);
+      c.dispose();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(result).toEqual({ status: 'cancelled', reason: 'user_stop' });
+    });
+  });
 });
