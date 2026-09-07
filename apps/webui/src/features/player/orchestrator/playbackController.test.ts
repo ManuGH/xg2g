@@ -1047,5 +1047,204 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toMatch(/409/);
     });
+
+    it('allows two valid five-second lease waits before a successful third request', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(3);
+      expect(result?.status).toBe('ready');
+    });
+
+    it('allows three capped five-second lease waits before a successful fourth request', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(4);
+      expect(result?.status).toBe('ready');
+    });
+
+    it('accommodates slower preflight combined with conflict retries', async () => {
+      const preflightDeferred = defer<any>();
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockReturnValue(preflightDeferred.promise),
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValueOnce(conflict('5'))
+          .mockResolvedValueOnce(accepted('S')),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+      await vi.advanceTimersByTimeAsync(4_000);
+      preflightDeferred.resolve({
+        status: 200,
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token',
+          decision: { mode: 'direct_stream' },
+        },
+        headers: new Headers(),
+      });
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(2);
+      expect(result?.status).toBe('ready');
+    });
+
+    it('reports defined timeout cancellation outcome on overall budget exhaustion rather than superseded', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi
+          .fn()
+          .mockResolvedValue(conflict('5')),
+      });
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 12_000,
+      });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+      await vi.advanceTimersByTimeAsync(12_001);
+      expect(result).toEqual({ status: 'cancelled', reason: 'timeout' });
+      expect(c.getInFlightStartsCount()).toBe(0);
+    });
+
+    it('handles near-deadline submitted reply: stops orphan session when no eligible start remains', async () => {
+      const preflightDeferred = defer<any>();
+      const postDeferred = defer<StartIntentResult>();
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockReturnValue(preflightDeferred.promise),
+        postStartIntent: vi.fn().mockReturnValue(postDeferred.promise),
+      });
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 10_000,
+      });
+      let result: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { result = r; }, (e) => { result = e; });
+
+      // Preflight takes 8 seconds
+      await vi.advanceTimersByTimeAsync(8_000);
+      preflightDeferred.resolve({
+        status: 200,
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token',
+          decision: { mode: 'direct_stream' },
+        },
+        headers: new Headers(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // POST is submitted at t = 8s
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+
+      // Overall budget (10s) expires at t = 10_001ms
+      await vi.advanceTimersByTimeAsync(2_001);
+      expect(result).toEqual({ status: 'cancelled', reason: 'timeout' });
+      expect(c.getInFlightStartsCount()).toBe(0);
+
+      // Near-deadline reply returns at t = 11s (3s after POST submitted)
+      postDeferred.resolve(accepted('S_ORPHAN'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'S_ORPHAN' }));
+    });
+
+    it('handles near-deadline submitted reply: holds candidate for adoption by subsequent eligible attempt', async () => {
+      const aPreflightDeferred = defer<any>();
+      const aDeferred = defer<StartIntentResult>();
+      const bDeferred = defer<StartIntentResult>();
+      let postCallCount = 0;
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(async ({ serviceRef }) => {
+          if (serviceRef === 'A') {
+            return aPreflightDeferred.promise;
+          }
+          return {
+            status: 200,
+            data: {
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-b',
+              decision: { mode: 'direct_stream' },
+            },
+            headers: new Headers(),
+          };
+        }),
+        postStartIntent: vi.fn().mockImplementation(async () => {
+          postCallCount++;
+          return postCallCount === 1 ? aDeferred.promise : bDeferred.promise;
+        }),
+      });
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 10_000,
+      });
+      let aResult: any = null;
+      void c.startLive({ serviceRef: 'A' }).then((r) => { aResult = r; }, (e) => { aResult = e; });
+
+      // Preflight takes 8 seconds
+      await vi.advanceTimersByTimeAsync(8_000);
+      aPreflightDeferred.resolve({
+        status: 200,
+        data: {
+          mode: 'direct_stream',
+          playbackDecisionToken: 'token-a',
+          decision: { mode: 'direct_stream' },
+        },
+        headers: new Headers(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Attempt A submits POST at 8s
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+
+      // Overall budget expires at t = 10_001ms
+      await vi.advanceTimersByTimeAsync(2_001);
+      expect(aResult).toEqual({ status: 'cancelled', reason: 'timeout' });
+      expect(c.getInFlightStartsCount()).toBe(0);
+
+      // Now start attempt B at 10.5s (fresh budget)
+      let bResult: any = null;
+      void c.startLive({ serviceRef: 'B' }).then((r) => { bResult = r; }, (e) => { bResult = e; });
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Attempt A's late response returns S at 11s (3s after POST submitted)
+      aDeferred.resolve(accepted('S_ADOPT'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Must NOT stop S_ADOPT because eligible B is in flight
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+      expect(c.getPendingAdoptionCandidatesCount()).toBe(1);
+
+      // Attempt B returns the same session S_ADOPT
+      bDeferred.resolve(accepted('S_ADOPT'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bResult?.status).toBe('ready');
+      expect(c.getActiveSessionId()).toBe('S_ADOPT');
+      expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
+      expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
   });
 });

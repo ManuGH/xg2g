@@ -31,13 +31,14 @@ export interface StartLiveParams {
 
 export type StartLiveResult =
   | { status: 'ready'; sessionId: string; session: SessionReadyResult }
-  | { status: 'cancelled'; reason: 'superseded' | 'user_stop' };
+  | { status: 'cancelled'; reason: 'superseded' | 'user_stop' | 'timeout' };
 
 export interface PlaybackControllerOptions {
   transport: LiveSessionTransport;
   createInitialState: () => PlaybackDomainState;
   executeCommand?: PlaybackCommandExecutor;
-  startSettlementTimeoutMs?: number; // default 10_000ms
+  startSettlementTimeoutMs?: number; // default 30_000ms (overall start/retry budget)
+  httpRequestTimeoutMs?: number;     // default 10_000ms (per-request HTTP timeout)
   stopRequestTimeoutMs?: number;     // default 3_000ms
 }
 
@@ -45,7 +46,7 @@ interface InFlightStart {
   attemptId: string;
   epoch: number;
   cancelled: boolean;
-  cancelReason: 'superseded' | 'user_stop' | null;
+  cancelReason: 'superseded' | 'user_stop' | 'timeout' | null;
   ineligibleForAdoption: boolean;
   receivedResponse: boolean;
   settled: boolean;
@@ -89,11 +90,36 @@ export interface PlaybackController {
   getPendingAdoptionCandidatesCount(): number;
 }
 
-export const DEFAULT_START_SETTLEMENT_TIMEOUT_MS = 10_000;
+export const DEFAULT_HTTP_REQUEST_TIMEOUT_MS = 10_000;
+export const DEFAULT_START_SETTLEMENT_TIMEOUT_MS = 30_000;
 export const DEFAULT_STOP_REQUEST_TIMEOUT_MS = 3_000;
 export const MAX_LEASE_CONFLICT_RETRIES = 3;
 export const DEFAULT_LEASE_CONFLICT_WAIT_MS = 1_000;
 export const MAX_LEASE_CONFLICT_WAIT_MS = 5_000;
+
+function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  timeoutErrorMsg: string,
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new Error(timeoutErrorMsg));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error(timeoutErrorMsg));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (res) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(res);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
 
 export function createPlaybackController(
   options: PlaybackControllerOptions,
@@ -102,9 +128,14 @@ export function createPlaybackController(
     transport,
     createInitialState,
     executeCommand = () => {},
-    startSettlementTimeoutMs = DEFAULT_START_SETTLEMENT_TIMEOUT_MS,
     stopRequestTimeoutMs = DEFAULT_STOP_REQUEST_TIMEOUT_MS,
   } = options;
+
+  const overallStartBudgetMs =
+    options.startSettlementTimeoutMs ?? DEFAULT_START_SETTLEMENT_TIMEOUT_MS;
+  const httpRequestTimeoutMs =
+    options.httpRequestTimeoutMs ??
+    Math.min(DEFAULT_HTTP_REQUEST_TIMEOUT_MS, overallStartBudgetMs);
 
   let executor: PlaybackCommandExecutor | null = executeCommand;
 
@@ -271,12 +302,29 @@ export function createPlaybackController(
 
     try {
       // 1. Preflight
-      const preflightRes = await transport.fetchStreamInfo({
-        serviceRef,
-        capabilities,
-        profileHeaders,
-        signal: attempt.abortController.signal,
-      });
+      const preflightController = new AbortController();
+      const preflightTimer = setTimeout(() => {
+        preflightController.abort();
+      }, httpRequestTimeoutMs);
+      const onPreflightAttemptAbort = () => preflightController.abort();
+      attempt.abortController.signal.addEventListener('abort', onPreflightAttemptAbort, { once: true });
+
+      let preflightRes: any;
+      try {
+        preflightRes = await raceWithSignal(
+          transport.fetchStreamInfo({
+            serviceRef,
+            capabilities,
+            profileHeaders,
+            signal: preflightController.signal,
+          }),
+          preflightController.signal,
+          'Preflight request timed out or aborted',
+        );
+      } finally {
+        clearTimeout(preflightTimer);
+        attempt.abortController.signal.removeEventListener('abort', onPreflightAttemptAbort);
+      }
 
       if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
         if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
@@ -325,13 +373,17 @@ export function createPlaybackController(
         const intentReqController = new AbortController();
         const intentReqTimer = setTimeout(() => {
           intentReqController.abort();
-        }, startSettlementTimeoutMs);
+        }, httpRequestTimeoutMs);
 
         try {
-          startRes = await transport.postStartIntent({
-            body: intentBody,
-            signal: intentReqController.signal,
-          });
+          startRes = await raceWithSignal(
+            transport.postStartIntent({
+              body: intentBody,
+              signal: intentReqController.signal,
+            }),
+            intentReqController.signal,
+            'Start intent request timed out',
+          );
         } finally {
           clearTimeout(intentReqTimer);
         }
@@ -475,7 +527,13 @@ export function createPlaybackController(
 
       if (!attempt.cancelled && !attempt.settled) {
         attempt.settled = true;
-        attempt.rejectPublic(err);
+        if (err instanceof Error && err.message.includes('timed out')) {
+          attempt.cancelled = true;
+          attempt.cancelReason = 'timeout';
+          attempt.resolvePublic({ status: 'cancelled', reason: 'timeout' });
+        } else {
+          attempt.rejectPublic(err);
+        }
       }
     } finally {
       inFlightStarts.delete(attempt.attemptId);
@@ -492,6 +550,10 @@ export function createPlaybackController(
 
     // Invalidate previous attempt promptly
     if (currentAttempt && !currentAttempt.settled) {
+      if (currentAttempt.settlementTimer) {
+        clearTimeout(currentAttempt.settlementTimer);
+        currentAttempt.settlementTimer = null;
+      }
       currentAttempt.cancelled = true;
       currentAttempt.cancelReason = 'superseded';
       currentAttempt.abortController.abort();
@@ -523,17 +585,20 @@ export function createPlaybackController(
     };
 
     attempt.settlementTimer = setTimeout(() => {
+      attempt.cancelled = true;
+      attempt.cancelReason = 'timeout';
       attempt.ineligibleForAdoption = true;
       inFlightStarts.delete(attemptId);
       if (currentAttempt === attempt) {
         currentAttempt = null;
       }
+      attempt.abortController.abort();
       flushPendingAdoptionCandidates();
       if (!attempt.settled) {
         attempt.settled = true;
-        attempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+        attempt.resolvePublic({ status: 'cancelled', reason: 'timeout' });
       }
-    }, startSettlementTimeoutMs);
+    }, overallStartBudgetMs);
 
     currentAttempt = attempt;
     inFlightStarts.set(attemptId, attempt);
@@ -569,6 +634,10 @@ export function createPlaybackController(
     const doStop = async () => {
       // 1. Synchronous attempt invalidation & prompt promise settle
       if (currentAttempt && !currentAttempt.settled) {
+        if (currentAttempt.settlementTimer) {
+          clearTimeout(currentAttempt.settlementTimer);
+          currentAttempt.settlementTimer = null;
+        }
         currentAttempt.cancelled = true;
         currentAttempt.cancelReason = 'user_stop';
         currentAttempt.abortController.abort();
@@ -578,6 +647,10 @@ export function createPlaybackController(
       currentAttempt = null;
 
       for (const start of inFlightStarts.values()) {
+        if (start.settlementTimer) {
+          clearTimeout(start.settlementTimer);
+          start.settlementTimer = null;
+        }
         if (!start.cancelled) {
           start.cancelled = true;
           start.cancelReason = 'user_stop';

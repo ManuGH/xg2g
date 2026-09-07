@@ -22,6 +22,7 @@ import type {
 
 export interface UsePlaybackControllerOptions {
   startSettlementTimeoutMs?: number;
+  httpRequestTimeoutMs?: number;
   stopRequestTimeoutMs?: number;
 }
 
@@ -65,6 +66,7 @@ export function usePlaybackController(
         }
       },
       startSettlementTimeoutMs: options?.startSettlementTimeoutMs,
+      httpRequestTimeoutMs: options?.httpRequestTimeoutMs,
       stopRequestTimeoutMs: options?.stopRequestTimeoutMs,
     }),
   );
