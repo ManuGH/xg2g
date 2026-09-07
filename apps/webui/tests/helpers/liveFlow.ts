@@ -70,6 +70,7 @@ export function mockLiveFlowFetch(options: LiveFlowOptions = {}): FetchMock {
           requestId: sessionRequestId,
           playbackUrl,
           heartbeatIntervalSeconds: heartbeatInterval,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
           trace: sessionTrace,
         }),
       );

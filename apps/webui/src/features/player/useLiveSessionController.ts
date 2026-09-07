@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
-import { createSession, getSessionEvents, type IntentRequest, type PlaybackEngineErrorContext } from '../../client-ts';
+import { createSession, getSessionEvents, type IntentRequest, type PlaybackEngineErrorContext, type SessionResponse } from '../../client-ts';
 import { setClientAuthToken, throwOnClientResultError } from '../../services/clientWrapper';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import type {
@@ -21,6 +21,25 @@ import {
   SESSION_REQUEST_TIMEOUT_MS,
   timeoutSignal,
 } from './utils/requestTimeout';
+import type { SessionReadyResult } from './orchestrator/liveSessionTransport';
+
+export function toV3SessionSnapshot(session: SessionReadyResult): V3SessionSnapshot {
+  return {
+    sessionId: session.sessionId,
+    state: 'READY',
+    requestId: session.requestId,
+    mode: session.mode as SessionResponse['mode'],
+    durationSeconds: typeof session.durationSeconds === 'number' ? session.durationSeconds : undefined,
+    reason: typeof session.reason === 'string' ? (session.reason as SessionResponse['reason']) : undefined,
+    reasonDetail: typeof session.reasonDetail === 'string' ? session.reasonDetail : undefined,
+    profileReason: typeof session.profileReason === 'string' ? session.profileReason : undefined,
+    trace: typeof session.trace === 'object' && session.trace !== null ? (session.trace as SessionResponse['trace']) : undefined,
+    windowKind: typeof session.windowKind === 'string' ? (session.windowKind as SessionResponse['windowKind']) : undefined,
+    seekableStartSeconds: typeof session.seekableStartSeconds === 'number' ? session.seekableStartSeconds : undefined,
+    seekableEndSeconds: typeof session.seekableEndSeconds === 'number' ? session.seekableEndSeconds : undefined,
+    liveEdgeSeconds: typeof session.liveEdgeSeconds === 'number' ? session.liveEdgeSeconds : undefined,
+  };
+}
 
 // Info code for client session-timeline snapshots on the feedback channel
 // (namespace: 2xx info codes in usePlaybackEngine; never triggers fallback).
@@ -69,6 +88,7 @@ interface LiveSessionController {
   recoverSessionCookie: (source: string) => Promise<boolean>;
   primePlaybackAuth: (playbackUrl: string, source: string) => Promise<void>;
   setActiveSessionId: (sessionId: string | null) => void;
+  activateLiveSession: (session: SessionReadyResult) => void;
   clearSessionLeaseState: () => void;
   sendStopIntent: (sessionId: string | null, force?: boolean) => Promise<void>;
   refreshSessionSnapshot: (sessionId?: string | null) => Promise<V3SessionStatusResponse | null>;
@@ -284,6 +304,26 @@ export function useLiveSessionController({
     sessionIdRef.current = nextSessionId;
     setSessionId(nextSessionId);
   }, []);
+
+  const activateLiveSession = useCallback((session: SessionReadyResult) => {
+    sessionIdRef.current = session.sessionId;
+    stopSentRef.current = null;
+    setSessionId(session.sessionId);
+    setConnectionLost(false);
+    if (hasValidHeartbeatInterval(session.heartbeatIntervalSeconds)) {
+      setHeartbeatInterval(session.heartbeatIntervalSeconds);
+    }
+    if (session.leaseExpiresAt) {
+      setLeaseExpiresAt(session.leaseExpiresAt);
+    }
+    if (session.mode) {
+      setPlaybackMode(session.mode === 'LIVE' ? 'LIVE' : 'VOD');
+    }
+    if (typeof session.durationSeconds === 'number' && session.durationSeconds > 0) {
+      setDurationSeconds(session.durationSeconds);
+    }
+    onSessionSnapshot?.(toV3SessionSnapshot(session));
+  }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
 
   const clearSessionLeaseState = useCallback(() => {
     sessionIdRef.current = null;
@@ -919,6 +959,7 @@ export function useLiveSessionController({
     recoverSessionCookie,
     primePlaybackAuth,
     setActiveSessionId,
+    activateLiveSession,
     clearSessionLeaseState,
     sendStopIntent,
     refreshSessionSnapshot,

@@ -105,11 +105,16 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
     'targetProfile' in record ||
     'ffmpegPlan' in record ||
     'stopReason' in record ||
-    'stopClass' in record
+    'stopClass' in record ||
+    'requestedIntent' in record ||
+    'resolvedIntent' in record
   )) {
     return record as unknown as PlaybackTraceContract;
   }
 
+  if ('data' in record && record.data) {
+    return extractPlaybackTrace(record.data);
+  }
   if ('body' in record) {
     return extractPlaybackTrace(record.body);
   }
@@ -158,7 +163,8 @@ export function resolveAutoTranscodeCodecs(snapshot: CapabilitySnapshot | null):
     out.push('hevc');
   }
 
-  if (snapshot.videoCodecs.includes('h264') || out.length === 0) {
+  const videoCodecs = Array.isArray(snapshot.videoCodecs) ? snapshot.videoCodecs : [];
+  if (videoCodecs.includes('h264') || out.length === 0) {
     out.push('h264');
   }
 

@@ -102,6 +102,7 @@ describe('V3Player live DVR semantics', () => {
             windowKind: 'live-dvr',
             playbackUrl: 'http://example.com/live-dvr.m3u8',
             heartbeatIntervalSeconds: 600,
+            leaseExpiresAt: '2026-09-07T22:00:00Z',
             durationSeconds: 30,
             seekableStartSeconds: 90,
             seekableEndSeconds: 120,
