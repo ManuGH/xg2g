@@ -141,6 +141,16 @@ jobs:
           go test -race -count=1 \
             ./internal/stream/ingest/remotecore
 
+          # And the PSI differential specifically has to have RUN, not merely
+          # not failed. It skips without a usable core, and a skip is reported
+          # as a pass by `go test` - so the line it prints when it has actually
+          # compared every call is what this job checks for. Without this, a
+          # change that made the core unstartable would turn the whole gate
+          # green.
+          go test -count=1 -v -run TestPSIDifferential \
+            ./internal/stream/ingest/remotecore | tee /tmp/psi-differential.log
+          grep -q 'real-process differential: .* calls, all exact' /tmp/psi-differential.log
+
   build:
     name: Release build (${{ matrix.target }})
     runs-on: ubuntu-latest
