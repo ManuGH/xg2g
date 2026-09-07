@@ -55,10 +55,13 @@ import {
 import { normalizePlayerError } from '../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
+import { translatePlaybackReason } from './utils/sessionReason';
 import {
   createInitialPlaybackDomainState,
 } from './orchestrator/playbackMachine';
-import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
+import { usePlaybackController } from './orchestrator/usePlaybackController';
+import { PlaybackHttpError } from './orchestrator/playbackController';
+import { createDefaultLiveSessionTransport, type SessionReadyResult } from './orchestrator/liveSessionTransport';
 import type { PlaybackCommand, PlaybackStopReason } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
@@ -88,7 +91,6 @@ import {
 } from './orchestrator/nativePlaybackHelpers';
 import { resolveSessionPhaseFromState } from './orchestrator/sessionPhase';
 import { formatDvrPositionDisplay } from './orchestrator/dvrPositionDisplay';
-import { useEpochManager } from './orchestrator/useEpochManager';
 import { usePlaybackStateSetters } from './orchestrator/usePlaybackStateSetters';
 import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCleanup';
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
@@ -115,8 +117,6 @@ import {
   buildBlockedContractFailure,
   buildContractConsumedTelemetry,
   buildLeaseBusyFailure,
-  buildLiveIntentBody,
-  buildMissingDecisionTokenFailure,
   buildMissingOutputUrlFailure,
   buildRecordingGoneFailure,
   buildSessionExpiredFailure,
@@ -126,10 +126,6 @@ import {
   resolveLiveEngineFromMode,
   resolveResumeStateFromContract,
 } from './orchestrator/startupHelpers';
-
-const MAX_LEASE_CONFLICT_RETRIES = 3;
-const DEFAULT_LEASE_CONFLICT_WAIT_MS = 1_000;
-const MAX_LEASE_CONFLICT_WAIT_MS = 5_000;
 
 
 export interface PlaybackOrchestratorRefs {
@@ -268,34 +264,64 @@ export function usePlaybackOrchestrator(
     }
   }, [sRef]);
 
-  const executeCommandRef = useRef<((cmd: PlaybackCommand) => void) | null>(null);
+  const executeCommandRef = useRef<((cmd: PlaybackCommand) => void | Promise<unknown>) | null>(null);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
-  const [playbackState, dispatchPlayback] = usePlaybackMachineRuntime(
+
+  const apiBase = useMemo(() => {
+    return getApiBaseUrl();
+  }, []);
+
+  const authHeaders = useCallback((hasBody: boolean = false): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }, [token]);
+
+  const recoverSessionCookieRef = useRef<(source: string) => Promise<boolean>>(async () => false);
+
+  const transport = useMemo(
+    () => createDefaultLiveSessionTransport({
+      apiBase,
+      authHeaders: (hasBody?: boolean) => authHeaders(Boolean(hasBody)),
+      recoverSessionCookie: (source: string) => recoverSessionCookieRef.current(source),
+    }),
+    [apiBase, authHeaders],
+  );
+
+  const playbackEpochRef = useRef(1);
+
+  const {
+    controller,
+    state: playbackState,
+    dispatch: dispatchPlayback,
+  } = usePlaybackController(
+    transport,
     () => createInitialPlaybackDomainState(requestedDuration),
     useCallback((command) => {
       if (executeCommandRef.current) {
-        executeCommandRef.current(command);
+        return executeCommandRef.current(command);
       }
     }, []),
+    useMemo(() => ({
+      requestedDuration,
+      onAttemptStarted: (epoch: number) => {
+        playbackEpochRef.current = epoch;
+        handleAttemptStarted(epoch);
+      },
+    }), [requestedDuration, handleAttemptStarted]),
   );
+
+  const allocatePlaybackEpoch = useCallback(() => {
+    const epoch = controller.allocatePlaybackEpoch();
+    playbackEpochRef.current = epoch;
+    return epoch;
+  }, [controller]);
+  const beginPlaybackAttempt = controller.beginPlaybackAttempt;
+  const isStalePlaybackEpoch = controller.isStalePlaybackEpoch;
+
   const playbackStateRef = useRef(playbackState);
-  const {
-    playbackEpochRef,
-    acceptedPlaybackEpochRef,
-    acceptedSessionEpochRef,
-    allocatePlaybackEpoch,
-    beginPlaybackAttempt,
-    markPlaybackStopped,
-    allocateSessionEpoch,
-    isStalePlaybackEpoch,
-    isStaleSessionEpoch,
-  } = useEpochManager({
-    initialEpoch: playbackState.epoch,
-    trackedEpoch: playbackState.epoch,
-    dispatchPlayback,
-    requestedDuration,
-    onAttemptStarted: handleAttemptStarted,
-  });
+  playbackStateRef.current = playbackState;
 
   const {
     traceId,
@@ -408,7 +434,7 @@ export function usePlaybackOrchestrator(
   } = usePlaybackStateSetters({
     dispatchPlayback,
     playbackStateRef,
-    acceptedPlaybackEpochRef,
+    acceptedPlaybackEpochRef: playbackEpochRef,
     setShowErrorDetails,
   });
 
@@ -527,33 +553,28 @@ export function usePlaybackOrchestrator(
     if (sessionPhase && activeLiveSessionId) {
       dispatchPlayback({
         type: 'normative.session.phase.changed',
-        playbackEpoch: acceptedPlaybackEpochRef.current,
-        sessionEpoch: acceptedSessionEpochRef.current,
+        playbackEpoch: playbackStateRef.current.epoch.playback,
+        sessionEpoch: playbackStateRef.current.epoch.session,
         phase: sessionPhase,
         requestId: session.requestId ?? null,
       });
     }
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
-  }, [acceptedPlaybackEpochRef, acceptedSessionEpochRef, dispatchPlayback, mergeSessionPlaybackTrace, setTraceId]);
+  }, [dispatchPlayback, mergeSessionPlaybackTrace, setTraceId]);
 
-  // Explicitly static/memoized apiBase
-  const apiBase = useMemo(() => {
-    return getApiBaseUrl();
-  }, []);
   const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
     sessionIdRef,
     connectionLost,
-    authHeaders,
     reportError,
     reportSessionTimeline,
     ensureSessionCookie,
-    setActiveSessionId: setActiveSessionIdBase,
+    activateLiveSession: activateLiveSessionBase,
     clearSessionLeaseState: clearSessionLeaseStateBase,
-    sendStopIntent,
-    waitForSessionReady
+    waitForSessionReady,
+    recoverSessionCookie,
   } = useLiveSessionController({
     token,
     apiBase,
@@ -569,6 +590,13 @@ export function usePlaybackOrchestrator(
     onSessionSnapshot: handleSessionSnapshot,
   });
 
+  recoverSessionCookieRef.current = recoverSessionCookie;
+
+  const activateLiveSession = useCallback((session: SessionReadyResult) => {
+    activeLiveSessionIdRef.current = session.sessionId;
+    activateLiveSessionBase(session);
+  }, [activateLiveSessionBase]);
+
   const reportTimelineSnapshot = useCallback((reason: string, events: string[]): Promise<void> => {
     telemetry.emit('ui.player.timeline', { reason, events });
     const completion = reportSessionTimeline(reason, events);
@@ -581,11 +609,6 @@ export function usePlaybackOrchestrator(
     sessionTimeline.endAttempt('attempt_replaced');
     await reportTimelineSnapshot('attempt_replaced', sessionTimeline.describe());
   }, [reportTimelineSnapshot]);
-
-  const setActiveSessionId = useCallback((nextSessionId: string | null) => {
-    activeLiveSessionIdRef.current = nextSessionId;
-    setActiveSessionIdBase(nextSessionId);
-  }, [setActiveSessionIdBase]);
 
   // Stabilize callback refs for the native trace poll so the effect never
   // re-creates its interval when authHeaders or mergeSessionPlaybackTrace are
@@ -883,7 +906,6 @@ export function usePlaybackOrchestrator(
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
-    const activeSessionId = sessionIdRef.current;
     const activeVideo = videoRef.current;
     const hasNativePlayback = isNativePlaybackHost && nativePlaybackState?.activeRequest;
 
@@ -899,7 +921,6 @@ export function usePlaybackOrchestrator(
     if (hasNativePlayback) {
       stopNativePlayback();
     }
-    void sendStopIntent(activeSessionId, true);
   }, [
     clearPlaybackSelection,
     clearVodFetch,
@@ -907,8 +928,6 @@ export function usePlaybackOrchestrator(
     hlsRef,
     isNativePlaybackHost,
     nativePlaybackState,
-    sendStopIntent,
-    sessionIdRef,
     videoRef,
   ]);
 
@@ -928,7 +947,6 @@ export function usePlaybackOrchestrator(
   }, [hlsRef, sessionIdRef, videoRef]);
 
   const teardownActivePlayback = useCallback(async (): Promise<void> => {
-    const activeSessionId = sessionIdRef.current;
     const hadNativePlayback = isNativePlaybackHost && Boolean(nativePlaybackState?.activeRequest);
     const hadActivePlayback = hasActivePlayback();
 
@@ -942,9 +960,6 @@ export function usePlaybackOrchestrator(
       resetPlaybackEngine();
       await sleep(75);
     }
-    if (activeSessionId) {
-      await sendStopIntent(activeSessionId);
-    }
     clearSessionLeaseState();
     resetChromeState();
   }, [
@@ -953,13 +968,11 @@ export function usePlaybackOrchestrator(
     clearVodFetch,
     clearVodRetry,
     hasActivePlayback,
-    resetChromeState,
-    resetPlaybackEngine,
-    sendStopIntent,
-    sessionIdRef,
-    sleep,
     isNativePlaybackHost,
     nativePlaybackState,
+    resetChromeState,
+    resetPlaybackEngine,
+    sleep,
   ]);
 
   const prepareForNextPlaybackAttempt = useCallback(async (
@@ -984,13 +997,14 @@ export function usePlaybackOrchestrator(
     id: string,
     profileOverride?: string,
     startOffsetMs?: number,
+    epochOverride?: number,
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
     const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
-    const playbackEpoch = allocatePlaybackEpoch();
+    const playbackEpoch = typeof epochOverride === 'number' ? epochOverride : allocatePlaybackEpoch();
     await prepareForNextPlaybackAttempt();
-    if (!isLifecycleActive(lifecycleGeneration)) return;
+    if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
     beginPlaybackAttempt(playbackEpoch, 'VOD', 'building', true, profileForAttempt !== 'auto');
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
@@ -1291,14 +1305,19 @@ export function usePlaybackOrchestrator(
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
-    if (startIntentInFlight.current) {
-      pendingStartRef.current = { refToUse, profileOverride, lifecycleGeneration };
-      return;
-    }
+
+    const attemptEpoch = allocatePlaybackEpoch();
+    playbackEpochRef.current = attemptEpoch;
+
     const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
     startIntentInFlight.current = true;
     userPauseIntentRef.current = false;
     applyAutoplayMute();
+
+    const initialMode: 'LIVE' | 'VOD' = recordingId || (src && requestedDuration) ? 'VOD' : 'LIVE';
+    const initialStatus: PlayerStatus = src ? 'buffering' : 'starting';
+    const hasSessionIntent = Boolean(recordingId || (!src && (refToUse || sRef || '').trim()));
+    beginPlaybackAttempt(attemptEpoch, initialMode, initialStatus, hasSessionIntent, profileForAttempt !== 'auto');
 
     // Re-resolve at call time to avoid stale closure from useMemo/useCallback caching.
     const nativeHost = supportsManagedNativePlayback(resolveHostEnvironment());
@@ -1310,10 +1329,9 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
         }
         if (nativeHost) {
-          const playbackEpoch = allocatePlaybackEpoch();
           await prepareForNextPlaybackAttempt(Boolean(nativePlaybackState?.activeRequest));
-          if (!isLifecycleActive(lifecycleGeneration)) return;
-          beginPlaybackAttempt(playbackEpoch, 'VOD', 'starting', true, profileForAttempt !== 'auto');
+          if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
+          beginPlaybackAttempt(attemptEpoch, 'VOD', 'starting', true, profileForAttempt !== 'auto');
           beginNativePlayback({
             kind: 'recording',
             recordingId,
@@ -1324,16 +1342,15 @@ export function usePlaybackOrchestrator(
           });
           return;
         }
-        await startRecordingPlayback(recordingId, profileForAttempt);
+        await startRecordingPlayback(recordingId, profileForAttempt, undefined, attemptEpoch);
         return;
       }
 
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
-        const playbackEpoch = allocatePlaybackEpoch();
         await prepareForNextPlaybackAttempt();
-        if (!isLifecycleActive(lifecycleGeneration)) return;
-        beginPlaybackAttempt(playbackEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering', false, false);
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
+        beginPlaybackAttempt(attemptEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering', false, false);
         const srcEngine = resolvePreferredHlsEngine();
         playHls(src, srcEngine);
         setActiveHlsEngine(srcEngine);
@@ -1342,18 +1359,17 @@ export function usePlaybackOrchestrator(
 
       const ref = (refToUse || sRef || '').trim();
       if (!ref) {
+        beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', false, false);
         setStatus('error');
         const failure = buildServiceRefRequiredFailure(t);
         reportPlaybackFailure(failure.appError, failure.options);
         return;
       }
-      const playbackEpoch = allocatePlaybackEpoch();
+
       await prepareForNextPlaybackAttempt();
-      if (!isLifecycleActive(lifecycleGeneration)) return;
-      beginPlaybackAttempt(playbackEpoch, 'LIVE', 'starting', true, profileForAttempt !== 'auto');
-      let newSessionId: string | null = null;
-      let sessionEpoch = 0;
-      clearPlayerError();
+      if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
+
+      beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', true, profileForAttempt !== 'auto');
 
       if (nativeHost) {
         beginNativePlayback({
@@ -1367,12 +1383,11 @@ export function usePlaybackOrchestrator(
         return;
       }
 
+      clearPlayerError();
+
       try {
         await ensureSessionCookie();
-        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
-
-        let liveMode: VodStreamMode = null;
-        let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
 
         const [requestCaps, networkProbe] = await Promise.all([
           gatherPlaybackCapabilitiesForPlayer('live'),
@@ -1382,9 +1397,9 @@ export function usePlaybackOrchestrator(
           requestCaps,
           gatherPlaybackClientContext(),
           networkProbe,
-
         );
-        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
+
         const automaticRequestProfile = resolvePlaybackRequestProfile(
           requestContext,
           requestCaps,
@@ -1400,426 +1415,337 @@ export function usePlaybackOrchestrator(
           probeKind: networkProbe?.kind,
           network: requestContext.network,
         });
-        const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
+
         setCapabilitySnapshot(requestCaps);
-        // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
-        const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
-          method: 'POST',
-          headers: {
-            ...(authHeaders(true) as Record<string, string>),
-            ...buildPlaybackProfileHeaders(requestProfile),
-          },
-          body: JSON.stringify({
-            serviceRef: ref,
-            capabilities: requestCaps
-          })
-        });
-        const { json: liveInfoJson } = await readResponseBody(liveResponse);
-        const liveError = (!liveResponse.ok) ? liveInfoJson as any : null;
-        const liveRequestId =
-          (typeof liveInfoJson === 'object' && liveInfoJson !== null && typeof (liveInfoJson as { requestId?: unknown }).requestId === 'string'
-            ? (liveInfoJson as { requestId: string }).requestId
-            : undefined) ||
-          liveResponse.headers.get('X-Request-ID') ||
-          undefined;
-        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
-        if (liveRequestId) {
-          setTraceId(liveRequestId);
-        }
 
-        if (!liveResponse.ok) {
-          const retryAfterHeader = liveResponse.headers.get('Retry-After');
-          const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
-          if (notifyAuthRequiredIfUnauthorizedResponse(liveResponse, 'V3Player.liveStreamInfo')) {
-            setStatus('error');
-            reportPlaybackFailure(normalizePlayerError(liveError ?? {
-              status: 401,
-              title: t('player.authFailed'),
-              requestId: liveRequestId,
-            }, {
-              fallbackTitle: t('player.authFailed'),
-              status: 401,
-              retryable: false,
-            }), {
-              source: 'backend',
-              failureClass: 'auth',
-              code: 'AUTH_DENIED',
-              retryable: false,
-              recoverable: false,
-              terminal: true,
-            });
-            return;
-          }
-          if (liveResponse.status === 403) {
-            setStatus('error');
-            reportPlaybackFailure(normalizePlayerError(liveError ?? {
-              status: 403,
-              title: t('player.forbidden'),
-              requestId: liveRequestId,
-            }, {
-              fallbackTitle: t('player.forbidden'),
-              status: 403,
-              retryable: false,
-            }), {
-              source: 'backend',
-              failureClass: 'auth',
-              code: 'AUTH_DENIED',
-              retryable: false,
-              recoverable: false,
-              terminal: true,
-            });
-            return;
-          }
-          if (liveResponse.status === 410) {
-            setStatus('error');
-            const failure = buildSessionExpiredFailure(t);
-            reportPlaybackFailure(failure.appError, failure.options);
-            return;
-          }
-          throw normalizePlayerError(liveError ?? {
-            status: liveResponse.status,
-            title: `${t('player.apiError')}: ${liveResponse.status}`,
-            requestId: liveRequestId,
-            retryAfterSeconds,
-          }, {
-            fallbackTitle: `${t('player.apiError')}: ${liveResponse.status}`,
-            status: liveResponse.status,
-          });
-        }
-
-        const normalizedContract = normalizePlaybackInfo(liveInfoJson, {
-          surface: 'live',
-          preferredHlsEngine,
+        const startLiveResult = await controller.startLive({
+          serviceRef: ref,
+          epoch: attemptEpoch,
+          capabilities: requestCaps,
+          profileHeaders: buildPlaybackProfileHeaders(requestProfile),
+          requestedDuration,
         });
 
-        debugLog('[V3Player] Normalized live contract:', normalizedContract);
-        recordContractAdvisories(playbackEpoch, normalizedContract.advisory.warnings);
-
-        telemetry.emit('ui.contract.consumed', buildContractConsumedTelemetry(normalizedContract, 'live'));
-
-        if (normalizedContract.observability.requestId) {
-          setTraceId(normalizedContract.observability.requestId);
-        }
-        setPlaybackObservability(resolvePlaybackObservability(
-          normalizedContract.observability.decision,
-          requestCaps.preferredHlsEngine ?? null
-        ));
-
-        if (normalizedContract.kind === 'blocked') {
-          setStatus('error');
-          const failure = buildBlockedContractFailure(normalizedContract, 'live', t);
-          reportPlaybackFailure(failure.appError, failure.options);
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) {
           return;
         }
 
-        liveMode = normalizedContract.playback.mode;
-        dispatchPlayback({
-          type: 'normative.playback.contract.resolved',
-          epoch: playbackEpoch,
-          contract: buildContractState('live', normalizedContract, normalizedContract.playback.outputUrl),
-        });
-
-        const liveDecisionToken = normalizedContract.session.decisionToken;
-        if (!liveDecisionToken) {
-          setStatus('error');
-          const failure = buildMissingDecisionTokenFailure(t);
-          reportPlaybackFailure(failure.appError, failure.options);
-          return;
-        }
-
-        const engineDecision = resolveLiveEngineFromMode(liveMode, requestCaps, resolvePreferredHlsEngineForCapabilities);
-        if ('unsupported' in engineDecision) {
-          setStatus('error');
-          const failure = buildUnsupportedLiveModeFailure(liveMode, t);
-          reportPlaybackFailure(failure.appError, failure.options);
-          return;
-        }
-        liveEngine = engineDecision.engine;
-
-        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
-        sessionEpoch = allocateSessionEpoch(playbackEpoch);
-
-        if (!isLifecycleActive(lifecycleGeneration)) return;
-
-        // A recovery restart can race the previous session's dedup-lease
-        // teardown. Treat 409 as that bounded timing conflict, honoring the
-        // server's Retry-After instead of turning it into a user-visible dead end.
-        let res!: Response;
-        for (let attempt = 0; ; attempt++) {
-          // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
-          res = await fetch(`${apiBase}/intents`, {
-            method: 'POST',
-            headers: authHeaders(true),
-            body: JSON.stringify(intentBody)
-          });
-          if (res.status !== 409 || attempt >= MAX_LEASE_CONFLICT_RETRIES) {
-            break;
-          }
-          const retryAfterSeconds = parseInt(res.headers.get('Retry-After') ?? '', 10);
-          const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-            ? Math.min(retryAfterSeconds * 1_000, MAX_LEASE_CONFLICT_WAIT_MS)
-            : DEFAULT_LEASE_CONFLICT_WAIT_MS;
-          debugWarn('[V3Player] Intent lease still held, waiting', { attempt, waitMs });
-          await sleep(waitMs);
-          if (
-            !isLifecycleActive(lifecycleGeneration)
-            || isStaleSessionEpoch(playbackEpoch, sessionEpoch)
-          ) {
-            return;
-          }
-        }
-        if (!isLifecycleActive(lifecycleGeneration)) {
-          // The request may already have created a backend session while React was
-          // unmounting us. Consume the accepted response only to reap that session;
-          // never publish it into the disposed player state.
-          if (res.ok) {
-            try {
-              const disposedIntentJson: unknown = await res.json();
-              const disposedSessionId =
-                disposedIntentJson && typeof disposedIntentJson === 'object'
-                  && typeof (disposedIntentJson as { sessionId?: unknown }).sessionId === 'string'
-                  ? (disposedIntentJson as { sessionId: string }).sessionId.trim()
-                  : '';
-              if (disposedSessionId) await sendStopIntent(disposedSessionId);
-            } catch {
-              // Best effort only: lifecycle cleanup must not revive UI state.
-            }
+        if (startLiveResult.status === 'cancelled') {
+          if (startLiveResult.reason === 'timeout') {
+            setStatus('error');
+            reportPlaybackFailure(
+              normalizePlayerError(
+                {
+                  title: `${t('player.apiError')}: 408`,
+                  status: 408,
+                  detail: t('player.timeout') || 'Startup timed out',
+                },
+                {
+                  fallbackTitle: t('player.streamFailed'),
+                  status: 408,
+                  retryable: true,
+                },
+              ),
+              {
+                source: 'backend',
+                failureClass: 'session',
+                code: 'TIMEOUT',
+                retryable: true,
+                recoverable: true,
+                terminal: true,
+              },
+            );
           }
           return;
         }
-        if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) return;
 
-        if (res.status === 401 || res.status === 403) {
-          const isUnauthorized = notifyAuthRequiredIfUnauthorizedResponse(res, 'V3Player.startIntent');
-          let errorTitle = isUnauthorized ? t('player.authFailed') : t('player.forbidden');
-          let problemBody: unknown = null;
-          try {
-            const ct = res.headers.get('content-type') || '';
-            if (ct.includes('application/problem+json') || ct.includes('application/json')) {
-              const problem = await res.json();
-              if (problem.title) errorTitle = problem.title;
-              problemBody = problem;
-            }
-          } catch {
-            // Body parse failed – fall through with generic message
-          }
-          setStatus('error');
-          reportPlaybackFailure(normalizePlayerError(problemBody ?? {
-            status: res.status,
-            title: errorTitle,
-          }, {
-            fallbackTitle: errorTitle,
-            status: res.status,
-            retryable: false,
-          }), {
-            source: 'backend',
-            failureClass: 'auth',
-            code:
-              problemBody && typeof problemBody === 'object' && 'code' in problemBody
-                ? ((problemBody as { code?: string }).code ?? 'AUTH_DENIED')
-                : 'AUTH_DENIED',
-            retryable: false,
-            recoverable: false,
-            terminal: true,
-          });
-          return;
-        }
+        const readySession = startLiveResult.session;
+        activateLiveSession(readySession);
+        mergeSessionPlaybackTrace(extractPlaybackTrace(readySession));
 
-        if (!res.ok) {
-          let errorMsg = `${t('player.apiError')}: ${res.status}`;
-          let errorPayload: unknown = null;
-          let errorDetails: string | null = null;
-          try {
-            const { json, text } = await readResponseBody(res);
-            const responseRequestId =
-              (json && typeof json === 'object' ? (json.requestId as string | undefined) : undefined) ||
-              res.headers.get('X-Request-ID') ||
-              undefined;
-
-            if (json && typeof json === 'object') {
-              const title = typeof json.title === 'string' && json.title ? json.title : null;
-              const message = typeof json.message === 'string' && json.message ? json.message : null;
-              if (title) {
-                errorMsg = title;
-              } else if (message) {
-                errorMsg = message;
-              }
-
-              const detailParts: string[] = [];
-              if (typeof json.code === 'string' && json.code) detailParts.push(`code=${json.code}`);
-              if (typeof json.detail === 'string' && json.detail) detailParts.push(json.detail);
-              if (json.details) {
-                detailParts.push(typeof json.details === 'string' ? json.details : JSON.stringify(json.details));
-              }
-              if (responseRequestId) detailParts.push(`requestId=${responseRequestId}`);
-              if (detailParts.length > 0) {
-                errorDetails = detailParts.join(' · ');
-              }
-              errorPayload = {
-                ...json,
-                status: res.status,
-                requestId: responseRequestId,
-              };
-            } else if (text) {
-              errorDetails = text;
-            }
-          } catch (e) {
-            debugWarn("Failed to parse error response", e);
-          }
-          throw normalizePlayerError(errorPayload ?? {
-            status: res.status,
-            title: errorMsg,
-            details: errorDetails,
-          }, {
-            fallbackTitle: errorMsg,
-            fallbackDetail: errorDetails ?? undefined,
-            status: res.status,
-          });
-        }
-
-        // raw-fetch-justified bypasses the generated client, so the
-        // IntentAcceptedResponse arrives as unvalidated JSON. Guard the one
-        // load-bearing field explicitly: sessionId must be a non-empty string
-        // (a non-string truthy value would otherwise slip through `?? null` and
-        // poison the session poll). On violation, surface a typed contract error
-        // carrying the requestId — like the other failures in this flow, not a
-        // bare Error.
-        const intentJson: unknown = await res.json();
-        const intentRecord = intentJson && typeof intentJson === 'object' ? (intentJson as Record<string, unknown>) : null;
-        const intentRequestId =
-          (typeof intentRecord?.requestId === 'string' ? intentRecord.requestId : undefined) ??
-          (res.headers?.get ? res.headers.get('X-Request-ID') : undefined) ??
-          undefined;
-        newSessionId = typeof intentRecord?.sessionId === 'string' ? intentRecord.sessionId.trim() || null : null;
-        if (!isLifecycleActive(lifecycleGeneration)) {
-          if (newSessionId) await sendStopIntent(newSessionId);
-          return;
-        }
-        if (!newSessionId) {
-          throw normalizePlayerError(
-            { title: t('player.sessionFailed'), detail: 'Intent response missing or invalid sessionId.', requestId: intentRequestId },
-            { fallbackTitle: t('player.sessionFailed') },
+        if (startLiveResult.contract) {
+          setPlaybackObservability(
+            resolvePlaybackObservability(
+              startLiveResult.contract.observability.decision,
+              requestCaps.preferredHlsEngine ?? null,
+            ),
           );
-        }
-        if (intentRequestId) setTraceId(intentRequestId);
-        setActiveSessionId(newSessionId);
-        dispatchPlayback({
-          type: 'normative.session.phase.changed',
-          playbackEpoch,
-          sessionEpoch,
-          phase: 'starting',
-          requestId: intentRequestId ?? null,
-        });
-        // From here the backend is tuning + spinning up the transcoder; surface
-        // that as its own startup phase ('priming') so the overlay can separate
-        // "connecting" from "transcoder starting" from "buffering".
-        setStatus('priming');
-        const session = await waitForSessionReady(newSessionId);
-        if (!isLifecycleActive(lifecycleGeneration) || isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
-          await sendStopIntent(newSessionId);
-          return;
+          if (startLiveResult.contract.observability.requestId) {
+            setTraceId(startLiveResult.contract.observability.requestId);
+          }
         }
 
-        dispatchPlayback({
-          type: 'normative.session.phase.changed',
-          playbackEpoch,
-          sessionEpoch,
-          phase: 'ready',
-          requestId: session.requestId ?? intentRequestId ?? null,
-        });
-        setStatus('ready');
-        const streamUrl = session.playbackUrl;
+        if (readySession.trace) {
+          mergeSessionPlaybackTrace(extractPlaybackTrace(readySession.trace));
+        }
+
+        if (readySession.requestId) {
+          setTraceId(readySession.requestId);
+        }
+
+        const streamUrl = readySession.playbackUrl;
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
         }
+
+        const normalizedMode = (readySession.mode as VodStreamMode) ?? 'LIVE';
+        const engineDecision = resolveLiveEngineFromMode(
+          normalizedMode,
+          requestCaps,
+          resolvePreferredHlsEngineForCapabilities,
+        );
+        if ('unsupported' in engineDecision) {
+          setStatus('error');
+          const failure = buildUnsupportedLiveModeFailure(normalizedMode as any, t);
+          reportPlaybackFailure(failure.appError, failure.options);
+          return;
+        }
+        const liveEngine = engineDecision.engine;
+
+        setStatus('ready');
         playHls(streamUrl, liveEngine);
         setActiveHlsEngine(liveEngine);
-
       } catch (err) {
-        if (!isLifecycleActive(lifecycleGeneration)) {
-          if (newSessionId) await sendStopIntent(newSessionId);
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) {
           return;
         }
-        const stalePlayback = isStalePlaybackEpoch(playbackEpoch);
-        const staleSession = sessionEpoch > 0 && isStaleSessionEpoch(playbackEpoch, sessionEpoch);
-        if (stalePlayback || staleSession) {
-          if (newSessionId) {
-            await sendStopIntent(newSessionId);
-          }
-          return;
-        }
-        if (newSessionId) {
-          await sendStopIntent(newSessionId);
-        }
-        if (!newSessionId || sessionIdRef.current === newSessionId) {
-          clearSessionLeaseState();
-        }
+
         debugError(err);
         mergeSessionPlaybackTrace(extractPlaybackTrace(err));
-        reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
-          source: newSessionId ? 'native-host' : 'backend',
-        });
+
+        if (err instanceof PlaybackHttpError) {
+          if (err.requestId) {
+            setTraceId(err.requestId);
+          }
+          if (err.traceId) {
+            mergeSessionPlaybackTrace({ requestId: err.traceId });
+          }
+
+          if (err.status === 401 || err.status === 403) {
+            if (err.status === 401) {
+              notifyAuthRequiredIfUnauthorizedResponse(
+                { status: 401, headers: err.headers } as Response,
+                'V3Player.startIntent',
+              );
+            }
+            const fallbackTitle = err.status === 401 ? t('player.authFailed') : t('player.forbidden');
+            const problemTitle =
+              err.data && typeof err.data === 'object' && typeof (err.data as any).title === 'string' && (err.data as any).title
+                ? (err.data as any).title
+                : fallbackTitle;
+            const problemCode =
+              err.data && typeof err.data === 'object' && typeof (err.data as any).code === 'string' && (err.data as any).code
+                ? (err.data as any).code
+                : 'AUTH_DENIED';
+            setStatus('error');
+            reportPlaybackFailure(
+              normalizePlayerError(
+                err.data ?? {
+                  status: err.status,
+                  title: problemTitle,
+                  requestId: err.requestId,
+                },
+                {
+                  fallbackTitle: problemTitle,
+                  status: err.status,
+                  retryable: false,
+                },
+              ),
+              {
+                source: 'backend',
+                failureClass: 'auth',
+                code: problemCode,
+                retryable: false,
+                recoverable: false,
+                terminal: true,
+              },
+            );
+            return;
+          }
+
+          if (err.status === 410) {
+            const dataObj = (err.data && typeof err.data === 'object' ? err.data : null) as Record<string, unknown> | null;
+            if (dataObj) {
+              mergeSessionPlaybackTrace(extractPlaybackTrace(dataObj));
+            }
+            setStatus('error');
+            const recoveredSessionAuth = Boolean(dataObj?.recoveredSessionAuth);
+            const reason = (dataObj?.reason ?? dataObj?.code) as string | undefined;
+            const reasonDetail = (dataObj?.reason_detail ?? dataObj?.reasonDetail ?? dataObj?.detail) as string | undefined;
+
+            if (String(reason).includes('LEASE_BUSY') || String(reasonDetail).includes('LEASE_BUSY')) {
+              reportPlaybackFailure(
+                normalizePlayerError(
+                  {
+                    status: 410,
+                    title: t('player.leaseBusy'),
+                    requestId: err.requestId,
+                    sessionId: err.sessionId,
+                  },
+                  {
+                    fallbackTitle: t('player.leaseBusy'),
+                    status: 410,
+                    retryable: true,
+                  },
+                ),
+                {
+                  source: 'backend',
+                  failureClass: 'session',
+                  code: 'LEASE_BUSY',
+                  retryable: true,
+                  recoverable: false,
+                },
+              );
+              return;
+            }
+
+            if (recoveredSessionAuth) {
+              const failure = buildSessionExpiredFailure(t);
+              reportPlaybackFailure(failure.appError, failure.options);
+              return;
+            }
+
+            const translatedReason = translatePlaybackReason(reason, reasonDetail, t);
+            const errorTitle = `${t('player.sessionFailed')}: ${translatedReason}`;
+            reportPlaybackFailure(
+              normalizePlayerError(
+                {
+                  ...(typeof err.data === 'object' && err.data !== null ? err.data : {}),
+                  title: errorTitle,
+                  status: 410,
+                  requestId: err.requestId,
+                  sessionId: err.sessionId,
+                },
+                {
+                  fallbackTitle: errorTitle,
+                  status: 410,
+                  retryable: true,
+                },
+              ),
+              {
+                source: 'backend',
+                failureClass: 'session',
+                code: (typeof dataObj?.code === 'string' && dataObj.code) ? dataObj.code : (reason || 'SESSION_GONE'),
+                retryable: true,
+                recoverable: false,
+              },
+            );
+            return;
+          }
+
+          const fallbackTitle = `${t('player.apiError')}: ${err.status}`;
+          let errorTitle = fallbackTitle;
+          let errorCode = `HTTP_${err.status}`;
+          if (err.data && typeof err.data === 'object') {
+            const dataObj = err.data as Record<string, unknown>;
+            if (typeof dataObj.title === 'string' && dataObj.title) {
+              errorTitle = dataObj.title;
+            } else if (typeof dataObj.message === 'string' && dataObj.message) {
+              errorTitle = dataObj.message;
+            }
+            if (typeof dataObj.code === 'string' && dataObj.code) {
+              errorCode = dataObj.code;
+            }
+          }
+          setStatus('error');
+          reportPlaybackFailure(
+            normalizePlayerError(
+              err.data ?? {
+                status: err.status,
+                title: errorTitle,
+                requestId: err.requestId,
+              },
+              {
+                fallbackTitle: errorTitle,
+                status: err.status,
+                retryable: err.status === 409 || err.status >= 500,
+              },
+            ),
+            {
+              source: 'backend',
+              failureClass: 'session',
+              code: errorCode,
+              retryable: err.status === 409 || err.status >= 500,
+              recoverable: true,
+              terminal: true,
+            },
+          );
+          return;
+        }
+
+        reportPlaybackFailure(
+          normalizeRuntimePlaybackError(err, t('player.streamFailed')),
+          {
+            source: 'backend',
+          },
+        );
         setStatus('error');
       }
     } catch (err) {
       if (!isLifecycleActive(lifecycleGeneration)) return;
-      // Safety net for synchronous throws on the paths that run inside this outer try but
-      // outside the live-session try above: the native-host bridge (beginNativePlayback)
-      // throws "Native playback bridge unavailable" when the host shell lacks
-      // startNativePlayback, and the src-path playHls throws "HLS playback engine not
-      // available". startStream is invoked un-awaited (`void startStream(...)` in retry and
-      // the autostart effect), so without this catch the throw becomes an unhandled
-      // rejection and the UI stays pinned on the startup spinner with no error and no retry.
-      // Convert it to a normal failure state like the inner handler does.
       debugError(err);
-      reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
+      reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.streamFailed')), {
         source: 'orchestrator',
       });
       setStatus('error');
     } finally {
       startIntentInFlight.current = false;
-      const pendingStart = pendingStartRef.current;
-      pendingStartRef.current = null;
-      if (pendingStart && isLifecycleActive(pendingStart.lifecycleGeneration)) {
-        queueMicrotask(() => {
-          if (isLifecycleActive(pendingStart.lifecycleGeneration)) {
-            void startStreamRef.current(pendingStart.refToUse, pendingStart.profileOverride);
-          }
-        });
-      }
     }
-  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, automaticProfileMemoryRef, linkProfileRef, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setStatus, setTraceId, sleep, token]);
+  }, [
+    src,
+    recordingId,
+    sRef,
+    explicitProfile,
+    apiBase,
+    clearPlayerError,
+    ensureSessionCookie,
+    mergeSessionPlaybackTrace,
+    playHls,
+    t,
+    startRecordingPlayback,
+    applyAutoplayMute,
+    automaticProfileMemoryRef,
+    linkProfileRef,
+    gatherPlaybackCapabilitiesForPlayer,
+    prepareForNextPlaybackAttempt,
+    resolvePreferredHlsEngine,
+    resolvePreferredHlsEngineForCapabilities,
+    activateLiveSession,
+    requestedDuration,
+    beginNativePlayback,
+    channel?.logoUrl,
+    channel?.name,
+    nativePlaybackState,
+    allocatePlaybackEpoch,
+    beginPlaybackAttempt,
+    isLifecycleActive,
+    isStalePlaybackEpoch,
+    normalizeRuntimePlaybackError,
+    reportPlaybackFailure,
+    setActiveHlsEngine,
+    setStatus,
+    setTraceId,
+    token,
+    controller,
+  ]);
 
   startStreamRef.current = startStream;
 
-  const performStopStream = useCallback(async (
-    skipClose: boolean,
-    stopEpoch: number,
-    reason: PlaybackStopReason,
+  const performLocalMediaTeardown = useCallback(async (
+    _reason?: PlaybackStopReason,
   ): Promise<void> => {
-    if (reason === 'user_stop') {
-      pendingStartRef.current = null;
-    }
     userPauseIntentRef.current = true;
     await timelineReportCompletionRef.current;
     await teardownActivePlayback();
-    markPlaybackStopped(stopEpoch);
-    if (onClose && !skipClose) onClose();
-  }, [markPlaybackStopped, onClose, teardownActivePlayback]);
+  }, [teardownActivePlayback]);
 
   const stopStream = useCallback(async (
     skipClose: boolean = false,
     reason: PlaybackStopReason = 'user_stop',
   ): Promise<void> => {
-    const stopEpoch = allocatePlaybackEpoch();
-    dispatchPlayback({
-      type: 'intent.stop.requested',
-      epoch: stopEpoch,
-      reason,
-      notifyClose: !skipClose,
-    });
-    await stopCommandCompletionRef.current;
-  }, [allocatePlaybackEpoch, dispatchPlayback]);
+    await controller.stop(reason, !skipClose);
+    if (onClose && !skipClose) onClose();
+  }, [controller, onClose]);
 
   const handleRetry = useCallback(async () => {
     if (disposedRef.current) return;
@@ -1830,13 +1756,11 @@ export function usePlaybackOrchestrator(
     try {
       await stopStream(true, 'auto_recovery_restart');
       if (disposedRef.current) return;
-      const pendingStart = pendingStartRef.current;
-      pendingStartRef.current = null;
-      await startStream(pendingStart?.refToUse, pendingStart?.profileOverride);
+      await startStream(sRef);
     } finally {
       retryInFlightRef.current = false;
     }
-  }, [stopStream, startStream]);
+  }, [stopStream, startStream, sRef]);
   // --- Effects ---
   executeCommandRef.current = useCallback((command: PlaybackCommand) => {
     switch (command.type) {
@@ -1849,19 +1773,17 @@ export function usePlaybackOrchestrator(
       case 'command.timeline.report':
         {
           const events = sessionTimeline.describe();
-          void reportTimelineSnapshot(command.reason, events);
+          return reportTimelineSnapshot(command.reason, events);
         }
-        break;
       case 'command.playback.start':
         void startStream(command.serviceRef, command.explicitProfile);
         break;
       case 'command.playback.stop':
-        stopCommandCompletionRef.current = performStopStream(
-          !command.notifyClose,
-          command.epoch,
-          command.reason,
-        );
-        break;
+        {
+          const stopPromise = performLocalMediaTeardown(command.reason);
+          stopCommandCompletionRef.current = stopPromise;
+          return stopPromise;
+        }
       case 'command.telemetry.emit':
         telemetry.emit(command.eventName as any, command.payload);
         break;
@@ -1891,7 +1813,7 @@ export function usePlaybackOrchestrator(
     }
   }, [
     startStream,
-    performStopStream,
+    performLocalMediaTeardown,
     reportTimelineSnapshot,
     dispatchPlayback,
     isLifecycleActive,

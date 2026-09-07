@@ -2,8 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import {
-  useInsertionEffect,
-  useLayoutEffect,
+  useEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -24,6 +23,8 @@ export interface UsePlaybackControllerOptions {
   startSettlementTimeoutMs?: number;
   httpRequestTimeoutMs?: number;
   stopRequestTimeoutMs?: number;
+  requestedDuration?: number | null;
+  onAttemptStarted?: (epoch: number) => void;
 }
 
 export interface UsePlaybackControllerResult {
@@ -38,12 +39,10 @@ export interface UsePlaybackControllerResult {
 // - Controller instance is created once via useState and exposed via useSyncExternalStore.
 // - Executor identity is decoupled from controller lifecycle: executorRef is updated
 //   synchronously on every render, so changing callbacks never causes effect tear-down.
-// - useInsertionEffect manages the true component mount/unmount lifecycle:
-//   * StrictMode mount simulation (Setup 1 -> Cleanup 1 -> Setup 2) only re-runs layout
-//     and passive effects; insertion effects remain active.
-//   * Suspense hiding preserves insertion effects, avoiding premature disposal.
-//   * On real unmount, insertion effect cleanup runs synchronously, disconnecting
-//     the executor and calling controller.dispose().
+// - useEffect manages component mount/unmount lifecycle:
+//   * StrictMode mount simulation (Setup 1 -> Cleanup 1 -> Setup 2) re-runs effect setup;
+//     controller disposal is idempotent and subsequent setup re-establishes active state.
+//   * On real unmount, effect cleanup runs, disconnecting the executor and calling controller.dispose().
 //   * useLayoutEffect setup re-connects the executor on mount and when revealed from Suspense.
 export function usePlaybackController(
   transport: LiveSessionTransport,
@@ -51,48 +50,45 @@ export function usePlaybackController(
   executeCommand: PlaybackCommandExecutor,
   options?: UsePlaybackControllerOptions,
 ): UsePlaybackControllerResult {
+  const transportRef = useRef<LiveSessionTransport>(transport);
+  transportRef.current = transport;
+
+  const optionsRef = useRef<UsePlaybackControllerOptions | undefined>(options);
+  optionsRef.current = options;
+
   const executorRef = useRef<PlaybackCommandExecutor | null>(executeCommand);
   executorRef.current = executeCommand;
 
-  const isConnectedRef = useRef(true);
-
   const [controller] = useState(() =>
     createPlaybackController({
-      transport,
+      getTransport: () => transportRef.current,
       createInitialState,
       executeCommand: (command) => {
-        if (isConnectedRef.current && executorRef.current) {
-          executorRef.current(command);
-        }
+        executorRef.current?.(command);
       },
       startSettlementTimeoutMs: options?.startSettlementTimeoutMs,
       httpRequestTimeoutMs: options?.httpRequestTimeoutMs,
       stopRequestTimeoutMs: options?.stopRequestTimeoutMs,
+      get requestedDuration() {
+        return optionsRef.current?.requestedDuration;
+      },
+      onAttemptStarted: (epoch) => {
+        optionsRef.current?.onAttemptStarted?.(epoch);
+      },
     }),
   );
 
-  useInsertionEffect(() => {
-    isConnectedRef.current = true;
-    controller.setCommandExecutor((command) => {
-      if (isConnectedRef.current && executorRef.current) {
-        executorRef.current(command);
-      }
-    });
+  // Reconnect executor and reactivate controller on each render.
+  // This ensures child layout effects (which run before parent effects)
+  // have a valid executor during StrictMode remount, and clears isDisposed.
+  controller.setCommandExecutor((command) => {
+    return executorRef.current?.(command);
+  });
 
+  useEffect(() => {
     return () => {
-      isConnectedRef.current = false;
-      controller.setCommandExecutor(null);
       controller.dispose();
     };
-  }, [controller]);
-
-  useLayoutEffect(() => {
-    isConnectedRef.current = true;
-    controller.setCommandExecutor((command) => {
-      if (isConnectedRef.current && executorRef.current) {
-        executorRef.current(command);
-      }
-    });
   }, [controller]);
 
   const state = useSyncExternalStore(

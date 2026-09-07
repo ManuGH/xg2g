@@ -40,6 +40,14 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
       return nested;
     }
   }
+
+  if ('data' in record && record.data) {
+    const nested = extractPlaybackTrace(record.data);
+    if (nested) {
+      return nested;
+    }
+  }
+
   const hasTraceMarker =
     'sessionId' in record ||
     'source' in record ||
@@ -47,7 +55,9 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
     'targetProfile' in record ||
     'ffmpegPlan' in record ||
     'stopReason' in record ||
-    'stopClass' in record;
+    'stopClass' in record ||
+    'requestedIntent' in record ||
+    'resolvedIntent' in record;
   if (hasTraceMarker) {
     return record as unknown as PlaybackTraceContract;
   }

@@ -112,7 +112,7 @@ export function buildRecordingGoneFailure(t: TFunction): PreparedFailure {
 export function buildSessionExpiredFailure(t: TFunction): PreparedFailure {
   return {
     appError: {
-      title: t('player.sessionExpiredTitle', { defaultValue: 'Wiedergabe-Sitzung beendet' }),
+      title: t('player.sessionExpired', { defaultValue: 'Session expired. Please restart.' }),
       status: 410,
       retryable: true,
       code: 'session_gone',
@@ -232,13 +232,13 @@ export type LiveEngineDecision =
   | { unsupported: true };
 
 export function resolveLiveEngineFromMode(
-  liveMode: VodStreamMode,
+  liveMode: VodStreamMode | string | undefined | null,
   requestCaps: CapabilitySnapshot,
   resolvePreferredHlsEngineForCapabilities: (caps: CapabilitySnapshot) => 'native' | 'hlsjs',
 ): LiveEngineDecision {
   if (liveMode === 'native_hls') return { engine: 'native' };
   if (liveMode === 'hlsjs') return { engine: 'hlsjs' };
-  if (liveMode === 'transcode') {
+  if (liveMode === 'transcode' || liveMode === 'LIVE' || liveMode === 'live' || !liveMode) {
     return { engine: resolvePreferredHlsEngineForCapabilities(requestCaps) };
   }
   return { unsupported: true };

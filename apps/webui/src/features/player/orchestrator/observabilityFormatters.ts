@@ -105,11 +105,16 @@ export function extractPlaybackTrace(value: unknown): PlaybackTraceContract | nu
     'targetProfile' in record ||
     'ffmpegPlan' in record ||
     'stopReason' in record ||
-    'stopClass' in record
+    'stopClass' in record ||
+    'requestedIntent' in record ||
+    'resolvedIntent' in record
   )) {
     return record as unknown as PlaybackTraceContract;
   }
 
+  if ('data' in record && record.data) {
+    return extractPlaybackTrace(record.data);
+  }
   if ('body' in record) {
     return extractPlaybackTrace(record.body);
   }

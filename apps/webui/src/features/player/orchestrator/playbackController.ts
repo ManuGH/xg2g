@@ -11,17 +11,28 @@ import type {
   PlaybackMachineEvent,
   PlaybackStopReason,
 } from './playbackTypes';
-import type {
-  LiveSessionTransport,
-  SessionReadyResult,
-  StartIntentResult,
+import {
+  type LiveSessionTransport,
+  PlaybackHttpError,
+  type SessionReadyResult,
+  type StartIntentResult,
+  type StreamInfoResult,
 } from './liveSessionTransport';
 import { normalizePlaybackInfo } from '../contracts/normalizePlaybackInfo';
+import type { NormalizedPlayablePlaybackContract } from '../contracts/normalizedPlaybackTypes';
 import { buildLiveIntentBody } from './startupHelpers';
+import { buildContractState } from './contractErrors';
 import type { PlayerStatus } from '../../../types/v3-player';
+
+export { PlaybackHttpError };
+
+export function isOkStatus(status: number): boolean {
+  return status >= 200 && status < 300;
+}
 
 export interface StartLiveParams {
   serviceRef: string;
+  epoch?: number;
   capabilities?: unknown;
   profileHeaders?: Record<string, string>;
   requestedDuration?: number | null;
@@ -30,21 +41,30 @@ export interface StartLiveParams {
 }
 
 export type StartLiveResult =
-  | { status: 'ready'; sessionId: string; session: SessionReadyResult }
+  | {
+      status: 'ready';
+      sessionId: string;
+      session: SessionReadyResult;
+      contract?: NormalizedPlayablePlaybackContract;
+    }
   | { status: 'cancelled'; reason: 'superseded' | 'user_stop' | 'timeout' };
 
 export interface PlaybackControllerOptions {
-  transport: LiveSessionTransport;
+  transport?: LiveSessionTransport;
+  getTransport?: () => LiveSessionTransport;
   createInitialState: () => PlaybackDomainState;
   executeCommand?: PlaybackCommandExecutor;
   startSettlementTimeoutMs?: number; // default 30_000ms (overall start/retry budget)
   httpRequestTimeoutMs?: number;     // default 10_000ms (per-request HTTP timeout)
   stopRequestTimeoutMs?: number;     // default 3_000ms
+  requestedDuration?: number | null;
+  onAttemptStarted?: (epoch: number) => void;
 }
 
 interface InFlightStart {
   attemptId: string;
   epoch: number;
+  transport: LiveSessionTransport;
   cancelled: boolean;
   cancelReason: 'superseded' | 'user_stop' | 'timeout' | null;
   ineligibleForAdoption: boolean;
@@ -137,7 +157,6 @@ export function createPlaybackController(
   options: PlaybackControllerOptions,
 ): PlaybackController {
   const {
-    transport,
     createInitialState,
     executeCommand = () => {},
     stopRequestTimeoutMs = DEFAULT_STOP_REQUEST_TIMEOUT_MS,
@@ -155,7 +174,7 @@ export function createPlaybackController(
     createInitialState,
     (command) => {
       if (executor) {
-        executor(command);
+        return executor(command);
       }
     },
   );
@@ -164,12 +183,26 @@ export function createPlaybackController(
   let sessionEpoch = runtime.getState().epoch.session;
 
   let activeSessionId: string | null = null;
+  let activeSessionTransport: LiveSessionTransport | null = null;
   let currentAttempt: InFlightStart | null = null;
   const inFlightStarts = new Map<string, InFlightStart>();
   const stoppingSessionIds = new Set<string>();
   const activeStopPromises = new Map<string, Promise<void>>();
   const inFlightStopPromises = new Map<number, Promise<void>>();
-  const pendingAdoptionCandidates = new Map<string, { sessionId: string; heldAt: number }>();
+  const getLatestTransport = (): LiveSessionTransport => {
+    if (typeof options.transport === 'function') {
+      return (options.transport as () => LiveSessionTransport)();
+    }
+    if (options.getTransport) {
+      return options.getTransport();
+    }
+    return options.transport!;
+  };
+
+  const pendingAdoptionCandidates = new Map<
+    string,
+    { sessionId: string; heldAt: number; transport: LiveSessionTransport }
+  >();
 
   let isDisposed = false;
 
@@ -182,13 +215,18 @@ export function createPlaybackController(
     return false;
   }
 
-  function retireAndStopSession(sessionId: string): Promise<void> {
+  function retireAndStopSession(
+    sessionId: string,
+    transportToUse?: LiveSessionTransport,
+  ): Promise<void> {
     if (stoppingSessionIds.has(sessionId)) {
       return activeStopPromises.get(sessionId) ?? Promise.resolve();
     }
 
     stoppingSessionIds.add(sessionId);
     pendingAdoptionCandidates.delete(sessionId);
+
+    const transportForStop = transportToUse ?? getLatestTransport();
 
     const stopController = new AbortController();
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -200,7 +238,7 @@ export function createPlaybackController(
       }, stopRequestTimeoutMs);
 
       Promise.resolve(
-        transport.postStopIntent({ sessionId, signal: stopController.signal }),
+        transportForStop.postStopIntent({ sessionId, signal: stopController.signal }),
       ).then(
         () => {
           if (timer) clearTimeout(timer);
@@ -220,37 +258,44 @@ export function createPlaybackController(
     return promise;
   }
 
-  function handleObsoleteSession(sessionId: string | null | undefined): void {
+  function handleObsoleteSession(
+    sessionId: string | null | undefined,
+    transportToUse?: LiveSessionTransport,
+  ): void {
     if (!sessionId) {
       return;
     }
 
-    if (stoppingSessionIds.has(sessionId)) {
+    const safeSessionId = sessionId.trim();
+    if (!safeSessionId) return;
+
+    if (stoppingSessionIds.has(safeSessionId)) {
       return;
     }
 
-    if (sessionId === activeSessionId) {
+    if (safeSessionId === activeSessionId) {
       return;
     }
 
-    if (hasEligibleInFlightStarts()) {
-      pendingAdoptionCandidates.set(sessionId, {
-        sessionId,
+    if (hasEligibleInFlightStarts() || inFlightStopPromises.size > 0) {
+      pendingAdoptionCandidates.set(safeSessionId, {
+        sessionId: safeSessionId,
         heldAt: Date.now(),
+        transport: transportToUse ?? getLatestTransport(),
       });
       return;
     }
 
-    void retireAndStopSession(sessionId);
+    void retireAndStopSession(safeSessionId, transportToUse);
   }
 
   function flushPendingAdoptionCandidates(): void {
     if (hasEligibleInFlightStarts()) {
       return;
     }
-    for (const sessionId of Array.from(pendingAdoptionCandidates.keys())) {
-      if (sessionId !== activeSessionId) {
-        void retireAndStopSession(sessionId);
+    for (const candidate of Array.from(pendingAdoptionCandidates.values())) {
+      if (candidate.sessionId !== activeSessionId) {
+        void retireAndStopSession(candidate.sessionId, candidate.transport);
       }
     }
     pendingAdoptionCandidates.clear();
@@ -259,6 +304,22 @@ export function createPlaybackController(
   function allocatePlaybackEpoch(): number {
     playbackEpoch += 1;
     sessionEpoch = 0;
+    options.onAttemptStarted?.(playbackEpoch);
+
+    // Invalidate any in-flight live start immediately and idempotently
+    if (currentAttempt && !currentAttempt.settled) {
+      if (currentAttempt.settlementTimer) {
+        clearTimeout(currentAttempt.settlementTimer);
+        currentAttempt.settlementTimer = null;
+      }
+      currentAttempt.cancelled = true;
+      currentAttempt.cancelReason = 'superseded';
+      currentAttempt.abortController.abort();
+      currentAttempt.settled = true;
+      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      currentAttempt = null;
+    }
+
     return playbackEpoch;
   }
 
@@ -279,12 +340,13 @@ export function createPlaybackController(
     hasSessionIntent = true,
     explicitProfilePinned = false,
   ): void {
+    options.onAttemptStarted?.(epoch);
     runtime.dispatch({
       type: 'normative.playback.attempt.started',
       epoch,
       playbackMode: nextPlaybackMode,
       status: nextStatus,
-      requestedDuration: null,
+      requestedDuration: options.requestedDuration ?? null,
       hasSessionIntent,
       explicitProfilePinned,
     });
@@ -321,10 +383,10 @@ export function createPlaybackController(
       const onPreflightAttemptAbort = () => preflightController.abort();
       attempt.abortController.signal.addEventListener('abort', onPreflightAttemptAbort, { once: true });
 
-      let preflightRes: any;
+      let preflightRes: StreamInfoResult;
       try {
         preflightRes = await raceWithSignal(
-          transport.fetchStreamInfo({
+          attempt.transport.fetchStreamInfo({
             serviceRef,
             capabilities,
             profileHeaders,
@@ -345,8 +407,13 @@ export function createPlaybackController(
         return;
       }
 
-      if (preflightRes.status !== 200) {
-        throw new Error(`Preflight failed with status ${preflightRes.status}`);
+      if (!isOkStatus(preflightRes.status)) {
+        throw new PlaybackHttpError(
+          `Preflight failed with status ${preflightRes.status}`,
+          preflightRes.status,
+          preflightRes.data,
+          preflightRes.headers,
+        );
       }
 
       // 2. Normalize preflight contract & shape intent payload
@@ -365,6 +432,14 @@ export function createPlaybackController(
         throw new Error(normalized.failure.message || 'Playback blocked');
       }
 
+      if (normalized.kind === 'playable') {
+        runtime.dispatch({
+          type: 'normative.playback.contract.resolved',
+          epoch: attempt.epoch,
+          contract: buildContractState('live', normalized, normalized.playback.outputUrl),
+        });
+      }
+
       const liveMode = normalized.playback.mode;
       const decisionToken = normalized.session.decisionToken;
 
@@ -380,6 +455,16 @@ export function createPlaybackController(
         typeof params.requestedDuration === 'number' ? params.requestedDuration : undefined,
       );
 
+      const sEpoch = allocateSessionEpoch(attempt.epoch);
+
+      runtime.dispatch({
+        type: 'normative.session.phase.changed',
+        playbackEpoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        phase: 'starting',
+        requestId: normalized.kind === 'playable' ? normalized.observability.requestId : undefined,
+      });
+
       let startRes!: StartIntentResult;
       for (let retryCount = 0; ; retryCount++) {
         let foregroundWaiting = true;
@@ -389,7 +474,7 @@ export function createPlaybackController(
           intentReqController.abort();
         }, httpRequestTimeoutMs);
 
-        const postPromise = transport.postStartIntent({
+        const postPromise = attempt.transport.postStartIntent({
           body: intentBody,
           signal: intentReqController.signal,
         });
@@ -405,7 +490,7 @@ export function createPlaybackController(
             }
             const lateSessionId = parseSessionId(lateRes?.data);
             if (lateSessionId) {
-              handleObsoleteSession(lateSessionId);
+              handleObsoleteSession(lateSessionId, attempt.transport);
               flushPendingAdoptionCandidates();
             }
           },
@@ -430,6 +515,22 @@ export function createPlaybackController(
         }
 
         if (startRes.status !== 409 || retryCount >= MAX_LEASE_CONFLICT_RETRIES) {
+          if (!isOkStatus(startRes.status) && startRes.status !== 409) {
+            throw new PlaybackHttpError(
+              `Start failed with status ${startRes.status}`,
+              startRes.status,
+              startRes.data,
+              startRes.headers,
+            );
+          }
+          if (startRes.status === 409) {
+            throw new PlaybackHttpError(
+              'Lease conflict retry budget exceeded (409)',
+              409,
+              startRes.data,
+              startRes.headers,
+            );
+          }
           break;
         }
 
@@ -477,7 +578,7 @@ export function createPlaybackController(
 
       if (isDisposed) {
         inFlightStarts.delete(attempt.attemptId);
-        handleObsoleteSession(returnedSessionId);
+        handleObsoleteSession(returnedSessionId, attempt.transport);
         return;
       }
 
@@ -505,7 +606,7 @@ export function createPlaybackController(
       // If attempt is obsolete (ineligible for adoption, cancelled, or settled)
       if (attempt.ineligibleForAdoption || attempt.cancelled || attempt.settled) {
         inFlightStarts.delete(attempt.attemptId);
-        handleObsoleteSession(returnedSessionId);
+        handleObsoleteSession(returnedSessionId, attempt.transport);
         flushPendingAdoptionCandidates();
         return;
       }
@@ -515,14 +616,16 @@ export function createPlaybackController(
         pendingAdoptionCandidates.delete(returnedSessionId);
       }
       const previousActiveSessionId = activeSessionId;
+      const previousActiveTransport = activeSessionTransport;
       activeSessionId = returnedSessionId;
+      activeSessionTransport = attempt.transport;
       if (previousActiveSessionId && previousActiveSessionId !== returnedSessionId) {
-        void retireAndStopSession(previousActiveSessionId);
+        void retireAndStopSession(previousActiveSessionId, previousActiveTransport ?? undefined);
       }
       flushPendingAdoptionCandidates();
 
       // 3. Wait for readiness
-      const readySession = await transport.waitForReady({
+      const readySession = await attempt.transport.waitForReady({
         sessionId: returnedSessionId,
         signal: attempt.abortController.signal,
       });
@@ -530,15 +633,24 @@ export function createPlaybackController(
       if (isDisposed) {
         if (activeSessionId === returnedSessionId) {
           activeSessionId = null;
+          activeSessionTransport = null;
         }
-        void retireAndStopSession(returnedSessionId);
+        void retireAndStopSession(returnedSessionId, attempt.transport);
         return;
       }
 
       if (attempt.cancelled || attempt.ineligibleForAdoption || attempt.settled) {
-        handleObsoleteSession(returnedSessionId);
+        handleObsoleteSession(returnedSessionId, attempt.transport);
         return;
       }
+
+      runtime.dispatch({
+        type: 'normative.session.phase.changed',
+        playbackEpoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        phase: 'ready',
+        requestId: readySession.requestId ?? (normalized.kind === 'playable' ? normalized.observability.requestId : undefined),
+      });
 
       if (!attempt.settled) {
         attempt.settled = true;
@@ -546,6 +658,7 @@ export function createPlaybackController(
           status: 'ready',
           sessionId: returnedSessionId,
           session: readySession,
+          contract: normalized.kind === 'playable' ? normalized : undefined,
         });
       }
     } catch (err) {
@@ -557,12 +670,13 @@ export function createPlaybackController(
 
       if (returnedSessionId) {
         if (attempt.cancelled || attempt.ineligibleForAdoption || attempt.settled) {
-          handleObsoleteSession(returnedSessionId);
+          handleObsoleteSession(returnedSessionId, attempt.transport);
         } else {
           if (activeSessionId === returnedSessionId) {
             activeSessionId = null;
+            activeSessionTransport = null;
           }
-          void retireAndStopSession(returnedSessionId);
+          void retireAndStopSession(returnedSessionId, attempt.transport);
         }
       }
 
@@ -587,10 +701,13 @@ export function createPlaybackController(
       return { status: 'cancelled', reason: 'user_stop' };
     }
 
-    const epoch = allocatePlaybackEpoch();
+    const epoch = typeof params.epoch === 'number' ? params.epoch : allocatePlaybackEpoch();
+    if (isStalePlaybackEpoch(epoch)) {
+      return { status: 'cancelled', reason: 'superseded' };
+    }
 
-    // Invalidate previous attempt promptly
-    if (currentAttempt && !currentAttempt.settled) {
+    // Invalidate previous attempt promptly if still running
+    if (currentAttempt && !currentAttempt.settled && currentAttempt.epoch !== epoch) {
       if (currentAttempt.settlementTimer) {
         clearTimeout(currentAttempt.settlementTimer);
         currentAttempt.settlementTimer = null;
@@ -600,6 +717,7 @@ export function createPlaybackController(
       currentAttempt.abortController.abort();
       currentAttempt.settled = true;
       currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      currentAttempt = null;
     }
 
     const attemptId = `att-${epoch}-${Math.random().toString(36).slice(2, 9)}`;
@@ -611,9 +729,12 @@ export function createPlaybackController(
       rejectPublic = reject;
     });
 
+    const attemptTransport = getLatestTransport();
+
     const attempt: InFlightStart = {
       attemptId,
       epoch,
+      transport: attemptTransport,
       cancelled: false,
       cancelReason: null,
       ineligibleForAdoption: false,
@@ -668,12 +789,18 @@ export function createPlaybackController(
     }
 
     const currentStatus = runtime.getState().status;
-    if ((currentStatus === 'stopped' || currentStatus === 'idle') && !activeSessionId && !currentAttempt) {
+    if (currentStatus === 'stopped' && !activeSessionId && !currentAttempt) {
       return Promise.resolve();
     }
 
     const doStop = async () => {
-      // 1. Synchronous attempt invalidation & prompt promise settle
+      // 1. Snapshot activeSessionId and its transport
+      const sessionToStop = activeSessionId;
+      const transportForActiveSession = activeSessionTransport;
+      activeSessionId = null;
+      activeSessionTransport = null;
+
+      // 2. Synchronously attempt invalidation & prompt promise settle
       if (currentAttempt && !currentAttempt.settled) {
         if (currentAttempt.settlementTimer) {
           clearTimeout(currentAttempt.settlementTimer);
@@ -703,7 +830,7 @@ export function createPlaybackController(
         }
       }
 
-      // 2. Dispatch intent.stop.requested (media teardown commands)
+      // 3. Dispatch intent.stop.requested (media teardown commands)
       runtime.dispatch({
         type: 'intent.stop.requested',
         epoch: stopEpoch,
@@ -711,17 +838,16 @@ export function createPlaybackController(
         notifyClose,
       });
 
-      // 3. Clean up active session and flush unadopted candidates
-      const sessionToStop = activeSessionId;
-      activeSessionId = null;
+      await runtime.waitForCommands();
 
+      // 4. Clean up active session and flush unadopted candidates
       flushPendingAdoptionCandidates();
 
       if (sessionToStop) {
-        await retireAndStopSession(sessionToStop);
+        await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
       }
 
-      // 4. Dispatch normative.playback.stopped
+      // 5. Dispatch normative.playback.stopped
       runtime.dispatch({
         type: 'normative.playback.stopped',
         epoch: stopEpoch,
@@ -761,11 +887,10 @@ export function createPlaybackController(
     flushPendingAdoptionCandidates();
 
     if (activeSessionId) {
-      void retireAndStopSession(activeSessionId);
+      void retireAndStopSession(activeSessionId, activeSessionTransport ?? undefined);
       activeSessionId = null;
+      activeSessionTransport = null;
     }
-    executor = null;
-    runtime.setCommandExecutor(null);
   }
 
   return {
@@ -773,6 +898,9 @@ export function createPlaybackController(
     subscribe: runtime.subscribe,
     dispatch: runtime.dispatch,
     setCommandExecutor(exec) {
+      if (exec) {
+        isDisposed = false;
+      }
       executor = exec;
       runtime.setCommandExecutor(exec);
     },

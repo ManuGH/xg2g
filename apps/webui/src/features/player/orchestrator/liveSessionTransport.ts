@@ -48,10 +48,48 @@ export interface LiveSessionTransport {
   }): Promise<void>;
 }
 
+export class PlaybackHttpError extends Error {
+  readonly status: number;
+  readonly data: unknown;
+  readonly headers?: Headers;
+  readonly requestId?: string;
+  readonly traceId?: string;
+  readonly sessionId?: string;
+
+  constructor(message: string, status: number, data: unknown, headers?: Headers | null, sessionId?: string) {
+    super(message);
+    this.name = 'PlaybackHttpError';
+    this.status = status;
+    this.data = data;
+    this.headers = (headers as Headers | undefined) ?? undefined;
+    this.sessionId =
+      sessionId ||
+      (typeof data === 'object' && data !== null && typeof (data as { sessionId?: unknown }).sessionId === 'string'
+        ? (data as { sessionId: string }).sessionId
+        : undefined);
+    const reqId =
+      (typeof data === 'object' && data !== null && typeof (data as { requestId?: unknown }).requestId === 'string'
+        ? (data as { requestId: string }).requestId
+        : undefined) ||
+      headers?.get?.('X-Request-ID') ||
+      headers?.get?.('x-request-id') ||
+      undefined;
+    this.requestId = reqId;
+    this.traceId =
+      (typeof data === 'object' && data !== null && typeof (data as { traceId?: unknown }).traceId === 'string'
+        ? (data as { traceId: string }).traceId
+        : undefined) ||
+      headers?.get?.('X-Trace-ID') ||
+      headers?.get?.('x-trace-id') ||
+      reqId;
+  }
+}
+
 export interface DefaultLiveSessionTransportOptions {
   apiBase: string;
   authHeaders: (hasBody?: boolean) => Record<string, string>;
   fetchFn?: typeof fetch;
+  recoverSessionCookie?: (source: string) => Promise<boolean>;
 }
 
 function raceWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -75,10 +113,37 @@ function raceWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T
   });
 }
 
+async function parseResponseBody(res: Response, signal?: AbortSignal): Promise<unknown> {
+  const maybe = res as unknown as {
+    json?: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  };
+  if (typeof maybe.json === 'function') {
+    try {
+      const p = maybe.json();
+      return signal ? await raceWithSignal(p, signal) : await p;
+    } catch {
+      // json() failed or was not a json endpoint, try text fallback
+    }
+  }
+  if (typeof maybe.text === 'function') {
+    try {
+      const p = maybe.text();
+      const rawText = signal ? await raceWithSignal(p, signal) : await p;
+      if (!rawText) return null;
+      return JSON.parse(rawText);
+    } catch {
+      // text parse failed
+    }
+  }
+  return null;
+}
+
 export function createDefaultLiveSessionTransport({
   apiBase,
   authHeaders,
   fetchFn = globalThis.fetch,
+  recoverSessionCookie,
 }: DefaultLiveSessionTransportOptions): LiveSessionTransport {
   return {
     async fetchStreamInfo({ serviceRef, capabilities, profileHeaders, signal }) {
@@ -93,12 +158,7 @@ export function createDefaultLiveSessionTransport({
         body: JSON.stringify({ serviceRef, capabilities }),
         signal,
       });
-      let data: unknown = null;
-      try {
-        data = await res.json();
-      } catch {
-        // Body parse failed
-      }
+      const data = await parseResponseBody(res, signal);
       return {
         status: res.status,
         data,
@@ -117,12 +177,7 @@ export function createDefaultLiveSessionTransport({
         body: JSON.stringify(body),
         signal,
       });
-      let data: unknown = null;
-      try {
-        data = await res.json();
-      } catch {
-        // Body parse failed
-      }
+      const data = await parseResponseBody(res, signal);
       return {
         status: res.status,
         data,
@@ -134,6 +189,7 @@ export function createDefaultLiveSessionTransport({
       const deadline = Date.now() + budgetMs;
       const pollIntervalMs = 500;
       const requestTimeoutMs = 5_000;
+      let recoveredSessionAuth = false;
 
       while (Date.now() < deadline) {
         if (signal?.aborted) {
@@ -154,25 +210,42 @@ export function createDefaultLiveSessionTransport({
             signal: pollController.signal,
           });
 
-          if (res.status === 401 || res.status === 403) {
-            throw new Error(`Session authorization failed (HTTP ${res.status})`);
+          if (res.status === 401) {
+            if (recoverSessionCookie && !recoveredSessionAuth) {
+              const recovered = await recoverSessionCookie('liveSessionTransport.waitForReady');
+              if (recovered) {
+                recoveredSessionAuth = true;
+                continue;
+              }
+            }
+            const data = await parseResponseBody(res, pollController.signal);
+            throw new PlaybackHttpError(`Session authorization failed (HTTP ${res.status})`, 401, data, res.headers);
+          }
+
+          if (res.status === 403) {
+            const data = await parseResponseBody(res, pollController.signal);
+            throw new PlaybackHttpError(`Session authorization failed (HTTP ${res.status})`, 403, data, res.headers);
           }
 
           if (res.status === 410) {
             let reason = 'expired';
+            let problem: unknown = null;
             try {
-              const problem = await raceWithSignal(res.json(), pollController.signal);
-              reason = problem?.reason || problem?.state || reason;
+              problem = (await parseResponseBody(res, pollController.signal)) as any;
+              reason = (problem as any)?.reason || (problem as any)?.state || reason;
             } catch {
               // body parse fallback
             }
-            throw new Error(`Session ${sessionId} expired or gone: ${reason}`);
+            const dataWithAuth = (problem && typeof problem === 'object')
+              ? { ...problem, recoveredSessionAuth }
+              : { recoveredSessionAuth };
+            throw new PlaybackHttpError(`Session ${sessionId} expired or gone: ${reason}`, 410, dataWithAuth, res.headers);
           }
 
           if (res.ok) {
             let data: any;
             try {
-              data = await raceWithSignal(res.json(), pollController.signal);
+              data = await parseResponseBody(res, pollController.signal);
             } catch (parseErr) {
               if (signal?.aborted || pollController.signal.aborted) {
                 throw parseErr;
@@ -200,6 +273,7 @@ export function createDefaultLiveSessionTransport({
                 mode: data.mode,
                 heartbeatIntervalSeconds: data.heartbeatIntervalSeconds,
                 leaseExpiresAt: data.leaseExpiresAt,
+                ...(data.trace ? { trace: data.trace } : {}),
               };
             }
           }
@@ -208,6 +282,9 @@ export function createDefaultLiveSessionTransport({
         } catch (err) {
           if (signal?.aborted) {
             throw new DOMException('Aborted', 'AbortError');
+          }
+          if (err instanceof PlaybackHttpError) {
+            throw err;
           }
           if (err instanceof Error && (
             err.message.includes('Session authorization failed') ||

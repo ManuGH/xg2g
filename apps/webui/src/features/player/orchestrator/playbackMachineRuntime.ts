@@ -8,13 +8,16 @@ import type {
   PlaybackMachineEvent,
 } from './playbackTypes';
 
-export type PlaybackCommandExecutor = (command: PlaybackCommand) => void;
+export type PlaybackCommandExecutor = (
+  command: PlaybackCommand,
+) => unknown;
 
 export interface PlaybackMachineRuntime {
   getState(): PlaybackDomainState;
   dispatch(event: PlaybackMachineEvent): void;
   subscribe(listener: () => void): () => void;
   setCommandExecutor(executor: PlaybackCommandExecutor | null): void;
+  waitForCommands(): Promise<void>;
   destroy(): void;
 }
 
@@ -22,6 +25,7 @@ export class PlaybackMachineRuntimeInstance implements PlaybackMachineRuntime {
   private state: PlaybackDomainState;
   private executor: PlaybackCommandExecutor | null = null;
   private readonly listeners = new Set<() => void>();
+  private readonly pendingCommands = new Set<Promise<unknown>>();
   private destroyed = false;
 
   constructor(
@@ -65,8 +69,21 @@ export class PlaybackMachineRuntimeInstance implements PlaybackMachineRuntime {
     if (this.executor && !this.destroyed) {
       for (const command of commands) {
         if (this.destroyed || !this.executor) break;
-        this.executor(command);
+        const result = this.executor(command);
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          const promise = result as Promise<unknown>;
+          this.pendingCommands.add(promise);
+          promise.finally(() => {
+            this.pendingCommands.delete(promise);
+          });
+        }
       }
+    }
+  };
+
+  waitForCommands = async (): Promise<void> => {
+    while (this.pendingCommands.size > 0) {
+      await Promise.allSettled(Array.from(this.pendingCommands));
     }
   };
 
@@ -81,6 +98,7 @@ export class PlaybackMachineRuntimeInstance implements PlaybackMachineRuntime {
   destroy = (): void => {
     this.destroyed = true;
     this.listeners.clear();
+    this.pendingCommands.clear();
     this.executor = null;
   };
 }

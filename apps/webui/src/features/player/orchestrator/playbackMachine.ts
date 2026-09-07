@@ -146,9 +146,11 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         // any other new attempt (user retry, channel change, remount) starts
         // with a fresh one. See RecoveryLadderState.restartPending for why the
         // marker is explicit rather than read off the status.
-        recovery: state.recovery.restartPending
-          ? { ...state.recovery, restartPending: false }
-          : createRecoveryLadderState(),
+        recovery: event.epoch === state.epoch.playback
+          ? state.recovery
+          : state.recovery.restartPending
+            ? { ...state.recovery, restartPending: false }
+            : createRecoveryLadderState(),
       };
 
     case 'normative.playback.stopped':
