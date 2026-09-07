@@ -84,7 +84,7 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
 
     // Commands must have run immediately and synchronously
     expect(executed.length).toBeGreaterThanOrEqual(1);
-    expect(executed[0].type).toBe('command.timeline.end_attempt');
+    expect(executed[0]!.type).toBe('command.timeline.end_attempt');
   });
 
   it('preserves executor across StrictMode double-mount simulation and executes child layout effect', () => {
