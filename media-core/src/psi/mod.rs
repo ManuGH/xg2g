@@ -161,7 +161,7 @@ pub struct Outcome {
 ///
 /// Not safe for concurrent use, and deliberately not internally synchronised:
 /// the caller already serialises access to the bytes it hands in.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PsiCore {
     /// The programme to follow, or 0 for whichever the PAT offers first.
     target_program_number: u16,

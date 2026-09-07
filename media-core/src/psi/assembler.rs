@@ -21,7 +21,7 @@ pub(crate) struct Completed {
 }
 
 /// Section assembly for one PSI PID.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct SectionAssembler {
     /// Bytes of the section still arriving.
     buf: Vec<u8>,
