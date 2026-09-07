@@ -149,3 +149,62 @@ func TestCoverage_TheInProcessCoreCoversEverything(t *testing.T) {
 		t.Errorf("GoCore.SetTargetProgram reported coverage %s", res.Coverage)
 	}
 }
+
+// throughCore answers correctly about everything except how much it read.
+type throughCore struct {
+	mediafacts.Core
+	delta int64
+}
+
+func (c throughCore) Ingest(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
+	res, err := c.Core.Ingest(ctx, startOffset, data)
+	res.ProcessedThroughOffset += c.delta
+	return res, err
+}
+
+// TestCoverage_AnOffsetThatIsNotTheWholeChunkCommitsNothing is the atomicity
+// gate, checked from both sides of the exact value.
+//
+// Short is a core that stopped early and left the ring with bytes it has no
+// meaning for - that case has been covered since the seam tests. Long is the
+// one a remote core makes reachable: a peer claiming to have read past what it
+// was given is describing bytes that do not exist yet, and it costs a failing
+// process nothing to say so. Neither may commit, and both finish the core.
+func TestCoverage_AnOffsetThatIsNotTheWholeChunkCommitsNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		delta int64
+	}{
+		{"one byte short", -1},
+		{"one byte long", 1},
+		{"a whole packet short", -TSPacketSize},
+		{"a whole packet long", TSPacketSize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewMasterRing(400 * TSPacketSize)
+			defer r.Close()
+			r.core = throughCore{Core: r.core, delta: tc.delta}
+
+			headBefore, genBefore := r.Head(), r.Generation()
+			n, err := r.Push(context.Background(), onePacket())
+			if err == nil {
+				t.Fatalf("Push returned (%d, nil) for an offset that was %+d", n, tc.delta)
+			}
+			if !errors.Is(err, ErrCoreIncomplete) {
+				t.Errorf("Push returned %v, want ErrCoreIncomplete", err)
+			}
+			if n != 0 {
+				t.Errorf("Push reported %d bytes written", n)
+			}
+			if got := r.Head(); got != headBefore {
+				t.Errorf("head moved from %d to %d", headBefore, got)
+			}
+			if got := r.Generation(); got != genBefore {
+				t.Errorf("generation moved from %d to %d", genBefore, got)
+			}
+			if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+				t.Errorf("the core stayed usable: %v", err)
+			}
+		})
+	}
+}
