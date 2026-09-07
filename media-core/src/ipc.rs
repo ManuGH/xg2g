@@ -9,14 +9,26 @@
 //! both sides is what keeps the two from drifting, because two implementations of
 //! one format always eventually disagree about something.
 //!
-//! Most of what arrives here is not interpreted: the ingest answers follow from
-//! the request alone, because reading transport streams is not this step's claim.
-//! The one exception is the audio shadow, which is the whole point of it - an
-//! observe request is answered by actually observing the bytes it carries.
+//! What arrives here is interpreted. An ingest request carries raw transport
+//! stream bytes and is answered by reading them: the PSI parser this crate owns
+//! is handed the chunk, and what it made of it is what goes back. An observe
+//! request is answered by actually observing the audio it carries.
+//!
+//! This module is transport and nothing else. It decodes a request, calls a
+//! parser, and encodes the answer - it does not read a table itself, because a
+//! second PSI implementation living in the wire code is precisely the thing this
+//! whole migration exists to avoid.
+//!
+//! What it answers about is narrower than what the Go core answers about: PSI,
+//! and nothing else. That is said out loud in every result, because the caller
+//! cannot tell "no entry point was seen" from "nobody looked" by reading a zero.
 
 use std::io::{self, Read, Write};
 
 use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
+use xg2g_media_core::psi::{
+    ActivePsi, Outcome as PsiOutcome, PsiCore, PsiEvent, PsiFacts, VideoCodec,
+};
 
 /// The protocol version this build speaks. Checked once, fatal when it differs.
 ///
@@ -25,7 +37,13 @@ use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
 /// asked what this build wants to ask". A core still answering 1 would refuse an
 /// observe request as an unknown message - a round trip later, and looking like a
 /// rejected batch rather than a peer that cannot do this at all.
-pub const VERSION: u8 = 2;
+///
+/// 3 makes ingest and set-target answer with what was read rather than with an
+/// offset alone, and makes the handshake's programme number the core's initial
+/// target. A v2 peer answers the old short body, which a v3 caller would read as
+/// a coverage and an offset that are not there - so this is exactly what the
+/// version is for. There is no shim.
+pub const VERSION: u8 = 3;
 
 pub const MSG_HANDSHAKE: u8 = 1;
 pub const MSG_INGEST: u8 = 2;
@@ -50,6 +68,54 @@ const OBSERVE_BATCH_OVERHEAD: usize = 2 + 8 + 4;
 const OBSERVE_FEED_OVERHEAD: usize = 4;
 /// pid, epoch, channels, flags, acmod, frames.
 const OBSERVE_OBSERVATION_SIZE: usize = 2 + 8 + 1 + 1 + 1 + 8;
+
+/// What a result covers. Mirrors `mediafacts.ParseCoverage`.
+///
+/// This core reads PSI, so every result it produces says so. A caller that
+/// commits stream truth requires complete coverage and must refuse this - which
+/// is the point: the absence of the fields this core does not fill has to be a
+/// statement, because their zero values are all legitimate answers.
+const COVERAGE_PSI_ONLY: u8 = 1;
+
+/// Event kinds on the wire. A random access point is a statement about video
+/// payload, which this coverage does not include, so there is exactly one.
+const EVENT_PROGRAM_IDENTITY_CHANGED: u8 = 1;
+
+const FACT_HAS_PAT: u8 = 1 << 0;
+const FACT_HAS_PMT: u8 = 1 << 1;
+
+const TRACK_MULTICHANNEL: u8 = 1 << 0;
+const TRACK_HAS_COMPONENT_TYPE: u8 = 1 << 1;
+
+/// Closed sets travel as numbers, not as the strings this crate happens to use.
+/// A spelling on the wire is a spelling two implementations can disagree about.
+const VIDEO_CODEC_UNKNOWN: u8 = 0;
+const VIDEO_CODEC_H264: u8 = 1;
+const VIDEO_CODEC_H265: u8 = 2;
+const VIDEO_CODEC_MPEG2: u8 = 3;
+
+const AUDIO_CODEC_UNKNOWN: u8 = 0;
+const AUDIO_CODEC_MP2: u8 = 1;
+const AUDIO_CODEC_AAC: u8 = 2;
+const AUDIO_CODEC_AC3: u8 = 3;
+const AUDIO_CODEC_EAC3: u8 = 4;
+const AUDIO_CODEC_DTS: u8 = 5;
+
+/// A language is always three bytes: the descriptor's three, or those of `und`.
+const LANGUAGE_LEN: usize = 3;
+
+/// The fixed part of a result: status, coverage, offset, event count, facts
+/// flags, PMT version, programme number, PMT PID, video PID, video codec, the
+/// two audio counts and the two section counts.
+const RESULT_FIXED_SIZE: usize = 1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + 2 + 2;
+const EVENT_SIZE: usize = 1 + 8 + 1;
+const AUDIO_PID_SIZE: usize = 2;
+const AUDIO_TRACK_SIZE: usize = 2 + 1 + 1 + LANGUAGE_LEN + 1 + 1 + 1;
+const SECTION_PREFIX: usize = 2;
+
+/// Transport packets are 188 bytes and a chunk is whole packets. Checked here as
+/// well as by the caller: this side cannot trust the caller either.
+const TS_PACKET_LEN: usize = 188;
 
 /// Observation flags, and the whole of what this build knows how to say.
 const OBS_FLAG_LFE: u8 = 1 << 0;
@@ -150,6 +216,14 @@ pub enum Outcome {
 /// sharing one with an authoritative core.
 #[derive(Debug, Default)]
 pub struct Session {
+    /// The PSI parser for this connection, established by the handshake.
+    ///
+    /// One connection is one stream, so one PSI lifecycle: the answer to the
+    /// second chunk depends on the first, and a core rebuilt per request would
+    /// have no table in force to answer with. Absent until the handshake, so an
+    /// ingest before one is a protocol error rather than a core invented on the
+    /// spot with a target nobody chose.
+    psi: Option<PsiCore>,
     audio: Registry,
 }
 
@@ -167,16 +241,33 @@ impl Session {
         }
 
         match frame.kind {
-            // Both carry a program number and nothing else, and neither does anything
-            // with it yet; they are one arm because they are one shape, not because
-            // the distinction was forgotten.
-            MSG_HANDSHAKE | MSG_SET_TARGET_PROGRAM => {
+            // The handshake establishes the initial target; set-target changes it
+            // later. They carry the same two bytes and mean different things, which
+            // is why they are no longer one arm: establishing state produces no
+            // event, and changing it does.
+            MSG_HANDSHAKE => {
                 // Exactly two. A body that is longer carries something this build does
                 // not know about, and answering OK to it would claim otherwise.
-                if frame.body.len() != 2 {
+                let Some(target) = two_byte_program(&frame.body) else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
-                }
+                };
+                // Built with the target rather than built at zero and then told:
+                // the second is a set-target call, and a set-target call from
+                // nothing to the programme already being followed is a change the
+                // stream never made. The handshake answers a status alone, so
+                // there is nowhere for such an event to go even if it existed.
+                self.psi = Some(PsiCore::new(target));
                 Outcome::Answer(vec![STATUS_OK])
+            }
+            MSG_SET_TARGET_PROGRAM => {
+                let Some(target) = two_byte_program(&frame.body) else {
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                };
+                let Some(psi) = self.psi.as_mut() else {
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                };
+                let outcome = psi.set_target_program(target);
+                Outcome::Answer(encode_psi_result(&outcome))
             }
             MSG_INGEST => {
                 if frame.body.len() < 8 {
@@ -184,15 +275,25 @@ impl Session {
                 }
                 let start =
                     u64::from_be_bytes(frame.body[..8].try_into().expect("checked length above"));
-                let chunk = frame.body.len() - 8;
-                // Everything it was given, interpreted by nobody. The offset is what
-                // the caller checks, so answering it honestly is the whole job here.
-                let through = start.saturating_add(chunk as u64);
-
-                let mut body = Vec::with_capacity(9);
-                body.push(STATUS_OK);
-                body.extend_from_slice(&through.to_be_bytes());
-                Outcome::Answer(body)
+                let chunk = &frame.body[8..];
+                // A chunk that is not whole packets is not a chunk. The caller
+                // refuses it too; this side refuses it because it cannot assume
+                // the caller did.
+                if !chunk.len().is_multiple_of(TS_PACKET_LEN) {
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                }
+                let Ok(start) = i64::try_from(start) else {
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                };
+                let Some(psi) = self.psi.as_mut() else {
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                };
+                let Ok(outcome) = psi.ingest(start, chunk) else {
+                    // The parser refuses what it cannot interpret. Its refusal is
+                    // this answer's refusal; nothing is invented in between.
+                    return Outcome::Answer(vec![STATUS_MALFORMED]);
+                };
+                Outcome::Answer(encode_psi_result(&outcome))
             }
             MSG_OBSERVE_AUDIO_BATCH => Outcome::Answer(self.observe_audio(&frame.body)),
             MSG_SHUTDOWN => {
@@ -343,50 +444,387 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Reads the two bytes a handshake or set-target request carries.
+///
+/// Exactly two. A longer body carries something this build does not know about,
+/// and answering OK to it would claim otherwise.
+fn two_byte_program(body: &[u8]) -> Option<u16> {
+    if body.len() != 2 {
+        return None;
+    }
+    Some(u16::from_be_bytes([body[0], body[1]]))
+}
+
+/// The size the answer for this outcome will encode to.
+///
+/// Computed before anything is built, in checked arithmetic. A response that
+/// cannot fit the frame must fail rather than be discovered half-written: the
+/// alternative is allocating megabytes to find out they were not wanted, which
+/// is the same mistake as trusting a length prefix, made from the other side.
+fn psi_result_size(outcome: &PsiOutcome) -> Option<usize> {
+    let mut size = RESULT_FIXED_SIZE;
+    size = size.checked_add(outcome.events.len().checked_mul(EVENT_SIZE)?)?;
+    size = size.checked_add(outcome.facts.audio_pids.len().checked_mul(AUDIO_PID_SIZE)?)?;
+    size = size.checked_add(
+        outcome
+            .facts
+            .audio_tracks
+            .len()
+            .checked_mul(AUDIO_TRACK_SIZE)?,
+    )?;
+    for table in [&outcome.active.pat_sections, &outcome.active.pmt_sections] {
+        for section in table {
+            size = size
+                .checked_add(SECTION_PREFIX)?
+                .checked_add(section.len())?;
+        }
+    }
+    Some(size)
+}
+
+/// Lays out one result. See the layout comment in the Go `psiresult.go`.
+///
+/// The two answers that carry a result use this one function, because they carry
+/// the same thing: what the core knows now. A second layout would be a second
+/// place for the two implementations to drift.
+fn encode_psi_result(outcome: &PsiOutcome) -> Vec<u8> {
+    let Some(size) = psi_result_size(outcome) else {
+        return vec![STATUS_MALFORMED];
+    };
+    if size > MAX_FRAME_SIZE - HEADER_SIZE {
+        // Fail closed rather than raise the ceiling. With PSI held to the bounds
+        // the syntax gives - 256 sections of at most 1024 bytes per table - a
+        // real answer is a few hundred kilobytes at its worst, so reaching this
+        // means something upstream is not what it claims to be.
+        return vec![STATUS_MALFORMED];
+    }
+
+    let mut body = Vec::with_capacity(size);
+    body.push(STATUS_OK);
+    body.push(COVERAGE_PSI_ONLY);
+    #[allow(clippy::cast_sign_loss)] // an offset is never negative; the caller checks it too
+    body.extend_from_slice(&(outcome.processed_through as u64).to_be_bytes());
+
+    encode_events(&mut body, &outcome.events);
+    encode_facts(&mut body, &outcome.facts);
+    encode_active_psi(&mut body, &outcome.active);
+
+    debug_assert_eq!(
+        body.len(),
+        size,
+        "the preflight size and the encoding disagree"
+    );
+    body
+}
+
+fn encode_events(body: &mut Vec<u8>, events: &[PsiEvent]) {
+    body.extend_from_slice(&count32(events.len()).to_be_bytes());
+    for event in events {
+        match event {
+            PsiEvent::ProgramIdentityChanged => {
+                body.push(EVENT_PROGRAM_IDENTITY_CHANGED);
+                // Offset and joinable are the Go event's shape. A PSI event
+                // carries neither, and says so as zeroes rather than by being a
+                // different size from the events a later step will add.
+                body.extend_from_slice(&0u64.to_be_bytes());
+                body.push(0);
+            }
+        }
+    }
+}
+
+fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) {
+    let mut flags = 0u8;
+    if facts.has_pat {
+        flags |= FACT_HAS_PAT;
+    }
+    if facts.has_pmt {
+        flags |= FACT_HAS_PMT;
+    }
+    body.push(flags);
+    body.push(facts.pmt_version);
+    body.extend_from_slice(&facts.program_number.to_be_bytes());
+    body.extend_from_slice(&facts.pmt_pid.to_be_bytes());
+    body.extend_from_slice(&facts.video_pid.to_be_bytes());
+    body.push(match facts.video_codec {
+        VideoCodec::Unknown => VIDEO_CODEC_UNKNOWN,
+        VideoCodec::H264 => VIDEO_CODEC_H264,
+        VideoCodec::H265 => VIDEO_CODEC_H265,
+        VideoCodec::Mpeg2 => VIDEO_CODEC_MPEG2,
+    });
+
+    body.extend_from_slice(&count32(facts.audio_pids.len()).to_be_bytes());
+    for pid in &facts.audio_pids {
+        body.extend_from_slice(&pid.to_be_bytes());
+    }
+
+    body.extend_from_slice(&count32(facts.audio_tracks.len()).to_be_bytes());
+    for track in &facts.audio_tracks {
+        body.extend_from_slice(&track.pid.to_be_bytes());
+        body.push(track.stream_type);
+        body.push(match track.codec.as_str() {
+            "mp2" => AUDIO_CODEC_MP2,
+            "aac" => AUDIO_CODEC_AAC,
+            "ac3" => AUDIO_CODEC_AC3,
+            "eac3" => AUDIO_CODEC_EAC3,
+            "dts" => AUDIO_CODEC_DTS,
+            _ => AUDIO_CODEC_UNKNOWN,
+        });
+        // Three bytes, always. The parser produces the descriptor's three or
+        // those of `und`, so a shorter one is a parser that changed and a longer
+        // one cannot happen; both are padded and truncated here rather than
+        // written as a length the reader would have to trust.
+        let mut language = [b'u', b'n', b'd'];
+        let bytes = track.language.as_bytes();
+        if bytes.len() == LANGUAGE_LEN {
+            language.copy_from_slice(bytes);
+        }
+        body.extend_from_slice(&language);
+        body.push(track.declared.channels);
+        let mut track_flags = 0u8;
+        if track.declared.multichannel {
+            track_flags |= TRACK_MULTICHANNEL;
+        }
+        if track.declared.has_component_type {
+            track_flags |= TRACK_HAS_COMPONENT_TYPE;
+        }
+        body.push(track_flags);
+        body.push(track.declared.component_type);
+    }
+}
+
+fn encode_active_psi(body: &mut Vec<u8>, active: &ActivePsi) {
+    for table in [&active.pat_sections, &active.pmt_sections] {
+        // A table has at most 256 sections, so the count is a u16 - a u8 cannot
+        // hold 256, and the one value it cannot hold is the legal maximum.
+        body.extend_from_slice(&count16(table.len()).to_be_bytes());
+        for section in table {
+            body.extend_from_slice(&count16(section.len()).to_be_bytes());
+            body.extend_from_slice(section);
+        }
+    }
+}
+
+/// Narrows a length that the preflight has already proved fits a frame.
+///
+/// Saturating rather than truncating: a value past what the field holds is a
+/// bug, and a truncation would encode a small number that the reader believes.
+fn count32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+fn count16(n: usize) -> u16 {
+    u16::try_from(n).unwrap_or(u16::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // The same bytes the Go side asserts. If either edits its encoder, one of the
-    // two tests goes red rather than both silently agreeing on something new.
-    const GOLDEN_INGEST_ANSWER: &[u8] = &[
-        0x00, 0x00, 0x00, 0x0F, // length: header 6 + body 9
-        0x02, // version
-        0x02, // ingest
-        0x00, 0x00, 0x00, 0x07, // request id 7
+    /// An empty PSI result: nothing read, nothing in force.
+    ///
+    /// The same bytes the Go side asserts. If either edits its encoder, one of
+    /// the two tests goes red rather than both silently agreeing on something
+    /// new - which is the only thing keeping two implementations of one format
+    /// from drifting apart.
+    const GOLDEN_EMPTY_RESULT: &[u8] = &[
         0x00, // status ok
+        0x01, // coverage: PSI only
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
+        0x00, 0x00, 0x00, 0x00, // no events
+        0x00, // no PAT, no PMT
+        0x00, // PMT version 0
+        0x00, 0x00, // programme 0
+        0x00, 0x00, // PMT PID 0
+        0x00, 0x00, // video PID 0
+        0x00, // video codec unknown
+        0x00, 0x00, 0x00, 0x00, // no audio PIDs
+        0x00, 0x00, 0x00, 0x00, // no audio tracks
+        0x00, 0x00, // no PAT sections
+        0x00, 0x00, // no PMT sections
     ];
 
     #[test]
-    fn an_ingest_answer_is_on_the_wire_exactly_as_agreed() {
-        let mut body = Vec::new();
-        body.push(STATUS_OK);
-        body.extend_from_slice(&1066u64.to_be_bytes());
-
-        let mut out = Vec::new();
-        write_frame(&mut out, MSG_INGEST, 7, &body).expect("write");
-        assert_eq!(out, GOLDEN_INGEST_ANSWER);
+    fn an_empty_result_is_on_the_wire_exactly_as_agreed() {
+        let outcome = PsiOutcome {
+            processed_through: 1066,
+            events: Vec::new(),
+            facts: PsiFacts::default(),
+            active: ActivePsi::default(),
+        };
+        assert_eq!(encode_psi_result(&outcome), GOLDEN_EMPTY_RESULT);
     }
 
+    /// A result with everything in it: an event, both tables in force, a video
+    /// stream and one audio track with a full declaration.
+    const GOLDEN_FULL_RESULT: &[u8] = &[
+        0x00, // status ok
+        0x01, // coverage: PSI only
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
+        0x00, 0x00, 0x00, 0x01, // one event
+        0x01, // programme identity changed
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // offset 0
+        0x00, // not joinable
+        0x03, // has PAT and PMT
+        0x05, // PMT version 5
+        0x00, 0x01, // programme 1
+        0x01, 0x00, // PMT PID 256
+        0x01, 0x01, // video PID 257
+        0x01, // H.264
+        0x00, 0x00, 0x00, 0x01, // one audio PID
+        0x01, 0x02, // PID 258
+        0x00, 0x00, 0x00, 0x01, // one audio track
+        0x01, 0x02, // PID 258
+        0x06, // stream type 0x06
+        0x03, // ac3
+        b'd', b'e', b'u', // language
+        0x02, // two channels
+        0x02, // has a component type, not multichannel
+        0x04, // component type 4
+        0x00, 0x01, // one PAT section
+        0x00, 0x04, // four bytes
+        0x00, 0xB0, 0x0D, 0x99, //
+        0x00, 0x01, // one PMT section
+        0x00, 0x03, // three bytes
+        0x02, 0xB0, 0x21, //
+    ];
+
     #[test]
-    fn ingest_reports_everything_it_was_handed() {
+    fn a_full_result_is_on_the_wire_exactly_as_agreed() {
+        let outcome = PsiOutcome {
+            processed_through: 188,
+            events: vec![PsiEvent::ProgramIdentityChanged],
+            facts: PsiFacts {
+                has_pat: true,
+                has_pmt: true,
+                pmt_version: 5,
+                program_number: 1,
+                pmt_pid: 256,
+                video_pid: 257,
+                video_codec: VideoCodec::H264,
+                audio_pids: vec![258],
+                audio_tracks: vec![xg2g_media_core::psi::AudioTrack {
+                    pid: 258,
+                    stream_type: 0x06,
+                    codec: "ac3".to_string(),
+                    language: "deu".to_string(),
+                    declared: xg2g_media_core::psi::ChannelDeclaration {
+                        channels: 2,
+                        multichannel: false,
+                        component_type: 4,
+                        has_component_type: true,
+                    },
+                }],
+            },
+            active: ActivePsi {
+                pat_sections: vec![vec![0x00, 0xB0, 0x0D, 0x99]],
+                pmt_sections: vec![vec![0x02, 0xB0, 0x21]],
+            },
+        };
+        assert_eq!(encode_psi_result(&outcome), GOLDEN_FULL_RESULT);
+    }
+
+    /// A chunk that is not whole transport packets is not a chunk. The caller
+    /// refuses it too; this side refuses it because it cannot assume the caller
+    /// did.
+    #[test]
+    fn a_chunk_that_is_not_whole_packets_is_refused() {
+        let mut session = handshaken(1);
         let mut body = 1000u64.to_be_bytes().to_vec();
         body.extend_from_slice(&[0u8; 66]);
+        match session.handle(&ingest_frame(body)) {
+            Outcome::Answer(a) => assert_eq!(a[0], STATUS_MALFORMED),
+            Outcome::Finished(_) => panic!("ingest should not finish the session"),
+        }
+    }
+
+    /// An ingest before a handshake has no core to reach. Refused rather than
+    /// answered by a core invented on the spot with a target nobody chose.
+    #[test]
+    fn an_ingest_before_a_handshake_is_refused() {
+        let body = 0u64.to_be_bytes().to_vec();
+        match Session::new().handle(&ingest_frame(body)) {
+            Outcome::Answer(a) => assert_eq!(a[0], STATUS_MALFORMED),
+            Outcome::Finished(_) => panic!("ingest should not finish the session"),
+        }
+    }
+
+    /// The handshake establishes the target, and the core that follows it reads
+    /// the programme that target names.
+    #[test]
+    fn the_handshake_target_is_the_core_target() {
+        let mut session = handshaken(2);
+        let mut body = 0u64.to_be_bytes().to_vec();
+        body.extend_from_slice(&two_programme_pat_packet());
+
+        let Outcome::Answer(answer) = session.handle(&ingest_frame(body)) else {
+            panic!("ingest should not finish the session");
+        };
+        assert_eq!(answer[0], STATUS_OK);
+        assert_eq!(
+            pmt_pid_of(&answer),
+            0x0200,
+            "the handshake target was not followed"
+        );
+    }
+
+    /// Reads the PMT PID out of an answer.
+    ///
+    /// Counted rather than indexed at a literal: the facts sit after the events,
+    /// so where they begin depends on how many there were. A test that hard-coded
+    /// an offset would pass or fail for reasons that have nothing to do with the
+    /// field it names.
+    fn pmt_pid_of(answer: &[u8]) -> u16 {
+        let event_count =
+            u32::from_be_bytes(answer[10..14].try_into().expect("event count")) as usize;
+        let facts = 14 + event_count * EVENT_SIZE;
+        let pmt_pid = facts + 1 + 1 + 2; // flags, version, programme number
+        u16::from_be_bytes([answer[pmt_pid], answer[pmt_pid + 1]])
+    }
+
+    fn handshaken(target: u16) -> Session {
+        let mut session = Session::new();
         let f = Frame {
+            version: VERSION,
+            kind: MSG_HANDSHAKE,
+            request_id: 1,
+            body: target.to_be_bytes().to_vec(),
+        };
+        match session.handle(&f) {
+            Outcome::Answer(a) => assert_eq!(a[0], STATUS_OK),
+            Outcome::Finished(_) => panic!("a handshake should not finish the session"),
+        }
+        session
+    }
+
+    fn ingest_frame(body: Vec<u8>) -> Frame {
+        Frame {
             version: VERSION,
             kind: MSG_INGEST,
             request_id: 1,
             body,
-        };
-
-        match Session::new().handle(&f) {
-            Outcome::Answer(a) => {
-                assert_eq!(a[0], STATUS_OK);
-                assert_eq!(u64::from_be_bytes(a[1..9].try_into().unwrap()), 1066);
-            }
-            Outcome::Finished(_) => panic!("ingest should not finish the session"),
         }
+    }
+
+    /// One packet carrying a PAT that names programme 1 on PID 0x0100 and
+    /// programme 2 on PID 0x0200.
+    fn two_programme_pat_packet() -> Vec<u8> {
+        // The CRC is written out rather than computed: the parser this crate
+        // owns is what the test is about, and a fixture that computed its own
+        // CRC with the same code would agree with itself. A wrong one here is
+        // caught immediately - the section would be refused and the assertion
+        // below would find PMT PID 0.
+        let section = [
+            0x00, 0xB0, 0x11, 0x00, 0x01, 0xC1, 0x00, 0x00, // header
+            0x00, 0x01, 0xE1, 0x00, // programme 1 -> 0x0100
+            0x00, 0x02, 0xE2, 0x00, // programme 2 -> 0x0200
+            0x39, 0x89, 0xA5, 0xA9, // CRC-32/MPEG-2
+        ];
+
+        let mut packet = vec![0x47, 0x40, 0x00, 0x10, 0x00];
+        packet.extend_from_slice(&section);
+        packet.resize(TS_PACKET_LEN, 0xFF);
+        packet
     }
 
     #[test]
@@ -409,7 +847,7 @@ mod tests {
     // produce these exact lengths to pass.
     const GOLDEN_OBSERVE_REQUEST: &[u8] = &[
         0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-        0x02, // version
+        0x03, // version
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, 0x00, 0x00, 0x01, // one batch
@@ -422,7 +860,7 @@ mod tests {
 
     const GOLDEN_OBSERVE_ANSWER: &[u8] = &[
         0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-        0x02, // version
+        0x03, // version
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, // status ok

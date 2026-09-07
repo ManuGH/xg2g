@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -229,6 +228,14 @@ func (r *RemoteCore) Ingest(ctx context.Context, startOffset int64, data []byte)
 	if startOffset < 0 {
 		return mediafacts.ParseResult{}, fmt.Errorf("negative start offset %d", startOffset)
 	}
+	// The same refusal GoCore makes, for the same reason and with the same error.
+	// Made here rather than only across the socket: a chunk that is not whole
+	// packets is the caller's mistake, and a round trip to learn that would give
+	// one implementation of Core a different failure mode from the other. The
+	// peer checks it too - it cannot trust this side either.
+	if len(data)%mediafacts.TSPacketSize != 0 {
+		return mediafacts.ParseResult{}, mediafacts.ErrInvalidPacketSize
+	}
 
 	body := make([]byte, 8+len(data))
 	binary.BigEndian.PutUint64(body[:8], uint64(startOffset))
@@ -241,21 +248,7 @@ func (r *RemoteCore) Ingest(ctx context.Context, startOffset int64, data []byte)
 	if err := statusError(resp); err != nil {
 		return mediafacts.ParseResult{}, err
 	}
-	// Response body is one status byte, then the offset. Exactly that: extra bytes
-	// mean the peer is sending something this build does not understand, and a
-	// reader that ignores them cannot tell that from a peer it agrees with.
-	if err := exactBody(resp, 1+8); err != nil {
-		return mediafacts.ParseResult{}, err
-	}
-	// The peer supplied this number. A value past what an offset can be is not a
-	// large offset, it is a peer that is failing - and converting it blindly would
-	// hand the caller a negative one.
-	through := binary.BigEndian.Uint64(resp.Body[1:9])
-	if through > math.MaxInt64 {
-		return mediafacts.ParseResult{}, fmt.Errorf("%w: answered with offset %d",
-			mediafacts.ErrCoreInvalidResponse, through)
-	}
-	return mediafacts.ParseResult{ProcessedThroughOffset: int64(through)}, nil
+	return decodePSIResult(resp.Body)
 }
 
 // SetTargetProgram selects the program the core follows.
@@ -270,10 +263,7 @@ func (r *RemoteCore) SetTargetProgram(ctx context.Context, programNumber uint16)
 	if err := statusError(resp); err != nil {
 		return mediafacts.ParseResult{}, err
 	}
-	if err := exactBody(resp, 1); err != nil {
-		return mediafacts.ParseResult{}, err
-	}
-	return mediafacts.ParseResult{}, nil
+	return decodePSIResult(resp.Body)
 }
 
 // Close ends the core process and reaps it.

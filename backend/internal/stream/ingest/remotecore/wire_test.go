@@ -19,26 +19,24 @@ import (
 // agreeing on something the other no longer sends. This is the one place where
 // both are pinned to the same literal, so an edit on either side turns one of the
 // two red.
-var goldenIngestAnswer = []byte{
-	0x00, 0x00, 0x00, 0x0F, // length: header 6 + body 9
-	0x02,                   // version
-	0x02,                   // ingest
-	0x00, 0x00, 0x00, 0x07, // request id 7
-	0x00,                                           // status ok
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
+var goldenHandshakeRequest = []byte{
+	0x00, 0x00, 0x00, 0x08, // length: header 6 + body 2
+	0x03,                   // version
+	0x01,                   // handshake
+	0x00, 0x00, 0x00, 0x01, // request id 1
+	0x00, 0x01, // target programme 1
 }
 
-func TestWire_AnIngestAnswerIsOnTheWireExactlyAsAgreed(t *testing.T) {
-	body := make([]byte, 9)
-	body[0] = StatusOK
-	binary.BigEndian.PutUint64(body[1:], 1066)
+func TestWire_AHandshakeIsOnTheWireExactlyAsAgreed(t *testing.T) {
+	body := make([]byte, 2)
+	binary.BigEndian.PutUint16(body, 1)
 
-	raw, err := Frame{Version: Version, Type: MsgIngest, RequestID: 7, Body: body}.Encode()
+	raw, err := Frame{Version: Version, Type: MsgHandshake, RequestID: 1, Body: body}.Encode()
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	if !bytes.Equal(raw, goldenIngestAnswer) {
-		t.Errorf("frame on the wire =\n  %x\nwant\n  %x", raw, goldenIngestAnswer)
+	if !bytes.Equal(raw, goldenHandshakeRequest) {
+		t.Errorf("frame on the wire =\n  %x\nwant\n  %x", raw, goldenHandshakeRequest)
 	}
 }
 
