@@ -266,4 +266,31 @@ describe('createDefaultLiveSessionTransport', () => {
       vi.useRealTimers();
     }
   });
+
+  it('postStartIntent rejects with AbortError when signal aborts while reading response body', async () => {
+    const abort = new AbortController();
+    const bodyPromise = new Promise<{ sessionId: string }>(() => {});
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      headers: new Headers(),
+      json: () => bodyPromise,
+    });
+
+    const transport = createDefaultLiveSessionTransport({
+      apiBase,
+      authHeaders,
+      fetchFn: fetchMock as unknown as typeof fetch,
+    });
+
+    const postPromise = transport.postStartIntent({
+      body: { type: 'stream.start' },
+      signal: abort.signal,
+    });
+
+    abort.abort();
+
+    await expect(postPromise).rejects.toThrow();
+    await expect(postPromise).rejects.toHaveProperty('name', 'AbortError');
+  });
 });

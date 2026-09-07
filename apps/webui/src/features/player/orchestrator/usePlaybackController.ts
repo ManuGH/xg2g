@@ -3,6 +3,8 @@
 
 import {
   useEffect,
+  useInsertionEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -39,11 +41,17 @@ export interface UsePlaybackControllerResult {
 // - Controller instance is created once via useState and exposed via useSyncExternalStore.
 // - Executor identity is decoupled from controller lifecycle: executorRef is updated
 //   synchronously on every render, so changing callbacks never causes effect tear-down.
-// - useEffect manages component mount/unmount lifecycle:
-//   * StrictMode mount simulation (Setup 1 -> Cleanup 1 -> Setup 2) re-runs effect setup;
-//     controller disposal is idempotent and subsequent setup re-establishes active state.
-//   * On real unmount, effect cleanup runs, disconnecting the executor and calling controller.dispose().
-//   * useLayoutEffect setup re-connects the executor on mount and when revealed from Suspense.
+// - useInsertionEffect manages the true component mount/unmount lifecycle for the executor wiring:
+//   * Setup connects the executor delegate synchronously.
+//   * StrictMode mount simulation (Setup 1 -> Cleanup 1 -> Setup 2) only re-runs layout
+//     and passive effects; insertion effects remain active so child layout effects have
+//     a valid executor in Setup 2.
+//   * On real unmount, insertion effect cleanup runs, disconnecting the executor so post-unmount
+//     dispatches drop commands.
+// - useLayoutEffect re-connects the executor on mount and when revealed from Suspense.
+// - useEffect manages the controller active/disposed lifecycle:
+//   * Setup calls controller.activate() (clears isDisposed).
+//   * Cleanup calls controller.dispose() (cancels in-flight starts and reaps sessions).
 export function usePlaybackController(
   transport: LiveSessionTransport,
   createInitialState: () => PlaybackDomainState,
@@ -78,14 +86,20 @@ export function usePlaybackController(
     }),
   );
 
-  // Reconnect executor and reactivate controller on each render.
-  // This ensures child layout effects (which run before parent effects)
-  // have a valid executor during StrictMode remount, and clears isDisposed.
-  controller.setCommandExecutor((command) => {
-    return executorRef.current?.(command);
-  });
+  useInsertionEffect(() => {
+    controller.setCommandExecutor((command) => executorRef.current?.(command));
+    return () => {
+      controller.setCommandExecutor(null);
+    };
+  }, [controller]);
+
+  useLayoutEffect(() => {
+    controller.setCommandExecutor((command) => executorRef.current?.(command));
+  }, [controller]);
 
   useEffect(() => {
+    controller.activate();
+
     return () => {
       controller.dispose();
     };

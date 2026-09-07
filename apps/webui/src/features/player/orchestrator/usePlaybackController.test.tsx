@@ -33,9 +33,22 @@ function createInitialState(): PlaybackDomainState {
 
 function createDummyTransport(): LiveSessionTransport {
   return {
-    fetchStreamInfo: vi.fn().mockResolvedValue({ status: 200, data: {}, headers: new Headers() }),
+    fetchStreamInfo: vi.fn().mockResolvedValue({
+      status: 200,
+      data: {
+        mode: 'direct_stream',
+        playbackDecisionToken: 'token-default',
+        decision: { mode: 'direct_stream', playbackDecisionToken: 'token-default' },
+      },
+      headers: new Headers(),
+    }),
     postStartIntent: vi.fn().mockResolvedValue({ status: 200, data: { sessionId: 's1' }, headers: new Headers() }),
-    waitForReady: vi.fn().mockResolvedValue({ sessionId: 's1', playbackUrl: 'http://test' }),
+    waitForReady: vi.fn().mockResolvedValue({
+      sessionId: 's1',
+      playbackUrl: 'http://test',
+      heartbeatIntervalSeconds: 5,
+      leaseExpiresAt: '2026-09-07T22:00:00Z',
+    }),
     postStopIntent: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -276,5 +289,71 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
     // Dispatching after reveal must execute commands synchronously
     screen.getByRole('button', { name: 'Stop' }).click();
     expect(executed.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('allows startLive to succeed after StrictMode mount simulation is fully flushed', async () => {
+    const transport = createDummyTransport();
+    let controllerRef: any = null;
+
+    function TestComponent() {
+      const { controller } = usePlaybackController(
+        transport,
+        createInitialState,
+        () => {},
+      );
+      controllerRef = controller;
+      return <div>Mounted</div>;
+    }
+
+    render(
+      <StrictMode>
+        <TestComponent />
+      </StrictMode>,
+    );
+
+    expect(screen.getByText('Mounted')).toBeInTheDocument();
+    expect(controllerRef).not.toBeNull();
+
+    // After StrictMode mount is flushed, controller must be active (not disposed)
+    // startLive must proceed rather than immediately cancelling with user_stop
+    let result: any;
+    await act(async () => {
+      result = await controllerRef.startLive({ serviceRef: 'live-1' });
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sessionId).toBe('s1');
+  });
+
+  it('drops commands when saved dispatch is invoked after real component unmount', () => {
+    const transport = createDummyTransport();
+    const executed: PlaybackCommand[] = [];
+    let savedDispatch: any = null;
+
+    function TestComponent() {
+      const { dispatch } = usePlaybackController(
+        transport,
+        createInitialState,
+        (cmd) => executed.push(cmd),
+      );
+      savedDispatch = dispatch;
+      return <div>Active</div>;
+    }
+
+    const { unmount } = render(<TestComponent />);
+    expect(savedDispatch).not.toBeNull();
+
+    // Unmount the component
+    unmount();
+
+    // Calling saved dispatch after unmount must execute 0 commands
+    savedDispatch({
+      type: 'intent.stop.requested',
+      epoch: 1,
+      reason: 'user_stop',
+      notifyClose: false,
+    });
+
+    expect(executed).toHaveLength(0);
   });
 });

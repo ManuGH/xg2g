@@ -101,6 +101,7 @@ export interface PlaybackController {
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
   stop(reason?: PlaybackStopReason | string, notifyClose?: boolean): Promise<void>;
+  activate(): void;
   dispose(): void;
 
   // Observability & inspection for tests
@@ -644,6 +645,26 @@ export function createPlaybackController(
         return;
       }
 
+      // Validate live lease contract before adoption
+      const isLiveSession = readySession.mode === 'LIVE' || !readySession.mode;
+      if (isLiveSession) {
+        const hasValidHeartbeat =
+          typeof readySession.heartbeatIntervalSeconds === 'number' &&
+          Number.isFinite(readySession.heartbeatIntervalSeconds) &&
+          readySession.heartbeatIntervalSeconds > 0;
+        const hasInvalidLease =
+          readySession.leaseExpiresAt !== undefined &&
+          readySession.leaseExpiresAt !== null &&
+          (typeof readySession.leaseExpiresAt !== 'string' ||
+            readySession.leaseExpiresAt.trim().length === 0);
+
+        if (!hasValidHeartbeat || hasInvalidLease) {
+          throw new Error(
+            `Live session ${returnedSessionId} readiness contract violation: missing valid heartbeat interval`,
+          );
+        }
+      }
+
       runtime.dispatch({
         type: 'normative.session.phase.changed',
         playbackEpoch: attempt.epoch,
@@ -682,7 +703,11 @@ export function createPlaybackController(
 
       if (!attempt.cancelled && !attempt.settled) {
         attempt.settled = true;
-        if (err instanceof Error && err.message.includes('timed out')) {
+        const isTimeout =
+          (err instanceof Error && err.message.includes('timed out')) ||
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError');
+        if (isTimeout) {
           attempt.cancelled = true;
           attempt.cancelReason = 'timeout';
           attempt.resolvePublic({ status: 'cancelled', reason: 'timeout' });
@@ -861,6 +886,10 @@ export function createPlaybackController(
     return promise;
   }
 
+  function activate(): void {
+    isDisposed = false;
+  }
+
   function dispose(): void {
     isDisposed = true;
     if (currentAttempt && !currentAttempt.settled) {
@@ -898,9 +927,6 @@ export function createPlaybackController(
     subscribe: runtime.subscribe,
     dispatch: runtime.dispatch,
     setCommandExecutor(exec) {
-      if (exec) {
-        isDisposed = false;
-      }
       executor = exec;
       runtime.setCommandExecutor(exec);
     },
@@ -917,6 +943,7 @@ export function createPlaybackController(
 
     startLive,
     stop,
+    activate,
     dispose,
 
     getActiveSessionId() {

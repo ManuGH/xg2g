@@ -84,6 +84,8 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       waitForReady: vi.fn().mockResolvedValue({
         sessionId: 'session-default-1',
         playbackUrl: 'http://localhost/stream.m3u8',
+        heartbeatIntervalSeconds: 5,
+        leaseExpiresAt: '2026-09-07T22:00:00Z',
       } satisfies SessionReadyResult),
 
       postStopIntent: vi.fn().mockImplementation(async ({ sessionId }) => {
@@ -750,14 +752,24 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
     it('does not stop the adopted session when obsolete readiness completes', async () => {
       const d = defer<SessionReadyResult>();
       const t = createMockTransport({
-        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({ sessionId, playbackUrl: '/hls/index.m3u8' })),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: '/hls/index.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
+        })),
       });
       (t.waitForReady as any).mockReturnValueOnce(d.promise);
       const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
       void c.startLive({ serviceRef: 'A' });
       await vi.advanceTimersByTimeAsync(0);
       await c.startLive({ serviceRef: 'B' });
-      d.resolve({ sessionId: 'session-default-1', playbackUrl: '/hls/index.m3u8' });
+      d.resolve({
+        sessionId: 'session-default-1',
+        playbackUrl: '/hls/index.m3u8',
+        heartbeatIntervalSeconds: 5,
+        leaseExpiresAt: '2026-09-07T22:00:00Z',
+      });
       await vi.advanceTimersByTimeAsync(0);
       expect(t.postStopIntent).not.toHaveBeenCalled();
       expect(c.getActiveSessionId()).toBe('session-default-1');
@@ -812,7 +824,12 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       const d = defer<SessionReadyResult>();
       const t = createMockTransport({
         postStartIntent: vi.fn().mockResolvedValue(accepted('S')),
-        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({ sessionId, playbackUrl: '/hls/index.m3u8' })),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: '/hls/index.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-07T22:00:00Z',
+        })),
       });
       (t.waitForReady as any).mockReturnValueOnce(d.promise);
       const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
@@ -1421,6 +1438,55 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       expect(c.getActiveSessionId()).toBe('timely-S');
       expect(c.getPendingAdoptionCandidatesCount()).toBe(0);
       expect(t.postStopIntent).not.toHaveBeenCalled();
+    });
+
+    it('yields reason: timeout when transport rejects with AbortError on stalled response body (never missing sessionId)', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {
+          return new Promise<StartIntentResult>((_, reject) => {
+            const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+            signal?.addEventListener('abort', onAbort, { once: true });
+          });
+        }),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        httpRequestTimeoutMs: 100,
+      });
+
+      const startPromise = c.startLive({ serviceRef: 'A' });
+
+      // Advance past httpRequestTimeoutMs so signal aborts
+      await vi.advanceTimersByTimeAsync(150);
+
+      const res = await startPromise;
+      expect(res.status).toBe('cancelled');
+      expect((res as any).reason).toBe('timeout');
+      expect(c.getActiveSessionId()).toBeNull();
+    });
+
+    it('reaps session and rejects if ready live session lacks valid heartbeat interval', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('s-invalid-lease')),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 's-invalid-lease',
+          playbackUrl: 'http://localhost/stream.m3u8',
+          // missing heartbeatIntervalSeconds
+        }),
+      });
+
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+
+      await expect(c.startLive({ serviceRef: 'A' })).rejects.toThrow(
+        /readiness contract violation: missing valid heartbeat interval/,
+      );
+
+      expect(c.getActiveSessionId()).toBeNull();
+      expect(t.postStopIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's-invalid-lease' }),
+      );
     });
   });
 });

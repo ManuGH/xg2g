@@ -122,7 +122,14 @@ async function parseResponseBody(res: Response, signal?: AbortSignal): Promise<u
     try {
       const p = maybe.json();
       return signal ? await raceWithSignal(p, signal) : await p;
-    } catch {
+    } catch (err) {
+      if (
+        signal?.aborted ||
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError')
+      ) {
+        throw err;
+      }
       // json() failed or was not a json endpoint, try text fallback
     }
   }
@@ -132,7 +139,14 @@ async function parseResponseBody(res: Response, signal?: AbortSignal): Promise<u
       const rawText = signal ? await raceWithSignal(p, signal) : await p;
       if (!rawText) return null;
       return JSON.parse(rawText);
-    } catch {
+    } catch (err) {
+      if (
+        signal?.aborted ||
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError')
+      ) {
+        throw err;
+      }
       // text parse failed
     }
   }

@@ -1735,8 +1735,9 @@ export function usePlaybackOrchestrator(
     _reason?: PlaybackStopReason,
   ): Promise<void> => {
     userPauseIntentRef.current = true;
-    await timelineReportCompletionRef.current;
+    const timelineCompletion = timelineReportCompletionRef.current;
     await teardownActivePlayback();
+    await timelineCompletion;
   }, [teardownActivePlayback]);
 
   const stopStream = useCallback(async (
