@@ -182,6 +182,7 @@ export function createPlaybackController(
 
   let playbackEpoch = runtime.getState().epoch.playback;
   let sessionEpoch = runtime.getState().epoch.session;
+  const stoppedEpochs = new Set<number>();
 
   let activeSessionId: string | null = null;
   let activeSessionTransport: LiveSessionTransport | null = null;
@@ -341,6 +342,27 @@ export function createPlaybackController(
     hasSessionIntent = true,
     explicitProfilePinned = false,
   ): void {
+    if (isDisposed) {
+      return;
+    }
+
+    // Fence: a stale attempt must never mutate state or retire a newer session!
+    if (isStalePlaybackEpoch(epoch)) {
+      return;
+    }
+
+    // If switching to a non-browser-Live mode, retire any active Live session!
+    if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
+      const sessionToRetire = activeSessionId;
+      const transportToUse = activeSessionTransport ?? getLatestTransport();
+      activeSessionId = null;
+      activeSessionTransport = null;
+      if (sessionToRetire) {
+        void retireAndStopSession(sessionToRetire, transportToUse);
+      }
+      flushPendingAdoptionCandidates();
+    }
+
     options.onAttemptStarted?.(epoch);
     runtime.dispatch({
       type: 'normative.playback.attempt.started',
@@ -361,11 +383,11 @@ export function createPlaybackController(
   }
 
   function isStalePlaybackEpoch(epoch: number): boolean {
-    return epoch !== playbackEpoch;
+    return epoch !== playbackEpoch || stoppedEpochs.has(epoch);
   }
 
   function isStaleSessionEpoch(pEpoch: number, sEpoch: number): boolean {
-    return pEpoch !== playbackEpoch || sEpoch !== sessionEpoch;
+    return isStalePlaybackEpoch(pEpoch) || sEpoch !== sessionEpoch;
   }
 
   async function executeLiveStartup(
@@ -811,59 +833,70 @@ export function createPlaybackController(
     return publicPromise;
   }
 
-  async function stop(
+  function stop(
     reason: PlaybackStopReason | string = 'user_stop',
     notifyClose: boolean = false,
   ): Promise<void> {
-    const stopEpoch = playbackEpoch;
-    const existing = inFlightStopPromises.get(stopEpoch);
-    if (existing) {
-      return existing;
+    const inFlight = inFlightStopPromises.get(playbackEpoch);
+    if (inFlight) {
+      return inFlight;
     }
 
     const currentStatus = runtime.getState().status;
-    if (currentStatus === 'stopped' && !activeSessionId && !currentAttempt) {
+    if (
+      currentStatus === 'stopped' &&
+      !activeSessionId &&
+      !currentAttempt &&
+      inFlightStarts.size === 0 &&
+      stoppedEpochs.has(playbackEpoch)
+    ) {
       return Promise.resolve();
     }
 
+    // 1. Synchronously advance playbackEpoch to invalidate pending preparation
+    playbackEpoch += 1;
+    sessionEpoch = 0;
+    const stopEpoch = playbackEpoch;
+    stoppedEpochs.add(stopEpoch);
+
+    // 2. Synchronously snapshot and clear activeSessionId and its transport
+    const sessionToStop = activeSessionId;
+    const transportForActiveSession = activeSessionTransport;
+    activeSessionId = null;
+    activeSessionTransport = null;
+
+    // 3. Synchronously attempt invalidation & prompt promise settle
+    if (currentAttempt && !currentAttempt.settled) {
+      if (currentAttempt.settlementTimer) {
+        clearTimeout(currentAttempt.settlementTimer);
+        currentAttempt.settlementTimer = null;
+      }
+      currentAttempt.cancelled = true;
+      currentAttempt.cancelReason = 'user_stop';
+      currentAttempt.abortController.abort();
+      currentAttempt.settled = true;
+      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+    }
+    currentAttempt = null;
+
+    for (const start of inFlightStarts.values()) {
+      if (start.settlementTimer) {
+        clearTimeout(start.settlementTimer);
+        start.settlementTimer = null;
+      }
+      if (!start.cancelled) {
+        start.cancelled = true;
+        start.cancelReason = 'user_stop';
+        start.abortController.abort();
+        if (!start.settled) {
+          start.settled = true;
+          start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+        }
+      }
+    }
+
     const doStop = async () => {
-      // 1. Snapshot activeSessionId and its transport
-      const sessionToStop = activeSessionId;
-      const transportForActiveSession = activeSessionTransport;
-      activeSessionId = null;
-      activeSessionTransport = null;
-
-      // 2. Synchronously attempt invalidation & prompt promise settle
-      if (currentAttempt && !currentAttempt.settled) {
-        if (currentAttempt.settlementTimer) {
-          clearTimeout(currentAttempt.settlementTimer);
-          currentAttempt.settlementTimer = null;
-        }
-        currentAttempt.cancelled = true;
-        currentAttempt.cancelReason = 'user_stop';
-        currentAttempt.abortController.abort();
-        currentAttempt.settled = true;
-        currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-      }
-      currentAttempt = null;
-
-      for (const start of inFlightStarts.values()) {
-        if (start.settlementTimer) {
-          clearTimeout(start.settlementTimer);
-          start.settlementTimer = null;
-        }
-        if (!start.cancelled) {
-          start.cancelled = true;
-          start.cancelReason = 'user_stop';
-          start.abortController.abort();
-          if (!start.settled) {
-            start.settled = true;
-            start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-          }
-        }
-      }
-
-      // 3. Dispatch intent.stop.requested (media teardown commands)
+      // 4. Dispatch intent.stop.requested (media teardown commands)
       runtime.dispatch({
         type: 'intent.stop.requested',
         epoch: stopEpoch,
@@ -873,14 +906,14 @@ export function createPlaybackController(
 
       await runtime.waitForCommands();
 
-      // 4. Clean up active session and flush unadopted candidates
+      // 5. Clean up active session and flush unadopted candidates
       flushPendingAdoptionCandidates();
 
       if (sessionToStop) {
         await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
       }
 
-      // 5. Dispatch normative.playback.stopped
+      // 6. Dispatch normative.playback.stopped
       runtime.dispatch({
         type: 'normative.playback.stopped',
         epoch: stopEpoch,
@@ -900,6 +933,9 @@ export function createPlaybackController(
 
   function dispose(): void {
     isDisposed = true;
+    playbackEpoch += 1;
+    sessionEpoch = 0;
+    stoppedEpochs.add(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
       currentAttempt.cancelled = true;
       currentAttempt.ineligibleForAdoption = true;

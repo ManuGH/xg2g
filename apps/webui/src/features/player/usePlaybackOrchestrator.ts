@@ -60,9 +60,9 @@ import {
   createInitialPlaybackDomainState,
 } from './orchestrator/playbackMachine';
 import { usePlaybackController } from './orchestrator/usePlaybackController';
-import { PlaybackHttpError } from './orchestrator/playbackController';
+import { PlaybackHttpError, type PlaybackController } from './orchestrator/playbackController';
 import { createDefaultLiveSessionTransport, type SessionReadyResult } from './orchestrator/liveSessionTransport';
-import type { PlaybackCommand, PlaybackStopReason } from './orchestrator/playbackTypes';
+import type { PlaybackCommand, PlaybackDomainState, PlaybackStopReason } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
@@ -164,6 +164,8 @@ export interface PlaybackOrchestratorActions {
 export interface UsePlaybackOrchestratorResult {
   viewState: V3PlayerViewState;
   actions: PlaybackOrchestratorActions;
+  controller: PlaybackController;
+  playbackState: PlaybackDomainState;
 }
 
 function areAudioTrackListsEqual(current: PlayerAudioTrack[], next: PlayerAudioTrack[]): boolean {
@@ -1314,13 +1316,13 @@ export function usePlaybackOrchestrator(
     userPauseIntentRef.current = false;
     applyAutoplayMute();
 
-    const initialMode: 'LIVE' | 'VOD' = recordingId || (src && requestedDuration) ? 'VOD' : 'LIVE';
-    const initialStatus: PlayerStatus = src ? 'buffering' : 'starting';
-    const hasSessionIntent = Boolean(recordingId || (!src && (refToUse || sRef || '').trim()));
-    beginPlaybackAttempt(attemptEpoch, initialMode, initialStatus, hasSessionIntent, profileForAttempt !== 'auto');
-
     // Re-resolve at call time to avoid stale closure from useMemo/useCallback caching.
     const nativeHost = supportsManagedNativePlayback(resolveHostEnvironment());
+
+    const initialMode: 'LIVE' | 'VOD' = recordingId || (src && requestedDuration) ? 'VOD' : 'LIVE';
+    const initialStatus: PlayerStatus = src ? 'buffering' : 'starting';
+    const hasSessionIntent = !nativeHost && Boolean(recordingId || (!src && (refToUse || sRef || '').trim()));
+    beginPlaybackAttempt(attemptEpoch, initialMode, initialStatus, hasSessionIntent, profileForAttempt !== 'auto');
 
     try {
       if (recordingId) {
@@ -1331,7 +1333,7 @@ export function usePlaybackOrchestrator(
         if (nativeHost) {
           await prepareForNextPlaybackAttempt(Boolean(nativePlaybackState?.activeRequest));
           if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
-          beginPlaybackAttempt(attemptEpoch, 'VOD', 'starting', true, profileForAttempt !== 'auto');
+          beginPlaybackAttempt(attemptEpoch, 'VOD', 'starting', false, profileForAttempt !== 'auto');
           beginNativePlayback({
             kind: 'recording',
             recordingId,
@@ -1369,7 +1371,7 @@ export function usePlaybackOrchestrator(
       await prepareForNextPlaybackAttempt();
       if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
 
-      beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', true, profileForAttempt !== 'auto');
+      beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', !nativeHost, profileForAttempt !== 'auto');
 
       if (nativeHost) {
         beginNativePlayback({
@@ -2573,6 +2575,8 @@ export function usePlaybackOrchestrator(
   return {
     viewState,
     actions,
+    controller,
+    playbackState,
   };
 }
 // cspell:ignore remux arrowleft arrowright enterpictureinpicture leavepictureinpicture kbps Remux
