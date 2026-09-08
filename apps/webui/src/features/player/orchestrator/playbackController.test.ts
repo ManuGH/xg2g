@@ -50,6 +50,14 @@ function defer<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
+function accepted(sessionId: string): StartIntentResult {
+  return {
+    status: 202,
+    headers: new Headers(),
+    data: { sessionId },
+  };
+}
+
 describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
   let stopCalls: Array<{ sessionId: string }> = [];
 
@@ -1538,6 +1546,297 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         expect.objectContaining({ sessionId: 's-recording' }),
       );
       expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Merged integration and mode-switch ownership regressions', () => {
+    it('invalidates the epoch of preparation when stop precedes startLive', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        const epoch = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epoch, 'LIVE', 'starting');
+        await c.stop();
+        expect(c.getState().status).toBe('stopped');
+        const result = await c.startLive({ epoch, serviceRef: 'A' });
+        expect(result.status).toBe('cancelled');
+        expect(t.postStartIntent).not.toHaveBeenCalled();
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('allows startLive without an explicit epoch to reach ready after stop', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce(accepted('s-A'))
+          .mockResolvedValueOnce(accepted('s-B')),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: `http://test/${sessionId}.m3u8`,
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T22:00:00Z',
+        })),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        expect((await c.startLive({ serviceRef: 'A' })).status).toBe('ready');
+        expect(c.getActiveSessionId()).toBe('s-A');
+        await c.stop();
+        expect(c.getState().status).toBe('stopped');
+        expect(c.getActiveSessionId()).toBeNull();
+        const res = await c.startLive({ serviceRef: 'B' });
+        expect(res.status).toBe('ready');
+        expect(c.getActiveSessionId()).toBe('s-B');
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('allows fresh allocated epoch to reach ready after stop', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue(accepted('s-fresh')),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: `http://test/${sessionId}.m3u8`,
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T22:00:00Z',
+        })),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        await c.stop();
+        const freshEpoch = c.allocatePlaybackEpoch();
+        const res = await c.startLive({ epoch: freshEpoch, serviceRef: 'A' });
+        expect(res.status).toBe('ready');
+        expect(c.getActiveSessionId()).toBe('s-fresh');
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('deduplicates concurrent stop calls without duplicating remote cleanup', async () => {
+      const d = defer<void>();
+      const t = createMockTransport({
+        postStopIntent: vi.fn().mockImplementation(() => d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        await c.startLive({ serviceRef: 'A' });
+        const p1 = c.stop();
+        const p2 = c.stop();
+        expect(p1).toBe(p2);
+        d.resolve();
+        await Promise.all([p1, p2]);
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('handles independent sessions when stopping pending A, starting B, and stopping B without overwrite', async () => {
+      const dA = defer<SessionReadyResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce(accepted('s-A'))
+          .mockResolvedValueOnce(accepted('s-B')),
+        waitForReady: vi.fn()
+          .mockReturnValueOnce(dA.promise)
+          .mockImplementation(async ({ sessionId }) => ({
+            sessionId,
+            playbackUrl: `http://test/${sessionId}.m3u8`,
+            heartbeatIntervalSeconds: 5,
+            leaseExpiresAt: '2026-09-09T22:00:00Z',
+          })),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        // Start A and stop while waiting for ready
+        void c.startLive({ serviceRef: 'A' });
+        await vi.advanceTimersByTimeAsync(0);
+        void c.stop();
+
+        // Start B and let it become ready
+        const startBPromise = c.startLive({ serviceRef: 'B' });
+        await vi.advanceTimersByTimeAsync(0);
+        const resB = await startBPromise;
+        expect(resB.status).toBe('ready');
+        expect(c.getActiveSessionId()).toBe('s-B');
+
+        // Resolve A late - B must not be overwritten
+        dA.resolve({
+          sessionId: 's-A',
+          playbackUrl: 'http://test/s-A.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T22:00:00Z',
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(c.getActiveSessionId()).toBe('s-B');
+
+        // Stop B
+        await c.stop();
+        expect(c.getActiveSessionId()).toBeNull();
+        expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's-B' }));
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('retires the ready Live session when switching to VOD', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        expect((await c.startLive({ serviceRef: 'A' })).status).toBe('ready');
+        const epoch = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epoch, 'VOD', 'starting');
+        await Promise.resolve();
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+        expect(c.getActiveSessionId()).toBeNull();
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('retires the ready Live session when switching to Direct src (hasSessionIntent=false)', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        expect((await c.startLive({ serviceRef: 'A' })).status).toBe('ready');
+        const epoch = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epoch, 'LIVE', 'buffering', false);
+        await Promise.resolve();
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+        expect(c.getActiveSessionId()).toBeNull();
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('retires the ready Live session when switching to Native playback (hasSessionIntent=false)', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        expect((await c.startLive({ serviceRef: 'A' })).status).toBe('ready');
+        const epoch = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epoch, 'LIVE', 'starting', false);
+        await Promise.resolve();
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+        expect(c.getActiveSessionId()).toBeNull();
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('compensates late replies when switching to non-Live mode during pending Live start', async () => {
+      const d = defer<StartIntentResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn().mockImplementation(() => d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        void c.startLive({ serviceRef: 'A' });
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Switch to VOD
+        const epoch = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epoch, 'VOD', 'starting');
+
+        // Late response arrives for A
+        d.resolve(accepted('s-late-A'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(t.postStopIntent).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionId: 's-late-A' }),
+        );
+        expect(c.getActiveSessionId()).toBeNull();
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('fences stale non-Live begin from stopping a newer ready Live session', async () => {
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce(accepted('s-live-1'))
+          .mockResolvedValueOnce(accepted('s-live-2')),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: `http://test/${sessionId}.m3u8`,
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T22:00:00Z',
+        })),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        // Live 1 allocated at epoch 1
+        const staleEpoch = c.allocatePlaybackEpoch();
+
+        // Live 2 started and reaches ready at epoch 2
+        const res2 = await c.startLive({ serviceRef: 'B' });
+        expect(res2.status).toBe('ready');
+        expect(c.getActiveSessionId()).toBe('s-live-1');
+
+        // Stale VOD begin attempt from epoch 1 arrives
+        c.beginPlaybackAttempt(staleEpoch, 'VOD', 'starting');
+        await Promise.resolve();
+
+        // Must NOT stop s-live-1!
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+        expect(c.getActiveSessionId()).toBe('s-live-1');
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('protects active Live session during Live-to-Live channel replacement until ready', async () => {
+      const d = defer<SessionReadyResult>();
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce(accepted('s-A'))
+          .mockResolvedValueOnce(accepted('s-B')),
+        waitForReady: vi.fn()
+          .mockImplementationOnce(async () => ({
+            sessionId: 's-A',
+            playbackUrl: 'http://test/s-A.m3u8',
+            heartbeatIntervalSeconds: 5,
+            leaseExpiresAt: '2026-09-09T22:00:00Z',
+          }))
+          .mockReturnValueOnce(d.promise),
+      });
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        await c.startLive({ serviceRef: 'A' });
+        expect(c.getActiveSessionId()).toBe('s-A');
+
+        // Start B (Live-to-Live)
+        const epochB = c.allocatePlaybackEpoch();
+        c.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+        await Promise.resolve();
+
+        // s-A must NOT be stopped yet!
+        expect(t.postStopIntent).not.toHaveBeenCalled();
+        expect(c.getActiveSessionId()).toBe('s-A');
+
+        // Now startLive for B runs and waitForReady resolves
+        const startBPromise = c.startLive({ epoch: epochB, serviceRef: 'B' });
+        await vi.advanceTimersByTimeAsync(0);
+        d.resolve({
+          sessionId: 's-B',
+          playbackUrl: 'http://test/s-B.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T22:00:00Z',
+        });
+        const resB = await startBPromise;
+        expect(resB.status).toBe('ready');
+
+        // Now s-B is adopted, and s-A is stopped!
+        expect(c.getActiveSessionId()).toBe('s-B');
+        expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's-A' }));
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+      } finally {
+        c.dispose();
+      }
     });
   });
 });
