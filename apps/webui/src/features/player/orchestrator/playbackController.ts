@@ -22,7 +22,12 @@ import { normalizePlaybackInfo } from '../contracts/normalizePlaybackInfo';
 import type { NormalizedPlayablePlaybackContract } from '../contracts/normalizedPlaybackTypes';
 import { buildLiveIntentBody } from './startupHelpers';
 import { buildContractState } from './contractErrors';
-import type { PlayerStatus } from '../../../types/v3-player';
+import type { PlayerStatus, V3SessionStatusResponse } from '../../../types/v3-player';
+import {
+  createPlaybackHeartbeatRuntime,
+  type PlaybackHeartbeatRuntime,
+} from './playbackHeartbeatRuntime';
+import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
 
@@ -59,6 +64,7 @@ export interface PlaybackControllerOptions {
   stopRequestTimeoutMs?: number;     // default 3_000ms
   requestedDuration?: number | null;
   onAttemptStarted?: (epoch: number) => void;
+  onSessionSnapshot?: (snapshot: V3SessionStatusResponse) => void;
 }
 
 interface InFlightStart {
@@ -109,6 +115,8 @@ export interface PlaybackController {
   getInFlightStartsCount(): number;
   getStoppingSessionIds(): ReadonlySet<string>;
   getPendingAdoptionCandidatesCount(): number;
+  getHeartbeatSessionId(): string | null;
+  isHeartbeatSupervising(): boolean;
 }
 
 export const DEFAULT_HTTP_REQUEST_TIMEOUT_MS = 10_000;
@@ -207,6 +215,18 @@ export function createPlaybackController(
   >();
 
   let isDisposed = false;
+  let heartbeatRuntime: PlaybackHeartbeatRuntime | null = null;
+  let heartbeatSessionId: string | null = null;
+  let heartbeatGeneration = 0;
+
+  function stopHeartbeatSupervision(): void {
+    heartbeatGeneration += 1;
+    if (heartbeatRuntime) {
+      heartbeatRuntime.stop();
+      heartbeatRuntime = null;
+    }
+    heartbeatSessionId = null;
+  }
 
   function hasEligibleInFlightStarts(): boolean {
     for (const start of inFlightStarts.values()) {
@@ -353,6 +373,7 @@ export function createPlaybackController(
 
     // If switching to a non-browser-Live mode, retire any active Live session!
     if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
+      stopHeartbeatSupervision();
       const sessionToRetire = activeSessionId;
       const transportToUse = activeSessionTransport ?? getLatestTransport();
       activeSessionId = null;
@@ -650,6 +671,7 @@ export function createPlaybackController(
       activeSessionId = returnedSessionId;
       activeSessionTransport = attempt.transport;
       if (previousActiveSessionId && previousActiveSessionId !== returnedSessionId) {
+        stopHeartbeatSupervision();
         void retireAndStopSession(previousActiveSessionId, previousActiveTransport ?? undefined);
       }
       flushPendingAdoptionCandidates();
@@ -662,6 +684,7 @@ export function createPlaybackController(
 
       if (isDisposed) {
         if (activeSessionId === returnedSessionId) {
+          stopHeartbeatSupervision();
           activeSessionId = null;
           activeSessionTransport = null;
         }
@@ -703,6 +726,78 @@ export function createPlaybackController(
         requestId: readySession.requestId ?? (normalized.kind === 'playable' ? normalized.observability.requestId : undefined),
       });
 
+      stopHeartbeatSupervision();
+      const currentGen = ++heartbeatGeneration;
+      heartbeatSessionId = returnedSessionId;
+      const initialLease = readySession.leaseExpiresAt ?? null;
+
+      runtime.dispatch({
+        type: 'normative.session.lease.updated',
+        epoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        leaseExpiresAt: initialLease,
+        connectionLost: false,
+      });
+
+      heartbeatRuntime = createPlaybackHeartbeatRuntime({
+        sessionId: returnedSessionId,
+        heartbeatIntervalSeconds: readySession.heartbeatIntervalSeconds!,
+        initialLeaseExpiresAt: initialLease,
+        transport: attempt.transport,
+        playbackEpoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        onLeaseUpdated: ({ leaseExpiresAt, connectionLost }) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          runtime.dispatch({
+            type: 'normative.session.lease.updated',
+            epoch: attempt.epoch,
+            sessionEpoch: sEpoch,
+            leaseExpiresAt,
+            connectionLost,
+          });
+        },
+        onFailure: (failure) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          runtime.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: attempt.epoch,
+            failure: buildPlaybackFailure(
+              {
+                title: failure.message,
+                status: failure.status,
+                code: failure.code,
+                retryable: failure.retryable,
+              } as any,
+              'native-host',
+              {
+                class: failure.failureClass,
+                code: failure.code,
+                message: failure.message,
+                retryable: failure.retryable,
+                recoverable: failure.recoverable,
+                terminal: failure.terminal,
+              },
+            ),
+            status: 'error',
+          });
+          if (failure.pauseMedia && executor) {
+            executor({ type: 'command.media.pause' });
+          }
+        },
+        onSessionSnapshot: (snapshot) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          options.onSessionSnapshot?.(snapshot);
+        },
+      });
+
+      heartbeatRuntime.start();
+
       if (!attempt.settled) {
         attempt.settled = true;
         attempt.resolvePublic({
@@ -724,6 +819,7 @@ export function createPlaybackController(
           handleObsoleteSession(returnedSessionId, attempt.transport);
         } else {
           if (activeSessionId === returnedSessionId) {
+            stopHeartbeatSupervision();
             activeSessionId = null;
             activeSessionTransport = null;
           }
@@ -853,6 +949,9 @@ export function createPlaybackController(
       return Promise.resolve();
     }
 
+    // 0. Synchronously stop heartbeat supervision
+    stopHeartbeatSupervision();
+
     // 1. Synchronously advance playbackEpoch to invalidate pending preparation
     playbackEpoch += 1;
     sessionEpoch = 0;
@@ -933,6 +1032,7 @@ export function createPlaybackController(
 
   function dispose(): void {
     isDisposed = true;
+    stopHeartbeatSupervision();
     playbackEpoch += 1;
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
@@ -1001,6 +1101,12 @@ export function createPlaybackController(
     },
     getPendingAdoptionCandidatesCount() {
       return pendingAdoptionCandidates.size;
+    },
+    getHeartbeatSessionId() {
+      return heartbeatSessionId;
+    },
+    isHeartbeatSupervising() {
+      return heartbeatRuntime?.isSupervising() ?? false;
     },
   };
 }

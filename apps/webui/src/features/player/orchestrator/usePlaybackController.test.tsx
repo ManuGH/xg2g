@@ -28,6 +28,8 @@ function createInitialState(): PlaybackDomainState {
     explicitProfilePinned: false,
     hasSessionIntent: false,
     recovery: createRecoveryLadderState(),
+    leaseExpiresAt: null,
+    connectionLost: false,
   };
 }
 
@@ -50,6 +52,16 @@ function createDummyTransport(): LiveSessionTransport {
       leaseExpiresAt: '2026-09-07T22:00:00Z',
     }),
     postStopIntent: vi.fn().mockResolvedValue(undefined),
+    postHeartbeat: vi.fn().mockResolvedValue({
+      status: 200,
+      data: { acknowledged: true, sessionId: 's1', leaseExpiresAt: '2026-09-07T22:05:00Z' },
+      headers: new Headers(),
+    }),
+    fetchSessionSnapshot: vi.fn().mockResolvedValue({
+      status: 200,
+      data: { sessionId: 's1', state: 'READY' },
+      headers: new Headers(),
+    }),
   };
 }
 
@@ -513,5 +525,113 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
     expect(controllerRef.getInFlightStartsCount()).toBe(0);
     // Orphan session s1 must have been stopped
     expect(stopCalls).toContain('s1');
+  });
+
+  it('manages heartbeat lifecycle across StrictMode mount/unmount and snapshot callbacks without duplicate timers', async () => {
+    vi.useFakeTimers();
+    try {
+      const heartbeatCalls: string[] = [];
+      const snapshotsReceived: any[] = [];
+
+      const transport: LiveSessionTransport = {
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { mode: 'direct_stream', playbackDecisionToken: 'token' },
+          headers: new Headers(),
+        }),
+        postStartIntent: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId: 'session-strict' },
+          headers: new Headers(),
+        }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'session-strict',
+          playbackUrl: 'http://test/stream.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T10:00:00Z',
+        }),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          heartbeatCalls.push(sessionId);
+          return {
+            status: 200,
+            data: {
+              acknowledged: true,
+              sessionId,
+              leaseExpiresAt: '2026-09-09T10:05:00Z',
+            },
+            headers: new Headers(),
+          };
+        }),
+        fetchSessionSnapshot: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          status: 200,
+          data: { sessionId, state: 'READY', bitrate: 5000 },
+          headers: new Headers(),
+        })),
+      };
+
+      let latestController: any = null;
+
+      function StrictComponent() {
+        const { controller, state } = usePlaybackController(
+          transport,
+          createInitialState,
+          () => {},
+          {
+            onSessionSnapshot: (snapshot) => {
+              snapshotsReceived.push(snapshot);
+            },
+          },
+        );
+        latestController = controller;
+
+        useEffect(() => {
+          void controller.startLive({ serviceRef: 'live-channel' });
+        }, [controller]);
+
+        return <div>Lease: {state.leaseExpiresAt ?? 'none'}</div>;
+      }
+
+      let unmountFn!: () => void;
+      await act(async () => {
+        const rendered = render(
+          <StrictMode>
+            <StrictComponent />
+          </StrictMode>,
+        );
+        unmountFn = rendered.unmount;
+      });
+
+      // StartLive settles
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(latestController.getActiveSessionId()).toBe('session-strict');
+      expect(latestController.isHeartbeatSupervising()).toBe(true);
+
+      // Advance 5s -> exactly 1 heartbeat request fires (no duplicate timers from StrictMode double mount)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(heartbeatCalls).toEqual(['session-strict']);
+
+      // Snapshot callback was routed
+      expect(snapshotsReceived.length).toBeGreaterThanOrEqual(1);
+
+      // Unmount -> controller.dispose() cleans up heartbeat supervision
+      await act(async () => {
+        unmountFn();
+      });
+      expect(latestController.isHeartbeatSupervising()).toBe(false);
+
+      // Advance another 10s: no more beats fire
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+      expect(heartbeatCalls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

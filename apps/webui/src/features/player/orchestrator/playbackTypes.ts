@@ -80,6 +80,8 @@ export interface PlaybackDomainState {
   /** Whether the orchestrator is running an active backend intent (channel/recording) vs static src. */
   hasSessionIntent: boolean;
   recovery: PlaybackRecoveryState;
+  leaseExpiresAt: string | null;
+  connectionLost: boolean;
 }
 
 export type PlaybackStopReason = 'user_stop' | 'auto_recovery_restart';
@@ -188,6 +190,13 @@ export type PlaybackNormativeEvent =
       sessionEpoch: number;
       phase: SessionPhase;
       requestId?: string | null;
+    }
+  | {
+      type: 'normative.session.lease.updated';
+      epoch: number;
+      sessionEpoch: number;
+      leaseExpiresAt: string | null;
+      connectionLost: boolean;
     };
 
 export type PlaybackAdvisoryEvent = {
@@ -273,6 +282,10 @@ export type PlaybackCommand =
       holdBandwidth?: boolean;
       failureCode: string;
       failureClass: string;
+    }
+  | {
+      /** Instruct media element (video) to pause. */
+      type: 'command.media.pause';
     };
 
 export interface PlaybackMachineResult {

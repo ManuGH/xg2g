@@ -98,6 +98,8 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
     explicitProfilePinned: false,
     hasSessionIntent: false,
     recovery: createRecoveryLadderState(),
+    leaseExpiresAt: null,
+    connectionLost: false,
   };
 }
 
@@ -142,6 +144,8 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         lastAdvisory: null,
         explicitProfilePinned: event.explicitProfilePinned ?? false,
         hasSessionIntent: event.hasSessionIntent ?? false,
+        leaseExpiresAt: event.playbackMode === 'LIVE' ? state.leaseExpiresAt : null,
+        connectionLost: event.playbackMode === 'LIVE' ? state.connectionLost : false,
         // An attempt that continues an automatic recovery inherits the budget;
         // any other new attempt (user retry, channel change, remount) starts
         // with a fresh one. See RecoveryLadderState.restartPending for why the
@@ -174,6 +178,8 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         explicitProfilePinned: false,
         hasSessionIntent: false,
         recovery: createRecoveryLadderState(),
+        leaseExpiresAt: null,
+        connectionLost: false,
       };
 
     case 'normative.playback.mode.changed':
@@ -316,6 +322,16 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
       return {
         ...state,
         lastAdvisory: event.advisory,
+      };
+
+    case 'normative.session.lease.updated':
+      if (state.status === 'stopped') {
+        return state;
+      }
+      return {
+        ...state,
+        leaseExpiresAt: event.leaseExpiresAt,
+        connectionLost: event.connectionLost,
       };
 
     default:

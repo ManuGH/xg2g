@@ -413,5 +413,140 @@ describe('usePlaybackOrchestrator', () => {
         expect(stopCalls.length).toBeGreaterThanOrEqual(1);
       });
     });
+
+    it('supervises Live session heartbeat and reflects lease state through orchestrator facade', async () => {
+      let heartbeatCallCount = 0;
+
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'tok-hb',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'tok-hb' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          if (body.type === 'stream.start') {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: 'sess-hb-live' }),
+              text: async () => JSON.stringify({ sessionId: 'sess-hb-live' }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-hb-live/heartbeat')) {
+          heartbeatCallCount++;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              acknowledged: true,
+              sessionId: 'sess-hb-live',
+              leaseExpiresAt: `2026-09-09T22:05:${10 * heartbeatCallCount}Z`,
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-hb-live')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-hb-live',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/live.m3u8',
+              heartbeatIntervalSeconds: 1,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      function HeartbeatFacadeHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, playbackState } = usePlaybackOrchestrator(
+          { autoStart: false } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        return (
+          <div>
+            <span data-testid="status">{playbackState.status}</span>
+            <span data-testid="mode">{playbackState.playbackMode}</span>
+            <span data-testid="lease">{playbackState.leaseExpiresAt ?? 'none'}</span>
+            <button onClick={() => void actions.startStream('1:0:1:BB')} type="button">
+              start-live
+            </button>
+            <button onClick={() => void actions.stopStream(false)} type="button">
+              stop-live
+            </button>
+          </div>
+        );
+      }
+
+      render(<HeartbeatFacadeHarness />);
+
+      // Start Live -> ready
+      fireEvent.click(screen.getByRole('button', { name: 'start-live' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('ready');
+        expect(screen.getByTestId('mode')).toHaveTextContent('LIVE');
+        expect(screen.getByTestId('lease')).toHaveTextContent('2026-09-09T22:00:00Z');
+      });
+
+      // Wait for 1st heartbeat to extend lease
+      await waitFor(() => {
+        expect(heartbeatCallCount).toBeGreaterThanOrEqual(1);
+        expect(screen.getByTestId('lease')).not.toHaveTextContent('2026-09-09T22:00:00Z');
+      });
+
+      // Stop stream
+      fireEvent.click(screen.getByRole('button', { name: 'stop-live' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('stopped');
+        expect(screen.getByTestId('lease')).toHaveTextContent('none');
+      });
+
+      // Stop intent was sent
+      const intentCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/intents'));
+      const stopCalls = intentCalls.filter((c: any[]) => {
+        const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+        return body?.type === 'stream.stop' && body?.sessionId === 'sess-hb-live';
+      });
+      expect(stopCalls.length).toBeGreaterThanOrEqual(1);
+    });
   });
 });

@@ -16,6 +16,7 @@ import {
 } from './playbackController';
 import type { PlaybackCommandExecutor } from './playbackMachineRuntime';
 import type { LiveSessionTransport } from './liveSessionTransport';
+import type { V3SessionStatusResponse } from '../../../types/v3-player';
 import type {
   PlaybackDomainState,
   PlaybackMachineEvent,
@@ -27,6 +28,7 @@ export interface UsePlaybackControllerOptions {
   stopRequestTimeoutMs?: number;
   requestedDuration?: number | null;
   onAttemptStarted?: (epoch: number) => void;
+  onSessionSnapshot?: (snapshot: V3SessionStatusResponse) => void;
 }
 
 export interface UsePlaybackControllerResult {
@@ -82,6 +84,9 @@ export function usePlaybackController(
       },
       onAttemptStarted: (epoch) => {
         optionsRef.current?.onAttemptStarted?.(epoch);
+      },
+      onSessionSnapshot: (snapshot) => {
+        optionsRef.current?.onSessionSnapshot?.(snapshot);
       },
     }),
   );

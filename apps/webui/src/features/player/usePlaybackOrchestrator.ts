@@ -292,6 +292,7 @@ export function usePlaybackOrchestrator(
   );
 
   const playbackEpochRef = useRef(1);
+  const handleSessionSnapshotRef = useRef<((session: V3SessionSnapshot) => void) | null>(null);
 
   const {
     controller,
@@ -310,6 +311,9 @@ export function usePlaybackOrchestrator(
       onAttemptStarted: (epoch: number) => {
         playbackEpochRef.current = epoch;
         handleAttemptStarted(epoch);
+      },
+      onSessionSnapshot: (snapshot) => {
+        handleSessionSnapshotRef.current?.(snapshot as unknown as V3SessionSnapshot);
       },
     }), [requestedDuration, handleAttemptStarted]),
   );
@@ -564,12 +568,12 @@ export function usePlaybackOrchestrator(
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
   }, [dispatchPlayback, mergeSessionPlaybackTrace, setTraceId]);
+  handleSessionSnapshotRef.current = handleSessionSnapshot;
 
   const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
     sessionIdRef,
-    connectionLost,
     reportError,
     reportSessionTimeline,
     ensureSessionCookie,
@@ -1828,6 +1832,13 @@ export function usePlaybackOrchestrator(
   // --- Effects ---
   executeCommandRef.current = useCallback((command: PlaybackCommand) => {
     switch (command.type) {
+      case 'command.media.pause':
+        try {
+          videoRef.current?.pause();
+        } catch {
+          // ignore DOMException if already paused or detached
+        }
+        break;
       case 'command.timeline.record':
         sessionTimeline.record(command.kind as any, command.detail);
         break;
@@ -1885,6 +1896,7 @@ export function usePlaybackOrchestrator(
     sRef,
     recordingId,
     src,
+    videoRef,
   ]);
 
   // Update sRef on channel change
@@ -2097,7 +2109,7 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    if (!isOnline || connectionLost) {
+    if (!isOnline || playbackState.connectionLost) {
       wasOfflineRef.current = true;
       return;
     }
@@ -2158,7 +2170,7 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [connectionLost, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, playbackState.connectionLost, sessionIdRef, setStatus, videoRef]);
 
   useNetworkRecoveryWatchdog({
     apiBase,
