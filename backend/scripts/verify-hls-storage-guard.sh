@@ -160,6 +160,9 @@ expect fail "9. not-yet-created HLS dir under the data filesystem is refused, no
 # 10. Fail closed when identity cannot be established at all.
 CASES=$((CASES + 1))
 identity_rc=0
+# Emptying PATH is the point: it makes the identity probe unavailable, which
+# is what an unverifiable host looks like. Contained to this subshell.
+# shellcheck disable=SC2123
 ( PATH="/nonexistent"; xg2g_hls_validate_storage "${WORK}/data" "${WORK}/scratch" true ) >/dev/null 2>&1 || identity_rc=$?
 if [[ "${identity_rc}" -ne 0 ]]; then
   echo "  ✅ 10. unverifiable filesystem identity is refused, not treated as different"
