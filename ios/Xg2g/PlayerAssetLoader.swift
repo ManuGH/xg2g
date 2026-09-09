@@ -42,6 +42,7 @@ enum PlayerAssetLoader {
     }
 
     /// Builds a configured AVPlayer for a live HLS stream with authentication cookies and DVR settings.
+    @MainActor
     static func makeLivePlayer(for stream: LiveStream, channel: Channel? = nil, nowNext: NowNext? = nil) -> AVPlayer {
         if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
             HTTPCookieStorage.shared.setCookie(cookie)

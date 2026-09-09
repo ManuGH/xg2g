@@ -51,6 +51,7 @@ import Testing
     }
 
     @Test("PlayerAssetLoader creates live player with DVR preservation settings")
+    @MainActor
     func testLivePlayerConfiguration() {
         let url = URL(string: "http://localhost:8088/sessions/test123/hls/index.m3u8")!
         let ticket = PlaybackTicket(
