@@ -44,6 +44,19 @@ var (
 	ErrRecoveryBackendUnverifiable = errors.New("lease recovery refused: backend state could not be verified")
 )
 
+// intentStillClaimsScope reports whether an intent in this state is still a
+// live claim on its scope. Everything that is not terminal is: PENDING is an
+// acquisition in flight, RELEASING a release not yet confirmed, and
+// RECOVERY_REQUIRED an unresolved question by definition.
+func intentStillClaimsScope(state IntentState) bool {
+	switch state {
+	case IntentStatePending, IntentStateActive, IntentStateReleasing, IntentStateRecoveryRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // RecoverMissingIntentRequest identifies exactly one intent and the revision
 // the operator believes it is at.
 type RecoverMissingIntentRequest struct {
@@ -120,8 +133,13 @@ func RecoverMissingIntent(
 			ErrRecoveryRevisionMismatch, req.IntentID, intent.Revision, req.ExpectedRevision)
 	}
 
-	// Another ACTIVE intent on the same scope means the operator has not
-	// established which claim is the stale one. Refuse rather than pick.
+	// By running this, the operator asserts that this exact intent is the sole
+	// stale claim on its scope. Any other live claim there -- not just another
+	// ACTIVE one, but a PENDING acquisition, an unconfirmed RELEASING, or an
+	// unresolved RECOVERY_REQUIRED -- makes that assertion untrue, so refuse
+	// rather than pick. A TERMINAL sibling is history and claims nothing.
+	//
+	// Siblings are never touched: this refuses, it does not tidy up.
 	all, err := store.ListIntents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list intents: %w", err)
@@ -130,9 +148,9 @@ func RecoverMissingIntent(
 		if other.IntentID == intent.IntentID {
 			continue
 		}
-		if other.State == IntentStateActive && other.Scope == intent.Scope {
-			return nil, fmt.Errorf("%w: scope %s has another ACTIVE intent %s",
-				ErrRecoveryTargetAmbiguous, intent.Scope, other.IntentID)
+		if other.Scope == intent.Scope && intentStillClaimsScope(other.State) {
+			return nil, fmt.Errorf("%w: scope %s also has %s intent %s",
+				ErrRecoveryTargetAmbiguous, intent.Scope, other.State, other.IntentID)
 		}
 	}
 

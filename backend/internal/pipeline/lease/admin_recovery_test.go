@@ -31,15 +31,18 @@ func (b *recoveryBackend) ListLeases(context.Context) ([]Lease, error) {
 	return b.leases, nil
 }
 
-const recoveryNow = "2026-09-09T07:00:00Z"
+// One epoch for the whole file. Mixing a fixed recovery clock with
+// time.Now()-derived fixture timestamps made these tests depend on the hour
+// they ran in: on CI, CreatedAt landed after the fixed recovery time and the
+// store correctly refused UpdatedAt < CreatedAt.
+var (
+	recoveryEpoch = time.Date(2026, 9, 9, 7, 0, 0, 0, time.UTC)
+	fixtureBirth  = recoveryEpoch.Add(-time.Hour)
+)
 
 func fixedNow(t *testing.T) func() time.Time {
 	t.Helper()
-	ts, err := time.Parse(time.RFC3339, recoveryNow)
-	if err != nil {
-		t.Fatalf("parse fixed time: %v", err)
-	}
-	return func() time.Time { return ts }
+	return func() time.Time { return recoveryEpoch }
 }
 
 // staleIntentStore builds a store holding one ACTIVE intent whose backend lease
@@ -47,7 +50,7 @@ func fixedNow(t *testing.T) func() time.Time {
 func staleIntentStore(t *testing.T) (*InMemoryIntentStore, LeaseIntent) {
 	t.Helper()
 	store := NewInMemoryIntentStore()
-	created := time.Now().Add(-time.Hour)
+	created := fixtureBirth
 	// The store enforces CAS: a new intent starts at revision 1 and every
 	// update increments by exactly one. Seed through that path rather than
 	// around it, so the fixture is a state the product can actually reach.
@@ -124,10 +127,11 @@ func TestRecoverMissingIntent_Refusals(t *testing.T) {
 			name: "backend lease still exists",
 			setup: func(t *testing.T) (*InMemoryIntentStore, ObservableLeaseBackend, RecoverMissingIntentRequest) {
 				store, intent := staleIntentStore(t)
-				ts, _ := time.Parse(time.RFC3339, recoveryNow)
 				backend := &recoveryBackend{leases: []Lease{{
 					ID: intent.LeaseID, Owner: intent.Owner, Scope: intent.Scope,
-					State: StateAcquired, AcquiredAt: ts.Add(-time.Minute), ExpiresAt: ts.Add(time.Hour),
+					State:      StateAcquired,
+					AcquiredAt: recoveryEpoch.Add(-time.Minute),
+					ExpiresAt:  recoveryEpoch.Add(time.Hour),
 				}}}
 				return store, backend, RecoverMissingIntentRequest{
 					IntentID: intent.IntentID, ExpectedRevision: intent.Revision, Confirmed: true,
@@ -250,10 +254,11 @@ func TestRecoverMissingIntent_Refusals(t *testing.T) {
 func TestRecoverMissingIntent_ExpiredBackendLeaseDoesNotBlock(t *testing.T) {
 	ctx := context.Background()
 	store, intent := staleIntentStore(t)
-	ts, _ := time.Parse(time.RFC3339, recoveryNow)
 	backend := &recoveryBackend{leases: []Lease{{
 		ID: intent.LeaseID, Owner: intent.Owner, Scope: intent.Scope,
-		State: StateAcquired, AcquiredAt: ts.Add(-2 * time.Hour), ExpiresAt: ts.Add(-time.Hour),
+		State:      StateAcquired,
+		AcquiredAt: recoveryEpoch.Add(-2 * time.Hour),
+		ExpiresAt:  recoveryEpoch.Add(-time.Hour),
 	}}}
 
 	res, err := RecoverMissingIntent(ctx, store, backend, RecoverMissingIntentRequest{
@@ -281,5 +286,108 @@ func TestStartupPolicyStillRefusesMissingLeases(t *testing.T) {
 	report.Summary.Missing = 0
 	if got := (DefaultStartupPolicy{}).Evaluate(report); got.Decision != StartupAccepted {
 		t.Fatalf("after recovery decision = %s, want ACCEPTED", got.Decision)
+	}
+}
+
+// seedSibling puts a second intent on a scope, reached through real
+// transitions so the fixture is a state the product can actually produce.
+func seedSibling(t *testing.T, store *InMemoryIntentStore, id string, scope Scope, state IntentState) {
+	t.Helper()
+	ctx := context.Background()
+
+	in := LeaseIntent{
+		IntentID:  ID(id),
+		Owner:     Owner("owner-" + id),
+		Scope:     scope,
+		State:     IntentStatePending,
+		Revision:  1,
+		CreatedAt: fixtureBirth,
+		UpdatedAt: fixtureBirth,
+	}
+	if err := store.SaveIntent(ctx, in); err != nil {
+		t.Fatalf("seed sibling %s as PENDING: %v", id, err)
+	}
+	if state == IntentStatePending {
+		return
+	}
+
+	in.LeaseID = ID(string(scope))
+	in.State = IntentStateActive
+	in.Revision = 2
+	if err := store.SaveIntent(ctx, in); err != nil {
+		t.Fatalf("seed sibling %s as ACTIVE: %v", id, err)
+	}
+	if state == IntentStateActive {
+		return
+	}
+
+	in.State = state
+	in.Revision = 3
+	if err := store.SaveIntent(ctx, in); err != nil {
+		t.Fatalf("seed sibling %s as %s: %v", id, state, err)
+	}
+}
+
+// Running the recovery asserts that the target is the sole stale claim on its
+// scope. Any other live claim there makes that assertion untrue -- not only
+// another ACTIVE one. A TERMINAL sibling is history and claims nothing.
+func TestRecoverMissingIntent_SiblingClaimsOnTheSameScope(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		siblingState IntentState
+		wantRefusal  bool
+	}{
+		{IntentStatePending, true},
+		{IntentStateActive, true},
+		{IntentStateReleasing, true},
+		{IntentStateRecoveryRequired, true},
+		{IntentStateTerminal, false},
+	} {
+		t.Run(string(tc.siblingState), func(t *testing.T) {
+			store, intent := staleIntentStore(t)
+			seedSibling(t, store, "intent-sibling", intent.Scope, tc.siblingState)
+
+			before, _ := store.GetIntent(ctx, "intent-sibling")
+
+			_, err := RecoverMissingIntent(ctx, store, &recoveryBackend{}, RecoverMissingIntentRequest{
+				IntentID:         intent.IntentID,
+				ExpectedRevision: intent.Revision,
+				Confirmed:        true,
+			}, fixedNow(t))
+
+			if tc.wantRefusal {
+				if !errors.Is(err, ErrRecoveryTargetAmbiguous) {
+					t.Fatalf("sibling in %s: error = %v, want ambiguous refusal", tc.siblingState, err)
+				}
+			} else if err != nil {
+				t.Fatalf("sibling in %s must not block recovery: %v", tc.siblingState, err)
+			}
+
+			// The sibling is never touched, refused or not.
+			after, gErr := store.GetIntent(ctx, "intent-sibling")
+			if gErr != nil || after == nil {
+				t.Fatalf("sibling vanished: %v", gErr)
+			}
+			if after.State != before.State || after.Revision != before.Revision {
+				t.Fatalf("sibling was mutated: %s/%d -> %s/%d",
+					before.State, before.Revision, after.State, after.Revision)
+			}
+		})
+	}
+}
+
+// A live claim on a different scope is none of this scope's business.
+func TestRecoverMissingIntent_SiblingOnAnotherScopeDoesNotBlock(t *testing.T) {
+	ctx := context.Background()
+	store, intent := staleIntentStore(t)
+	seedSibling(t, store, "intent-other-scope", "tuner:1", IntentStateActive)
+
+	if _, err := RecoverMissingIntent(ctx, store, &recoveryBackend{}, RecoverMissingIntentRequest{
+		IntentID:         intent.IntentID,
+		ExpectedRevision: intent.Revision,
+		Confirmed:        true,
+	}, fixedNow(t)); err != nil {
+		t.Fatalf("a claim on another scope must not block recovery: %v", err)
 	}
 }
