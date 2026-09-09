@@ -141,9 +141,10 @@ func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.Subscrib
 // PrimedAttachWithTimeout waits up to timeout for the first valid keyframe to arrive in the ring buffer.
 func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
 	deadline := time.Now().Add(timeout)
-	// Give the receiver's CAM/descrambler a grace window (typically 1-2.5s for ECM round-trip)
+	// Give the receiver's CAM/descrambler a grace window (typically 2-4.5s for ECM round-trip
+	// and CW loading on cold zap, e.g. Sky/HD+ on VU+ Uno 4K)
 	// before declaring scrambled packets conclusively terminal.
-	scrambleGrace := 2500 * time.Millisecond
+	scrambleGrace := 5500 * time.Millisecond
 	if scrambleGrace > timeout {
 		scrambleGrace = timeout
 	}
