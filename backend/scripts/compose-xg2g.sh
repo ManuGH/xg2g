@@ -10,6 +10,11 @@ TEMP_FILES=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
 
+# HLS/DVR placement rules live in one file, shared with the staging fast-deploy
+# path so the two preflights cannot drift apart.
+# shellcheck source=lib/hls-storage.sh
+source "${SCRIPT_DIR}/lib/hls-storage.sh"
+
 cleanup() {
   local file
   for file in "${TEMP_FILES[@]:-}"; do
@@ -147,55 +152,23 @@ env_value_or_default() {
 }
 
 is_true() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
+  xg2g_hls_is_true "$1"
 }
 
 validate_absolute_storage_path() {
-  local label="$1"
-  local path="$2"
-
-  [[ "${path}" == /* ]] || {
-    echo "ERROR: ${label} must be an absolute Linux path: ${path}" >&2
-    return 1
-  }
-  case "${path}" in
-    *$'\n'*|*$'\r'*)
-      echo "ERROR: ${label} contains a line break" >&2
-      return 1
-      ;;
-  esac
-  case "/${path#/}/" in
-    *"/../"*|*"/./"*|*"//"*)
-      echo "ERROR: ${label} must be a normalized absolute path: ${path}" >&2
-      return 1
-      ;;
-  esac
+  xg2g_hls_validate_absolute_path "$1" "$2"
 }
 
 path_is_within() {
-  local child="${1%/}"
-  local parent="${2%/}"
-
-  [[ "${child}" == "${parent}" || "${child}" == "${parent}/"* ]]
+  xg2g_hls_path_is_within "$1" "$2"
 }
 
 existing_storage_ancestor() {
-  local path="$1"
-
-  while [[ ! -e "${path}" && "${path}" != "/" ]]; do
-    path="$(dirname "${path}")"
-  done
-  printf '%s\n' "${path}"
+  xg2g_hls_existing_ancestor "$1"
 }
 
 storage_mount_target() {
-  local path
-  path="$(existing_storage_ancestor "$1")"
-  command -v findmnt >/dev/null 2>&1 || return 1
-  findmnt -T "${path}" -n -o TARGET 2>/dev/null | head -n 1
+  xg2g_hls_mount_target "$1"
 }
 
 storage_medium() {
@@ -277,49 +250,13 @@ print_storage_layout() {
 }
 
 validate_hls_storage() {
-  local data_root hls_root require_mount data_mount hls_mount
+  local data_root hls_root require_mount
 
   data_root="$(env_value_or_default XG2G_DATA "${DEFAULT_DATA_ROOT}")"
   hls_root="$(env_value_or_default XG2G_HLS_ROOT "${data_root%/}/hls")"
   require_mount="$(env_value_or_default XG2G_HLS_REQUIRE_MOUNT false)"
 
-  validate_absolute_storage_path XG2G_DATA "${data_root}"
-  validate_absolute_storage_path XG2G_HLS_ROOT "${hls_root}"
-  [[ "${hls_root}" != "/" ]] || {
-    echo "ERROR: XG2G_HLS_ROOT must not be the filesystem root" >&2
-    return 1
-  }
-  case "$(printf '%s' "${require_mount}" | tr '[:upper:]' '[:lower:]')" in
-    0|1|false|true|no|yes|off|on) ;;
-    *)
-      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT must be a boolean, got: ${require_mount}" >&2
-      return 1
-      ;;
-  esac
-
-  if ! path_is_within "${hls_root}" "${data_root}"; then
-    [[ -d "${hls_root}" ]] || {
-      echo "ERROR: external XG2G_HLS_ROOT does not exist: ${hls_root}" >&2
-      return 1
-    }
-    [[ -w "${hls_root}" ]] || {
-      echo "ERROR: external XG2G_HLS_ROOT is not writable: ${hls_root}" >&2
-      return 1
-    }
-  fi
-
-  if is_true "${require_mount}"; then
-    command -v findmnt >/dev/null 2>&1 || {
-      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT=true requires findmnt" >&2
-      return 1
-    }
-    data_mount="$(storage_mount_target "${data_root}")"
-    hls_mount="$(storage_mount_target "${hls_root}")"
-    [[ -n "${data_mount}" && -n "${hls_mount}" && "${data_mount}" != "${hls_mount}" ]] || {
-      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT=true but DVR scratch shares the data mount (${data_mount:-unknown})" >&2
-      return 1
-    }
-  fi
+  xg2g_hls_validate_storage "${data_root}" "${hls_root}" "${require_mount}"
 }
 
 build_hls_storage_overlay() {
