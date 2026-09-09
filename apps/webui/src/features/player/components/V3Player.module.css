@@ -74,6 +74,7 @@
 }
 
 .container.userIdle .controlsHeader,
+.container.userIdle .topHeader,
 .container.userIdle .volumeControl,
 .container.userIdle .closeButton {
   opacity: 0;
@@ -203,6 +204,16 @@
   font-family: var(--font-heading);
   font-size: clamp(1.15rem, 1.8vw, 1.6rem);
   line-height: 1.08;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.spinnerProgrammeTitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+  font-weight: 500;
+  line-height: 1.25;
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
@@ -558,6 +569,65 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.topHeader {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 200;
+  max-width: calc(100% - 100px);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+  transform: translateY(-4px);
+}
+
+.container:hover:not(.userIdle) .topHeader,
+.topHeader:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.topHeaderLogo {
+  width: 44px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.topHeaderMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.topHeaderChannel {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.topHeaderProgramme {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 
 .closeButton {
@@ -1038,10 +1108,31 @@
 }
 
 .container.surfaceCompact.userIdle .controlsHeader,
+.container.surfaceCompact.userIdle .topHeader,
 .container.surfaceCompact.userIdle .closeButton {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.5s ease-out;
+}
+
+.container.surfaceCompact .topHeader {
+  top: calc(12px + var(--sat, 0px));
+  left: 14px;
+  max-width: calc(100% - 76px);
+  gap: 8px;
+}
+
+.container.surfaceCompact .topHeaderLogo {
+  width: 36px;
+  height: 24px;
+}
+
+.container.surfaceCompact .topHeaderChannel {
+  font-size: 0.75rem;
+}
+
+.container.surfaceCompact .topHeaderProgramme {
+  font-size: 0.95rem;
 }
 
 /* The default scrim ramps to black only at the very bottom, which works under

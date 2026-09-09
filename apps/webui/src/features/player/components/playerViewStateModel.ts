@@ -309,8 +309,8 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
 
   return {
     channelName: input.channel?.name ?? null,
-    programmeTitle: input.playbackMode === 'LIVE' ? input.liveNowPlaying.title : (input.channel?.name ?? null),
-    programmeDesc: input.playbackMode === 'LIVE' ? input.liveNowPlaying.desc : null,
+    programmeTitle: input.liveNowPlaying?.title || (input.playbackMode === 'LIVE' ? null : (input.channel?.name ?? null)),
+    programmeDesc: input.liveNowPlaying?.desc || null,
     useOverlayLayout: Boolean(input.onClose),
     userIdle: input.isIdle,
     showCloseButton: Boolean(input.onClose),

@@ -60,6 +60,25 @@ export function V3PlayerView({
         </button>
       )}
 
+      {viewState.showCloseButton && !viewState.showSpinnerCard && (viewState.channelName || viewState.programmeTitle) && (
+        <div className={styles.topHeader}>
+          {viewState.channelLogoUrl && (
+            <img
+              className={styles.topHeaderLogo}
+              src={viewState.channelLogoUrl}
+              alt=""
+              loading="lazy"
+            />
+          )}
+          <div className={styles.topHeaderMeta}>
+            {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
+              <span className={styles.topHeaderChannel}>{viewState.channelName}</span>
+            )}
+            <span className={styles.topHeaderProgramme}>{viewState.programmeTitle ?? viewState.channelName}</span>
+          </div>
+        </div>
+      )}
+
       {viewState.showStatsOverlay && (
         <div className={styles.statsOverlay}>
           <Card variant="standard">
@@ -123,6 +142,9 @@ export function V3PlayerView({
             </div>
             <div className={styles.spinnerContent}>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
+              {viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
+                <div className={styles.spinnerProgrammeTitle}>{viewState.programmeTitle}</div>
+              )}
               <div className={styles.spinnerLabel}>{viewState.spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{viewState.spinnerSupport}</div>
 
