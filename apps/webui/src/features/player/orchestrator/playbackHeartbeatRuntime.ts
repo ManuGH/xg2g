@@ -37,6 +37,7 @@ export interface PlaybackHeartbeatRuntimeOptions {
 export interface PlaybackHeartbeatRuntime {
   start(): void;
   stop(): void;
+  updateTransport(newTransport: LiveSessionTransport): void;
   isSupervising(): boolean;
   getLeaseExpiresAt(): string | null;
   isConnectionLost(): boolean;
@@ -56,19 +57,23 @@ export function createPlaybackHeartbeatRuntime(
     onSessionSnapshot,
   } = options;
 
+  let currentTransport = transport;
   let cancelled = false;
   let timerId: ReturnType<typeof setTimeout> | null = null;
   let activeAbortController: AbortController | null = null;
-  let activeSnapshotController: AbortController | null = null;
+  const inFlightSnapshotControllers = new Set<AbortController>();
+  let latestSnapshotSeq = 0;
   let consecutiveFailures = 0;
   let connectionLost = false;
   let currentLeaseExpiresAt: string | null = initialLeaseExpiresAt;
   let isSupervisingActive = false;
   let generation = 0;
 
-  const intervalMs = heartbeatIntervalSeconds * 1000;
-  const isValidInterval = Number.isFinite(intervalMs) && intervalMs > 0;
-  const safeIntervalMs = isValidInterval ? intervalMs : 0;
+  let currentIntervalSeconds = heartbeatIntervalSeconds;
+  let safeIntervalMs =
+    Number.isFinite(currentIntervalSeconds * 1000) && currentIntervalSeconds * 1000 > 0
+      ? currentIntervalSeconds * 1000
+      : 0;
   let currentDelayMs = safeIntervalMs;
 
   function stopTimersAndControllers(): void {
@@ -80,14 +85,14 @@ export function createPlaybackHeartbeatRuntime(
       activeAbortController.abort();
       activeAbortController = null;
     }
-    if (activeSnapshotController) {
-      activeSnapshotController.abort();
-      activeSnapshotController = null;
+    for (const ctrl of inFlightSnapshotControllers) {
+      ctrl.abort();
     }
+    inFlightSnapshotControllers.clear();
   }
 
   function schedule(delayMs: number): void {
-    if (cancelled || !isSupervisingActive || !isValidInterval) {
+    if (cancelled || !isSupervisingActive || safeIntervalMs <= 0) {
       return;
     }
     currentDelayMs = delayMs;
@@ -120,21 +125,22 @@ export function createPlaybackHeartbeatRuntime(
       cancelled ||
       gen !== generation ||
       !isSupervisingActive ||
-      !transport.fetchSessionSnapshot ||
+      !currentTransport.fetchSessionSnapshot ||
       !onSessionSnapshot
     ) {
       return;
     }
 
+    const snapshotSeq = ++latestSnapshotSeq;
     const snapshotCtrl = new AbortController();
-    activeSnapshotController = snapshotCtrl;
+    inFlightSnapshotControllers.add(snapshotCtrl);
     const hardTimeoutTimer = setTimeout(() => {
       snapshotCtrl.abort();
     }, SNAPSHOT_REQUEST_TIMEOUT_MS);
 
     try {
       const res = await Promise.race([
-        transport.fetchSessionSnapshot({ sessionId, signal: snapshotCtrl.signal }),
+        currentTransport.fetchSessionSnapshot({ sessionId, signal: snapshotCtrl.signal }),
         new Promise<never>((_, reject) => {
           const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
           snapshotCtrl.signal.addEventListener('abort', onAbort, { once: true });
@@ -142,6 +148,10 @@ export function createPlaybackHeartbeatRuntime(
       ]);
 
       if (cancelled || gen !== generation || !isSupervisingActive) {
+        return;
+      }
+
+      if (snapshotSeq < latestSnapshotSeq) {
         return;
       }
 
@@ -157,15 +167,27 @@ export function createPlaybackHeartbeatRuntime(
             connectionLost,
           });
         }
+        if (
+          typeof snapshot.heartbeatIntervalSeconds === 'number' &&
+          Number.isFinite(snapshot.heartbeatIntervalSeconds) &&
+          snapshot.heartbeatIntervalSeconds > 0
+        ) {
+          const updatedIntervalSeconds = snapshot.heartbeatIntervalSeconds;
+          if (updatedIntervalSeconds !== currentIntervalSeconds) {
+            currentIntervalSeconds = updatedIntervalSeconds;
+            safeIntervalMs = updatedIntervalSeconds * 1000;
+            if (timerId !== null) {
+              schedule(safeIntervalMs);
+            }
+          }
+        }
         onSessionSnapshot(snapshot);
       }
     } catch {
       // Snapshot refresh is supplementary; reachability is driven by beat()
     } finally {
       clearTimeout(hardTimeoutTimer);
-      if (activeSnapshotController === snapshotCtrl) {
-        activeSnapshotController = null;
-      }
+      inFlightSnapshotControllers.delete(snapshotCtrl);
     }
   }
 
@@ -174,7 +196,7 @@ export function createPlaybackHeartbeatRuntime(
       return;
     }
 
-    if (!transport.postHeartbeat) {
+    if (!currentTransport.postHeartbeat) {
       // If transport provides no postHeartbeat, no-op gracefully
       return;
     }
@@ -193,7 +215,7 @@ export function createPlaybackHeartbeatRuntime(
 
     try {
       const res = await Promise.race([
-        transport.postHeartbeat({
+        currentTransport.postHeartbeat({
           sessionId,
           signal: abortController.signal,
         }),
@@ -321,7 +343,7 @@ export function createPlaybackHeartbeatRuntime(
     if (isSupervisingActive || cancelled) {
       return;
     }
-    if (!isValidInterval) {
+    if (safeIntervalMs <= 0) {
       return;
     }
     isSupervisingActive = true;
@@ -342,6 +364,9 @@ export function createPlaybackHeartbeatRuntime(
   return {
     start,
     stop,
+    updateTransport(newTransport: LiveSessionTransport) {
+      currentTransport = newTransport;
+    },
     isSupervising: () => isSupervisingActive && !cancelled,
     getLeaseExpiresAt: () => currentLeaseExpiresAt,
     isConnectionLost: () => connectionLost,

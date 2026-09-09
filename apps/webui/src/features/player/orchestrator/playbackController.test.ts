@@ -2269,6 +2269,192 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         controller.dispose();
       }
     });
+
+    it('reports retained-session auth failure after a newer attempt has begun', async () => {
+      const commands: any[] = [];
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({ status: 202, data: { sessionId: 'A' }, headers: new Headers() }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 401,
+          data: {},
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+        executeCommand: (cmd) => commands.push(cmd),
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(commands).toContainEqual({ type: 'command.media.pause' });
+        expect(controller.getState().failure?.code).toBe('SESSION_UNAUTHORIZED');
+        expect(controller.getState().status).toBe('error');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('handles retained-session recoverable 404/410 failure during in-flight new attempt without cancelling new attempt', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveStartB!: (val: any) => void;
+      let attemptBReady!: (val: any) => void;
+      const transport = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce({ status: 202, data: { sessionId: 'A' }, headers: new Headers() })
+          .mockImplementationOnce(() => new Promise((resolve) => {
+            resolveStartB = () => resolve({ status: 202, data: { sessionId: 'B' }, headers: new Headers() });
+          })),
+        waitForReady: vi.fn()
+          .mockResolvedValueOnce({
+            sessionId: 'A',
+            playbackUrl: 'https://example.test/live-A.m3u8',
+            heartbeatIntervalSeconds: 5,
+            leaseExpiresAt: expiry,
+          })
+          .mockImplementationOnce(() => new Promise((resolve) => {
+            attemptBReady = () => resolve({
+              sessionId: 'B',
+              playbackUrl: 'https://example.test/live-B.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: expiry,
+            });
+          })),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 404,
+          data: {},
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Start attempt B (in-flight)
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+        const startBPromise = controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+
+        // Session A's heartbeat returns 404 while B is in flight
+        await vi.advanceTimersByTimeAsync(5000);
+
+        // Session A's supervision should stop, but attempt B is NOT cancelled
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+
+        // Attempt B resolves start intent then ready
+        resolveStartB({});
+        await vi.advanceTimersByTimeAsync(10);
+        attemptBReady({});
+        const resB = await startBPromise;
+
+        expect(controller.getActiveSessionId()).toBe('B');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+        expect(resB.status).toBe('ready');
+        expect(controller.getState().sessionPhase).toBe('ready');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('adopts same session ID cleanly without duplicate timers or leaking prior supervision', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({ status: 202, data: { sessionId: 'A' }, headers: new Headers() }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Re-request same channel -> adopts session 'A'
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Advance 5s -> heartbeat should be called exactly once for this period (not twice)
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('does not switch existing session traffic when updated transport has a different apiBase', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport1 = createMockTransport({
+        apiBase: 'https://srv1.example.test/api/v3',
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+      const transport2 = createMockTransport({
+        apiBase: 'https://srv2.example.test/api/v3',
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport: transport1,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+
+        // Update transport with different apiBase
+        controller.updateTransport(transport2);
+
+        // Advance 5s -> heartbeat should continue using transport1 because apiBase changed
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(transport1.postHeartbeat).toHaveBeenCalledTimes(1);
+        expect(transport2.postHeartbeat).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    });
   });
 });
 

@@ -46,6 +46,7 @@ export interface FetchSessionSnapshotResult {
 }
 
 export interface LiveSessionTransport {
+  readonly apiBase?: string;
   fetchStreamInfo(params: {
     serviceRef: string;
     capabilities?: unknown;
@@ -186,6 +187,7 @@ export function createDefaultLiveSessionTransport({
   recoverSessionCookie,
 }: DefaultLiveSessionTransportOptions): LiveSessionTransport {
   return {
+    apiBase,
     async fetchStreamInfo({ serviceRef, capabilities, profileHeaders, signal }) {
       const headers = {
         ...authHeaders(true),

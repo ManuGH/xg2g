@@ -107,6 +107,7 @@ export interface PlaybackController {
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
   stop(reason?: PlaybackStopReason | string, notifyClose?: boolean): Promise<void>;
+  updateTransport(newTransport: LiveSessionTransport): void;
   activate(): void;
   dispose(): void;
 
@@ -199,14 +200,21 @@ export function createPlaybackController(
   const stoppingSessionIds = new Set<string>();
   const activeStopPromises = new Map<string, Promise<void>>();
   const inFlightStopPromises = new Map<number, Promise<void>>();
+  let currentTransport: LiveSessionTransport =
+    typeof options.transport === 'function'
+      ? (options.transport as () => LiveSessionTransport)()
+      : options.getTransport
+        ? options.getTransport()
+        : options.transport!;
+
   const getLatestTransport = (): LiveSessionTransport => {
-    if (typeof options.transport === 'function') {
-      return (options.transport as () => LiveSessionTransport)();
-    }
     if (options.getTransport) {
       return options.getTransport();
     }
-    return options.transport!;
+    if (typeof currentTransport === 'function') {
+      return (currentTransport as () => LiveSessionTransport)();
+    }
+    return currentTransport;
   };
 
   const pendingAdoptionCandidates = new Map<
@@ -762,9 +770,65 @@ export function createPlaybackController(
           if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
             return;
           }
+          const currentPlaybackEpoch = runtime.getState().epoch.playback;
+          const isTerminalAuth =
+            failure.terminal ||
+            failure.code === 'SESSION_UNAUTHORIZED' ||
+            failure.code === 'SESSION_FORBIDDEN' ||
+            failure.status === 401 ||
+            failure.status === 403;
+
+          const hasInFlightNewAttempt = Boolean(currentAttempt && currentAttempt.epoch !== attempt.epoch);
+
+          if (isTerminalAuth) {
+            if (currentAttempt && currentAttempt.epoch !== attempt.epoch) {
+              currentAttempt.cancelled = true;
+              currentAttempt.abortController.abort();
+              inFlightStarts.delete(currentAttempt.attemptId);
+            }
+            stopHeartbeatSupervision();
+            runtime.dispatch({
+              type: 'normative.playback.failure.raised',
+              epoch: currentPlaybackEpoch,
+              failure: buildPlaybackFailure(
+                {
+                  title: failure.message,
+                  status: failure.status,
+                  code: failure.code,
+                  retryable: failure.retryable,
+                } as any,
+                'native-host',
+                {
+                  class: failure.failureClass,
+                  code: failure.code,
+                  message: failure.message,
+                  retryable: failure.retryable,
+                  recoverable: failure.recoverable,
+                  terminal: failure.terminal,
+                },
+              ),
+              status: 'error',
+            });
+            if (failure.pauseMedia && executor) {
+              executor({ type: 'command.media.pause' });
+            }
+            return;
+          }
+
+          if (hasInFlightNewAttempt) {
+            stopHeartbeatSupervision();
+            activeSessionId = null;
+            activeSessionTransport = null;
+            if (failure.pauseMedia && executor) {
+              executor({ type: 'command.media.pause' });
+            }
+            return;
+          }
+
+          stopHeartbeatSupervision();
           runtime.dispatch({
             type: 'normative.playback.failure.raised',
-            epoch: attempt.epoch,
+            epoch: currentPlaybackEpoch,
             failure: buildPlaybackFailure(
               {
                 title: failure.message,
@@ -1087,6 +1151,17 @@ export function createPlaybackController(
 
     startLive,
     stop,
+    updateTransport(newTransport: LiveSessionTransport) {
+      currentTransport = newTransport;
+      if (activeSessionId && heartbeatRuntime) {
+        const pinnedBase = activeSessionTransport?.apiBase;
+        const newBase = newTransport.apiBase;
+        if (!pinnedBase || !newBase || pinnedBase === newBase) {
+          activeSessionTransport = newTransport;
+          heartbeatRuntime.updateTransport(newTransport);
+        }
+      }
+    },
     activate,
     dispose,
 

@@ -1,11 +1,11 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { StrictMode, Suspense, useEffect, useLayoutEffect, useState } from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { StrictMode, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackController } from './usePlaybackController';
-import type { LiveSessionTransport } from './liveSessionTransport';
+import { createDefaultLiveSessionTransport, type LiveSessionTransport } from './liveSessionTransport';
 import type { PlaybackCommand, PlaybackDomainState } from './playbackTypes';
 import { createRecoveryLadderState } from './recoveryLadder';
 
@@ -633,5 +633,153 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('uses refreshed credentials for an established session after a same-endpoint rerender', async () => {
+    vi.useFakeTimers();
+    try {
+      const expiry = '2026-09-09T12:10:00Z';
+      const fetchFn = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+        acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+      const { result: hook, rerender, unmount } = renderHook(({ token }) => {
+        const t = useMemo(() => {
+          const real = createDefaultLiveSessionTransport({
+            apiBase: 'https://example.test/api/v3',
+            authHeaders: () => ({ Authorization: `Bearer ${token}` }),
+            fetchFn,
+          });
+          return {
+            ...createDummyTransport(),
+            postHeartbeat: real.postHeartbeat,
+          };
+        }, [token]);
+        return usePlaybackController(t, createInitialState, vi.fn());
+      }, { initialProps: { token: 'fixture-old' } });
+
+      await act(async () => {
+        await hook.current.controller.startLive({ serviceRef: 'channel-A' });
+      });
+
+      rerender({ token: 'fixture-new' });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      const call = fetchFn.mock.calls[0];
+      expect(call).toBeDefined();
+      expect(new Headers(call![1]?.headers).get('Authorization')).toBe('Bearer fixture-new');
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cleans up active timers and aborts in-flight requests on unmount after rerender', async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const fetchFn = vi.fn().mockImplementation(async ({ signal }: { signal: AbortSignal }) => {
+        signals.push(signal);
+        return new Promise(() => {}); // hang
+      });
+
+      const { result: hook, rerender, unmount } = renderHook(({ token }) => {
+        const t = useMemo(() => {
+          const real = createDefaultLiveSessionTransport({
+            apiBase: 'https://example.test/api/v3',
+            authHeaders: () => ({ Authorization: `Bearer ${token}` }),
+            fetchFn,
+          });
+          return {
+            ...createDummyTransport(),
+            postHeartbeat: real.postHeartbeat,
+          };
+        }, [token]);
+        return usePlaybackController(t, createInitialState, vi.fn());
+      }, { initialProps: { token: 'fixture-old' } });
+
+      await act(async () => {
+        await hook.current.controller.startLive({ serviceRef: 'channel-A' });
+      });
+
+      rerender({ token: 'fixture-new' });
+
+      // Unmount after rerender
+      await act(async () => {
+        unmount();
+      });
+
+      expect(hook.current.controller.isHeartbeatSupervising()).toBe(false);
+
+      // Advance timers: no delayed beats should be invoked
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(fetchFn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves command executor across Suspense hide and reveal', async () => {
+    const executed: PlaybackCommand[] = [];
+    const transport = createDummyTransport();
+
+    let toggleSuspense!: (suspend: boolean) => void;
+    let promiseToSuspend: Promise<void> | null = null;
+    let resolveSuspense!: () => void;
+
+    function SuspendingChild({ suspend }: { suspend: boolean }) {
+      if (suspend && promiseToSuspend) {
+        throw promiseToSuspend;
+      }
+      const { controller } = usePlaybackController(
+        transport,
+        createInitialState,
+        (cmd) => executed.push(cmd),
+      );
+
+      return (
+        <button
+          onClick={() =>
+            controller.setCommandExecutor((cmd) => executed.push(cmd))
+          }
+        >
+          Active
+        </button>
+      );
+    }
+
+    function ParentComponent() {
+      const [suspend, setSuspend] = useState(false);
+      toggleSuspense = setSuspend;
+
+      return (
+        <Suspense fallback={<div>Suspended</div>}>
+          <SuspendingChild suspend={suspend} />
+        </Suspense>
+      );
+    }
+
+    render(<ParentComponent />);
+    expect(screen.getByText('Active')).toBeDefined();
+
+    // Trigger suspense
+    promiseToSuspend = new Promise<void>((r) => { resolveSuspense = r; });
+    act(() => {
+      toggleSuspense(true);
+    });
+    expect(screen.getByText('Suspended')).toBeDefined();
+
+    // Reveal from suspense
+    await act(async () => {
+      resolveSuspense();
+      toggleSuspense(false);
+    });
+    expect(screen.getByText('Active')).toBeDefined();
   });
 });

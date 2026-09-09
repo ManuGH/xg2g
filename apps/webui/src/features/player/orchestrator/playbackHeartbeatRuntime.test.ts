@@ -764,5 +764,203 @@ describe('PlaybackHeartbeatRuntime', () => {
 
       expect(onSessionSnapshot).not.toHaveBeenCalled();
     });
+
+    it('applies a valid negotiated interval update from the session snapshot and reschedules timer', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+        fetchSessionSnapshot: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId: 'sess-1', heartbeatIntervalSeconds: 1, leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+      const runtime = createPlaybackHeartbeatRuntime({
+        sessionId: 'sess-1',
+        heartbeatIntervalSeconds: 5,
+        transport,
+        playbackEpoch: 1,
+        sessionEpoch: 1,
+        onLeaseUpdated: vi.fn(),
+        onFailure: vi.fn(),
+        onSessionSnapshot: vi.fn(),
+      });
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(transport.postHeartbeat).toHaveBeenCalledTimes(2);
+      runtime.stop();
+    });
+
+    it('retains the known interval when snapshot heartbeatIntervalSeconds is missing or invalid', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+        fetchSessionSnapshot: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId: 'sess-1', heartbeatIntervalSeconds: 0, leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+      const runtime = createPlaybackHeartbeatRuntime({
+        sessionId: 'sess-1',
+        heartbeatIntervalSeconds: 5,
+        transport,
+        playbackEpoch: 1,
+        sessionEpoch: 1,
+        onLeaseUpdated: vi.fn(),
+        onFailure: vi.fn(),
+        onSessionSnapshot: vi.fn(),
+      });
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+      // At 1000ms after first beat, second beat must NOT have fired because 0 was ignored
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+      // At 5000ms after first beat, second beat fires
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(transport.postHeartbeat).toHaveBeenCalledTimes(2);
+      runtime.stop();
+    });
+
+    it('cancels every outstanding snapshot request when supervision stops', async () => {
+      const signals: AbortSignal[] = [];
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:00Z' },
+          headers: new Headers(),
+        }),
+        fetchSessionSnapshot: vi.fn().mockImplementation(({ signal }) => {
+          signals.push(signal);
+          return new Promise(() => {});
+        }),
+      });
+      const runtime = createPlaybackHeartbeatRuntime({
+        sessionId: 'sess-1',
+        heartbeatIntervalSeconds: 1,
+        transport,
+        playbackEpoch: 1,
+        sessionEpoch: 1,
+        onLeaseUpdated: vi.fn(),
+        onFailure: vi.fn(),
+        onSessionSnapshot: vi.fn(),
+      });
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(signals.length).toBeGreaterThan(0);
+      runtime.stop();
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    });
+
+    it('discards slower snapshot response from older request when newer snapshot has arrived', async () => {
+      let resolveOlderSnapshot!: (val: any) => void;
+      let resolveNewerSnapshot!: (val: any) => void;
+      let callCount = 0;
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:00Z' },
+          headers: new Headers(),
+        }),
+        fetchSessionSnapshot: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return new Promise((r) => { resolveOlderSnapshot = r; });
+          }
+          return new Promise((r) => { resolveNewerSnapshot = r; });
+        }),
+      });
+      const onSessionSnapshot = vi.fn();
+      const onLeaseUpdated = vi.fn();
+
+      const runtime = createPlaybackHeartbeatRuntime({
+        sessionId: 'sess-1',
+        heartbeatIntervalSeconds: 1,
+        transport,
+        playbackEpoch: 1,
+        sessionEpoch: 1,
+        onLeaseUpdated,
+        onFailure: vi.fn(),
+        onSessionSnapshot,
+      });
+
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(1000); // Trigger beat 1 -> snapshot 1 started
+      await vi.advanceTimersByTimeAsync(1000); // Trigger beat 2 -> snapshot 2 started
+
+      // Snapshot 2 (newer) resolves first
+      resolveNewerSnapshot({
+        status: 200,
+        data: { sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:30Z', heartbeatIntervalSeconds: 2 },
+        headers: new Headers(),
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(onLeaseUpdated).toHaveBeenCalledWith({
+        leaseExpiresAt: '2026-09-09T12:00:30Z',
+        connectionLost: false,
+      });
+
+      // Snapshot 1 (older) resolves second
+      resolveOlderSnapshot({
+        status: 200,
+        data: { sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:10Z', heartbeatIntervalSeconds: 10 },
+        headers: new Headers(),
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Older snapshot metadata must NOT overwrite newer lease
+      expect(runtime.getLeaseExpiresAt()).toBe('2026-09-09T12:00:30Z');
+      runtime.stop();
+    });
+
+    it('updateTransport allows dynamic credential update for subsequent heartbeats', async () => {
+      const transport1 = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:00Z' },
+          headers: new Headers(),
+        }),
+      });
+      const transport2 = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'sess-1', leaseExpiresAt: '2026-09-09T12:00:05Z' },
+          headers: new Headers(),
+        }),
+      });
+
+      const runtime = createPlaybackHeartbeatRuntime({
+        sessionId: 'sess-1',
+        heartbeatIntervalSeconds: 5,
+        transport: transport1,
+        playbackEpoch: 1,
+        sessionEpoch: 1,
+        onLeaseUpdated: vi.fn(),
+        onFailure: vi.fn(),
+      });
+
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(transport1.postHeartbeat).toHaveBeenCalledTimes(1);
+      expect(transport2.postHeartbeat).not.toHaveBeenCalled();
+
+      // Switch to transport2
+      runtime.updateTransport(transport2);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(transport1.postHeartbeat).toHaveBeenCalledTimes(1);
+      expect(transport2.postHeartbeat).toHaveBeenCalledTimes(1);
+      runtime.stop();
+    });
   });
 });

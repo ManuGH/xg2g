@@ -91,6 +91,8 @@ export function usePlaybackController(
     }),
   );
 
+  controller.updateTransport(transport);
+
   useInsertionEffect(() => {
     controller.setCommandExecutor((command) => executorRef.current?.(command));
     return () => {
@@ -99,8 +101,9 @@ export function usePlaybackController(
   }, [controller]);
 
   useLayoutEffect(() => {
+    controller.updateTransport(transport);
     controller.setCommandExecutor((command) => executorRef.current?.(command));
-  }, [controller]);
+  }, [controller, transport]);
 
   useEffect(() => {
     controller.activate();
