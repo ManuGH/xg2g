@@ -1009,13 +1009,21 @@ final class AppModel {
         let targets = channels.map(\.serviceRef)
         if !targets.isEmpty {
             if let updated = try? await channelRepository.nowNext(for: targets) {
-                schedule = updated
+                if selectedBouquet == nil {
+                    schedule = updated
+                } else {
+                    schedule.merge(updated) { _, new in new }
+                }
             }
         }
 
         // 2. Refresh full EPG schedule
         if let epgUpdated = try? await channelRepository.epgSchedule(bouquet: selectedBouquet?.name) {
-            fullEpg = epgUpdated
+            if selectedBouquet == nil {
+                fullEpg = epgUpdated
+            } else {
+                fullEpg.merge(epgUpdated) { _, new in new }
+            }
         }
 
         lastDataRefreshTime = Date()
@@ -1044,8 +1052,14 @@ final class AppModel {
         selectedBouquet = bouquet
         guard let bouquet, bouquet.id != Self.favoritesBouquetID else {
             // "Alle Sender" (nil) or "Favoriten" filter locally in memory in 0ms
-            if bouquet == nil, let all = bouquetChannelsCache["all"], channels.count != all.count {
-                channels = all
+            if bouquet == nil {
+                if let all = bouquetChannelsCache["all"], channels.count != all.count {
+                    channels = all
+                }
+                let totalCount = bouquetChannelsCache["all"]?.count ?? channels.count
+                if fullEpg.isEmpty || (totalCount > 0 && fullEpg.count < totalCount) {
+                    await loadChannels()
+                }
             }
             return
         }
@@ -1080,8 +1094,13 @@ final class AppModel {
             async let epgTask = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
 
             let (newSchedule, newEpg) = await (nowNextTask, epgTask)
-            schedule = newSchedule
-            fullEpg = newEpg
+            if bouquet == nil {
+                schedule = newSchedule
+                fullEpg = newEpg
+            } else {
+                schedule.merge(newSchedule) { _, new in new }
+                fullEpg.merge(newEpg) { _, new in new }
+            }
             lastDataRefreshTime = Date()
         } catch {
             handle(error)

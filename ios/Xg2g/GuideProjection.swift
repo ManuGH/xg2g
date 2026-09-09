@@ -104,6 +104,7 @@ enum GuideProjectionBuilder {
     static func build(
         channels: [Channel],
         epg: [String: [NowNext.Entry]],
+        schedule: [String: NowNext] = [:],
         dayOffset: Int,
         anchor: GuideAnchor,
         genre: EpgGenre,
@@ -131,7 +132,13 @@ enum GuideProjectionBuilder {
         var slotBuckets: [Date: [GuideEntry]] = [:]
 
         for channel in channels {
-            let allShows = epg[channel.serviceRef] ?? []
+            var allShows = epg[channel.serviceRef] ?? []
+            // Fallback: If no multi-day EPG is available for this channel on day 0 (today),
+            // seamlessly use the live Now & Next schedule so the channel is never empty.
+            if allShows.isEmpty && dayOffset == 0, let nn = schedule[channel.serviceRef] {
+                if let nowShow = nn.now { allShows.append(nowShow) }
+                if let nextShow = nn.next, nextShow.id != nn.now?.id { allShows.append(nextShow) }
+            }
 
             // Hoisted: the channel name is identical for every show below.
             let channelMatchesQuery = hasQuery

@@ -22,8 +22,37 @@ struct ChannelListView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // MARK: - 1. Material Dynamic Filter Chip Carousel
-                    ScrollView(.horizontal, showsIndicators: false) {
+                    if !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let searchResult = SmartSearchEngine.search(
+                            query: model.searchQuery,
+                            channels: model.channels,
+                            schedule: model.schedule,
+                            fullEpg: model.fullEpg,
+                            now: Date.now
+                        )
+                        SmartSearchResultsView(
+                            result: searchResult,
+                            onPlayChannel: { channel in
+                                model.playingChannel = channel
+                            },
+                            onOpenShowDetail: { channel, entry in
+                                selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                            },
+                            onRecordShow: { channel, entry in
+                                Task {
+                                    let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
+                                    if ok {
+                                        triggerHaptic(.medium)
+                                        withAnimation {
+                                            recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    } else {
+                        // MARK: - 1. Material Dynamic Filter Chip Carousel
+                        ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             // 🔴 Jetzt Live
                             let isNow = model.selectedTimeFilter == .now && model.selectedGenre == .all
@@ -328,6 +357,7 @@ struct ChannelListView: View {
                         }
                     }
                 }
+            }
 
                 // MARK: - Toast Banner (Timer Scheduled)
                 if let message = recordConfirmationMessage {

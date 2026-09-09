@@ -33,6 +33,11 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		// legitimately have no EPG events in the window. Treating empty-but-OK as a
 		// failure fell through to the fallback, logging a spurious "primary failed" and
 		// doubling receiver load.
+		for i := range events {
+			if events[i].SRef == "" {
+				events[i].SRef = sRef
+			}
+		}
 		return events, nil
 	}
 
@@ -53,6 +58,11 @@ func (c *Client) GetEPG(ctx context.Context, sRef string, days int) ([]EPGEvent,
 		return nil, fmt.Errorf("both EPG endpoints failed: %w", combinedErr)
 	}
 
+	for i := range events {
+		if events[i].SRef == "" {
+			events[i].SRef = sRef
+		}
+	}
 	return events, nil
 }
 
@@ -133,7 +143,16 @@ func (c *Client) GetServiceEPG(ctx context.Context, serviceRef string) ([]EPGEve
 	params.Set("sRef", serviceRef)
 	urlPath := fmt.Sprintf("/api/epgservice?%s", params.Encode())
 
-	return c.fetchEPGFromURL(ctx, urlPath)
+	events, err := c.fetchEPGFromURL(ctx, urlPath)
+	if err != nil {
+		return nil, err
+	}
+	for i := range events {
+		if events[i].SRef == "" {
+			events[i].SRef = serviceRef
+		}
+	}
+	return events, nil
 }
 
 func (c *Client) fetchEPGFromURL(ctx context.Context, urlPath string) ([]EPGEvent, error) {

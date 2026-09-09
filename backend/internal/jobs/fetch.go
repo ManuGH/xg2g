@@ -79,14 +79,29 @@ func (a *epgAggregator) buildSRefMap() map[string]string {
 	return srefMap
 }
 
+func canonicalRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	ref = strings.TrimRight(ref, ":")
+	return strings.ToUpper(ref)
+}
+
 // aggregateEvents matches EPG events to channels and converts them to programmes
 func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map[string]string) []epg.Programme {
 	logger := xglog.FromContext(a.ctx)
+
+	// Build canonical lookup map for resilient matching across case / trailing colons
+	canonicalMap := make(map[string]string, len(srefMap))
+	for k, v := range srefMap {
+		canonicalMap[canonicalRef(k)] = v
+	}
 
 	// Group events by channel
 	eventsByChannel := make(map[string][]openwebif.EPGEvent)
 	for _, event := range events {
 		tvgID, found := srefMap[event.SRef]
+		if !found {
+			tvgID, found = canonicalMap[canonicalRef(event.SRef)]
+		}
 		if !found {
 			logger.Debug().Str("sref", event.SRef).Msg("No channel match for EPG event")
 			continue

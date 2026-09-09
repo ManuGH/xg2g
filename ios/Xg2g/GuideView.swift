@@ -38,7 +38,7 @@ struct GuideView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    if mode != .onAir {
+                    if mode != .onAir && guideSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         windowBar
                     }
 
@@ -253,7 +253,28 @@ struct GuideView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !hasBuiltProjection {
+        if !guideSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let searchResult = SmartSearchEngine.search(
+                query: guideSearchText,
+                channels: model.channels,
+                schedule: model.schedule,
+                fullEpg: model.fullEpg,
+                now: Date.now
+            )
+            SmartSearchResultsView(
+                result: searchResult,
+                onPlayChannel: { channel in
+                    triggerHaptic(.light)
+                    model.playingChannel = channel
+                },
+                onOpenShowDetail: { channel, entry in
+                    selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                },
+                onRecordShow: { channel, entry in
+                    record(entry, on: channel)
+                }
+            )
+        } else if !hasBuiltProjection {
             centeredState {
                 ProgressView("Programm wird geladen…")
                     .tint(Theme.Colors.accentAction)
@@ -416,9 +437,6 @@ struct GuideView: View {
         let genre: EpgGenre
         let query: String
         let contentRevision: Int
-        let modelGenre: EpgGenre
-        let modelQuery: String
-        let modelTimeFilter: AppModel.TimeFilter
         let modelBouquetID: String?
         let favoritesCount: Int
         /// Minute bucket, so a programme that has ended stops being "on air".
@@ -435,9 +453,6 @@ struct GuideView: View {
             genre: selectedGenre,
             query: guideSearchText,
             contentRevision: model.contentRevision,
-            modelGenre: model.selectedGenre,
-            modelQuery: model.searchQuery,
-            modelTimeFilter: model.selectedTimeFilter,
             modelBouquetID: model.selectedBouquet?.id,
             favoritesCount: model.favoriteChannelIDs.count,
             minuteBucket: tracksClock ? Int(Date.now.timeIntervalSince1970 / 60) : 0
@@ -451,8 +466,11 @@ struct GuideView: View {
             guard !Task.isCancelled else { return }
         }
 
-        let channels = model.filteredChannels
+        let channels = model.selectedBouquet?.id == AppModel.favoritesBouquetID
+            ? model.favoriteChannels
+            : model.channels
         let epg = model.fullEpg
+        let schedule = model.schedule
         let dayOffset = selectedDayOffset
         let currentAnchor = mode == .onAir ? GuideAnchor.now : anchor
         let genre = selectedGenre
@@ -463,6 +481,7 @@ struct GuideView: View {
             GuideProjectionBuilder.build(
                 channels: channels,
                 epg: epg,
+                schedule: schedule,
                 dayOffset: dayOffset,
                 anchor: currentAnchor,
                 genre: genre,
