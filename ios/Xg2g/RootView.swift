@@ -90,8 +90,14 @@ struct RootContentView: View {
             }
         }
         .fullScreenCover(item: Binding(
-            get: { playbackManager.activeRecordingItem },
-            set: { if $0 == nil { playbackManager.stop() } }
+            get: {
+                playbackManager.presentationMode == .fullscreen ? playbackManager.activeRecordingItem : nil
+            },
+            set: { item in
+                if item == nil && playbackManager.presentationMode == .fullscreen {
+                    playbackManager.minimize()
+                }
+            }
         )) { item in
             // No configured deployment means nothing to play. The screen used to
             // take a string and repair it; now the address either exists or the

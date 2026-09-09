@@ -41,6 +41,8 @@ public struct TestTSPlayerScreen: View {
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
     @State private var currentSubtitleImage: CGImage?
+    @State private var verticalDragOffset: CGFloat = 0
+    @State private var isDraggingDown: Bool = false
 
     private struct ChannelPreset: Identifiable, Hashable {
         var id: String { serviceRef }
@@ -148,6 +150,9 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func closePlayer() {
+        verticalDragOffset = 0
+        isDraggingDown = false
+        Haptics.shared.impact(.medium)
         playbackManager.minimize()
         dismiss()
     }
@@ -261,14 +266,31 @@ public struct TestTSPlayerScreen: View {
                         }
                     }
                     .gesture(
-                        DragGesture(minimumDistance: 40)
+                        DragGesture(minimumDistance: 15)
+                            .onChanged { value in
+                                if value.translation.height > 0 && abs(value.translation.height) > abs(value.translation.width) {
+                                    isDraggingDown = true
+                                    verticalDragOffset = value.translation.height
+                                }
+                            }
                             .onEnded { value in
-                                if value.translation.width < -50 {
-                                    Haptics.shared.impact(.medium)
-                                    zapRelative(delta: 1)
-                                } else if value.translation.width > 50 {
-                                    Haptics.shared.impact(.medium)
-                                    zapRelative(delta: -1)
+                                if isDraggingDown {
+                                    if value.translation.height > 80 || value.predictedEndTranslation.height > 160 {
+                                        closePlayer()
+                                    } else {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                            verticalDragOffset = 0
+                                            isDraggingDown = false
+                                        }
+                                    }
+                                } else {
+                                    if value.translation.width < -50 {
+                                        Haptics.shared.impact(.medium)
+                                        zapRelative(delta: 1)
+                                    } else if value.translation.width > 50 {
+                                        Haptics.shared.impact(.medium)
+                                        zapRelative(delta: -1)
+                                    }
                                 }
                             }
                     )
@@ -370,6 +392,10 @@ public struct TestTSPlayerScreen: View {
             // Real fullscreen, not merely an edge-to-edge video frame.
             .statusBarHidden(isLandscape)
             .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
+            .offset(y: max(0, verticalDragOffset))
+            .scaleEffect(isDraggingDown ? max(0.85, 1.0 - (verticalDragOffset / 1200)) : 1.0)
+            .clipShape(RoundedRectangle(cornerRadius: isDraggingDown ? min(32, verticalDragOffset / 4) : 0, style: .continuous))
+            .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.85), value: verticalDragOffset)
         }
         .onAppear {
             setupPlayback()
