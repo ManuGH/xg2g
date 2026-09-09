@@ -54,13 +54,17 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi")
 
-	filters := make([]string, 0, 2)
+	filters := make([]string, 0, 3)
 	if prof.Deinterlace {
 		// rate=field emits one frame per field - the GPU equivalent of bwdif's
 		// send_field, and the only way this path reaches 50p. Without it
 		// deinterlace_vaapi defaults to one frame per field PAIR, so the full-GPU
 		// chain silently produced 25p no matter what the runtime mode said.
 		filters = append(filters, vaapiDeinterlaceFilter(spec))
+	}
+	if prof.HDRToneMap {
+		// Hardware tonemapping from HDR/HLG (BT.2020) to SDR (BT.709)
+		filters = append(filters, "tonemap_vaapi=format=nv12:p=bt709:m=bt709:t=bt709")
 	}
 	// AV1 encodes 10-bit (see vaapiEncodeOnlyFilter): the extra precision cuts
 	// encoder-introduced banding on gradients even from an 8-bit source. Forcing

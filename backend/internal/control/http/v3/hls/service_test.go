@@ -220,21 +220,25 @@ func TestParseBlockingReloadParams(t *testing.T) {
 		query    string
 		wantMSN  int
 		wantPart int
+		wantSkip string
 	}{
-		{query: "", wantMSN: -1, wantPart: -1},
-		{query: "?_HLS_msn=12", wantMSN: 12, wantPart: -1},
-		{query: "?_HLS_msn=12&_HLS_part=3", wantMSN: 12, wantPart: 3},
-		{query: "?_HLS_part=3", wantMSN: -1, wantPart: -1},
-		{query: "?_HLS_msn=-1&_HLS_part=3", wantMSN: -1, wantPart: -1},
-		{query: "?_HLS_msn=invalid&_HLS_part=3", wantMSN: -1, wantPart: -1},
-		{query: "?_HLS_msn=12&_HLS_part=-1", wantMSN: 12, wantPart: -1},
+		{query: "", wantMSN: -1, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_msn=12", wantMSN: 12, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_msn=12&_HLS_part=3", wantMSN: 12, wantPart: 3, wantSkip: ""},
+		{query: "?_HLS_part=3", wantMSN: -1, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_msn=-1&_HLS_part=3", wantMSN: -1, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_msn=invalid&_HLS_part=3", wantMSN: -1, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_msn=12&_HLS_part=-1", wantMSN: 12, wantPart: -1, wantSkip: ""},
+		{query: "?_HLS_skip=YES", wantMSN: -1, wantPart: -1, wantSkip: "YES"},
+		{query: "?_HLS_msn=12&_HLS_part=3&_HLS_skip=YES", wantMSN: 12, wantPart: 3, wantSkip: "YES"},
+		{query: "?_HLS_skip=v2", wantMSN: -1, wantPart: -1, wantSkip: "v2"},
 	}
 
 	for _, tt := range tests {
 		request := httptest.NewRequest(http.MethodGet, "http://example.test/hls"+tt.query, nil)
-		msn, part := parseBlockingReloadParams(request)
-		if msn != tt.wantMSN || part != tt.wantPart {
-			t.Errorf("%q: got (%d, %d), want (%d, %d)", tt.query, msn, part, tt.wantMSN, tt.wantPart)
+		msn, part, skip := parseBlockingReloadParams(request)
+		if msn != tt.wantMSN || part != tt.wantPart || skip != tt.wantSkip {
+			t.Errorf("%q: got (%d, %d, %q), want (%d, %d, %q)", tt.query, msn, part, skip, tt.wantMSN, tt.wantPart, tt.wantSkip)
 		}
 	}
 }

@@ -217,8 +217,8 @@ func (s *Service) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, ses
 		return false
 	}
 
-	msn, part := parseBlockingReloadParams(r)
-	out, err := tracker.AwaitAndRender(r.Context(), msn, part, time.Now().Add(llhlsBlockingReloadTimeout))
+	msn, part, skip := parseBlockingReloadParams(r)
+	out, err := tracker.AwaitAndRender(r.Context(), msn, part, skip, time.Now().Add(llhlsBlockingReloadTimeout))
 	if err != nil {
 		return false
 	}
@@ -231,7 +231,7 @@ func (s *Service) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, ses
 	return true
 }
 
-func parseBlockingReloadParams(r *http.Request) (msn, part int) {
+func parseBlockingReloadParams(r *http.Request) (msn, part int, skip string) {
 	msn, part = -1, -1
 	q := r.URL.Query()
 	if v := q.Get("_HLS_msn"); v != "" {
@@ -246,5 +246,6 @@ func parseBlockingReloadParams(r *http.Request) (msn, part int) {
 			}
 		}
 	}
-	return msn, part
+	skip = q.Get("_HLS_skip")
+	return msn, part, skip
 }
