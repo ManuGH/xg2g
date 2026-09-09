@@ -981,6 +981,18 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
         if (!startGateOpen && bufferedAheadSeconds() >= HLS_STARTUP_POLICY.bufferTargetSeconds) {
+          const gateVideo = videoRef.current;
+          if (gateVideo && gateVideo.readyState < 2) {
+            const onCanPlay = () => {
+              gateVideo.removeEventListener('canplay', onCanPlay);
+              gateVideo.removeEventListener('loadeddata', onCanPlay);
+              openStartGate('buffer_target_ready');
+            };
+            gateVideo.addEventListener('canplay', onCanPlay, { once: true });
+            gateVideo.addEventListener('loadeddata', onCanPlay, { once: true });
+            window.setTimeout(() => openStartGate('buffer_target_timeout'), 200);
+            return;
+          }
           openStartGate('buffer_target');
         }
         if (
@@ -1369,8 +1381,8 @@ export function usePlaybackEngine({
         }
       }
 
-      if (videoEl.readyState >= 3 && bufferHealth > 0.5) {
-        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s)`);
+      if ((videoEl.readyState >= 3 || videoEl.currentTime < 0.5) && bufferHealth > 0.5) {
+        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s, ct=${videoEl.currentTime.toFixed(2)})`);
         clearNativeStallRecovery();
         clearHlsStallRecovery();
         return;

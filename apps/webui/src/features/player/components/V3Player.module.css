@@ -239,7 +239,7 @@
   );
   mask: radial-gradient(circle, transparent 58%, black 60%);
   -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
-  animation-name: startupRingSpin;
+  animation-name: global(startupRingSpin);
   animation-duration: 1.4s;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
@@ -296,7 +296,7 @@
   margin: -5px 0 0 -5px;
   border-radius: 50%;
   background: var(--accent-action);
-  animation-name: startupCorePulse;
+  animation-name: global(startupCorePulse);
   animation-duration: 1.6s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
@@ -353,7 +353,7 @@
   width: 40%;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, var(--accent-action), var(--accent-live), transparent);
-  animation-name: startupProgressIndeterminate;
+  animation-name: global(startupProgressIndeterminate);
   animation-duration: 1.5s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   animation-iteration-count: infinite;

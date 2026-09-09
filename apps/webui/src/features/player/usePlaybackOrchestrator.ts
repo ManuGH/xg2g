@@ -348,6 +348,7 @@ export function usePlaybackOrchestrator(
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
+  const hasReachedPlayingRef = useRef(false);
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isNativePlaybackHost = supportsManagedNativePlayback(hostEnvironment);
 
@@ -984,6 +985,7 @@ export function usePlaybackOrchestrator(
   const prepareForNextPlaybackAttempt = useCallback(async (
     hasActiveNativeRequest: boolean = false,
   ): Promise<void> => {
+    hasReachedPlayingRef.current = false;
     await finalizeTimelineForReplacement();
     const teardown = prepareForPlaybackAttempt({
       hasActivePlayback,
@@ -1943,8 +1945,16 @@ export function usePlaybackOrchestrator(
     });
   }, [dispatchPlayback, requestedDuration]);
 
+  useEffect(() => {
+    if (status === 'playing') {
+      hasReachedPlayingRef.current = true;
+    }
+  }, [status]);
+
+  const isInitialStartupBuffering =
+    !hasReachedPlayingRef.current && (status === 'buffering' || status === 'ready');
   const isImmediateStartupStatus =
-    status === 'starting' || status === 'priming' || status === 'building';
+    status === 'starting' || status === 'priming' || status === 'building' || isInitialStartupBuffering;
   const isNativeEngine = activeHlsEngine === 'native';
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
