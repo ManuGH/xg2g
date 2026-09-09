@@ -1362,6 +1362,27 @@ final class AppModel {
         await playback?.stopLive(sessionID: stream.sessionID)
     }
 
+    /// Starts or connects to an HLS Timeshift stream for the specified channel.
+    func startTimeshift(for channel: Channel) async throws -> LiveStream? {
+        guard let playback else { return nil }
+        if let existing = liveStream, playingChannel?.id == channel.id {
+            return existing
+        }
+        await stopPlayback()
+        let stream = try await playback.startLive(
+            serviceRef: channel.serviceRef,
+            qualityPreference: qualityPreference.rawValue
+        )
+        self.liveStream = stream
+        self.playingChannel = channel
+        return stream
+    }
+
+    /// Releases any active HLS timeshift session on the backend.
+    func stopTimeshift() async {
+        await stopPlayback()
+    }
+
     func heartbeat(sessionID: String) async throws {
         try await playback?.heartbeat(sessionID: sessionID)
     }

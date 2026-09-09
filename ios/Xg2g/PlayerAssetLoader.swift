@@ -40,4 +40,42 @@ enum PlayerAssetLoader {
         let asset = makeAsset(url: url, baseURL: baseURL, extraHeaders: extraHeaders)
         return AVPlayerItem(asset: asset)
     }
+
+    /// Builds a configured AVPlayer for a live HLS stream with authentication cookies and DVR settings.
+    static func makeLivePlayer(for stream: LiveStream, channel: Channel? = nil, nowNext: NowNext? = nil) -> AVPlayer {
+        if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
+            HTTPCookieStorage.shared.setCookie(cookie)
+        }
+        if let rootCookie = stream.ticket.rootCookie(for: stream.playlistURL) {
+            HTTPCookieStorage.shared.setCookie(rootCookie)
+        }
+
+        var options: [String: Any] = [:]
+        if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
+            options[AVURLAssetHTTPCookiesKey] = [cookie]
+            options["AVURLAssetHTTPHeaderFieldsKey"] = [
+                "Cookie": "\(cookie.name)=\(cookie.value)",
+                "User-Agent": "xg2g-ios/3.0"
+            ]
+        } else {
+            options["AVURLAssetHTTPHeaderFieldsKey"] = [
+                "User-Agent": "xg2g-ios/3.0"
+            ]
+        }
+
+        let asset = AVURLAsset(url: stream.playlistURL, options: options)
+        let item = AVPlayerItem(asset: asset)
+        item.automaticallyPreservesTimeOffsetFromLive = true
+        item.preferredForwardBufferDuration = 4.0
+
+        if let channel {
+            PlayerScreen.updatePlayerMetadata(for: item, channel: channel, nowNext: nowNext)
+        }
+
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = true
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        return player
+    }
 }

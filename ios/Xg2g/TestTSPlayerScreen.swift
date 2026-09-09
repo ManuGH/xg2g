@@ -2,6 +2,8 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
+import AVFoundation
+import CoreMedia
 import SwiftUI
 import UIKit
 
@@ -28,6 +30,20 @@ public struct TestTSPlayerScreen: View {
         case direct = "DIRECT (Vu+:8001)"
         case legacySmoother = "SMOOTHER (legacy)"
     }
+    public enum PlaybackEngineMode: Equatable {
+        case nativeDirectLive
+        case timeshiftHLS
+    }
+
+    @State private var engineMode: PlaybackEngineMode = .nativeDirectLive
+    @State private var timeshiftPlayer: AVPlayer?
+    @State private var isTimeshiftLoading: Bool = false
+    @State private var timeshiftOffsetSeconds: Double = 0
+    @State private var timeshiftTotalDuration: Double = 0
+    @State private var timeshiftCurrentPosition: Double = 0
+    @State private var timeshiftObserverToken: Any?
+    @State private var isTimeshiftScrubbing: Bool = false
+
     @State private var streamRouteMode: StreamRouteMode = .livePipeline
     @State private var isStreaming: Bool = false
     @State private var isPlaying: Bool = true
@@ -221,9 +237,43 @@ public struct TestTSPlayerScreen: View {
                             aspectRatioOverride: viewPreset.aspectRatio
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
+                        .opacity(engineMode == .nativeDirectLive ? 1.0 : 0.0)
 
-                        // 1b. Synchronized Native DVB Subtitle Overlay
-                        if let subImage = currentSubtitleImage {
+                        // 1b. HLS Timeshift Player Stage (AVPlayer)
+                        if let tsPlayer = timeshiftPlayer {
+                            NativeVideoPlayerView(
+                                player: tsPlayer,
+                                showsPlaybackControls: false,
+                                onDismiss: { closePlayer() }
+                            )
+                            .ignoresSafeArea(edges: isLandscape ? .all : [])
+                            .opacity(engineMode == .timeshiftHLS ? 1.0 : 0.0)
+                        }
+
+                        // 1c. Timeshift Loading Indicator Overlay
+                        if isTimeshiftLoading {
+                            ZStack {
+                                Color.black.opacity(0.4)
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .tint(Theme.Colors.accentLive)
+                                        .scaleEffect(0.9)
+                                    Text("Timeshift wird vorbereitet…")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                                .shadow(color: Color.black.opacity(0.4), radius: 8)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                        }
+
+                        // 1d. Synchronized Native DVB Subtitle Overlay
+                        if let subImage = currentSubtitleImage, engineMode == .nativeDirectLive {
                             Image(decorative: subImage, scale: 1.0)
                                 .resizable()
                                 .aspectRatio(16/9, contentMode: .fit)
@@ -490,13 +540,31 @@ public struct TestTSPlayerScreen: View {
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
-                            let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE"
-                            Text(liveTag)
-                                .font(.system(size: 9, weight: .black, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.accentLive)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1.5)
-                                .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            if engineMode == .nativeDirectLive {
+                                let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE • DIRECT"
+                                Text(liveTag)
+                                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentLive)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1.5)
+                                    .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            } else {
+                                HStack(spacing: 3) {
+                                    Text("TIMESHIFT")
+                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.statusWarning)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1.5)
+                                        .background(Theme.Colors.statusWarning.opacity(0.25), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+
+                                    Text(formattedTimeshiftOffset)
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1.5)
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                }
+                            }
                         }
 
                         if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
@@ -508,6 +576,27 @@ public struct TestTSPlayerScreen: View {
                     }
 
                     Spacer(minLength: 4)
+
+                    // Timeshift Direct Return Button (Header Quick Access)
+                    if engineMode == .timeshiftHLS {
+                        Button {
+                            jumpToLiveEdge()
+                        } label: {
+                            HStack(spacing: 4) {
+                                PulsingLiveDot(size: 5)
+                                Text("Zur Live-Kante")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(Theme.Colors.accentLive, in: Capsule())
+                            .foregroundStyle(Color.black)
+                            .shadow(color: Theme.Colors.accentLive.opacity(0.4), radius: 6)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
 
                     // 3. Aspect Ratio Preset Button (Primary Control, 44pt hit target)
                     Button {
@@ -676,15 +765,31 @@ public struct TestTSPlayerScreen: View {
                 Spacer()
 
                 // Center Transport Controls
-                HStack(spacing: 36) {
+                HStack(spacing: 24) {
                     // Previous Channel
                     Button {
                         zapRelative(delta: -1)
                     } label: {
                         Image(systemName: "backward.end.fill")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(13)
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    // Timeshift Rewind 30s
+                    Button {
+                        if engineMode == .timeshiftHLS {
+                            seekTimeshiftRelative(-30)
+                        } else {
+                            enterTimeshift(seekBackSeconds: 30)
+                        }
+                    } label: {
+                        Image(systemName: "gobackward.30")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -702,17 +807,57 @@ public struct TestTSPlayerScreen: View {
                     }
                     .buttonStyle(.plain)
 
+                    // Timeshift Forward 30s (active in Timeshift)
+                    Button {
+                        if engineMode == .timeshiftHLS {
+                            seekTimeshiftRelative(30)
+                        } else {
+                            displayZapToast("Bereits an der Live-Kante")
+                        }
+                    } label: {
+                        Image(systemName: "goforward.30")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(engineMode == .timeshiftHLS ? .white : .white.opacity(0.35))
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(engineMode != .timeshiftHLS)
+
                     // Next Channel
                     Button {
                         zapRelative(delta: 1)
                     } label: {
                         Image(systemName: "forward.end.fill")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(13)
+                            .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
+                }
+
+                // Timeshift Timeline Bar (Visible when in Timeshift mode)
+                if engineMode == .timeshiftHLS {
+                    TimeshiftTimelineBar(
+                        currentOffset: formattedTimeshiftOffset,
+                        progress: timeshiftCurrentPosition,
+                        durationSeconds: timeshiftTotalDuration,
+                        onSeekProgress: { fraction in
+                            isTimeshiftScrubbing = true
+                            timeshiftCurrentPosition = fraction
+                        },
+                        onCommitSeek: { fraction in
+                            isTimeshiftScrubbing = false
+                            commitTimeshiftSeek(progress: fraction)
+                        },
+                        onJumpLive: {
+                            jumpToLiveEdge()
+                        }
+                    )
+                    .padding(.horizontal, sideInset)
+                    .padding(.top, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 Spacer()
@@ -1128,6 +1273,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func teardownPlayback() {
+        teardownTimeshift()
         playbackManager.stop()
         isStreaming = false
         UIApplication.shared.isIdleTimerDisabled = false
@@ -1197,6 +1343,10 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func switchTo(preset: ChannelPreset) {
+        if engineMode == .timeshiftHLS {
+            teardownTimeshift()
+            engineMode = .nativeDirectLive
+        }
         viewPreset = .standard
         streamURLString = preset.url
         currentChannelName = preset.name
@@ -1228,16 +1378,178 @@ public struct TestTSPlayerScreen: View {
         switchTo(preset: presets[nextIndex])
     }
 
-    private func togglePlayPause() {
-        if isPlaying {
-            let stopping = coordinator.playing
-            Task { await coordinator.stop() }
-            isPlaying = false
-            isStreaming = false
-            NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
-            stopping?.notePlaybackStateChanged()
+    // MARK: - Auto-Timeshift-Weiche (Handover Live TS ↔ HLS Timeshift)
+
+    private var formattedTimeshiftOffset: String {
+        let secs = Int(timeshiftOffsetSeconds)
+        let hours = secs / 3600
+        let minutes = (secs % 3600) / 60
+        let seconds = secs % 60
+        if hours > 0 {
+            return String(format: "-%02d:%02d:%02d", hours, minutes, seconds)
         } else {
-            startCurrentPreset()
+            return String(format: "-%02d:%02d", minutes, seconds)
+        }
+    }
+
+    private func enterTimeshift(seekBackSeconds: Double = 0) {
+        guard let model, let ch = model.channels.first(where: { $0.serviceRef == activePresentedServiceRef || $0.name == currentChannelName }) else {
+            displayZapToast("Timeshift nicht verfügbar")
+            return
+        }
+
+        Haptics.shared.impact(.medium)
+        isTimeshiftLoading = true
+        engineMode = .timeshiftHLS
+        isPlaying = (seekBackSeconds > 0)
+
+        // Stop the live direct pipeline presentation gracefully
+        let stopping = coordinator.playing
+        Task { await coordinator.stop() }
+        stopping?.notePlaybackStateChanged()
+
+        Task { @MainActor in
+            do {
+                if let stream = try await model.startTimeshift(for: ch) {
+                    let player = PlayerAssetLoader.makeLivePlayer(for: stream, channel: ch, nowNext: model.schedule[ch.serviceRef])
+                    self.timeshiftPlayer = player
+                    self.attachTimeshiftObserver(player: player)
+
+                    if seekBackSeconds > 0 {
+                        self.seekTimeshiftRelative(-seekBackSeconds)
+                        player.play()
+                        self.isPlaying = true
+                    } else {
+                        player.pause()
+                        self.isPlaying = false
+                    }
+                    self.isTimeshiftLoading = false
+                    displayZapToast(seekBackSeconds > 0 ? "◀◀ Timeshift -\(Int(seekBackSeconds))s" : "❚❚ Timeshift Pausiert")
+                } else {
+                    isTimeshiftLoading = false
+                    displayZapToast("Timeshift konnte nicht gestartet werden")
+                    jumpToLiveEdge()
+                }
+            } catch {
+                isTimeshiftLoading = false
+                displayZapToast("Fehler bei Timeshift: \(error.localizedDescription)")
+                jumpToLiveEdge()
+            }
+        }
+    }
+
+    private func jumpToLiveEdge() {
+        Haptics.shared.notification(.success)
+        teardownTimeshift()
+        engineMode = .nativeDirectLive
+        startCurrentPreset()
+        displayZapToast("▶ Live-Kante (Native TS)")
+    }
+
+    private func teardownTimeshift() {
+        if let token = timeshiftObserverToken {
+            timeshiftPlayer?.removeTimeObserver(token)
+            timeshiftObserverToken = nil
+        }
+        timeshiftPlayer?.pause()
+        timeshiftPlayer = nil
+        isTimeshiftLoading = false
+        timeshiftOffsetSeconds = 0
+        Task { await model?.stopTimeshift() }
+    }
+
+    private func attachTimeshiftObserver(player: AVPlayer) {
+        if let token = timeshiftObserverToken {
+            timeshiftPlayer?.removeTimeObserver(token)
+            timeshiftObserverToken = nil
+        }
+        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        timeshiftObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak player] _ in
+            guard let player, let item = player.currentItem else { return }
+            guard let lastRange = item.seekableTimeRanges.last?.timeRangeValue else { return }
+            let liveEnd = lastRange.end.seconds
+            let start = lastRange.start.seconds
+            let current = player.currentTime().seconds
+
+            if liveEnd.isFinite && current.isFinite && start.isFinite {
+                let offset = max(0, liveEnd - current)
+                let duration = max(1.0, liveEnd - start)
+                let progress = max(0.0, min(1.0, (current - start) / duration))
+
+                Task { @MainActor in
+                    self.timeshiftOffsetSeconds = offset
+                    self.timeshiftTotalDuration = duration
+                    if !self.isTimeshiftScrubbing {
+                        self.timeshiftCurrentPosition = progress
+                    }
+
+                    // Auto-return to Native Direct TS if caught up to live edge during playback
+                    if self.isPlaying && offset < 1.5 {
+                        self.jumpToLiveEdge()
+                    }
+                }
+            }
+        }
+    }
+
+    private func toggleTimeshiftPlayPause() {
+        guard let player = timeshiftPlayer else {
+            enterTimeshift()
+            return
+        }
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+            displayZapToast("❚❚ Pausiert")
+        } else {
+            player.play()
+            isPlaying = true
+            displayZapToast("▶ Fortsetzen")
+        }
+    }
+
+    private func seekTimeshiftRelative(_ seconds: Double) {
+        guard let player = timeshiftPlayer, let item = player.currentItem else { return }
+        guard let range = item.seekableTimeRanges.last?.timeRangeValue else { return }
+        let current = player.currentTime().seconds
+        let liveEnd = range.end.seconds
+        let target = max(range.start.seconds, min(liveEnd, current + seconds))
+
+        if (liveEnd - target) <= 2.5 && seconds > 0 {
+            jumpToLiveEdge()
+            return
+        }
+
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        displayZapToast(seconds > 0 ? "▶▶ +\(Int(seconds))s" : "◀◀ \(Int(seconds))s")
+    }
+
+    private func commitTimeshiftSeek(progress: Double) {
+        guard let player = timeshiftPlayer, let item = player.currentItem else { return }
+        guard let lastRange = item.seekableTimeRanges.last?.timeRangeValue else { return }
+        let start = lastRange.start.seconds
+        let duration = max(1.0, lastRange.end.seconds - start)
+        let target = start + (duration * progress)
+        let liveEnd = lastRange.end.seconds
+
+        if (liveEnd - target) <= 2.5 {
+            jumpToLiveEdge()
+            return
+        }
+
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        Haptics.shared.impact(.light)
+    }
+
+    private func togglePlayPause() {
+        if engineMode == .timeshiftHLS {
+            toggleTimeshiftPlayPause()
+        } else {
+            if isPlaying {
+                enterTimeshift(seekBackSeconds: 0)
+            } else {
+                startCurrentPreset()
+            }
         }
     }
 
@@ -1408,5 +1720,102 @@ struct UnplayableFormatNotice: View {
             .padding(28)
         }
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Timeshift Timeline Bar
+
+struct TimeshiftTimelineBar: View {
+    let currentOffset: String
+    let progress: Double // 0.0 to 1.0
+    let durationSeconds: Double
+    let onSeekProgress: (Double) -> Void
+    let onCommitSeek: (Double) -> Void
+    let onJumpLive: () -> Void
+
+    @State private var dragProgress: Double?
+
+    private var displayProgress: Double {
+        dragProgress ?? progress
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Theme.Colors.statusWarning)
+                        .frame(width: 6, height: 6)
+                    Text("TIMESHIFT")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.statusWarning)
+                    Text(currentOffset)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(.ultraThinMaterial, in: Capsule())
+
+                Spacer()
+
+                Button(action: onJumpLive) {
+                    HStack(spacing: 4) {
+                        PulsingLiveDot(size: 5)
+                        Text("Zur Live-Kante")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Theme.Colors.accentLive, in: Capsule())
+                    .foregroundStyle(Color.black)
+                }
+                .buttonStyle(.plain)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: 4)
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Theme.Colors.statusWarning, Theme.Colors.accentLive],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(displayProgress))), height: 4)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 14, height: 14)
+                        .shadow(color: Theme.Colors.accentLive.opacity(0.8), radius: 4)
+                        .offset(x: max(0, min(geo.size.width - 14, geo.size.width * CGFloat(displayProgress) - 7)))
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let fraction = max(0.0, min(1.0, value.location.x / geo.size.width))
+                            dragProgress = fraction
+                            onSeekProgress(fraction)
+                        }
+                        .onEnded { value in
+                            let fraction = max(0.0, min(1.0, value.location.x / geo.size.width))
+                            dragProgress = nil
+                            onCommitSeek(fraction)
+                        }
+                )
+            }
+            .frame(height: 14)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+        .shadow(color: Color.black.opacity(0.3), radius: 8)
     }
 }
