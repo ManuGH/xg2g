@@ -331,6 +331,24 @@ export function createPlaybackController(
     pendingAdoptionCandidates.clear();
   }
 
+  function cancelInFlightAttempt(
+    attempt: InFlightStart,
+    reason: 'superseded' | 'user_stop' | 'timeout' = 'user_stop',
+  ): void {
+    if (attempt.settled) {
+      return;
+    }
+    attempt.cancelled = true;
+    attempt.cancelReason = reason;
+    if (attempt.settlementTimer) {
+      clearTimeout(attempt.settlementTimer);
+      attempt.settlementTimer = null;
+    }
+    attempt.abortController.abort();
+    attempt.settled = true;
+    attempt.resolvePublic({ status: 'cancelled', reason });
+  }
+
   function allocatePlaybackEpoch(): number {
     playbackEpoch += 1;
     sessionEpoch = 0;
@@ -338,15 +356,7 @@ export function createPlaybackController(
 
     // Invalidate any in-flight live start immediately and idempotently
     if (currentAttempt && !currentAttempt.settled) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'superseded';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      cancelInFlightAttempt(currentAttempt, 'superseded');
       currentAttempt = null;
     }
 
@@ -381,6 +391,13 @@ export function createPlaybackController(
 
     // If switching to a non-browser-Live mode, retire any active Live session!
     if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
+      if (currentAttempt && !currentAttempt.settled) {
+        cancelInFlightAttempt(currentAttempt, 'superseded');
+        currentAttempt = null;
+      }
+      for (const start of Array.from(inFlightStarts.values())) {
+        cancelInFlightAttempt(start, 'superseded');
+      }
       stopHeartbeatSupervision();
       const sessionToRetire = activeSessionId;
       const transportToUse = activeSessionTransport ?? getLatestTransport();
@@ -676,8 +693,16 @@ export function createPlaybackController(
       }
       const previousActiveSessionId = activeSessionId;
       const previousActiveTransport = activeSessionTransport;
+
+      const pinnedBase = attempt.transport.apiBase;
+      const latestTransport = getLatestTransport();
+      const isSameEndpoint = !pinnedBase || !latestTransport.apiBase || pinnedBase === latestTransport.apiBase;
+      const resolvedTransport = isSameEndpoint ? latestTransport : attempt.transport;
+
       activeSessionId = returnedSessionId;
-      activeSessionTransport = attempt.transport;
+      activeSessionTransport = resolvedTransport;
+      attempt.transport = resolvedTransport;
+
       if (previousActiveSessionId && previousActiveSessionId !== returnedSessionId) {
         stopHeartbeatSupervision();
         void retireAndStopSession(previousActiveSessionId, previousActiveTransport ?? undefined);
@@ -739,6 +764,19 @@ export function createPlaybackController(
       heartbeatSessionId = returnedSessionId;
       const initialLease = readySession.leaseExpiresAt ?? null;
 
+      // Reconcile the latest committed same-endpoint credentials when supervision is created:
+      const effectivePinnedBase = attempt.transport.apiBase;
+      const latestCommittedTransport = getLatestTransport();
+      const effectiveTransport =
+        !effectivePinnedBase ||
+        !latestCommittedTransport.apiBase ||
+        effectivePinnedBase === latestCommittedTransport.apiBase
+          ? latestCommittedTransport
+          : attempt.transport;
+
+      activeSessionTransport = effectiveTransport;
+      attempt.transport = effectiveTransport;
+
       runtime.dispatch({
         type: 'normative.session.lease.updated',
         epoch: attempt.epoch,
@@ -751,7 +789,7 @@ export function createPlaybackController(
         sessionId: returnedSessionId,
         heartbeatIntervalSeconds: readySession.heartbeatIntervalSeconds!,
         initialLeaseExpiresAt: initialLease,
-        transport: attempt.transport,
+        transport: effectiveTransport,
         playbackEpoch: attempt.epoch,
         sessionEpoch: sEpoch,
         onLeaseUpdated: ({ leaseExpiresAt, connectionLost }) => {
@@ -778,13 +816,23 @@ export function createPlaybackController(
             failure.status === 401 ||
             failure.status === 403;
 
-          const hasInFlightNewAttempt = Boolean(currentAttempt && currentAttempt.epoch !== attempt.epoch);
+          const hasInFlightNewAttempt = Boolean(
+            (currentAttempt && currentAttempt.epoch !== attempt.epoch) ||
+            Array.from(inFlightStarts.values()).some((s) => s.epoch !== attempt.epoch)
+          );
 
           if (isTerminalAuth) {
-            if (currentAttempt && currentAttempt.epoch !== attempt.epoch) {
-              currentAttempt.cancelled = true;
-              currentAttempt.abortController.abort();
-              inFlightStarts.delete(currentAttempt.attemptId);
+            stoppedEpochs.add(currentPlaybackEpoch);
+            stoppedEpochs.add(playbackEpoch);
+            stoppedEpochs.add(attempt.epoch);
+            if (currentAttempt) {
+              stoppedEpochs.add(currentAttempt.epoch);
+              cancelInFlightAttempt(currentAttempt, 'superseded');
+              currentAttempt = null;
+            }
+            for (const start of Array.from(inFlightStarts.values())) {
+              stoppedEpochs.add(start.epoch);
+              cancelInFlightAttempt(start, 'superseded');
             }
             stopHeartbeatSupervision();
             runtime.dispatch({
@@ -815,10 +863,21 @@ export function createPlaybackController(
             return;
           }
 
+          const isConfirmedDead =
+            failure.status === 404 ||
+            failure.status === 410 ||
+            failure.code === 'SESSION_NOT_FOUND' ||
+            failure.code === 'SESSION_EXPIRED';
+
           if (hasInFlightNewAttempt) {
+            const failedSessionId = activeSessionId;
+            const failedTransport = activeSessionTransport ?? getLatestTransport();
             stopHeartbeatSupervision();
             activeSessionId = null;
             activeSessionTransport = null;
+            if (!isConfirmedDead && failedSessionId) {
+              handleObsoleteSession(failedSessionId, failedTransport);
+            }
             if (failure.pauseMedia && executor) {
               executor({ type: 'command.media.pause' });
             }
@@ -923,15 +982,7 @@ export function createPlaybackController(
 
     // Invalidate previous attempt promptly if still running
     if (currentAttempt && !currentAttempt.settled && currentAttempt.epoch !== epoch) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'superseded';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      cancelInFlightAttempt(currentAttempt, 'superseded');
       currentAttempt = null;
     }
 
@@ -1030,32 +1081,11 @@ export function createPlaybackController(
 
     // 3. Synchronously attempt invalidation & prompt promise settle
     if (currentAttempt && !currentAttempt.settled) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'user_stop';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+      cancelInFlightAttempt(currentAttempt, 'user_stop');
+      currentAttempt = null;
     }
-    currentAttempt = null;
-
-    for (const start of inFlightStarts.values()) {
-      if (start.settlementTimer) {
-        clearTimeout(start.settlementTimer);
-        start.settlementTimer = null;
-      }
-      if (!start.cancelled) {
-        start.cancelled = true;
-        start.cancelReason = 'user_stop';
-        start.abortController.abort();
-        if (!start.settled) {
-          start.settled = true;
-          start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-        }
-      }
+    for (const start of Array.from(inFlightStarts.values())) {
+      cancelInFlightAttempt(start, 'user_stop');
     }
 
     const doStop = async () => {
@@ -1101,24 +1131,13 @@ export function createPlaybackController(
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
-      currentAttempt.cancelled = true;
       currentAttempt.ineligibleForAdoption = true;
-      currentAttempt.cancelReason = 'user_stop';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+      cancelInFlightAttempt(currentAttempt, 'user_stop');
+      currentAttempt = null;
     }
-    for (const start of inFlightStarts.values()) {
-      if (start.settlementTimer) {
-        clearTimeout(start.settlementTimer);
-      }
-      start.cancelled = true;
+    for (const start of Array.from(inFlightStarts.values())) {
       start.ineligibleForAdoption = true;
-      start.abortController.abort();
-      if (!start.settled) {
-        start.settled = true;
-        start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-      }
+      cancelInFlightAttempt(start, 'user_stop');
     }
     inFlightStarts.clear();
     flushPendingAdoptionCandidates();
@@ -1153,11 +1172,26 @@ export function createPlaybackController(
     stop,
     updateTransport(newTransport: LiveSessionTransport) {
       currentTransport = newTransport;
-      if (activeSessionId && heartbeatRuntime) {
-        const pinnedBase = activeSessionTransport?.apiBase;
-        const newBase = newTransport.apiBase;
-        if (!pinnedBase || !newBase || pinnedBase === newBase) {
+      const pinnedBase =
+        activeSessionTransport?.apiBase ??
+        currentAttempt?.transport.apiBase ??
+        Array.from(inFlightStarts.values())[0]?.transport.apiBase;
+      const newBase = newTransport.apiBase;
+      const isSameEndpoint = !pinnedBase || !newBase || pinnedBase === newBase;
+      if (isSameEndpoint) {
+        if (activeSessionId) {
           activeSessionTransport = newTransport;
+        }
+        if (currentAttempt) {
+          currentAttempt.transport = newTransport;
+        }
+        for (const start of Array.from(inFlightStarts.values())) {
+          const startPinnedBase = start.transport.apiBase;
+          if (!startPinnedBase || !newBase || startPinnedBase === newBase) {
+            start.transport = newTransport;
+          }
+        }
+        if (heartbeatRuntime) {
           heartbeatRuntime.updateTransport(newTransport);
         }
       }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { StrictMode, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { startTransition, StrictMode, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackController } from './usePlaybackController';
@@ -781,5 +781,59 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
       toggleSuspense(false);
     });
     expect(screen.getByText('Active')).toBeDefined();
+  });
+
+  it('does not publish credentials from a suspended uncommitted render to active heartbeats', async () => {
+    vi.useFakeTimers();
+    try {
+      const response = (data: unknown) => ({ status: 200, data, headers: new Headers() });
+      const expiry = '2026-09-09T12:10:00Z';
+      const oldTransport: LiveSessionTransport = {
+        apiBase: 'https://example.test/api/v3',
+        fetchStreamInfo: vi.fn().mockResolvedValue(response({
+          mode: 'direct_stream', playbackDecisionToken: 'fixture',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+        })),
+        postStartIntent: vi.fn().mockResolvedValue(response({ sessionId: 'A' })),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'A', playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5, leaseExpiresAt: expiry,
+        }),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockResolvedValue(response({
+          acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry,
+        })),
+      };
+      const newTransport: LiveSessionTransport = {
+        ...oldTransport,
+        postHeartbeat: vi.fn().mockResolvedValue(response({
+          acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry,
+        })),
+      };
+      const pending = new Promise(() => {});
+      let controller!: ReturnType<typeof usePlaybackController>['controller'];
+      let setPending!: () => void;
+      function Owner({ version }: { version: number }) {
+        const hook = usePlaybackController(version ? newTransport : oldTransport, createInitialState, vi.fn());
+        if (version) throw pending;
+        controller = hook.controller;
+        return <div>committed-old</div>;
+      }
+      function Host() {
+        const [version, setVersion] = useState(0);
+        setPending = () => startTransition(() => setVersion(1));
+        return <Suspense fallback={<div>pending</div>}><Owner version={version} /></Suspense>;
+      }
+      render(<Host />);
+      await act(async () => { await controller.startLive({ serviceRef: 'channel-A' }); });
+      await act(async () => { setPending(); });
+      expect(screen.getByText('committed-old')).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(vi.mocked(oldTransport.postHeartbeat!).mock.calls.length + vi.mocked(newTransport.postHeartbeat!).mock.calls.length).toBe(1);
+      expect(oldTransport.postHeartbeat).toHaveBeenCalledTimes(1);
+      expect(newTransport.postHeartbeat).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

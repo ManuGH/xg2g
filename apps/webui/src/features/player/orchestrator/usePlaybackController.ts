@@ -91,8 +91,6 @@ export function usePlaybackController(
     }),
   );
 
-  controller.updateTransport(transport);
-
   useInsertionEffect(() => {
     controller.setCommandExecutor((command) => executorRef.current?.(command));
     return () => {

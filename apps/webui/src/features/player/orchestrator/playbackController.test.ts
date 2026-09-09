@@ -2455,6 +2455,121 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         controller.dispose();
       }
     });
+
+    it('settles the new start promise when retained-session auth cancels its preflight', async () => {
+      const t = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({ status: 401, data: {}, headers: new Headers() }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        vi.mocked(t.fetchStreamInfo).mockImplementationOnce(() => new Promise(() => {}));
+        let settled = false;
+        void controller.startLive({ serviceRef: 'channel-B' }).then(
+          () => { settled = true; }, () => { settled = true; },
+        );
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().failure?.code).toBe('SESSION_UNAUTHORIZED');
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(settled).toBe(true);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('invalidates already allocated preparation after retained-session terminal auth failure', async () => {
+      const t = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({ status: 403, data: {}, headers: new Headers() }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().failure?.code).toBe('SESSION_FORBIDDEN');
+        const result = await controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+        expect(result.status).toBe('cancelled');
+        expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('uses a same-endpoint transport refresh that occurs while readiness is pending', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveReady!: (val: any) => void;
+      const readyPromise = new Promise<any>((r) => { resolveReady = r; });
+      const oldTransport = createMockTransport({
+        waitForReady: vi.fn().mockReturnValue(readyPromise),
+      });
+      const updatedTransport = createMockTransport();
+      const controller = createPlaybackController({
+        transport: oldTransport,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        const startup = controller.startLive({ serviceRef: 'channel-A' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(oldTransport.waitForReady).toHaveBeenCalledTimes(1);
+        controller.updateTransport(updatedTransport);
+        resolveReady({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        });
+        await startup;
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(updatedTransport.postHeartbeat).toHaveBeenCalledTimes(1);
+        expect(oldTransport.postHeartbeat).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('retires a retained session after invalid heartbeat contract while another start is pending', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveStartB!: (val: any) => void;
+      const startBPromise = new Promise<any>((r) => { resolveStartB = r; });
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce({ status: 202, data: { sessionId: 'A' }, headers: new Headers() })
+          .mockReturnValueOnce(startBPromise),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        })),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: false, sessionId: 'A' },
+          headers: new Headers(),
+        }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const startupB = controller.startLive({ serviceRef: 'channel-B' });
+        await vi.advanceTimersByTimeAsync(5000);
+        resolveStartB({ status: 202, data: { sessionId: 'B' }, headers: new Headers() });
+        await startupB;
+        await controller.stop();
+        expect(vi.mocked(t.postStopIntent).mock.calls.some(([p]) => p.sessionId === 'A')).toBe(true);
+      } finally {
+        controller.dispose();
+      }
+    });
   });
 });
 
