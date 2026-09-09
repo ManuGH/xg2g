@@ -148,6 +148,9 @@ type NodeHarnessResult struct {
 }
 
 func TestP6_1b_BrowserDownswitchAgainstLiveSpike(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser downswitch E2E test in short mode")
+	}
 	nodeBin, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node binary not found in PATH, skipping browser downswitch E2E test")
