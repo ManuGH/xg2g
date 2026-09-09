@@ -392,6 +392,48 @@ describe('usePlayerChrome', () => {
     expect(video.muted).toBe(true);
   });
 
+  it('does not re-mute on applyAutoplayMute once user has explicitly unmuted', () => {
+    render(<HookHarness shouldForceNativeMobileHls={() => false} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    // Initial cold-start: applyAutoplayMute runs
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+    expect(video.muted).toBe(true);
+
+    // User explicitly un-mutes
+    fireEvent.click(screen.getByRole('button', { name: 'togglemute' }));
+    expect(video.muted).toBe(false);
+
+    // Channel switch / stream restart calls applyAutoplayMute again
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+
+    // Audio must remain unmuted!
+    expect(video.muted).toBe(false);
+  });
+
+  it('keeps video muted on applyAutoplayMute if user explicitly muted', () => {
+    render(<HookHarness shouldForceNativeMobileHls={() => false} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    // Cold start mute
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+    expect(video.muted).toBe(true);
+
+    // User unmutes
+    fireEvent.click(screen.getByRole('button', { name: 'togglemute' }));
+    expect(video.muted).toBe(false);
+
+    // User explicitly mutes again
+    fireEvent.click(screen.getByRole('button', { name: 'togglemute' }));
+    expect(video.muted).toBe(true);
+
+    // Channel switch / stream restart calls applyAutoplayMute
+    fireEvent.click(screen.getByRole('button', { name: 'mute' }));
+
+    // Must remain muted because user explicitly muted
+    expect(video.muted).toBe(true);
+  });
+
   it('prefers container fullscreen over desktop WebKit fullscreen by default', async () => {
     const requestFullscreen = vi.fn().mockResolvedValue(undefined);
     const webkitEnterFullscreen = vi.fn();
