@@ -128,6 +128,7 @@ struct RecordingsView: View {
     @State private var promptResumeRecording: Recording?
     @State private var selectedDetailRecording: Recording?
     @State private var recordingToDelete: Recording?
+    @State private var showTimersSheet = false
 
     private func play(recording: Recording, startPosition: Double) {
         model.playbackManager.play(recording: recording, startPosition: startPosition)
@@ -219,6 +220,18 @@ struct RecordingsView: View {
             }
             .navigationTitle("Aufnahmen")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showTimersSheet = true
+                    } label: {
+                        Label("Timer", systemImage: "clock.badge")
+                    }
+                }
+            }
+            .sheet(isPresented: $showTimersSheet) {
+                TimersView(model: model)
+            }
             .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
             .sheet(item: $selectedDetailRecording) { rec in
                 RecordingDetailSheet(

@@ -470,8 +470,6 @@ struct ChannelZappingNavigationTests {
     @Test func zappingWrapsAroundProperly() {
         let model = AppModel()
         let c1 = Channel(id: "1", name: "ORF1", number: "1", serviceRef: "ref1", logoURL: nil)
-        let c2 = Channel(id: "2", name: "ORF2", number: "2", serviceRef: "ref2", logoURL: nil)
-        let c3 = Channel(id: "3", name: "ATV", number: "3", serviceRef: "ref3", logoURL: nil)
 
         // In empty state
         #expect(model.channelAfter(c1) == nil)
