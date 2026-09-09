@@ -56,10 +56,15 @@ jobs:
           make ui-build
 
       - name: Install ffmpeg
+        # A stalled apt mirror must not eat the job budget (run 33599181411 hung
+        # the equivalent PR step for 21m37s and got a passing suite cancelled).
+        # Slowest healthy install across the nightly jobs is 295s, so 10m bounds
+        # a hang at ~2x that without firing on a merely slow mirror.
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
           ffmpeg -version
 
       - name: Run race suite
@@ -97,10 +102,15 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Install ffmpeg
+        # A stalled apt mirror must not eat the job budget (run 33599181411 hung
+        # the equivalent PR step for 21m37s and got a passing suite cancelled).
+        # Slowest healthy install across the nightly jobs is 295s, so 10m bounds
+        # a hang at ~2x that without firing on a merely slow mirror.
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
           ffmpeg -version
 
       - name: Run integration and invariants (fail-fast)
