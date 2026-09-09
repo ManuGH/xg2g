@@ -16,8 +16,12 @@ import (
 type SweeperConfig struct {
 	Interval         time.Duration
 	SessionRetention time.Duration // How long to keep terminal sessions in Store
-	FileRetention    time.Duration // How long to keep orphan files? (Or strict sync?)
-	IdleTimeout      time.Duration // Stop READY/DRAINING sessions after no playlist access (0 disables)
+	// FileRetention bounds how long an unowned session directory may stay on
+	// disk. It is deliberately separate from SessionRetention: store records
+	// are cheap to keep for a day, DVR scratch measured in gigabytes is not.
+	// Falls back to SessionRetention when unset.
+	FileRetention time.Duration
+	IdleTimeout   time.Duration // Stop READY/DRAINING sessions after no playlist access (0 disables)
 }
 
 // Sweeper performs background cleanup of stale sessions and files.
@@ -53,6 +57,12 @@ func (s *Sweeper) Run(ctx context.Context) {
 	defer ticker.Stop()
 
 	log.L().Info().Dur("interval", s.Conf.Interval).Msg("background sweeper started")
+
+	// Reconcile once before waiting on the ticker. An unclean exit leaves
+	// session directories that no running process owns, and waiting a full
+	// interval to notice means the scratch a crash left behind outlives the
+	// crash by that much on every restart.
+	s.SweepOnce(ctx)
 
 	for {
 		select {
@@ -233,6 +243,13 @@ func (s *Sweeper) sweepSessionsDir(ctx context.Context, sessionsDir string) {
 		// Fallback to individual lookups
 	} else {
 		for _, sess := range allSessions {
+			// ListSessions returns every record, terminal ones included. A
+			// STOPPED or FAILED session does not own its scratch directory
+			// any more; treating its record as protection kept a crashed
+			// session's HLS segments on disk for the full store retention.
+			if sess.State.IsTerminal() {
+				continue
+			}
 			activeSessions[sess.SessionID] = true
 		}
 	}
@@ -265,8 +282,8 @@ func (s *Sweeper) sweepSessionsDir(ctx context.Context, sessionsDir string) {
 				if err != nil {
 					continue // Store error, skip safety
 				}
-				if rec == nil {
-					// Not in store, and old -> Orphan
+				if rec == nil || rec.State.IsTerminal() {
+					// No record, or a record that no longer owns files -> orphan.
 					s.Orch.cleanupFiles(sid)
 					orphanCount++
 				}

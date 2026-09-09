@@ -152,6 +152,10 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 			IdleTimeout:      cfg.Engine.IdleTimeout,
 			Interval:         1 * time.Minute,
 			SessionRetention: 24 * time.Hour,
+			// Scratch is bounded separately from store records: a day of
+			// history rows costs kilobytes, a day of abandoned DVR segments
+			// costs tens of gigabytes.
+			FileRetention: 15 * time.Minute,
 		},
 		ReceiverBaseURL: cfg.Enigma2.BaseURL,
 		OutboundPolicy: platformnet.OutboundPolicy{
