@@ -506,7 +506,11 @@ fn encode_psi_result(outcome: &PsiOutcome) -> Vec<u8> {
     body.extend_from_slice(&(outcome.processed_through as u64).to_be_bytes());
 
     encode_events(&mut body, &outcome.events);
-    encode_facts(&mut body, &outcome.facts);
+    if encode_facts(&mut body, &outcome.facts).is_none() {
+        // A declaration this protocol has no way to say. Refused rather than
+        // sent as the nearest thing that fits: see wire_audio_codec.
+        return vec![STATUS_MALFORMED];
+    }
     encode_active_psi(&mut body, &outcome.active);
 
     debug_assert_eq!(
@@ -533,7 +537,33 @@ fn encode_events(body: &mut Vec<u8>, events: &[PsiEvent]) {
     }
 }
 
-fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) {
+/// The wire number for a codec this protocol knows, or nothing.
+///
+/// `unknown` is one of the values it knows: the parser says it when a stream is
+/// audio but its codec cannot be named, and that is an answer. What has no
+/// number here is a codec this build has never heard of - a spelling from a
+/// newer parser, or an empty string from one that failed.
+///
+/// Those must not become `unknown` on the way out. `unknown` already means
+/// something, and answering it for a codec the parser did name would turn a
+/// value this protocol cannot carry into a different, legitimate one - and the
+/// reader would have no way to tell. The encoding fails instead, so the day a
+/// codec is added to the parser and not to the wire is the day this refuses to
+/// answer rather than the day it starts lying.
+fn wire_audio_codec(codec: &str) -> Option<u8> {
+    match codec {
+        "unknown" => Some(AUDIO_CODEC_UNKNOWN),
+        "mp2" => Some(AUDIO_CODEC_MP2),
+        "aac" => Some(AUDIO_CODEC_AAC),
+        "ac3" => Some(AUDIO_CODEC_AC3),
+        "eac3" => Some(AUDIO_CODEC_EAC3),
+        "dts" => Some(AUDIO_CODEC_DTS),
+        _ => None,
+    }
+}
+
+/// Lays out the facts, or reports that they cannot be said on this protocol.
+fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) -> Option<()> {
     let mut flags = 0u8;
     if facts.has_pat {
         flags |= FACT_HAS_PAT;
@@ -562,23 +592,16 @@ fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) {
     for track in &facts.audio_tracks {
         body.extend_from_slice(&track.pid.to_be_bytes());
         body.push(track.stream_type);
-        body.push(match track.codec.as_str() {
-            "mp2" => AUDIO_CODEC_MP2,
-            "aac" => AUDIO_CODEC_AAC,
-            "ac3" => AUDIO_CODEC_AC3,
-            "eac3" => AUDIO_CODEC_EAC3,
-            "dts" => AUDIO_CODEC_DTS,
-            _ => AUDIO_CODEC_UNKNOWN,
-        });
-        // Three bytes, always. The parser produces the descriptor's three or
-        // those of `und`, so a shorter one is a parser that changed and a longer
-        // one cannot happen; both are padded and truncated here rather than
-        // written as a length the reader would have to trust.
-        let mut language = [b'u', b'n', b'd'];
-        let bytes = track.language.as_bytes();
-        if bytes.len() == LANGUAGE_LEN {
-            language.copy_from_slice(bytes);
-        }
+        body.push(wire_audio_codec(&track.codec)?);
+        // Exactly three bytes, or nothing. The parser produces the descriptor's
+        // three or those of `und`, so any other length is a parser this build
+        // does not match.
+        //
+        // Padding it to `und` would be the same mistake as mapping an unknown
+        // codec to `unknown`: `und` is a legitimate answer, meaning the table
+        // declared no language, and a reader given it cannot tell that from a
+        // language the encoder could not represent.
+        let language: [u8; LANGUAGE_LEN] = track.language.as_bytes().try_into().ok()?;
         body.extend_from_slice(&language);
         body.push(track.declared.channels);
         let mut track_flags = 0u8;
@@ -591,6 +614,7 @@ fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) {
         body.push(track_flags);
         body.push(track.declared.component_type);
     }
+    Some(())
 }
 
 fn encode_active_psi(body: &mut Vec<u8>, active: &ActivePsi) {
@@ -727,6 +751,67 @@ mod tests {
     /// A chunk that is not whole transport packets is not a chunk. The caller
     /// refuses it too; this side refuses it because it cannot assume the caller
     /// did.
+    /// A declaration this protocol cannot say is refused, not rounded to the
+    /// nearest thing that fits.
+    ///
+    /// Both of these normalise into values that already mean something else:
+    /// `unknown` is what the parser says for audio whose codec it cannot name,
+    /// and `und` is what it says when the table declared no language. Answering
+    /// either for a value the encoder could not represent would hand the reader
+    /// a legitimate answer it has no way to distrust - and the day a codec is
+    /// added to the parser and not to the wire, that is a silent wrong answer
+    /// rather than a loud refusal.
+    #[test]
+    fn a_declaration_this_protocol_cannot_say_is_refused() {
+        let track = |codec: &str, language: &str| PsiOutcome {
+            processed_through: 188,
+            events: Vec::new(),
+            facts: PsiFacts {
+                audio_pids: vec![258],
+                audio_tracks: vec![xg2g_media_core::psi::AudioTrack {
+                    pid: 258,
+                    stream_type: 0x06,
+                    codec: codec.to_string(),
+                    language: language.to_string(),
+                    declared: xg2g_media_core::psi::ChannelDeclaration::default(),
+                }],
+                ..PsiFacts::default()
+            },
+            active: ActivePsi::default(),
+        };
+
+        // The values the parser actually produces are all sayable, including
+        // the two that mean "nothing was declared".
+        for codec in ["unknown", "mp2", "aac", "ac3", "eac3", "dts"] {
+            let answer = encode_psi_result(&track(codec, "und"));
+            assert_eq!(
+                answer[0], STATUS_OK,
+                "codec {codec} with language und was refused"
+            );
+        }
+        for language in ["und", "deu", "eng"] {
+            let answer = encode_psi_result(&track("ac3", language));
+            assert_eq!(answer[0], STATUS_OK, "language {language} was refused");
+        }
+
+        // And nothing else is.
+        for (codec, language, what) in [
+            ("opus", "und", "a codec this build has never heard of"),
+            ("", "und", "no codec at all"),
+            ("AC3", "und", "a codec spelled differently"),
+            ("ac3", "de", "a language of two bytes"),
+            ("ac3", "deutsch", "a language of seven bytes"),
+            ("ac3", "", "no language at all"),
+        ] {
+            let answer = encode_psi_result(&track(codec, language));
+            assert_eq!(
+                answer,
+                vec![STATUS_MALFORMED],
+                "{what} was answered instead of refused"
+            );
+        }
+    }
+
     #[test]
     fn a_chunk_that_is_not_whole_packets_is_refused() {
         let mut session = handshaken(1);
