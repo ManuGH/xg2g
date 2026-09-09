@@ -30,6 +30,22 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    ulimits:
+      # FFmpeg crashes wrote 13 core dumps totalling 3.79 GiB straight into
+      # XG2G_DATA: the kernel's core_pattern is a bare "core", so dumps land in
+      # the crashing process's working directory, which is the data root.
+      #
+      # core_pattern is not namespaced -- setting it inside a container or LXC
+      # changes it for the whole host and every other guest -- so the bound has
+      # to be a per-container rlimit instead.
+      #
+      # soft 0 writes no dump by default. hard 2 GiB keeps the capability: an
+      # operator chasing a decoder crash raises the soft limit for that one
+      # session with `ulimit -c`, without editing the container definition and
+      # without the limit outliving the investigation.
+      core:
+        soft: 0
+        hard: 2147483648
     init: true
     healthcheck:
       test: ["CMD", "xg2g", "healthcheck", "-mode", "live"]

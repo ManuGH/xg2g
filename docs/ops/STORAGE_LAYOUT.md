@@ -79,10 +79,35 @@ The Compose helper materializes a bind-mount overlay at runtime. The external
 path is mounted at the identical absolute path inside the container, so the
 application remains independent of the host's physical storage technology.
 
-`XG2G_HLS_REQUIRE_MOUNT=true` fails startup when the configured HLS path
-resolves to the same backing mount as `XG2G_DATA`. This protects against a
-missing removable, LVM, ZFS, or hypervisor-provided scratch mount silently
-falling back onto the system disk.
+`XG2G_HLS_REQUIRE_MOUNT=true` refuses the **deployment** when the configured
+HLS path resolves to the same backing mount as `XG2G_DATA`. This protects
+against a missing removable, LVM, ZFS, or hypervisor-provided scratch mount
+silently falling back onto the system disk.
+
+It is a host-side preflight, not a runtime check: only the host can see the
+mount topology a container is about to be given, and the answer is needed
+before the container exists. The daemon never reads this variable, so a
+deployment path that skips the preflight has no protection at all. Both
+supported paths -- the Compose helper and the staging fast-deploy -- run the
+same implementation, `backend/scripts/lib/hls-storage.sh`.
+
+**Filesystem identity** is what decides -- neither path spelling nor the
+mountpoint. Two things that look like the answer are not:
+
+- `/var/lib/xg2g/hls` may or may not be its own filesystem, and a path outside
+  `XG2G_DATA` may legitimately share one, so the path text proves nothing.
+- A **bind mount has its own mountpoint and none of its own capacity**. A
+  mountpoint comparison would call it a dedicated mount while DVR scratch went
+  on filling the same filesystem.
+
+The invariant is about capacity, so the check compares `st_dev`, which is the
+same for a bind mount and its source. Mountpoints are reported for
+diagnostics and never decide. The check runs for every configuration,
+including an HLS root nested inside the data root -- historically the one it
+skipped, and the one that let a staging DVR session fill a root filesystem.
+
+A deployment that cannot establish filesystem identity is refused rather than
+allowed: unknown is not the same as different.
 
 ### HDD scratch
 
