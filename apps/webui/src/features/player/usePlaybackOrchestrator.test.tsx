@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
 import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
+import { buildPlaybackFailure } from './orchestrator/playbackMachine';
 import * as networkProbeModule from './utils/playbackNetworkProbe';
 
 vi.mock('./lib/hlsRuntime', () => {
@@ -547,6 +548,267 @@ describe('usePlaybackOrchestrator', () => {
         return body?.type === 'stream.stop' && body?.sessionId === 'sess-hb-live';
       });
       expect(stopCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('demonstrates machine failure -> facade target capture -> controller timer -> actual restart path', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockReturnValue(Promise.resolve(null as any));
+
+        let streamInfoCalls = 0;
+        fetchMock = vi.fn().mockImplementation((url: string) => {
+          const u = String(url);
+          if (u.includes('/live/stream-info')) {
+            streamInfoCalls += 1;
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({
+                mode: 'direct_stream',
+                playbackDecisionToken: `token-auto-fb-${streamInfoCalls}`,
+                decision: { mode: 'direct_stream', playbackDecisionToken: `token-auto-fb-${streamInfoCalls}` },
+              }),
+              text: async () => JSON.stringify({}),
+            });
+          }
+          if (u.includes('/intents')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: `sess-auto-fb-${streamInfoCalls}` }),
+              text: async () => JSON.stringify({ sessionId: `sess-auto-fb-${streamInfoCalls}` }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        let exposedController!: any;
+        let exposedActions!: any;
+
+        function FallbackFacadeHarness() {
+          const containerRef = useRef<HTMLDivElement>(null);
+          const videoRef = useRef<VideoElementRef>(null);
+          const hlsRef = useRef<HlsInstanceRef>(null);
+          const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+          const { controller, playbackState, actions } = usePlaybackOrchestrator(
+            { autoStart: false } as unknown as V3PlayerProps,
+            { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+          );
+          exposedController = controller;
+          exposedActions = actions;
+
+          return (
+            <div>
+              <span data-testid="status">{playbackState.status}</span>
+              <button onClick={() => void actions.startStream('1:0:1:CC')} type="button">
+                start-live
+              </button>
+            </div>
+          );
+        }
+
+        render(<FallbackFacadeHarness />);
+        expect(exposedController).toBeDefined();
+
+        // Start initial stream
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(1);
+        const currentEpoch = exposedController.getEpoch();
+
+        // Controller should not have scheduled fallback initially
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(false);
+
+        // Machine failure occurs: dispatch normative.playback.failure.raised
+        // State machine decides recovery ladder restart and generates command.playback.schedule_auto_fallback
+        // Orchestrator executes command, captures facade target ('1:0:1:CC', 'repair'), and schedules via controller
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: currentEpoch,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+
+        // Controller now has the timer scheduled
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(true);
+        expect(streamInfoCalls).toBe(1); // No restart yet before deadline
+
+        // Advance timers by 249ms: timer has not fired yet
+        await act(async () => {
+          vi.advanceTimersByTime(249);
+        });
+        expect(streamInfoCalls).toBe(1);
+
+        // Advance 1ms to reach 250ms deadline: controller fires, dispatches start request,
+        // orchestrator receives command.playback.start and executes actual restart
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1);
+        });
+
+        expect(streamInfoCalls).toBe(2);
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels scheduled recovery fallback on stop and channel replacement', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockReturnValue(Promise.resolve(null as any));
+
+        let streamInfoCalls = 0;
+        fetchMock = vi.fn().mockImplementation((url: string) => {
+          const u = String(url);
+          if (u.includes('/live/stream-info')) {
+            streamInfoCalls += 1;
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({
+                mode: 'direct_stream',
+                playbackDecisionToken: `token-cancel-${streamInfoCalls}`,
+                decision: { mode: 'direct_stream', playbackDecisionToken: `token-cancel-${streamInfoCalls}` },
+              }),
+              text: async () => JSON.stringify({}),
+            });
+          }
+          if (u.includes('/intents')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: `sess-cancel-${streamInfoCalls}` }),
+              text: async () => JSON.stringify({ sessionId: `sess-cancel-${streamInfoCalls}` }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        let exposedController!: any;
+        let exposedActions!: any;
+
+        function FallbackCancelHarness() {
+          const containerRef = useRef<HTMLDivElement>(null);
+          const videoRef = useRef<VideoElementRef>(null);
+          const hlsRef = useRef<HlsInstanceRef>(null);
+          const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+          const { controller, playbackState, actions } = usePlaybackOrchestrator(
+            { autoStart: false } as unknown as V3PlayerProps,
+            { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+          );
+          exposedController = controller;
+          exposedActions = actions;
+
+          return (
+            <div>
+              <span data-testid="status">{playbackState.status}</span>
+              <button onClick={() => void actions.startStream('1:0:1:CC')} type="button">
+                start-live
+              </button>
+              <button onClick={() => void actions.stopStream(false)} type="button">
+                stop-live
+              </button>
+            </div>
+          );
+        }
+
+        render(<FallbackCancelHarness />);
+
+        // --- Part A: Cancellation on stop ---
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(1);
+        const epoch1 = exposedController.getEpoch();
+
+        // Trigger failure -> schedule fallback
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: epoch1,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch1)).toBe(true);
+
+        // Explicit user stop cancels the fallback
+        await act(async () => {
+          await exposedActions.stopStream(false);
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch1)).toBe(false);
+
+        // Advance timers past deadline: no restart fires
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(streamInfoCalls).toBe(1);
+
+        // --- Part B: Cancellation on channel change (source replacement) ---
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(2);
+        const epoch2 = exposedController.getEpoch();
+
+        // Trigger failure for epoch 2 -> schedule fallback
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: epoch2,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch2)).toBe(true);
+
+        // Tune to channel D -> supersedes epoch 2 and cancels fallback
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:DD');
+        });
+        expect(streamInfoCalls).toBe(3); // One start for channel D
+        expect(exposedController.hasScheduledAutoFallback(epoch2)).toBe(false);
+
+        // Advance timers: old channel fallback never fires
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(streamInfoCalls).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

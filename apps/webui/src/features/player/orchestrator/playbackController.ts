@@ -7,6 +7,7 @@ import {
   type PlaybackMachineRuntime,
 } from './playbackMachineRuntime';
 import type {
+  PlaybackCommand,
   PlaybackDomainState,
   PlaybackMachineEvent,
   PlaybackStopReason,
@@ -67,6 +68,19 @@ export interface PlaybackControllerOptions {
   onSessionSnapshot?: (snapshot: V3SessionStatusResponse) => void;
 }
 
+export interface AutoFallbackRestartTarget {
+  kind: 'live' | 'vod' | 'src';
+  serviceRef?: string;
+  recordingId?: string;
+  srcUrl?: string;
+  explicitProfile?: string;
+}
+
+export type ScheduleAutoFallbackCommand = Extract<
+  PlaybackCommand,
+  { type: 'command.playback.schedule_auto_fallback' }
+>;
+
 interface InFlightStart {
   attemptId: string;
   epoch: number;
@@ -80,6 +94,7 @@ interface InFlightStart {
   resolvePublic: (result: StartLiveResult) => void;
   rejectPublic: (err: unknown) => void;
   abortController: AbortController;
+  params?: StartLiveParams;
 }
 
 export interface PlaybackController {
@@ -103,6 +118,14 @@ export interface PlaybackController {
   isStalePlaybackEpoch(epoch: number): boolean;
   isStaleSessionEpoch(playbackEpoch: number, sessionEpoch: number): boolean;
   getEpoch(): number;
+
+  // Recovery fallback timers
+  scheduleAutoFallback(
+    command: ScheduleAutoFallbackCommand,
+    target?: AutoFallbackRestartTarget,
+  ): void;
+  cancelAutoFallback(epoch?: number): void;
+  hasScheduledAutoFallback(epoch?: number): boolean;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -178,20 +201,169 @@ export function createPlaybackController(
     options.httpRequestTimeoutMs ??
     Math.min(DEFAULT_HTTP_REQUEST_TIMEOUT_MS, overallStartBudgetMs);
 
+  let isDisposed = false;
+  let playbackEpoch = 0;
+  let sessionEpoch = 0;
+  const stoppedEpochs = new Set<number>();
+  let lastKnownLiveServiceRef: string | null = null;
+  const scheduledCommands = new WeakSet<PlaybackCommand>();
+  let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
+
+  interface ActiveFallback {
+    timer: ReturnType<typeof setTimeout>;
+    target: AutoFallbackRestartTarget;
+    command: ScheduleAutoFallbackCommand;
+  }
+  const activeFallbacks = new Map<number, ActiveFallback>();
+
+  function cancelAutoFallback(epoch?: number): void {
+    if (epoch !== undefined) {
+      const fallback = activeFallbacks.get(epoch);
+      if (fallback) {
+        clearTimeout(fallback.timer);
+        activeFallbacks.delete(epoch);
+      }
+    } else {
+      for (const fallback of activeFallbacks.values()) {
+        clearTimeout(fallback.timer);
+      }
+      activeFallbacks.clear();
+    }
+  }
+
+  function hasScheduledAutoFallback(epoch?: number): boolean {
+    if (epoch !== undefined) {
+      return activeFallbacks.has(epoch);
+    }
+    return activeFallbacks.size > 0;
+  }
+
+  function scheduleAutoFallback(
+    command: ScheduleAutoFallbackCommand,
+    target?: AutoFallbackRestartTarget,
+  ): void {
+    scheduledCommands.add(command);
+    if (
+      currentlyHandlingScheduleCommand &&
+      currentlyHandlingScheduleCommand.epoch === command.epoch
+    ) {
+      scheduledCommands.add(currentlyHandlingScheduleCommand);
+    }
+
+    if (isDisposed) {
+      return;
+    }
+    if (isStalePlaybackEpoch(command.epoch)) {
+      return;
+    }
+
+    // Duplicate replacement policy: cancel any existing pending fallback for this epoch
+    const existing = activeFallbacks.get(command.epoch);
+    if (existing) {
+      clearTimeout(existing.timer);
+      activeFallbacks.delete(command.epoch);
+    }
+
+    const currentMode = runtime.getState().playbackMode;
+    const defaultKind: 'live' | 'vod' | 'src' =
+      currentMode === 'VOD' ? 'vod' : currentMode === 'LIVE' ? 'live' : 'live';
+
+    const resolvedTarget: AutoFallbackRestartTarget = target ?? {
+      kind: defaultKind,
+      serviceRef:
+        defaultKind === 'live'
+          ? (currentAttempt?.params?.serviceRef ?? lastKnownLiveServiceRef ?? undefined)
+          : undefined,
+      recordingId: undefined,
+      srcUrl: undefined,
+      explicitProfile: command.profile ?? undefined,
+    };
+
+    const timer = setTimeout(() => {
+      activeFallbacks.delete(command.epoch);
+
+      if (isDisposed) {
+        return;
+      }
+      if (isStalePlaybackEpoch(command.epoch)) {
+        return;
+      }
+
+      runtime.dispatch({
+        type: 'intent.start.requested',
+        epoch: command.epoch,
+        kind: resolvedTarget.kind,
+        serviceRef: resolvedTarget.serviceRef,
+        recordingId: resolvedTarget.recordingId,
+        srcUrl: resolvedTarget.srcUrl,
+        explicitProfile: command.profile ?? resolvedTarget.explicitProfile,
+      });
+    }, command.delayMs);
+
+    activeFallbacks.set(command.epoch, {
+      timer,
+      target: resolvedTarget,
+      command,
+    });
+  }
+
   let executor: PlaybackCommandExecutor | null = executeCommand;
+
+  const handleCommand: PlaybackCommandExecutor = (command) => {
+    let result: unknown;
+    if (command.type === 'command.playback.schedule_auto_fallback') {
+      const prevHandling = currentlyHandlingScheduleCommand;
+      currentlyHandlingScheduleCommand = command;
+      try {
+        if (executor) {
+          result = executor(command);
+        }
+        if (!scheduledCommands.has(command)) {
+          scheduleAutoFallback(command);
+        }
+      } finally {
+        currentlyHandlingScheduleCommand = prevHandling;
+      }
+      return result;
+    }
+
+    if (executor) {
+      result = executor(command);
+    }
+    return result;
+  };
 
   const runtime: PlaybackMachineRuntime = createPlaybackMachineRuntime(
     createInitialState,
-    (command) => {
-      if (executor) {
-        return executor(command);
-      }
-    },
+    handleCommand,
   );
 
-  let playbackEpoch = runtime.getState().epoch.playback;
-  let sessionEpoch = runtime.getState().epoch.session;
-  const stoppedEpochs = new Set<number>();
+  function dispatch(event: PlaybackMachineEvent): void {
+    if (event.type === 'normative.playback.failure.raised') {
+      const failure = event.failure;
+      const isTerminalAuth =
+        failure.class === 'auth' ||
+        failure.terminal === true ||
+        failure.code === 'SESSION_FORBIDDEN' ||
+        failure.code === 'SESSION_UNAUTHORIZED' ||
+        failure.status === 401 ||
+        failure.status === 403;
+
+      if (
+        isTerminalAuth &&
+        !isStalePlaybackEpoch(event.epoch) &&
+        event.epoch === playbackEpoch
+      ) {
+        cancelAutoFallback(event.epoch);
+        stoppedEpochs.add(event.epoch);
+        stopHeartbeatSupervision();
+      }
+    }
+    runtime.dispatch(event);
+  }
+
+  playbackEpoch = runtime.getState().epoch.playback;
+  sessionEpoch = runtime.getState().epoch.session;
 
   let activeSessionId: string | null = null;
   let activeSessionTransport: LiveSessionTransport | null = null;
@@ -227,7 +399,6 @@ export function createPlaybackController(
     { sessionId: string; heldAt: number; transport: LiveSessionTransport }
   >();
 
-  let isDisposed = false;
   let heartbeatRuntime: PlaybackHeartbeatRuntime | null = null;
   let heartbeatSessionId: string | null = null;
   let heartbeatGeneration = 0;
@@ -357,6 +528,7 @@ export function createPlaybackController(
   function allocatePlaybackEpoch(): number {
     playbackEpoch += 1;
     sessionEpoch = 0;
+    cancelAutoFallback();
     options.onAttemptStarted?.(playbackEpoch);
 
     // Invalidate any in-flight live start immediately and idempotently
@@ -394,6 +566,8 @@ export function createPlaybackController(
       return;
     }
 
+    cancelAutoFallback(epoch);
+
     // If switching to a non-browser-Live mode, retire any active Live session!
     if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
       if (currentAttempt && !currentAttempt.settled) {
@@ -427,6 +601,8 @@ export function createPlaybackController(
   }
 
   function markPlaybackStopped(epoch: number): void {
+    stoppedEpochs.add(epoch);
+    cancelAutoFallback(epoch);
     runtime.dispatch({
       type: 'normative.playback.stopped',
       epoch,
@@ -840,6 +1016,7 @@ export function createPlaybackController(
               cancelInFlightAttempt(start, 'superseded');
             }
             stopHeartbeatSupervision();
+            cancelAutoFallback();
             runtime.dispatch({
               type: 'normative.playback.failure.raised',
               epoch: currentPlaybackEpoch,
@@ -1015,7 +1192,9 @@ export function createPlaybackController(
       resolvePublic,
       rejectPublic,
       abortController: new AbortController(),
+      params,
     };
+    lastKnownLiveServiceRef = params.serviceRef;
 
     attempt.settlementTimer = setTimeout(() => {
       attempt.cancelled = true;
@@ -1069,8 +1248,9 @@ export function createPlaybackController(
       return Promise.resolve();
     }
 
-    // 0. Synchronously stop heartbeat supervision
+    // 0. Synchronously stop heartbeat supervision and auto-fallback timers
     stopHeartbeatSupervision();
+    cancelAutoFallback();
 
     // 1. Synchronously advance playbackEpoch to invalidate pending preparation
     playbackEpoch += 1;
@@ -1132,6 +1312,7 @@ export function createPlaybackController(
   function dispose(): void {
     isDisposed = true;
     stopHeartbeatSupervision();
+    cancelAutoFallback();
     playbackEpoch += 1;
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
@@ -1157,10 +1338,9 @@ export function createPlaybackController(
   return {
     getState: runtime.getState,
     subscribe: runtime.subscribe,
-    dispatch: runtime.dispatch,
+    dispatch,
     setCommandExecutor(exec) {
       executor = exec;
-      runtime.setCommandExecutor(exec);
     },
 
     allocatePlaybackEpoch,
@@ -1172,6 +1352,10 @@ export function createPlaybackController(
     getEpoch() {
       return playbackEpoch;
     },
+
+    scheduleAutoFallback,
+    cancelAutoFallback,
+    hasScheduledAutoFallback,
 
     startLive,
     stop,

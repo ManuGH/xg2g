@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useInsertionEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
@@ -205,6 +205,8 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const activeServiceRef = useRef<string>(sRef);
+  activeServiceRef.current = sRef;
   const [explicitProfile, setExplicitProfile] = useState<PlaybackProfileSelection>(() => {
     try {
       return normalizePlaybackProfileSelection(localStorage.getItem('xg2g.player.explicitProfile'));
@@ -368,7 +370,6 @@ export function usePlaybackOrchestrator(
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const disposedRef = useRef(false);
   const lifecycleGenerationRef = useRef(0);
-  const autoFallbackTimersRef = useRef<Set<number>>(new Set());
   const startIntentInFlight = useRef<boolean>(false);
   const pendingStartRef = useRef<{
     refToUse?: string;
@@ -396,7 +397,6 @@ export function usePlaybackOrchestrator(
 
   useEffect(() => {
     disposedRef.current = false;
-    const autoFallbackTimers = autoFallbackTimersRef.current;
 
     return () => {
       disposedRef.current = true;
@@ -405,8 +405,6 @@ export function usePlaybackOrchestrator(
       // second setup to issue the real autostart while the old generation drains.
       mounted.current = false;
       pendingStartRef.current = null;
-      autoFallbackTimers.forEach((timerId) => window.clearTimeout(timerId));
-      autoFallbackTimers.clear();
     };
   }, []);
 
@@ -1363,13 +1361,17 @@ export function usePlaybackOrchestrator(
         return;
       }
 
-      const ref = (refToUse || sRef || '').trim();
+      const ref = (refToUse || activeServiceRef.current || sRef || '').trim();
       if (!ref) {
         beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', false, false);
         setStatus('error');
         const failure = buildServiceRefRequiredFailure(t);
         reportPlaybackFailure(failure.appError, failure.options);
         return;
+      }
+      activeServiceRef.current = ref;
+      if (ref !== sRef) {
+        setSRef(ref);
       }
 
       await prepareForNextPlaybackAttempt();
@@ -1830,7 +1832,7 @@ export function usePlaybackOrchestrator(
     }
   }, [stopStream, startStream, sRef]);
   // --- Effects ---
-  executeCommandRef.current = useCallback((command: PlaybackCommand) => {
+  const executeCommand = useCallback((command: PlaybackCommand) => {
     switch (command.type) {
       case 'command.media.pause':
         try {
@@ -1867,22 +1869,13 @@ export function usePlaybackOrchestrator(
           if (command.holdBandwidth) {
             noteNetworkStarvation(automaticProfileMemoryRef.current);
           }
-          const lifecycleGeneration = lifecycleGenerationRef.current;
-          const timerId = window.setTimeout(() => {
-            autoFallbackTimersRef.current.delete(timerId);
-            if (isLifecycleActive(lifecycleGeneration) && !isStalePlaybackEpoch(command.epoch)) {
-              dispatchPlayback({
-                type: 'intent.start.requested',
-                epoch: command.epoch,
-                kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
-                serviceRef: sRef,
-                recordingId: recordingId || undefined,
-                srcUrl: src || undefined,
-                explicitProfile: command.profile ?? undefined,
-              });
-            }
-          }, command.delayMs);
-          autoFallbackTimersRef.current.add(timerId);
+          controller.scheduleAutoFallback(command, {
+            kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
+            serviceRef: activeServiceRef.current || sRef || undefined,
+            recordingId: recordingId || undefined,
+            srcUrl: src || undefined,
+            explicitProfile: command.profile ?? undefined,
+          });
         }
         break;
     }
@@ -1890,14 +1883,20 @@ export function usePlaybackOrchestrator(
     startStream,
     performLocalMediaTeardown,
     reportTimelineSnapshot,
-    dispatchPlayback,
-    isLifecycleActive,
-    isStalePlaybackEpoch,
+    controller,
     sRef,
     recordingId,
     src,
     videoRef,
   ]);
+
+  useInsertionEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
+
+  useLayoutEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
 
   // Update sRef on channel change
   useEffect(() => {

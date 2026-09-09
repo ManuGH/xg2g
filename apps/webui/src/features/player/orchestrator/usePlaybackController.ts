@@ -65,8 +65,7 @@ export function usePlaybackController(
   const optionsRef = useRef<UsePlaybackControllerOptions | undefined>(options);
   optionsRef.current = options;
 
-  const executorRef = useRef<PlaybackCommandExecutor | null>(executeCommand);
-  executorRef.current = executeCommand;
+  const committedExecutorRef = useRef<PlaybackCommandExecutor | null>(executeCommand);
 
   const [controller] = useState(() =>
     createPlaybackController({
@@ -74,7 +73,7 @@ export function usePlaybackController(
       getTransport: () => committedTransportRef.current,
       createInitialState,
       executeCommand: (command) => {
-        executorRef.current?.(command);
+        committedExecutorRef.current?.(command);
       },
       startSettlementTimeoutMs: options?.startSettlementTimeoutMs,
       httpRequestTimeoutMs: options?.httpRequestTimeoutMs,
@@ -92,7 +91,11 @@ export function usePlaybackController(
   );
 
   useInsertionEffect(() => {
-    controller.setCommandExecutor((command) => executorRef.current?.(command));
+    committedExecutorRef.current = executeCommand;
+  });
+
+  useInsertionEffect(() => {
+    controller.setCommandExecutor((command) => committedExecutorRef.current?.(command));
     return () => {
       controller.setCommandExecutor(null);
     };
@@ -101,7 +104,7 @@ export function usePlaybackController(
   useLayoutEffect(() => {
     committedTransportRef.current = transport;
     controller.updateTransport(transport);
-    controller.setCommandExecutor((command) => executorRef.current?.(command));
+    controller.setCommandExecutor((command) => committedExecutorRef.current?.(command));
   }, [controller, transport]);
 
   useEffect(() => {

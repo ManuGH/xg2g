@@ -916,4 +916,231 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
       vi.useRealTimers();
     }
   });
+
+  describe('Automatic Fallback Timers across React Lifecycle', () => {
+    it('cancels pending fallback timer on component unmount (StrictMode setup/cleanup)', () => {
+      vi.useFakeTimers();
+      try {
+        const transport = createDummyTransport();
+        const executed: PlaybackCommand[] = [];
+        let exposedController!: ReturnType<typeof usePlaybackController>['controller'];
+
+        function Component() {
+          const { controller } = usePlaybackController(
+            transport,
+            createInitialState,
+            (cmd) => executed.push(cmd),
+          );
+          exposedController = controller;
+          return <div>player</div>;
+        }
+
+        const { unmount } = render(
+          <StrictMode>
+            <Component />
+          </StrictMode>,
+        );
+
+        let currentEpoch = 0;
+        act(() => {
+          currentEpoch = exposedController.allocatePlaybackEpoch();
+          exposedController.beginPlaybackAttempt(currentEpoch, 'LIVE', 'playing', true);
+          exposedController.scheduleAutoFallback({
+            type: 'command.playback.schedule_auto_fallback',
+            epoch: currentEpoch,
+            delayMs: 1500,
+            profile: null,
+            failureCode: 'MEDIA_ERR_DECODE',
+            failureClass: 'decode',
+          });
+        });
+
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(true);
+
+        // Unmount the component
+        unmount();
+
+        // Controller disposed on unmount, timer cancelled
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(false);
+
+        // Advance timers past deadline
+        act(() => {
+          vi.advanceTimersByTime(2000);
+        });
+
+        const startCmds = executed.filter((c) => c.type === 'command.playback.start');
+        expect(startCmds).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('re-routes fallback restart to the latest committed executor after Suspense reveal', async () => {
+      vi.useFakeTimers();
+      try {
+        const transport = createDummyTransport();
+        const initialExecCommands: PlaybackCommand[] = [];
+        const revealedExecCommands: PlaybackCommand[] = [];
+        let exposedController!: ReturnType<typeof usePlaybackController>['controller'];
+
+        let resolvePromise!: () => void;
+        let pendingPromise: Promise<void> | null = null;
+
+        function Player({ version }: { version: number }) {
+          if (version === 1 && pendingPromise) {
+            throw pendingPromise;
+          }
+          const { controller } = usePlaybackController(
+            transport,
+            createInitialState,
+            (cmd) => {
+              if (version === 0) {
+                initialExecCommands.push(cmd);
+              } else {
+                revealedExecCommands.push(cmd);
+              }
+            },
+          );
+          exposedController = controller;
+          return <div>player-v{version}</div>;
+        }
+
+        let setVer!: (v: number) => void;
+        function Container() {
+          const [version, setVersion] = useState(0);
+          setVer = setVersion;
+          return (
+            <Suspense fallback={<div>suspense-loading</div>}>
+              <Player version={version} />
+            </Suspense>
+          );
+        }
+
+        render(<Container />);
+        expect(screen.getByText('player-v0')).toBeTruthy();
+
+        act(() => {
+          exposedController.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+          exposedController.scheduleAutoFallback({
+            type: 'command.playback.schedule_auto_fallback',
+            epoch: 1,
+            delayMs: 1000,
+            profile: null,
+            failureCode: 'MEDIA_ERR_DECODE',
+            failureClass: 'decode',
+          });
+        });
+
+        expect(exposedController.hasScheduledAutoFallback(1)).toBe(true);
+
+        // Prepare suspense promise and start transition to v1
+        pendingPromise = new Promise((r) => {
+          resolvePromise = r;
+        });
+
+        act(() => {
+          startTransition(() => {
+            setVer(1);
+          });
+        });
+
+        // Player v0 is still displayed during transition
+        expect(screen.getByText('player-v0')).toBeTruthy();
+
+        // Advance 300ms while still suspended
+        act(() => {
+          vi.advanceTimersByTime(300);
+        });
+        expect(initialExecCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(0);
+        expect(revealedExecCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(0);
+
+        // Resolve the suspension so v1 reveals and commits
+        pendingPromise = null;
+        await act(async () => {
+          resolvePromise();
+        });
+
+        // Player v1 is now committed and revealed!
+        expect(screen.getByText('player-v1')).toBeTruthy();
+
+        // Advance remaining 700ms to trigger the restart
+        act(() => {
+          vi.advanceTimersByTime(700);
+        });
+
+        // The restart must be delivered to the newly committed executor (v1)
+        expect(revealedExecCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(1);
+        expect(initialExecCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('delivers due restart through committed executor when speculative transition is suspended', async () => {
+      vi.useFakeTimers();
+      try {
+        const transport = createDummyTransport();
+        const committedCommands: PlaybackCommand[] = [];
+        const speculativeCommands: PlaybackCommand[] = [];
+        const pending = new Promise(() => {});
+        let exposedController!: ReturnType<typeof usePlaybackController>['controller'];
+        let transition!: () => void;
+
+        function Player({ version }: { version: number }) {
+          const { controller } = usePlaybackController(
+            transport,
+            createInitialState,
+            version ? (cmd) => speculativeCommands.push(cmd) : (cmd) => committedCommands.push(cmd),
+          );
+          if (version) throw pending;
+          exposedController = controller;
+          return <div>player-committed</div>;
+        }
+
+        function Host() {
+          const [version, setVersion] = useState(0);
+          transition = () => startTransition(() => setVersion(1));
+          return (
+            <Suspense fallback={<div>loading</div>}>
+              <Player version={version} />
+            </Suspense>
+          );
+        }
+
+        render(<Host />);
+        expect(screen.getByText('player-committed')).toBeTruthy();
+
+        act(() => {
+          exposedController.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+          exposedController.scheduleAutoFallback({
+            type: 'command.playback.schedule_auto_fallback',
+            epoch: 1,
+            delayMs: 250,
+            profile: null,
+            failureCode: 'MEDIA_ERR_DECODE',
+            failureClass: 'decode',
+          });
+        });
+
+        // Trigger speculative transition that suspends
+        await act(async () => {
+          transition();
+        });
+
+        // Committed UI remains
+        expect(screen.getByText('player-committed')).toBeTruthy();
+
+        // Advance timers to trigger due restart
+        act(() => {
+          vi.advanceTimersByTime(250);
+        });
+
+        // Delivered through committed executor, speculative executor never called
+        expect(committedCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(1);
+        expect(speculativeCommands).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
