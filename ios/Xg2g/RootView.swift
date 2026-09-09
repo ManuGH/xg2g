@@ -137,6 +137,8 @@ struct AdaptiveAppNavigation: View {
                 iPadSidebar(model: model)
             } detail: {
                 switch model.selectedTab {
+                case .home:
+                    HomeHubView(model: model)
                 case .liveTV:
                     ChannelListView(model: model)
                 case .guide:
@@ -340,6 +342,12 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
+            HomeHubView(model: model)
+                .tabItem {
+                    Label(Tab.home.rawValue, systemImage: Tab.home.systemImage)
+                }
+                .tag(Tab.home)
+
             ChannelListView(model: model)
                 .tabItem {
                     Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
@@ -357,12 +365,6 @@ struct MainTabView: View {
                     Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
                 }
                 .tag(Tab.recordings)
-
-            TimersView(model: model)
-                .tabItem {
-                    Label(Tab.timers.rawValue, systemImage: Tab.timers.systemImage)
-                }
-                .tag(Tab.timers)
 
             SettingsView(model: model)
                 .tabItem {

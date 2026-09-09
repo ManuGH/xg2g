@@ -52,6 +52,7 @@ enum AppState: Equatable, Sendable {
 
 /// Top-level sections in the Broadcast Console.
 enum Tab: String, CaseIterable, Identifiable, Sendable {
+    case home = "Für dich"
     case liveTV = "Live TV"
     case guide = "Programm"
     case recordings = "Aufnahmen"
@@ -62,6 +63,7 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
 
     var systemImage: String {
         switch self {
+        case .home: return "sparkles.tv"
         case .liveTV: return "tv"
         case .guide: return "calendar.badge.clock"
         case .recordings: return "play.rectangle.on.rectangle"
@@ -98,7 +100,7 @@ struct RerunItem: Identifiable, Sendable {
 final class AppModel {
 
     private(set) var state: AppState = .needsServer
-    var selectedTab: Tab = .liveTV
+    var selectedTab: Tab = .home
 
     // MARK: - Live TV State
     private(set) var channels: [Channel] = [] { didSet { contentRevision &+= 1 } }
@@ -161,6 +163,22 @@ final class AppModel {
 
     var currentDeviceType: String {
         Self.deviceType.rawValue
+    }
+
+    var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+    }
+
+    var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
+
+    @MainActor
+    func clearCaches() async {
+        filteredChannelsCache = nil
+        bouquetChannelsCache.removeAll()
+        URLCache.shared.removeAllCachedResponses()
+        await loadInitialData()
     }
 
     enum StreamingQualityPreference: String, CaseIterable, Identifiable, Sendable {
