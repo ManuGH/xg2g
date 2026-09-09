@@ -193,8 +193,12 @@ func TestPSIDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 			}
 		})
 	}
-	t.Logf("real-process differential: %d cases, %d calls, all exact", len(cases), compared)
-	if compared != corpusCalls(cases) {
-		t.Errorf("compared %d calls, the corpus has %d", compared, corpusCalls(cases))
+	// Counted before it is claimed. CI greps for the line below as proof that
+	// this test ran rather than skipped, so printing it and only then finding
+	// the count wrong would put the proof marker in the log of a failing run -
+	// where a later reader, or a looser grep, would take it at face value.
+	if want := corpusCalls(cases); compared != want {
+		t.Fatalf("compared %d calls, the corpus has %d", compared, want)
 	}
+	t.Logf("real-process differential: %d cases, %d calls, all exact", len(cases), compared)
 }
