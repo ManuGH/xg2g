@@ -622,12 +622,50 @@
         "android-tv": "TV handoff now lives as its own section inside Settings.",
         "scan": "Channel scan is now reachable as a direct subsection of Settings.",
         "streaming": "Streaming defaults now live in a clearly scoped Settings subsection.",
-        "advanced": "Expert tools are now grouped inside the advanced settings area."
+        "advanced": "Expert tools are now grouped inside the advanced settings area.",
+        "about": "Version details, system status and local browser cache management."
       },
       "tool": {
         "files": "Playlist, guide and compatibility feeds now live under the advanced settings area.",
         "logs": "Diagnostics and recent server events now live under the advanced settings area."
       }
+    },
+    "security": {
+      "title": "Security & Passkeys",
+      "tabTitle": "Security & Passkeys"
+    },
+    "devices": {
+      "tabTitle": "Pair Devices & Apps",
+      "heroEyebrow": "UNIVERSAL ZERO-TRUST ENROLLMENT",
+      "heroTitle": "Pair iPhone, Apple TV & Smart TV with PIN",
+      "heroCopy": "Open the xg2g app on your iPhone, iPad, Apple TV or Android TV and enter the code shown on the screen here.",
+      "keyAuthLabel": "Authorize Device Key (Device Authorization)",
+      "keyAuthHint": "Enter the 8-character code displayed in your xg2g app:",
+      "inputPlaceholder": "e.g. MCDA-R2GC or MCDAR2GC",
+      "buttonPair": "Pair Device Now",
+      "buttonPairing": "Authorizing…",
+      "successFeedback": "Device authorized successfully! The TV stream will now open on your device.",
+      "errorDefault": "Could not authorize device pairing.",
+      "errorAuthRequired": "Admin authentication required. Please go to the \"Security\" tab first and log in with your admin token.",
+      "errorPrefix": "Error: {{message}}"
+    },
+    "about": {
+      "title": "About xg2g & Storage",
+      "tabTitle": "About & Storage",
+      "subtitle": "System and version information along with local browser storage management.",
+      "versionTitle": "Software Versions",
+      "clientVersion": "WebUI Client",
+      "protocol": "API Protocol",
+      "protocolVersion": "v3 Normative",
+      "serverStatus": "Server Status",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "storageTitle": "Local Browser Storage",
+      "storageDescription": "Reset local user preferences (audio mode, DVR mode, auth tokens) in your browser.",
+      "clearStorage": "Clear Client Cache & Settings",
+      "storageCleared": "Local preferences have been successfully reset.",
+      "licenseTitle": "License",
+      "licenseText": "PolyForm Noncommercial License 1.0.0 (Non-commercial use only)."
     },
     "advanced": {
       "title": "Expert tools",
@@ -684,6 +722,11 @@
     },
     "streaming": {
       "title": "Streaming",
+      "engineSubtitle": "xg2g manages video bitrate, resolution, and codecs adaptively based on your connection. No manual profile selection required.",
+      "cardEngineText": "Automatically detects hardware acceleration (GPU: VAAPI, NVENC, QSV, VideoToolbox) on the server and falls back seamlessly to optimized CPU encoding. Dynamically scales bitrate and resolution (720p minimum up to native 1080p).",
+      "cardCodecsText": "Dynamic negotiation of the best codecs: AV1 & HEVC (H.265) for maximum quality at minimum bandwidth, H.264 for universal compatibility, and MPEG-2 for lossless direct play on LAN.",
+      "cardContainersText": "Modern low-latency HLS (fMP4 / CMAF) for rapid channel switching on HD channels, plus legacy MPEG-TS for full receiver compatibility.",
+      "cardInterlacedText": "Progressive channels (720p, 1080p) pass through untouched. Interlaced broadcasts (e.g. 1080i / 576i) are automatically deinterlaced to smooth 50 fps progressive video without comb artifacts.",
       "policy": {
         "label": "Delivery Policy",
         "universal": "Universal (H.264/AAC/fMP4)",

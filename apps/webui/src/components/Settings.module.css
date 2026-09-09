@@ -42,11 +42,29 @@
 }
 
 .sectionTabsShell {
-  padding: 6px;
+  padding: 10px;
   border-radius: 16px;
   border: 1px solid var(--border-base);
   background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
   box-shadow: var(--shadow-form-inset);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.navGroupLabel {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 0 4px;
 }
 
 .sectionTabs {
@@ -1006,3 +1024,68 @@
 .optionLabel {
   font-weight: 600;
 }
+
+.aboutGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.aboutCard {
+  background: color-mix(in srgb, var(--surface-panel) 92%, var(--surface-stage) 8%);
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aboutCardTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.aboutList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aboutItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.aboutItemLabel {
+  color: var(--text-secondary);
+}
+
+.aboutItemValue {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.aboutStorageCard {
+  background: color-mix(in srgb, var(--surface-panel) 92%, var(--surface-stage) 8%);
+  border: 1px solid var(--border-base);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aboutStorageCopy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+

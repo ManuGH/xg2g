@@ -8,6 +8,7 @@ struct SettingsView: View {
 
     @Bindable var model: AppModel
     @State private var showingRevokeConfirmation = false
+    @State private var showingClearCacheConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -267,6 +268,67 @@ struct SettingsView: View {
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
 
+                    // MARK: - Speicher & Cache
+                    Section {
+                        Button {
+                            showingClearCacheConfirmation = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "trash.circle", backgroundColor: Color.orange)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("EPG- & Medien-Cache leeren")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text("Löscht temporäre Sender- und EPG-Caches und lädt die Daten neu.")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                                Spacer()
+                            }
+                        }
+                    } header: {
+                        Text("Speicher & Cache")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
+                    // MARK: - Über xg2g
+                    Section {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "info.circle.fill", backgroundColor: Theme.Colors.accentAction)
+                            Text("Version")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            Text("\(model.appVersion) (\(model.buildNumber))")
+                                .font(.subheadline.monospaced())
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "network.badge.shield.half.filled", backgroundColor: Color.teal)
+                            Text("Protokoll")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            Text("v3 Normative")
+                                .font(.subheadline.monospaced())
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "doc.text.fill", backgroundColor: Color.gray)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Lizenz")
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                Text("PolyForm Noncommercial License 1.0.0")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                        }
+                    } header: {
+                        Text("Über xg2g")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
                     // MARK: - Sitzung
                     Section {
                         Button(role: .destructive) {
@@ -303,6 +365,18 @@ struct SettingsView: View {
                     Button("Abbrechen", role: .cancel) {}
                 } message: {
                     Text("Das Gerät wird serverseitig abgemeldet. Für erneuten Zugriff muss der Pairing-Code wieder genehmigt werden.")
+                }
+                .confirmationDialog(
+                    "Möchtest du den Cache wirklich leeren?",
+                    isPresented: $showingClearCacheConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Cache leeren & Daten neu laden", role: .destructive) {
+                        Task { await model.clearCaches() }
+                    }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: {
+                    Text("Löscht gespeicherte EPG-Daten und Senderlisten und lädt diese frisch vom Server.")
                 }
             }
             .navigationTitle("Einstellungen")

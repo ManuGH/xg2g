@@ -115,10 +115,10 @@ struct LiveToRecordingLifecycleTests {
 
         // 3. Assert exact canonical state
         let expectedItem = PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 120.0)
-        #expect(manager.state == .recording(expectedItem))
+        #expect(manager.state == .recording(expectedItem, mode: .fullscreen))
         #expect(manager.activeRecordingItem == expectedItem)
         #expect(manager.currentChannel == nil, "Live channel must be cleared")
-        #expect(manager.presentationMode == .hidden, "Live presentationMode must be hidden")
+        #expect(manager.presentationMode == .fullscreen, "Recording presentationMode is fullscreen")
         #expect(manager.isStreaming == false, "isStreaming must be false for VOD recordings")
         #expect(manager.isPlaying == true, "isPlaying is true while watching a recording")
 
@@ -224,7 +224,7 @@ struct LiveToRecordingLifecycleTests {
         // 3. Verify Live is completely torn down
         #expect(manager.coordinator.playing == nil)
         #expect(manager.coordinator.presentedServiceRef == nil)
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 42.0)))
+        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 42.0), mode: .fullscreen))
 
         await manager.stop()
         #expect(manager.state == .idle)
@@ -252,7 +252,7 @@ struct LiveToRecordingLifecycleTests {
             #expect(ch == self.channelA || ch == self.channelB)
             #expect(manager.activeRecordingItem == nil)
             #expect(manager.activeOfflineRecording == nil)
-        case .recording(let rec):
+        case .recording(let rec, _):
             #expect(rec.id == self.testRecording.id)
             #expect(manager.currentChannel == nil)
             #expect(manager.activeOfflineRecording == nil)
@@ -312,13 +312,31 @@ struct LiveToRecordingLifecycleTests {
         _ = await offlineTask.value
 
         // 4. Assert Recording won exclusively and offline was discarded
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0)))
+        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0), mode: .fullscreen))
         #expect(manager.activeRecordingItem != nil)
         #expect(manager.activeOfflineRecording == nil)
         #expect(manager.currentChannel == nil)
 
         await manager.stop()
         #expect(manager.state == .idle)
+    }
+
+    @Test("Recording mode transitions between fullscreen and miniplayer within single state")
+    func recordingPresentationTransitions() async {
+        let manager = makeManager()
+
+        // 1. Play Fullscreen
+        await manager.play(recording: testRecording, startPosition: 0)
+        #expect(manager.presentationMode == .fullscreen)
+
+        // 2. Minimize to MiniPlayer
+        manager.minimize()
+        #expect(manager.presentationMode == .miniplayer)
+        #expect(manager.activeRecordingItem != nil)
+
+        // 3. Expand back to Fullscreen
+        manager.expand()
+        #expect(manager.presentationMode == .fullscreen)
     }
 
     @Test("Superseded coordinator stop does not tear down subsequently started live session")

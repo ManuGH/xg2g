@@ -2904,3 +2904,43 @@ func TestBuildArgs_LiveMultiAudioRenditions_ZDF(t *testing.T) {
 	require.NotEmpty(t, args)
 	assert.Contains(t, args[len(args)-1], "stream_%v.m3u8")
 }
+
+func TestBuildVaapiVideoArgs_HDRToneMap(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"",
+		"",
+		t.TempDir(),
+		nil,
+		zerolog.New(io.Discard),
+		"",
+		"/dev/dri/renderD128",
+		0,
+		0,
+		false,
+		2*time.Second,
+		6,
+		0,
+		0,
+		"",
+	)
+
+	spec := ports.StreamSpec{
+		SessionID: "hdr-test-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Profile: ports.ProfileSpec{
+			Name:           "vaapi_hdr_tonemap",
+			HWAccel:        "vaapi",
+			TranscodeVideo: true,
+			VideoCodec:     "h264",
+			HDRToneMap:     true,
+			Deinterlace:    false,
+		},
+	}
+
+	args := adapter.buildVaapiVideoArgs(nil, spec, "h264", 50, 2)
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok, "must have -vf argument")
+	assert.Contains(t, vf, "tonemap_vaapi=format=nv12:p=bt709:m=bt709:t=bt709")
+	assert.Contains(t, vf, "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+}
