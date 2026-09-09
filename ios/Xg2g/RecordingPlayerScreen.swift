@@ -122,8 +122,8 @@ struct RecordingPlayerScreen: View {
             setupPlayer()
         }
         .onDisappear {
-            model?.playbackManager.unregisterRecordingCleanup()
             if model?.playbackManager.presentationMode != .miniplayer {
+                model?.playbackManager.unregisterRecordingCleanup()
                 cleanup()
             }
         }

@@ -1074,8 +1074,7 @@ final class AppModel {
                 if let all = bouquetChannelsCache["all"], channels.count != all.count {
                     channels = all
                 }
-                let totalCount = bouquetChannelsCache["all"]?.count ?? channels.count
-                if fullEpg.isEmpty || (totalCount > 0 && fullEpg.count < totalCount) {
+                if fullEpg.isEmpty {
                     await loadChannels()
                 }
             }

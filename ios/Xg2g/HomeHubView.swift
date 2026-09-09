@@ -215,7 +215,7 @@ struct HomeHubView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(primeItems, id: \.entry.id) { pick in
+                        ForEach(primeItems, id: \.channel.id) { pick in
                             HomePrimeTimeCard(pick: pick) {
                                 Haptics.shared.impact(.light)
                                 selectedDetail = ProgramDetailPayload(channel: pick.channel, entry: pick.entry)

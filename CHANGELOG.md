@@ -1147,3 +1147,16 @@ v3.10.0 Mobile WebUI, Transcode Tuning & Startup Orchestration:
 - High-Fidelity Video Tuning: Elevated AV1 maxrate ceiling to 32Mbps (64Mbps burst buffer) and tuned unsharp filter (2.0) with QVBR 70 for reference-grade LAN streaming. Default audio bitrate raised to 320k.
 - Startup & Ringbuffer Engine: Integrated DVR ringbuffer engine, SnapshotReservation API, and budget-aware preflight startup orchestration with deadline clamping.
 - Dead-CSS Governance Gate: Added strict AST-level gate:no-dead-css:player into standard linting.
+
+
+### Behavioral Changes (v3.11.0)
+v3.11.0 Modern iOS Home Hub, Robust Media Core, & Storage Hardening:
+
+- iOS "Für dich" Home Hub: Adds modern landing surface with Spotlight Hero, Prime Time (20:15) highlights, Favoriten and Zuletzt geschaut rails, swipe-down MiniPlayer gesture, and Universal Smart Search.
+- Bitstream TS & Engine Selection: Explicit indicator pill and switcher between 100% Native Bitstream TS (Metal 50fps deinterlacing) and HLS DVR timeshift handover.
+- EPG Parity & SRef Mapping: Full 72-hour horizon pre-caching in iOS client and canonical OpenWebIF Service Reference backfill for zero-gap guide navigation.
+- Media Core & Rust PSI Parser: Hardened DVB PSI parsing over the RemoteCore v3 boundary with robust Enhanced AC-3 acceptance and corrupt packet recovery.
+- CAM / Softcam Descramble Grace Window: Introduces a 2.5s descramble grace window in PrimedAttachWithTimeout allowing CAM/OSCam ECM round-trips during cold channel zaps without premature R_UPSTREAM_SCRAMBLED termination.
+- Storage Protection: Dedicated HLS/DVR scratch mount validation to prevent silent writes to root filesystem; deterministic CAS lease sweeper for ended sessions.
+- WebUI Modular Settings: Decomposed monolithic settings into scoped subsections and streamlined device pairing.
+- Zero-Vulnerability Baseline: Patched all active Dependabot security CVEs and stabilized deep CI suites.
