@@ -18,7 +18,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
-const defaultLiveAudioMap = "0:a:0?"
+const (
+	defaultLiveAudioMap = "0:a:0?"
+
+	// BroadcastDownmixFilter is an ITU-R BS.775 / ATSC-derived downmix matrix with Center Dialogue
+	// boost (+3 dB) and 25% LFE (subwoofer) inclusion with peak-normalizing limit (<) to avoid clipping.
+	// It supports both 5.1(side) [SL/SR] and 5.1(back) [BL/BR] channel layouts.
+	BroadcastDownmixFilter = "pan=stereo|FL < 0.707*FL + 1.0*FC + 0.707*BL + 0.707*SL + 0.25*LFE | FR < 0.707*FR + 1.0*FC + 0.707*BR + 0.707*SR + 0.25*LFE"
+)
 
 type liveAudioDisposition struct {
 	Default         int `json:"default"`
@@ -235,12 +242,18 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		var maps []string
 		var audioArgs []string
 
+		trackByPID := make(map[uint16]audiotopology.AudioTrack, len(topo.Tracks))
+		for _, t := range topo.Tracks {
+			trackByPID[t.PID] = t
+		}
+
 		for i, tp := range multiPlan.Tracks {
 			// Guaranteed to hit: the filter above removed every track without one.
 			matchedStream := streamByPID[tp.PID]
 			mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
 			maps = append(maps, mapArg)
 
+			hasDownmixFilter := false
 			if tp.Strategy == audiotopology.CodecStrategyPassthrough && !spec.Profile.TranscodesAudio() {
 				audioArgs = append(audioArgs, fmt.Sprintf("-c:a:%d", i), "copy")
 			} else {
@@ -255,6 +268,18 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 				if bitrateKbps <= 0 {
 					bitrateKbps = 192
 				}
+
+				inChannels := matchedStream.Channels
+				if inChannels == 0 {
+					if t, ok := trackByPID[tp.PID]; ok {
+						inChannels = t.Channels
+					}
+				}
+				if inChannels >= 6 && tp.Channels == 2 {
+					hasDownmixFilter = true
+					audioArgs = append(audioArgs, fmt.Sprintf("-filter:a:%d", i), BroadcastDownmixFilter)
+				}
+
 				audioArgs = append(audioArgs,
 					fmt.Sprintf("-c:a:%d", i), encoderCodec,
 					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
@@ -276,6 +301,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 				Int("bitrate_kbps", tp.BitrateKbps).
 				Str("track_name", tp.Name).
 				Bool("is_default", tp.IsDefault).
+				Bool("downmix_filter", hasDownmixFilter).
 				Msg("configured multi-audio rendition")
 		}
 		audioArgs = append(audioArgs, "-sn")
@@ -316,8 +342,18 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		selectedPlan.BitrateKbps = 192
 	}
 
-	audioArgs := appendPlannedAudioArgs(nil, spec, selectedPlan)
+	inChannels := matchedStream.Channels
+	if inChannels == 0 {
+		for _, t := range topo.Tracks {
+			if t.PID == selectedPlan.PID {
+				inChannels = t.Channels
+				break
+			}
+		}
+	}
+	audioArgs := appendPlannedAudioArgs(nil, spec, selectedPlan, inChannels)
 
+	hasDownmixFilter := inChannels >= 6 && selectedPlan.Channels == 2 && selectedPlan.Strategy == audiotopology.CodecStrategyTranscode
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "live_audio_stream_selected").
@@ -330,6 +366,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		Bool("channels_assumed", selectedPlan.ChannelsAssumed).
 		Int("bitrate_kbps", selectedPlan.BitrateKbps).
 		Str("track_name", selectedPlan.Name).
+		Bool("downmix_filter", hasDownmixFilter).
 		Msg("selected live audio stream for playback pipeline")
 
 	return liveAudioSelection{
@@ -338,7 +375,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	}
 }
 
-func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan) []string {
+func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan, inChannels int) []string {
 	if (plan.Strategy == audiotopology.CodecStrategyPassthrough || plan.Strategy == "") && !spec.Profile.TranscodesAudio() {
 		return append(args, "-c:a", "copy", "-sn")
 	}
@@ -362,6 +399,10 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 	channels := plan.Channels
 	if channels <= 0 {
 		channels = 2
+	}
+
+	if inChannels >= 6 && channels == 2 {
+		args = append(args, "-filter:a", BroadcastDownmixFilter)
 	}
 
 	return append(args,
