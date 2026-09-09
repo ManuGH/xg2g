@@ -121,6 +121,16 @@ func TestSweeper_RunReconcilesBeforeFirstTick(t *testing.T) {
 
 	dir := agedSessionDir(t, hlsRoot, "sess-crash-leftover", time.Second)
 
+	// Observe the pass instead of polling for its effect: the ticker is an
+	// hour away, so a completed pass can only be the startup one.
+	swept := make(chan struct{}, 1)
+	sw.OnSweepComplete = func() {
+		select {
+		case swept <- struct{}{}:
+		default:
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -128,10 +138,9 @@ func TestSweeper_RunReconcilesBeforeFirstTick(t *testing.T) {
 		sw.Run(ctx)
 	}()
 
-	require.Eventually(t, func() bool {
-		_, err := os.Stat(dir)
-		return os.IsNotExist(err)
-	}, 3*time.Second, 20*time.Millisecond,
+	<-swept
+	_, err := os.Stat(dir)
+	assert.True(t, os.IsNotExist(err),
 		"startup pass must reclaim the leftover without waiting for a tick")
 
 	cancel()

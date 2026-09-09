@@ -29,6 +29,10 @@ type Sweeper struct {
 	Orch      *Orchestrator
 	Conf      SweeperConfig
 	RecoverFn func(context.Context) error // optional; if nil, uses Orch.recoverStaleLeases
+	// OnSweepComplete, when set, is called after each finished pass. It exists
+	// so callers can observe a pass rather than wait for one, which is what
+	// this package's determinism contract requires of its tests.
+	OnSweepComplete func()
 }
 
 func effectiveIdleStopThreshold(r *model.SessionRecord, idleTimeout time.Duration) time.Duration {
@@ -88,6 +92,9 @@ func (s *Sweeper) SweepOnce(ctx context.Context) {
 	}
 	s.sweepStore(ctx)
 	s.sweepFiles(ctx)
+	if s.OnSweepComplete != nil {
+		s.OnSweepComplete()
+	}
 }
 
 func (s *Sweeper) sweepStore(ctx context.Context) {
