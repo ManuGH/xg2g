@@ -207,12 +207,17 @@ export function createPlaybackController(
         ? options.getTransport()
         : options.transport!;
 
+  let explicitTransportUpdated = false;
+
   const getLatestTransport = (): LiveSessionTransport => {
-    if (options.getTransport) {
-      return options.getTransport();
-    }
     if (typeof currentTransport === 'function') {
       return (currentTransport as () => LiveSessionTransport)();
+    }
+    if (explicitTransportUpdated) {
+      return currentTransport;
+    }
+    if (options.getTransport) {
+      return options.getTransport();
     }
     return currentTransport;
   };
@@ -1171,28 +1176,34 @@ export function createPlaybackController(
     startLive,
     stop,
     updateTransport(newTransport: LiveSessionTransport) {
+      explicitTransportUpdated = true;
       currentTransport = newTransport;
-      const pinnedBase =
-        activeSessionTransport?.apiBase ??
-        currentAttempt?.transport.apiBase ??
-        Array.from(inFlightStarts.values())[0]?.transport.apiBase;
       const newBase = newTransport.apiBase;
-      const isSameEndpoint = !pinnedBase || !newBase || pinnedBase === newBase;
-      if (isSameEndpoint) {
-        if (activeSessionId) {
+
+      // 1. Active session & heartbeat runtime (evaluated independently)
+      if (activeSessionId && activeSessionTransport) {
+        const activeBase = activeSessionTransport.apiBase;
+        if (!activeBase || !newBase || activeBase === newBase) {
           activeSessionTransport = newTransport;
-        }
-        if (currentAttempt) {
-          currentAttempt.transport = newTransport;
-        }
-        for (const start of Array.from(inFlightStarts.values())) {
-          const startPinnedBase = start.transport.apiBase;
-          if (!startPinnedBase || !newBase || startPinnedBase === newBase) {
-            start.transport = newTransport;
+          if (heartbeatRuntime) {
+            heartbeatRuntime.updateTransport(newTransport);
           }
         }
-        if (heartbeatRuntime) {
-          heartbeatRuntime.updateTransport(newTransport);
+      }
+
+      // 2. Current attempt (evaluated independently)
+      if (currentAttempt) {
+        const attemptBase = currentAttempt.transport.apiBase;
+        if (!attemptBase || !newBase || attemptBase === newBase) {
+          currentAttempt.transport = newTransport;
+        }
+      }
+
+      // 3. Every tracked in-flight start (evaluated independently)
+      for (const start of Array.from(inFlightStarts.values())) {
+        const startBase = start.transport.apiBase;
+        if (!startBase || !newBase || startBase === newBase) {
+          start.transport = newTransport;
         }
       }
     },

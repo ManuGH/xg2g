@@ -5,7 +5,7 @@ import { startTransition, StrictMode, Suspense, useEffect, useLayoutEffect, useM
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaybackController } from './usePlaybackController';
-import { createDefaultLiveSessionTransport, type LiveSessionTransport } from './liveSessionTransport';
+import { createDefaultLiveSessionTransport, type LiveSessionTransport, type SessionReadyResult } from './liveSessionTransport';
 import type { PlaybackCommand, PlaybackDomainState } from './playbackTypes';
 import { createRecoveryLadderState } from './recoveryLadder';
 
@@ -832,6 +832,86 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
       expect(vi.mocked(oldTransport.postHeartbeat!).mock.calls.length + vi.mocked(newTransport.postHeartbeat!).mock.calls.length).toBe(1);
       expect(oldTransport.postHeartbeat).toHaveBeenCalledTimes(1);
       expect(newTransport.postHeartbeat).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reconcile pending readiness from an uncommitted suspended render', async () => {
+    vi.useFakeTimers();
+    try {
+      const response = (data: unknown) => ({ status: 200, data, headers: new Headers() });
+      const expiry = '2026-09-09T12:10:00Z';
+      const ready = (sessionId: string): SessionReadyResult => ({
+        sessionId,
+        playbackUrl: 'https://example.test/live.m3u8',
+        heartbeatIntervalSeconds: 5,
+        leaseExpiresAt: expiry,
+      });
+      const oldTransport: LiveSessionTransport = {
+        apiBase: 'https://one.example.test/api/v3',
+        fetchStreamInfo: vi.fn().mockResolvedValue(response({
+          mode: 'direct_stream', playbackDecisionToken: 'fixture',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+        })),
+        postStartIntent: vi.fn().mockResolvedValue(response({ sessionId: 'A' })),
+        waitForReady: vi.fn(),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockResolvedValue(response({ acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry })),
+      };
+      const newTransport: LiveSessionTransport = {
+        ...oldTransport,
+        fetchStreamInfo: vi.fn().mockResolvedValue(response({
+          mode: 'direct_stream', playbackDecisionToken: 'fixture',
+          decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+        })),
+        postStartIntent: vi.fn().mockResolvedValue(response({ sessionId: 'A' })),
+        waitForReady: vi.fn(),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockResolvedValue(response({ acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry })),
+      };
+      let resolveReady!: (res: SessionReadyResult) => void;
+      const pendingReadyPromise = new Promise<SessionReadyResult>((r) => { resolveReady = r; });
+      vi.mocked(oldTransport.waitForReady).mockReturnValue(pendingReadyPromise);
+      const pendingRender = new Promise(() => {});
+      let controller!: ReturnType<typeof usePlaybackController>['controller'];
+      let transition!: () => void;
+      function Owner({ version }: { version: number }) {
+        const hook = usePlaybackController(version ? newTransport : oldTransport, createInitialState, vi.fn());
+        if (version) throw pendingRender;
+        controller = hook.controller;
+        return <div>committed-old</div>;
+      }
+      function Host() {
+        const [version, setVersion] = useState(0);
+        transition = () => startTransition(() => setVersion(1));
+        return <Suspense fallback={<div>pending</div>}><Owner version={version} /></Suspense>;
+      }
+      render(<Host />);
+      let startup!: ReturnType<typeof controller.startLive>;
+      await act(async () => {
+        startup = controller.startLive({ serviceRef: 'channel-A' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(oldTransport.waitForReady).toHaveBeenCalledTimes(1);
+      await act(async () => { transition(); });
+      expect(screen.getByText('committed-old')).toBeTruthy();
+      let oldStops = 0;
+      let newStops = 0;
+      let interveningCommits = 0;
+      await act(async () => {
+        resolveReady(ready('A'));
+        await startup;
+        const observer = vi.spyOn(controller, 'updateTransport');
+        await controller.stop();
+        oldStops = vi.mocked(oldTransport.postStopIntent).mock.calls.length;
+        newStops = vi.mocked(newTransport.postStopIntent).mock.calls.length;
+        interveningCommits = observer.mock.calls.length;
+      });
+      expect(interveningCommits).toBe(0);
+      expect(oldStops + newStops).toBe(1);
+      expect(oldStops).toBe(1);
+      expect(newStops).toBe(0);
     } finally {
       vi.useRealTimers();
     }

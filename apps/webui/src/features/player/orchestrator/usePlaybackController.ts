@@ -60,8 +60,7 @@ export function usePlaybackController(
   executeCommand: PlaybackCommandExecutor,
   options?: UsePlaybackControllerOptions,
 ): UsePlaybackControllerResult {
-  const transportRef = useRef<LiveSessionTransport>(transport);
-  transportRef.current = transport;
+  const committedTransportRef = useRef<LiveSessionTransport>(transport);
 
   const optionsRef = useRef<UsePlaybackControllerOptions | undefined>(options);
   optionsRef.current = options;
@@ -71,7 +70,8 @@ export function usePlaybackController(
 
   const [controller] = useState(() =>
     createPlaybackController({
-      getTransport: () => transportRef.current,
+      transport,
+      getTransport: () => committedTransportRef.current,
       createInitialState,
       executeCommand: (command) => {
         executorRef.current?.(command);
@@ -99,6 +99,7 @@ export function usePlaybackController(
   }, [controller]);
 
   useLayoutEffect(() => {
+    committedTransportRef.current = transport;
     controller.updateTransport(transport);
     controller.setCommandExecutor((command) => executorRef.current?.(command));
   }, [controller, transport]);

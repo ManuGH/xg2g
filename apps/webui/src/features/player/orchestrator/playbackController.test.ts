@@ -2570,6 +2570,79 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         controller.dispose();
       }
     });
+
+    it('preserves each pending attempt endpoint when refreshing the retained session credentials', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const makeTransport = (apiBase = 'https://one.example.test/api/v3', sessionId = 'A'): LiveSessionTransport => ({
+        apiBase,
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 200,
+          data: {
+            mode: 'direct_stream', playbackDecisionToken: 'fixture',
+            decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+          },
+          headers: new Headers(),
+        }),
+        postStartIntent: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId },
+          headers: new Headers(),
+        }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId,
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId, leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const endpointOne = makeTransport('https://one.example.test/api/v3', 'A');
+      const endpointTwo = makeTransport('https://two.example.test/api/v3', 'B');
+      const refreshedOne = makeTransport('https://one.example.test/api/v3', 'A');
+
+      let resolvePreflight!: (val: any) => void;
+      const pendingPreflight = new Promise<any>((r) => { resolvePreflight = r; });
+      vi.mocked(endpointTwo.fetchStreamInfo).mockReturnValue(pendingPreflight);
+
+      const controller = createPlaybackController({
+        transport: endpointOne,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        controller.updateTransport(endpointTwo);
+        const startupB = controller.startLive({ serviceRef: 'channel-B' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(endpointTwo.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+        // Session A is retained on endpoint one; B was initiated on endpoint two.
+        controller.updateTransport(refreshedOne);
+        resolvePreflight({
+          status: 200,
+          data: {
+            mode: 'direct_stream', playbackDecisionToken: 'fixture',
+            decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+          },
+          headers: new Headers(),
+        });
+        await startupB;
+        expect(
+          vi.mocked(endpointTwo.postStartIntent).mock.calls.length +
+          vi.mocked(refreshedOne.postStartIntent).mock.calls.length,
+        ).toBe(1);
+        expect(endpointTwo.postStartIntent).toHaveBeenCalledTimes(1);
+        expect(refreshedOne.postStartIntent).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    });
   });
 });
 
