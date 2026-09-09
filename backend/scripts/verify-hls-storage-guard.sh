@@ -2,14 +2,19 @@
 #
 # Regression gate for the shared HLS/DVR placement preflight.
 #
-# The defect this exists to prevent: XG2G_HLS_REQUIRE_MOUNT=true was evaluated
-# only when XG2G_HLS_ROOT was lexically outside XG2G_DATA. The dangerous
-# configuration -- HLS nested inside the data root, on the same filesystem --
-# skipped the check entirely, and staging wrote a 12 GiB DVR session onto its
-# root filesystem until the disk filled.
+# Two defects this exists to prevent:
 #
-# Mount topology is simulated with a findmnt stub so the gate is hermetic and
-# needs no privileges.
+#  1. XG2G_HLS_REQUIRE_MOUNT=true was evaluated only when XG2G_HLS_ROOT was
+#     lexically outside XG2G_DATA, so the dangerous configuration -- HLS nested
+#     inside the data root on the same filesystem -- skipped the check and
+#     staging wrote a 12 GiB DVR session onto its root filesystem.
+#
+#  2. The check then compared mountpoints. A bind mount has a mountpoint of its
+#     own and none of its own capacity, so a TARGET comparison reports
+#     "dedicated" for storage that still fills the same filesystem.
+#
+# Mount topology and device identity are both simulated, with findmnt and stat
+# stubs, so the gate is hermetic and needs no privileges.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,38 +27,62 @@ trap 'rm -rf "${WORK}"' EXIT
 FAILURES=0
 CASES=0
 
-# --- findmnt stub -----------------------------------------------------------
-# MOUNT_TABLE maps a path prefix to a mount target, longest prefix wins.
 mkdir -p "${WORK}/bin"
+
+# --- findmnt stub: path -> mountpoint (longest prefix wins) ------------------
 cat > "${WORK}/bin/findmnt" <<'STUB'
 #!/usr/bin/env bash
-# Minimal stand-in for `findmnt -T <path> -n -o TARGET`.
 target=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -T) shift; target="$1" ;;
-    *) ;;
   esac
   shift
 done
-best=""
-while IFS='=' read -r prefix mount; do
+best=""; answer="/"
+while IFS='=' read -r prefix value; do
   [[ -n "${prefix}" ]] || continue
   if [[ "${target}" == "${prefix}" || "${target}" == "${prefix}/"* ]]; then
-    if [[ ${#prefix} -gt ${#best} ]]; then best="${prefix}"; echo "${mount}" > "${TMPDIR_STUB}/answer"; fi
+    if [[ ${#prefix} -ge ${#best} ]]; then best="${prefix}"; answer="${value}"; fi
   fi
 done < "${MOUNT_TABLE}"
-if [[ -n "${best}" ]]; then cat "${TMPDIR_STUB}/answer"; else echo "/"; fi
+printf '%s\n' "${answer}"
 STUB
-chmod +x "${WORK}/bin/findmnt"
-export TMPDIR_STUB="${WORK}"
-export PATH="${WORK}/bin:${PATH}"
 
-set_mounts() {
-  : > "${WORK}/mounts"
-  local entry
-  for entry in "$@"; do printf '%s\n' "${entry}" >> "${WORK}/mounts"; done
-  export MOUNT_TABLE="${WORK}/mounts"
+# --- stat stub: path -> st_dev (longest prefix wins) -------------------------
+# A bind mount and its source share an st_dev; that is the whole point.
+cat > "${WORK}/bin/stat" <<'STUB'
+#!/usr/bin/env bash
+target=""
+for arg in "$@"; do
+  case "${arg}" in
+    -c|-f|'%d'|--) ;;
+    *) target="${arg}" ;;
+  esac
+done
+best=""; answer="2049"
+while IFS='=' read -r prefix value; do
+  [[ -n "${prefix}" ]] || continue
+  if [[ "${target}" == "${prefix}" || "${target}" == "${prefix}/"* ]]; then
+    if [[ ${#prefix} -ge ${#best} ]]; then best="${prefix}"; answer="${value}"; fi
+  fi
+done < "${DEVICE_TABLE}"
+printf '%s\n' "${answer}"
+STUB
+
+chmod +x "${WORK}/bin/findmnt" "${WORK}/bin/stat"
+export PATH="${WORK}/bin:${PATH}"
+export MOUNT_TABLE="${WORK}/mounts"
+export DEVICE_TABLE="${WORK}/devices"
+
+set_topology() {
+  # set_topology <mounts-csv> -- <devices-csv>
+  : > "${WORK}/mounts"; : > "${WORK}/devices"
+  local into="mounts" entry
+  for entry in "$@"; do
+    if [[ "${entry}" == "--" ]]; then into="devices"; continue; fi
+    printf '%s\n' "${entry}" >> "${WORK}/${into}"
+  done
 }
 
 # shellcheck source=lib/hls-storage.sh
@@ -64,7 +93,7 @@ expect() {
   CASES=$((CASES + 1))
   local rc=0
   xg2g_hls_validate_storage "${data}" "${hls}" "${req}" >/dev/null 2>&1 || rc=$?
-  if [[ "${want}" == "pass" && "${rc}" -eq 0 ]] || [[ "${want}" == "fail" && "${rc}" -ne 0 ]]; then
+  if { [[ "${want}" == "pass" ]] && [[ "${rc}" -eq 0 ]]; } || { [[ "${want}" == "fail" ]] && [[ "${rc}" -ne 0 ]]; }; then
     echo "  ✅ ${name}"
   else
     echo "  ❌ ${name} (wanted ${want}, rc=${rc})"
@@ -72,65 +101,81 @@ expect() {
   fi
 }
 
-echo "== HLS/DVR dedicated-mount preflight =="
+mkdir -p "${WORK}/data/hls" "${WORK}/scratch" "${WORK}/bindtarget"
 
-# The regression for the actual defect: nested path, same filesystem, required.
-mkdir -p "${WORK}/data/hls"
-set_mounts "/=/"
-expect fail "nested HLS root on the SAME mount with REQUIRE=true is refused" \
+echo "== dedicated-filesystem preflight =="
+
+# 1. Same filesystem, same mountpoint. The original defect.
+set_topology "/=/" -- "/=2049"
+expect fail "1. nested HLS root on the same filesystem with REQUIRE=true is refused" \
   "${WORK}/data" "${WORK}/data/hls" true
 
-# Mount identity, not path spelling: a nested path that really is its own
-# filesystem is a legitimate dedicated mount and must be allowed.
-set_mounts "/=/" "${WORK}/data/hls=${WORK}/data/hls"
-expect pass "nested HLS root that IS its own mount with REQUIRE=true is allowed" \
+# 2. THE BIND-MOUNT HOLE. Distinct mountpoints, one filesystem: a TARGET
+#    comparison calls this dedicated, and the root filesystem still fills up.
+set_topology "/=/" "${WORK}/bindtarget=${WORK}/bindtarget" \
+          -- "/=2049"
+expect fail "2. distinct mountpoints backed by the SAME filesystem are refused (bind mount)" \
+  "${WORK}/data" "${WORK}/bindtarget" true
+
+# 3. External path on genuinely separate storage.
+set_topology "/=/" "${WORK}/scratch=${WORK}/scratch" \
+          -- "/=2049" "${WORK}/scratch=2065"
+expect pass "3. external HLS root on a different filesystem with REQUIRE=true is allowed" \
+  "${WORK}/data" "${WORK}/scratch" true
+
+# 4. Nested path that really is its own filesystem: identity decides, not spelling.
+set_topology "/=/" "${WORK}/data/hls=${WORK}/data/hls" \
+          -- "/=2049" "${WORK}/data/hls=2066"
+expect pass "4. nested HLS root that IS its own filesystem with REQUIRE=true is allowed" \
   "${WORK}/data" "${WORK}/data/hls" true
 
-# External path, distinct mount: the configuration that was already working.
-mkdir -p "${WORK}/scratch"
-set_mounts "/=/" "${WORK}/scratch=${WORK}/scratch"
-expect pass "external HLS root on a distinct mount with REQUIRE=true is allowed" \
-  "${WORK}/data" "${WORK}/scratch" true
-
-# External path that shares the data mount must still be refused.
-set_mounts "/=/"
-expect fail "external HLS root sharing the data mount with REQUIRE=true is refused" \
-  "${WORK}/data" "${WORK}/scratch" true
-
-# Portable profile: no dedicated mount demanded, shared placement stays legal.
-set_mounts "/=/"
-expect pass "shared mount with REQUIRE=false remains allowed (portable profile)" \
+# 5/6. Portable profile: sharing is legal when no dedicated storage is demanded.
+set_topology "/=/" -- "/=2049"
+expect pass "5. shared filesystem with REQUIRE=false remains allowed (portable profile)" \
   "${WORK}/data" "${WORK}/data/hls" false
-expect pass "shared mount with REQUIRE unset remains allowed" \
+expect pass "6. shared filesystem with REQUIRE unset remains allowed" \
   "${WORK}/data" "${WORK}/data/hls" ""
 
-# External storage has to exist and be usable before a container gets it.
-set_mounts "/=/" "${WORK}/scratch=${WORK}/scratch"
-expect fail "missing external HLS root is refused" \
+# 7. External storage must exist before a container is handed it.
+expect fail "7. missing external HLS root is refused" \
   "${WORK}/data" "${WORK}/does-not-exist" false
 
+# 8. ...and be writable.
 if [[ "${EUID}" -ne 0 ]]; then
   mkdir -p "${WORK}/readonly"
   chmod 500 "${WORK}/readonly"
-  expect fail "non-writable external HLS root is refused" \
+  expect fail "8. non-writable external HLS root is refused" \
     "${WORK}/data" "${WORK}/readonly" false
   chmod 700 "${WORK}/readonly"
 else
-  echo "  ⏭  non-writable external HLS root (skipped: running as root)"
+  echo "  ⏭  8. non-writable external HLS root (skipped: running as root)"
+fi
+
+# 9. A not-yet-created HLS directory resolves through its existing ancestor and
+#    must be classified as that ancestor's filesystem, not an imagined device.
+set_topology "/=/" -- "/=2049"
+expect fail "9. not-yet-created HLS dir under the data filesystem is refused, not assumed dedicated" \
+  "${WORK}/data" "${WORK}/data/hls/not/created/yet" true
+
+# 10. Fail closed when identity cannot be established at all.
+CASES=$((CASES + 1))
+identity_rc=0
+( PATH="/nonexistent"; xg2g_hls_validate_storage "${WORK}/data" "${WORK}/scratch" true ) >/dev/null 2>&1 || identity_rc=$?
+if [[ "${identity_rc}" -ne 0 ]]; then
+  echo "  ✅ 10. unverifiable filesystem identity is refused, not treated as different"
+else
+  echo "  ❌ 10. unverifiable filesystem identity was accepted"
+  FAILURES=$((FAILURES + 1))
 fi
 
 # Input hygiene.
-set_mounts "/=/"
-expect fail "non-boolean REQUIRE value is refused" \
-  "${WORK}/data" "${WORK}/data/hls" maybe
-expect fail "filesystem root as HLS root is refused" \
-  "${WORK}/data" "/" false
-expect fail "relative HLS root is refused" \
-  "${WORK}/data" "relative/path" false
-expect fail "non-normalized HLS root is refused" \
-  "${WORK}/data" "${WORK}/data/../data/hls" false
+set_topology "/=/" -- "/=2049"
+expect fail "11. non-boolean REQUIRE value is refused" "${WORK}/data" "${WORK}/data/hls" maybe
+expect fail "12. filesystem root as HLS root is refused" "${WORK}/data" "/" false
+expect fail "13. relative HLS root is refused" "${WORK}/data" "relative/path" false
+expect fail "14. non-normalized HLS root is refused" "${WORK}/data" "${WORK}/data/../data/hls" false
 
-# --- both callers must use the shared authority, not their own copy ---------
+# --- both callers must use the shared authority ----------------------------
 echo
 echo "== single-authority wiring =="
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -153,6 +198,17 @@ if grep -qE 'hls_root.*!=[[:space:]]*/var/lib/xg2g/\*' "${REPO_ROOT}/scripts/dep
   FAILURES=$((FAILURES + 1))
 else
   echo "  ✅ staging fast-deploy no longer gates validation on path spelling"
+fi
+
+# The safety decision must not be a mountpoint comparison.
+CASES=$((CASES + 1))
+guard_lib="${REPO_ROOT}/backend/scripts/lib/hls-storage.sh"
+if grep -qE '\$\{data_fs\}"?[[:space:]]*==[[:space:]]*"?\$\{hls_fs\}' "${guard_lib}" &&
+   ! grep -qE '\$\{data_mount\}"?[[:space:]]*(==|!=)[[:space:]]*"?\$\{hls_mount\}' "${guard_lib}"; then
+  echo "  ✅ shared preflight decides on filesystem identity, not mountpoints"
+else
+  echo "  ❌ shared preflight must compare filesystem identity, never mountpoints"
+  FAILURES=$((FAILURES + 1))
 fi
 
 echo
