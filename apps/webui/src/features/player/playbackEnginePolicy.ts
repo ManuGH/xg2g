@@ -31,7 +31,8 @@ export function createHlsRuntimeConfig(link: PlaybackLinkProfile = 'stable'): Pa
 export const HLS_STARTUP_POLICY = Object.freeze({
   bufferTargetSeconds: 4.5,
   timeoutMs: 6_000,
-  slowBuildPlaybackRate: 0.955,
+  // Rate-based slow-build caused visible judder and audio micro-skips when restoring to 1.
+  slowBuildPlaybackRate: 1,
   slowBuildTargetSeconds: 8,
   slowBuildMaxMs: 150_000,
 });

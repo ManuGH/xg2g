@@ -913,6 +913,7 @@ export function usePlaybackEngine({
         if (
           reason !== 'vod' &&
           gateVideo &&
+          HLS_STARTUP_POLICY.slowBuildPlaybackRate < 1 &&
           bufferedAheadSeconds() < HLS_STARTUP_POLICY.slowBuildTargetSeconds
         ) {
           slowBuildActive = true;
