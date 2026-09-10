@@ -945,14 +945,20 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
         act(() => {
           currentEpoch = exposedController.allocatePlaybackEpoch();
           exposedController.beginPlaybackAttempt(currentEpoch, 'LIVE', 'playing', true);
-          exposedController.scheduleAutoFallback({
-            type: 'command.playback.schedule_auto_fallback',
-            epoch: currentEpoch,
-            delayMs: 1500,
-            profile: null,
-            failureCode: 'MEDIA_ERR_DECODE',
-            failureClass: 'decode',
-          });
+          exposedController.scheduleAutoFallback(
+            {
+              type: 'command.playback.schedule_auto_fallback',
+              epoch: currentEpoch,
+              delayMs: 1500,
+              profile: null,
+              failureCode: 'MEDIA_ERR_DECODE',
+              failureClass: 'decode',
+            },
+            {
+              kind: 'live',
+              serviceRef: 'channel-test',
+            },
+          );
         });
 
         expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(true);
@@ -1021,14 +1027,20 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
 
         act(() => {
           exposedController.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
-          exposedController.scheduleAutoFallback({
-            type: 'command.playback.schedule_auto_fallback',
-            epoch: 1,
-            delayMs: 1000,
-            profile: null,
-            failureCode: 'MEDIA_ERR_DECODE',
-            failureClass: 'decode',
-          });
+          exposedController.scheduleAutoFallback(
+            {
+              type: 'command.playback.schedule_auto_fallback',
+              epoch: 1,
+              delayMs: 1000,
+              profile: null,
+              failureCode: 'MEDIA_ERR_DECODE',
+              failureClass: 'decode',
+            },
+            {
+              kind: 'live',
+              serviceRef: 'channel-test',
+            },
+          );
         });
 
         expect(exposedController.hasScheduledAutoFallback(1)).toBe(true);
@@ -1112,14 +1124,20 @@ describe('usePlaybackController React Integration & Lifecycle', () => {
 
         act(() => {
           exposedController.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
-          exposedController.scheduleAutoFallback({
-            type: 'command.playback.schedule_auto_fallback',
-            epoch: 1,
-            delayMs: 250,
-            profile: null,
-            failureCode: 'MEDIA_ERR_DECODE',
-            failureClass: 'decode',
-          });
+          exposedController.scheduleAutoFallback(
+            {
+              type: 'command.playback.schedule_auto_fallback',
+              epoch: 1,
+              delayMs: 250,
+              profile: null,
+              failureCode: 'MEDIA_ERR_DECODE',
+              failureClass: 'decode',
+            },
+            {
+              kind: 'live',
+              serviceRef: 'channel-test',
+            },
+          );
         });
 
         // Trigger speculative transition that suspends

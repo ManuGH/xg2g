@@ -147,6 +147,15 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
 
   describe('Scenario 2: Session vs profile fallback delays and budgets', () => {
     it('preserves 1500ms session re-establishment delay and increments sessionRestarts count', () => {
+      controller.setCommandExecutor((cmd) => {
+        executedCommands.push(cmd);
+        if (cmd.type === 'command.playback.schedule_auto_fallback') {
+          controller.scheduleAutoFallback(cmd, {
+            kind: 'live',
+            serviceRef: '1:0:19:283D:3FB:1:C00000:0:0:0:',
+          });
+        }
+      });
       controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
       // Transition session phase to ready
       controller.dispatch({
@@ -191,6 +200,15 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
     });
 
     it('preserves 250ms profile/bandwidth fallback delay and marks autoFallbackUsed', () => {
+      controller.setCommandExecutor((cmd) => {
+        executedCommands.push(cmd);
+        if (cmd.type === 'command.playback.schedule_auto_fallback') {
+          controller.scheduleAutoFallback(cmd, {
+            kind: 'live',
+            serviceRef: '1:0:19:283D:3FB:1:C00000:0:0:0:',
+          });
+        }
+      });
       controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true, false);
 
       const failure = buildPlaybackFailure(
@@ -230,14 +248,20 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
     it('settles stop immediately without waiting for delay and cancels pending restart', async () => {
       controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
 
-      controller.scheduleAutoFallback({
-        type: 'command.playback.schedule_auto_fallback',
-        epoch: 1,
-        delayMs: 1500,
-        profile: null,
-        failureCode: 'MEDIA_ERR_DECODE',
-        failureClass: 'decode',
-      });
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 1500,
+          profile: null,
+          failureCode: 'MEDIA_ERR_DECODE',
+          failureClass: 'decode',
+        },
+        {
+          kind: 'live',
+          serviceRef: 'channel-test',
+        },
+      );
       expect(controller.hasScheduledAutoFallback(1)).toBe(true);
 
       // Call stop during the delay
@@ -297,14 +321,20 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
     it('cancels pending retry upon terminal auth error', () => {
       controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
 
-      controller.scheduleAutoFallback({
-        type: 'command.playback.schedule_auto_fallback',
-        epoch: 1,
-        delayMs: 1500,
-        profile: null,
-        failureCode: 'MEDIA_ERR_NETWORK',
-        failureClass: 'network',
-      });
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 1500,
+          profile: null,
+          failureCode: 'MEDIA_ERR_NETWORK',
+          failureClass: 'network',
+        },
+        {
+          kind: 'live',
+          serviceRef: 'channel-test',
+        },
+      );
       expect(controller.hasScheduledAutoFallback(1)).toBe(true);
 
       // At T+300ms, terminal auth failure is raised
@@ -457,14 +487,20 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
     it('cancels pending timers on dispose and prevents post-disposal restart', () => {
       controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
 
-      controller.scheduleAutoFallback({
-        type: 'command.playback.schedule_auto_fallback',
-        epoch: 1,
-        delayMs: 1500,
-        profile: null,
-        failureCode: 'MEDIA_ERR_DECODE',
-        failureClass: 'decode',
-      });
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 1500,
+          profile: null,
+          failureCode: 'MEDIA_ERR_DECODE',
+          failureClass: 'decode',
+        },
+        {
+          kind: 'live',
+          serviceRef: 'channel-test',
+        },
+      );
       expect(controller.hasScheduledAutoFallback(1)).toBe(true);
 
       controller.dispose();
@@ -534,6 +570,221 @@ describe('PlaybackController: Automatic Recovery Fallback Timers (Step 1)', () =
         epoch: 1,
         kind: 'src',
         srcUrl: 'https://example.test/direct.mp4',
+      });
+    });
+  });
+
+  describe('Scenario 10: Missing source identity and valid supplied targets', () => {
+    it('does not schedule or emit a restart when VOD identity is missing', () => {
+      controller.beginPlaybackAttempt(1, 'VOD', 'playing', true);
+
+      controller.dispatch({
+        type: 'normative.playback.failure.raised',
+        epoch: 1,
+        failure: buildPlaybackFailure(
+          { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+          'media-element',
+          { recoverable: true },
+        ),
+      });
+
+      expect(controller.getState().status).toBe('recovering');
+      expect(controller.hasScheduledAutoFallback(1)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toEqual([]);
+    });
+
+    it('does not schedule or emit a restart when VOD target has empty or whitespace recordingId', () => {
+      controller.beginPlaybackAttempt(1, 'VOD', 'playing', true);
+
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 250,
+          profile: null,
+          failureCode: 'DECODE_EXHAUSTED',
+          failureClass: 'decode',
+        },
+        {
+          kind: 'vod',
+          recordingId: '   ',
+        },
+      );
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toEqual([]);
+    });
+
+    it('does not schedule or emit a restart when Live identity is missing and no in-flight attempt exists', () => {
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+
+      controller.scheduleAutoFallback({
+        type: 'command.playback.schedule_auto_fallback',
+        epoch: 1,
+        delayMs: 250,
+        profile: null,
+        failureCode: 'MEDIA_ERR_DECODE',
+        failureClass: 'decode',
+      });
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toEqual([]);
+    });
+
+    it('does not schedule or emit a restart when Live target has empty or whitespace serviceRef', () => {
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 250,
+          profile: null,
+          failureCode: 'MEDIA_ERR_DECODE',
+          failureClass: 'decode',
+        },
+        {
+          kind: 'live',
+          serviceRef: '   ',
+        },
+      );
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toEqual([]);
+    });
+
+    it('does not schedule or emit a restart when src target has empty or whitespace srcUrl', () => {
+      controller.beginPlaybackAttempt(1, 'UNKNOWN', 'buffering', false);
+
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 250,
+          profile: null,
+          failureCode: 'MEDIA_ERR_NETWORK',
+          failureClass: 'network',
+        },
+        {
+          kind: 'src',
+          srcUrl: '   ',
+        },
+      );
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toEqual([]);
+    });
+
+    it('does not derive live identity from an earlier epoch attempt (no cross-epoch pollution)', async () => {
+      // Epoch 1: Live attempt started via startLive
+      const startPromise = controller.startLive({
+        serviceRef: '1:0:19:283D:3FB:1:C00000:0:0:0:',
+        epoch: 1,
+      });
+
+      // Advance time slightly to let startup commence
+      vi.advanceTimersByTime(10);
+
+      // Now tune away / allocate epoch 2 for VOD
+      const epoch2 = controller.allocatePlaybackEpoch();
+      expect(epoch2).toBe(2);
+      controller.beginPlaybackAttempt(epoch2, 'VOD', 'playing', true);
+
+      // Settle epoch 1 promise (superseded)
+      await startPromise;
+
+      // Epoch 2 receives fallback command without target
+      controller.scheduleAutoFallback({
+        type: 'command.playback.schedule_auto_fallback',
+        epoch: 2,
+        delayMs: 250,
+        profile: null,
+        failureCode: 'DECODE_EXHAUSTED',
+        failureClass: 'decode',
+      });
+
+      // No fallback should be scheduled using epoch 1's live service reference
+      expect(controller.hasScheduledAutoFallback(2)).toBe(false);
+
+      vi.advanceTimersByTime(2000);
+      const starts = executedCommands.filter((c) => c.type === 'command.playback.start');
+      expect(starts).toEqual([]);
+    });
+
+    it('schedules and emits restart when authoritative live attempt matches current epoch', () => {
+      // Live attempt started with authoritative serviceRef in currentAttempt
+      void controller.startLive({
+        serviceRef: '1:0:19:283D:3FB:1:C00000:0:0:0:',
+        epoch: 1,
+      });
+
+      // Headless schedule command without target for matching epoch 1
+      controller.scheduleAutoFallback({
+        type: 'command.playback.schedule_auto_fallback',
+        epoch: 1,
+        delayMs: 500,
+        profile: 'repair',
+        failureCode: 'MEDIA_ERR_DECODE',
+        failureClass: 'decode',
+      });
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(true);
+
+      vi.advanceTimersByTime(500);
+
+      const starts = executedCommands.filter((c) => c.type === 'command.playback.start');
+      expect(starts).toHaveLength(1);
+      expect(starts[0]).toMatchObject({
+        type: 'command.playback.start',
+        epoch: 1,
+        kind: 'live',
+        serviceRef: '1:0:19:283D:3FB:1:C00000:0:0:0:',
+        explicitProfile: 'repair',
+      });
+    });
+
+    it('faithfully schedules and emits restart when explicit valid target is supplied', () => {
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+
+      controller.scheduleAutoFallback(
+        {
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: 1,
+          delayMs: 500,
+          profile: 'low',
+          failureCode: 'MEDIA_ERR_DECODE',
+          failureClass: 'decode',
+        },
+        {
+          kind: 'live',
+          serviceRef: 'channel-explicit',
+          explicitProfile: 'high',
+        },
+      );
+
+      expect(controller.hasScheduledAutoFallback(1)).toBe(true);
+
+      vi.advanceTimersByTime(500);
+
+      const starts = executedCommands.filter((c) => c.type === 'command.playback.start');
+      expect(starts).toHaveLength(1);
+      // Command profile ('low') takes precedence over target explicitProfile ('high')
+      expect(starts[0]).toMatchObject({
+        type: 'command.playback.start',
+        epoch: 1,
+        kind: 'live',
+        serviceRef: 'channel-explicit',
+        explicitProfile: 'low',
       });
     });
   });

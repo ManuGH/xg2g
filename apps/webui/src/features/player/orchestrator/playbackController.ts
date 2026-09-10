@@ -205,7 +205,6 @@ export function createPlaybackController(
   let playbackEpoch = 0;
   let sessionEpoch = 0;
   const stoppedEpochs = new Set<number>();
-  let lastKnownLiveServiceRef: string | null = null;
   const scheduledCommands = new WeakSet<PlaybackCommand>();
   let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
 
@@ -264,21 +263,53 @@ export function createPlaybackController(
       activeFallbacks.delete(command.epoch);
     }
 
-    const currentMode = runtime.getState().playbackMode;
-    const defaultKind: 'live' | 'vod' | 'src' =
-      currentMode === 'VOD' ? 'vod' : currentMode === 'LIVE' ? 'live' : 'live';
+    let resolvedTarget: AutoFallbackRestartTarget | null = null;
 
-    const resolvedTarget: AutoFallbackRestartTarget = target ?? {
-      kind: defaultKind,
-      serviceRef:
-        defaultKind === 'live'
-          ? (currentAttempt?.params?.serviceRef ?? lastKnownLiveServiceRef ?? undefined)
-          : undefined,
-      recordingId: undefined,
-      srcUrl: undefined,
-      explicitProfile: command.profile ?? undefined,
-    };
+    if (target) {
+      const explicitProfile = (command.profile ?? target.explicitProfile) || undefined;
+      if (target.kind === 'live' && target.serviceRef?.trim()) {
+        resolvedTarget = {
+          kind: 'live',
+          serviceRef: target.serviceRef.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'vod' && target.recordingId?.trim()) {
+        resolvedTarget = {
+          kind: 'vod',
+          recordingId: target.recordingId.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'src' && target.srcUrl?.trim()) {
+        resolvedTarget = {
+          kind: 'src',
+          srcUrl: target.srcUrl.trim(),
+          explicitProfile,
+        };
+      }
+    }
 
+    if (!resolvedTarget) {
+      const currentMode = runtime.getState().playbackMode;
+      if (
+        currentMode === 'LIVE' &&
+        currentAttempt &&
+        currentAttempt.epoch === command.epoch &&
+        currentAttempt.params?.serviceRef?.trim()
+      ) {
+        resolvedTarget = {
+          kind: 'live',
+          serviceRef: currentAttempt.params.serviceRef.trim(),
+          explicitProfile: (command.profile ?? undefined) || undefined,
+        };
+      }
+    }
+
+    if (!resolvedTarget) {
+      // Missing required source identity: do not manufacture unexecutable restart
+      return;
+    }
+
+    const finalTarget = resolvedTarget;
     const timer = setTimeout(() => {
       activeFallbacks.delete(command.epoch);
 
@@ -292,17 +323,17 @@ export function createPlaybackController(
       runtime.dispatch({
         type: 'intent.start.requested',
         epoch: command.epoch,
-        kind: resolvedTarget.kind,
-        serviceRef: resolvedTarget.serviceRef,
-        recordingId: resolvedTarget.recordingId,
-        srcUrl: resolvedTarget.srcUrl,
-        explicitProfile: command.profile ?? resolvedTarget.explicitProfile,
+        kind: finalTarget.kind,
+        serviceRef: finalTarget.serviceRef,
+        recordingId: finalTarget.recordingId,
+        srcUrl: finalTarget.srcUrl,
+        explicitProfile: finalTarget.explicitProfile,
       });
     }, command.delayMs);
 
     activeFallbacks.set(command.epoch, {
       timer,
-      target: resolvedTarget,
+      target: finalTarget,
       command,
     });
   }
@@ -1194,7 +1225,6 @@ export function createPlaybackController(
       abortController: new AbortController(),
       params,
     };
-    lastKnownLiveServiceRef = params.serviceRef;
 
     attempt.settlementTimer = setTimeout(() => {
       attempt.cancelled = true;
