@@ -10,5 +10,6 @@
 //! against a corpus without a process, a socket or a Go daemon in the way.
 
 pub mod audio;
+pub mod pes;
 pub mod psi;
 pub mod transport;
