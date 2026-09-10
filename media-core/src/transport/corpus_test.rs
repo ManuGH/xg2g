@@ -363,7 +363,102 @@ fn only_the_low_four_bits_of_the_counter_are_the_counter() {
     let mut t = ContinuityTracker::new();
     // The caller passes the whole byte; the tracker must mask it. Byte 3 of a
     // packet carries scrambling and adaptation bits above the counter, and a
-    // tracker comparing the whole byte would call a scrambling change a gap.
-    assert_eq!(t.observe(&cc_packet(1, 0x01), 0xF1), Continuity::First);
-    assert_eq!(t.observe(&cc_packet(2, 0x02), 0x02), Continuity::Continuous);
+    // tracker comparing the whole byte would read a scrambling change as a
+    // different counter.
+    //
+    // The pair below is chosen because it is where the mask decides: 0xF1 and
+    // 0x01 are the same counter, so the identical packet that follows is the
+    // transport repeating itself. Unmasked they are different numbers, and the
+    // repeat would be read as a break instead. A pair that merely advances
+    // would look continuous either way, because the comparison masks its own
+    // side.
+    let p = cc_packet(1, 0x77);
+    assert_eq!(t.observe(&p, 0xF1), Continuity::First);
+    assert_eq!(t.observe(&p, 0x01), Continuity::Duplicate);
+}
+
+/// Reads the archived Step 5d captures through the packet reader and reports
+/// what real broadcast looks like to it.
+///
+/// Diagnostics, not product truth and not a benchmark. The numbers are here so
+/// that "the reader handles real transport" is a statement with something
+/// behind it: which PIDs, how the adaptation control is actually distributed,
+/// whether anything arrives scrambled or flagged in error, and how often the
+/// continuity counter does something other than advance.
+///
+/// Skipped without the archive, because the captures are deliberately not in
+/// the repository - they are tens of megabytes of real broadcast, identified by
+/// hash in testdata/psi-hardware/manifest.txt.
+#[test]
+fn real_broadcast_reads_through_the_packet_reader() {
+    let Ok(dir) = std::env::var("XG2G_PSI_HARDWARE_DIR") else {
+        eprintln!("XG2G_PSI_HARDWARE_DIR not set; skipping the archived-capture read");
+        return;
+    };
+
+    for name in ["A_orf1hd", "B1_puls4", "I_post"] {
+        let path = std::path::Path::new(&dir).join(format!("{name}.ts"));
+        let Ok(data) = std::fs::read(&path) else {
+            eprintln!("{name}: not in the archive; skipping");
+            continue;
+        };
+        assert_eq!(
+            data.len() % TS_PACKET_LEN,
+            0,
+            "{name} is not a whole number of packets"
+        );
+
+        let mut pids = std::collections::BTreeSet::new();
+        let (mut payload_only, mut adaptation_and_payload, mut adaptation_only) =
+            (0u64, 0u64, 0u64);
+        let (mut scrambled, mut tei, mut announced) = (0u64, 0u64, 0u64);
+        let mut refused = 0u64;
+
+        for chunk in data.chunks_exact(TS_PACKET_LEN) {
+            let Ok(v) = PacketView::parse(chunk) else {
+                refused += 1;
+                continue;
+            };
+            pids.insert(v.pid());
+            match v.adaptation_field_control() {
+                0b01 => payload_only += 1,
+                0b11 => adaptation_and_payload += 1,
+                0b10 => adaptation_only += 1,
+                _ => {}
+            }
+            if v.scrambling_control() != 0 {
+                scrambled += 1;
+            }
+            if v.transport_error_indicator() {
+                tei += 1;
+            }
+            if v.discontinuity_indicator() {
+                announced += 1;
+            }
+        }
+
+        let total = (data.len() / TS_PACKET_LEN) as u64;
+        eprintln!(
+            "{name}: {total} packets, {} PIDs, payload-only {payload_only}, \
+             adaptation+payload {adaptation_and_payload}, adaptation-only {adaptation_only}, \
+             scrambled {scrambled}, error-flagged {tei}, announced discontinuities {announced}, \
+             unreadable {refused}",
+            pids.len()
+        );
+
+        // Real broadcast is readable. A capture the reader refuses wholesale
+        // would mean the header decode is wrong, not that the broadcaster is.
+        assert!(
+            refused * 100 < total,
+            "{name}: {refused} of {total} packets unreadable"
+        );
+        assert!(
+            pids.len() > 1,
+            "{name}: a real multiplex carries more than one PID"
+        );
+        assert!(
+            payload_only + adaptation_and_payload > 0,
+            "{name}: no packet carried a payload"
+        );
+    }
 }
