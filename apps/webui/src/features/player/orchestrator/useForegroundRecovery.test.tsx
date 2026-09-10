@@ -1,10 +1,14 @@
-import React, { Suspense, useRef, useState, useTransition } from 'react';
+import React, { Suspense, startTransition, useRef, useState } from 'react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useForegroundRecovery } from './useForegroundRecovery';
+import { usePlaybackController } from './usePlaybackController';
 import { createPlaybackController, type PlaybackController } from './playbackController';
+import { buildPlaybackFailure } from './playbackMachine';
 import { createRecoveryLadderState } from './recoveryLadder';
-import type { PlaybackRetryTarget } from './playbackTypes';
+import { createDefaultLiveSessionTransport, type LiveSessionTransport } from './liveSessionTransport';
+import type { PlaybackCommand, PlaybackRetryTarget } from './playbackTypes';
+import type { PlaybackCommandExecutor } from './playbackMachineRuntime';
 import type { PlayerStatus } from '../../../types/v3-player';
 
 describe('useForegroundRecovery (React hook & adapter integration)', () => {
@@ -27,8 +31,12 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
     }
   });
 
-  function createTestController(initialStatus: PlayerStatus = 'playing') {
+  function createTestController(
+    initialStatus: PlayerStatus = 'playing',
+    executeCommand: PlaybackCommandExecutor = () => {},
+  ) {
     return createPlaybackController({
+      executeCommand,
       createInitialState: () => ({
         epoch: { playback: 1, session: 0 },
         traceId: 'trace-1',
@@ -221,14 +229,170 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
     expect(controller.getActiveForegroundOperationId()).not.toBeNull();
   });
 
-  it('runs safely under React.StrictMode with setup/cleanup replay with exactly one initial play', () => {
-    const controller = createTestController('playing');
+  function createDummyTransport(): LiveSessionTransport {
+    return createDefaultLiveSessionTransport({
+      apiBase: 'http://localhost/api/v3',
+      authHeaders: () => ({}),
+    });
+  }
+
+  function StrictRealControllerPlayer({
+    isDocumentVisible,
+    onPlayCall,
+  }: {
+    isDocumentVisible: boolean;
+    onPlayCall: () => void;
+  }) {
+    const transport = createDummyTransport();
+    const executeCommand = vi.fn();
+    const { controller } = usePlaybackController(
+      transport,
+      () => ({
+        epoch: { playback: 1, session: 0 },
+        traceId: 'trace-strict',
+        status: 'playing',
+        playbackMode: 'LIVE',
+        vodStreamMode: null,
+        activeHlsEngine: null,
+        durationSeconds: null,
+        canSeek: false,
+        startUnix: null,
+        sessionPhase: 'idle',
+        mediaPhase: 'playing',
+        contract: null,
+        failure: null,
+        lastAdvisory: null,
+        explicitProfilePinned: false,
+        hasSessionIntent: true,
+        recovery: createRecoveryLadderState(),
+        leaseExpiresAt: null,
+        connectionLost: false,
+      }),
+      executeCommand,
+    );
+
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const hlsRef = useRef(null);
+    const paused = useRef(false);
+    const [, setStatus] = useState<PlayerStatus>('playing');
+
+    useForegroundRecovery({
+      controller,
+      videoRef,
+      hlsRef,
+      isEligible: true,
+      isDocumentVisible,
+      target: { kind: 'live', serviceRef: 'strict-service' },
+      userPauseIntentRef: paused,
+      setStatus,
+    });
+
+    return (
+      <video
+        ref={(el) => {
+          if (el) {
+            el.play = vi.fn().mockImplementation(() => {
+              onPlayCall();
+              return Promise.resolve();
+            });
+          }
+          videoRef.current = el;
+        }}
+        data-testid="strict-video"
+      />
+    );
+  }
+
+  function StrictParentPlayer({
+    isDocumentVisible,
+    onPlayCall,
+  }: {
+    isDocumentVisible: boolean;
+    onPlayCall: () => void;
+  }) {
+    const transport = createDummyTransport();
+    const { controller } = usePlaybackController(
+      transport,
+      () => ({
+        epoch: { playback: 1, session: 0 },
+        traceId: 'trace-parent',
+        status: 'playing',
+        playbackMode: 'LIVE',
+        vodStreamMode: null,
+        activeHlsEngine: null,
+        durationSeconds: null,
+        canSeek: false,
+        startUnix: null,
+        sessionPhase: 'idle',
+        mediaPhase: 'playing',
+        contract: null,
+        failure: null,
+        lastAdvisory: null,
+        explicitProfilePinned: false,
+        hasSessionIntent: true,
+        recovery: createRecoveryLadderState(),
+        leaseExpiresAt: null,
+        connectionLost: false,
+      }),
+      vi.fn(),
+    );
+
+    return (
+      <StrictChildPlayer
+        controller={controller}
+        isDocumentVisible={isDocumentVisible}
+        onPlayCall={onPlayCall}
+      />
+    );
+  }
+
+  function StrictChildPlayer({
+    controller,
+    isDocumentVisible,
+    onPlayCall,
+  }: {
+    controller: PlaybackController;
+    isDocumentVisible: boolean;
+    onPlayCall: () => void;
+  }) {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const hlsRef = useRef(null);
+    const paused = useRef(false);
+    const [, setStatus] = useState<PlayerStatus>('playing');
+
+    useForegroundRecovery({
+      controller,
+      videoRef,
+      hlsRef,
+      isEligible: true,
+      isDocumentVisible,
+      target: { kind: 'live', serviceRef: 'parent-child-service' },
+      userPauseIntentRef: paused,
+      setStatus,
+    });
+
+    return (
+      <video
+        ref={(el) => {
+          if (el) {
+            el.play = vi.fn().mockImplementation(() => {
+              onPlayCall();
+              return Promise.resolve();
+            });
+          }
+          videoRef.current = el;
+        }}
+        data-testid="child-video"
+      />
+    );
+  }
+
+  it('runs safely under Root React.StrictMode using real usePlaybackController lifecycle with exactly one initial play', () => {
     let playCallCount = 0;
 
-    const { rerender } = render(
+    const { rerender, unmount } = render(
       <React.StrictMode>
-        <TestPlayer
-          controller={controller}
+        <StrictRealControllerPlayer
           isDocumentVisible={false}
           onPlayCall={() => {
             playCallCount++;
@@ -237,11 +401,12 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
       </React.StrictMode>,
     );
 
-    // Reveal inside StrictMode
+    expect(playCallCount).toBe(0);
+
+    // Reveal inside Root StrictMode
     rerender(
       <React.StrictMode>
-        <TestPlayer
-          controller={controller}
+        <StrictRealControllerPlayer
           isDocumentVisible={true}
           onPlayCall={() => {
             playCallCount++;
@@ -250,9 +415,47 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
       </React.StrictMode>,
     );
 
-    // StrictMode double-invocation must NOT duplicate the play call or operation
+    // StrictMode double-invocation must NOT duplicate the play call
     expect(playCallCount).toBe(1);
-    expect(controller.getActiveForegroundOperationId()).not.toBeNull();
+
+    unmount();
+  });
+
+  it('runs safely under Subtree React.StrictMode with parent usePlaybackController and child useForegroundRecovery', () => {
+    let playCallCount = 0;
+
+    const { rerender, unmount } = render(
+      <div>
+        <React.StrictMode>
+          <StrictParentPlayer
+            isDocumentVisible={false}
+            onPlayCall={() => {
+              playCallCount++;
+            }}
+          />
+        </React.StrictMode>
+      </div>,
+    );
+
+    expect(playCallCount).toBe(0);
+
+    // Reveal inside Subtree StrictMode
+    rerender(
+      <div>
+        <React.StrictMode>
+          <StrictParentPlayer
+            isDocumentVisible={true}
+            onPlayCall={() => {
+              playCallCount++;
+            }}
+          />
+        </React.StrictMode>
+      </div>,
+    );
+
+    expect(playCallCount).toBe(1);
+
+    unmount();
   });
 
   it('cancels the old nudge when React replaces the actual video DOM element', () => {
@@ -431,34 +634,54 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
     expect(controller.getActiveForegroundOperationId()).toBeNull();
   });
 
-  it('real state-driven suspended transition does not mutate controller target or binding', async () => {
-    const controller = createTestController('playing');
-    let resolveSuspense: (() => void) | null = null;
-    let suspensePromise: Promise<void> | null = null;
+  it('isolates speculative hook renders during Suspense and correctly routes target and callbacks after commit', async () => {
+    const executedCommands: PlaybackCommand[] = [];
+    const controller = createTestController('playing', (command) => {
+      executedCommands.push(command);
+    });
 
-    interface SuspendingPlayerProps {
-      target: PlaybackRetryTarget;
-      shouldSuspend: boolean;
+    const committedSetter = vi.fn();
+    const speculativeSetter = vi.fn();
+
+    let rejectPlay1!: (err: unknown) => void;
+    const pendingPlay1 = new Promise<void>((_resolve, reject) => {
+      rejectPlay1 = reject;
+    });
+
+    let rejectPlay2!: (err: unknown) => void;
+    const pendingPlay2 = new Promise<void>((_resolve, reject) => {
+      rejectPlay2 = reject;
+    });
+
+    let resolveGate!: () => void;
+    let gatePromise: Promise<void> | null = null;
+    let shouldSuspend = false;
+
+    function resetGate() {
+      gatePromise = new Promise<void>((resolve) => {
+        resolveGate = resolve;
+      });
     }
 
-    function SuspendingPlayer({ target, shouldSuspend }: SuspendingPlayerProps) {
-      if (shouldSuspend) {
-        if (!suspensePromise) {
-          suspensePromise = new Promise((resolve) => {
-            resolveSuspense = () => {
-              suspensePromise = null;
-              resolve();
-            };
-          });
-        }
-        throw suspensePromise;
-      }
+    const targetA: PlaybackRetryTarget = { kind: 'live', serviceRef: 'committed-a' };
+    const targetB: PlaybackRetryTarget = { kind: 'live', serviceRef: 'speculative-b' };
 
+    let renderedVersion = -1;
+    let committedVersion = -1;
+
+    interface BoundaryChildProps {
+      version: number;
+    }
+
+    function SuspendingBoundaryChild({ version }: BoundaryChildProps) {
       const videoRef = useRef<HTMLVideoElement | null>(null);
       const hlsRef = useRef(null);
       const paused = useRef(false);
-      const [, setStatus] = useState<PlayerStatus>('playing');
 
+      const target = version === 0 ? targetA : targetB;
+      const setStatus = version === 0 ? committedSetter : speculativeSetter;
+
+      // useForegroundRecovery executes BEFORE the suspension gate so its render-phase writes are tested
       useForegroundRecovery({
         controller,
         videoRef,
@@ -470,71 +693,146 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
         setStatus,
       });
 
+      renderedVersion = version;
+
+      // Explicitly resolvable gate after hook execution
+      if (shouldSuspend) {
+        throw gatePromise;
+      }
+
+      committedVersion = version;
+
       return (
         <video
           ref={(el) => {
             if (el) {
-              el.play = vi.fn().mockResolvedValue(undefined);
+              el.play = vi.fn().mockImplementation(() => {
+                return version === 0 ? pendingPlay1 : pendingPlay2;
+              });
             }
             videoRef.current = el;
           }}
+          data-testid={`video-version-${version}`}
         />
       );
     }
 
-    let triggerSuspendedTransition: () => void = () => {};
+    let triggerTransition: () => void = () => {};
 
     function SuspenseApp() {
-      const [target, setTarget] = useState<PlaybackRetryTarget>(committedTarget);
-      const [shouldSuspend, setShouldSuspend] = useState(false);
-      const [isPending, startTransition] = useTransition();
+      const [version, setVersion] = useState(0);
 
-      triggerSuspendedTransition = () => {
+      triggerTransition = () => {
         startTransition(() => {
-          setTarget(speculativeTarget);
-          setShouldSuspend(true);
+          setVersion(1);
         });
       };
 
       return (
-        <Suspense fallback={<div data-testid="fallback">Suspended Loading...</div>}>
-          <SuspendingPlayer target={target} shouldSuspend={shouldSuspend} />
-          {isPending && <div data-testid="pending">Transition Pending...</div>}
+        <Suspense fallback={<div data-testid="suspense-fallback">Loading...</div>}>
+          <SuspendingBoundaryChild version={version} />
         </Suspense>
       );
     }
 
-    const committedTarget: PlaybackRetryTarget = { kind: 'live', serviceRef: 'committed-1' };
-    const speculativeTarget: PlaybackRetryTarget = { kind: 'live', serviceRef: 'speculative-2' };
-
     const view = render(<SuspenseApp />);
 
-    // Initial committed render:
-    // Report hidden then reveal to start an active operation on committedTarget
-    controller.reportForegroundVisibility(false, false);
-    controller.reportForegroundVisibility(true, false);
+    // 1. Initial committed render (version 0)
+    expect(renderedVersion).toBe(0);
+    expect(committedVersion).toBe(0);
+    expect(view.getByTestId('video-version-0')).toBeDefined();
+
+    // Trigger reveal to start foreground operation on version 0
+    act(() => {
+      controller.reportForegroundVisibility(false, false);
+      controller.reportForegroundVisibility(true, false);
+    });
+
     const activeOpBefore = controller.getActiveForegroundOperationId();
     expect(activeOpBefore).not.toBeNull();
 
-    // Now start a concurrent transition to the speculative target that suspends
+    // 2. Start suspended transition to version 1
+    shouldSuspend = true;
+    resetGate();
     act(() => {
-      triggerSuspendedTransition();
+      triggerTransition();
     });
 
-    // Transition is pending, suspended offscreen
-    expect(view.getByTestId('pending')).toBeDefined();
-
-    // CRITICAL ASSERTION: The uncommitted / suspended render must NOT mutate controller target!
-    // The active operation must still be alive for committedTarget
+    // Verify speculative render ran the hook, but did NOT commit
+    expect(renderedVersion).toBe(1);
+    expect(committedVersion).toBe(0);
+    expect(view.getByTestId('video-version-0')).toBeDefined();
+    expect(view.queryByTestId('video-version-1')).toBeNull();
+    // In transition, fallback is not shown, and active operation on version 0 is still alive
+    expect(view.queryByTestId('suspense-fallback')).toBeNull();
     expect(controller.getActiveForegroundOperationId()).toBe(activeOpBefore);
 
-    // Now resolve the suspense promise to allow commit
+    // 3. Reject the pending play on version 0 while version 1 is suspended
+    committedSetter.mockClear();
+    speculativeSetter.mockClear();
+
     await act(async () => {
-      resolveSuspense?.();
-      await vi.runAllTimersAsync();
+      rejectPlay1({ name: 'NotAllowedError' });
     });
 
-    // Once resolved, the speculativeTarget commits, replacing the target and cancelling older op
-    expect(controller.getActiveForegroundOperationId()).toBeNull();
+    // SPECULATIVE ISOLATION: uncommitted render must NOT have hijacked the callback
+    expect(speculativeSetter).not.toHaveBeenCalled();
+    expect(committedSetter).toHaveBeenCalledWith('paused');
+
+    // 4. Resolve the gate and allow version 1 to commit
+    await act(async () => {
+      shouldSuspend = false;
+      resolveGate();
+    });
+
+    // Version 1 is now committed!
+    expect(committedVersion).toBe(1);
+    expect(view.getByTestId('video-version-1')).toBeDefined();
+
+    // 5. Verify post-commit callback & target routing
+    committedSetter.mockClear();
+    speculativeSetter.mockClear();
+
+    act(() => {
+      controller.reportForegroundVisibility(false, false);
+      controller.reportForegroundVisibility(true, false);
+    });
+
+    const activeOpAfter = controller.getActiveForegroundOperationId();
+    expect(activeOpAfter).not.toBeNull();
+    expect(activeOpAfter).not.toBe(activeOpBefore);
+
+    // Reject the second play promise
+    await act(async () => {
+      rejectPlay2({ name: 'NotAllowedError' });
+    });
+
+    // COMMITTED CALLBACK REFRESH: version 1's setter receives the callback
+    expect(committedSetter).not.toHaveBeenCalled();
+    expect(speculativeSetter).toHaveBeenCalledWith('paused');
+
+    // Verify target routing: transition controller to error and reveal
+    controller.dispatch({
+      type: 'normative.playback.failure.raised',
+      epoch: 1,
+      failure: buildPlaybackFailure(
+        { title: 'Error', code: 'TEST_ERROR', retryable: true },
+        'orchestrator',
+        { recoverable: true },
+      ),
+    });
+
+    executedCommands.length = 0;
+    await act(async () => {
+      controller.reportForegroundVisibility(false, false);
+      controller.reportForegroundVisibility(true, false);
+    });
+
+    // Observable target routing: retry receives committed targetB
+    const startCmd = executedCommands.find((cmd) => cmd.type === 'command.playback.start');
+    expect(startCmd).toBeDefined();
+    if (startCmd && startCmd.type === 'command.playback.start') {
+      expect(startCmd.serviceRef).toBe('speculative-b');
+    }
   });
 });

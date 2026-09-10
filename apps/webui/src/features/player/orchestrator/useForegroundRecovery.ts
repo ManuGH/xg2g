@@ -36,7 +36,6 @@ export function useForegroundRecovery({
   const committedMediaIdRef = useRef<string>('');
   const mediaIdCounterRef = useRef<number>(0);
   const setStatusRef = useRef(setStatus);
-  setStatusRef.current = setStatus;
 
   // Cleanup media binding when controller changes or on unmount
   useLayoutEffect(() => {
@@ -48,10 +47,14 @@ export function useForegroundRecovery({
     };
   }, [controller]);
 
-  // Synchronize committed target, eligibility, user pause, and video DOM attachment in layout phase.
+  // Synchronize committed target, eligibility, user pause, status callback, and video DOM attachment in layout phase.
   // Running on every commit ensures node replacements (e.g. key="a" -> key="b") or late-attached
   // refs are immediately resolved at the commit boundary without waiting for unrelated renders.
+  // Crucially, setStatusRef is updated ONLY in the commit phase so uncommitted or suspended renders
+  // never leak speculative callbacks to active asynchronous recovery operations.
   useLayoutEffect(() => {
+    setStatusRef.current = setStatus;
+
     controller.setForegroundEligibility(isEligible);
     controller.setForegroundTarget(target);
     controller.setUserPaused(userPauseIntentRef.current);

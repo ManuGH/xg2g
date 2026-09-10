@@ -1565,5 +1565,151 @@ describe('usePlaybackOrchestrator', () => {
 
       view.unmount();
     });
+
+    it('handles simultaneous foreground reveal and online reconnection events with shared controller retry coalescing', async () => {
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      let streamInfoCalls = 0;
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-coalesce-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-coalesce-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-coalesce-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-coalesce-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/stop')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      let exposedHlsRef!: any;
+      const startLoadSpy = vi.fn();
+
+      function CombinedRecoveryHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        exposedHlsRef = hlsRef;
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:COMBINED' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedActions = actions;
+        exposedController = controller;
+
+        return (
+          <div ref={containerRef}>
+            <video
+              ref={(el) => {
+                if (el) {
+                  el.play = vi.fn().mockResolvedValue(undefined);
+                }
+                videoRef.current = el;
+              }}
+            />
+          </div>
+        );
+      }
+
+      const view = render(<CombinedRecoveryHarness />);
+
+      // 1. Initial stream start
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:COMBINED');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Attach mock HLS engine for active playback
+      exposedHlsRef.current = {
+        startLoad: startLoadSpy,
+        destroy: vi.fn(),
+      };
+
+      // 2. Simulate document going hidden and network going offline
+      act(() => {
+        visibility = 'hidden';
+        fireEvent(document, new Event('visibilitychange'));
+        fireEvent(window, new Event('offline'));
+      });
+
+      // 3. Inject playback failure to put player into error status
+      const currentEpoch = exposedController.getState().epoch.playback;
+      act(() => {
+        exposedController.dispatch({
+          type: 'normative.playback.failure.raised',
+          epoch: currentEpoch,
+          failure: buildPlaybackFailure(
+            { title: 'Network Outage', code: 'NETWORK_TIMEOUT', retryable: true },
+            'orchestrator',
+            { recoverable: true },
+          ),
+        });
+      });
+      expect(exposedController.getState().status).toBe('error');
+
+      startLoadSpy.mockClear();
+
+      // 4. Trigger simultaneous foreground reveal and online reconnection events
+      await act(async () => {
+        visibility = 'visible';
+        fireEvent(document, new Event('visibilitychange'));
+        fireEvent(window, new Event('online'));
+      });
+
+      // 5. Observable outcomes:
+      // Both branches observe the event edge and request recovery:
+      // HLS startLoad was called
+      expect(startLoadSpy).toHaveBeenCalled();
+
+      // Both recovery branches coalesce at the controller retry:
+      // Exactly 1 restart was performed (streamInfoCalls was 1, now 2; not 3!)
+      await waitFor(() => {
+        expect(streamInfoCalls).toBe(2);
+      });
+
+      view.unmount();
+    });
   });
 });

@@ -1690,6 +1690,7 @@ export function createPlaybackController(
 
   function activate(): void {
     isDisposed = false;
+    stoppedEpochs.delete(playbackEpoch);
   }
 
   function dispose(): void {
