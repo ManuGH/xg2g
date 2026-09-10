@@ -47,10 +47,11 @@ type hardwareCapture struct {
 
 type hardwareStep struct {
 	// feed names a capture whose bytes are ingested; setTarget is a target
-	// change. Exactly one of them is set.
+	// change; newCore ends both cores and builds fresh ones.
 	feed      string
 	setTarget uint16
 	isFeed    bool
+	newCore   bool
 }
 
 type hardwareCase struct {
@@ -137,6 +138,18 @@ func loadHardwareManifest(t *testing.T) (map[string]hardwareCapture, []hardwareC
 				t.Fatalf("line %d: feed names %q, which the manifest never declared", line, fields[1])
 			}
 			current.steps = append(current.steps, hardwareStep{feed: fields[1], isFeed: true})
+
+		case "newcore":
+			// A transport interruption is a core boundary, not bytes. Production
+			// does not reconnect into a running parser: SessionPipeline.Start
+			// closes the ring - and with it the GoCore - when the upstream ends,
+			// and connector.go builds a new SessionPipeline, a new MasterRing and
+			// a new GoCore for the next connection. Encoding the gap as invented
+			// MPEG-TS would be modelling something the product never sees.
+			if current == nil {
+				t.Fatalf("line %d: newcore outside a case", line)
+			}
+			current.steps = append(current.steps, hardwareStep{newCore: true})
 
 		case "settarget":
 			if current == nil {
@@ -295,13 +308,15 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Start: %v", err)
 			}
-			defer func() {
+			closeRemote := func() {
 				if err := remote.Close(); err != nil {
 					t.Errorf("Close: %v", err)
 				}
-			}()
+			}
+			defer func() { closeRemote() }()
 
 			local := mediafacts.NewGoCore(c.initial)
+			cores := 1
 			offset := int64(0)
 			call := 0
 			identities := 0
@@ -339,6 +354,27 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 			}
 
 			for _, step := range c.steps {
+				if step.newCore {
+					closeRemote()
+					fresh, err := Start(ctx, bin, c.initial)
+					if err != nil {
+						t.Fatalf("Start after the interruption: %v", err)
+					}
+					remote = fresh
+					closeRemote = func() {
+						if err := fresh.Close(); err != nil {
+							t.Errorf("Close: %v", err)
+						}
+					}
+					local = mediafacts.NewGoCore(c.initial)
+					cores++
+					// Offsets restart with the core, because the caller's byte
+					// coordinate system does: a new pipeline begins at zero.
+					offset = 0
+					t.Logf("  --- transport interruption: both cores rebuilt (core %d), target %d, offsets restart at 0",
+						cores, c.initial)
+					continue
+				}
 				if !step.isFeed {
 					goRes, goErr := local.SetTargetProgram(ctx, step.setTarget)
 					rustRes, rustErr := remote.SetTargetProgram(ctx, step.setTarget)
@@ -384,6 +420,9 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 			}
 			t.Logf("  final psi    %s", truncate(final.psi, 160))
 			t.Logf("  identity events across the case: %d", identities)
+			if cores > 1 {
+				t.Logf("  cores used across the case: %d (production rebuilds the parser after an interruption)", cores)
+			}
 			if !strings.Contains(final.facts, "hasPAT=1") || !strings.Contains(final.facts, "hasPMT=1") {
 				t.Fatalf("case %s never resolved PAT and PMT; it proved nothing", c.name)
 			}
