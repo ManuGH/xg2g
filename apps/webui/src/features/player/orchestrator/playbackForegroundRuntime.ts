@@ -47,7 +47,7 @@ export interface PlaybackForegroundRuntime {
   setUserPaused(userPaused: boolean): void;
   onPlaybackAttemptStarted(epoch: number): void;
   onPlaybackStopped(epoch: number): void;
-  onTerminalAuth(epoch: number): void;
+  onTerminalAuth(epoch?: number): void;
   dispose(): void;
 
   // Inspection for tests
@@ -253,16 +253,40 @@ export function createPlaybackForegroundRuntime(
     };
     activeOp = op;
 
+    const targetBinding = currentBinding;
     currentBinding.onTransitionToBuffering?.();
 
+    // Revalidate operation, lifecycle, and binding ownership after external callback before starting DOM work
+    if (
+      op.cancelled ||
+      activeOp !== op ||
+      options.isDisposed() ||
+      options.isStalePlaybackEpoch(op.epoch) ||
+      options.isStoppedEpoch(op.epoch) ||
+      currentBinding !== targetBinding ||
+      currentBinding.mediaId !== op.mediaId
+    ) {
+      if (activeOp === op) {
+        activeOp = null;
+      }
+      op.cancelled = true;
+      return;
+    }
+
     try {
-      const handle = currentBinding.startNudge({
+      const handle = targetBinding.startNudge({
         onBlocked: (err) => handleNudgeBlocked(op, err),
         onFailed: () => handleNudgeFailed(op),
         shouldContinue: () => shouldNudgeContinue(op),
       });
 
-      if (op.cancelled) {
+      if (
+        op.cancelled ||
+        activeOp !== op ||
+        options.isDisposed() ||
+        options.isStalePlaybackEpoch(op.epoch) ||
+        options.isStoppedEpoch(op.epoch)
+      ) {
         // Synchronous cancellation occurred during startNudge!
         if (typeof handle === 'function') {
           try {
@@ -327,8 +351,12 @@ export function createPlaybackForegroundRuntime(
     cancelActiveOperation('playback_stopped');
   }
 
-  function onTerminalAuth(_epoch: number): void {
-    cancelActiveOperation('terminal_auth');
+  function onTerminalAuth(authEpoch?: number): void {
+    if (activeOp) {
+      if (authEpoch === undefined || authEpoch >= activeOp.epoch) {
+        cancelActiveOperation('terminal_auth');
+      }
+    }
   }
 
   function dispose(): void {

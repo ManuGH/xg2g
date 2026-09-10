@@ -516,7 +516,7 @@ export function createPlaybackController(
           cancelActiveRetry('terminal_auth');
         }
 
-        foregroundRuntime.onTerminalAuth(event.epoch ?? playbackEpoch);
+        foregroundRuntime.onTerminalAuth(event.epoch);
       }
     }
     runtime.dispatch(event);

@@ -1421,4 +1421,149 @@ describe('usePlaybackOrchestrator', () => {
       await act(async () => {});
     });
   });
+
+  describe('Facade browser foreground recovery and lifecycle', () => {
+    let originalVisibilityState: PropertyDescriptor | undefined;
+
+    beforeEach(() => {
+      originalVisibilityState = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    });
+
+    afterEach(() => {
+      if (originalVisibilityState) {
+        Object.defineProperty(document, 'visibilityState', originalVisibilityState);
+      }
+    });
+
+    it('cleans up document and window visibility event listeners on unmount', () => {
+      const docAdd = vi.spyOn(document, 'addEventListener');
+      const docRemove = vi.spyOn(document, 'removeEventListener');
+      const winAdd = vi.spyOn(window, 'addEventListener');
+      const winRemove = vi.spyOn(window, 'removeEventListener');
+
+      const view = render(<Harness props={{ autoStart: false } as unknown as V3PlayerProps} />);
+      expect(docAdd).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(winAdd).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      expect(winAdd).toHaveBeenCalledWith('pagehide', expect.any(Function));
+
+      view.unmount();
+      expect(docRemove).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(winRemove).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      expect(winRemove).toHaveBeenCalledWith('pagehide', expect.any(Function));
+    });
+
+    it('triggers play and kicks hls.startLoad on document reveal when paused', async () => {
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      let exposedController!: any;
+      const startLoadSpy = vi.fn();
+      let playCallCount = 0;
+
+      function ForegroundFacadeHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>({
+          startLoad: startLoadSpy,
+          destroy: vi.fn(),
+        } as any);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:FACADE' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedController = controller;
+
+        return (
+          <div ref={containerRef}>
+            <video
+              ref={(el) => {
+                if (el) {
+                  el.play = vi.fn().mockImplementation(() => {
+                    playCallCount++;
+                    return Promise.resolve();
+                  });
+                }
+                videoRef.current = el;
+              }}
+            />
+          </div>
+        );
+      }
+
+      const view = render(<ForegroundFacadeHarness />);
+
+      // Establish playback attempt in playing state
+      act(() => {
+        const epoch = exposedController.allocatePlaybackEpoch();
+        exposedController.beginPlaybackAttempt(epoch, 'LIVE', 'playing', true);
+      });
+
+      // Document hidden
+      act(() => {
+        visibility = 'hidden';
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      expect(exposedController.getActiveForegroundOperationId()).toBeNull();
+
+      // Document reveal
+      act(() => {
+        visibility = 'visible';
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      // HLS startLoad kicked synchronously on reveal
+      expect(startLoadSpy).toHaveBeenCalledTimes(1);
+
+      // Programmatic play called and foreground operation active
+      expect(playCallCount).toBe(1);
+      expect(exposedController.getActiveForegroundOperationId()).not.toBeNull();
+
+      view.unmount();
+      expect(exposedController.getActiveForegroundOperationId()).toBeNull();
+    });
+
+    it('coalesces concurrent retries between facade retry action and controller recovery', async () => {
+      let exposedActions!: any;
+      let exposedController!: any;
+
+      function RetryCoalesceHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>({ destroy: vi.fn() } as any);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:COALESCE' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedActions = actions;
+        exposedController = controller;
+
+        return <div ref={containerRef} />;
+      }
+
+      const view = render(<RetryCoalesceHarness />);
+
+      // Two concurrent retry requests on the facade return the exact same in-flight promise
+      let p1: any;
+      let p2: any;
+      act(() => {
+        p1 = exposedActions.retry();
+        p2 = exposedActions.retry();
+      });
+
+      expect(p1).toBe(p2);
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      view.unmount();
+    });
+  });
 });

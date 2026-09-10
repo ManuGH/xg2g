@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { PlaybackController } from './playbackController';
 import type { ForegroundMediaBinding } from './playbackForegroundRuntime';
 import { startResumePlaybackRecovery } from './resumePlaybackRecovery';
@@ -31,59 +31,73 @@ export function useForegroundRecovery({
   userPauseIntentRef,
   setStatus,
 }: UseForegroundRecoveryOptions): void {
-  const lastVideoElementRef = useRef<HTMLVideoElement | null>(null);
-  const mediaIdRef = useRef<string>('');
-  const mediaIdCounterRef = useRef(0);
+  const committedVideoRef = useRef<HTMLVideoElement | null>(null);
+  const committedBindingRef = useRef<ForegroundMediaBinding | null>(null);
+  const committedMediaIdRef = useRef<string>('');
+  const mediaIdCounterRef = useRef<number>(0);
+  const setStatusRef = useRef(setStatus);
+  setStatusRef.current = setStatus;
 
-  const currentVideo = videoRef.current;
-  if (currentVideo !== lastVideoElementRef.current) {
-    lastVideoElementRef.current = currentVideo;
-    mediaIdRef.current = currentVideo ? `vid-${++mediaIdCounterRef.current}` : '';
-  }
-
-  const mediaBinding = useMemo<ForegroundMediaBinding | null>(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return null;
-    }
-    const mediaId = mediaIdRef.current;
-
-    return {
-      mediaId,
-      onHlsReload: () => {
-        if (hlsRef.current) {
-          try {
-            hlsRef.current.startLoad();
-          } catch (err) {
-            debugWarn('[V3Player] hls resume startLoad failed', err);
-          }
-        }
-      },
-      onTransitionToBuffering: () => {
-        setStatus((current) => (current === 'paused' ? 'buffering' : current));
-      },
-      onTransitionToPaused: () => {
-        setStatus('paused');
-      },
-      isUserPaused: () => userPauseIntentRef.current,
-      startNudge: (callbacks) => {
-        return startResumePlaybackRecovery(video, {
-          shouldContinue: callbacks.shouldContinue,
-          onBlocked: callbacks.onBlocked,
-          onFailed: callbacks.onFailed,
-        });
-      },
+  // Cleanup media binding when controller changes or on unmount
+  useLayoutEffect(() => {
+    return () => {
+      committedVideoRef.current = null;
+      committedBindingRef.current = null;
+      committedMediaIdRef.current = '';
+      controller.setForegroundMediaBinding(null);
     };
-  }, [hlsRef, setStatus, videoRef, userPauseIntentRef]);
+  }, [controller]);
 
-  // Publish committed target, media binding, and eligibility in the layout phase (commit phase).
-  // This guarantees uncommitted / suspended renders never mutate controller state.
+  // Synchronize committed target, eligibility, user pause, and video DOM attachment in layout phase.
+  // Running on every commit ensures node replacements (e.g. key="a" -> key="b") or late-attached
+  // refs are immediately resolved at the commit boundary without waiting for unrelated renders.
   useLayoutEffect(() => {
     controller.setForegroundEligibility(isEligible);
     controller.setForegroundTarget(target);
-    controller.setForegroundMediaBinding(mediaBinding);
     controller.setUserPaused(userPauseIntentRef.current);
-  }, [controller, isEligible, target, mediaBinding, userPauseIntentRef]);
+
+    const currentVideo = videoRef.current;
+    if (currentVideo !== committedVideoRef.current) {
+      committedVideoRef.current = currentVideo;
+
+      if (!currentVideo) {
+        committedBindingRef.current = null;
+        committedMediaIdRef.current = '';
+        controller.setForegroundMediaBinding(null);
+      } else {
+        const mediaId = `vid-${++mediaIdCounterRef.current}`;
+        committedMediaIdRef.current = mediaId;
+        const binding: ForegroundMediaBinding = {
+          mediaId,
+          onHlsReload: () => {
+            if (hlsRef.current) {
+              try {
+                hlsRef.current.startLoad();
+              } catch (err) {
+                debugWarn('[V3Player] hls resume startLoad failed', err);
+              }
+            }
+          },
+          onTransitionToBuffering: () => {
+            setStatusRef.current((current) => (current === 'paused' ? 'buffering' : current));
+          },
+          onTransitionToPaused: () => {
+            setStatusRef.current('paused');
+          },
+          isUserPaused: () => userPauseIntentRef.current,
+          startNudge: (callbacks) => {
+            return startResumePlaybackRecovery(currentVideo, {
+              shouldContinue: callbacks.shouldContinue,
+              onBlocked: callbacks.onBlocked,
+              onFailed: callbacks.onFailed,
+            });
+          },
+        };
+        committedBindingRef.current = binding;
+        controller.setForegroundMediaBinding(binding);
+      }
+    }
+  });
 
   // Document visibility edge listener.
   useEffect(() => {
@@ -91,11 +105,4 @@ export function useForegroundRecovery({
     const isPiP = typeof document !== 'undefined' && Boolean(video && document.pictureInPictureElement === video);
     controller.reportForegroundVisibility(isDocumentVisible, isPiP);
   }, [controller, isDocumentVisible, videoRef]);
-
-  // On unmount, detach media binding cleanly
-  useEffect(() => {
-    return () => {
-      controller.setForegroundMediaBinding(null);
-    };
-  }, [controller]);
 }
