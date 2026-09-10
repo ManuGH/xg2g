@@ -199,6 +199,61 @@ fn one_byte_decides_between_complete_and_incomplete() {
 }
 
 #[test]
+fn the_ids_that_carry_no_optional_header_are_read_that_way() {
+    // A padding stream stuffed with 0xFF. Byte eight is 0xFF, so a reader that
+    // applied the optional-header layout would declare 255 bytes of header that
+    // do not exist and lose everything after them.
+    let mut payload = vec![0x00, 0x00, 0x01, 0xBE, 0x00, 0x10];
+    payload.extend_from_slice(&[0xFF; 16]);
+    match read_start(&payload) {
+        PesStart::NoOptionalHeader {
+            stream_id,
+            packet_length,
+            data,
+        } => {
+            assert_eq!(stream_id, 0xBE);
+            assert_eq!(packet_length, 0x0010);
+            // Everything after the six fixed bytes, and nothing skipped.
+            assert_eq!(data.len(), 16);
+            assert!(data.iter().all(|b| *b == 0xFF));
+        }
+        other => panic!("expected a header-less start, got {other:?}"),
+    }
+}
+
+#[test]
+fn every_id_without_an_optional_header_is_known() {
+    // The list from the standard, and the ones either side of each of them.
+    for id in [0xBC_u8, 0xBE, 0xBF, 0xF0, 0xF1, 0xF2, 0xF8, 0xFF] {
+        assert!(
+            !has_optional_header(id),
+            "{id:#04x} carries no optional header"
+        );
+    }
+    for id in [
+        0xBB_u8, 0xBD, 0xC0, 0xE0, 0xEF, 0xF3, 0xF7, 0xF9, 0xFD, 0xFE,
+    ] {
+        assert!(has_optional_header(id), "{id:#04x} does carry one");
+    }
+}
+
+#[test]
+fn a_header_less_id_needs_only_six_bytes_to_be_read() {
+    // Six bytes is the whole header for these ids, so a payload of exactly six
+    // is a complete start with no data rather than a truncated one.
+    let payload = vec![0x00, 0x00, 0x01, 0xBF, 0x00, 0x00];
+    match read_start(&payload) {
+        PesStart::NoOptionalHeader { data, .. } => assert!(data.is_empty()),
+        other => panic!("{other:?}"),
+    }
+    // Five is not enough to read the packet length.
+    assert_eq!(
+        read_start(&payload[..5]),
+        PesStart::Truncated { available: 5 }
+    );
+}
+
+#[test]
 fn a_payload_without_the_start_code_is_not_a_start() {
     let mut payload = pes(0xE0, 0, &[], &[0x01, 0x02]);
     payload[2] = 0x02; // 00 00 02
@@ -431,6 +486,7 @@ fn real_broadcast_pes_starts_are_counted() {
         for pid in pids {
             let (mut starts, mut incomplete, mut truncated, mut not_a_start) =
                 (0u64, 0u64, 0u64, 0u64);
+            let mut no_optional = 0u64;
             let (mut empty_es, mut scrambled, mut continuations) = (0u64, 0u64, 0u64);
             let mut ids = std::collections::BTreeSet::new();
             let mut header_lengths = std::collections::BTreeSet::new();
@@ -473,6 +529,10 @@ fn real_broadcast_pes_starts_are_counted() {
                         ids.insert(stream_id);
                         header_lengths.insert(header_data_length);
                     }
+                    Some(PesStart::NoOptionalHeader { stream_id, .. }) => {
+                        no_optional += 1;
+                        ids.insert(stream_id);
+                    }
                     Some(PesStart::Truncated { .. }) => truncated += 1,
                     Some(PesStart::NotAStart) => not_a_start += 1,
                     None => {}
@@ -481,7 +541,8 @@ fn real_broadcast_pes_starts_are_counted() {
 
             eprintln!(
                 "{name} pid {pid}: starts {starts}, header-incomplete {incomplete}, \
-                 truncated {truncated}, pusi-without-start-code {not_a_start}, \
+                 no-optional-header {no_optional}, truncated {truncated}, \
+                 pusi-without-start-code {not_a_start}, \
                  start-with-no-es {empty_es}, continuations {continuations}, \
                  scrambled {scrambled}, stream_ids {ids:02x?}, header_data_lengths {header_lengths:?}"
             );
@@ -530,12 +591,21 @@ fn the_reference_pes_offsets_are_all_video_pes_starts() {
 
         // Every offset at which a video PES packet starts, in this reader's
         // opinion, in the caller's coordinate system: the offset of the packet.
+        //
+        // A start whose optional header runs past the payload counts. The
+        // reference commits currentPESOffset as soon as it recognises the start
+        // code and only afterwards decides there are no elementary bytes here,
+        // so excluding those would fail the containment on a case this reader
+        // classifies correctly - blaming the reader for being more precise.
         let mut starts = std::collections::BTreeSet::new();
         let mut offset = 0i64;
         for chunk in data.chunks_exact(TS_PACKET_LEN) {
             if let Ok(view) = PacketView::parse(chunk)
                 && view.pid() == pid
-                && let Some(PesStart::Complete { stream_id, .. }) = read_packet_start(&view)
+                && let Some(
+                    PesStart::Complete { stream_id, .. }
+                    | PesStart::HeaderIncomplete { stream_id, .. },
+                ) = read_packet_start(&view)
                 && is_video_stream_id(stream_id)
             {
                 starts.insert(offset);

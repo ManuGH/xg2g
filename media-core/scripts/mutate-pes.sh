@@ -75,21 +75,29 @@ mutate() {
   local what="$1" from="$2" to="$3"
   cp "$BACKUP/mod.rs" "$SRC"
 
-  local occurrences
-  occurrences=$(grep -cF -- "$from" "$SRC")
-  if [ "$occurrences" -ne 1 ]; then
-    log "not applied" "$what (anchor matched $occurrences times, want exactly 1)"
-    notapplied=$((notapplied + 1))
-    return
-  fi
-
-  python3 - "$SRC" "$from" "$to" <<'PY'
+  # The count and the edit are one step, and its exit status is checked.
+  #
+  # Splitting them meant grep counted matching *lines* while python counted
+  # occurrences, so the two guards could disagree about the same anchor. Worse,
+  # the edit's status went unread: a python that failed for any reason - a
+  # tripped assertion, an unusable interpreter, an I/O error - left the source
+  # pristine, and the corpus then passed against unmutated code and the mutation
+  # was logged as a survivor. A harness reporting a corpus gap it had invented.
+  if ! python3 - "$SRC" "$from" "$to" <<'PY'
 import sys
 path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path).read()
-assert s.count(old) == 1, "anchor must be unique"
+n = s.count(old)
+if n != 1:
+    sys.stderr.write(f"anchor matched {n} times, want exactly 1\n")
+    sys.exit(1)
 open(path, "w").write(s.replace(old, new, 1))
 PY
+  then
+    log "not applied" "$what"
+    notapplied=$((notapplied + 1))
+    return
+  fi
 
   attempted=$((attempted + 1))
   local rc=0
@@ -182,6 +190,28 @@ mutate "read a start out of a continuation packet" \
 mutate "scan a scrambled payload for a start code" \
   'if !view.payload_unit_start() || view.scrambling_control() != 0 {' \
   'if !view.payload_unit_start() {'
+
+# --- which ids carry an optional header --------------------------------------
+
+mutate "give every stream id an optional header" \
+  '    !matches!(
+        stream_id,
+        0xBC | 0xBE | 0xBF | 0xF0 | 0xF1 | 0xF2 | 0xF8 | 0xFF
+    )' \
+  '    let _ = stream_id;
+    true'
+
+mutate "give padding streams an optional header" \
+  '0xBC | 0xBE | 0xBF | 0xF0 | 0xF1 | 0xF2 | 0xF8 | 0xFF' \
+  '0xBC | 0xBF | 0xF0 | 0xF1 | 0xF2 | 0xF8 | 0xFF'
+
+mutate "start a header-less packet's data one byte late" \
+  'data: &payload[MINIMUM_HEADER_LEN..],' \
+  'data: &payload[MINIMUM_HEADER_LEN + 1..],'
+
+mutate "need the full fixed header before reading the stream id" \
+  'const MINIMUM_HEADER_LEN: usize = 6;' \
+  'const MINIMUM_HEADER_LEN: usize = 9;'
 
 # --- the role predicates -----------------------------------------------------
 

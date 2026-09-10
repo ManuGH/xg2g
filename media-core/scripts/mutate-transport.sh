@@ -81,17 +81,30 @@ log baseline "the unmutated reader passes the corpus"
 mutate() {
   local what="$1" from="$2" to="$3"
   cp "$BACKUP/mod.rs" "$SRC"
-  if ! grep -qF -- "$from" "$SRC"; then
+  # The count and the edit are one step, and its exit status is checked.
+  #
+  # Splitting them meant grep counted matching *lines* while python counted
+  # occurrences, so the two guards could disagree about the same anchor. Worse,
+  # the edit's status went unread: a python that failed for any reason - a
+  # tripped assertion, an unusable interpreter, an I/O error - left the source
+  # pristine, and the corpus then passed against unmutated code and the mutation
+  # was logged as a survivor. A harness reporting a corpus gap it had invented.
+  if ! python3 - "$SRC" "$from" "$to" <<'PY'
+import sys
+path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(path).read()
+n = s.count(old)
+if n != 1:
+    sys.stderr.write(f"anchor matched {n} times, want exactly 1\n")
+    sys.exit(1)
+open(path, "w").write(s.replace(old, new, 1))
+PY
+  then
     log "not applied" "$what"
     notapplied=$((notapplied + 1))
     return
   fi
-  python3 - "$SRC" "$from" "$to" <<'PY'
-import sys
-path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
-s = open(path).read()
-open(path, "w").write(s.replace(old, new, 1))
-PY
+
   attempted=$((attempted + 1))
   # Capture the status before anything else runs: after a case statement $? is
   # the status of the case, not of the thing being asked about.

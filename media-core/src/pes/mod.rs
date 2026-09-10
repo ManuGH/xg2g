@@ -39,6 +39,9 @@ const FIXED_HEADER_LEN: usize = 9;
 /// Where the optional header's own length is written.
 const HEADER_DATA_LENGTH_AT: usize = 8;
 
+/// The bytes before the optional header: start code, stream id, packet length.
+const MINIMUM_HEADER_LEN: usize = 6;
+
 /// What one transport payload said about a PES packet starting in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PesStart<'a> {
@@ -58,6 +61,22 @@ pub enum PesStart<'a> {
     Truncated {
         /// How many bytes the payload actually held.
         available: usize,
+    },
+
+    /// A PES packet starts here whose stream id carries no optional header at
+    /// all, so its data begins immediately after the six fixed bytes.
+    ///
+    /// Padding, ECM, EMM and the stream-map ids are laid out this way. Reading
+    /// byte eight of one of them as a header length invents a header: a padding
+    /// stream stuffed with `0xFF` would declare 255 bytes of optional header
+    /// that do not exist, and every byte after would be attributed wrongly.
+    NoOptionalHeader {
+        /// Which stream this packet belongs to.
+        stream_id: u8,
+        /// The `PES_packet_length` field, as written.
+        packet_length: u16,
+        /// The packet's data bytes in this payload.
+        data: &'a [u8],
     },
 
     /// A PES packet starts here and its optional header ends inside this
@@ -118,7 +137,10 @@ pub fn read_start(payload: &[u8]) -> PesStart<'_> {
     if payload[..START_CODE.len()] != START_CODE {
         return PesStart::NotAStart;
     }
-    if payload.len() < FIXED_HEADER_LEN {
+    // The stream id and the packet length come before the optional header, and
+    // whether there is an optional header at all depends on the stream id - so
+    // those six bytes are read first and the rest is decided from them.
+    if payload.len() < MINIMUM_HEADER_LEN {
         return PesStart::Truncated {
             available: payload.len(),
         };
@@ -126,6 +148,21 @@ pub fn read_start(payload: &[u8]) -> PesStart<'_> {
 
     let stream_id = payload[3];
     let packet_length = u16::from_be_bytes([payload[4], payload[5]]);
+
+    if !has_optional_header(stream_id) {
+        return PesStart::NoOptionalHeader {
+            stream_id,
+            packet_length,
+            data: &payload[MINIMUM_HEADER_LEN..],
+        };
+    }
+
+    if payload.len() < FIXED_HEADER_LEN {
+        return PesStart::Truncated {
+            available: payload.len(),
+        };
+    }
+
     let header_data_length = payload[HEADER_DATA_LENGTH_AT];
     let es_start = FIXED_HEADER_LEN + usize::from(header_data_length);
 
@@ -163,6 +200,24 @@ pub fn read_packet_start<'a>(view: &PacketView<'a>) -> Option<PesStart<'a>> {
         return None;
     }
     view.payload().map(read_start)
+}
+
+/// Whether a stream id carries the optional PES header.
+///
+/// Most do. These do not, and their data begins immediately after the six fixed
+/// bytes: `program_stream_map` (0xBC), `padding_stream` (0xBE),
+/// `private_stream_2` (0xBF), ECM (0xF0), EMM (0xF1), DSM-CC (0xF2), H.222.1
+/// type E (0xF8) and `program_stream_directory` (0xFF).
+///
+/// Reading byte eight of one of those as a header length invents a header that
+/// is not there. A padding stream stuffed with `0xFF` would declare 255 bytes
+/// of it.
+#[must_use]
+pub fn has_optional_header(stream_id: u8) -> bool {
+    !matches!(
+        stream_id,
+        0xBC | 0xBE | 0xBF | 0xF0 | 0xF1 | 0xF2 | 0xF8 | 0xFF
+    )
 }
 
 /// Whether a stream id is one the video reference accepts.
