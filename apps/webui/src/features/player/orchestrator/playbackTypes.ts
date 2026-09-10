@@ -86,6 +86,30 @@ export interface PlaybackDomainState {
 
 export type PlaybackStopReason = 'user_stop' | 'auto_recovery_restart';
 
+export interface PlaybackRetryTarget {
+  kind: 'live' | 'vod' | 'src';
+  serviceRef?: string;
+  recordingId?: string;
+  srcUrl?: string;
+  explicitProfile?: string;
+}
+
+export type PlaybackRetryResult =
+  | {
+      status: 'restarted';
+      epoch: number;
+    }
+  | {
+      status: 'cancelled';
+      reason:
+        | 'superseded'
+        | 'user_stop'
+        | 'disposed'
+        | 'terminal_auth'
+        | 'missing_target'
+        | 'error';
+    };
+
 export type PlaybackNormativeEvent =
   | {
       type: 'system.requested_duration.synced';

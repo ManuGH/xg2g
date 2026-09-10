@@ -10,6 +10,8 @@ import type {
   PlaybackCommand,
   PlaybackDomainState,
   PlaybackMachineEvent,
+  PlaybackRetryResult,
+  PlaybackRetryTarget,
   PlaybackStopReason,
 } from './playbackTypes';
 import {
@@ -31,6 +33,7 @@ import {
 import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
+export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
 
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
@@ -119,13 +122,25 @@ export interface PlaybackController {
   isStaleSessionEpoch(playbackEpoch: number, sessionEpoch: number): boolean;
   getEpoch(): number;
 
-  // Recovery fallback timers
+  // Recovery fallback timers & retry sequencing
   scheduleAutoFallback(
     command: ScheduleAutoFallbackCommand,
     target?: AutoFallbackRestartTarget,
   ): void;
   cancelAutoFallback(epoch?: number): void;
   hasScheduledAutoFallback(epoch?: number): boolean;
+
+  retry(target?: PlaybackRetryTarget): Promise<PlaybackRetryResult>;
+  isRetryInFlight(): boolean;
+  cancelRetry(
+    reason?:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error',
+  ): void;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -207,6 +222,48 @@ export function createPlaybackController(
   const stoppedEpochs = new Set<number>();
   const scheduledCommands = new WeakSet<PlaybackCommand>();
   let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
+
+  interface ActiveRetryOperation {
+    opId: number;
+    phase: 'stopping' | 'restarting';
+    initialEpoch: number;
+    restartEpoch: number | null;
+    target: AutoFallbackRestartTarget;
+    cancelled: boolean;
+    cancelReason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error'
+      | null;
+    publicPromise: Promise<PlaybackRetryResult>;
+    resolvePublic: (result: PlaybackRetryResult) => void;
+    stopPromise: Promise<void> | null;
+  }
+
+  let activeRetry: ActiveRetryOperation | null = null;
+  let nextRetryOpId = 1;
+
+  function cancelActiveRetry(
+    reason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error',
+  ): void {
+    if (!activeRetry || activeRetry.cancelled) {
+      return;
+    }
+    const op = activeRetry;
+    activeRetry = null;
+    op.cancelled = true;
+    op.cancelReason = reason;
+    op.resolvePublic({ status: 'cancelled', reason });
+  }
 
   interface ActiveFallback {
     timer: ReturnType<typeof setTimeout>;
@@ -380,14 +437,19 @@ export function createPlaybackController(
         failure.status === 401 ||
         failure.status === 403;
 
-      if (
-        isTerminalAuth &&
-        !isStalePlaybackEpoch(event.epoch) &&
-        event.epoch === playbackEpoch
-      ) {
-        cancelAutoFallback(event.epoch);
-        stoppedEpochs.add(event.epoch);
-        stopHeartbeatSupervision();
+      if (isTerminalAuth) {
+        if (
+          !isStalePlaybackEpoch(event.epoch) &&
+          event.epoch === playbackEpoch
+        ) {
+          cancelAutoFallback(event.epoch);
+          stoppedEpochs.add(event.epoch);
+          stopHeartbeatSupervision();
+        }
+
+        if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
+          cancelActiveRetry('terminal_auth');
+        }
       }
     }
     runtime.dispatch(event);
@@ -557,6 +619,14 @@ export function createPlaybackController(
   }
 
   function allocatePlaybackEpoch(): number {
+    if (activeRetry) {
+      if (activeRetry.phase === 'restarting' && activeRetry.restartEpoch === null) {
+        activeRetry.restartEpoch = playbackEpoch + 1;
+      } else {
+        cancelActiveRetry('superseded');
+      }
+    }
+
     playbackEpoch += 1;
     sessionEpoch = 0;
     cancelAutoFallback();
@@ -590,6 +660,16 @@ export function createPlaybackController(
   ): void {
     if (isDisposed) {
       return;
+    }
+
+    if (activeRetry) {
+      if (activeRetry.phase === 'restarting') {
+        if (epoch !== activeRetry.restartEpoch) {
+          cancelActiveRetry('superseded');
+        }
+      } else {
+        cancelActiveRetry('superseded');
+      }
     }
 
     // Fence: a stale attempt must never mutate state or retire a newer session!
@@ -632,6 +712,9 @@ export function createPlaybackController(
   }
 
   function markPlaybackStopped(epoch: number): void {
+    if (activeRetry && activeRetry.phase === 'restarting') {
+      cancelActiveRetry('superseded');
+    }
     stoppedEpochs.add(epoch);
     cancelAutoFallback(epoch);
     runtime.dispatch({
@@ -1262,6 +1345,14 @@ export function createPlaybackController(
     reason: PlaybackStopReason | string = 'user_stop',
     notifyClose: boolean = false,
   ): Promise<void> {
+    cancelActiveRetry('user_stop');
+    return executeStopInternal(reason, notifyClose);
+  }
+
+  function executeStopInternal(
+    reason: PlaybackStopReason | string = 'user_stop',
+    notifyClose: boolean = false,
+  ): Promise<void> {
     const inFlight = inFlightStopPromises.get(playbackEpoch);
     if (inFlight) {
       return inFlight;
@@ -1335,12 +1426,184 @@ export function createPlaybackController(
     return promise;
   }
 
+  function resolveRetryTarget(
+    target?: PlaybackRetryTarget,
+  ): AutoFallbackRestartTarget | null {
+    if (target) {
+      const explicitProfile = target.explicitProfile?.trim() || undefined;
+      if (target.kind === 'vod' && target.recordingId?.trim()) {
+        return {
+          kind: 'vod',
+          recordingId: target.recordingId.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'src' && target.srcUrl?.trim()) {
+        return {
+          kind: 'src',
+          srcUrl: target.srcUrl.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'live' && target.serviceRef?.trim()) {
+        return {
+          kind: 'live',
+          serviceRef: target.serviceRef.trim(),
+          explicitProfile,
+        };
+      }
+    }
+
+    const currentMode = runtime.getState().playbackMode;
+    if (
+      currentMode === 'LIVE' &&
+      currentAttempt &&
+      currentAttempt.params?.serviceRef?.trim()
+    ) {
+      return {
+        kind: 'live',
+        serviceRef: currentAttempt.params.serviceRef.trim(),
+        explicitProfile: undefined,
+      };
+    }
+
+    return null;
+  }
+
+  function isSameRetryTarget(
+    a: AutoFallbackRestartTarget,
+    b: AutoFallbackRestartTarget,
+  ): boolean {
+    if (a.kind !== b.kind) return false;
+    if (a.explicitProfile !== b.explicitProfile) return false;
+    if (a.kind === 'live') {
+      return a.serviceRef === b.serviceRef;
+    }
+    if (a.kind === 'vod') {
+      return a.recordingId === b.recordingId;
+    }
+    if (a.kind === 'src') {
+      return a.srcUrl === b.srcUrl;
+    }
+    return false;
+  }
+
+  function isRetryInFlight(): boolean {
+    return Boolean(activeRetry && !activeRetry.cancelled);
+  }
+
+  function cancelRetry(
+    reason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error' = 'superseded',
+  ): void {
+    cancelActiveRetry(reason);
+  }
+
+  function retry(target?: PlaybackRetryTarget): Promise<PlaybackRetryResult> {
+    if (isDisposed) {
+      return Promise.resolve({ status: 'cancelled', reason: 'disposed' });
+    }
+
+    const resolvedTarget = resolveRetryTarget(target);
+    if (!resolvedTarget) {
+      return Promise.resolve({ status: 'cancelled', reason: 'missing_target' });
+    }
+
+    // Coalescing check: if activeRetry matches target, coalesce
+    if (activeRetry && !activeRetry.cancelled && isSameRetryTarget(activeRetry.target, resolvedTarget)) {
+      return activeRetry.publicPromise;
+    }
+
+    // Cancel existing active retry if target changed
+    cancelActiveRetry('superseded');
+
+    let resolvePublic!: (result: PlaybackRetryResult) => void;
+    const publicPromise = new Promise<PlaybackRetryResult>((resolve) => {
+      resolvePublic = resolve;
+    });
+
+    const op: ActiveRetryOperation = {
+      opId: nextRetryOpId++,
+      phase: 'stopping',
+      initialEpoch: playbackEpoch,
+      restartEpoch: null,
+      target: resolvedTarget,
+      cancelled: false,
+      cancelReason: null,
+      publicPromise,
+      resolvePublic,
+      stopPromise: null,
+    };
+
+    activeRetry = op;
+    void runRetryWorker(op);
+
+    return publicPromise;
+  }
+
+  async function runRetryWorker(op: ActiveRetryOperation): Promise<void> {
+    try {
+      const stopPromise = executeStopInternal('auto_recovery_restart', false);
+      op.stopPromise = stopPromise;
+      await stopPromise;
+    } catch (_err) {
+      if (activeRetry === op && !op.cancelled) {
+        activeRetry = null;
+        op.cancelled = true;
+        op.cancelReason = 'error';
+        op.resolvePublic({ status: 'cancelled', reason: 'error' });
+      }
+      return;
+    }
+
+    // If cancelled or superseded during stop teardown
+    if (op.cancelled || activeRetry !== op || isDisposed) {
+      return;
+    }
+
+    op.phase = 'restarting';
+
+    try {
+      runtime.dispatch({
+        type: 'intent.start.requested',
+        epoch: playbackEpoch,
+        kind: op.target.kind,
+        serviceRef: op.target.serviceRef,
+        recordingId: op.target.recordingId,
+        srcUrl: op.target.srcUrl,
+        explicitProfile: op.target.explicitProfile,
+      });
+
+      if (activeRetry === op && !op.cancelled) {
+        activeRetry = null;
+        if (op.restartEpoch !== null) {
+          op.resolvePublic({ status: 'restarted', epoch: op.restartEpoch });
+        } else {
+          op.cancelled = true;
+          op.cancelReason = 'error';
+          op.resolvePublic({ status: 'cancelled', reason: 'error' });
+        }
+      }
+    } catch (_err) {
+      if (activeRetry === op && !op.cancelled) {
+        activeRetry = null;
+        op.cancelled = true;
+        op.cancelReason = 'error';
+        op.resolvePublic({ status: 'cancelled', reason: 'error' });
+      }
+    }
+  }
+
   function activate(): void {
     isDisposed = false;
   }
 
   function dispose(): void {
     isDisposed = true;
+    cancelActiveRetry('disposed');
     stopHeartbeatSupervision();
     cancelAutoFallback();
     playbackEpoch += 1;
@@ -1386,6 +1649,10 @@ export function createPlaybackController(
     scheduleAutoFallback,
     cancelAutoFallback,
     hasScheduledAutoFallback,
+
+    retry,
+    isRetryInFlight,
+    cancelRetry,
 
     startLive,
     stop,

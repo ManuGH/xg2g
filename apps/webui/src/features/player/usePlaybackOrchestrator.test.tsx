@@ -810,5 +810,199 @@ describe('usePlaybackOrchestrator', () => {
         vi.useRealTimers();
       }
     });
+
+    it('executes controller-owned retry sequencing through actions.retry without calling onClose', async () => {
+      let streamInfoCalls = 0;
+      let onCloseCalled = false;
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-retry-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-retry-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-retry-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-retry-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/stop')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+
+      function FacadeRetryHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { playbackState, actions } = usePlaybackOrchestrator(
+          {
+            autoStart: false,
+            sRef: '1:0:1:RETRY',
+            onClose: () => {
+              onCloseCalled = true;
+            },
+          } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+
+        return (
+          <div>
+            <span data-testid="status">{playbackState.status}</span>
+          </div>
+        );
+      }
+
+      render(<FacadeRetryHarness />);
+
+      // Initial start
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:RETRY');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Call actions.retry()
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+
+      expect(retryResult.status).toBe('restarted');
+      expect(onCloseCalled).toBe(false);
+      // streamInfo called again for the restart
+      expect(streamInfoCalls).toBe(2);
+    });
+
+    it('cancels retry when actions.stopStream is called while retry teardown is deferred', async () => {
+      let streamInfoCalls = 0;
+      let stopDeferredResolve!: () => void;
+      const stopDeferred = new Promise<void>((resolve) => {
+        stopDeferredResolve = resolve;
+      });
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-stop-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-stop-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-stop-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-stop-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/stop')) {
+          return stopDeferred;
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedController!: any;
+      let exposedActions!: any;
+
+      function FacadeStopCancelHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { controller, actions } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:STOP' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedController = controller;
+        exposedActions = actions;
+
+        return <div />;
+      }
+
+      render(<FacadeStopCancelHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:STOP');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Begin retry (awaits deferred stop)
+      let retryPromise: Promise<any>;
+      act(() => {
+        retryPromise = exposedActions.retry();
+      });
+
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // External user stop
+      let stopPromise: Promise<void>;
+      act(() => {
+        stopPromise = exposedActions.stopStream();
+      });
+
+      // The retry promise MUST settle promptly with cancelled user_stop
+      const retryResult = await retryPromise!;
+      expect(retryResult).toEqual({ status: 'cancelled', reason: 'user_stop' });
+
+      // Resolve the deferred backend stop
+      stopDeferredResolve();
+      await act(async () => {
+        await stopPromise;
+      });
+
+      // Stream info must NOT have been called again (zero restarts)
+      expect(streamInfoCalls).toBe(1);
+    });
   });
 });
