@@ -241,6 +241,7 @@ export function createPlaybackController(
     publicPromise: Promise<PlaybackRetryResult>;
     resolvePublic: (result: PlaybackRetryResult) => void;
     stopPromise: Promise<void> | null;
+    startPromise?: Promise<unknown> | null;
   }
 
   let activeRetry: ActiveRetryOperation | null = null;
@@ -413,6 +414,27 @@ export function createPlaybackController(
         currentlyHandlingScheduleCommand = prevHandling;
       }
       return result;
+    }
+
+    if (command.type === 'command.playback.start') {
+      if (executor) {
+        result = executor(command);
+      }
+      if (activeRetry && activeRetry.phase === 'restarting') {
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          const startPromise = result as Promise<unknown>;
+          const op = activeRetry;
+          op.startPromise = startPromise;
+          startPromise.finally(() => {
+            if (activeRetry === op) {
+              activeRetry = null;
+            }
+          });
+        }
+      }
+      // Return undefined so that startPromise is NOT added to runtime.pendingCommands (the command-drain set),
+      // ensuring runtime.waitForCommands() does not wait for start preparation during teardown.
+      return undefined;
     }
 
     if (executor) {
@@ -662,6 +684,11 @@ export function createPlaybackController(
       return;
     }
 
+    // Fence: a stale attempt must never mutate state, retire a newer session, or cancel an active retry!
+    if (isStalePlaybackEpoch(epoch)) {
+      return;
+    }
+
     if (activeRetry) {
       if (activeRetry.phase === 'restarting') {
         if (epoch !== activeRetry.restartEpoch) {
@@ -670,11 +697,6 @@ export function createPlaybackController(
       } else {
         cancelActiveRetry('superseded');
       }
-    }
-
-    // Fence: a stale attempt must never mutate state or retire a newer session!
-    if (isStalePlaybackEpoch(epoch)) {
-      return;
     }
 
     cancelAutoFallback(epoch);
@@ -712,6 +734,9 @@ export function createPlaybackController(
   }
 
   function markPlaybackStopped(epoch: number): void {
+    if (isStalePlaybackEpoch(epoch)) {
+      return;
+    }
     if (activeRetry && activeRetry.phase === 'restarting') {
       cancelActiveRetry('superseded');
     }
@@ -1394,35 +1419,50 @@ export function createPlaybackController(
       cancelInFlightAttempt(start, 'user_stop');
     }
 
-    const doStop = async () => {
-      // 4. Dispatch intent.stop.requested (media teardown commands)
-      runtime.dispatch({
-        type: 'intent.stop.requested',
-        epoch: stopEpoch,
-        reason: reason as PlaybackStopReason,
-        notifyClose,
-      });
-
-      await runtime.waitForCommands();
-
-      // 5. Clean up active session and flush unadopted candidates
-      flushPendingAdoptionCandidates();
-
-      if (sessionToStop) {
-        await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
-      }
-
-      // 6. Dispatch normative.playback.stopped
-      runtime.dispatch({
-        type: 'normative.playback.stopped',
-        epoch: stopEpoch,
-      });
-    };
-
-    const promise = doStop().finally(() => {
+    let stopPromiseResolve!: () => void;
+    let stopPromiseReject!: (err: unknown) => void;
+    const promise = new Promise<void>((resolve, reject) => {
+      stopPromiseResolve = resolve;
+      stopPromiseReject = reject;
+    }).finally(() => {
       inFlightStopPromises.delete(stopEpoch);
     });
+
+    // Establish coalescing entry BEFORE synchronous command dispatch so reentrant calls coalesce!
     inFlightStopPromises.set(stopEpoch, promise);
+
+    const doStop = async () => {
+      try {
+        // 4. Dispatch intent.stop.requested (media teardown commands)
+        runtime.dispatch({
+          type: 'intent.stop.requested',
+          epoch: stopEpoch,
+          reason: reason as PlaybackStopReason,
+          notifyClose,
+        });
+
+        await runtime.waitForCommands();
+
+        // 5. Clean up active session and flush unadopted candidates
+        flushPendingAdoptionCandidates();
+
+        if (sessionToStop) {
+          await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
+        }
+
+        // 6. Dispatch normative.playback.stopped
+        runtime.dispatch({
+          type: 'normative.playback.stopped',
+          epoch: stopEpoch,
+        });
+
+        stopPromiseResolve();
+      } catch (err) {
+        stopPromiseReject(err);
+      }
+    };
+
+    void doStop();
     return promise;
   }
 
@@ -1578,10 +1618,14 @@ export function createPlaybackController(
       });
 
       if (activeRetry === op && !op.cancelled) {
-        activeRetry = null;
         if (op.restartEpoch !== null) {
           op.resolvePublic({ status: 'restarted', epoch: op.restartEpoch });
+          // If no asynchronous start promise is being tracked, preparation completed synchronously:
+          if (!op.startPromise) {
+            activeRetry = null;
+          }
         } else {
+          activeRetry = null;
           op.cancelled = true;
           op.cancelReason = 'error';
           op.resolvePublic({ status: 'cancelled', reason: 'error' });

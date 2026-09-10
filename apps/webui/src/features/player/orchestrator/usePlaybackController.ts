@@ -73,7 +73,7 @@ export function usePlaybackController(
       getTransport: () => committedTransportRef.current,
       createInitialState,
       executeCommand: (command) => {
-        committedExecutorRef.current?.(command);
+        return committedExecutorRef.current?.(command);
       },
       startSettlementTimeoutMs: options?.startSettlementTimeoutMs,
       httpRequestTimeoutMs: options?.httpRequestTimeoutMs,

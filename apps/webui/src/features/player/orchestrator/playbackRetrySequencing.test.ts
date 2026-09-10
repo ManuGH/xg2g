@@ -328,17 +328,19 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
   });
 
   describe('Scenario 6: Synchronous nested public stop from command executor', () => {
-    it('cancels retry when a stop-command executor calls controller.stop synchronously', async () => {
-      let nestedStopCalled = false;
+    it('coalesces synchronous nested public stop calls with exactly one teardown command', async () => {
+      let stopCommands = 0;
       controller = createPlaybackController({
         transport,
         createInitialState,
         executeCommand: (cmd) => {
           executedCommands.push(cmd);
-          if (cmd.type === 'command.playback.stop' && !nestedStopCalled) {
-            nestedStopCalled = true;
-            // Nested reentrant call to public stop from inside executor!
-            void controller.stop('user_stop');
+          if (cmd.type === 'command.playback.stop') {
+            stopCommands += 1;
+            // Bounded nested stop calls from inside the command executor: must coalesce into current teardown
+            if (stopCommands < 3) {
+              void controller.stop('user_stop');
+            }
           }
           if (cmd.type === 'command.playback.start') {
             const epoch = controller.allocatePlaybackEpoch();
@@ -352,6 +354,8 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
       const retryResult = await controller.retry(liveTarget);
 
       expect(retryResult).toEqual({ status: 'cancelled', reason: 'user_stop' });
+      expect(stopCommands).toBe(1);
+      expect(executedCommands.filter((c) => c.type === 'command.playback.stop')).toHaveLength(1);
       expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(0);
     });
   });

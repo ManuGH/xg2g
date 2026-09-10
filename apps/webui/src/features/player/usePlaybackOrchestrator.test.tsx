@@ -1,10 +1,11 @@
-import { createRef, useRef, useState } from 'react';
+import { StrictMode, createRef, useRef, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
 import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
 import { buildPlaybackFailure } from './orchestrator/playbackMachine';
 import * as networkProbeModule from './utils/playbackNetworkProbe';
+import { client } from '../../client-ts/client.gen';
 
 vi.mock('./lib/hlsRuntime', () => {
   const HlsMock = vi.fn();
@@ -908,12 +909,13 @@ describe('usePlaybackOrchestrator', () => {
 
     it('cancels retry when actions.stopStream is called while retry teardown is deferred', async () => {
       let streamInfoCalls = 0;
+      let stopIntentEntered = false;
       let stopDeferredResolve!: () => void;
       const stopDeferred = new Promise<void>((resolve) => {
         stopDeferredResolve = resolve;
       });
 
-      fetchMock = vi.fn().mockImplementation((url: string) => {
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
         const u = String(url);
         if (u.includes('/live/stream-info')) {
           streamInfoCalls += 1;
@@ -930,6 +932,17 @@ describe('usePlaybackOrchestrator', () => {
           });
         }
         if (u.includes('/intents')) {
+          const bodyStr = typeof init?.body === 'string' ? init.body : '';
+          if (bodyStr.includes('stream.stop')) {
+            stopIntentEntered = true;
+            return stopDeferred.then(() => ({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({}),
+              text: async () => JSON.stringify({}),
+            }));
+          }
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -938,8 +951,21 @@ describe('usePlaybackOrchestrator', () => {
             text: async () => JSON.stringify({ sessionId: `sess-stop-${streamInfoCalls}` }),
           });
         }
-        if (u.includes('/stop')) {
-          return stopDeferred;
+        if (u.includes('/sessions/sess-stop-')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: `sess-stop-${streamInfoCalls}`,
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: `http://test/sess-stop-${streamInfoCalls}.m3u8`,
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
         }
         return Promise.resolve({
           ok: true,
@@ -983,6 +1009,11 @@ describe('usePlaybackOrchestrator', () => {
         retryPromise = exposedActions.retry();
       });
 
+      // Wait for the asynchronous teardown to reach the backend stop intent in /intents
+      await waitFor(() => {
+        expect(stopIntentEntered).toBe(true);
+      });
+
       expect(exposedController.isRetryInFlight()).toBe(true);
 
       // External user stop
@@ -1003,6 +1034,384 @@ describe('usePlaybackOrchestrator', () => {
 
       // Stream info must NOT have been called again (zero restarts)
       expect(streamInfoCalls).toBe(1);
+    });
+
+    it('routes real VOD retry request to recording playback', async () => {
+      client.setConfig({ baseUrl: 'http://localhost/api/v3' });
+      let vodPlaybackCalls = 0;
+      const vodPayload = {
+        recordingId: 'rec-vod-retry',
+        mode: 'direct',
+        playbackUrl: 'http://test/vod-retry.m3u8',
+      };
+      fetchMock = vi.fn().mockImplementation((input: any) => {
+        const u = typeof input === 'string' ? input : (input?.url ?? String(input));
+        if (u.includes('/recordings/rec-vod-retry/stream-info')) {
+          vodPlaybackCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Type': 'application/json' }),
+            json: async () => vodPayload,
+            text: async () => JSON.stringify(vodPayload),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      function VodHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions } = usePlaybackOrchestrator(
+          { autoStart: false, recordingId: 'rec-vod-retry' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        return <div />;
+      }
+
+      render(<VodHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream();
+      });
+      expect(vodPlaybackCalls).toBe(1);
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+      expect(vodPlaybackCalls).toBe(2);
+    });
+
+    it('routes real direct src retry request', async () => {
+      let exposedActions!: any;
+      let exposedState!: any;
+      function SrcHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, playbackState } = usePlaybackOrchestrator(
+          { autoStart: false, src: 'https://test.example/live.m3u8' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedState = playbackState;
+        return <div />;
+      }
+
+      render(<SrcHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream();
+      });
+      expect(exposedState.playbackMode).toBe('LIVE');
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+    });
+
+    it('cancels retry as superseded when committed source changes during deferred teardown', async () => {
+      let stopDeferredResolve!: () => void;
+      const stopDeferred = new Promise<void>((resolve) => {
+        stopDeferredResolve = resolve;
+      });
+
+      let channelACalls = 0;
+      let stopIntentEntered = false;
+
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const bodyStr = typeof init?.body === 'string' ? init.body : '';
+        if (u.includes('/live/stream-info') && bodyStr.includes('1:0:1:SRC-A')) {
+          channelACalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-A-${channelACalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-A-${channelACalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const bodyStr = typeof init?.body === 'string' ? init.body : '';
+          if (bodyStr.includes('stream.stop')) {
+            stopIntentEntered = true;
+            return stopDeferred.then(() => ({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({}),
+              text: async () => JSON.stringify({}),
+            }));
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: 'sess-A' }),
+            text: async () => JSON.stringify({ sessionId: 'sess-A' }),
+          });
+        }
+        if (u.includes('/sessions/sess-A')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-A',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/sess-A.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      function DynamicSourceHarness({ sRef }: { sRef: string }) {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedController = controller;
+        return <div />;
+      }
+
+      const { rerender } = render(<DynamicSourceHarness sRef="1:0:1:SRC-A" />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:SRC-A');
+      });
+      expect(channelACalls).toBe(1);
+
+      // Begin retry for SRC-A (awaits deferred stop)
+      let retryPromise: Promise<any>;
+      act(() => {
+        retryPromise = exposedActions.retry();
+      });
+
+      await waitFor(() => {
+        expect(stopIntentEntered).toBe(true);
+      });
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // Rerender with changed committed source prop SRC-B while teardown is deferred
+      act(() => {
+        rerender(<DynamicSourceHarness sRef="1:0:1:SRC-B" />);
+      });
+
+      // Retry promise must settle promptly with cancelled superseded
+      const retryResult = await retryPromise!;
+      expect(retryResult).toEqual({ status: 'cancelled', reason: 'superseded' });
+
+      // Resolve the deferred stop teardown
+      stopDeferredResolve();
+      await act(async () => {});
+
+      // SRC-A must NOT have been restarted
+      expect(channelACalls).toBe(1);
+    });
+
+    it('executes retry correctly under React.StrictMode without duplicated commands', async () => {
+      let streamInfoCalls = 0;
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-strict-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-strict-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-strict-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-strict-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/sessions/sess-strict-')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: `sess-strict-${streamInfoCalls}`,
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/strict.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      function StrictHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:STRICT' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        return <div />;
+      }
+
+      render(
+        <StrictMode>
+          <StrictHarness />
+        </StrictMode>,
+      );
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:STRICT');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+      expect(streamInfoCalls).toBe(2);
+    });
+
+    it('cancels retry as disposed when component unmounts during pending preparation', async () => {
+      let releaseProbe!: (value: any) => void;
+      const pendingProbe = new Promise<any>((resolve) => {
+        releaseProbe = resolve;
+      });
+      vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockResolvedValueOnce(undefined as any).mockReturnValue(pendingProbe);
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-unmount',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'token-unmount' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      function UnmountHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:UNMOUNT' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedController = controller;
+        return <div />;
+      }
+
+      const view = render(<UnmountHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:UNMOUNT');
+      });
+
+      // Begin retry: its restart enters startStream and awaits pendingProbe
+      act(() => {
+        void exposedActions.retry();
+      });
+
+      // Retry preparation is in flight
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // Unmount while preparation is still pending
+      act(() => {
+        view.unmount();
+      });
+
+      // Controller is disposed and retry is cancelled
+      expect(exposedController.isRetryInFlight()).toBe(false);
+
+      // Clean up deferred probe
+      releaseProbe(null);
     });
   });
 });

@@ -197,13 +197,14 @@ export function usePlaybackOrchestrator(
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const explicitSRefProp = 'sRef' in props ? String((props as any).sRef ?? '').trim() || undefined : undefined;
   const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
   const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
   const zapChannels = 'channels' in props ? props.channels : undefined;
   const onSwitchChannel = 'onSwitchChannel' in props ? props.onSwitchChannel : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    (channel?.serviceRef || channel?.id || '').trim()
+    (channel?.serviceRef || channel?.id || explicitSRefProp || '').trim()
   );
   const activeServiceRef = useRef<string>(sRef);
   activeServiceRef.current = sRef;
@@ -1932,7 +1933,7 @@ export function usePlaybackOrchestrator(
           return reportTimelineSnapshot(command.reason, events);
         }
       case 'command.playback.start':
-        void startStream(command.serviceRef, command.explicitProfile, {
+        return startStream(command.serviceRef, command.explicitProfile, {
           kind: command.kind,
           serviceRef: command.serviceRef,
           recordingId: command.recordingId,
@@ -1940,7 +1941,6 @@ export function usePlaybackOrchestrator(
           explicitProfile: command.explicitProfile,
           epoch: command.epoch,
         });
-        break;
       case 'command.playback.stop':
         {
           const stopPromise = performLocalMediaTeardown(command.reason);
@@ -1989,14 +1989,16 @@ export function usePlaybackOrchestrator(
     if (channel) {
       const ref = (channel.serviceRef || channel.id || '').trim();
       if (ref) setSRef(ref);
+    } else if (explicitSRefProp) {
+      setSRef(explicitSRefProp);
     }
-  }, [channel]);
+  }, [channel, explicitSRefProp]);
 
   useEffect(() => {
     clearNetworkStarvationHold(automaticProfileMemoryRef.current);
   }, [sRef, recordingId]);
 
-  const committedSourceKey = `${recordingId ?? ''}|${src ?? ''}|${sRef ?? ''}`;
+  const committedSourceKey = `${recordingId ?? ''}|${src ?? ''}|${channel?.serviceRef ?? channel?.id ?? explicitSRefProp ?? sRef ?? ''}`;
   const prevCommittedSourceKeyRef = useRef(committedSourceKey);
   useEffect(() => {
     if (prevCommittedSourceKeyRef.current !== committedSourceKey) {
