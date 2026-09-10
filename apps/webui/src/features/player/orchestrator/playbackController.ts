@@ -235,7 +235,6 @@ export function createPlaybackController(
   let sessionEpoch = 0;
   const stoppedEpochs = new Set<number>();
   const terminalFencedEpochs = new Set<number>();
-  const lifecycleDisposedEpochs = new Set<number>();
   const scheduledCommands = new WeakSet<PlaybackCommand>();
   let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
 
@@ -508,8 +507,11 @@ export function createPlaybackController(
         const authEpoch = typeof event.epoch === 'number' ? event.epoch : playbackEpoch;
         terminalFencedEpochs.add(authEpoch);
         stoppedEpochs.add(authEpoch);
-        cancelAutoFallback(authEpoch);
-        stopHeartbeatSupervision();
+
+        if (event.epoch === undefined || event.epoch >= playbackEpoch) {
+          cancelAutoFallback(authEpoch);
+          stopHeartbeatSupervision();
+        }
 
         if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
           cancelActiveRetry('terminal_auth');
@@ -1707,11 +1709,11 @@ export function createPlaybackController(
     const currentStatus = runtime.getState().status;
     const isTerminalStatus = currentStatus === 'error' || currentStatus === 'stopped';
 
-    if (!terminalFencedEpochs.has(playbackEpoch) && !isTerminalStatus) {
-      if (lifecycleDisposedEpochs.has(playbackEpoch)) {
-        lifecycleDisposedEpochs.delete(playbackEpoch);
-        stoppedEpochs.delete(playbackEpoch);
-      }
+    if (!isTerminalStatus && !terminalFencedEpochs.has(playbackEpoch)) {
+      stoppedEpochs.delete(playbackEpoch);
+    } else {
+      terminalFencedEpochs.add(playbackEpoch);
+      stoppedEpochs.add(playbackEpoch);
     }
   }
 
@@ -1721,7 +1723,10 @@ export function createPlaybackController(
     stopHeartbeatSupervision();
     cancelAutoFallback();
     foregroundRuntime.dispose();
-    lifecycleDisposedEpochs.add(playbackEpoch);
+    terminalFencedEpochs.add(playbackEpoch);
+    stoppedEpochs.add(playbackEpoch);
+    playbackEpoch += 1;
+    sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
       currentAttempt.ineligibleForAdoption = true;
