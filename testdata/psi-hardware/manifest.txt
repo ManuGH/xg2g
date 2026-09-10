@@ -101,3 +101,47 @@ case G-target-reselect
   settarget 4911
   feed A2_orf1hd
 end
+
+capture H_pre          7700480 45b6c7e69f29a1b96e91233fe84660372ee7b2b8c1643cee3f4dff62937d1c8e
+capture H_post         9625600 4a6f2e1fb2047c9b7eb4d32c8aee0f72000b6d3be81e4542bd68bb6e11f6b63c
+
+# H: the source stops and comes back.
+#
+# Soft standby was measured NOT to interrupt transport on this receiver - it
+# served 1925120 bytes while reporting instandby=true - so the interruption is
+# an enigma2 restart, which kills the streaming process and keeps the network.
+# Deep standby is deliberately not used: it takes the network with it and the
+# receiver could not then be woken through the API.
+#
+# newcore, not invented bytes: production destroys the parser at an
+# interruption. SessionPipeline.Start closes the ring, and with it the GoCore,
+# when the upstream ends; connector.go then builds a new pipeline, ring and core
+# for the next connection. The case mirrors that, so what it proves about the
+# post-recovery state is what production would actually see.
+case H-standby-reconnect
+  target 4911
+  chunk 65424
+  feed H_pre
+  newcore
+  feed H_post
+end
+
+capture I_pre          5775360 66316b9f11f4222bb1f7ddeb7cf61831a70b22e4e9de74271aadb8179d35f736
+capture I_post        15400960 7ee2613b1eedaa53ac44f42c953ab5a5028a2d3582d78eba32d53339fd08ff2f
+
+# I: the receiver is restarted outright.
+#
+# Boot transport is the reason this case exists separately from H: a receiver
+# coming up can present its PSI carousel in an order a running one never does,
+# and the post-boot capture is long enough to contain several complete cycles
+# rather than only the first one.
+#
+# Same core boundary as H, for the same reason: production destroys the parser
+# when the upstream ends and builds a new one for the next connection.
+case I-receiver-restart
+  target 4911
+  chunk 65424
+  feed I_pre
+  newcore
+  feed I_post
+end
