@@ -328,7 +328,7 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
   });
 
   describe('Scenario 6: Synchronous nested public stop from command executor', () => {
-    it('coalesces synchronous nested public stop calls with exactly one teardown command', async () => {
+    it.each([false, true])('coalesces synchronous nested public stop calls with exactly one teardown command (returnNestedPromise: %s)', async (returnNestedPromise) => {
       let stopCommands = 0;
       controller = createPlaybackController({
         transport,
@@ -337,10 +337,8 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
           executedCommands.push(cmd);
           if (cmd.type === 'command.playback.stop') {
             stopCommands += 1;
-            // Bounded nested stop calls from inside the command executor: must coalesce into current teardown
-            if (stopCommands < 3) {
-              void controller.stop('user_stop');
-            }
+            const nested = controller.stop('user_stop');
+            if (returnNestedPromise) return nested;
           }
           if (cmd.type === 'command.playback.start') {
             const epoch = controller.allocatePlaybackEpoch();
@@ -354,7 +352,11 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
       const retryResult = await controller.retry(liveTarget);
 
       expect(retryResult).toEqual({ status: 'cancelled', reason: 'user_stop' });
+      let settled = false;
+      void controller.stop('user_stop').then(() => { settled = true; });
+      for (let i = 0; i < 30; i += 1) await Promise.resolve();
       expect(stopCommands).toBe(1);
+      expect(settled).toBe(true);
       expect(executedCommands.filter((c) => c.type === 'command.playback.stop')).toHaveLength(1);
       expect(executedCommands.filter((c) => c.type === 'command.playback.start')).toHaveLength(0);
     });
@@ -670,6 +672,112 @@ describe('PlaybackController: Retry Sequencing (Recovery Step 2)', () => {
       expect(result).toEqual({ status: 'cancelled', reason: 'superseded' });
 
       stopDeferred.resolve();
+    });
+  });
+
+  describe('Scenario 17: Asynchronous start promise rejection', () => {
+    it('observes rejection of current start promise without unhandled rejection and clears retry', async () => {
+      const startDeferred = defer<void>();
+      controller = createPlaybackController({
+        transport,
+        createInitialState,
+        executeCommand: (cmd) => {
+          executedCommands.push(cmd);
+          if (cmd.type === 'command.playback.start') {
+            const epoch = controller.allocatePlaybackEpoch();
+            controller.beginPlaybackAttempt(epoch, 'LIVE', 'starting');
+            return startDeferred.promise;
+          }
+        },
+      });
+
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+      const result = await controller.retry(liveTarget);
+      expect(result.status).toBe('restarted');
+      expect(controller.isRetryInFlight()).toBe(true);
+
+      startDeferred.reject(new Error('simulated async start rejection'));
+      await startDeferred.promise.catch(() => {});
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(controller.isRetryInFlight()).toBe(false);
+    });
+
+    it('handles late rejection after cancellation without affecting state or unhandled errors', async () => {
+      const startDeferred = defer<void>();
+      controller = createPlaybackController({
+        transport,
+        createInitialState,
+        executeCommand: (cmd) => {
+          executedCommands.push(cmd);
+          if (cmd.type === 'command.playback.start') {
+            const epoch = controller.allocatePlaybackEpoch();
+            controller.beginPlaybackAttempt(epoch, 'LIVE', 'starting');
+            return startDeferred.promise;
+          }
+        },
+      });
+
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+      const result = await controller.retry(liveTarget);
+      expect(result.status).toBe('restarted');
+      expect(controller.isRetryInFlight()).toBe(true);
+
+      // User calls stop while start is pending
+      await controller.stop('user_stop');
+      expect(controller.isRetryInFlight()).toBe(false);
+
+      // Late rejection arrives after cancellation
+      startDeferred.reject(new Error('simulated late rejection after stop'));
+      await startDeferred.promise.catch(() => {});
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      expect(controller.isRetryInFlight()).toBe(false);
+    });
+
+    it('does not mutate replacement retry when previous start promise rejects late', async () => {
+      const startDeferred1 = defer<void>();
+      const startDeferred2 = defer<void>();
+      let startCount = 0;
+      controller = createPlaybackController({
+        transport,
+        createInitialState,
+        executeCommand: (cmd) => {
+          executedCommands.push(cmd);
+          if (cmd.type === 'command.playback.start') {
+            startCount += 1;
+            const epoch = controller.allocatePlaybackEpoch();
+            controller.beginPlaybackAttempt(epoch, 'LIVE', 'starting');
+            return startCount === 1 ? startDeferred1.promise : startDeferred2.promise;
+          }
+        },
+      });
+
+      controller.beginPlaybackAttempt(1, 'LIVE', 'playing', true);
+      // First retry
+      const result1 = await controller.retry(liveTarget);
+      expect(result1.status).toBe('restarted');
+      expect(controller.isRetryInFlight()).toBe(true);
+
+      // Replacement retry with different target (supersedes first retry)
+      const vodTarget: PlaybackRetryTarget = { kind: 'vod', recordingId: 'rec-replace' };
+      const result2 = await controller.retry(vodTarget);
+      expect(result2.status).toBe('restarted');
+      expect(controller.isRetryInFlight()).toBe(true);
+
+      // Previous start promise rejects late
+      startDeferred1.reject(new Error('simulated late rejection of replaced retry'));
+      await startDeferred1.promise.catch(() => {});
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+
+      // Replacement retry must STILL be in flight!
+      expect(controller.isRetryInFlight()).toBe(true);
+
+      // Complete replacement
+      startDeferred2.resolve();
+      await startDeferred2.promise;
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      expect(controller.isRetryInFlight()).toBe(false);
     });
   });
 });

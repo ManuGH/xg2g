@@ -1344,7 +1344,7 @@ describe('usePlaybackOrchestrator', () => {
       const pendingProbe = new Promise<any>((resolve) => {
         releaseProbe = resolve;
       });
-      vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockResolvedValueOnce(undefined as any).mockReturnValue(pendingProbe);
+      const probeSpy = vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockResolvedValueOnce(undefined as any).mockReturnValue(pendingProbe);
 
       fetchMock = vi.fn().mockImplementation((url: string) => {
         const u = String(url);
@@ -1393,25 +1393,32 @@ describe('usePlaybackOrchestrator', () => {
       await act(async () => {
         await exposedActions.startStream('1:0:1:UNMOUNT');
       });
+      expect(probeSpy).toHaveBeenCalledTimes(1);
 
-      // Begin retry: its restart enters startStream and awaits pendingProbe
+      // Begin retry: synchronous epoch allocation initiates restart and resolves public promise as restarted
+      let retryResult: any;
       act(() => {
-        void exposedActions.retry();
+        void exposedActions.retry().then((r: any) => { retryResult = r; });
       });
 
-      // Retry preparation is in flight
+      // Wait until retry's restart preparation has actively entered measurePlaybackNetwork (the deferred probe)
+      await waitFor(() => {
+        expect(probeSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(retryResult).toEqual({ status: 'restarted', epoch: expect.any(Number) });
       expect(exposedController.isRetryInFlight()).toBe(true);
 
-      // Unmount while preparation is still pending
+      // Unmount while deferred probe is actively pending
       act(() => {
         view.unmount();
       });
 
-      // Controller is disposed and retry is cancelled
+      // Controller is disposed and in-flight retry tracking is cleared
       expect(exposedController.isRetryInFlight()).toBe(false);
 
-      // Clean up deferred probe
-      releaseProbe(null);
+      // Clean up deferred probe and verify no unhandled rejections
+      releaseProbe(undefined);
+      await act(async () => {});
     });
   });
 });

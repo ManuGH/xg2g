@@ -425,11 +425,20 @@ export function createPlaybackController(
           const startPromise = result as Promise<unknown>;
           const op = activeRetry;
           op.startPromise = startPromise;
-          startPromise.finally(() => {
-            if (activeRetry === op) {
-              activeRetry = null;
-            }
-          });
+          // Explicitly observe both fulfillment and rejection to prevent derived unhandled rejections
+          // while guarding identity so late settlements do not mutate replacement retries.
+          void startPromise.then(
+            () => {
+              if (activeRetry === op) {
+                activeRetry = null;
+              }
+            },
+            (_err: unknown) => {
+              if (activeRetry === op) {
+                activeRetry = null;
+              }
+            },
+          );
         }
       }
       // Return undefined so that startPromise is NOT added to runtime.pendingCommands (the command-drain set),
@@ -440,6 +449,17 @@ export function createPlaybackController(
     if (executor) {
       result = executor(command);
     }
+
+    // Prevent the active stop operation's own promise from entering its command-drain dependencies,
+    // which would cause runtime.waitForCommands() to wait on its own completion (deadlock).
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      for (const inFlightStop of inFlightStopPromises.values()) {
+        if (result === inFlightStop) {
+          return undefined;
+        }
+      }
+    }
+
     return result;
   };
 
