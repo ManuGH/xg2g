@@ -96,7 +96,8 @@ import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCl
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
-import { decideForegroundResume } from './orchestrator/foregroundResume';
+import { useForegroundRecovery } from './orchestrator/useForegroundRecovery';
+import { resolveCommittedForegroundTarget } from './orchestrator/playbackForegroundRuntime';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -390,7 +391,6 @@ export function usePlaybackOrchestrator(
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
-  const wasHiddenRef = useRef(false);
   const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
@@ -2098,96 +2098,28 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
-  // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
-  // suspend the decoder while backgrounded and do not auto-resume inline
-  // <video> on return — the frame stays black/frozen. Repair only on the
-  // hidden->visible edge; deliberately NO pause-on-hide (that would break
-  // desktop tab-switches). TV keeps its own effect above, untouched.
-  useEffect(() => {
-    if (hostEnvironment.isTv) {
-      return;
-    }
-    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
-      return;
-    }
+  // Browser (non-TV) foreground recovery owned by PlaybackController.
+  // Fenced against late rejections, obsolete callbacks, and source replacement.
+  const foregroundTarget = useMemo(() => resolveCommittedForegroundTarget({
+    recordingId,
+    src,
+    serviceRef: sRef,
+    activeServiceRef: activeServiceRef.current,
+    explicitProfile,
+  }), [recordingId, src, sRef, explicitProfile]);
 
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
+  const isForegroundEligible = !hostEnvironment.isTv && !(isNativePlaybackHost && nativePlaybackState?.activeRequest);
 
-    if (!isDocumentVisible) {
-      wasHiddenRef.current = true;
-      return;
-    }
-
-    const wasHidden = wasHiddenRef.current;
-    wasHiddenRef.current = false;
-
-    // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
-    // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
-    // it can stay stalled, freezing buffering AND the DVR seekable window (so
-    // scrubbing dies). Nudge hls.js to resume loading on the hidden->visible edge so
-    // the buffer refills and the live/DVR playlist window refreshes. Gated on
-    // hlsRef.current, so the native-HLS path (browser-owned buffer) is untouched.
-    if (wasHidden && hlsRef.current) {
-      try {
-        hlsRef.current.startLoad();
-      } catch (err) {
-        debugWarn('[V3Player] hls resume startLoad failed', err);
-      }
-    }
-
-    const action = decideForegroundResume({
-      wasHidden,
-      isPiP: document.pictureInPictureElement === video,
-      status: recoveryStatusRef.current,
-      userPaused: userPauseIntentRef.current,
-      hasTerminal: hasTerminalStatus,
-    });
-
-    if (action === 'none') {
-      return;
-    }
-
-    if (action === 'retry') {
-      // Reaped session (heartbeat 410/404 during background) — re-establish.
-      void handleRetry();
-      return;
-    }
-
-    // action === 'play'. A single play() right after a page-freeze often fizzles —
-    // the element is still suspended and discards it, so the frame stays black until
-    // the user mashes play a few times. Nudge play() until currentTime actually
-    // advances (the only proof the decoder accepted the resume), bounded; the
-    // returned cancel cleans it up if the page hides again mid-recovery.
-    //
-    // NOTE: the live status is read through recoveryStatusRef instead of making
-    // it an effect dependency. The
-    // `setStatus('paused'→'buffering')` call below would otherwise trigger a
-    // re-render where React cleans up the current effect (calling the cancel
-    // function) before the observation timer can fire, defeating the retry loop.
-    // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
-    // already in deps and correctly re-runs the effect when the session is reaped.
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
-    return startResumePlaybackRecovery(video, {
-      // Keep a user pause sacred even if it happens during the ~2s recovery window.
-      shouldContinue: () => !userPauseIntentRef.current,
-      onBlocked: (err: unknown) => {
-        if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-          // iOS blocked the programmatic resume; the play/pause control is the
-          // user-gesture tap-to-resume.
-          setStatus('paused');
-        } else {
-          debugWarn('[V3Player] Browser resume play blocked', err);
-        }
-      },
-      onFailed: () => {
-        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
-        void handleRetry();
-      },
-    });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+  useForegroundRecovery({
+    controller,
+    videoRef,
+    hlsRef,
+    isEligible: isForegroundEligible,
+    isDocumentVisible,
+    target: foregroundTarget,
+    userPauseIntentRef,
+    setStatus,
+  });
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online

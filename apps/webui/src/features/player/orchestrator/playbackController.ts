@@ -30,10 +30,16 @@ import {
   createPlaybackHeartbeatRuntime,
   type PlaybackHeartbeatRuntime,
 } from './playbackHeartbeatRuntime';
+import {
+  createPlaybackForegroundRuntime,
+  type ForegroundMediaBinding,
+  type PlaybackForegroundRuntime,
+} from './playbackForegroundRuntime';
 import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
 export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
+export type { ForegroundMediaBinding } from './playbackForegroundRuntime';
 
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
@@ -141,6 +147,14 @@ export interface PlaybackController {
       | 'missing_target'
       | 'error',
   ): void;
+
+  // Foreground recovery coordination
+  reportForegroundVisibility(visible: boolean, isPiP: boolean): void;
+  setForegroundEligibility(eligible: boolean): void;
+  setForegroundTarget(target: PlaybackRetryTarget | null): void;
+  setForegroundMediaBinding(binding: ForegroundMediaBinding | null): void;
+  setUserPaused(userPaused: boolean): void;
+  getActiveForegroundOperationId(): number | null;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -468,6 +482,15 @@ export function createPlaybackController(
     handleCommand,
   );
 
+  const foregroundRuntime: PlaybackForegroundRuntime = createPlaybackForegroundRuntime({
+    getDomainStatus: () => runtime.getState().status,
+    getPlaybackEpoch: () => playbackEpoch,
+    isStalePlaybackEpoch,
+    isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch),
+    isDisposed: () => isDisposed,
+    onRetry: (target) => retry(target),
+  });
+
   function dispatch(event: PlaybackMachineEvent): void {
     if (event.type === 'normative.playback.failure.raised') {
       const failure = event.failure;
@@ -492,6 +515,8 @@ export function createPlaybackController(
         if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
           cancelActiveRetry('terminal_auth');
         }
+
+        foregroundRuntime.onTerminalAuth(event.epoch ?? playbackEpoch);
       }
     }
     runtime.dispatch(event);
@@ -720,6 +745,7 @@ export function createPlaybackController(
     }
 
     cancelAutoFallback(epoch);
+    foregroundRuntime.onPlaybackAttemptStarted(epoch);
 
     // If switching to a non-browser-Live mode, retire any active Live session!
     if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
@@ -1417,6 +1443,7 @@ export function createPlaybackController(
     // 0. Synchronously stop heartbeat supervision and auto-fallback timers
     stopHeartbeatSupervision();
     cancelAutoFallback();
+    foregroundRuntime.onPlaybackStopped(playbackEpoch);
 
     // 1. Synchronously advance playbackEpoch to invalidate pending preparation
     playbackEpoch += 1;
@@ -1670,6 +1697,7 @@ export function createPlaybackController(
     cancelActiveRetry('disposed');
     stopHeartbeatSupervision();
     cancelAutoFallback();
+    foregroundRuntime.dispose();
     playbackEpoch += 1;
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
@@ -1754,6 +1782,25 @@ export function createPlaybackController(
     },
     activate,
     dispose,
+
+    reportForegroundVisibility(visible: boolean, isPiP: boolean) {
+      foregroundRuntime.updateVisibility(visible, isPiP);
+    },
+    setForegroundEligibility(eligible: boolean) {
+      foregroundRuntime.updateEligibility(eligible);
+    },
+    setForegroundTarget(target: PlaybackRetryTarget | null) {
+      foregroundRuntime.setTargetContext(target);
+    },
+    setForegroundMediaBinding(binding: ForegroundMediaBinding | null) {
+      foregroundRuntime.setMediaBinding(binding);
+    },
+    setUserPaused(userPaused: boolean) {
+      foregroundRuntime.setUserPaused(userPaused);
+    },
+    getActiveForegroundOperationId() {
+      return foregroundRuntime.getActiveOperationId();
+    },
 
     getActiveSessionId() {
       return activeSessionId;
