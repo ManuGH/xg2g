@@ -34,9 +34,24 @@ BIN=media-core/target/release/xg2g-media-core
 
 BACKUP=$(mktemp -d)
 cp "$IPC" "$BACKUP/ipc.rs"
+
+# Restoring the source is only half of leaving this tree in a state someone can
+# trust. Every mutation builds, and the last one to build wins the file at
+# $BIN - so a run that restored ipc.rs and stopped there left a clean source
+# beside a binary compiled from a mutant. Source and binary would disagree
+# about what the core does, silently, and the next reader of that binary would
+# be testing a mutation while believing they were testing the core.
+#
+# That is the same "which code did we actually test" question 5c exists to
+# answer, so the postcondition is made unambiguous instead: the mutated binary
+# is deleted, and the next consumer has to build. Deleting is deliberate rather
+# than rebuilding here - a cleanup rebuild would have to succeed to mean
+# anything, and a harness that ends by hiding a failed build is the problem
+# again in a new place.
 restore() {
   cp "$BACKUP/ipc.rs" "$IPC"
   rm -rf "$BACKUP"
+  rm -f "$BIN"
 }
 trap restore EXIT
 
@@ -219,6 +234,9 @@ echo "not run:     $notlaunched"
 echo
 echo "Only 'killed' counts. A mutation that did not build or did not run was not"
 echo "tested, and is a gap in this harness rather than evidence about the code."
+echo
+echo "The mutated $BIN has been removed. Build again before using the core;"
+echo "a binary left behind by this script would be the last mutant, not the core."
 if [ "$survived" -ne 0 ] || [ "$anchor" -ne 0 ] || [ "$notbuilt" -ne 0 ] || [ "$notlaunched" -ne 0 ]; then
   exit 1
 fi
