@@ -234,6 +234,8 @@ export function createPlaybackController(
   let playbackEpoch = 0;
   let sessionEpoch = 0;
   const stoppedEpochs = new Set<number>();
+  const terminalFencedEpochs = new Set<number>();
+  const lifecycleDisposedEpochs = new Set<number>();
   const scheduledCommands = new WeakSet<PlaybackCommand>();
   let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
 
@@ -486,7 +488,7 @@ export function createPlaybackController(
     getDomainStatus: () => runtime.getState().status,
     getPlaybackEpoch: () => playbackEpoch,
     isStalePlaybackEpoch,
-    isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch),
+    isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch),
     isDisposed: () => isDisposed,
     onRetry: (target) => retry(target),
   });
@@ -503,14 +505,11 @@ export function createPlaybackController(
         failure.status === 403;
 
       if (isTerminalAuth) {
-        if (
-          !isStalePlaybackEpoch(event.epoch) &&
-          event.epoch === playbackEpoch
-        ) {
-          cancelAutoFallback(event.epoch);
-          stoppedEpochs.add(event.epoch);
-          stopHeartbeatSupervision();
-        }
+        const authEpoch = typeof event.epoch === 'number' ? event.epoch : playbackEpoch;
+        terminalFencedEpochs.add(authEpoch);
+        stoppedEpochs.add(authEpoch);
+        cancelAutoFallback(authEpoch);
+        stopHeartbeatSupervision();
 
         if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
           cancelActiveRetry('terminal_auth');
@@ -786,6 +785,7 @@ export function createPlaybackController(
     if (activeRetry && activeRetry.phase === 'restarting') {
       cancelActiveRetry('superseded');
     }
+    terminalFencedEpochs.add(epoch);
     stoppedEpochs.add(epoch);
     cancelAutoFallback(epoch);
     runtime.dispatch({
@@ -795,7 +795,11 @@ export function createPlaybackController(
   }
 
   function isStalePlaybackEpoch(epoch: number): boolean {
-    return epoch !== playbackEpoch || stoppedEpochs.has(epoch);
+    return (
+      epoch !== playbackEpoch ||
+      stoppedEpochs.has(epoch) ||
+      terminalFencedEpochs.has(epoch)
+    );
   }
 
   function isStaleSessionEpoch(pEpoch: number, sEpoch: number): boolean {
@@ -1188,15 +1192,20 @@ export function createPlaybackController(
           );
 
           if (isTerminalAuth) {
+            terminalFencedEpochs.add(currentPlaybackEpoch);
+            terminalFencedEpochs.add(playbackEpoch);
+            terminalFencedEpochs.add(attempt.epoch);
             stoppedEpochs.add(currentPlaybackEpoch);
             stoppedEpochs.add(playbackEpoch);
             stoppedEpochs.add(attempt.epoch);
             if (currentAttempt) {
+              terminalFencedEpochs.add(currentAttempt.epoch);
               stoppedEpochs.add(currentAttempt.epoch);
               cancelInFlightAttempt(currentAttempt, 'superseded');
               currentAttempt = null;
             }
             for (const start of Array.from(inFlightStarts.values())) {
+              terminalFencedEpochs.add(start.epoch);
               stoppedEpochs.add(start.epoch);
               cancelInFlightAttempt(start, 'superseded');
             }
@@ -1449,6 +1458,7 @@ export function createPlaybackController(
     playbackEpoch += 1;
     sessionEpoch = 0;
     const stopEpoch = playbackEpoch;
+    terminalFencedEpochs.add(stopEpoch);
     stoppedEpochs.add(stopEpoch);
 
     // 2. Synchronously snapshot and clear activeSessionId and its transport
@@ -1689,8 +1699,20 @@ export function createPlaybackController(
   }
 
   function activate(): void {
+    if (!isDisposed) {
+      return;
+    }
     isDisposed = false;
-    stoppedEpochs.delete(playbackEpoch);
+
+    const currentStatus = runtime.getState().status;
+    const isTerminalStatus = currentStatus === 'error' || currentStatus === 'stopped';
+
+    if (!terminalFencedEpochs.has(playbackEpoch) && !isTerminalStatus) {
+      if (lifecycleDisposedEpochs.has(playbackEpoch)) {
+        lifecycleDisposedEpochs.delete(playbackEpoch);
+        stoppedEpochs.delete(playbackEpoch);
+      }
+    }
   }
 
   function dispose(): void {
@@ -1699,8 +1721,7 @@ export function createPlaybackController(
     stopHeartbeatSupervision();
     cancelAutoFallback();
     foregroundRuntime.dispose();
-    playbackEpoch += 1;
-    sessionEpoch = 0;
+    lifecycleDisposedEpochs.add(playbackEpoch);
     stoppedEpochs.add(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
       currentAttempt.ineligibleForAdoption = true;
