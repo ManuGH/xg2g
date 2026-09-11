@@ -349,6 +349,16 @@ impl AudioIngress {
         self.incarnation
     }
 
+    /// The audio tracks the table in force declares, observable or not.
+    ///
+    /// A track this cannot read is still a track. Saying so is what keeps "no
+    /// observation" apart from "no audio", which are different answers and only
+    /// one of them is about the stream.
+    #[must_use]
+    pub fn declared(&self) -> &[AudioTrack] {
+        self.psi.audio_tracks()
+    }
+
     /// The streams being followed, in the order the table lists them.
     #[must_use]
     pub fn followed(&self) -> Vec<FollowedStream> {
