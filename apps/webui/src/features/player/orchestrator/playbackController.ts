@@ -150,6 +150,15 @@ export interface PlaybackController {
   ): void;
 
   // Foreground and online resume recovery coordination
+  beginCommitPhase(params: {
+    eligible: boolean;
+    target: PlaybackRetryTarget | null;
+    userPaused: boolean;
+    online: boolean;
+    hasActiveSession: boolean;
+  }): void;
+  endCommitPhase(): void;
+  abortCommitPhase(): void;
   reportForegroundVisibility(visible: boolean, isPiP: boolean): void;
   reportBrowserConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
   setCommittedConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
@@ -1831,6 +1840,21 @@ export function createPlaybackController(
       return isDisposed;
     },
 
+    beginCommitPhase(params: {
+      eligible: boolean;
+      target: PlaybackRetryTarget | null;
+      userPaused: boolean;
+      online: boolean;
+      hasActiveSession: boolean;
+    }) {
+      foregroundRuntime.beginCommitPhase(params);
+    },
+    endCommitPhase() {
+      foregroundRuntime.endCommitPhase();
+    },
+    abortCommitPhase() {
+      foregroundRuntime.abortCommitPhase();
+    },
     reportForegroundVisibility(visible: boolean, isPiP: boolean) {
       foregroundRuntime.updateVisibility(visible, isPiP);
     },

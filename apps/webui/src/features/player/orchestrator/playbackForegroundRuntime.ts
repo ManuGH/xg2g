@@ -51,6 +51,15 @@ export interface ActiveResumeOperation {
 export type ActiveForegroundOperation = ActiveResumeOperation;
 
 export interface PlaybackForegroundRuntime {
+  beginCommitPhase(params: {
+    eligible: boolean;
+    target: PlaybackRetryTarget | null;
+    userPaused: boolean;
+    online: boolean;
+    hasActiveSession: boolean;
+  }): void;
+  endCommitPhase(): void;
+  abortCommitPhase(): void;
   updateEligibility(eligible: boolean): void;
   updateVisibility(visible: boolean, isPiP: boolean): void;
   updateConnectivity(online: boolean, hasActiveSession: boolean): void;
@@ -137,6 +146,8 @@ export function createPlaybackForegroundRuntime(
   let isUserPaused = false;
   let nextOpId = 0;
   let activeOp: ActiveResumeOperation | null = null;
+  let commitPhaseActive = false;
+  let pendingAvailabilityCheck = false;
 
   function cancelActiveOperation(_reason: string): void {
     if (activeOp) {
@@ -310,10 +321,18 @@ export function createPlaybackForegroundRuntime(
     if (!isAvailable) {
       wasUnavailableState = true;
       withdrawParticipant('online');
+      pendingAvailabilityCheck = false;
       return;
     }
 
     const wasOffline = wasUnavailableState;
+    if (commitPhaseActive) {
+      if (wasOffline) {
+        pendingAvailabilityCheck = true;
+      }
+      return;
+    }
+
     wasUnavailableState = false;
 
     if (!wasOffline) {
@@ -430,6 +449,47 @@ export function createPlaybackForegroundRuntime(
     requestPlayRecovery('foreground');
   }
 
+  function beginCommitPhase(params: {
+    eligible: boolean;
+    target: PlaybackRetryTarget | null;
+    userPaused: boolean;
+    online: boolean;
+    hasActiveSession: boolean;
+  }): void {
+    commitPhaseActive = true;
+    pendingAvailabilityCheck = false;
+
+    updateEligibility(params.eligible);
+    setTargetContext(params.target);
+    setUserPaused(params.userPaused);
+    browserOnline = params.online;
+    hasActiveSession = params.hasActiveSession;
+
+    const connectionLost = options.getConnectionLost ? options.getConnectionLost() : false;
+    const isAvailable = browserOnline && !connectionLost;
+    if (!isAvailable) {
+      wasUnavailableState = true;
+      withdrawParticipant('online');
+    } else if (wasUnavailableState) {
+      pendingAvailabilityCheck = true;
+    }
+  }
+
+  function endCommitPhase(): void {
+    if (!commitPhaseActive) return;
+    commitPhaseActive = false;
+
+    if (pendingAvailabilityCheck) {
+      pendingAvailabilityCheck = false;
+      checkAvailabilityEdge();
+    }
+  }
+
+  function abortCommitPhase(): void {
+    commitPhaseActive = false;
+    pendingAvailabilityCheck = false;
+  }
+
   function updateConnectivity(online: boolean, hasActive: boolean): void {
     browserOnline = online;
     hasActiveSession = hasActive;
@@ -503,12 +563,16 @@ export function createPlaybackForegroundRuntime(
   }
 
   function dispose(): void {
+    abortCommitPhase();
     cancelActiveOperation('disposed');
     currentBinding = null;
     capturedTarget = null;
   }
 
   return {
+    beginCommitPhase,
+    endCommitPhase,
+    abortCommitPhase,
     updateEligibility,
     updateVisibility,
     updateConnectivity,

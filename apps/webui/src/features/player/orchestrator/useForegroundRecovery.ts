@@ -44,6 +44,7 @@ export function useForegroundRecovery({
   // Set up cleanup on unmount.
   useLayoutEffect(() => {
     return () => {
+      controller.abortCommitPhase();
       committedVideoRef.current = null;
       committedBindingRef.current = null;
       committedMediaIdRef.current = '';
@@ -52,14 +53,14 @@ export function useForegroundRecovery({
   }, [controller]);
 
   // Synchronize committed facts (callbacks, target, eligibility, user pause, connectivity context)
-  // in insertion effect phase so descendants' layout effects observe fresh committed facts
-  // rather than stale facts from a previous commit.
+  // in insertion effect phase and begin commit phase so descendants' layout effects observe fresh
+  // committed facts rather than stale facts, and do not evaluate recovery against obsolete media bindings.
   useInsertionEffect(() => {
     setStatusRef.current = setStatus;
-    controller.setForegroundEligibility(isEligible);
-    controller.setForegroundTarget(target);
-    controller.setUserPaused(userPauseIntentRef.current);
-    controller.setCommittedConnectivity({
+    controller.beginCommitPhase({
+      eligible: isEligible,
+      target,
+      userPaused: userPauseIntentRef.current,
       online: isOnline ?? true,
       hasActiveSession: hasActiveSession ?? false,
     });
@@ -123,6 +124,8 @@ export function useForegroundRecovery({
       online: isOnline ?? true,
       hasActiveSession: hasActiveSession ?? false,
     });
+
+    controller.endCommitPhase();
   });
 
   // Document visibility edge listener.
