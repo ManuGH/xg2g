@@ -223,7 +223,7 @@ impl PsiCore {
         if !data.len().is_multiple_of(TS_PACKET_LEN) {
             return Err(IngestError::UnalignedChunk { len: data.len() });
         }
-        self.events.clear();
+        self.begin_chunk();
         for packet in data.chunks_exact(TS_PACKET_LEN) {
             self.index_packet(packet);
         }
@@ -325,29 +325,55 @@ impl PsiCore {
         }
     }
 
-    /// Routes one packet to the table it belongs to, if any.
-    fn index_packet(&mut self, packet: &[u8]) {
+    /// Begins a chunk, forgetting the events of the one before it.
+    ///
+    /// [`PsiCore::ingest`] does this itself. It is public for the caller that
+    /// drives [`PsiCore::index_packet`] directly and has to mark where one
+    /// call's events end.
+    pub fn begin_chunk(&mut self) {
+        self.events.clear();
+    }
+
+    /// Routes one packet to the table it belongs to, and reports what it meant.
+    ///
+    /// The step [`PsiCore::ingest`] takes for each packet of a chunk, offered
+    /// on its own because a stage that follows the same transport has to act on
+    /// a programme change at the packet it happened on rather than at the end of
+    /// the chunk. What it returns is this packet's events alone: the ones
+    /// earlier packets of the chunk produced stay in the chunk's outcome and
+    /// out of this answer, so a caller cannot mistake a change it has already
+    /// acted on for one that has just happened.
+    pub fn index_packet(&mut self, packet: &[u8]) -> &[PsiEvent] {
+        let before = self.events.len();
         // What a packet is gets decided in one place. A packet this layer cannot
         // read - no sync byte, the reserved adaptation control, a field reaching
         // past the end - is skipped rather than guessed at, which is what this
         // code did when it read the header itself.
-        let Ok(view) = PacketView::parse(packet) else {
-            return;
-        };
-        // No payload means nothing for a table to be assembled from, whether the
-        // packet carries an adaptation field only or one that swallowed the
-        // payload it promised.
-        let Some(payload) = view.payload() else {
-            return;
-        };
-
-        let pid = view.pid();
-        if pid == PAT_PID {
-            self.feed_table(true, &view, payload);
-        } else if self.pmt_pid() > 0 && pid == self.pmt_pid() {
-            self.feed_table(false, &view, payload);
+        if let Ok(view) = PacketView::parse(packet) {
+            // No payload means nothing for a table to be assembled from, whether
+            // the packet carries an adaptation field only or one that swallowed
+            // the payload it promised.
+            if let Some(payload) = view.payload() {
+                let pid = view.pid();
+                if pid == PAT_PID {
+                    self.feed_table(true, &view, payload);
+                } else if self.pmt_pid() > 0 && pid == self.pmt_pid() {
+                    self.feed_table(false, &view, payload);
+                }
+                // Everything else is an elementary stream. This step reads
+                // tables only.
+            }
         }
-        // Everything else is an elementary stream. This step reads tables only.
+        &self.events[before..]
+    }
+
+    /// The audio tracks the table in force declares, in the order it lists them.
+    ///
+    /// Borrowed rather than cloned: a caller asking this per packet would
+    /// otherwise pay for a copy of every track on every packet of the stream.
+    #[must_use]
+    pub fn audio_tracks(&self) -> &[AudioTrack] {
+        &self.streams.audio_tracks
     }
 
     /// Assembles one packet's payload and interprets whatever it completed.
