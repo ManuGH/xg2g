@@ -260,6 +260,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
 					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", tp.Channels),
 					fmt.Sprintf("-ar:a:%d", i), "48000",
+					fmt.Sprintf("-af:a:%d", i), "aresample=async=1",
 				)
 			}
 
@@ -369,6 +370,7 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 		"-b:a", fmt.Sprintf("%dk", bitrateKbps),
 		"-ac", fmt.Sprintf("%d", channels),
 		"-ar", "48000",
+		"-af", "aresample=async=1",
 		"-sn",
 	)
 }

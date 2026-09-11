@@ -92,6 +92,7 @@ func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 		"-b:a", "320k",
 		"-ac", "2",
 		"-ar", "48000",
+		"-af", "aresample=async=1",
 		"-sn",
 		"-f", "hls",
 		"-hls_time", "2",
