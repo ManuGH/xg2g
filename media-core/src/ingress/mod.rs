@@ -93,6 +93,15 @@ pub struct FollowedStream {
     /// Scrambled packets seen on the PID since it began. Counted, and fed to
     /// nothing.
     pub scrambled_packets: u64,
+    /// Payload units that began an audio PES packet.
+    pub pes_starts: u64,
+    /// How many of those declared an optional header reaching past the packet
+    /// that carried it.
+    ///
+    /// The one place this and the reference answer differently, counted, so
+    /// that "the difference never arises on real transport" can be a
+    /// measurement rather than an expectation.
+    pub header_incomplete: u64,
 }
 
 /// Where in a PES packet the next continuation payload begins.
@@ -145,6 +154,8 @@ struct Follower {
     feeds: u64,
     clear_packets: u64,
     scrambled_packets: u64,
+    pes_starts: u64,
+    header_incomplete: u64,
 }
 
 impl Follower {
@@ -162,6 +173,8 @@ impl Follower {
             feeds: 0,
             clear_packets: 0,
             scrambled_packets: 0,
+            pes_starts: 0,
+            header_incomplete: 0,
         }
     }
 
@@ -174,6 +187,7 @@ impl Follower {
                 header_data_length: _,
                 packet_length: _,
             } if pes::is_audio_stream_id(stream_id) => {
+                self.pes_starts += 1;
                 self.position = Position::InElementaryStream;
                 Some(es)
             }
@@ -183,6 +197,8 @@ impl Follower {
                 header_data_length: _,
                 packet_length: _,
             } if pes::is_audio_stream_id(stream_id) => {
+                self.pes_starts += 1;
+                self.header_incomplete += 1;
                 // The elementary stream has not begun. What the next payloads
                 // start with is the rest of this header, and a consumer told
                 // nothing would read it as audio.
@@ -346,6 +362,8 @@ impl AudioIngress {
                 feeds: f.feeds,
                 clear_packets: f.clear_packets,
                 scrambled_packets: f.scrambled_packets,
+                pes_starts: f.pes_starts,
+                header_incomplete: f.header_incomplete,
             })
             .collect()
     }

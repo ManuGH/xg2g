@@ -861,6 +861,35 @@ func audioTSCorpusCases() []audioTSCase {
 		cases = append(cases, b.done())
 	}
 
+	// A header that reached past its packet, and then a payload unit that is
+	// not the rest of it.
+	//
+	// The transport started something else, so the header's remainder never
+	// arrives and the count of it is not a count of anything any more. Carrying
+	// it forward would take those bytes off the front of a later packet that
+	// owes them to nobody. The reference keeps no such state and feeds the
+	// continuation whole, which is also the right answer - this is a case where
+	// having state is the thing that could go wrong.
+	{
+		b := audioTSNew("a_header_remainder_abandoned_by_a_new_payload_unit",
+			"a payload unit start ends a header that was still being read", audioTSProgram)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+
+		full := audioTSPESHeader(0xBD, 200)
+		start := full[:184]
+		// A payload unit of its own, on an id this does not read.
+		other := pesStart(0xE0, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		b.chunk(
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), other),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+		)
+		b.feed(0, audioTSAudioA, c1, obsFrames(1))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		cases = append(cases, b.done())
+	}
+
 	// The one case where the reference and the corpus disagree on purpose.
 	//
 	// A PES header whose optional part reaches past the packet that started it.
