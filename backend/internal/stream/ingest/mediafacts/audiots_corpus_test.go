@@ -890,6 +890,55 @@ func audioTSCorpusCases() []audioTSCase {
 		cases = append(cases, b.done())
 	}
 
+	// A table that declares an AC-3 track on the video PID. The reference asks
+	// which PID a packet is on in a fixed order - the table, then the video,
+	// then the audio - so the video wins and the track's observer is never fed.
+	// A PES packet carrying perfectly good AC-3 on that PID is still not this
+	// track's audio: the table has already said the PID is video.
+	{
+		b := audioTSNew("an_audio_track_declared_on_the_video_pid",
+			"a PID the table names for video is not fed as audio", audioTSProgram)
+		const shared = 0x0200
+		b.chunk(b.psi(0,
+			audioTSEs{streamType: 0x1B, pid: shared},
+			ac3Stream(shared),
+		)...)
+		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		b.chunk(
+			audioTSPacket(shared, true, b.next(shared), start),
+			audioTSPacket(shared, false, b.next(shared), c1),
+			audioTSPacket(shared, false, b.next(shared), c2),
+		)
+		b.stream(shared, esaudio.CodecAC3, 0, esaudio.Observation{})
+		cases = append(cases, b.done())
+	}
+
+	// A table that declares an AC-3 track on its own PID. The table's packets
+	// keep arriving on that PID, and the second copy here is split across two
+	// packets the way a longer section would be, so one of them is a
+	// continuation - which is exactly the payload a follower would take whole
+	// if nothing asked first whether the PID carried the table.
+	{
+		b := audioTSNew("an_audio_track_declared_on_the_pmt_pid",
+			"the table's own PID is not fed as audio", audioTSProgram)
+		pmt := audioTSPMT(audioTSProgram, 0, ac3Stream(audioTSPMTPID))
+		b.chunk(
+			audioTSPSIPacket(0, b.next(0), audioTSPAT(audioTSProgram)),
+			audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), pmt),
+		)
+		// The same table again, its first ten bytes in one packet and the rest
+		// in the next.
+		head := append([]byte{0x00}, pmt[:10]...)
+		b.chunk(
+			audioTSShortPacket(audioTSPMTPID, true, b.next(audioTSPMTPID), head),
+			audioTSPacket(audioTSPMTPID, false, b.next(audioTSPMTPID), audioTSPad(pmt[10:])),
+		)
+		b.stream(audioTSPMTPID, esaudio.CodecAC3, 0, esaudio.Observation{})
+		cases = append(cases, b.done())
+	}
+
 	// The one case where the reference and the corpus disagree on purpose.
 	//
 	// A PES header whose optional part reaches past the packet that started it.

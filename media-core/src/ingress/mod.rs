@@ -400,6 +400,19 @@ impl AudioIngress {
     /// being followed.
     fn route<'a>(&mut self, view: &PacketView<'a>, out: &mut Vec<AudioFeed<'a>>) {
         let pid = view.pid();
+        // A PID that carries the programme's table or its video is not audio,
+        // whatever else the table says about it. The reference decides this by
+        // the order it asks - the PMT PID, then the video PID, then the audio
+        // ones - so a track declared on either of the first two is a track whose
+        // observer is never fed. Asking here keeps that: the table's own bytes,
+        // or a video stream's, handed to a frame parser could establish a
+        // layout no audio carries.
+        //
+        // PID 0 needs no such question. The table reader refuses it for an
+        // elementary stream when the track is declared, so no follower has it.
+        if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {
+            return;
+        }
         let Some(index) = self.followers.iter().position(|f| f.pid == pid) else {
             return;
         };
