@@ -2950,6 +2950,7 @@ func TestBuildVaapiVideoArgs_IntelSharpness(t *testing.T) {
 	adapter := &LocalAdapter{
 		Config: AdapterConfig{
 			GPUVendor:        "intel",
+			TranscodeDenoise: 0.6,
 			TranscodeSharpen: 2.0,
 		},
 		VaapiDevice: "/dev/dri/renderD128",
@@ -2973,11 +2974,17 @@ func TestBuildVaapiVideoArgs_IntelSharpness(t *testing.T) {
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok, "must have -vf argument")
 	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, vf, "denoise_vaapi=denoise=12")
 	assert.Contains(t, vf, "scale_vaapi=format=p010")
 	assert.Contains(t, vf, "sharpness_vaapi=sharpness=44")
 
-	// Ensure sharpness follows scale_vaapi
+	// Ensure correct pipeline ordering: deinterlace -> denoise -> scale -> sharpen
+	deintIdx := strings.Index(vf, "deinterlace_vaapi")
+	denoiseIdx := strings.Index(vf, "denoise_vaapi")
 	scaleIdx := strings.Index(vf, "scale_vaapi")
 	sharpIdx := strings.Index(vf, "sharpness_vaapi")
-	assert.True(t, scaleIdx >= 0 && sharpIdx > scaleIdx, "sharpness_vaapi must appear after scale_vaapi")
+
+	assert.True(t, deintIdx >= 0 && denoiseIdx > deintIdx, "denoise_vaapi must appear after deinterlace_vaapi")
+	assert.True(t, scaleIdx > denoiseIdx, "scale_vaapi must appear after denoise_vaapi")
+	assert.True(t, sharpIdx > scaleIdx, "sharpness_vaapi must appear after scale_vaapi")
 }

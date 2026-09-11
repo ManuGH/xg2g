@@ -61,6 +61,41 @@ func TestVaapiSharpnessFilter(t *testing.T) {
 	})
 }
 
+func TestVaapiDenoiseFilter(t *testing.T) {
+	t.Run("intel default maps 0.6 to hardware 12", func(t *testing.T) {
+		assert.Equal(t, "denoise_vaapi=denoise=12", vaapiDenoiseFilter(0.6, "intel"))
+	})
+
+	t.Run("staging 0.5 maps to hardware 10", func(t *testing.T) {
+		assert.Equal(t, "denoise_vaapi=denoise=10", vaapiDenoiseFilter(0.5, "intel"))
+	})
+
+	t.Run("zero disables denoise", func(t *testing.T) {
+		assert.Equal(t, "", vaapiDenoiseFilter(0, "intel"))
+	})
+
+	t.Run("negative amount disables denoise", func(t *testing.T) {
+		assert.Equal(t, "", vaapiDenoiseFilter(-0.5, "intel"))
+	})
+
+	t.Run("tunable amount", func(t *testing.T) {
+		assert.Equal(t, "denoise_vaapi=denoise=20", vaapiDenoiseFilter(1.0, "intel"))
+	})
+
+	t.Run("clamped to 64", func(t *testing.T) {
+		assert.Equal(t, "denoise_vaapi=denoise=30", vaapiDenoiseFilter(1.5, "intel"))
+		assert.Equal(t, "denoise_vaapi=denoise=64", vaapiDenoiseFilter(5.0, "intel"))
+	})
+
+	t.Run("amd disables denoise_vaapi because driver lacks VPP denoise", func(t *testing.T) {
+		assert.Equal(t, "", vaapiDenoiseFilter(0.6, "amd"))
+	})
+
+	t.Run("unknown vendor disables denoise_vaapi", func(t *testing.T) {
+		assert.Equal(t, "", vaapiDenoiseFilter(0.6, "unknown"))
+	})
+}
+
 func TestTranscodeDenoiseFilter(t *testing.T) {
 	t.Run("default scales the conservative base", func(t *testing.T) {
 		// default 0.6 * base 4:3:6:4
