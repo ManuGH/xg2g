@@ -308,40 +308,126 @@ func audioHWDrain(t *testing.T, core *GoCore, name string) {
 	}
 }
 
-// audioHWTrace renders the captured feeds, with the incarnations numbered by
-// the order their first feed appeared.
+// audioHWTrace renders the captured feeds in the one order that survives how
+// they were batched: streams in the order their first feed appeared, and each
+// stream's feeds in the order they were given.
+//
+// The reference groups a call's feeds per stream, so two streams interleaved
+// packet by packet come out as one run each from a single call and as an
+// alternation from one call per packet. The Rust side writes packet order. The
+// same feeds to the same observers either way - and a positional comparison of
+// the two would report a mismatch the moment a capture carried two observable
+// tracks. The corpus canonicalises for exactly this reason; so does this.
 func audioHWTrace(shadows []*replayShadow) (*strings.Builder, []byte) {
 	type key struct {
 		core  int
 		epoch uint64
 	}
-	var order []key
-	var trace strings.Builder
-	var es []byte
+	index := map[key]int{}
+	var feeds []audioTSFeed
 	for coreIndex, shadow := range shadows {
 		shadow.mu.Lock()
 		batches := append([]AudioShadowBatch(nil), shadow.seen...)
 		shadow.mu.Unlock()
 		for _, batch := range batches {
 			k := key{core: coreIndex, epoch: batch.Epoch}
-			inc := -1
-			for j, seen := range order {
-				if seen == k {
-					inc = j
-					break
-				}
-			}
-			if inc < 0 {
-				inc = len(order)
-				order = append(order, k)
+			inc, ok := index[k]
+			if !ok {
+				inc = len(index)
+				index[k] = inc
 			}
 			for _, f := range batch.Feeds {
-				trace.WriteString(fmt.Sprintf("feed inc=%d pid=%04x len=%d\n", inc, batch.PID, len(f)))
-				es = append(es, f...)
+				feeds = append(feeds, audioTSFeed{incarnation: inc, pid: batch.PID, es: f})
 			}
 		}
 	}
+	var trace strings.Builder
+	var es []byte
+	for _, f := range audioTSCanonical(feeds) {
+		trace.WriteString(fmt.Sprintf("feed inc=%d pid=%04x len=%d\n", f.incarnation, f.pid, len(f.es)))
+		es = append(es, f.es...)
+	}
 	return &trace, es
+}
+
+// The trace may not know how the reference batched. Two shadows holding the
+// same four feeds - once as the alternation one packet per call produces, once
+// as the two runs a single call produces - have to render identically.
+func TestAudioTSHardware_TheTraceDoesNotDependOnHowTheReferenceBatches(t *testing.T) {
+	f := func(b byte) []byte { return []byte{b, b, b} }
+	interleaved := newReplayShadow()
+	interleaved.seen = []AudioShadowBatch{
+		{PID: 0x100, Epoch: 2, Feeds: [][]byte{f(1)}},
+		{PID: 0x101, Epoch: 2, Feeds: [][]byte{f(2)}},
+		{PID: 0x100, Epoch: 2, Feeds: [][]byte{f(3)}},
+		{PID: 0x101, Epoch: 2, Feeds: [][]byte{f(4)}},
+	}
+	grouped := newReplayShadow()
+	grouped.seen = []AudioShadowBatch{
+		{PID: 0x100, Epoch: 2, Feeds: [][]byte{f(1), f(3)}},
+		{PID: 0x101, Epoch: 2, Feeds: [][]byte{f(2), f(4)}},
+	}
+	a, aBytes := audioHWTrace([]*replayShadow{interleaved})
+	b, bBytes := audioHWTrace([]*replayShadow{grouped})
+	if a.String() != b.String() || string(aBytes) != string(bBytes) {
+		t.Fatalf("the trace depends on batching:\n%s\nversus\n%s", a.String(), b.String())
+	}
+	want := "feed inc=0 pid=0100 len=3\nfeed inc=0 pid=0100 len=3\nfeed inc=0 pid=0101 len=3\nfeed inc=0 pid=0101 len=3\n"
+	if a.String() != want {
+		t.Fatalf("trace\n%s\nwant\n%s", a.String(), want)
+	}
+	if string(aBytes) != string(append(append(append(f(1), f(3)...), f(2)...), f(4)...)) {
+		t.Fatalf("the bytes are not in the order the trace names them: %x", aBytes)
+	}
+}
+
+// And the order it settles on is the corpus's. Two observable streams, handed
+// over one packet per call - the case that batches least like a single call -
+// render exactly as the authored feeds do. The Rust side is held to the same
+// rendering of the same authored feeds, which is what makes the two writers
+// agree on a multi-track capture before one has ever been archived.
+func TestAudioTSHardware_TheTraceOfTwoStreamsIsTheCorpusOrder(t *testing.T) {
+	var c audioTSCase
+	for _, candidate := range audioTSCorpusCases() {
+		if candidate.name == "two_observable_streams_at_once" {
+			c = candidate
+		}
+	}
+	if c.name == "" {
+		t.Fatal("the corpus has no two-stream case")
+	}
+	ctx := t.Context()
+	shadow := newReplayShadow()
+	core := NewGoCore(c.initial)
+	core.SetAudioShadow(shadow)
+	defer core.CloseAudioShadow()
+	offset := int64(0)
+	for _, step := range c.steps {
+		if step.kind != audioTSStepChunk {
+			t.Fatalf("case %s has a step this test does not drive", c.name)
+		}
+		for _, part := range audioTSCut(step.chunk, TSPacketSize) {
+			if _, err := core.Ingest(ctx, offset, part); err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			offset += int64(len(part))
+			audioHWDrain(t, core, c.name)
+		}
+	}
+	got, gotBytes := audioHWTrace([]*replayShadow{shadow})
+
+	var want strings.Builder
+	var wantBytes []byte
+	for _, f := range audioTSCanonical(c.want) {
+		want.WriteString(fmt.Sprintf("feed inc=%d pid=%04x len=%d\n", f.incarnation, f.pid, len(f.es)))
+		wantBytes = append(wantBytes, f.es...)
+	}
+	if got.String() != want.String() {
+		t.Fatalf("trace\n%s\nwant\n%s", got.String(), want.String())
+	}
+	if string(gotBytes) != string(wantBytes) {
+		t.Fatal("the bytes differ from the authored feeds")
+	}
 }
 
 func audioHWFeedsOfCurrent(shadow *replayShadow, epoch uint64, pid uint16) int {
