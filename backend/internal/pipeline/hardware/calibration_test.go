@@ -17,25 +17,25 @@ func TestAV1QualityCalibration(t *testing.T) {
 		"av1_vaapi": {"ICQ": true},
 	})
 
-	t.Run("Intel AV1 VAAPI Cinema resolves ICQ Q22", func(t *testing.T) {
+	t.Run("Intel AV1 VAAPI Cinema resolves ICQ Q18", func(t *testing.T) {
 		mode, q, ok := AV1QualityCalibration(GPUVendorIntel, "av1_vaapi", playbackprofile.IntentCinema)
 		assert.True(t, ok)
 		assert.Equal(t, RateControlICQ, mode)
-		assert.Equal(t, 22, q)
+		assert.Equal(t, 18, q)
 	})
 
-	t.Run("Intel AV1 VAAPI Quality resolves ICQ Q24", func(t *testing.T) {
+	t.Run("Intel AV1 VAAPI Quality resolves ICQ Q20", func(t *testing.T) {
 		mode, q, ok := AV1QualityCalibration(GPUVendorIntel, "av1_vaapi", playbackprofile.IntentQuality)
 		assert.True(t, ok)
 		assert.Equal(t, RateControlICQ, mode)
-		assert.Equal(t, 24, q)
+		assert.Equal(t, 20, q)
 	})
 
-	t.Run("Intel AV1 VAAPI Compatible resolves ICQ Q26", func(t *testing.T) {
+	t.Run("Intel AV1 VAAPI Compatible resolves ICQ Q22", func(t *testing.T) {
 		mode, q, ok := AV1QualityCalibration(GPUVendorIntel, "av1_vaapi", playbackprofile.IntentCompatible)
 		assert.True(t, ok)
 		assert.Equal(t, RateControlICQ, mode)
-		assert.Equal(t, 26, q)
+		assert.Equal(t, 22, q)
 	})
 
 	t.Run("AMD vendor never inherits Intel ICQ values", func(t *testing.T) {

@@ -21,7 +21,7 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		"av1_vaapi": {"ICQ": true},
 	})
 
-	t.Run("Intel + IntentCinema emits -rc_mode ICQ -global_quality 22 without bitrate caps", func(t *testing.T) {
+	t.Run("Intel + IntentCinema emits -rc_mode ICQ -global_quality 18 without bitrate caps", func(t *testing.T) {
 		prof := ports.ProfileSpec{
 			Name:          profiles.ProfileAV1HW,
 			Intent:        playbackprofile.IntentCinema,
@@ -33,13 +33,13 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		require.Contains(t, args, "-rc_mode")
 		require.Contains(t, args, "ICQ")
 		require.Contains(t, args, "-global_quality")
-		require.Contains(t, args, "22")
+		require.Contains(t, args, "18")
 		assert.NotContains(t, args, "-b:v")
 		assert.NotContains(t, args, "-maxrate")
 		assert.NotContains(t, args, "-bufsize")
 	})
 
-	t.Run("Intel + IntentQuality emits -rc_mode ICQ -global_quality 24 without bitrate caps", func(t *testing.T) {
+	t.Run("Intel + IntentQuality emits -rc_mode ICQ -global_quality 20 without bitrate caps", func(t *testing.T) {
 		prof := ports.ProfileSpec{
 			Name:          profiles.ProfileAV1HW,
 			Intent:        playbackprofile.IntentQuality,
@@ -51,13 +51,13 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		require.Contains(t, args, "-rc_mode")
 		require.Contains(t, args, "ICQ")
 		require.Contains(t, args, "-global_quality")
-		require.Contains(t, args, "24")
+		require.Contains(t, args, "20")
 		assert.NotContains(t, args, "-b:v")
 		assert.NotContains(t, args, "-maxrate")
 		assert.NotContains(t, args, "-bufsize")
 	})
 
-	t.Run("Intel + IntentCompatible emits -rc_mode ICQ -global_quality 26 without bitrate caps", func(t *testing.T) {
+	t.Run("Intel + IntentCompatible emits -rc_mode ICQ -global_quality 22 without bitrate caps", func(t *testing.T) {
 		prof := ports.ProfileSpec{
 			Name:          profiles.ProfileAV1HW,
 			Intent:        playbackprofile.IntentCompatible,
@@ -69,7 +69,7 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		require.Contains(t, args, "-rc_mode")
 		require.Contains(t, args, "ICQ")
 		require.Contains(t, args, "-global_quality")
-		require.Contains(t, args, "26")
+		require.Contains(t, args, "22")
 		assert.NotContains(t, args, "-b:v")
 		assert.NotContains(t, args, "-maxrate")
 		assert.NotContains(t, args, "-bufsize")
