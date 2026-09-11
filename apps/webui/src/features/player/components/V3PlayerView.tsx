@@ -1,4 +1,4 @@
-import { type RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -9,7 +9,22 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph, PictureModeGlyph } from './playerControlGlyphs';
+
+const PICTURE_MODE_STORAGE_KEY = 'xg2g.player.pictureMode';
+export type PictureMode = 'natural' | 'vivid' | 'cinema';
+
+function getStoredPictureMode(): PictureMode {
+  try {
+    const val = localStorage.getItem(PICTURE_MODE_STORAGE_KEY);
+    if (val === 'vivid' || val === 'cinema' || val === 'natural') {
+      return val;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return 'natural';
+}
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -39,6 +54,16 @@ export function V3PlayerView({
   // roomy desktop chrome eats 79% of the screen — measured 312px of 393px.
   const { surface, heightClass } = useUiSurface();
   const isCompactSurface = surface === 'small' || heightClass === 'compact';
+  const [pictureMode, setPictureMode] = useState<PictureMode>(getStoredPictureMode);
+
+  const handlePictureModeChange = (mode: PictureMode) => {
+    setPictureMode(mode);
+    try {
+      localStorage.setItem(PICTURE_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Ignore storage errors
+    }
+  };
   return (
     <div
       ref={containerRef}
@@ -165,6 +190,8 @@ export function V3PlayerView({
           className={[
             styles.videoElement,
             viewState.hideVideoElement ? styles.videoElementHidden : null,
+            pictureMode === 'vivid' ? styles.pictureModeVivid : null,
+            pictureMode === 'cinema' ? styles.pictureModeCinema : null,
           ].filter(Boolean).join(' ')}
         />
       </div>
@@ -346,6 +373,18 @@ export function V3PlayerView({
                   { id: 'quality', label: 'Quality (High • ~10–12 Mbps)' },
                   { id: 'compatible', label: 'Standard (Eco • ~5–6 Mbps)' },
                   { id: 'direct', label: 'Direct Play (Passthrough)' },
+                ]}
+              />
+
+              <DropdownMenu
+                icon={<PictureModeGlyph />}
+                title="Bildmodus"
+                activeId={pictureMode}
+                onSelect={(id) => handlePictureModeChange(id as PictureMode)}
+                options={[
+                  { id: 'natural', label: 'Natürlich (Studio • Referenz)' },
+                  { id: 'vivid', label: 'Brillant (TV • OLED-Punch)' },
+                  { id: 'cinema', label: 'Kino (Warm • D65-Look)' },
                 ]}
               />
 
