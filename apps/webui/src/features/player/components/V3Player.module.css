@@ -74,6 +74,7 @@
 }
 
 .container.userIdle .controlsHeader,
+.container.userIdle .topHeader,
 .container.userIdle .volumeControl,
 .container.userIdle .closeButton {
   opacity: 0;
@@ -207,6 +208,16 @@
   overflow-wrap: anywhere;
 }
 
+.spinnerProgrammeTitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+  font-weight: 500;
+  line-height: 1.25;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
 /* Startup ring: thin conic arc with glow + pulsing core, replaces the legacy
    border-spinner on the startup card. */
 .startupRing {
@@ -228,7 +239,7 @@
   );
   mask: radial-gradient(circle, transparent 58%, black 60%);
   -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
-  animation-name: startupRingSpin;
+  animation-name: global(startupRingSpin);
   animation-duration: 1.4s;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
@@ -285,7 +296,7 @@
   margin: -5px 0 0 -5px;
   border-radius: 50%;
   background: var(--accent-action);
-  animation-name: startupCorePulse;
+  animation-name: global(startupCorePulse);
   animation-duration: 1.6s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
@@ -342,7 +353,7 @@
   width: 40%;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, var(--accent-action), var(--accent-live), transparent);
-  animation-name: startupProgressIndeterminate;
+  animation-name: global(startupProgressIndeterminate);
   animation-duration: 1.5s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   animation-iteration-count: infinite;
@@ -558,6 +569,65 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.topHeader {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 200;
+  max-width: calc(100% - 100px);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+  transform: translateY(-4px);
+}
+
+.container:hover:not(.userIdle) .topHeader,
+.topHeader:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.topHeaderLogo {
+  width: 44px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.topHeaderMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.topHeaderChannel {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.topHeaderProgramme {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 
 .closeButton {
@@ -1038,10 +1108,31 @@
 }
 
 .container.surfaceCompact.userIdle .controlsHeader,
+.container.surfaceCompact.userIdle .topHeader,
 .container.surfaceCompact.userIdle .closeButton {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.5s ease-out;
+}
+
+.container.surfaceCompact .topHeader {
+  top: calc(12px + var(--sat, 0px));
+  left: 14px;
+  max-width: calc(100% - 76px);
+  gap: 8px;
+}
+
+.container.surfaceCompact .topHeaderLogo {
+  width: 36px;
+  height: 24px;
+}
+
+.container.surfaceCompact .topHeaderChannel {
+  font-size: 0.75rem;
+}
+
+.container.surfaceCompact .topHeaderProgramme {
+  font-size: 0.95rem;
 }
 
 /* The default scrim ramps to black only at the very bottom, which works under

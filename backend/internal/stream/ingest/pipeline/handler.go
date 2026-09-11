@@ -23,11 +23,10 @@ import (
 )
 
 // primedAttachTimeout bounds the wait for the first indexable keyframe after a cold session
-// start. Measured against the production receiver (VU+ Uno4K, Astra 19.2E, ORF1 HD): 2.23s
-// time-to-first-byte cold, of which roughly 1.05s is the OSCam ECM round-trip; a warm shared
-// session attaches in 0.025s. 5s leaves margin for tuner contention without turning a
-// permanently unattachable stream into a long stall - terminal conditions return early.
-const primedAttachTimeout = 5 * time.Second
+// start. Measured against the production receiver (VU+ Uno4K, Astra 19.2E, ORF1 HD ~2.23s,
+// Sky/HD+ ~3.5s): 8s leaves margin for CAM/OSCam ECM round-trips and tuner contention without
+// turning a permanently unattachable stream into a long stall - terminal conditions return early.
+const primedAttachTimeout = 8 * time.Second
 
 // zapIDHeader carries the client's identifier for one channel change.
 const zapIDHeader = "X-Xg2g-Zap-Id"

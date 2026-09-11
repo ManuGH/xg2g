@@ -25,7 +25,11 @@ const MIN_REFRESH_MS = 1000;
  * to the next show instead of sticking on the old title. Disabled (returns
  * empty) for non-live playback, where the title is fixed.
  */
-export function useLiveNowPlaying(serviceRef: string | null, enabled: boolean): LiveNowPlaying {
+export function useLiveNowPlaying(
+  serviceRef: string | null,
+  enabled: boolean,
+  token?: string | null,
+): LiveNowPlaying {
   const [nowPlaying, setNowPlaying] = useState<LiveNowPlaying>(EMPTY);
   const timerRef = useRef<number | null>(null);
 
@@ -52,7 +56,7 @@ export function useLiveNowPlaying(serviceRef: string | null, enabled: boolean): 
 
     const fetchNow = async () => {
       try {
-        const authToken = getStoredToken().trim();
+        const authToken = (token || getStoredToken()).trim();
         const result = await postServicesNowNext({
           headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
           body: { services: [serviceRef] },
@@ -78,7 +82,7 @@ export function useLiveNowPlaying(serviceRef: string | null, enabled: boolean): 
       cancelled = true;
       clearTimer();
     };
-  }, [serviceRef, enabled]);
+  }, [serviceRef, enabled, token]);
 
   return nowPlaying;
 }

@@ -43,6 +43,7 @@ function V3Player(props: V3PlayerProps) {
           onSwitch={props.onSwitchChannel!}
           open={channelsOpen}
           onClose={handleCloseChannels}
+          token={props.token}
         />
       ) : null}
     </V3PlayerView>

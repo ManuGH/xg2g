@@ -181,6 +181,15 @@ export function usePlaybackEngine({
       pendingNativeAutoplayRef.current = null;
       onPlaybackMilestone?.('manifest');
       video.play().catch((err) => {
+        if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
+          debugWarn('[V3Player] Unmuted native playback blocked, falling back to muted autoplay', err);
+          video.muted = true;
+          void video.play().catch((fallbackErr) => {
+            debugWarn(label, fallbackErr);
+            setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+          });
+          return;
+        }
         debugWarn(label, err);
         // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
         // Mirror the hls.js path: clear the startup overlay and surface the play
@@ -904,6 +913,7 @@ export function usePlaybackEngine({
         if (
           reason !== 'vod' &&
           gateVideo &&
+          HLS_STARTUP_POLICY.slowBuildPlaybackRate < 1 &&
           bufferedAheadSeconds() < HLS_STARTUP_POLICY.slowBuildTargetSeconds
         ) {
           slowBuildActive = true;
@@ -914,6 +924,16 @@ export function usePlaybackEngine({
           );
         }
         videoRef.current?.play().catch((err) => {
+          const videoEl = videoRef.current;
+          if (videoEl && (err as { name?: string } | null)?.name === 'NotAllowedError' && !videoEl.muted) {
+            debugWarn('[V3Player] Unmuted hls playback blocked, falling back to muted autoplay', err);
+            videoEl.muted = true;
+            void videoEl.play().catch((fallbackErr) => {
+              debugWarn('[V3Player] Fallback muted autoplay failed', fallbackErr);
+              setStatus('ready');
+            });
+            return;
+          }
           debugWarn('[V3Player] Autoplay failed', err);
           setStatus('ready');
         });
@@ -961,6 +981,18 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
         if (!startGateOpen && bufferedAheadSeconds() >= HLS_STARTUP_POLICY.bufferTargetSeconds) {
+          const gateVideo = videoRef.current;
+          if (gateVideo && gateVideo.readyState < 2) {
+            const onCanPlay = () => {
+              gateVideo.removeEventListener('canplay', onCanPlay);
+              gateVideo.removeEventListener('loadeddata', onCanPlay);
+              openStartGate('buffer_target_ready');
+            };
+            gateVideo.addEventListener('canplay', onCanPlay, { once: true });
+            gateVideo.addEventListener('loadeddata', onCanPlay, { once: true });
+            window.setTimeout(() => openStartGate('buffer_target_timeout'), 200);
+            return;
+          }
           openStartGate('buffer_target');
         }
         if (
@@ -1303,6 +1335,15 @@ export function usePlaybackEngine({
     video.src = url;
     video.load();
     video.play().catch((err) => {
+      if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
+        debugWarn('[V3Player] Unmuted direct playback blocked, falling back to muted autoplay', err);
+        video.muted = true;
+        void video.play().catch((fallbackErr) => {
+          debugWarn('Autoplay fallback failed', fallbackErr);
+          setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+        });
+        return;
+      }
       debugWarn('Autoplay failed', err);
       // Autoplay rejected: clear the startup overlay and show the play control rather
       // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
@@ -1340,8 +1381,8 @@ export function usePlaybackEngine({
         }
       }
 
-      if (videoEl.readyState >= 3 && bufferHealth > 0.5) {
-        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s)`);
+      if ((videoEl.readyState >= 3 || videoEl.currentTime < 0.5) && bufferHealth > 0.5) {
+        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s, ct=${videoEl.currentTime.toFixed(2)})`);
         clearNativeStallRecovery();
         clearHlsStallRecovery();
         return;

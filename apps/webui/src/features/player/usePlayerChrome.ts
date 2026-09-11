@@ -173,6 +173,7 @@ export function usePlayerChrome({
   const [nativeFullscreenPending, setNativeFullscreenPending] = useState(false);
   const lastNonZeroVolumeRef = useRef<number>(1);
   const userExplicitlyMutedRef = useRef(false);
+  const userExplicitlyUnmutedRef = useRef(false);
   const programmaticVolumeChangeRef = useRef(false);
   const idleTimerRef = useRef<number | null>(null);
   const pendingNativeFullscreenRef = useRef(false);
@@ -477,6 +478,8 @@ export function usePlayerChrome({
     if (!video || !shouldForceNativeMobileHls(video) || !video.muted) {
       return;
     }
+    userExplicitlyMutedRef.current = false;
+    userExplicitlyUnmutedRef.current = true;
     video.muted = false;
     setIsMuted(false);
   }, [shouldForceNativeMobileHls, videoRef]);
@@ -737,12 +740,14 @@ export function usePlayerChrome({
         lastNonZeroVolumeRef.current = video.volume;
       }
       userExplicitlyMutedRef.current = true;
+      userExplicitlyUnmutedRef.current = false;
       video.muted = true;
       setIsMuted(true);
       return;
     }
 
     userExplicitlyMutedRef.current = false;
+    userExplicitlyUnmutedRef.current = true;
     const restoreVolume = lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : video.volume;
     if (restoreVolume > 0 && video.volume !== restoreVolume) {
       video.volume = restoreVolume;
@@ -763,6 +768,11 @@ export function usePlayerChrome({
     }
     const shouldMute = newVolume === 0;
     userExplicitlyMutedRef.current = shouldMute;
+    if (!shouldMute) {
+      userExplicitlyUnmutedRef.current = true;
+    } else {
+      userExplicitlyUnmutedRef.current = false;
+    }
     video.muted = shouldMute;
     setIsMuted(shouldMute);
   }, [videoRef]);
@@ -771,6 +781,25 @@ export function usePlayerChrome({
     if (!autoStart) return;
     const video = videoRef.current;
     if (!video) return;
+
+    // If user already explicitly unmuted during this session, do not re-mute on stream restarts / channel switches.
+    if (userExplicitlyUnmutedRef.current && !userExplicitlyMutedRef.current) {
+      if (video.muted) {
+        video.muted = false;
+        setIsMuted(false);
+      }
+      return;
+    }
+
+    // If user explicitly muted, preserve muted state.
+    if (userExplicitlyMutedRef.current) {
+      if (!video.muted) {
+        video.muted = true;
+        setIsMuted(true);
+      }
+      return;
+    }
+
     programmaticVolumeChangeRef.current = true;
     userExplicitlyMutedRef.current = false;
     video.muted = true;
@@ -1222,6 +1251,10 @@ export function usePlayerChrome({
       // policy, automatically un-mute so the user gets audio immediately.
       if (video.muted && shouldForceNativeMobileHls(video) && !userExplicitlyMutedRef.current) {
         video.muted = false;
+      }
+      if (!video.muted) {
+        userExplicitlyUnmutedRef.current = true;
+        userExplicitlyMutedRef.current = false;
       }
       setVolume(video.volume);
       setIsMuted(video.muted);

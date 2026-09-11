@@ -205,6 +205,9 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const activeChannelRef = useRef<string>(
+    (channel?.serviceRef || channel?.id || '').trim()
+  );
   const [explicitProfile, setExplicitProfile] = useState<PlaybackProfileSelection>(() => {
     try {
       return normalizePlaybackProfileSelection(localStorage.getItem('xg2g.player.explicitProfile'));
@@ -345,6 +348,7 @@ export function usePlaybackOrchestrator(
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
   const [sessionPlaybackTrace, setSessionPlaybackTrace] = useState<PlaybackTraceContract | null>(null);
   const [sessionProfileReason, setSessionProfileReason] = useState<string | null>(null);
+  const hasReachedPlayingRef = useRef(false);
   const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
   const isNativePlaybackHost = supportsManagedNativePlayback(hostEnvironment);
 
@@ -698,7 +702,8 @@ export function usePlaybackOrchestrator(
 
   // Live now-playing EPG (current programme title + synopsis, auto-refreshes
   // when the programme changes). Disabled for recordings (fixed title).
-  const liveNowPlaying = useLiveNowPlaying(sRef, playbackMode === 'LIVE');
+  const isLiveIntent = Boolean(sRef && !recordingId && !src) || playbackMode === 'LIVE';
+  const liveNowPlaying = useLiveNowPlaying(sRef, isLiveIntent, token);
 
   // Lock-screen / control-center metadata + hardware-key channel zapping.
   const mediaSessionModel = useMemo(() => buildPlayerMediaSessionModel({
@@ -980,6 +985,7 @@ export function usePlaybackOrchestrator(
   const prepareForNextPlaybackAttempt = useCallback(async (
     hasActiveNativeRequest: boolean = false,
   ): Promise<void> => {
+    hasReachedPlayingRef.current = false;
     await finalizeTimelineForReplacement();
     const teardown = prepareForPlaybackAttempt({
       hasActivePlayback,
@@ -1367,6 +1373,7 @@ export function usePlaybackOrchestrator(
         reportPlaybackFailure(failure.appError, failure.options);
         return;
       }
+      activeChannelRef.current = ref;
 
       await prepareForNextPlaybackAttempt();
       if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
@@ -1887,13 +1894,26 @@ export function usePlaybackOrchestrator(
     src,
   ]);
 
-  // Update sRef on channel change
+  // Update sRef and switch stream on channel change
   useEffect(() => {
-    if (channel) {
-      const ref = (channel.serviceRef || channel.id || '').trim();
-      if (ref) setSRef(ref);
+    if (!channel) return;
+    const ref = (channel.serviceRef || channel.id || '').trim();
+    if (!ref) return;
+
+    if (ref !== activeChannelRef.current) {
+      activeChannelRef.current = ref;
+      setSRef(ref);
+      if (mounted.current) {
+        dispatchPlayback({
+          type: 'intent.start.requested',
+          epoch: allocatePlaybackEpoch(),
+          kind: 'live',
+          serviceRef: ref,
+          explicitProfile: explicitProfile,
+        });
+      }
     }
-  }, [channel]);
+  }, [channel, explicitProfile, allocatePlaybackEpoch, dispatchPlayback]);
 
   useEffect(() => {
     clearNetworkStarvationHold(automaticProfileMemoryRef.current);
@@ -1925,8 +1945,16 @@ export function usePlaybackOrchestrator(
     });
   }, [dispatchPlayback, requestedDuration]);
 
+  useEffect(() => {
+    if (status === 'playing') {
+      hasReachedPlayingRef.current = true;
+    }
+  }, [status]);
+
+  const isInitialStartupBuffering =
+    !hasReachedPlayingRef.current && (status === 'buffering' || status === 'ready');
   const isImmediateStartupStatus =
-    status === 'starting' || status === 'priming' || status === 'building';
+    status === 'starting' || status === 'priming' || status === 'building' || isInitialStartupBuffering;
   const isNativeEngine = activeHlsEngine === 'native';
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
@@ -2515,9 +2543,12 @@ export function usePlaybackOrchestrator(
     togglePlayPause,
     updateServiceRef: setSRef,
     submitServiceRef(nextValue) {
-      void startStream(nextValue);
+      const ref = (nextValue || '').trim();
+      if (ref) activeChannelRef.current = ref;
+      void startStream(ref);
     },
     startStream(refToUse) {
+      if (refToUse) activeChannelRef.current = refToUse.trim();
       void startStream(refToUse);
     },
     enterDVRMode,
