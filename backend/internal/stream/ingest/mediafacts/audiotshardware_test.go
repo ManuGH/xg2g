@@ -50,14 +50,6 @@ type audioHWStep struct {
 	target  uint16
 }
 
-// audioHWBoundary says which core the batches before it came from. A new core
-// starts its epochs again, and two streams from different cores sharing a
-// number would otherwise be reported as one.
-type audioHWBoundary struct {
-	coreIndex int
-	batches   int
-}
-
 type audioHWCase struct {
 	name   string
 	target uint16
@@ -208,13 +200,19 @@ func TestAudioTSHardware_TheArchivedTransportIsReplayedThroughTheReference(t *te
 
 	for _, c := range audioHWCases(t) {
 		t.Run(c.name, func(t *testing.T) {
-			shadow := newReplayShadow()
+			// One shadow per core, and not one shadow reused.
+			//
+			// A shadow keys its observers by PID and epoch, and a new core
+			// starts its epochs again - so a reused shadow hands the new core's
+			// first feed to an observer that already holds the old core's
+			// stream, and then reports the two disagreeing. That is the harness
+			// describing itself. The traces are joined afterwards instead,
+			// where the core they came from is still known.
+			shadows := []*replayShadow{newReplayShadow()}
 			core := NewGoCore(c.target)
-			core.SetAudioShadow(shadow)
-			defer core.CloseAudioShadow()
+			core.SetAudioShadow(shadows[0])
+			defer func() { core.CloseAudioShadow() }()
 
-			var boundaries []audioHWBoundary
-			coreIndex := 0
 			var facts Facts
 			offset := int64(0)
 
@@ -229,12 +227,10 @@ func TestAudioTSHardware_TheArchivedTransportIsReplayedThroughTheReference(t *te
 				case audioHWNewCore:
 					audioHWDrain(t, core, c.name)
 					core.CloseAudioShadow()
-					shadow.mu.Lock()
-					boundaries = append(boundaries, audioHWBoundary{coreIndex: coreIndex, batches: len(shadow.seen)})
-					shadow.mu.Unlock()
-					coreIndex++
 					core = NewGoCore(c.target)
-					core.SetAudioShadow(shadow)
+					next := newReplayShadow()
+					shadows = append(shadows, next)
+					core.SetAudioShadow(next)
 					offset = 0
 				case audioHWFeed:
 					data, ok := loaded[step.capture]
@@ -267,11 +263,16 @@ func TestAudioTSHardware_TheArchivedTransportIsReplayedThroughTheReference(t *te
 				}
 			}
 			audioHWDrain(t, core, c.name)
-			shadow.mu.Lock()
-			boundaries = append(boundaries, audioHWBoundary{coreIndex: coreIndex, batches: len(shadow.seen)})
-			shadow.mu.Unlock()
 
-			trace, esBytes := audioHWTrace(shadow, boundaries)
+			trace, esBytes := audioHWTrace(shadows)
+			// Every audio track the table declares, so that a capture with no
+			// observable audio says which codecs it carried instead of saying
+			// nothing at all.
+			for _, tr := range facts.AudioTracks {
+				trace.WriteString(fmt.Sprintf("track pid=%04x codec=%s lang=%s observable=%d\n",
+					tr.PID, tr.Codec, tr.Language, b2i(observableAudioCodec(tr.Codec))))
+			}
+			last := shadows[len(shadows)-1]
 			for _, tr := range facts.AudioTracks {
 				if !observableAudioCodec(tr.Codec) {
 					continue
@@ -279,7 +280,7 @@ func TestAudioTSHardware_TheArchivedTransportIsReplayedThroughTheReference(t *te
 				o := tr.Observed
 				trace.WriteString(fmt.Sprintf(
 					"stream pid=%04x codec=%s feeds=%d channels=%d lfe=%d acmod=%d hasAcmod=%d dependent=%d frames=%d\n",
-					tr.PID, tr.Codec, audioHWFeedsOfCurrent(shadow, core.shadowEpoch, tr.PID),
+					tr.PID, tr.Codec, audioHWFeedsOfCurrent(last, core.shadowEpoch, tr.PID),
 					o.Channels, b2i(o.LFE), o.Acmod, b2i(o.HasAcmod), b2i(o.DependentSubstream), o.Frames))
 			}
 
@@ -309,19 +310,7 @@ func audioHWDrain(t *testing.T, core *GoCore, name string) {
 
 // audioHWTrace renders the captured feeds, with the incarnations numbered by
 // the order their first feed appeared.
-func audioHWTrace(shadow *replayShadow, boundaries []audioHWBoundary) (*strings.Builder, []byte) {
-	shadow.mu.Lock()
-	defer shadow.mu.Unlock()
-
-	coreOf := func(i int) int {
-		for _, b := range boundaries {
-			if i < b.batches {
-				return b.coreIndex
-			}
-		}
-		return boundaries[len(boundaries)-1].coreIndex
-	}
-
+func audioHWTrace(shadows []*replayShadow) (*strings.Builder, []byte) {
 	type key struct {
 		core  int
 		epoch uint64
@@ -329,22 +318,27 @@ func audioHWTrace(shadow *replayShadow, boundaries []audioHWBoundary) (*strings.
 	var order []key
 	var trace strings.Builder
 	var es []byte
-	for i, batch := range shadow.seen {
-		k := key{core: coreOf(i), epoch: batch.Epoch}
-		inc := -1
-		for j, seen := range order {
-			if seen == k {
-				inc = j
-				break
+	for coreIndex, shadow := range shadows {
+		shadow.mu.Lock()
+		batches := append([]AudioShadowBatch(nil), shadow.seen...)
+		shadow.mu.Unlock()
+		for _, batch := range batches {
+			k := key{core: coreIndex, epoch: batch.Epoch}
+			inc := -1
+			for j, seen := range order {
+				if seen == k {
+					inc = j
+					break
+				}
 			}
-		}
-		if inc < 0 {
-			inc = len(order)
-			order = append(order, k)
-		}
-		for _, f := range batch.Feeds {
-			trace.WriteString(fmt.Sprintf("feed inc=%d pid=%04x len=%d\n", inc, batch.PID, len(f)))
-			es = append(es, f...)
+			if inc < 0 {
+				inc = len(order)
+				order = append(order, k)
+			}
+			for _, f := range batch.Feeds {
+				trace.WriteString(fmt.Sprintf("feed inc=%d pid=%04x len=%d\n", inc, batch.PID, len(f)))
+				es = append(es, f...)
+			}
 		}
 	}
 	return &trace, es

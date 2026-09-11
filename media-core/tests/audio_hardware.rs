@@ -204,6 +204,21 @@ fn the_archived_transport_is_replayed_through_the_audio_path() {
             }
         }
 
+        // Every audio track the table declares, so that a capture with no
+        // observable audio says which codecs it carried instead of saying
+        // nothing at all.
+        for t in ing.declared() {
+            writeln!(
+                trace,
+                "track pid={:04x} codec={} lang={} observable={}",
+                t.pid,
+                t.codec,
+                t.language,
+                u8::from(t.codec == "ac3" || t.codec == "eac3")
+            )
+            .expect("write");
+        }
+
         for s in ing.followed() {
             let o = s.observation;
             writeln!(

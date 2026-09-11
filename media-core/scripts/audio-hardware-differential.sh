@@ -77,6 +77,9 @@ for go_trace in "$XG2G_AUDIO_HARDWARE_OUT"/*.go.trace; do
   if ! diff -q <(grep '^stream ' "$go_trace") <(grep '^stream ' "$rust_trace") >/dev/null; then
     bad="$bad observations"
   fi
+  if ! diff -q <(grep '^track ' "$go_trace") <(grep '^track ' "$rust_trace") >/dev/null; then
+    bad="$bad declarations"
+  fi
   if ! cmp -s "$XG2G_AUDIO_HARDWARE_OUT/$name.go.es" "$XG2G_AUDIO_HARDWARE_OUT/$name.rust.es"; then
     bad="$bad bytes"
   fi
@@ -97,7 +100,7 @@ echo
 echo "== what the streams said =="
 for t in "$XG2G_AUDIO_HARDWARE_OUT"/*.rust.trace; do
   printf '  %s\n' "$(basename "$t" .rust.trace)"
-  grep '^stream ' "$t" | sed 's/^/    /'
+  grep -E '^(track|stream) ' "$t" | sed 's/^/    /' || echo "    (the table declared no audio)"
 done
 
 echo
