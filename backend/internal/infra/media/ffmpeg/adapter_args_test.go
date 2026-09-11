@@ -2974,12 +2974,15 @@ func TestBuildVaapiVideoArgs_IntelSharpness(t *testing.T) {
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok, "must have -vf argument")
 	assert.Contains(t, vf, "deinterlace_vaapi")
-	assert.NotContains(t, vf, "denoise_vaapi")
+	assert.Contains(t, vf, "denoise_vaapi=denoise=12")
 	assert.Contains(t, vf, "scale_vaapi=format=p010")
 	assert.Contains(t, vf, "sharpness_vaapi=sharpness=44")
 
-	// Ensure sharpness follows scale_vaapi
+	// Ensure pipeline order: deinterlace -> denoise -> scale -> sharpness
+	deintIdx := strings.Index(vf, "deinterlace_vaapi")
+	denoiseIdx := strings.Index(vf, "denoise_vaapi")
 	scaleIdx := strings.Index(vf, "scale_vaapi")
 	sharpIdx := strings.Index(vf, "sharpness_vaapi")
-	assert.True(t, scaleIdx >= 0 && sharpIdx > scaleIdx, "sharpness_vaapi must appear after scale_vaapi")
+	assert.True(t, deintIdx >= 0 && denoiseIdx > deintIdx && scaleIdx > denoiseIdx && sharpIdx > scaleIdx,
+		"pipeline order must be deinterlace -> denoise -> scale -> sharpness")
 }

@@ -52,10 +52,11 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
+		Float64("denoise", a.Config.TranscodeDenoise).
 		Float64("sharpen", a.Config.TranscodeSharpen).
 		Msg("pipeline video: vaapi")
 
-	filters := make([]string, 0, 4)
+	filters := make([]string, 0, 5)
 	if prof.Deinterlace {
 		// rate=field emits one frame per field - the GPU equivalent of bwdif's
 		// send_field, and the only way this path reaches 50p. Without it
@@ -67,10 +68,9 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		// Hardware tonemapping from HDR/HLG (BT.2020) to SDR (BT.709)
 		filters = append(filters, "tonemap_vaapi=format=nv12:p=bt709:m=bt709:t=bt709")
 	}
-	// denoise_vaapi is deliberately omitted here: Intel VPP temporal recursive
-	// noise reduction introduces intermittent VPP queue stalls on live interlaced DVB
-	// feeds (speed drops from 1.25x to <0.7x), causing HLS player buffer underruns.
-	// sharpness_vaapi alone operates purely spatially and maintains solid 1.25x+ headroom.
+	if f := vaapiDenoiseFilter(a.Config.TranscodeDenoise, a.Config.GPUVendor); f != "" {
+		filters = append(filters, f)
+	}
 	// AV1 encodes 10-bit (see vaapiEncodeOnlyFilter): the extra precision cuts
 	// encoder-introduced banding on gradients even from an 8-bit source. Forcing
 	// nv12 here threw that away the moment the full-GPU path became reachable -
