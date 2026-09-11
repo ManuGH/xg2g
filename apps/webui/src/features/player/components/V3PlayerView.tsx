@@ -342,8 +342,9 @@ export function V3PlayerView({
                 onSelect={(id) => actions.changeProfile(id as string)}
                 options={[
                   { id: 'auto', label: 'Auto (Smart)' },
-                  { id: 'direct', label: 'Direct Play' },
+                  { id: 'cinema', label: 'Cinema (Referenz)' },
                   { id: 'quality', label: 'Quality' },
+                  { id: 'direct', label: 'Direct Play' },
                   { id: 'compatible', label: 'Compatible' },
                   { id: 'repair', label: 'Repair' },
                 ]}

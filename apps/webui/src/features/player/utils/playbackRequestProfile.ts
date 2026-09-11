@@ -1,8 +1,8 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair';
+export type PlaybackRequestProfile = 'direct' | 'cinema' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackProfileSelection = 'auto' | 'cinema' | 'direct' | 'quality' | 'compatible' | 'repair';
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -11,6 +11,7 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
     case 'copy':
     case 'passthrough':
       return 'direct';
+    case 'cinema':
     case 'quality':
     case 'compatible':
     case 'repair':

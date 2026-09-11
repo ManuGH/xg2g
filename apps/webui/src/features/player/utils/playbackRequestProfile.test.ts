@@ -233,6 +233,7 @@ describe('buildPlaybackProfileHeaders', () => {
 describe('planner-bound profile selection', () => {
   it('keeps only public playback intents and migrates copy aliases', () => {
     expect(normalizePlaybackProfileSelection('copy')).toBe('direct');
+    expect(normalizePlaybackProfileSelection('cinema')).toBe('cinema');
     expect(normalizePlaybackProfileSelection('quality')).toBe('quality');
     expect(normalizePlaybackProfileSelection('compatible')).toBe('compatible');
     expect(normalizePlaybackProfileSelection('repair')).toBe('repair');
