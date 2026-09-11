@@ -54,7 +54,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi")
 
-	filters := make([]string, 0, 3)
+	filters := make([]string, 0, 4)
 	if prof.Deinterlace {
 		// rate=field emits one frame per field - the GPU equivalent of bwdif's
 		// send_field, and the only way this path reaches 50p. Without it
@@ -79,6 +79,9 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth, hwFormat)
 	}
 	filters = append(filters, scaleFilter)
+	if f := vaapiSharpnessFilter(a.Config.TranscodeSharpen, a.Config.GPUVendor); f != "" {
+		filters = append(filters, f)
+	}
 	args = append(args, "-vf", strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
@@ -216,6 +219,32 @@ func transcodeSharpenFilter(amount float64) string {
 		return ""
 	}
 	return fmt.Sprintf("unsharp=5:5:%.2f:5:5:0.0", amount)
+}
+
+// vaapiSharpnessFilter returns an Intel VPP hardware sharpness filter expression
+// for the full-GPU VAAPI transcode chain, or "" when disabled or on non-Intel hardware.
+// AMD Mesa Gallium VAAPI drivers do not implement VAProcFilterSharpening.
+// XG2G_TRANSCODE_SHARPEN is the sharpening amount (0 disables, default 2.0, capped at 3.0),
+// which maps linearly to the VAAPI hardware scale [1, 64] where Intel's default is 44
+// (2.0 * 22 = 44).
+func vaapiSharpnessFilter(amount float64, vendor string) string {
+	if amount <= 0 {
+		return ""
+	}
+	if vendor == "" {
+		vendor = string(hardware.DetectGPUVendor().Vendor)
+	}
+	if vendor != string(hardware.GPUVendorIntel) {
+		return ""
+	}
+	level := int(amount*22.0 + 0.5)
+	if level < 1 {
+		level = 1
+	}
+	if level > 64 {
+		level = 64
+	}
+	return fmt.Sprintf("sharpness_vaapi=sharpness=%d", level)
 }
 
 // transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode
