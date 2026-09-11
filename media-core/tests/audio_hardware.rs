@@ -129,6 +129,113 @@ fn cases() -> Vec<Case> {
     out
 }
 
+/// One feed as the trace records it: its incarnation, its PID, its bytes.
+type Fed = (usize, u16, Vec<u8>);
+
+/// Renders feeds in the one order that survives how they were batched: streams
+/// in the order their first feed appeared, and each stream's feeds in the order
+/// they were given.
+///
+/// This side sees packet order and the reference groups a call's feeds per
+/// stream, so two interleaved streams would otherwise compare as a mismatch
+/// the moment a capture carried two observable tracks.
+fn render(feeds: &[Fed]) -> (String, Vec<u8>) {
+    let mut order: Vec<(usize, u16)> = Vec::new();
+    for (inc, pid, _) in feeds {
+        if !order.contains(&(*inc, *pid)) {
+            order.push((*inc, *pid));
+        }
+    }
+    let mut trace = String::new();
+    let mut bytes = Vec::new();
+    for key in order {
+        for (inc, pid, es) in feeds.iter().filter(|(i, p, _)| (*i, *p) == key) {
+            writeln!(trace, "feed inc={inc} pid={pid:04x} len={}", es.len()).expect("write");
+            bytes.extend_from_slice(es);
+        }
+    }
+    (trace, bytes)
+}
+
+/// Reads one case of the shared corpus: its programme, its chunks, and the
+/// feeds it authors.
+fn corpus_case(name: &str) -> (u16, Vec<Vec<u8>>, Vec<Fed>) {
+    let text = fs::read_to_string(repo_root().join("testdata/audio-ts-corpus/corpus.txt"))
+        .expect("the corpus is checked in");
+    let hex = |s: &str| -> Vec<u8> {
+        (0..s.len() / 2)
+            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("hex"))
+            .collect()
+    };
+    let field = |parts: &[&str], key: &str| -> String {
+        parts
+            .iter()
+            .find_map(|p| p.strip_prefix(key))
+            .unwrap_or_else(|| panic!("no {key}"))
+            .to_string()
+    };
+    let mut inside = false;
+    let (mut program, mut chunks, mut feeds) = (0u16, Vec::new(), Vec::new());
+    for line in text.lines() {
+        if line == format!("case {name}") {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if line == "end" {
+            break;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.first().copied() {
+            Some("program") => program = parts[1].parse().expect("program"),
+            Some("chunk") => chunks.push(hex(parts[1])),
+            Some("feed") => feeds.push((
+                field(&parts, "inc=").parse().expect("inc"),
+                u16::from_str_radix(&field(&parts, "pid="), 16).expect("pid"),
+                hex(&field(&parts, "es=")),
+            )),
+            Some("target") => panic!("case {name} has a step this test does not drive"),
+            _ => {}
+        }
+    }
+    assert!(inside, "the corpus has no case {name}");
+    (program, chunks, feeds)
+}
+
+/// The order this writer settles on is the corpus's. Two observable streams,
+/// handed over one packet per call and in whole chunks, render exactly as the
+/// authored feeds do - the same rendering the reference's writer is held to,
+/// which is what makes the two agree on a multi-track capture before one has
+/// ever been archived.
+#[test]
+fn the_trace_of_two_streams_is_the_corpus_order() {
+    let (program, chunks, authored) = corpus_case("two_observable_streams_at_once");
+    assert!(!authored.is_empty(), "the case authors no feeds");
+    let want = render(&authored);
+    for size in [188usize, usize::MAX] {
+        let mut ing = AudioIngress::new(program);
+        let mut offset = 0i64;
+        let mut seen: Vec<u64> = Vec::new();
+        let mut fed: Vec<Fed> = Vec::new();
+        for chunk in &chunks {
+            for part in chunk.chunks(size.min(chunk.len())) {
+                let out = ing.ingest(offset, part).expect("aligned");
+                offset = out.processed_through;
+                for f in out.feeds {
+                    if !seen.contains(&f.incarnation) {
+                        seen.push(f.incarnation);
+                    }
+                    let inc = seen.iter().position(|i| *i == f.incarnation).expect("seen");
+                    fed.push((inc, f.pid, f.es.to_vec()));
+                }
+            }
+        }
+        assert_eq!(render(&fed), want, "at {size} bytes a call");
+    }
+}
+
 #[test]
 fn the_archived_transport_is_replayed_through_the_audio_path() {
     let Ok(dir) = std::env::var("XG2G_AUDIO_HARDWARE_DIR") else {
@@ -146,8 +253,7 @@ fn the_archived_transport_is_replayed_through_the_audio_path() {
 
     for case in cases() {
         let mut ing = AudioIngress::new(case.target);
-        let mut trace = String::new();
-        let mut bytes: Vec<u8> = Vec::new();
+        let mut fed: Vec<Fed> = Vec::new();
         let mut offset: i64 = 0;
         // Incarnations are numbered by the order their first feed appears, so
         // the trace says where the stream was split without saying what either
@@ -195,14 +301,14 @@ fn the_archived_transport_is_replayed_through_the_audio_path() {
                                 seen.push(key);
                             }
                             let inc = seen.iter().position(|k| *k == key).expect("just seen");
-                            writeln!(trace, "feed inc={inc} pid={:04x} len={}", f.pid, f.es.len())
-                                .expect("write");
-                            bytes.extend_from_slice(f.es);
+                            fed.push((inc, f.pid, f.es.to_vec()));
                         }
                     }
                 }
             }
         }
+
+        let (mut trace, bytes) = render(&fed);
 
         // Every audio track the table declares, so that a capture with no
         // observable audio says which codecs it carried instead of saying
