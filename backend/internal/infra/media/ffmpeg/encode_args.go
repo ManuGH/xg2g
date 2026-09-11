@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
@@ -293,6 +294,9 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			"-global_quality", strconv.Itoa(icqQuality),
 			"-async_depth", "1",
 		)
+		if prof.Intent == playbackprofile.IntentCinema {
+			args = append(args, "-compression_level", "1")
+		}
 		return args
 	}
 
