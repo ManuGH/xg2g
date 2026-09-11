@@ -98,10 +98,7 @@ import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { useForegroundRecovery } from './orchestrator/useForegroundRecovery';
 import { resolveCommittedForegroundTarget } from './orchestrator/playbackForegroundRuntime';
-import {
-  shouldWatchForNetworkRecovery,
-  useNetworkRecoveryWatchdog,
-} from './orchestrator/useNetworkRecoveryWatchdog';
+import { useNetworkRecoveryWatchdog } from './orchestrator/useNetworkRecoveryWatchdog';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
@@ -2122,11 +2119,10 @@ export function usePlaybackOrchestrator(
   });
 
   useNetworkRecoveryWatchdog({
+    controller,
     apiBase,
-    active: !hostEnvironment.isTv && status === 'error' && shouldWatchForNetworkRecovery(failure),
+    isTv: hostEnvironment.isTv,
     intentKey: `${sRef}|${recordingId ?? ''}|${src ?? ''}`,
-    healthy: status === 'playing',
-    onReachable: handleRetry,
   });
 
   const showBufferingOverlay = useBufferingOverlay(status);

@@ -36,11 +36,17 @@ import {
   type PlaybackForegroundRuntime,
   type ResumeTrigger,
 } from './playbackForegroundRuntime';
+import {
+  createPlaybackNetworkWatchdogRuntime,
+  type PlaybackNetworkWatchdogRuntime,
+  type PlaybackNetworkWatchdogState,
+} from './playbackNetworkWatchdogRuntime';
 import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
 export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
 export type { ForegroundMediaBinding, ResumeTrigger } from './playbackForegroundRuntime';
+export type { PlaybackNetworkWatchdogState } from './playbackNetworkWatchdogRuntime';
 
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
@@ -128,6 +134,7 @@ export interface PlaybackController {
   isStalePlaybackEpoch(epoch: number): boolean;
   isStaleSessionEpoch(playbackEpoch: number, sessionEpoch: number): boolean;
   getEpoch(): number;
+  getDomainStatus(): PlayerStatus;
 
   // Recovery fallback timers & retry sequencing
   scheduleAutoFallback(
@@ -169,6 +176,14 @@ export interface PlaybackController {
   getActiveForegroundOperationId(): number | null;
   getActiveResumeParticipants(): ReadonlySet<ResumeTrigger> | null;
   getForegroundTarget(): PlaybackRetryTarget | null;
+
+  // Network watchdog recovery
+  setNetworkWatchdogContext(params: {
+    platformEligible: boolean;
+    intentKey: string;
+    probe?: () => Promise<boolean>;
+  }): void;
+  getNetworkWatchdogState(): PlaybackNetworkWatchdogState;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -509,12 +524,51 @@ export function createPlaybackController(
     onRetry: (target) => retry(target),
   });
 
+  const watchdogRuntime: PlaybackNetworkWatchdogRuntime = createPlaybackNetworkWatchdogRuntime({
+    getDomainStatus: () => runtime.getState().status,
+    getFailure: () => runtime.getState().failure,
+    getPlaybackEpoch: () => playbackEpoch,
+    isDisposed: () => isDisposed,
+    isRetryInFlight: () => isRetryInFlight(),
+    onRecover: (target) => retry(target),
+    getTargetContext: () => {
+      const captured = foregroundRuntime.getCapturedTarget();
+      if (captured) {
+        return captured;
+      }
+      const resolved = resolveRetryTarget();
+      if (!resolved) {
+        return null;
+      }
+      if (resolved.kind === 'live') {
+        return { kind: 'live', serviceRef: resolved.serviceRef, explicitProfile: resolved.explicitProfile };
+      }
+      if (resolved.kind === 'vod') {
+        return { kind: 'vod', recordingId: resolved.recordingId, explicitProfile: resolved.explicitProfile };
+      }
+      if (resolved.kind === 'src') {
+        return { kind: 'src', srcUrl: resolved.srcUrl, explicitProfile: resolved.explicitProfile };
+      }
+      return null;
+    },
+  });
+
   let previousConnectionLost = runtime.getState().connectionLost;
+  let previousDomainStatus = runtime.getState().status;
+  let previousFailure = runtime.getState().failure;
   runtime.subscribe(() => {
-    const currentConnectionLost = runtime.getState().connectionLost;
+    const currentState = runtime.getState();
+    const currentConnectionLost = currentState.connectionLost;
     if (currentConnectionLost !== previousConnectionLost) {
       previousConnectionLost = currentConnectionLost;
       foregroundRuntime.onConnectionLostChanged(currentConnectionLost);
+    }
+    const currentDomainStatus = currentState.status;
+    const currentFailure = currentState.failure;
+    if (currentDomainStatus !== previousDomainStatus || currentFailure !== previousFailure) {
+      previousDomainStatus = currentDomainStatus;
+      previousFailure = currentFailure;
+      watchdogRuntime.onDomainStateChanged();
     }
   });
 
@@ -1732,6 +1786,7 @@ export function createPlaybackController(
       return;
     }
     isDisposed = false;
+    watchdogRuntime.activate();
 
     const currentStatus = runtime.getState().status;
     const isTerminalStatus = currentStatus === 'error' || currentStatus === 'stopped';
@@ -1750,6 +1805,7 @@ export function createPlaybackController(
     stopHeartbeatSupervision();
     cancelAutoFallback();
     foregroundRuntime.dispose();
+    watchdogRuntime.dispose();
     terminalFencedEpochs.add(playbackEpoch);
     stoppedEpochs.add(playbackEpoch);
     playbackEpoch += 1;
@@ -1790,6 +1846,9 @@ export function createPlaybackController(
     isStaleSessionEpoch,
     getEpoch() {
       return playbackEpoch;
+    },
+    getDomainStatus() {
+      return runtime.getState().status;
     },
 
     scheduleAutoFallback,
@@ -1884,6 +1943,17 @@ export function createPlaybackController(
     },
     getForegroundTarget() {
       return foregroundRuntime.getCapturedTarget();
+    },
+
+    setNetworkWatchdogContext(params: {
+      platformEligible: boolean;
+      intentKey: string;
+      probe?: () => Promise<boolean>;
+    }) {
+      watchdogRuntime.setContext(params);
+    },
+    getNetworkWatchdogState() {
+      return watchdogRuntime.getState();
     },
 
     getActiveSessionId() {
