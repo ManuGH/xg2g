@@ -282,7 +282,8 @@ impl PsiCore {
     }
 
     /// The PID the PAT named, or 0 while none has been.
-    fn pmt_pid(&self) -> u16 {
+    #[must_use]
+    pub fn pmt_pid(&self) -> u16 {
         self.selection.map_or(0, |s| s.pmt_pid)
     }
 
@@ -365,6 +366,12 @@ impl PsiCore {
             }
         }
         &self.events[before..]
+    }
+
+    /// The PID the table in force names for video, or 0 while none has.
+    #[must_use]
+    pub fn video_pid(&self) -> u16 {
+        self.streams.video_pid
     }
 
     /// The audio tracks the table in force declares, in the order it lists them.
