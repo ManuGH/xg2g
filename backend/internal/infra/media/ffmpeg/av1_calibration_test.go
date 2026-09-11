@@ -57,7 +57,7 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		assert.NotContains(t, args, "-bufsize")
 	})
 
-	t.Run("Intel + IntentCompatible emits -rc_mode ICQ -global_quality 24 without bitrate caps", func(t *testing.T) {
+	t.Run("Intel + IntentCompatible emits -rc_mode ICQ -global_quality 26 without bitrate caps", func(t *testing.T) {
 		prof := ports.ProfileSpec{
 			Name:          profiles.ProfileAV1HW,
 			Intent:        playbackprofile.IntentCompatible,
@@ -69,7 +69,7 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		require.Contains(t, args, "-rc_mode")
 		require.Contains(t, args, "ICQ")
 		require.Contains(t, args, "-global_quality")
-		require.Contains(t, args, "24")
+		require.Contains(t, args, "26")
 		assert.NotContains(t, args, "-b:v")
 		assert.NotContains(t, args, "-maxrate")
 		assert.NotContains(t, args, "-bufsize")
