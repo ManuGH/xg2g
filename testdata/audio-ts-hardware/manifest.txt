@@ -1,0 +1,74 @@
+# Step 6c: the archived Step-5d transport, replayed through the audio path.
+#
+# The captures are not in the repository and are not captured again. They are
+# the Step-5d acceptance archive, and their identity - name, size, SHA-256 -
+# lives in testdata/psi-hardware/manifest.txt and nowhere else. This file adds
+# cases only, so that the two steps can never disagree about which bytes a
+# result came from.
+#
+# A run resolves each name under XG2G_AUDIO_HARDWARE_DIR and refuses to proceed
+# unless the bytes hash to what the Step-5d manifest says.
+#
+# Chunk sizes are packet counts times 188: 65424 is 348 packets. A chunk
+# boundary can only fall between packets, and PES packets still straddle them,
+# which is the point.
+
+version 1
+
+# Each capture on its own, at the programme Step 5d resolved for it.
+case R-orf1hd
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+end
+
+case R-orf1hd-second
+  target 4911
+  chunk 65424
+  feed A2_orf1hd
+end
+
+case R-puls4
+  target 20007
+  chunk 65424
+  feed B1_puls4
+end
+
+case R-schlager
+  target 35
+  chunk 65424
+  feed B2_schlager
+end
+
+# A zap, on one core. Three programmes in sequence, so the incarnation
+# boundaries are drawn on real transport rather than on authored packets - and
+# the audio of the programme that was left cannot reach the observers of the
+# one that arrived.
+case R-zap
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+  settarget 20007
+  feed B1_puls4
+  settarget 4911
+  feed A2_orf1hd
+end
+
+# The interruption cases. Production destroys the parser when the upstream ends
+# and builds a new one for the next connection, so the boundary is a new core
+# and not a gap in the bytes.
+case R-reconnect
+  target 4911
+  chunk 65424
+  feed H_pre
+  newcore
+  feed H_post
+end
+
+case R-reboot
+  target 4911
+  chunk 65424
+  feed I_pre
+  newcore
+  feed I_post
+end
