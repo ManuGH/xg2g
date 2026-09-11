@@ -17,6 +17,13 @@
 # a mutation that only half-applies is a mutation whose survival means nothing.
 # An anchor that has drifted out of the source entirely is a gap, not a pass.
 #
+# And every mutation must produce a program no other one produced. Exactly-once
+# anchoring is not enough for that: an anchor written with less indentation
+# than its line still matches that line exactly once, and two differently named
+# mutations then test the same change twice. Both are killed, the count says
+# two, and the site one of them was meant for is never mutated at all. So each
+# mutated source is hashed, and a repeat is refused before it is run.
+#
 # Compiling is asked before running, on its own, because a failing `cargo test`
 # also prints lines beginning with "error:" and grepping one combined output
 # reports every kill as a build failure.
@@ -46,7 +53,9 @@ killed=0
 survived=0
 notbuilt=0
 notapplied=0
+duplicates=0
 attempted=0
+DIGESTS=" "
 
 log() { printf '  %-12s %s\n' "$1" "$2"; }
 
@@ -82,21 +91,33 @@ mutate() {
   # edit whose failure went unread would leave the source pristine, the corpus
   # would pass against unmutated code, and the mutation would be logged as a
   # survivor - a harness reporting a gap it had invented.
-  if ! python3 - "$SRC" "$from" "$to" <<'PY'
-import sys
+  local digest
+  if ! digest=$(python3 - "$SRC" "$from" "$to" <<'PY'
+import sys, hashlib
 path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path).read()
 n = s.count(old)
 if n != 1:
     sys.stderr.write(f"anchor matched {n} times, want exactly 1\n")
     sys.exit(1)
-open(path, "w").write(s.replace(old, new, 1))
+out = s.replace(old, new, 1)
+open(path, "w").write(out)
+print(hashlib.sha256(out.encode()).hexdigest())
 PY
-  then
+  ); then
     log "not applied" "$what"
     notapplied=$((notapplied + 1))
     return
   fi
+
+  case "$DIGESTS" in
+    *" $digest "*)
+      log duplicate "$what -- the same program another mutation already produced"
+      duplicates=$((duplicates + 1))
+      return
+      ;;
+  esac
+  DIGESTS="$DIGESTS$digest "
 
   attempted=$((attempted + 1))
   local rc=0
@@ -129,6 +150,14 @@ mutate "follow a PID one number off" \
                 let mut t = track.clone();
                 t.pid += 1;
                 self.followers.push(Follower::new(&t));'
+
+mutate "route the table's own PID as audio" \
+  'if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {' \
+  'if pid == self.psi.video_pid() {'
+
+mutate "route the video PID as audio" \
+  'if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {' \
+  'if pid == self.psi.pmt_pid() {'
 
 # --- which codecs are read --------------------------------------------------
 
@@ -183,10 +212,6 @@ mutate "drop the first byte of every elementary stream run" \
                 self.position = Position::InElementaryStream;
                 Some(if es.is_empty() { es } else { &es[1..] })'
 
-mutate "feed the last byte of the PES header as well" \
-  '                Some(&payload[remaining..])' \
-  '                Some(&payload[remaining - 1..])'
-
 mutate "trim one byte off the end of every run" \
   '        follower.observer.feed(es);' \
   '        let es = &es[..es.len() - 1];
@@ -231,6 +256,12 @@ mutate "step over one byte too few of a header remainder" \
                         Some(&payload[remaining..])' \
   '                        self.position = Position::InElementaryStream;
                         Some(&payload[remaining - 1..])'
+
+mutate "step over one byte too many of a header remainder" \
+  '                        self.position = Position::InElementaryStream;
+                        Some(&payload[remaining..])' \
+  '                        self.position = Position::InElementaryStream;
+                        Some(&payload[remaining + 1..])'
 
 mutate "carry the header state past the next payload unit start" \
   '            _ => {
@@ -295,6 +326,7 @@ echo "killed:      $killed"
 echo "survived:    $survived"
 echo "not built:   $notbuilt"
 echo "not applied: $notapplied"
+echo "duplicate:   $duplicates"
 echo
 echo "Only 'killed' counts. A mutation that did not apply uniquely, or did not"
 echo "compile, was never tested - a gap in this harness rather than evidence"
@@ -308,6 +340,6 @@ fi
 if [ "$killed" -ne "$attempted" ]; then
   echo; echo "killed $killed of $attempted attempted mutations; the counts must agree." >&2; exit 1
 fi
-if [ "$survived" -ne 0 ] || [ "$notbuilt" -ne 0 ] || [ "$notapplied" -ne 0 ]; then
+if [ "$survived" -ne 0 ] || [ "$notbuilt" -ne 0 ] || [ "$notapplied" -ne 0 ] || [ "$duplicates" -ne 0 ]; then
   exit 1
 fi
