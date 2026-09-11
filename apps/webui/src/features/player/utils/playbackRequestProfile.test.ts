@@ -158,6 +158,24 @@ describe('resolvePlaybackRequestProfile', () => {
     )).toBe('quality');
   });
 
+  it('does not demote desktop Chrome when downlink is clamped to 10 Mbps by browser privacy', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext({
+        isTv: false,
+        isNativePlayback: false,
+        platform: 'macos',
+        network: {
+          kind: 'browser',
+          effectiveType: '4g',
+          downlinkMbps: 10,
+          metered: false,
+        },
+      }),
+      buildCapabilities(),
+      'live'
+    )).toBe('quality');
+  });
+
   it('still caps a measured link that is genuinely slow', () => {
     expect(resolvePlaybackRequestProfile(
       buildContext({

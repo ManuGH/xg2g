@@ -342,11 +342,10 @@ export function V3PlayerView({
                 onSelect={(id) => actions.changeProfile(id as string)}
                 options={[
                   { id: 'auto', label: 'Auto (Smart)' },
-                  { id: 'cinema', label: 'Cinema (Referenz)' },
-                  { id: 'quality', label: 'Quality' },
-                  { id: 'direct', label: 'Direct Play' },
-                  { id: 'compatible', label: 'Compatible' },
-                  { id: 'repair', label: 'Repair' },
+                  { id: 'cinema', label: 'Cinema (Referenz • ~25–35 Mbps)' },
+                  { id: 'quality', label: 'Quality (High • ~10–12 Mbps)' },
+                  { id: 'compatible', label: 'Standard (Eco • ~5–6 Mbps)' },
+                  { id: 'direct', label: 'Direct Play (Passthrough)' },
                 ]}
               />
 

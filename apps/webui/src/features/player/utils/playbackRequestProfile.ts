@@ -387,9 +387,14 @@ export function resolvePlaybackRequestProfile(
 
   const previous = memory?.lastProfile;
 
-  if (downlinkMbps !== undefined) {
+  // Chromium privacy-caps navigator.connection.downlink at 10 Mbps.
+  // On an unmetered 4G/broadband connection, treat this as unconstrained rather than a link bottleneck.
+  const isChromePrivacyClamped = network?.kind === 'browser' && network?.effectiveType === '4g' && downlinkMbps === 10;
+  const effectiveDownlink = isChromePrivacyClamped ? undefined : downlinkMbps;
+
+  if (effectiveDownlink !== undefined) {
     const bandwidthCeiling = previous === 'bandwidth' ? BANDWIDTH_EXIT_MBPS : BANDWIDTH_ENTER_MBPS;
-    if (downlinkMbps < bandwidthCeiling) {
+    if (effectiveDownlink < bandwidthCeiling) {
       return settle('bandwidth');
     }
   }
@@ -400,7 +405,7 @@ export function resolvePlaybackRequestProfile(
     && !network?.saveData
     && !network?.metered
     && (network == null || QUALITY_ELIGIBLE_NETWORK_KINDS.has(network.kind))
-    && (downlinkMbps === undefined || downlinkMbps >= qualityFloor)
+    && (effectiveDownlink === undefined || effectiveDownlink >= qualityFloor)
   ) {
     return settle('quality');
   }
