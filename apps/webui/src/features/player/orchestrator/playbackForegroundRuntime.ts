@@ -2,9 +2,13 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { decideForegroundResume, type ForegroundResumeAction } from './foregroundResume';
+import { decideOnlineRecovery, type OnlineRecoveryAction } from './onlineRecovery';
 import type { PlaybackRetryResult, PlaybackRetryTarget } from './playbackTypes';
 import type { PlayerStatus } from '../../../types/v3-player';
 import { debugWarn } from '../../../utils/logging';
+import type { ResumeRecoveryOutcome } from './resumePlaybackRecovery';
+
+export type ResumeTrigger = 'foreground' | 'online';
 
 export interface ForegroundMediaBinding {
   mediaId: string;
@@ -18,11 +22,13 @@ export interface ForegroundMediaBinding {
 export interface ForegroundNudgeCallbacks {
   onBlocked: (err: unknown) => void;
   onFailed: () => void;
+  onSettled?: (outcome: ResumeRecoveryOutcome) => void;
   shouldContinue: () => boolean;
 }
 
 export interface PlaybackForegroundRuntimeOptions {
   getDomainStatus: () => PlayerStatus;
+  getConnectionLost?: () => boolean;
   getPlaybackEpoch: () => number;
   isStalePlaybackEpoch: (epoch: number) => boolean;
   isStoppedEpoch: (epoch: number) => boolean;
@@ -30,18 +36,24 @@ export interface PlaybackForegroundRuntimeOptions {
   onRetry: (target: PlaybackRetryTarget) => Promise<PlaybackRetryResult>;
 }
 
-export interface ActiveForegroundOperation {
+export interface ActiveResumeOperation {
   opId: number;
   epoch: number;
   target: PlaybackRetryTarget | null;
   mediaId: string;
+  participants: Set<ResumeTrigger>;
   cancelled: boolean;
+  settled: boolean;
   cancelHandle: (() => void) | null;
 }
+
+export type ActiveForegroundOperation = ActiveResumeOperation;
 
 export interface PlaybackForegroundRuntime {
   updateEligibility(eligible: boolean): void;
   updateVisibility(visible: boolean, isPiP: boolean): void;
+  updateConnectivity(online: boolean, hasActiveSession: boolean): void;
+  onConnectionLostChanged(connectionLost: boolean): void;
   setTargetContext(target: PlaybackRetryTarget | null): void;
   setMediaBinding(binding: ForegroundMediaBinding | null): void;
   setUserPaused(userPaused: boolean): void;
@@ -52,8 +64,10 @@ export interface PlaybackForegroundRuntime {
 
   // Inspection for tests
   getActiveOperationId(): number | null;
+  getActiveParticipants(): ReadonlySet<ResumeTrigger> | null;
   getCapturedTarget(): PlaybackRetryTarget | null;
   isWasHidden(): boolean;
+  isWasUnavailable(): boolean;
 }
 
 export function isSameRetryTarget(
@@ -112,11 +126,14 @@ export function createPlaybackForegroundRuntime(
 ): PlaybackForegroundRuntime {
   let isEligible = true;
   let wasHiddenState = false;
+  let browserOnline = true;
+  let hasActiveSession = false;
+  let wasUnavailableState = options.getConnectionLost ? options.getConnectionLost() : false;
   let capturedTarget: PlaybackRetryTarget | null = null;
   let currentBinding: ForegroundMediaBinding | null = null;
   let isUserPaused = false;
   let nextOpId = 0;
-  let activeOp: ActiveForegroundOperation | null = null;
+  let activeOp: ActiveResumeOperation | null = null;
 
   function cancelActiveOperation(_reason: string): void {
     if (activeOp) {
@@ -127,14 +144,22 @@ export function createPlaybackForegroundRuntime(
         try {
           op.cancelHandle();
         } catch (err) {
-          debugWarn('[V3Player][Foreground] Error during cancelHandle', err);
+          debugWarn('[V3Player][Resume] Error during cancelHandle', err);
         }
         op.cancelHandle = null;
       }
     }
   }
 
-  function shouldNudgeContinue(op: ActiveForegroundOperation): boolean {
+  function withdrawParticipant(trigger: ResumeTrigger): void {
+    if (!activeOp) return;
+    activeOp.participants.delete(trigger);
+    if (activeOp.participants.size === 0) {
+      cancelActiveOperation(`participant_withdrawn_${trigger}`);
+    }
+  }
+
+  function shouldNudgeContinue(op: ActiveResumeOperation): boolean {
     if (op.cancelled || activeOp !== op) return false;
     if (options.isDisposed()) return false;
     if (options.isStalePlaybackEpoch(op.epoch)) return false;
@@ -143,7 +168,7 @@ export function createPlaybackForegroundRuntime(
     return true;
   }
 
-  function handleNudgeBlocked(op: ActiveForegroundOperation, err: unknown): void {
+  function handleNudgeBlocked(op: ActiveResumeOperation, err: unknown): void {
     if (op.cancelled || activeOp !== op) return;
     if (options.isDisposed()) return;
     if (options.isStalePlaybackEpoch(op.epoch)) return;
@@ -156,19 +181,175 @@ export function createPlaybackForegroundRuntime(
     }
   }
 
-  function handleNudgeFailed(op: ActiveForegroundOperation): void {
-    if (op.cancelled || activeOp !== op) return;
-    if (options.isDisposed()) return;
-    if (options.isStalePlaybackEpoch(op.epoch)) return;
-    if (options.isStoppedEpoch(op.epoch)) return;
-    if (isUserPaused || (currentBinding?.isUserPaused?.() ?? false)) return;
-
-    debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
-    cancelActiveOperation('exhaustion');
-
-    if (op.target) {
-      void options.onRetry(op.target);
+  function handleOperationSettled(op: ActiveResumeOperation, outcome: ResumeRecoveryOutcome): void {
+    if (op.settled || activeOp !== op) {
+      return;
     }
+    activeOp = null;
+    op.settled = true;
+
+    if (outcome === 'exhausted') {
+      if (
+        !op.cancelled &&
+        !options.isDisposed() &&
+        !options.isStalePlaybackEpoch(op.epoch) &&
+        !options.isStoppedEpoch(op.epoch) &&
+        !isUserPaused &&
+        !(currentBinding?.isUserPaused?.() ?? false)
+      ) {
+        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
+        if (op.target) {
+          void options.onRetry(op.target);
+        }
+      }
+    }
+  }
+
+  function requestPlayRecovery(trigger: ResumeTrigger): void {
+    if (!currentBinding) {
+      return;
+    }
+
+    if (
+      activeOp &&
+      !activeOp.cancelled &&
+      !activeOp.settled &&
+      activeOp.epoch === options.getPlaybackEpoch() &&
+      activeOp.mediaId === currentBinding.mediaId &&
+      isSameRetryTarget(activeOp.target, capturedTarget) &&
+      !options.isDisposed() &&
+      !options.isStalePlaybackEpoch(activeOp.epoch) &&
+      !options.isStoppedEpoch(activeOp.epoch)
+    ) {
+      // Matching second trigger joins running operation without resetting timer, attempt count, or play call
+      activeOp.participants.add(trigger);
+      return;
+    }
+
+    cancelActiveOperation('superseded_by_new_episode');
+
+    const opId = ++nextOpId;
+    const epoch = options.getPlaybackEpoch();
+    const op: ActiveResumeOperation = {
+      opId,
+      epoch,
+      target: capturedTarget,
+      mediaId: currentBinding.mediaId,
+      participants: new Set<ResumeTrigger>([trigger]),
+      cancelled: false,
+      settled: false,
+      cancelHandle: null,
+    };
+    activeOp = op;
+
+    const targetBinding = currentBinding;
+    currentBinding.onTransitionToBuffering?.();
+
+    if (
+      op.cancelled ||
+      activeOp !== op ||
+      options.isDisposed() ||
+      options.isStalePlaybackEpoch(op.epoch) ||
+      options.isStoppedEpoch(op.epoch) ||
+      currentBinding !== targetBinding ||
+      currentBinding.mediaId !== op.mediaId
+    ) {
+      if (activeOp === op) {
+        activeOp = null;
+      }
+      op.cancelled = true;
+      return;
+    }
+
+    try {
+      const handle = targetBinding.startNudge({
+        onBlocked: (err) => handleNudgeBlocked(op, err),
+        onFailed: () => handleOperationSettled(op, 'exhausted'),
+        onSettled: (outcome) => handleOperationSettled(op, outcome),
+        shouldContinue: () => shouldNudgeContinue(op),
+      });
+
+      if (
+        op.cancelled ||
+        activeOp !== op ||
+        options.isDisposed() ||
+        options.isStalePlaybackEpoch(op.epoch) ||
+        options.isStoppedEpoch(op.epoch)
+      ) {
+        if (typeof handle === 'function') {
+          try {
+            handle();
+          } catch {
+            // ignore
+          }
+        }
+      } else {
+        op.cancelHandle = handle;
+      }
+    } catch (_err) {
+      op.cancelled = true;
+      if (activeOp === op) {
+        activeOp = null;
+      }
+    }
+  }
+
+  function checkAvailabilityEdge(): void {
+    if (options.isDisposed()) return;
+
+    const connectionLost = options.getConnectionLost ? options.getConnectionLost() : false;
+    const isAvailable = browserOnline && !connectionLost;
+
+    if (!isAvailable) {
+      wasUnavailableState = true;
+      withdrawParticipant('online');
+      return;
+    }
+
+    const wasOffline = wasUnavailableState;
+    wasUnavailableState = false;
+
+    if (!wasOffline) {
+      return;
+    }
+
+    if (!isEligible) {
+      return;
+    }
+
+    if (hasActiveSession && currentBinding?.onHlsReload) {
+      try {
+        currentBinding.onHlsReload();
+      } catch (err) {
+        debugWarn('[V3Player] hls reconnect startLoad failed', err);
+      }
+    }
+
+    const domainStatus = options.getDomainStatus();
+    const hasTerminal = domainStatus === 'idle' || domainStatus === 'error' || domainStatus === 'stopped';
+    const effectiveUserPaused = isUserPaused || (currentBinding?.isUserPaused?.() ?? false);
+
+    const action: OnlineRecoveryAction = decideOnlineRecovery({
+      wasOffline: true,
+      hasActiveSession,
+      status: domainStatus,
+      userPaused: effectiveUserPaused,
+      hasTerminal,
+    });
+
+    if (action === 'none') {
+      return;
+    }
+
+    if (action === 'retry') {
+      cancelActiveOperation('reestablishing_session');
+      if (capturedTarget) {
+        void options.onRetry(capturedTarget);
+      }
+      return;
+    }
+
+    requestPlayRecovery('online');
   }
 
   function updateEligibility(eligible: boolean): void {
@@ -184,16 +365,14 @@ export function createPlaybackForegroundRuntime(
 
     if (!visible) {
       wasHiddenState = true;
-      cancelActiveOperation('hidden');
+      withdrawParticipant('foreground');
       return;
     }
 
-    // Document is visible. Check if this was a genuine hidden->visible transition.
     const wasHidden = wasHiddenState;
     wasHiddenState = false;
 
     if (!wasHidden) {
-      // Not a hidden->visible edge (initial visible mount or repeated visible report)
       return;
     }
 
@@ -201,7 +380,6 @@ export function createPlaybackForegroundRuntime(
       return;
     }
 
-    // Preserve HLS startLoad() kick on qualifying reveal BEFORE play/retry decision
     if (currentBinding?.onHlsReload) {
       try {
         currentBinding.onHlsReload();
@@ -234,76 +412,17 @@ export function createPlaybackForegroundRuntime(
       return;
     }
 
-    // action === 'play'
-    if (!currentBinding) {
-      return;
-    }
+    requestPlayRecovery('foreground');
+  }
 
-    cancelActiveOperation('superseded_by_new_episode');
+  function updateConnectivity(online: boolean, hasActive: boolean): void {
+    browserOnline = online;
+    hasActiveSession = hasActive;
+    checkAvailabilityEdge();
+  }
 
-    const opId = ++nextOpId;
-    const epoch = options.getPlaybackEpoch();
-    const op: ActiveForegroundOperation = {
-      opId,
-      epoch,
-      target: capturedTarget,
-      mediaId: currentBinding.mediaId,
-      cancelled: false,
-      cancelHandle: null,
-    };
-    activeOp = op;
-
-    const targetBinding = currentBinding;
-    currentBinding.onTransitionToBuffering?.();
-
-    // Revalidate operation, lifecycle, and binding ownership after external callback before starting DOM work
-    if (
-      op.cancelled ||
-      activeOp !== op ||
-      options.isDisposed() ||
-      options.isStalePlaybackEpoch(op.epoch) ||
-      options.isStoppedEpoch(op.epoch) ||
-      currentBinding !== targetBinding ||
-      currentBinding.mediaId !== op.mediaId
-    ) {
-      if (activeOp === op) {
-        activeOp = null;
-      }
-      op.cancelled = true;
-      return;
-    }
-
-    try {
-      const handle = targetBinding.startNudge({
-        onBlocked: (err) => handleNudgeBlocked(op, err),
-        onFailed: () => handleNudgeFailed(op),
-        shouldContinue: () => shouldNudgeContinue(op),
-      });
-
-      if (
-        op.cancelled ||
-        activeOp !== op ||
-        options.isDisposed() ||
-        options.isStalePlaybackEpoch(op.epoch) ||
-        options.isStoppedEpoch(op.epoch)
-      ) {
-        // Synchronous cancellation occurred during startNudge!
-        if (typeof handle === 'function') {
-          try {
-            handle();
-          } catch {
-            // ignore
-          }
-        }
-      } else {
-        op.cancelHandle = handle;
-      }
-    } catch (_err) {
-      op.cancelled = true;
-      if (activeOp === op) {
-        activeOp = null;
-      }
-    }
+  function onConnectionLostChanged(_connectionLost: boolean): void {
+    checkAvailabilityEdge();
   }
 
   function setTargetContext(target: PlaybackRetryTarget | null): void {
@@ -368,6 +487,8 @@ export function createPlaybackForegroundRuntime(
   return {
     updateEligibility,
     updateVisibility,
+    updateConnectivity,
+    onConnectionLostChanged,
     setTargetContext,
     setMediaBinding,
     setUserPaused,
@@ -376,7 +497,9 @@ export function createPlaybackForegroundRuntime(
     onTerminalAuth,
     dispose,
     getActiveOperationId: () => activeOp?.opId ?? null,
+    getActiveParticipants: () => (activeOp ? new Set(activeOp.participants) : null),
     getCapturedTarget: () => capturedTarget,
     isWasHidden: () => wasHiddenState,
+    isWasUnavailable: () => wasUnavailableState,
   };
 }

@@ -34,12 +34,13 @@ import {
   createPlaybackForegroundRuntime,
   type ForegroundMediaBinding,
   type PlaybackForegroundRuntime,
+  type ResumeTrigger,
 } from './playbackForegroundRuntime';
 import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
 export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
-export type { ForegroundMediaBinding } from './playbackForegroundRuntime';
+export type { ForegroundMediaBinding, ResumeTrigger } from './playbackForegroundRuntime';
 
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
@@ -148,13 +149,15 @@ export interface PlaybackController {
       | 'error',
   ): void;
 
-  // Foreground recovery coordination
+  // Foreground and online resume recovery coordination
   reportForegroundVisibility(visible: boolean, isPiP: boolean): void;
+  reportBrowserConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
   setForegroundEligibility(eligible: boolean): void;
   setForegroundTarget(target: PlaybackRetryTarget | null): void;
   setForegroundMediaBinding(binding: ForegroundMediaBinding | null): void;
   setUserPaused(userPaused: boolean): void;
   getActiveForegroundOperationId(): number | null;
+  getActiveResumeParticipants(): ReadonlySet<ResumeTrigger> | null;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -485,11 +488,21 @@ export function createPlaybackController(
 
   const foregroundRuntime: PlaybackForegroundRuntime = createPlaybackForegroundRuntime({
     getDomainStatus: () => runtime.getState().status,
+    getConnectionLost: () => runtime.getState().connectionLost,
     getPlaybackEpoch: () => playbackEpoch,
     isStalePlaybackEpoch,
     isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch),
     isDisposed: () => isDisposed,
     onRetry: (target) => retry(target),
+  });
+
+  let previousConnectionLost = runtime.getState().connectionLost;
+  runtime.subscribe(() => {
+    const currentConnectionLost = runtime.getState().connectionLost;
+    if (currentConnectionLost !== previousConnectionLost) {
+      previousConnectionLost = currentConnectionLost;
+      foregroundRuntime.onConnectionLostChanged(currentConnectionLost);
+    }
   });
 
   function dispatch(event: PlaybackMachineEvent): void {
@@ -1813,6 +1826,9 @@ export function createPlaybackController(
     reportForegroundVisibility(visible: boolean, isPiP: boolean) {
       foregroundRuntime.updateVisibility(visible, isPiP);
     },
+    reportBrowserConnectivity({ online, hasActiveSession }: { online: boolean; hasActiveSession: boolean }) {
+      foregroundRuntime.updateConnectivity(online, hasActiveSession);
+    },
     setForegroundEligibility(eligible: boolean) {
       foregroundRuntime.updateEligibility(eligible);
     },
@@ -1827,6 +1843,9 @@ export function createPlaybackController(
     },
     getActiveForegroundOperationId() {
       return foregroundRuntime.getActiveOperationId();
+    },
+    getActiveResumeParticipants() {
+      return foregroundRuntime.getActiveParticipants();
     },
 
     getActiveSessionId() {

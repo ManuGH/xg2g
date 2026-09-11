@@ -16,6 +16,8 @@ export interface UseForegroundRecoveryOptions {
   hlsRef: React.RefObject<Hls | null>;
   isEligible: boolean;
   isDocumentVisible: boolean;
+  isOnline?: boolean;
+  hasActiveSession?: boolean;
   target: PlaybackRetryTarget | null;
   userPauseIntentRef: React.MutableRefObject<boolean>;
   setStatus: React.Dispatch<React.SetStateAction<PlayerStatus>>;
@@ -27,6 +29,8 @@ export function useForegroundRecovery({
   hlsRef,
   isEligible,
   isDocumentVisible,
+  isOnline,
+  hasActiveSession,
   target,
   userPauseIntentRef,
   setStatus,
@@ -93,6 +97,7 @@ export function useForegroundRecovery({
               shouldContinue: callbacks.shouldContinue,
               onBlocked: callbacks.onBlocked,
               onFailed: callbacks.onFailed,
+              onSettled: callbacks.onSettled,
             });
           },
         };
@@ -108,4 +113,12 @@ export function useForegroundRecovery({
     const isPiP = typeof document !== 'undefined' && Boolean(video && document.pictureInPictureElement === video);
     controller.reportForegroundVisibility(isDocumentVisible, isPiP);
   }, [controller, isDocumentVisible, videoRef]);
+
+  // Browser connectivity edge listener.
+  useEffect(() => {
+    controller.reportBrowserConnectivity({
+      online: isOnline ?? true,
+      hasActiveSession: hasActiveSession ?? false,
+    });
+  }, [controller, isOnline, hasActiveSession]);
 }

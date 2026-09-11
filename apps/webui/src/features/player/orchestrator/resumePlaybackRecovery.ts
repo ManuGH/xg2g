@@ -39,6 +39,8 @@ export function resumeRecoverySettled(
   return resumeStreamRecovered(startTime, currentTime, ended) || attempts >= maxAttempts;
 }
 
+export type ResumeRecoveryOutcome = 'recovered' | 'exhausted' | 'cancelled';
+
 export interface ResumePlaybackRecoveryOptions {
   observeMs?: number;
   intervalMs?: number;
@@ -50,6 +52,7 @@ export interface ResumePlaybackRecoveryOptions {
   // decideForegroundResume; this protects against a pause DURING the ~2s window.)
   shouldContinue?: () => boolean;
   onFailed?: () => void;
+  onSettled?: (outcome: ResumeRecoveryOutcome) => void;
 }
 
 // startResumePlaybackRecovery observes first, then nudges play() until the stream
@@ -66,8 +69,27 @@ export function startResumePlaybackRecovery(
   let attempts = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
+  let settled = false;
 
-  const alive = (): boolean => !cancelled && (options.shouldContinue?.() ?? true);
+  const settle = (outcome: ResumeRecoveryOutcome): void => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    options.onSettled?.(outcome);
+  };
+
+  const alive = (): boolean => {
+    if (cancelled) {
+      settle('cancelled');
+      return false;
+    }
+    if (options.shouldContinue && !options.shouldContinue()) {
+      settle('cancelled');
+      return false;
+    }
+    return true;
+  };
 
   const nudge = (): void => {
     if (!alive()) {
@@ -82,7 +104,10 @@ export function startResumePlaybackRecovery(
       attempts += 1;
       if (resumeRecoverySettled(startTime, video.currentTime, video.ended, attempts, maxAttempts)) {
         if (!resumeStreamRecovered(startTime, video.currentTime, video.ended)) {
+          settle('exhausted');
           options.onFailed?.();
+        } else {
+          settle('recovered');
         }
         return;
       }
@@ -105,6 +130,7 @@ export function startResumePlaybackRecovery(
       return;
     }
     if (resumeStreamRecovered(observeStart, video.currentTime, video.ended)) {
+      settle('recovered');
       return; // recovered on its own — never touch a waking element
     }
     // First play() didn't take — continue nudging on interval.
@@ -117,5 +143,6 @@ export function startResumePlaybackRecovery(
     if (timer !== undefined) {
       clearTimeout(timer);
     }
+    settle('cancelled');
   };
 }
