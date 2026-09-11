@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useInsertionEffect, useLayoutEffect, useRef } from 'react';
 import type { PlaybackController } from './playbackController';
 import type { ForegroundMediaBinding } from './playbackForegroundRuntime';
 import { startResumePlaybackRecovery } from './resumePlaybackRecovery';
@@ -35,13 +35,13 @@ export function useForegroundRecovery({
   userPauseIntentRef,
   setStatus,
 }: UseForegroundRecoveryOptions): void {
+  const setStatusRef = useRef(setStatus);
   const committedVideoRef = useRef<HTMLVideoElement | null>(null);
   const committedBindingRef = useRef<ForegroundMediaBinding | null>(null);
   const committedMediaIdRef = useRef<string>('');
   const mediaIdCounterRef = useRef<number>(0);
-  const setStatusRef = useRef(setStatus);
 
-  // Cleanup media binding when controller changes or on unmount
+  // Set up cleanup on unmount.
   useLayoutEffect(() => {
     return () => {
       committedVideoRef.current = null;
@@ -50,6 +50,20 @@ export function useForegroundRecovery({
       controller.setForegroundMediaBinding(null);
     };
   }, [controller]);
+
+  // Synchronize committed facts (callbacks, target, eligibility, user pause, connectivity context)
+  // in insertion effect phase so descendants' layout effects observe fresh committed facts
+  // rather than stale facts from a previous commit.
+  useInsertionEffect(() => {
+    setStatusRef.current = setStatus;
+    controller.setForegroundEligibility(isEligible);
+    controller.setForegroundTarget(target);
+    controller.setUserPaused(userPauseIntentRef.current);
+    controller.setCommittedConnectivity({
+      online: isOnline ?? true,
+      hasActiveSession: hasActiveSession ?? false,
+    });
+  });
 
   // Synchronize committed target, eligibility, user pause, status callback, and video DOM attachment in layout phase.
   // Running on every commit ensures node replacements (e.g. key="a" -> key="b") or late-attached
@@ -62,11 +76,6 @@ export function useForegroundRecovery({
     controller.setForegroundEligibility(isEligible);
     controller.setForegroundTarget(target);
     controller.setUserPaused(userPauseIntentRef.current);
-    controller.reportBrowserConnectivity({
-      online: isOnline ?? true,
-      hasActiveSession: hasActiveSession ?? false,
-    });
-
     const currentVideo = videoRef.current;
     if (currentVideo !== committedVideoRef.current) {
       committedVideoRef.current = currentVideo;
@@ -109,6 +118,11 @@ export function useForegroundRecovery({
         controller.setForegroundMediaBinding(binding);
       }
     }
+
+    controller.reportBrowserConnectivity({
+      online: isOnline ?? true,
+      hasActiveSession: hasActiveSession ?? false,
+    });
   });
 
   // Document visibility edge listener.

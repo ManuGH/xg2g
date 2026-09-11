@@ -410,49 +410,262 @@ describe('Step 3c: React Lifecycle, Suspense Isolation, and Facade Events (Rows 
       expect(controllerInstance!.getActiveForegroundOperationId()).toBeNull();
     });
 
-    it('evaluates coherent committed context when child layout effect dispatches connectionLost change', () => {
-      let playCalls = 0;
-      const controller = createTestController('playing', true);
+    describe('Row 10: Commit hierarchy and effect ordering', () => {
+      it.each(['offline', 'session_removed'] as const)(
+        'evaluates coherent committed context when hook is in parent and child dispatches during %s commit',
+        (change) => {
+          let playCalls = 0;
+          const controller = createTestController('playing', true);
+          vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => {
+            playCalls++;
+            return Promise.resolve();
+          });
 
-      function Child({ changed }: { changed: boolean }) {
-        useLayoutEffect(() => {
-          if (changed) {
-            controller.dispatch({
-              type: 'normative.session.lease.updated',
-              epoch: controller.getEpoch(),
-              sessionEpoch: 0,
-              leaseExpiresAt: null,
-              connectionLost: false,
-            });
+          function DomainChild({ changed }: { changed: boolean }) {
+            useLayoutEffect(() => {
+              if (changed) {
+                controller.dispatch({
+                  type: 'normative.session.lease.updated',
+                  epoch: controller.getEpoch(),
+                  sessionEpoch: 0,
+                  leaseExpiresAt: null,
+                  connectionLost: false,
+                });
+              }
+            }, [changed]);
+            return null;
           }
-        }, [changed]);
-        return null;
-      }
 
-      function Parent({ isOnline, changed }: { isOnline: boolean; changed: boolean }) {
-        return (
-          <div>
-            <ResumeHarness
-              controller={controller}
-              isOnline={isOnline}
-              hasActiveSession={true}
-              onPlayCall={() => playCalls++}
-            />
-            <Child changed={changed} />
-          </div>
-        );
-      }
+          function Parent({ changed }: { changed: boolean }) {
+            const videoRef = useRef<HTMLVideoElement | null>(null);
+            const hlsRef = useRef<Hls | null>(null);
+            const paused = useRef(false);
+            useForegroundRecovery({
+              controller,
+              videoRef,
+              hlsRef,
+              isEligible: true,
+              isDocumentVisible: true,
+              isOnline: !(changed && change === 'offline'),
+              hasActiveSession: !(changed && change === 'session_removed'),
+              target: { kind: 'live', serviceRef: 'channel-a' },
+              userPauseIntentRef: paused,
+              setStatus: () => {},
+            });
+            return (
+              <div>
+                <video ref={videoRef} />
+                <DomainChild changed={changed} />
+              </div>
+            );
+          }
 
-      const { rerender } = render(<Parent isOnline={true} changed={false} />);
-      expect(playCalls).toBe(0);
+          const { rerender } = render(<Parent changed={false} />);
+          expect(playCalls).toBe(0);
 
-      // Now rerender with isOnline=false and changed=true:
-      // Child dispatches connectionLost=false in layout effect.
-      // Coherent committed context ensures isOnline=false is known; zero plays issued!
-      rerender(<Parent isOnline={false} changed={true} />);
-      expect(controller.getState().connectionLost).toBe(false);
-      expect(playCalls).toBe(0);
-      expect(controller.getActiveForegroundOperationId()).toBeNull();
+          rerender(<Parent changed={true} />);
+          expect(controller.getState().connectionLost).toBe(false);
+          expect(playCalls).toBe(0);
+          expect(controller.getActiveForegroundOperationId()).toBeNull();
+        },
+      );
+
+      it.each(['offline', 'session_removed'] as const)(
+        'evaluates coherent committed context when hook is in child and parent dispatches during %s commit',
+        (change) => {
+          let playCalls = 0;
+          const controller = createTestController('playing', true);
+          vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => {
+            playCalls++;
+            return Promise.resolve();
+          });
+
+          function ChildHook({ isOnline, hasActiveSession }: { isOnline: boolean; hasActiveSession: boolean }) {
+            const videoRef = useRef<HTMLVideoElement | null>(null);
+            const hlsRef = useRef<Hls | null>(null);
+            const paused = useRef(false);
+            useForegroundRecovery({
+              controller,
+              videoRef,
+              hlsRef,
+              isEligible: true,
+              isDocumentVisible: true,
+              isOnline,
+              hasActiveSession,
+              target: { kind: 'live', serviceRef: 'channel-a' },
+              userPauseIntentRef: paused,
+              setStatus: () => {},
+            });
+            return <video ref={videoRef} />;
+          }
+
+          function Parent({ changed }: { changed: boolean }) {
+            useLayoutEffect(() => {
+              if (changed) {
+                controller.dispatch({
+                  type: 'normative.session.lease.updated',
+                  epoch: controller.getEpoch(),
+                  sessionEpoch: 0,
+                  leaseExpiresAt: null,
+                  connectionLost: false,
+                });
+              }
+            }, [changed]);
+
+            return (
+              <div>
+                <ChildHook
+                  isOnline={!(changed && change === 'offline')}
+                  hasActiveSession={!(changed && change === 'session_removed')}
+                />
+              </div>
+            );
+          }
+
+          const { rerender } = render(<Parent changed={false} />);
+          expect(playCalls).toBe(0);
+
+          rerender(<Parent changed={true} />);
+          expect(controller.getState().connectionLost).toBe(false);
+          expect(playCalls).toBe(0);
+          expect(controller.getActiveForegroundOperationId()).toBeNull();
+        },
+      );
+
+      it.each(['hook_first', 'reporter_first'] as const)(
+        'evaluates coherent committed context across sibling components in %s order',
+        (order) => {
+          let playCalls = 0;
+          const controller = createTestController('playing', true);
+          vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => {
+            playCalls++;
+            return Promise.resolve();
+          });
+
+          function SiblingHook({ isOnline }: { isOnline: boolean }) {
+            const videoRef = useRef<HTMLVideoElement | null>(null);
+            const hlsRef = useRef<Hls | null>(null);
+            const paused = useRef(false);
+            useForegroundRecovery({
+              controller,
+              videoRef,
+              hlsRef,
+              isEligible: true,
+              isDocumentVisible: true,
+              isOnline,
+              hasActiveSession: true,
+              target: { kind: 'live', serviceRef: 'channel-a' },
+              userPauseIntentRef: paused,
+              setStatus: () => {},
+            });
+            return <video ref={videoRef} />;
+          }
+
+          function SiblingReporter({ changed }: { changed: boolean }) {
+            useLayoutEffect(() => {
+              if (changed) {
+                controller.dispatch({
+                  type: 'normative.session.lease.updated',
+                  epoch: controller.getEpoch(),
+                  sessionEpoch: 0,
+                  leaseExpiresAt: null,
+                  connectionLost: false,
+                });
+              }
+            }, [changed]);
+            return null;
+          }
+
+          function SiblingParent({ changed }: { changed: boolean }) {
+            return (
+              <div>
+                {order === 'hook_first' ? (
+                  <>
+                    <SiblingHook isOnline={!changed} />
+                    <SiblingReporter changed={changed} />
+                  </>
+                ) : (
+                  <>
+                    <SiblingReporter changed={changed} />
+                    <SiblingHook isOnline={!changed} />
+                  </>
+                )}
+              </div>
+            );
+          }
+
+          const { rerender } = render(<SiblingParent changed={false} />);
+          expect(playCalls).toBe(0);
+
+          rerender(<SiblingParent changed={true} />);
+          expect(controller.getState().connectionLost).toBe(false);
+          expect(playCalls).toBe(0);
+          expect(controller.getActiveForegroundOperationId()).toBeNull();
+        },
+      );
+
+      it.each(['before', 'after'] as const)(
+        'evaluates coherent committed context when same-component layout effect is placed %s hook',
+        (placement) => {
+          let playCalls = 0;
+          const controller = createTestController('playing', true);
+          vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => {
+            playCalls++;
+            return Promise.resolve();
+          });
+
+          function SameComponent({ changed }: { changed: boolean }) {
+            const videoRef = useRef<HTMLVideoElement | null>(null);
+            const hlsRef = useRef<Hls | null>(null);
+            const paused = useRef(false);
+
+            const reporterEffect = () => {
+              if (changed) {
+                controller.dispatch({
+                  type: 'normative.session.lease.updated',
+                  epoch: controller.getEpoch(),
+                  sessionEpoch: 0,
+                  leaseExpiresAt: null,
+                  connectionLost: false,
+                });
+              }
+            };
+
+            if (placement === 'before') {
+              // eslint-disable-next-line react-hooks/rules-of-hooks
+              useLayoutEffect(reporterEffect, [changed]);
+            }
+
+            useForegroundRecovery({
+              controller,
+              videoRef,
+              hlsRef,
+              isEligible: true,
+              isDocumentVisible: true,
+              isOnline: !changed,
+              hasActiveSession: true,
+              target: { kind: 'live', serviceRef: 'channel-a' },
+              userPauseIntentRef: paused,
+              setStatus: () => {},
+            });
+
+            if (placement === 'after') {
+              // eslint-disable-next-line react-hooks/rules-of-hooks
+              useLayoutEffect(reporterEffect, [changed]);
+            }
+
+            return <video ref={videoRef} />;
+          }
+
+          const { rerender } = render(<SameComponent changed={false} />);
+          expect(playCalls).toBe(0);
+
+          rerender(<SameComponent changed={true} />);
+          expect(controller.getState().connectionLost).toBe(false);
+          expect(playCalls).toBe(0);
+          expect(controller.getActiveForegroundOperationId()).toBeNull();
+        },
+      );
     });
   });
 

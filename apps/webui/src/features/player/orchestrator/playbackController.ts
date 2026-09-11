@@ -152,6 +152,7 @@ export interface PlaybackController {
   // Foreground and online resume recovery coordination
   reportForegroundVisibility(visible: boolean, isPiP: boolean): void;
   reportBrowserConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
+  setCommittedConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
   setForegroundEligibility(eligible: boolean): void;
   setForegroundTarget(target: PlaybackRetryTarget | null): void;
   setForegroundMediaBinding(binding: ForegroundMediaBinding | null): void;
@@ -1835,6 +1836,9 @@ export function createPlaybackController(
     },
     reportBrowserConnectivity({ online, hasActiveSession }: { online: boolean; hasActiveSession: boolean }) {
       foregroundRuntime.updateConnectivity(online, hasActiveSession);
+    },
+    setCommittedConnectivity({ online, hasActiveSession }: { online: boolean; hasActiveSession: boolean }) {
+      foregroundRuntime.setCommittedConnectivity(online, hasActiveSession);
     },
     setForegroundEligibility(eligible: boolean) {
       foregroundRuntime.updateEligibility(eligible);

@@ -54,6 +54,7 @@ export interface PlaybackForegroundRuntime {
   updateEligibility(eligible: boolean): void;
   updateVisibility(visible: boolean, isPiP: boolean): void;
   updateConnectivity(online: boolean, hasActiveSession: boolean): void;
+  setCommittedConnectivity(online: boolean, hasActiveSession: boolean): void;
   onConnectionLostChanged(connectionLost: boolean): void;
   setTargetContext(target: PlaybackRetryTarget | null): void;
   setMediaBinding(binding: ForegroundMediaBinding | null): void;
@@ -435,6 +436,11 @@ export function createPlaybackForegroundRuntime(
     checkAvailabilityEdge();
   }
 
+  function setCommittedConnectivity(online: boolean, hasActive: boolean): void {
+    browserOnline = online;
+    hasActiveSession = hasActive;
+  }
+
   function onConnectionLostChanged(_connectionLost: boolean): void {
     checkAvailabilityEdge();
   }
@@ -506,6 +512,7 @@ export function createPlaybackForegroundRuntime(
     updateEligibility,
     updateVisibility,
     updateConnectivity,
+    setCommittedConnectivity,
     onConnectionLostChanged,
     setTargetContext,
     setMediaBinding,
