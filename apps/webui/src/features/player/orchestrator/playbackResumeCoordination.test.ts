@@ -361,6 +361,60 @@ describe('Step 3c: Playback Resume Coordination Runtime (Rows 1-9)', () => {
       expect(runtime.getActiveOperationId()).not.toBeNull();
       expect(mock.playSpy).toHaveBeenCalledTimes(1);
     });
+
+    it('suppresses online recovery when media binding is missing under healthy status', () => {
+      const runtime = createTestRuntime();
+      runtime.setTargetContext({ kind: 'live', serviceRef: '1:0:1:TEST' });
+      runtime.setMediaBinding(null);
+
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+
+      expect(runtime.getActiveOperationId()).toBeNull();
+      expect(onRetryCalls).toHaveLength(0);
+    });
+
+    it('suppresses online retry when media binding is missing under error status', () => {
+      const runtime = createTestRuntime();
+      runtime.setTargetContext({ kind: 'live', serviceRef: '1:0:1:TEST' });
+      runtime.setMediaBinding(null);
+      status = 'error';
+
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+
+      expect(onRetryCalls).toHaveLength(0);
+      expect(runtime.getActiveOperationId()).toBeNull();
+    });
+
+    it('handles media detachment and re-attachment around an outage correctly', () => {
+      const runtime = createTestRuntime();
+      const mock = createMockMedia();
+      runtime.setMediaBinding(mock.binding);
+      runtime.setTargetContext({ kind: 'live', serviceRef: '1:0:1:TEST' });
+
+      // 1. Goes offline while video attached
+      runtime.updateConnectivity(false, true);
+
+      // 2. Video detaches while offline
+      runtime.setMediaBinding(null);
+
+      // 3. Comes online while video detached -> no recovery
+      runtime.updateConnectivity(true, true);
+      expect(mock.playSpy).not.toHaveBeenCalled();
+      expect(runtime.getActiveOperationId()).toBeNull();
+
+      // 4. Video re-attached while online -> no recovery without fresh edge
+      runtime.setMediaBinding(mock.binding);
+      expect(mock.playSpy).not.toHaveBeenCalled();
+      expect(runtime.getActiveOperationId()).toBeNull();
+
+      // 5. Fresh outage occurs while video attached -> recovers on online edge!
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+      expect(mock.playSpy).toHaveBeenCalledTimes(1);
+      expect(runtime.getActiveOperationId()).not.toBeNull();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -742,6 +796,61 @@ describe('Step 3c: Playback Resume Coordination Runtime (Rows 1-9)', () => {
       rejectPlay({ name: 'NotAllowedError' });
       // paused callback must NOT be invoked for dead operation
       expect(mock.pausedSpy).not.toHaveBeenCalled();
+    });
+
+    it('suppresses online and foreground recovery while retry preparation is in flight', () => {
+      let retryInFlight = false;
+      const runtime = createTestRuntime({
+        isRetryInFlight: () => retryInFlight,
+      });
+      const mock = createMockMedia();
+      runtime.setMediaBinding(mock.binding);
+      runtime.setTargetContext({ kind: 'live', serviceRef: '1:0:1:TEST' });
+
+      // Start retry preparation
+      retryInFlight = true;
+
+      // Online edge arrives during preparation
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+      expect(mock.playSpy).not.toHaveBeenCalled();
+      expect(runtime.getActiveOperationId()).toBeNull();
+
+      // Foreground edge arrives during preparation
+      runtime.updateVisibility(false, false);
+      runtime.updateVisibility(true, false);
+      expect(mock.playSpy).not.toHaveBeenCalled();
+      expect(runtime.getActiveOperationId()).toBeNull();
+
+      // Complete retry preparation
+      retryInFlight = false;
+
+      // Fresh online edge after preparation completes triggers recovery
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+      expect(mock.playSpy).toHaveBeenCalledTimes(1);
+      expect(runtime.getActiveOperationId()).not.toBeNull();
+    });
+
+    it('cancels active resume operation when retry is initiated', () => {
+      const runtime = createTestRuntime();
+      const mock = createMockMedia();
+      runtime.setMediaBinding(mock.binding);
+      runtime.setTargetContext({ kind: 'live', serviceRef: '1:0:1:TEST' });
+
+      // Active recovery running
+      runtime.updateConnectivity(false, true);
+      runtime.updateConnectivity(true, true);
+      expect(runtime.getActiveOperationId()).not.toBeNull();
+      expect(mock.playSpy).toHaveBeenCalledTimes(1);
+
+      // Retry initiated
+      runtime.onRetryInitiated();
+      expect(runtime.getActiveOperationId()).toBeNull();
+
+      // Advancing timers produces no further plays
+      vi.advanceTimersByTime(2000);
+      expect(mock.playSpy).toHaveBeenCalledTimes(1);
     });
   });
 

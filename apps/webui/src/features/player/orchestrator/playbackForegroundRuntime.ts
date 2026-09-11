@@ -33,6 +33,7 @@ export interface PlaybackForegroundRuntimeOptions {
   isStalePlaybackEpoch: (epoch: number) => boolean;
   isStoppedEpoch: (epoch: number) => boolean;
   isDisposed: () => boolean;
+  isRetryInFlight?: () => boolean;
   onRetry: (target: PlaybackRetryTarget) => Promise<PlaybackRetryResult>;
 }
 
@@ -60,6 +61,7 @@ export interface PlaybackForegroundRuntime {
   onPlaybackAttemptStarted(epoch: number): void;
   onPlaybackStopped(epoch: number): void;
   onTerminalAuth(epoch?: number): void;
+  onRetryInitiated(): void;
   dispose(): void;
 
   // Inspection for tests
@@ -210,6 +212,10 @@ export function createPlaybackForegroundRuntime(
       return;
     }
 
+    if (options.isRetryInFlight?.()) {
+      return;
+    }
+
     if (
       activeOp &&
       !activeOp.cancelled &&
@@ -313,11 +319,15 @@ export function createPlaybackForegroundRuntime(
       return;
     }
 
-    if (!isEligible) {
+    if (!isEligible || !currentBinding) {
       return;
     }
 
-    if (hasActiveSession && currentBinding?.onHlsReload) {
+    if (options.isRetryInFlight?.()) {
+      return;
+    }
+
+    if (hasActiveSession && currentBinding.onHlsReload) {
       try {
         currentBinding.onHlsReload();
       } catch (err) {
@@ -327,7 +337,7 @@ export function createPlaybackForegroundRuntime(
 
     const domainStatus = options.getDomainStatus();
     const hasTerminal = domainStatus === 'idle' || domainStatus === 'error' || domainStatus === 'stopped';
-    const effectiveUserPaused = isUserPaused || (currentBinding?.isUserPaused?.() ?? false);
+    const effectiveUserPaused = isUserPaused || (currentBinding.isUserPaused?.() ?? false);
 
     const action: OnlineRecoveryAction = decideOnlineRecovery({
       wasOffline: true,
@@ -376,11 +386,15 @@ export function createPlaybackForegroundRuntime(
       return;
     }
 
-    if (!isEligible) {
+    if (!isEligible || !currentBinding) {
       return;
     }
 
-    if (currentBinding?.onHlsReload) {
+    if (options.isRetryInFlight?.()) {
+      return;
+    }
+
+    if (currentBinding.onHlsReload) {
       try {
         currentBinding.onHlsReload();
       } catch (err) {
@@ -390,7 +404,7 @@ export function createPlaybackForegroundRuntime(
 
     const domainStatus = options.getDomainStatus();
     const hasTerminal = domainStatus === 'idle' || domainStatus === 'error' || domainStatus === 'stopped';
-    const effectiveUserPaused = isUserPaused || (currentBinding?.isUserPaused?.() ?? false);
+    const effectiveUserPaused = isUserPaused || (currentBinding.isUserPaused?.() ?? false);
 
     const action: ForegroundResumeAction = decideForegroundResume({
       wasHidden: true,
@@ -478,6 +492,10 @@ export function createPlaybackForegroundRuntime(
     }
   }
 
+  function onRetryInitiated(): void {
+    cancelActiveOperation('retry_initiated');
+  }
+
   function dispose(): void {
     cancelActiveOperation('disposed');
     currentBinding = null;
@@ -495,6 +513,7 @@ export function createPlaybackForegroundRuntime(
     onPlaybackAttemptStarted,
     onPlaybackStopped,
     onTerminalAuth,
+    onRetryInitiated,
     dispose,
     getActiveOperationId: () => activeOp?.opId ?? null,
     getActiveParticipants: () => (activeOp ? new Set(activeOp.participants) : null),

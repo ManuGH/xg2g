@@ -158,6 +158,7 @@ export interface PlaybackController {
   setUserPaused(userPaused: boolean): void;
   getActiveForegroundOperationId(): number | null;
   getActiveResumeParticipants(): ReadonlySet<ResumeTrigger> | null;
+  getForegroundTarget(): PlaybackRetryTarget | null;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
@@ -165,6 +166,7 @@ export interface PlaybackController {
   updateTransport(newTransport: LiveSessionTransport): void;
   activate(): void;
   dispose(): void;
+  isDisposed(): boolean;
 
   // Observability & inspection for tests
   getActiveSessionId(): string | null;
@@ -493,6 +495,7 @@ export function createPlaybackController(
     isStalePlaybackEpoch,
     isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch),
     isDisposed: () => isDisposed,
+    isRetryInFlight: () => isRetryInFlight(),
     onRetry: (target) => retry(target),
   });
 
@@ -1631,6 +1634,7 @@ export function createPlaybackController(
 
     // Cancel existing active retry if target changed
     cancelActiveRetry('superseded');
+    foregroundRuntime.onRetryInitiated();
 
     let resolvePublic!: (result: PlaybackRetryResult) => void;
     const publicPromise = new Promise<PlaybackRetryResult>((resolve) => {
@@ -1822,6 +1826,9 @@ export function createPlaybackController(
     },
     activate,
     dispose,
+    isDisposed() {
+      return isDisposed;
+    },
 
     reportForegroundVisibility(visible: boolean, isPiP: boolean) {
       foregroundRuntime.updateVisibility(visible, isPiP);
@@ -1846,6 +1853,9 @@ export function createPlaybackController(
     },
     getActiveResumeParticipants() {
       return foregroundRuntime.getActiveParticipants();
+    },
+    getForegroundTarget() {
+      return foregroundRuntime.getCapturedTarget();
     },
 
     getActiveSessionId() {

@@ -62,6 +62,10 @@ export function useForegroundRecovery({
     controller.setForegroundEligibility(isEligible);
     controller.setForegroundTarget(target);
     controller.setUserPaused(userPauseIntentRef.current);
+    controller.reportBrowserConnectivity({
+      online: isOnline ?? true,
+      hasActiveSession: hasActiveSession ?? false,
+    });
 
     const currentVideo = videoRef.current;
     if (currentVideo !== committedVideoRef.current) {
@@ -113,12 +117,4 @@ export function useForegroundRecovery({
     const isPiP = typeof document !== 'undefined' && Boolean(video && document.pictureInPictureElement === video);
     controller.reportForegroundVisibility(isDocumentVisible, isPiP);
   }, [controller, isDocumentVisible, videoRef]);
-
-  // Browser connectivity edge listener.
-  useEffect(() => {
-    controller.reportBrowserConnectivity({
-      online: isOnline ?? true,
-      hasActiveSession: hasActiveSession ?? false,
-    });
-  }, [controller, isOnline, hasActiveSession]);
 }

@@ -1,15 +1,37 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import React, { Suspense, startTransition, useRef, useState } from 'react';
+import React, { Suspense, startTransition, useLayoutEffect, useRef, useState } from 'react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import type Hls from 'hls.js';
 import { useForegroundRecovery } from './useForegroundRecovery';
 import { createPlaybackController, type PlaybackController } from './playbackController';
+import { usePlaybackController } from './usePlaybackController';
+import { createInitialPlaybackDomainState } from './playbackMachine';
 import { createRecoveryLadderState } from './recoveryLadder';
 import type { PlaybackRetryTarget } from './playbackTypes';
-import type { PlayerStatus } from '../../../types/v3-player';
+import type { HlsInstanceRef, PlayerStatus, V3PlayerProps, VideoElementRef } from '../../../types/v3-player';
+import { usePlaybackOrchestrator } from '../usePlaybackOrchestrator';
+
+vi.mock('../lib/hlsRuntime', () => {
+  const HlsMock = vi.fn().mockImplementation(function (this: any) {
+    this.destroy = vi.fn();
+    this.startLoad = vi.fn();
+    this.attachMedia = vi.fn();
+    this.loadSource = vi.fn();
+    this.on = vi.fn();
+    this.off = vi.fn();
+  });
+  (HlsMock as any).isSupported = vi.fn().mockReturnValue(true);
+  (HlsMock as any).Events = {
+    MANIFEST_PARSED: 'hlsManifestParsed',
+    LEVEL_SWITCHED: 'hlsLevelSwitched',
+    FRAG_BUFFERED: 'hlsFragBuffered',
+    ERROR: 'hlsError',
+  };
+  return { default: HlsMock };
+});
 
 describe('Step 3c: React Lifecycle, Suspense Isolation, and Facade Events (Rows 10-12)', () => {
   const controllers: PlaybackController[] = [];
@@ -263,39 +285,174 @@ describe('Step 3c: React Lifecycle, Suspense Isolation, and Facade Events (Rows 
       expect(playCalls).toBe(1);
     });
 
-    it('operates reliably under StrictMode mount and double-invocation', () => {
-      const controller = createTestController('playing');
+    it('operates reliably with usePlaybackController under root StrictMode across mount, unmount, and reconnect', () => {
       let playCalls = 0;
+      let controllerInstance: PlaybackController | null = null;
+      const dummyTransport: any = {
+        startLiveSession: vi.fn(),
+        stopSession: vi.fn(),
+        sendHeartbeat: vi.fn(),
+        getSession: vi.fn(),
+      };
 
-      const { rerender } = render(
-        <React.StrictMode>
+      function StrictModePlayer({ isOnline }: { isOnline: boolean }) {
+        const { controller } = usePlaybackController(
+          dummyTransport,
+          () => ({
+            ...createInitialPlaybackDomainState(),
+            status: 'playing',
+            playbackMode: 'LIVE',
+            hasSessionIntent: true,
+          }),
+          () => {},
+        );
+        controllerInstance = controller;
+        controllers.push(controller);
+        return (
           <ResumeHarness
             controller={controller}
-            isOnline={false}
+            isOnline={isOnline}
             hasActiveSession={true}
             onPlayCall={() => playCalls++}
           />
+        );
+      }
+
+      const { rerender, unmount } = render(
+        <React.StrictMode>
+          <StrictModePlayer isOnline={false} />
         </React.StrictMode>,
       );
+
+      // In StrictMode mount, controller was activated
+      expect(controllerInstance!.isDisposed()).toBe(false);
+      expect(playCalls).toBe(0);
 
       // Transition to online
       rerender(
         <React.StrictMode>
-          <ResumeHarness
-            controller={controller}
-            isOnline={true}
-            hasActiveSession={true}
-            onPlayCall={() => playCalls++}
-          />
+          <StrictModePlayer isOnline={true} />
         </React.StrictMode>,
       );
 
       // Exactly 1 operation started and 1 immediate play
-      expect(controller.getActiveForegroundOperationId()).not.toBeNull();
+      expect(controllerInstance!.getActiveForegroundOperationId()).not.toBeNull();
       expect(playCalls).toBe(1);
 
-      vi.advanceTimersByTime(400);
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
       expect(playCalls).toBe(2);
+
+      // Unmount under StrictMode cancels active recovery and disposes controller cleanly
+      unmount();
+      expect(controllerInstance!.getActiveForegroundOperationId()).toBeNull();
+      expect(controllerInstance!.isDisposed()).toBe(true);
+    });
+
+    it('operates reliably with usePlaybackController under subtree StrictMode', () => {
+      let playCalls = 0;
+      let controllerInstance: PlaybackController | null = null;
+      const dummyTransport: any = {
+        startLiveSession: vi.fn(),
+        stopSession: vi.fn(),
+        sendHeartbeat: vi.fn(),
+        getSession: vi.fn(),
+      };
+
+      function SubtreePlayer({ isOnline }: { isOnline: boolean }) {
+        const { controller } = usePlaybackController(
+          dummyTransport,
+          () => ({
+            ...createInitialPlaybackDomainState(),
+            status: 'playing',
+            playbackMode: 'LIVE',
+            hasSessionIntent: true,
+          }),
+          () => {},
+        );
+        controllerInstance = controller;
+        controllers.push(controller);
+        return (
+          <ResumeHarness
+            controller={controller}
+            isOnline={isOnline}
+            hasActiveSession={true}
+            onPlayCall={() => playCalls++}
+          />
+        );
+      }
+
+      const { rerender, unmount } = render(
+        <div>
+          <React.StrictMode>
+            <SubtreePlayer isOnline={false} />
+          </React.StrictMode>
+        </div>,
+      );
+
+      expect(controllerInstance!.isDisposed()).toBe(false);
+      expect(playCalls).toBe(0);
+
+      rerender(
+        <div>
+          <React.StrictMode>
+            <SubtreePlayer isOnline={true} />
+          </React.StrictMode>
+        </div>,
+      );
+
+      expect(controllerInstance!.getActiveForegroundOperationId()).not.toBeNull();
+      expect(playCalls).toBe(1);
+
+      unmount();
+      expect(controllerInstance!.isDisposed()).toBe(true);
+      expect(controllerInstance!.getActiveForegroundOperationId()).toBeNull();
+    });
+
+    it('evaluates coherent committed context when child layout effect dispatches connectionLost change', () => {
+      let playCalls = 0;
+      const controller = createTestController('playing', true);
+
+      function Child({ changed }: { changed: boolean }) {
+        useLayoutEffect(() => {
+          if (changed) {
+            controller.dispatch({
+              type: 'normative.session.lease.updated',
+              epoch: controller.getEpoch(),
+              sessionEpoch: 0,
+              leaseExpiresAt: null,
+              connectionLost: false,
+            });
+          }
+        }, [changed]);
+        return null;
+      }
+
+      function Parent({ isOnline, changed }: { isOnline: boolean; changed: boolean }) {
+        return (
+          <div>
+            <ResumeHarness
+              controller={controller}
+              isOnline={isOnline}
+              hasActiveSession={true}
+              onPlayCall={() => playCalls++}
+            />
+            <Child changed={changed} />
+          </div>
+        );
+      }
+
+      const { rerender } = render(<Parent isOnline={true} changed={false} />);
+      expect(playCalls).toBe(0);
+
+      // Now rerender with isOnline=false and changed=true:
+      // Child dispatches connectionLost=false in layout effect.
+      // Coherent committed context ensures isOnline=false is known; zero plays issued!
+      rerender(<Parent isOnline={false} changed={true} />);
+      expect(controller.getState().connectionLost).toBe(false);
+      expect(playCalls).toBe(0);
+      expect(controller.getActiveForegroundOperationId()).toBeNull();
     });
   });
 
@@ -394,8 +551,32 @@ describe('Step 3c: React Lifecycle, Suspense Isolation, and Facade Events (Rows 
         resolveSuspension();
       });
 
-      // After committed reveal, target context was updated to speculative-now-committed
+      // After committed reveal:
+      // 1. Target context is updated to replacement target
       expect(view.getByTestId('video-child')).toBeDefined();
+      expect(controller.getForegroundTarget()).toEqual({
+        kind: 'live',
+        serviceRef: '1:0:1:SPECULATIVE',
+      });
+
+      // 2. Fresh recovery edge after reveal uses replacement callbacks
+      let rejectRevealPlay!: (err: unknown) => void;
+      const revealPlayPromise = new Promise<void>((_, reject) => {
+        rejectRevealPlay = reject;
+      });
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockReturnValue(revealPlayPromise);
+
+      act(() => {
+        controller.reportForegroundVisibility(false, false);
+        controller.reportForegroundVisibility(true, false);
+      });
+
+      await act(async () => {
+        rejectRevealPlay({ name: 'NotAllowedError' });
+      });
+
+      // Speculative (now committed) status change received the pause update!
+      expect(speculativeStatusChange).toHaveBeenCalledWith('paused');
     });
   });
 
@@ -588,6 +769,193 @@ describe('Step 3c: React Lifecycle, Suspense Isolation, and Facade Events (Rows 
       expect(playCalls).toBe(1);
       expect(controller.getActiveForegroundOperationId()).not.toBeNull();
       expect(controller.getActiveResumeParticipants()).toEqual(new Set(['online']));
+    });
+
+    it('coordinates offline/online and visibilitychange events with shared play under real usePlaybackOrchestrator facade', async () => {
+      let playCalls = 0;
+
+      const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'tok-orchestrator-facade',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'tok-orchestrator-facade' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          if (body.type === 'stream.start') {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: 'sess-orchestrator-facade' }),
+              text: async () => JSON.stringify({ sessionId: 'sess-orchestrator-facade' }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-orchestrator-facade/heartbeat')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              acknowledged: true,
+              sessionId: 'sess-orchestrator-facade',
+              leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-orchestrator-facade')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-orchestrator-facade',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/live.m3u8',
+              heartbeatIntervalSeconds: 1,
+              leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let orchestratorController!: PlaybackController;
+
+      function OrchestratorFacadeHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const orchestrator = usePlaybackOrchestrator(
+          { autoStart: false } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        orchestratorController = orchestrator.controller;
+
+        return (
+          <div>
+            <video
+              ref={(el) => {
+                if (el) {
+                  el.play = vi.fn().mockImplementation(() => {
+                    playCalls++;
+                    return Promise.resolve();
+                  });
+                }
+                videoRef.current = el;
+              }}
+            />
+            <button onClick={() => void orchestrator.actions.startStream('1:0:1:TEST_FACADE')} type="button">
+              start-live
+            </button>
+          </div>
+        );
+      }
+
+      const view = render(<OrchestratorFacadeHarness />);
+      controllers.push(orchestratorController);
+
+      // Start live session and wait for established session
+      await act(async () => {
+        fireEvent.click(view.getByText('start-live'));
+      });
+      expect(orchestratorController.getActiveSessionId()).toBe('sess-orchestrator-facade');
+
+      const initialPlayCalls = playCalls;
+
+      // 1. Simulate network offline event
+      act(() => {
+        fireEvent(window, new Event('offline'));
+      });
+
+      // 2. Simulate document hide event
+      act(() => {
+        Object.defineProperty(document, 'visibilityState', {
+          value: 'hidden',
+          configurable: true,
+        });
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      // 3. Network reconnects while document is hidden
+      act(() => {
+        fireEvent(window, new Event('online'));
+      });
+
+      // Online recovery triggers play on attached media while hidden
+      expect(playCalls).toBe(initialPlayCalls + 1);
+      expect(orchestratorController.getActiveResumeParticipants()).toEqual(new Set(['online']));
+
+      // 4. Document returns to foreground
+      act(() => {
+        Object.defineProperty(document, 'visibilityState', {
+          value: 'visible',
+          configurable: true,
+        });
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      // Foreground joins running online operation without duplicate play!
+      expect(playCalls).toBe(initialPlayCalls + 1);
+      expect(orchestratorController.getActiveResumeParticipants()).toEqual(new Set(['online', 'foreground']));
+
+      // 5. Shared 400ms tick advances budget
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(playCalls).toBe(initialPlayCalls + 2);
+
+      // 6. Domain connectionLost changes through lease update
+      act(() => {
+        orchestratorController.dispatch({
+          type: 'normative.session.lease.updated',
+          epoch: orchestratorController.getEpoch(),
+          sessionEpoch: 0,
+          leaseExpiresAt: null,
+          connectionLost: true,
+        });
+      });
+      expect(orchestratorController.getState().connectionLost).toBe(true);
+
+      act(() => {
+        orchestratorController.dispatch({
+          type: 'normative.session.lease.updated',
+          epoch: orchestratorController.getEpoch(),
+          sessionEpoch: 0,
+          leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+          connectionLost: false,
+        });
+      });
+      expect(orchestratorController.getState().connectionLost).toBe(false);
     });
   });
 });
