@@ -176,10 +176,10 @@ mutate "let a target change leave the streams standing" \
 # --- where the elementary stream begins -------------------------------------
 
 mutate "drop the first byte of every elementary stream run" \
-  '            } if pes::is_audio_stream_id(stream_id) => {
+  '                self.pes_starts += 1;
                 self.position = Position::InElementaryStream;
                 Some(es)' \
-  '            } if pes::is_audio_stream_id(stream_id) => {
+  '                self.pes_starts += 1;
                 self.position = Position::InElementaryStream;
                 Some(if es.is_empty() { es } else { &es[1..] })'
 
