@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useInsertionEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
@@ -62,7 +62,7 @@ import {
 import { usePlaybackController } from './orchestrator/usePlaybackController';
 import { PlaybackHttpError, type PlaybackController } from './orchestrator/playbackController';
 import { createDefaultLiveSessionTransport, type SessionReadyResult } from './orchestrator/liveSessionTransport';
-import type { PlaybackCommand, PlaybackDomainState, PlaybackStopReason } from './orchestrator/playbackTypes';
+import type { PlaybackCommand, PlaybackDomainState, PlaybackRetryResult, PlaybackRetryTarget, PlaybackStopReason } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
@@ -96,13 +96,9 @@ import { usePlaybackResourceCleanup } from './orchestrator/usePlaybackResourceCl
 import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
-import { decideForegroundResume } from './orchestrator/foregroundResume';
-import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
-import {
-  shouldWatchForNetworkRecovery,
-  useNetworkRecoveryWatchdog,
-} from './orchestrator/useNetworkRecoveryWatchdog';
-import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
+import { useForegroundRecovery } from './orchestrator/useForegroundRecovery';
+import { resolveCommittedForegroundTarget } from './orchestrator/playbackForegroundRuntime';
+import { useNetworkRecoveryWatchdog } from './orchestrator/useNetworkRecoveryWatchdog';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
@@ -139,7 +135,7 @@ export type { V3PlayerLabeledValue, V3PlayerViewState };
 
 export interface PlaybackOrchestratorActions {
   stopStream(skipClose?: boolean): Promise<void>;
-  retry(): Promise<void>;
+  retry(): Promise<PlaybackRetryResult>;
   seekBy(deltaSeconds: number): void;
   changeAudioTrack(trackId: number): void;
   seekTo(positionSeconds: number): void;
@@ -197,14 +193,17 @@ export function usePlaybackOrchestrator(
   const channel = 'channel' in props ? props.channel : undefined;
   const src = 'src' in props ? props.src : undefined;
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
+  const explicitSRefProp = 'sRef' in props ? String((props as any).sRef ?? '').trim() || undefined : undefined;
   const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
   const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
   const zapChannels = 'channels' in props ? props.channels : undefined;
   const onSwitchChannel = 'onSwitchChannel' in props ? props.onSwitchChannel : undefined;
 
   const [sRef, setSRef] = useState<string>(
-    (channel?.serviceRef || channel?.id || '').trim()
+    (channel?.serviceRef || channel?.id || explicitSRefProp || '').trim()
   );
+  const activeServiceRef = useRef<string>(sRef);
+  activeServiceRef.current = sRef;
   const [explicitProfile, setExplicitProfile] = useState<PlaybackProfileSelection>(() => {
     try {
       return normalizePlaybackProfileSelection(localStorage.getItem('xg2g.player.explicitProfile'));
@@ -292,6 +291,7 @@ export function usePlaybackOrchestrator(
   );
 
   const playbackEpochRef = useRef(1);
+  const handleSessionSnapshotRef = useRef<((session: V3SessionSnapshot) => void) | null>(null);
 
   const {
     controller,
@@ -310,6 +310,9 @@ export function usePlaybackOrchestrator(
       onAttemptStarted: (epoch: number) => {
         playbackEpochRef.current = epoch;
         handleAttemptStarted(epoch);
+      },
+      onSessionSnapshot: (snapshot) => {
+        handleSessionSnapshotRef.current?.(snapshot as unknown as V3SessionSnapshot);
       },
     }), [requestedDuration, handleAttemptStarted]),
   );
@@ -338,8 +341,6 @@ export function usePlaybackOrchestrator(
     lastAdvisory,
   } = playbackState;
   const error = failure?.appError ?? null;
-  const recoveryStatusRef = useRef(status);
-  recoveryStatusRef.current = status;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
@@ -350,12 +351,10 @@ export function usePlaybackOrchestrator(
 
   const mounted = useRef<boolean>(false);
   const {
-    vodRetryRef,
     vodFetchRef,
     nativeVideoRevealTimerRef,
     nativeVideoVeilRevealTimerRef,
     nativeVideoVeilClearTimerRef,
-    clearVodRetry,
     clearVodFetch,
     clearNativeVideoVeilTimers,
     clearNativeVideoRevealTimer,
@@ -364,23 +363,25 @@ export function usePlaybackOrchestrator(
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const disposedRef = useRef(false);
   const lifecycleGenerationRef = useRef(0);
-  const autoFallbackTimersRef = useRef<Set<number>>(new Set());
   const startIntentInFlight = useRef<boolean>(false);
   const pendingStartRef = useRef<{
     refToUse?: string;
     profileOverride?: string;
     lifecycleGeneration: number;
   } | null>(null);
-  const startStreamRef = useRef<(refToUse?: string, profileOverride?: string) => Promise<void>>(async () => {});
-  const retryInFlightRef = useRef(false);
+  const startStreamRef = useRef<
+    (
+      refToUse?: string,
+      profileOverride?: string,
+      explicitTarget?: PlaybackRetryTarget & { epoch?: number },
+    ) => Promise<void>
+  >(async () => {});
   const stopCommandCompletionRef = useRef<Promise<void>>(Promise.resolve());
   const timelineReportCompletionRef = useRef<Promise<void>>(Promise.resolve());
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
-  const wasHiddenRef = useRef(false);
-  const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
   const automaticProfileMemoryRef = useRef(createAutomaticProfileMemory());
@@ -392,7 +393,6 @@ export function usePlaybackOrchestrator(
 
   useEffect(() => {
     disposedRef.current = false;
-    const autoFallbackTimers = autoFallbackTimersRef.current;
 
     return () => {
       disposedRef.current = true;
@@ -401,8 +401,6 @@ export function usePlaybackOrchestrator(
       // second setup to issue the real autostart while the old generation drains.
       mounted.current = false;
       pendingStartRef.current = null;
-      autoFallbackTimers.forEach((timerId) => window.clearTimeout(timerId));
-      autoFallbackTimers.clear();
     };
   }, []);
 
@@ -564,12 +562,12 @@ export function usePlaybackOrchestrator(
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
   }, [dispatchPlayback, mergeSessionPlaybackTrace, setTraceId]);
+  handleSessionSnapshotRef.current = handleSessionSnapshot;
 
   const isCompactTouchLayout = useMemo(() => hasTouchInput(), []);
 
   const {
     sessionIdRef,
-    connectionLost,
     reportError,
     reportSessionTimeline,
     ensureSessionCookie,
@@ -900,11 +898,10 @@ export function usePlaybackOrchestrator(
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
-    clearVodRetry();
     clearVodFetch();
     clearSessionLeaseState();
     resetChromeState();
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, resetChromeState]);
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
@@ -917,7 +914,6 @@ export function usePlaybackOrchestrator(
       activeVideo.src = '';
     }
 
-    clearVodRetry();
     clearVodFetch();
     clearPlaybackSelection();
     if (hasNativePlayback) {
@@ -926,7 +922,6 @@ export function usePlaybackOrchestrator(
   }, [
     clearPlaybackSelection,
     clearVodFetch,
-    clearVodRetry,
     hlsRef,
     isNativePlaybackHost,
     nativePlaybackState,
@@ -953,7 +948,6 @@ export function usePlaybackOrchestrator(
     const hadActivePlayback = hasActivePlayback();
 
     clearPlaybackSelection();
-    clearVodRetry();
     clearVodFetch();
     if (hadNativePlayback) {
       stopNativePlayback();
@@ -968,7 +962,6 @@ export function usePlaybackOrchestrator(
     clearPlaybackSelection,
     clearSessionLeaseState,
     clearVodFetch,
-    clearVodRetry,
     hasActivePlayback,
     isNativePlaybackHost,
     nativePlaybackState,
@@ -1104,7 +1097,14 @@ export function usePlaybackOrchestrator(
                   message: `${t('player.preparing')} (${seconds}s)`,
                   source: 'backend',
                 }]);
-                await sleep(seconds * 1000);
+                const outcome = await controller.scheduleStartContinuation({
+                  epoch: playbackEpoch,
+                  delayMs: seconds * 1000,
+                  reason: 'recording_retry_after',
+                });
+                if (outcome === 'cancelled') {
+                  return;
+                }
                 continue;
               } else {
                 throw new Error('503 Service Unavailable (No Retry-After)');
@@ -1217,13 +1217,14 @@ export function usePlaybackOrchestrator(
       }
 
       if (mode === 'native_hls' || mode === 'hlsjs' || mode === 'transcode') {
-        const controller = new AbortController();
-        abortController = controller;
-        vodFetchRef.current = controller;
+        const fetchController = new AbortController();
+        abortController = fetchController;
+        vodFetchRef.current = fetchController;
+        let continuationDelayMs: number | null = null;
         try {
           const res = await fetch(streamUrl, {
             method: 'HEAD',
-            signal: controller.signal
+            signal: fetchController.signal,
           });
 
           if (res.status === 404) {
@@ -1233,27 +1234,37 @@ export function usePlaybackOrchestrator(
           if (res.status === 503) {
             const retryAfter = res.headers.get('Retry-After');
             if (retryAfter) {
-              const delay = parseInt(retryAfter, 10) * 1000;
+              continuationDelayMs = parseInt(retryAfter, 10) * 1000;
               setStatus('building');
-              vodRetryRef.current = window.setTimeout(() => {
-                if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
-                  startRecordingPlayback(id, profileForAttempt, startOffsetMs);
-                }
-              }, delay);
-              return;
+            } else {
+              throw new Error('503 Service Unavailable (No Retry-After)');
             }
-            throw new Error('503 Service Unavailable (No Retry-After)');
+          } else {
+            if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+            setStatus('buffering');
+            const engine: 'native' | 'hlsjs' = mode === 'native_hls'
+              ? 'native'
+              : resolvePreferredHlsEngineForCapabilities(requestCaps);
+            playHls(streamUrl, engine);
+            setActiveHlsEngine(engine);
           }
-
-          if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-          setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls'
-            ? 'native'
-            : resolvePreferredHlsEngineForCapabilities(requestCaps);
-          playHls(streamUrl, engine);
-          setActiveHlsEngine(engine);
         } finally {
-          if (vodFetchRef.current === controller) vodFetchRef.current = null;
+          if (vodFetchRef.current === fetchController) vodFetchRef.current = null;
+        }
+
+        if (continuationDelayMs !== null) {
+          const outcome = await controller.scheduleStartContinuation({
+            epoch: playbackEpoch,
+            delayMs: continuationDelayMs,
+            reason: 'recording_retry_after',
+          });
+          if (outcome === 'cancelled') {
+            return;
+          }
+          if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
+            void startRecordingPlayback(id, profileForAttempt, startOffsetMs);
+          }
+          return;
         }
       }
     } catch (err: unknown) {
@@ -1272,6 +1283,7 @@ export function usePlaybackOrchestrator(
     apiBase,
     beginPlaybackAttempt,
     clearPlayerError,
+    controller,
     dispatchPlayback,
     ensureSessionCookie,
     explicitProfile,
@@ -1295,18 +1307,84 @@ export function usePlaybackOrchestrator(
     setStatus,
     setTraceId,
     setVodStreamMode,
-    sleep,
     t,
     vodFetchRef,
-    vodRetryRef,
   ]);
 
   const startStream = useCallback(async (
     refToUse?: string,
     profileOverride?: string,
+    explicitTarget?: PlaybackRetryTarget & { epoch?: number },
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
+
+    let effectiveRecordingId = recordingId;
+    let effectiveSrc = src;
+    let effectiveRef = (refToUse || activeServiceRef.current || sRef || '').trim();
+
+    if (explicitTarget) {
+      const currentCommittedKind: 'vod' | 'src' | 'live' = recordingId
+        ? 'vod'
+        : src
+          ? 'src'
+          : 'live';
+
+      if (explicitTarget.kind !== currentCommittedKind) {
+        debugWarn('[V3Player] Explicit start target kind disagrees with committed source context; superseding restart.', {
+          explicitKind: explicitTarget.kind,
+          committedKind: currentCommittedKind,
+        });
+        controller.cancelRetry('superseded');
+        return;
+      }
+
+      if (explicitTarget.kind === 'vod' && explicitTarget.recordingId !== recordingId) {
+        debugWarn('[V3Player] Explicit VOD target disagrees with committed recordingId; superseding restart.', {
+          explicit: explicitTarget.recordingId,
+          committed: recordingId,
+        });
+        controller.cancelRetry('superseded');
+        return;
+      }
+
+      if (explicitTarget.kind === 'src' && explicitTarget.srcUrl !== src) {
+        debugWarn('[V3Player] Explicit src target disagrees with committed src; superseding restart.', {
+          explicit: explicitTarget.srcUrl,
+          committed: src,
+        });
+        controller.cancelRetry('superseded');
+        return;
+      }
+
+      if (
+        explicitTarget.kind === 'live' &&
+        explicitTarget.serviceRef &&
+        (sRef || activeServiceRef.current) &&
+        explicitTarget.serviceRef !== (sRef || activeServiceRef.current)?.trim()
+      ) {
+        debugWarn('[V3Player] Explicit live target disagrees with committed serviceRef; superseding restart.', {
+          explicit: explicitTarget.serviceRef,
+          committed: sRef || activeServiceRef.current,
+        });
+        controller.cancelRetry('superseded');
+        return;
+      }
+
+      if (explicitTarget.kind === 'vod') {
+        effectiveRecordingId = explicitTarget.recordingId ?? recordingId;
+        effectiveSrc = undefined;
+        effectiveRef = '';
+      } else if (explicitTarget.kind === 'src') {
+        effectiveRecordingId = undefined;
+        effectiveSrc = explicitTarget.srcUrl ?? src;
+        effectiveRef = '';
+      } else {
+        effectiveRecordingId = undefined;
+        effectiveSrc = undefined;
+        effectiveRef = (explicitTarget.serviceRef ?? refToUse ?? activeServiceRef.current ?? sRef ?? '').trim();
+      }
+    }
 
     const attemptEpoch = allocatePlaybackEpoch();
     playbackEpochRef.current = attemptEpoch;
@@ -1319,15 +1397,15 @@ export function usePlaybackOrchestrator(
     // Re-resolve at call time to avoid stale closure from useMemo/useCallback caching.
     const nativeHost = supportsManagedNativePlayback(resolveHostEnvironment());
 
-    const initialMode: 'LIVE' | 'VOD' = recordingId || (src && requestedDuration) ? 'VOD' : 'LIVE';
-    const initialStatus: PlayerStatus = src ? 'buffering' : 'starting';
-    const hasSessionIntent = !nativeHost && Boolean(recordingId || (!src && (refToUse || sRef || '').trim()));
+    const initialMode: 'LIVE' | 'VOD' = effectiveRecordingId || (effectiveSrc && requestedDuration) ? 'VOD' : 'LIVE';
+    const initialStatus: PlayerStatus = effectiveSrc ? 'buffering' : 'starting';
+    const hasSessionIntent = !nativeHost && Boolean(effectiveRecordingId || (!effectiveSrc && effectiveRef));
     beginPlaybackAttempt(attemptEpoch, initialMode, initialStatus, hasSessionIntent, profileForAttempt !== 'auto');
 
     try {
-      if (recordingId) {
-        debugLog('[V3Player] startStream: recordingId path', { recordingId, hasSrc: !!src });
-        if (src) {
+      if (effectiveRecordingId) {
+        debugLog('[V3Player] startStream: recordingId path', { recordingId: effectiveRecordingId, hasSrc: !!effectiveSrc });
+        if (effectiveSrc) {
           debugWarn('[V3Player] Both recordingId and src provided; prioritizing recordingId (VOD path).');
         }
         if (nativeHost) {
@@ -1336,36 +1414,40 @@ export function usePlaybackOrchestrator(
           beginPlaybackAttempt(attemptEpoch, 'VOD', 'starting', false, profileForAttempt !== 'auto');
           beginNativePlayback({
             kind: 'recording',
-            recordingId,
+            recordingId: effectiveRecordingId,
             profile: profileForAttempt === 'auto' ? undefined : profileForAttempt,
             authToken: token || undefined,
             startPositionMs: 0,
-            title: channel?.name ?? recordingId,
+            title: channel?.name ?? effectiveRecordingId,
           });
           return;
         }
-        await startRecordingPlayback(recordingId, profileForAttempt, undefined, attemptEpoch);
+        await startRecordingPlayback(effectiveRecordingId, profileForAttempt, undefined, attemptEpoch);
         return;
       }
 
-      if (src) {
+      if (effectiveSrc) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
         await prepareForNextPlaybackAttempt();
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
         beginPlaybackAttempt(attemptEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering', false, false);
         const srcEngine = resolvePreferredHlsEngine();
-        playHls(src, srcEngine);
+        playHls(effectiveSrc, srcEngine);
         setActiveHlsEngine(srcEngine);
         return;
       }
 
-      const ref = (refToUse || sRef || '').trim();
+      const ref = effectiveRef;
       if (!ref) {
         beginPlaybackAttempt(attemptEpoch, 'LIVE', 'starting', false, false);
         setStatus('error');
         const failure = buildServiceRefRequiredFailure(t);
         reportPlaybackFailure(failure.appError, failure.options);
         return;
+      }
+      activeServiceRef.current = ref;
+      if (ref !== sRef) {
+        setSRef(ref);
       }
 
       await prepareForNextPlaybackAttempt();
@@ -1811,23 +1893,36 @@ export function usePlaybackOrchestrator(
     if (onClose && !skipClose) onClose();
   }, [controller, onClose]);
 
-  const handleRetry = useCallback(async () => {
-    if (disposedRef.current) return;
-    if (retryInFlightRef.current) {
-      return;
-    }
-    retryInFlightRef.current = true;
-    try {
-      await stopStream(true, 'auto_recovery_restart');
-      if (disposedRef.current) return;
-      await startStream(sRef);
-    } finally {
-      retryInFlightRef.current = false;
-    }
-  }, [stopStream, startStream, sRef]);
+  const handleRetry = useCallback((): Promise<PlaybackRetryResult> => {
+    const target: PlaybackRetryTarget = recordingId
+      ? {
+          kind: 'vod',
+          recordingId,
+          explicitProfile: explicitProfile ?? undefined,
+        }
+      : src
+        ? {
+            kind: 'src',
+            srcUrl: src,
+            explicitProfile: explicitProfile ?? undefined,
+          }
+        : {
+            kind: 'live',
+            serviceRef: activeServiceRef.current || sRef || undefined,
+            explicitProfile: explicitProfile ?? undefined,
+          };
+    return controller.retry(target);
+  }, [controller, recordingId, src, sRef, explicitProfile]);
   // --- Effects ---
-  executeCommandRef.current = useCallback((command: PlaybackCommand) => {
+  const executeCommand = useCallback((command: PlaybackCommand) => {
     switch (command.type) {
+      case 'command.media.pause':
+        try {
+          videoRef.current?.pause();
+        } catch {
+          // ignore DOMException if already paused or detached
+        }
+        break;
       case 'command.timeline.record':
         sessionTimeline.record(command.kind as any, command.detail);
         break;
@@ -1840,8 +1935,14 @@ export function usePlaybackOrchestrator(
           return reportTimelineSnapshot(command.reason, events);
         }
       case 'command.playback.start':
-        void startStream(command.serviceRef, command.explicitProfile);
-        break;
+        return startStream(command.serviceRef, command.explicitProfile, {
+          kind: command.kind,
+          serviceRef: command.serviceRef,
+          recordingId: command.recordingId,
+          srcUrl: command.srcUrl,
+          explicitProfile: command.explicitProfile,
+          epoch: command.epoch,
+        });
       case 'command.playback.stop':
         {
           const stopPromise = performLocalMediaTeardown(command.reason);
@@ -1856,22 +1957,13 @@ export function usePlaybackOrchestrator(
           if (command.holdBandwidth) {
             noteNetworkStarvation(automaticProfileMemoryRef.current);
           }
-          const lifecycleGeneration = lifecycleGenerationRef.current;
-          const timerId = window.setTimeout(() => {
-            autoFallbackTimersRef.current.delete(timerId);
-            if (isLifecycleActive(lifecycleGeneration) && !isStalePlaybackEpoch(command.epoch)) {
-              dispatchPlayback({
-                type: 'intent.start.requested',
-                epoch: command.epoch,
-                kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
-                serviceRef: sRef,
-                recordingId: recordingId || undefined,
-                srcUrl: src || undefined,
-                explicitProfile: command.profile ?? undefined,
-              });
-            }
-          }, command.delayMs);
-          autoFallbackTimersRef.current.add(timerId);
+          controller.scheduleAutoFallback(command, {
+            kind: recordingId ? 'vod' : (src ? 'src' : 'live'),
+            serviceRef: activeServiceRef.current || sRef || undefined,
+            recordingId: recordingId || undefined,
+            srcUrl: src || undefined,
+            explicitProfile: command.profile ?? undefined,
+          });
         }
         break;
     }
@@ -1879,25 +1971,45 @@ export function usePlaybackOrchestrator(
     startStream,
     performLocalMediaTeardown,
     reportTimelineSnapshot,
-    dispatchPlayback,
-    isLifecycleActive,
-    isStalePlaybackEpoch,
+    controller,
     sRef,
     recordingId,
     src,
+    videoRef,
   ]);
+
+  useInsertionEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
+
+  useLayoutEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
 
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
       const ref = (channel.serviceRef || channel.id || '').trim();
       if (ref) setSRef(ref);
+    } else if (explicitSRefProp) {
+      setSRef(explicitSRefProp);
     }
-  }, [channel]);
+  }, [channel, explicitSRefProp]);
 
   useEffect(() => {
     clearNetworkStarvationHold(automaticProfileMemoryRef.current);
   }, [sRef, recordingId]);
+
+  const committedSourceKey = `${recordingId ?? ''}|${src ?? ''}|${channel?.serviceRef ?? channel?.id ?? explicitSRefProp ?? sRef ?? ''}`;
+  const prevCommittedSourceKeyRef = useRef(committedSourceKey);
+  useEffect(() => {
+    if (prevCommittedSourceKeyRef.current !== committedSourceKey) {
+      prevCommittedSourceKeyRef.current = committedSourceKey;
+      if (controller.isRetryInFlight()) {
+        controller.cancelRetry('superseded');
+      }
+    }
+  }, [committedSourceKey, controller]);
 
   useEffect(() => {
     if (!autoStart || mounted.current) return;
@@ -1909,7 +2021,7 @@ export function usePlaybackOrchestrator(
       dispatchPlayback({
         type: 'intent.start.requested',
         epoch: allocatePlaybackEpoch(),
-        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        kind: recordingId ? 'vod' : (src ? 'src' : 'live'),
         serviceRef: normalizedRef || undefined,
         recordingId: recordingId || undefined,
         srcUrl: src || undefined,
@@ -1988,184 +2100,39 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
-  // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
-  // suspend the decoder while backgrounded and do not auto-resume inline
-  // <video> on return — the frame stays black/frozen. Repair only on the
-  // hidden->visible edge; deliberately NO pause-on-hide (that would break
-  // desktop tab-switches). TV keeps its own effect above, untouched.
-  useEffect(() => {
-    if (hostEnvironment.isTv) {
-      return;
-    }
-    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
-      return;
-    }
+  // Browser (non-TV) foreground recovery owned by PlaybackController.
+  // Fenced against late rejections, obsolete callbacks, and source replacement.
+  const foregroundTarget = useMemo(() => resolveCommittedForegroundTarget({
+    recordingId,
+    src,
+    serviceRef: sRef,
+    activeServiceRef: activeServiceRef.current,
+    explicitProfile,
+  }), [recordingId, src, sRef, explicitProfile]);
 
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
+  const isForegroundEligible = !hostEnvironment.isTv && !(isNativePlaybackHost && nativePlaybackState?.activeRequest);
+  const hasActiveSession = Boolean(
+    sessionIdRef.current || nativePlaybackState?.session?.sessionId,
+  );
 
-    if (!isDocumentVisible) {
-      wasHiddenRef.current = true;
-      return;
-    }
-
-    const wasHidden = wasHiddenRef.current;
-    wasHiddenRef.current = false;
-
-    // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
-    // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
-    // it can stay stalled, freezing buffering AND the DVR seekable window (so
-    // scrubbing dies). Nudge hls.js to resume loading on the hidden->visible edge so
-    // the buffer refills and the live/DVR playlist window refreshes. Gated on
-    // hlsRef.current, so the native-HLS path (browser-owned buffer) is untouched.
-    if (wasHidden && hlsRef.current) {
-      try {
-        hlsRef.current.startLoad();
-      } catch (err) {
-        debugWarn('[V3Player] hls resume startLoad failed', err);
-      }
-    }
-
-    const action = decideForegroundResume({
-      wasHidden,
-      isPiP: document.pictureInPictureElement === video,
-      status: recoveryStatusRef.current,
-      userPaused: userPauseIntentRef.current,
-      hasTerminal: hasTerminalStatus,
-    });
-
-    if (action === 'none') {
-      return;
-    }
-
-    if (action === 'retry') {
-      // Reaped session (heartbeat 410/404 during background) — re-establish.
-      void handleRetry();
-      return;
-    }
-
-    // action === 'play'. A single play() right after a page-freeze often fizzles —
-    // the element is still suspended and discards it, so the frame stays black until
-    // the user mashes play a few times. Nudge play() until currentTime actually
-    // advances (the only proof the decoder accepted the resume), bounded; the
-    // returned cancel cleans it up if the page hides again mid-recovery.
-    //
-    // NOTE: the live status is read through recoveryStatusRef instead of making
-    // it an effect dependency. The
-    // `setStatus('paused'→'buffering')` call below would otherwise trigger a
-    // re-render where React cleans up the current effect (calling the cancel
-    // function) before the observation timer can fire, defeating the retry loop.
-    // `hasTerminalStatus` (which tracks terminal states derived from `status`) is
-    // already in deps and correctly re-runs the effect when the session is reaped.
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
-    return startResumePlaybackRecovery(video, {
-      // Keep a user pause sacred even if it happens during the ~2s recovery window.
-      shouldContinue: () => !userPauseIntentRef.current,
-      onBlocked: (err: unknown) => {
-        if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-          // iOS blocked the programmatic resume; the play/pause control is the
-          // user-gesture tap-to-resume.
-          setStatus('paused');
-        } else {
-          debugWarn('[V3Player] Browser resume play blocked', err);
-        }
-      },
-      onFailed: () => {
-        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
-        void handleRetry();
-      },
-    });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
-
-  // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
-  // handoffs, laptop sleep/wake — drops connectivity; on the offline->online
-  // edge we re-establish a reaped session or nudge a still-alive stream back to
-  // play, instead of leaving the user to hit Retry by hand. Mirrors the
-  // foreground recovery above; TV keeps its own resume effect.
-  useEffect(() => {
-    if (hostEnvironment.isTv) {
-      return;
-    }
-    if (isNativePlaybackHost && nativePlaybackState?.activeRequest) {
-      return;
-    }
-
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (!isOnline || connectionLost) {
-      wasOfflineRef.current = true;
-      return;
-    }
-
-    const wasOffline = wasOfflineRef.current;
-    wasOfflineRef.current = false;
-
-    const hasActiveSession = Boolean(
-      sessionIdRef.current || nativePlaybackState?.session?.sessionId,
-    );
-
-    // hls.js parks its segment loader on a fatal network error during the
-    // outage; nudge it to resume loading once connectivity is back (gated on
-    // hlsRef so the native-HLS path, with its UA-owned buffer, is untouched).
-    if (wasOffline && hasActiveSession && hlsRef.current) {
-      try {
-        hlsRef.current.startLoad();
-      } catch (err) {
-        debugWarn('[V3Player] hls reconnect startLoad failed', err);
-      }
-    }
-
-    const action = decideOnlineRecovery({
-      wasOffline,
-      hasActiveSession,
-      status: recoveryStatusRef.current,
-      userPaused: userPauseIntentRef.current,
-      hasTerminal: hasTerminalStatus,
-    });
-
-    if (action === 'none') {
-      return;
-    }
-
-    if (action === 'retry') {
-      // Session was reaped during the outage (heartbeat 410/404) — re-establish.
-      void handleRetry();
-      return;
-    }
-
-    // action === 'play'. As in foreground recovery, a single play() right after a
-    // network stall often fizzles (the element discards it), so nudge play()
-    // until currentTime advances, bounded; the returned cancel cleans it up if we
-    // go offline again mid-recovery. The latest status is read through
-    // recoveryStatusRef for the same reason documented on the foreground effect.
-    setStatus((current) => (current === 'paused' ? 'buffering' : current));
-    return startResumePlaybackRecovery(video, {
-      shouldContinue: () => !userPauseIntentRef.current,
-      onBlocked: (err: unknown) => {
-        if ((err as { name?: string } | null)?.name === 'NotAllowedError') {
-          setStatus('paused');
-        } else {
-          debugWarn('[V3Player] Reconnect resume play blocked', err);
-        }
-      },
-      onFailed: () => {
-        debugWarn('[V3Player] Reconnect resume play failed to advance, retrying session');
-        void handleRetry();
-      },
-    });
-  }, [connectionLost, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
+  useForegroundRecovery({
+    controller,
+    videoRef,
+    hlsRef,
+    isEligible: isForegroundEligible,
+    isDocumentVisible,
+    isOnline,
+    hasActiveSession,
+    target: foregroundTarget,
+    userPauseIntentRef,
+    setStatus,
+  });
 
   useNetworkRecoveryWatchdog({
+    controller,
     apiBase,
-    active: !hostEnvironment.isTv && status === 'error' && shouldWatchForNetworkRecovery(failure),
+    isTv: hostEnvironment.isTv,
     intentKey: `${sRef}|${recordingId ?? ''}|${src ?? ''}`,
-    healthy: status === 'playing',
-    onReachable: handleRetry,
   });
 
   const showBufferingOverlay = useBufferingOverlay(status);

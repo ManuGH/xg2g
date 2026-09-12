@@ -7,8 +7,11 @@ import {
   type PlaybackMachineRuntime,
 } from './playbackMachineRuntime';
 import type {
+  PlaybackCommand,
   PlaybackDomainState,
   PlaybackMachineEvent,
+  PlaybackRetryResult,
+  PlaybackRetryTarget,
   PlaybackStopReason,
 } from './playbackTypes';
 import {
@@ -22,9 +25,42 @@ import { normalizePlaybackInfo } from '../contracts/normalizePlaybackInfo';
 import type { NormalizedPlayablePlaybackContract } from '../contracts/normalizedPlaybackTypes';
 import { buildLiveIntentBody } from './startupHelpers';
 import { buildContractState } from './contractErrors';
-import type { PlayerStatus } from '../../../types/v3-player';
+import type { PlayerStatus, V3SessionStatusResponse } from '../../../types/v3-player';
+import {
+  createPlaybackHeartbeatRuntime,
+  type PlaybackHeartbeatRuntime,
+} from './playbackHeartbeatRuntime';
+import {
+  createPlaybackForegroundRuntime,
+  type ForegroundMediaBinding,
+  type PlaybackForegroundRuntime,
+  type ResumeTrigger,
+} from './playbackForegroundRuntime';
+import {
+  createPlaybackNetworkWatchdogRuntime,
+  type PlaybackNetworkWatchdogRuntime,
+  type PlaybackNetworkWatchdogState,
+} from './playbackNetworkWatchdogRuntime';
+import { buildPlaybackFailure } from './playbackMachine';
 
 export { PlaybackHttpError };
+export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
+export type { ForegroundMediaBinding, ResumeTrigger } from './playbackForegroundRuntime';
+export type { PlaybackNetworkWatchdogState } from './playbackNetworkWatchdogRuntime';
+
+export type StartContinuationOutcome = 'proceed' | 'cancelled';
+
+export interface ScheduleStartContinuationParams {
+  epoch: number;
+  delayMs: number;
+  reason: 'recording_retry_after';
+}
+
+export interface PendingStartContinuationInfo {
+  epoch: number;
+  delayMs: number;
+  reason: string;
+}
 
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
@@ -59,7 +95,21 @@ export interface PlaybackControllerOptions {
   stopRequestTimeoutMs?: number;     // default 3_000ms
   requestedDuration?: number | null;
   onAttemptStarted?: (epoch: number) => void;
+  onSessionSnapshot?: (snapshot: V3SessionStatusResponse) => void;
 }
+
+export interface AutoFallbackRestartTarget {
+  kind: 'live' | 'vod' | 'src';
+  serviceRef?: string;
+  recordingId?: string;
+  srcUrl?: string;
+  explicitProfile?: string;
+}
+
+export type ScheduleAutoFallbackCommand = Extract<
+  PlaybackCommand,
+  { type: 'command.playback.schedule_auto_fallback' }
+>;
 
 interface InFlightStart {
   attemptId: string;
@@ -74,6 +124,7 @@ interface InFlightStart {
   resolvePublic: (result: StartLiveResult) => void;
   rejectPublic: (err: unknown) => void;
   abortController: AbortController;
+  params?: StartLiveParams;
 }
 
 export interface PlaybackController {
@@ -97,18 +148,78 @@ export interface PlaybackController {
   isStalePlaybackEpoch(epoch: number): boolean;
   isStaleSessionEpoch(playbackEpoch: number, sessionEpoch: number): boolean;
   getEpoch(): number;
+  getDomainStatus(): PlayerStatus;
+
+  // Recovery fallback timers & retry sequencing
+  scheduleAutoFallback(
+    command: ScheduleAutoFallbackCommand,
+    target?: AutoFallbackRestartTarget,
+  ): void;
+  cancelAutoFallback(epoch?: number): void;
+  hasScheduledAutoFallback(epoch?: number): boolean;
+
+  scheduleStartContinuation(
+    params: ScheduleStartContinuationParams,
+  ): Promise<StartContinuationOutcome>;
+  cancelStartContinuation(epoch?: number): void;
+  getPendingStartContinuation(): PendingStartContinuationInfo | null;
+
+  retry(target?: PlaybackRetryTarget): Promise<PlaybackRetryResult>;
+  isRetryInFlight(): boolean;
+  cancelRetry(
+    reason?:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error',
+  ): void;
+
+  // Foreground and online resume recovery coordination
+  beginCommitPhase(params: {
+    eligible: boolean;
+    target: PlaybackRetryTarget | null;
+    userPaused: boolean;
+    online: boolean;
+    hasActiveSession: boolean;
+  }): void;
+  endCommitPhase(): void;
+  abortCommitPhase(): void;
+  reportForegroundVisibility(visible: boolean, isPiP: boolean): void;
+  reportBrowserConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
+  setCommittedConnectivity(params: { online: boolean; hasActiveSession: boolean }): void;
+  setForegroundEligibility(eligible: boolean): void;
+  setForegroundTarget(target: PlaybackRetryTarget | null): void;
+  setForegroundMediaBinding(binding: ForegroundMediaBinding | null): void;
+  setUserPaused(userPaused: boolean): void;
+  getActiveForegroundOperationId(): number | null;
+  getActiveResumeParticipants(): ReadonlySet<ResumeTrigger> | null;
+  getForegroundTarget(): PlaybackRetryTarget | null;
+
+  // Network watchdog recovery
+  setNetworkWatchdogContext(params: {
+    platformEligible: boolean;
+    intentKey: string;
+    probe?: () => Promise<boolean>;
+  }): void;
+  getNetworkWatchdogState(): PlaybackNetworkWatchdogState;
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
   stop(reason?: PlaybackStopReason | string, notifyClose?: boolean): Promise<void>;
+  updateTransport(newTransport: LiveSessionTransport): void;
   activate(): void;
   dispose(): void;
+  isDisposed(): boolean;
 
   // Observability & inspection for tests
   getActiveSessionId(): string | null;
   getInFlightStartsCount(): number;
   getStoppingSessionIds(): ReadonlySet<string>;
   getPendingAdoptionCandidatesCount(): number;
+  getHeartbeatSessionId(): string | null;
+  isHeartbeatSupervising(): boolean;
 }
 
 export const DEFAULT_HTTP_REQUEST_TIMEOUT_MS = 10_000;
@@ -169,20 +280,471 @@ export function createPlaybackController(
     options.httpRequestTimeoutMs ??
     Math.min(DEFAULT_HTTP_REQUEST_TIMEOUT_MS, overallStartBudgetMs);
 
+  let isDisposed = false;
+  let playbackEpoch = 0;
+  let sessionEpoch = 0;
+  const stoppedEpochs = new Set<number>();
+  const terminalFencedEpochs = new Set<number>();
+  const scheduledCommands = new WeakSet<PlaybackCommand>();
+  let currentlyHandlingScheduleCommand: ScheduleAutoFallbackCommand | null = null;
+
+  interface ActiveRetryOperation {
+    opId: number;
+    phase: 'stopping' | 'restarting';
+    initialEpoch: number;
+    restartEpoch: number | null;
+    target: AutoFallbackRestartTarget;
+    cancelled: boolean;
+    cancelReason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error'
+      | null;
+    publicPromise: Promise<PlaybackRetryResult>;
+    resolvePublic: (result: PlaybackRetryResult) => void;
+    stopPromise: Promise<void> | null;
+    startPromise?: Promise<unknown> | null;
+  }
+
+  let activeRetry: ActiveRetryOperation | null = null;
+  let nextRetryOpId = 1;
+
+  function cancelActiveRetry(
+    reason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error',
+  ): void {
+    if (!activeRetry || activeRetry.cancelled) {
+      return;
+    }
+    const op = activeRetry;
+    activeRetry = null;
+    op.cancelled = true;
+    op.cancelReason = reason;
+    op.resolvePublic({ status: 'cancelled', reason });
+  }
+
+  interface ActiveFallback {
+    timer: ReturnType<typeof setTimeout>;
+    target: AutoFallbackRestartTarget;
+    command: ScheduleAutoFallbackCommand;
+  }
+  const activeFallbacks = new Map<number, ActiveFallback>();
+
+  function cancelAutoFallback(epoch?: number): void {
+    if (epoch !== undefined) {
+      const fallback = activeFallbacks.get(epoch);
+      if (fallback) {
+        clearTimeout(fallback.timer);
+        activeFallbacks.delete(epoch);
+      }
+    } else {
+      for (const fallback of activeFallbacks.values()) {
+        clearTimeout(fallback.timer);
+      }
+      activeFallbacks.clear();
+    }
+  }
+
+  function hasScheduledAutoFallback(epoch?: number): boolean {
+    if (epoch !== undefined) {
+      return activeFallbacks.has(epoch);
+    }
+    return activeFallbacks.size > 0;
+  }
+
+  interface ActiveStartContinuationEntry {
+    epoch: number;
+    delayMs: number;
+    reason: 'recording_retry_after';
+    timer: ReturnType<typeof setTimeout>;
+    resolve: (outcome: StartContinuationOutcome) => void;
+  }
+  const activeStartContinuations = new Map<number, ActiveStartContinuationEntry>();
+
+  function cancelStartContinuation(epoch?: number): void {
+    if (epoch !== undefined) {
+      const continuation = activeStartContinuations.get(epoch);
+      if (continuation) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    } else {
+      for (const continuation of activeStartContinuations.values()) {
+        clearTimeout(continuation.timer);
+        continuation.resolve('cancelled');
+      }
+      activeStartContinuations.clear();
+    }
+  }
+
+  function cancelStartContinuationsBefore(targetEpoch: number): void {
+    for (const [epoch, continuation] of activeStartContinuations.entries()) {
+      if (epoch < targetEpoch) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    }
+  }
+
+  function cancelStartContinuationsUpTo(targetEpoch?: number): void {
+    if (targetEpoch === undefined) {
+      cancelStartContinuation();
+      return;
+    }
+    for (const [epoch, continuation] of activeStartContinuations.entries()) {
+      if (epoch <= targetEpoch) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    }
+  }
+
+  function getPendingStartContinuation(): PendingStartContinuationInfo | null {
+    if (activeStartContinuations.size === 0) {
+      return null;
+    }
+    if (activeStartContinuations.size > 1) {
+      throw new Error(
+        `Invariant violation: multiple active start continuations (${activeStartContinuations.size})`,
+      );
+    }
+    const entry = activeStartContinuations.values().next().value;
+    if (!entry) {
+      return null;
+    }
+    return {
+      epoch: entry.epoch,
+      delayMs: entry.delayMs,
+      reason: entry.reason,
+    };
+  }
+
+  function scheduleStartContinuation(
+    params: ScheduleStartContinuationParams,
+  ): Promise<StartContinuationOutcome> {
+    if (
+      isDisposed ||
+      isStalePlaybackEpoch(params.epoch) ||
+      stoppedEpochs.has(params.epoch) ||
+      terminalFencedEpochs.has(params.epoch)
+    ) {
+      return Promise.resolve('cancelled');
+    }
+
+    // Cancel any existing continuation for this epoch (replaces it synchronously)
+    const existing = activeStartContinuations.get(params.epoch);
+    if (existing) {
+      clearTimeout(existing.timer);
+      activeStartContinuations.delete(params.epoch);
+      existing.resolve('cancelled');
+    }
+
+    // Enforce C1 invariant: cancel any older continuations
+    cancelStartContinuationsBefore(params.epoch);
+
+    return new Promise<StartContinuationOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        activeStartContinuations.delete(params.epoch);
+        if (
+          isDisposed ||
+          isStalePlaybackEpoch(params.epoch) ||
+          stoppedEpochs.has(params.epoch) ||
+          terminalFencedEpochs.has(params.epoch)
+        ) {
+          resolve('cancelled');
+          return;
+        }
+        resolve('proceed');
+      }, params.delayMs);
+
+      activeStartContinuations.set(params.epoch, {
+        epoch: params.epoch,
+        delayMs: params.delayMs,
+        reason: params.reason,
+        timer,
+        resolve,
+      });
+    });
+  }
+
+  function scheduleAutoFallback(
+    command: ScheduleAutoFallbackCommand,
+    target?: AutoFallbackRestartTarget,
+  ): void {
+    scheduledCommands.add(command);
+    if (
+      currentlyHandlingScheduleCommand &&
+      currentlyHandlingScheduleCommand.epoch === command.epoch
+    ) {
+      scheduledCommands.add(currentlyHandlingScheduleCommand);
+    }
+
+    if (isDisposed) {
+      return;
+    }
+    if (isStalePlaybackEpoch(command.epoch)) {
+      return;
+    }
+
+    // Duplicate replacement policy: cancel any existing pending fallback for this epoch
+    const existing = activeFallbacks.get(command.epoch);
+    if (existing) {
+      clearTimeout(existing.timer);
+      activeFallbacks.delete(command.epoch);
+    }
+
+    let resolvedTarget: AutoFallbackRestartTarget | null = null;
+
+    if (target) {
+      const explicitProfile = (command.profile ?? target.explicitProfile) || undefined;
+      if (target.kind === 'live' && target.serviceRef?.trim()) {
+        resolvedTarget = {
+          kind: 'live',
+          serviceRef: target.serviceRef.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'vod' && target.recordingId?.trim()) {
+        resolvedTarget = {
+          kind: 'vod',
+          recordingId: target.recordingId.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'src' && target.srcUrl?.trim()) {
+        resolvedTarget = {
+          kind: 'src',
+          srcUrl: target.srcUrl.trim(),
+          explicitProfile,
+        };
+      }
+    }
+
+    if (!resolvedTarget) {
+      const currentMode = runtime.getState().playbackMode;
+      if (
+        currentMode === 'LIVE' &&
+        currentAttempt &&
+        currentAttempt.epoch === command.epoch &&
+        currentAttempt.params?.serviceRef?.trim()
+      ) {
+        resolvedTarget = {
+          kind: 'live',
+          serviceRef: currentAttempt.params.serviceRef.trim(),
+          explicitProfile: (command.profile ?? undefined) || undefined,
+        };
+      }
+    }
+
+    if (!resolvedTarget) {
+      // Missing required source identity: do not manufacture unexecutable restart
+      return;
+    }
+
+    const finalTarget = resolvedTarget;
+    const timer = setTimeout(() => {
+      activeFallbacks.delete(command.epoch);
+
+      if (isDisposed) {
+        return;
+      }
+      if (isStalePlaybackEpoch(command.epoch)) {
+        return;
+      }
+
+      runtime.dispatch({
+        type: 'intent.start.requested',
+        epoch: command.epoch,
+        kind: finalTarget.kind,
+        serviceRef: finalTarget.serviceRef,
+        recordingId: finalTarget.recordingId,
+        srcUrl: finalTarget.srcUrl,
+        explicitProfile: finalTarget.explicitProfile,
+      });
+    }, command.delayMs);
+
+    activeFallbacks.set(command.epoch, {
+      timer,
+      target: finalTarget,
+      command,
+    });
+  }
+
   let executor: PlaybackCommandExecutor | null = executeCommand;
+
+  const handleCommand: PlaybackCommandExecutor = (command) => {
+    let result: unknown;
+    if (command.type === 'command.playback.schedule_auto_fallback') {
+      const prevHandling = currentlyHandlingScheduleCommand;
+      currentlyHandlingScheduleCommand = command;
+      try {
+        if (executor) {
+          result = executor(command);
+        }
+        if (!scheduledCommands.has(command)) {
+          scheduleAutoFallback(command);
+        }
+      } finally {
+        currentlyHandlingScheduleCommand = prevHandling;
+      }
+      return result;
+    }
+
+    if (command.type === 'command.playback.start') {
+      if (executor) {
+        result = executor(command);
+      }
+      if (activeRetry && activeRetry.phase === 'restarting') {
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          const startPromise = result as Promise<unknown>;
+          const op = activeRetry;
+          op.startPromise = startPromise;
+          // Explicitly observe both fulfillment and rejection to prevent derived unhandled rejections
+          // while guarding identity so late settlements do not mutate replacement retries.
+          void startPromise.then(
+            () => {
+              if (activeRetry === op) {
+                activeRetry = null;
+              }
+            },
+            (_err: unknown) => {
+              if (activeRetry === op) {
+                activeRetry = null;
+              }
+            },
+          );
+        }
+      }
+      // Return undefined so that startPromise is NOT added to runtime.pendingCommands (the command-drain set),
+      // ensuring runtime.waitForCommands() does not wait for start preparation during teardown.
+      return undefined;
+    }
+
+    if (executor) {
+      result = executor(command);
+    }
+
+    // Prevent the active stop operation's own promise from entering its command-drain dependencies,
+    // which would cause runtime.waitForCommands() to wait on its own completion (deadlock).
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      for (const inFlightStop of inFlightStopPromises.values()) {
+        if (result === inFlightStop) {
+          return undefined;
+        }
+      }
+    }
+
+    return result;
+  };
 
   const runtime: PlaybackMachineRuntime = createPlaybackMachineRuntime(
     createInitialState,
-    (command) => {
-      if (executor) {
-        return executor(command);
-      }
-    },
+    handleCommand,
   );
 
-  let playbackEpoch = runtime.getState().epoch.playback;
-  let sessionEpoch = runtime.getState().epoch.session;
-  const stoppedEpochs = new Set<number>();
+  const foregroundRuntime: PlaybackForegroundRuntime = createPlaybackForegroundRuntime({
+    getDomainStatus: () => runtime.getState().status,
+    getConnectionLost: () => runtime.getState().connectionLost,
+    getPlaybackEpoch: () => playbackEpoch,
+    isStalePlaybackEpoch,
+    isStoppedEpoch: (epoch) => stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch),
+    isDisposed: () => isDisposed,
+    isRetryInFlight: () => isRetryInFlight(),
+    onRetry: (target) => retry(target),
+  });
+
+  const watchdogRuntime: PlaybackNetworkWatchdogRuntime = createPlaybackNetworkWatchdogRuntime({
+    getDomainStatus: () => runtime.getState().status,
+    getFailure: () => runtime.getState().failure,
+    getPlaybackEpoch: () => playbackEpoch,
+    isDisposed: () => isDisposed,
+    isRetryInFlight: () => isRetryInFlight(),
+    onRecover: (target) => retry(target),
+    getTargetContext: () => {
+      const captured = foregroundRuntime.getCapturedTarget();
+      if (captured) {
+        return captured;
+      }
+      const resolved = resolveRetryTarget();
+      if (!resolved) {
+        return null;
+      }
+      if (resolved.kind === 'live') {
+        return { kind: 'live', serviceRef: resolved.serviceRef, explicitProfile: resolved.explicitProfile };
+      }
+      if (resolved.kind === 'vod') {
+        return { kind: 'vod', recordingId: resolved.recordingId, explicitProfile: resolved.explicitProfile };
+      }
+      if (resolved.kind === 'src') {
+        return { kind: 'src', srcUrl: resolved.srcUrl, explicitProfile: resolved.explicitProfile };
+      }
+      return null;
+    },
+  });
+
+  let previousConnectionLost = runtime.getState().connectionLost;
+  let previousDomainStatus = runtime.getState().status;
+  let previousFailure = runtime.getState().failure;
+  runtime.subscribe(() => {
+    const currentState = runtime.getState();
+    const currentConnectionLost = currentState.connectionLost;
+    if (currentConnectionLost !== previousConnectionLost) {
+      previousConnectionLost = currentConnectionLost;
+      foregroundRuntime.onConnectionLostChanged(currentConnectionLost);
+    }
+    const currentDomainStatus = currentState.status;
+    const currentFailure = currentState.failure;
+    if (currentDomainStatus !== previousDomainStatus || currentFailure !== previousFailure) {
+      previousDomainStatus = currentDomainStatus;
+      previousFailure = currentFailure;
+      watchdogRuntime.onDomainStateChanged();
+    }
+  });
+
+  function dispatch(event: PlaybackMachineEvent): void {
+    if (event.type === 'normative.playback.failure.raised') {
+      const failure = event.failure;
+      const isTerminalAuth =
+        failure.class === 'auth' ||
+        failure.terminal === true ||
+        failure.code === 'SESSION_FORBIDDEN' ||
+        failure.code === 'SESSION_UNAUTHORIZED' ||
+        failure.status === 401 ||
+        failure.status === 403;
+
+      if (isTerminalAuth) {
+        const authEpoch = typeof event.epoch === 'number' ? event.epoch : playbackEpoch;
+        terminalFencedEpochs.add(authEpoch);
+        stoppedEpochs.add(authEpoch);
+
+        if (event.epoch === undefined || event.epoch >= playbackEpoch) {
+          cancelAutoFallback(authEpoch);
+          stopHeartbeatSupervision();
+        }
+
+        cancelStartContinuationsUpTo(typeof event.epoch === 'number' ? event.epoch : undefined);
+
+        if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
+          cancelActiveRetry('terminal_auth');
+        }
+
+        foregroundRuntime.onTerminalAuth(event.epoch);
+      }
+    }
+    runtime.dispatch(event);
+  }
+
+  playbackEpoch = runtime.getState().epoch.playback;
+  sessionEpoch = runtime.getState().epoch.session;
 
   let activeSessionId: string | null = null;
   let activeSessionTransport: LiveSessionTransport | null = null;
@@ -191,14 +753,26 @@ export function createPlaybackController(
   const stoppingSessionIds = new Set<string>();
   const activeStopPromises = new Map<string, Promise<void>>();
   const inFlightStopPromises = new Map<number, Promise<void>>();
+  let currentTransport: LiveSessionTransport =
+    typeof options.transport === 'function'
+      ? (options.transport as () => LiveSessionTransport)()
+      : options.getTransport
+        ? options.getTransport()
+        : options.transport!;
+
+  let explicitTransportUpdated = false;
+
   const getLatestTransport = (): LiveSessionTransport => {
-    if (typeof options.transport === 'function') {
-      return (options.transport as () => LiveSessionTransport)();
+    if (typeof currentTransport === 'function') {
+      return (currentTransport as () => LiveSessionTransport)();
+    }
+    if (explicitTransportUpdated) {
+      return currentTransport;
     }
     if (options.getTransport) {
       return options.getTransport();
     }
-    return options.transport!;
+    return currentTransport;
   };
 
   const pendingAdoptionCandidates = new Map<
@@ -206,7 +780,18 @@ export function createPlaybackController(
     { sessionId: string; heldAt: number; transport: LiveSessionTransport }
   >();
 
-  let isDisposed = false;
+  let heartbeatRuntime: PlaybackHeartbeatRuntime | null = null;
+  let heartbeatSessionId: string | null = null;
+  let heartbeatGeneration = 0;
+
+  function stopHeartbeatSupervision(): void {
+    heartbeatGeneration += 1;
+    if (heartbeatRuntime) {
+      heartbeatRuntime.stop();
+      heartbeatRuntime = null;
+    }
+    heartbeatSessionId = null;
+  }
 
   function hasEligibleInFlightStarts(): boolean {
     for (const start of inFlightStarts.values()) {
@@ -303,22 +888,42 @@ export function createPlaybackController(
     pendingAdoptionCandidates.clear();
   }
 
+  function cancelInFlightAttempt(
+    attempt: InFlightStart,
+    reason: 'superseded' | 'user_stop' | 'timeout' = 'user_stop',
+  ): void {
+    if (attempt.settled) {
+      return;
+    }
+    attempt.cancelled = true;
+    attempt.cancelReason = reason;
+    if (attempt.settlementTimer) {
+      clearTimeout(attempt.settlementTimer);
+      attempt.settlementTimer = null;
+    }
+    attempt.abortController.abort();
+    attempt.settled = true;
+    attempt.resolvePublic({ status: 'cancelled', reason });
+  }
+
   function allocatePlaybackEpoch(): number {
+    if (activeRetry) {
+      if (activeRetry.phase === 'restarting' && activeRetry.restartEpoch === null) {
+        activeRetry.restartEpoch = playbackEpoch + 1;
+      } else {
+        cancelActiveRetry('superseded');
+      }
+    }
+
     playbackEpoch += 1;
     sessionEpoch = 0;
+    cancelAutoFallback();
+    cancelStartContinuationsBefore(playbackEpoch);
     options.onAttemptStarted?.(playbackEpoch);
 
     // Invalidate any in-flight live start immediately and idempotently
     if (currentAttempt && !currentAttempt.settled) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'superseded';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      cancelInFlightAttempt(currentAttempt, 'superseded');
       currentAttempt = null;
     }
 
@@ -346,13 +951,35 @@ export function createPlaybackController(
       return;
     }
 
-    // Fence: a stale attempt must never mutate state or retire a newer session!
+    // Fence: a stale attempt must never mutate state, retire a newer session, or cancel an active retry!
+    // Only epochs the controller allocated are current; an unknown higher epoch is not adopted.
     if (isStalePlaybackEpoch(epoch)) {
       return;
     }
 
+    if (activeRetry) {
+      if (activeRetry.phase === 'restarting') {
+        if (epoch !== activeRetry.restartEpoch) {
+          cancelActiveRetry('superseded');
+        }
+      } else {
+        cancelActiveRetry('superseded');
+      }
+    }
+
+    cancelAutoFallback(epoch);
+    foregroundRuntime.onPlaybackAttemptStarted(epoch);
+
     // If switching to a non-browser-Live mode, retire any active Live session!
     if (nextPlaybackMode !== 'LIVE' || !hasSessionIntent) {
+      if (currentAttempt && !currentAttempt.settled) {
+        cancelInFlightAttempt(currentAttempt, 'superseded');
+        currentAttempt = null;
+      }
+      for (const start of Array.from(inFlightStarts.values())) {
+        cancelInFlightAttempt(start, 'superseded');
+      }
+      stopHeartbeatSupervision();
       const sessionToRetire = activeSessionId;
       const transportToUse = activeSessionTransport ?? getLatestTransport();
       activeSessionId = null;
@@ -376,6 +1003,16 @@ export function createPlaybackController(
   }
 
   function markPlaybackStopped(epoch: number): void {
+    if (isStalePlaybackEpoch(epoch)) {
+      return;
+    }
+    if (activeRetry && activeRetry.phase === 'restarting') {
+      cancelActiveRetry('superseded');
+    }
+    terminalFencedEpochs.add(epoch);
+    stoppedEpochs.add(epoch);
+    cancelAutoFallback(epoch);
+    cancelStartContinuation(epoch);
     runtime.dispatch({
       type: 'normative.playback.stopped',
       epoch,
@@ -383,7 +1020,11 @@ export function createPlaybackController(
   }
 
   function isStalePlaybackEpoch(epoch: number): boolean {
-    return epoch !== playbackEpoch || stoppedEpochs.has(epoch);
+    return (
+      epoch !== playbackEpoch ||
+      stoppedEpochs.has(epoch) ||
+      terminalFencedEpochs.has(epoch)
+    );
   }
 
   function isStaleSessionEpoch(pEpoch: number, sEpoch: number): boolean {
@@ -647,9 +1288,18 @@ export function createPlaybackController(
       }
       const previousActiveSessionId = activeSessionId;
       const previousActiveTransport = activeSessionTransport;
+
+      const pinnedBase = attempt.transport.apiBase;
+      const latestTransport = getLatestTransport();
+      const isSameEndpoint = !pinnedBase || !latestTransport.apiBase || pinnedBase === latestTransport.apiBase;
+      const resolvedTransport = isSameEndpoint ? latestTransport : attempt.transport;
+
       activeSessionId = returnedSessionId;
-      activeSessionTransport = attempt.transport;
+      activeSessionTransport = resolvedTransport;
+      attempt.transport = resolvedTransport;
+
       if (previousActiveSessionId && previousActiveSessionId !== returnedSessionId) {
+        stopHeartbeatSupervision();
         void retireAndStopSession(previousActiveSessionId, previousActiveTransport ?? undefined);
       }
       flushPendingAdoptionCandidates();
@@ -662,6 +1312,7 @@ export function createPlaybackController(
 
       if (isDisposed) {
         if (activeSessionId === returnedSessionId) {
+          stopHeartbeatSupervision();
           activeSessionId = null;
           activeSessionTransport = null;
         }
@@ -703,6 +1354,174 @@ export function createPlaybackController(
         requestId: readySession.requestId ?? (normalized.kind === 'playable' ? normalized.observability.requestId : undefined),
       });
 
+      stopHeartbeatSupervision();
+      const currentGen = ++heartbeatGeneration;
+      heartbeatSessionId = returnedSessionId;
+      const initialLease = readySession.leaseExpiresAt ?? null;
+
+      // Reconcile the latest committed same-endpoint credentials when supervision is created:
+      const effectivePinnedBase = attempt.transport.apiBase;
+      const latestCommittedTransport = getLatestTransport();
+      const effectiveTransport =
+        !effectivePinnedBase ||
+        !latestCommittedTransport.apiBase ||
+        effectivePinnedBase === latestCommittedTransport.apiBase
+          ? latestCommittedTransport
+          : attempt.transport;
+
+      activeSessionTransport = effectiveTransport;
+      attempt.transport = effectiveTransport;
+
+      runtime.dispatch({
+        type: 'normative.session.lease.updated',
+        epoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        leaseExpiresAt: initialLease,
+        connectionLost: false,
+      });
+
+      heartbeatRuntime = createPlaybackHeartbeatRuntime({
+        sessionId: returnedSessionId,
+        heartbeatIntervalSeconds: readySession.heartbeatIntervalSeconds!,
+        initialLeaseExpiresAt: initialLease,
+        transport: effectiveTransport,
+        playbackEpoch: attempt.epoch,
+        sessionEpoch: sEpoch,
+        onLeaseUpdated: ({ leaseExpiresAt, connectionLost }) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          runtime.dispatch({
+            type: 'normative.session.lease.updated',
+            epoch: attempt.epoch,
+            sessionEpoch: sEpoch,
+            leaseExpiresAt,
+            connectionLost,
+          });
+        },
+        onFailure: (failure) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          const currentPlaybackEpoch = runtime.getState().epoch.playback;
+          const isTerminalAuth =
+            failure.terminal ||
+            failure.code === 'SESSION_UNAUTHORIZED' ||
+            failure.code === 'SESSION_FORBIDDEN' ||
+            failure.status === 401 ||
+            failure.status === 403;
+
+          const hasInFlightNewAttempt = Boolean(
+            (currentAttempt && currentAttempt.epoch !== attempt.epoch) ||
+            Array.from(inFlightStarts.values()).some((s) => s.epoch !== attempt.epoch)
+          );
+
+          if (isTerminalAuth) {
+            terminalFencedEpochs.add(currentPlaybackEpoch);
+            terminalFencedEpochs.add(playbackEpoch);
+            terminalFencedEpochs.add(attempt.epoch);
+            stoppedEpochs.add(currentPlaybackEpoch);
+            stoppedEpochs.add(playbackEpoch);
+            stoppedEpochs.add(attempt.epoch);
+            if (currentAttempt) {
+              terminalFencedEpochs.add(currentAttempt.epoch);
+              stoppedEpochs.add(currentAttempt.epoch);
+              cancelInFlightAttempt(currentAttempt, 'superseded');
+              currentAttempt = null;
+            }
+            for (const start of Array.from(inFlightStarts.values())) {
+              terminalFencedEpochs.add(start.epoch);
+              stoppedEpochs.add(start.epoch);
+              cancelInFlightAttempt(start, 'superseded');
+            }
+            stopHeartbeatSupervision();
+            cancelAutoFallback();
+            runtime.dispatch({
+              type: 'normative.playback.failure.raised',
+              epoch: currentPlaybackEpoch,
+              failure: buildPlaybackFailure(
+                {
+                  title: failure.message,
+                  status: failure.status,
+                  code: failure.code,
+                  retryable: failure.retryable,
+                } as any,
+                'native-host',
+                {
+                  class: failure.failureClass,
+                  code: failure.code,
+                  message: failure.message,
+                  retryable: failure.retryable,
+                  recoverable: failure.recoverable,
+                  terminal: failure.terminal,
+                },
+              ),
+              status: 'error',
+            });
+            if (failure.pauseMedia && executor) {
+              executor({ type: 'command.media.pause' });
+            }
+            return;
+          }
+
+          const isConfirmedDead =
+            failure.status === 404 ||
+            failure.status === 410 ||
+            failure.code === 'SESSION_NOT_FOUND' ||
+            failure.code === 'SESSION_EXPIRED';
+
+          if (hasInFlightNewAttempt) {
+            const failedSessionId = activeSessionId;
+            const failedTransport = activeSessionTransport ?? getLatestTransport();
+            stopHeartbeatSupervision();
+            activeSessionId = null;
+            activeSessionTransport = null;
+            if (!isConfirmedDead && failedSessionId) {
+              handleObsoleteSession(failedSessionId, failedTransport);
+            }
+            if (failure.pauseMedia && executor) {
+              executor({ type: 'command.media.pause' });
+            }
+            return;
+          }
+
+          stopHeartbeatSupervision();
+          runtime.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: currentPlaybackEpoch,
+            failure: buildPlaybackFailure(
+              {
+                title: failure.message,
+                status: failure.status,
+                code: failure.code,
+                retryable: failure.retryable,
+              } as any,
+              'native-host',
+              {
+                class: failure.failureClass,
+                code: failure.code,
+                message: failure.message,
+                retryable: failure.retryable,
+                recoverable: failure.recoverable,
+                terminal: failure.terminal,
+              },
+            ),
+            status: 'error',
+          });
+          if (failure.pauseMedia && executor) {
+            executor({ type: 'command.media.pause' });
+          }
+        },
+        onSessionSnapshot: (snapshot) => {
+          if (currentGen !== heartbeatGeneration || activeSessionId !== returnedSessionId) {
+            return;
+          }
+          options.onSessionSnapshot?.(snapshot);
+        },
+      });
+
+      heartbeatRuntime.start();
+
       if (!attempt.settled) {
         attempt.settled = true;
         attempt.resolvePublic({
@@ -724,6 +1543,7 @@ export function createPlaybackController(
           handleObsoleteSession(returnedSessionId, attempt.transport);
         } else {
           if (activeSessionId === returnedSessionId) {
+            stopHeartbeatSupervision();
             activeSessionId = null;
             activeSessionTransport = null;
           }
@@ -763,15 +1583,7 @@ export function createPlaybackController(
 
     // Invalidate previous attempt promptly if still running
     if (currentAttempt && !currentAttempt.settled && currentAttempt.epoch !== epoch) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'superseded';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'superseded' });
+      cancelInFlightAttempt(currentAttempt, 'superseded');
       currentAttempt = null;
     }
 
@@ -799,6 +1611,7 @@ export function createPlaybackController(
       resolvePublic,
       rejectPublic,
       abortController: new AbortController(),
+      params,
     };
 
     attempt.settlementTimer = setTimeout(() => {
@@ -837,6 +1650,14 @@ export function createPlaybackController(
     reason: PlaybackStopReason | string = 'user_stop',
     notifyClose: boolean = false,
   ): Promise<void> {
+    cancelActiveRetry('user_stop');
+    return executeStopInternal(reason, notifyClose);
+  }
+
+  function executeStopInternal(
+    reason: PlaybackStopReason | string = 'user_stop',
+    notifyClose: boolean = false,
+  ): Promise<void> {
     const inFlight = inFlightStopPromises.get(playbackEpoch);
     if (inFlight) {
       return inFlight;
@@ -853,10 +1674,18 @@ export function createPlaybackController(
       return Promise.resolve();
     }
 
+    // 0. Synchronously stop heartbeat supervision and auto-fallback timers
+    stopHeartbeatSupervision();
+    cancelAutoFallback();
+    cancelStartContinuation();
+    foregroundRuntime.onPlaybackStopped(playbackEpoch);
+
     // 1. Synchronously advance playbackEpoch to invalidate pending preparation
     playbackEpoch += 1;
     sessionEpoch = 0;
+    cancelStartContinuationsBefore(playbackEpoch);
     const stopEpoch = playbackEpoch;
+    terminalFencedEpochs.add(stopEpoch);
     stoppedEpochs.add(stopEpoch);
 
     // 2. Synchronously snapshot and clear activeSessionId and its transport
@@ -867,94 +1696,277 @@ export function createPlaybackController(
 
     // 3. Synchronously attempt invalidation & prompt promise settle
     if (currentAttempt && !currentAttempt.settled) {
-      if (currentAttempt.settlementTimer) {
-        clearTimeout(currentAttempt.settlementTimer);
-        currentAttempt.settlementTimer = null;
-      }
-      currentAttempt.cancelled = true;
-      currentAttempt.cancelReason = 'user_stop';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+      cancelInFlightAttempt(currentAttempt, 'user_stop');
+      currentAttempt = null;
     }
-    currentAttempt = null;
-
-    for (const start of inFlightStarts.values()) {
-      if (start.settlementTimer) {
-        clearTimeout(start.settlementTimer);
-        start.settlementTimer = null;
-      }
-      if (!start.cancelled) {
-        start.cancelled = true;
-        start.cancelReason = 'user_stop';
-        start.abortController.abort();
-        if (!start.settled) {
-          start.settled = true;
-          start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-        }
-      }
+    for (const start of Array.from(inFlightStarts.values())) {
+      cancelInFlightAttempt(start, 'user_stop');
     }
 
-    const doStop = async () => {
-      // 4. Dispatch intent.stop.requested (media teardown commands)
-      runtime.dispatch({
-        type: 'intent.stop.requested',
-        epoch: stopEpoch,
-        reason: reason as PlaybackStopReason,
-        notifyClose,
-      });
-
-      await runtime.waitForCommands();
-
-      // 5. Clean up active session and flush unadopted candidates
-      flushPendingAdoptionCandidates();
-
-      if (sessionToStop) {
-        await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
-      }
-
-      // 6. Dispatch normative.playback.stopped
-      runtime.dispatch({
-        type: 'normative.playback.stopped',
-        epoch: stopEpoch,
-      });
-    };
-
-    const promise = doStop().finally(() => {
+    let stopPromiseResolve!: () => void;
+    let stopPromiseReject!: (err: unknown) => void;
+    const promise = new Promise<void>((resolve, reject) => {
+      stopPromiseResolve = resolve;
+      stopPromiseReject = reject;
+    }).finally(() => {
       inFlightStopPromises.delete(stopEpoch);
     });
+
+    // Establish coalescing entry BEFORE synchronous command dispatch so reentrant calls coalesce!
     inFlightStopPromises.set(stopEpoch, promise);
+
+    const doStop = async () => {
+      try {
+        // 4. Dispatch intent.stop.requested (media teardown commands)
+        runtime.dispatch({
+          type: 'intent.stop.requested',
+          epoch: stopEpoch,
+          reason: reason as PlaybackStopReason,
+          notifyClose,
+        });
+
+        await runtime.waitForCommands();
+
+        // 5. Clean up active session and flush unadopted candidates
+        flushPendingAdoptionCandidates();
+
+        if (sessionToStop) {
+          await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
+        }
+
+        // 6. Dispatch normative.playback.stopped
+        runtime.dispatch({
+          type: 'normative.playback.stopped',
+          epoch: stopEpoch,
+        });
+
+        stopPromiseResolve();
+      } catch (err) {
+        stopPromiseReject(err);
+      }
+    };
+
+    void doStop();
     return promise;
   }
 
+  function resolveRetryTarget(
+    target?: PlaybackRetryTarget,
+  ): AutoFallbackRestartTarget | null {
+    if (target) {
+      const explicitProfile = target.explicitProfile?.trim() || undefined;
+      if (target.kind === 'vod' && target.recordingId?.trim()) {
+        return {
+          kind: 'vod',
+          recordingId: target.recordingId.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'src' && target.srcUrl?.trim()) {
+        return {
+          kind: 'src',
+          srcUrl: target.srcUrl.trim(),
+          explicitProfile,
+        };
+      } else if (target.kind === 'live' && target.serviceRef?.trim()) {
+        return {
+          kind: 'live',
+          serviceRef: target.serviceRef.trim(),
+          explicitProfile,
+        };
+      }
+    }
+
+    const currentMode = runtime.getState().playbackMode;
+    if (
+      currentMode === 'LIVE' &&
+      currentAttempt &&
+      currentAttempt.params?.serviceRef?.trim()
+    ) {
+      return {
+        kind: 'live',
+        serviceRef: currentAttempt.params.serviceRef.trim(),
+        explicitProfile: undefined,
+      };
+    }
+
+    return null;
+  }
+
+  function isSameRetryTarget(
+    a: AutoFallbackRestartTarget,
+    b: AutoFallbackRestartTarget,
+  ): boolean {
+    if (a.kind !== b.kind) return false;
+    if (a.explicitProfile !== b.explicitProfile) return false;
+    if (a.kind === 'live') {
+      return a.serviceRef === b.serviceRef;
+    }
+    if (a.kind === 'vod') {
+      return a.recordingId === b.recordingId;
+    }
+    if (a.kind === 'src') {
+      return a.srcUrl === b.srcUrl;
+    }
+    return false;
+  }
+
+  function isRetryInFlight(): boolean {
+    return Boolean(activeRetry && !activeRetry.cancelled);
+  }
+
+  function cancelRetry(
+    reason:
+      | 'superseded'
+      | 'user_stop'
+      | 'disposed'
+      | 'terminal_auth'
+      | 'missing_target'
+      | 'error' = 'superseded',
+  ): void {
+    cancelActiveRetry(reason);
+  }
+
+  function retry(target?: PlaybackRetryTarget): Promise<PlaybackRetryResult> {
+    if (isDisposed) {
+      return Promise.resolve({ status: 'cancelled', reason: 'disposed' });
+    }
+
+    const resolvedTarget = resolveRetryTarget(target);
+    if (!resolvedTarget) {
+      return Promise.resolve({ status: 'cancelled', reason: 'missing_target' });
+    }
+
+    // Coalescing check: if activeRetry matches target, coalesce
+    if (activeRetry && !activeRetry.cancelled && isSameRetryTarget(activeRetry.target, resolvedTarget)) {
+      return activeRetry.publicPromise;
+    }
+
+    // Cancel existing active retry if target changed
+    cancelActiveRetry('superseded');
+    foregroundRuntime.onRetryInitiated();
+    cancelStartContinuation();
+
+    let resolvePublic!: (result: PlaybackRetryResult) => void;
+    const publicPromise = new Promise<PlaybackRetryResult>((resolve) => {
+      resolvePublic = resolve;
+    });
+
+    const op: ActiveRetryOperation = {
+      opId: nextRetryOpId++,
+      phase: 'stopping',
+      initialEpoch: playbackEpoch,
+      restartEpoch: null,
+      target: resolvedTarget,
+      cancelled: false,
+      cancelReason: null,
+      publicPromise,
+      resolvePublic,
+      stopPromise: null,
+    };
+
+    activeRetry = op;
+    void runRetryWorker(op);
+
+    return publicPromise;
+  }
+
+  async function runRetryWorker(op: ActiveRetryOperation): Promise<void> {
+    try {
+      const stopPromise = executeStopInternal('auto_recovery_restart', false);
+      op.stopPromise = stopPromise;
+      await stopPromise;
+    } catch (_err) {
+      if (activeRetry === op && !op.cancelled) {
+        activeRetry = null;
+        op.cancelled = true;
+        op.cancelReason = 'error';
+        op.resolvePublic({ status: 'cancelled', reason: 'error' });
+      }
+      return;
+    }
+
+    // If cancelled or superseded during stop teardown
+    if (op.cancelled || activeRetry !== op || isDisposed) {
+      return;
+    }
+
+    op.phase = 'restarting';
+
+    try {
+      runtime.dispatch({
+        type: 'intent.start.requested',
+        epoch: playbackEpoch,
+        kind: op.target.kind,
+        serviceRef: op.target.serviceRef,
+        recordingId: op.target.recordingId,
+        srcUrl: op.target.srcUrl,
+        explicitProfile: op.target.explicitProfile,
+      });
+
+      if (activeRetry === op && !op.cancelled) {
+        if (op.restartEpoch !== null) {
+          op.resolvePublic({ status: 'restarted', epoch: op.restartEpoch });
+          // If no asynchronous start promise is being tracked, preparation completed synchronously:
+          if (!op.startPromise) {
+            activeRetry = null;
+          }
+        } else {
+          activeRetry = null;
+          op.cancelled = true;
+          op.cancelReason = 'error';
+          op.resolvePublic({ status: 'cancelled', reason: 'error' });
+        }
+      }
+    } catch (_err) {
+      if (activeRetry === op && !op.cancelled) {
+        activeRetry = null;
+        op.cancelled = true;
+        op.cancelReason = 'error';
+        op.resolvePublic({ status: 'cancelled', reason: 'error' });
+      }
+    }
+  }
+
   function activate(): void {
+    if (!isDisposed) {
+      return;
+    }
     isDisposed = false;
+    watchdogRuntime.activate();
+
+    const currentStatus = runtime.getState().status;
+    const isTerminalStatus = currentStatus === 'error' || currentStatus === 'stopped';
+
+    if (!isTerminalStatus && !terminalFencedEpochs.has(playbackEpoch)) {
+      stoppedEpochs.delete(playbackEpoch);
+    } else {
+      terminalFencedEpochs.add(playbackEpoch);
+      stoppedEpochs.add(playbackEpoch);
+    }
   }
 
   function dispose(): void {
     isDisposed = true;
+    cancelActiveRetry('disposed');
+    stopHeartbeatSupervision();
+    cancelAutoFallback();
+    cancelStartContinuation();
+    foregroundRuntime.dispose();
+    watchdogRuntime.dispose();
+    terminalFencedEpochs.add(playbackEpoch);
+    stoppedEpochs.add(playbackEpoch);
     playbackEpoch += 1;
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
+    cancelStartContinuationsBefore(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
-      currentAttempt.cancelled = true;
       currentAttempt.ineligibleForAdoption = true;
-      currentAttempt.cancelReason = 'user_stop';
-      currentAttempt.abortController.abort();
-      currentAttempt.settled = true;
-      currentAttempt.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
+      cancelInFlightAttempt(currentAttempt, 'user_stop');
+      currentAttempt = null;
     }
-    for (const start of inFlightStarts.values()) {
-      if (start.settlementTimer) {
-        clearTimeout(start.settlementTimer);
-      }
-      start.cancelled = true;
+    for (const start of Array.from(inFlightStarts.values())) {
       start.ineligibleForAdoption = true;
-      start.abortController.abort();
-      if (!start.settled) {
-        start.settled = true;
-        start.resolvePublic({ status: 'cancelled', reason: 'user_stop' });
-      }
+      cancelInFlightAttempt(start, 'user_stop');
     }
     inFlightStarts.clear();
     flushPendingAdoptionCandidates();
@@ -969,10 +1981,9 @@ export function createPlaybackController(
   return {
     getState: runtime.getState,
     subscribe: runtime.subscribe,
-    dispatch: runtime.dispatch,
+    dispatch,
     setCommandExecutor(exec) {
       executor = exec;
-      runtime.setCommandExecutor(exec);
     },
 
     allocatePlaybackEpoch,
@@ -984,11 +1995,118 @@ export function createPlaybackController(
     getEpoch() {
       return playbackEpoch;
     },
+    getDomainStatus() {
+      return runtime.getState().status;
+    },
+
+    scheduleAutoFallback,
+    cancelAutoFallback,
+    hasScheduledAutoFallback,
+
+    scheduleStartContinuation,
+    cancelStartContinuation,
+    getPendingStartContinuation,
+
+    retry,
+    isRetryInFlight,
+    cancelRetry,
 
     startLive,
     stop,
+    updateTransport(newTransport: LiveSessionTransport) {
+      explicitTransportUpdated = true;
+      currentTransport = newTransport;
+      const newBase = newTransport.apiBase;
+
+      // 1. Active session & heartbeat runtime (evaluated independently)
+      if (activeSessionId && activeSessionTransport) {
+        const activeBase = activeSessionTransport.apiBase;
+        if (!activeBase || !newBase || activeBase === newBase) {
+          activeSessionTransport = newTransport;
+          if (heartbeatRuntime) {
+            heartbeatRuntime.updateTransport(newTransport);
+          }
+        }
+      }
+
+      // 2. Current attempt (evaluated independently)
+      if (currentAttempt) {
+        const attemptBase = currentAttempt.transport.apiBase;
+        if (!attemptBase || !newBase || attemptBase === newBase) {
+          currentAttempt.transport = newTransport;
+        }
+      }
+
+      // 3. Every tracked in-flight start (evaluated independently)
+      for (const start of Array.from(inFlightStarts.values())) {
+        const startBase = start.transport.apiBase;
+        if (!startBase || !newBase || startBase === newBase) {
+          start.transport = newTransport;
+        }
+      }
+    },
     activate,
     dispose,
+    isDisposed() {
+      return isDisposed;
+    },
+
+    beginCommitPhase(params: {
+      eligible: boolean;
+      target: PlaybackRetryTarget | null;
+      userPaused: boolean;
+      online: boolean;
+      hasActiveSession: boolean;
+    }) {
+      foregroundRuntime.beginCommitPhase(params);
+    },
+    endCommitPhase() {
+      foregroundRuntime.endCommitPhase();
+    },
+    abortCommitPhase() {
+      foregroundRuntime.abortCommitPhase();
+    },
+    reportForegroundVisibility(visible: boolean, isPiP: boolean) {
+      foregroundRuntime.updateVisibility(visible, isPiP);
+    },
+    reportBrowserConnectivity({ online, hasActiveSession }: { online: boolean; hasActiveSession: boolean }) {
+      foregroundRuntime.updateConnectivity(online, hasActiveSession);
+    },
+    setCommittedConnectivity({ online, hasActiveSession }: { online: boolean; hasActiveSession: boolean }) {
+      foregroundRuntime.setCommittedConnectivity(online, hasActiveSession);
+    },
+    setForegroundEligibility(eligible: boolean) {
+      foregroundRuntime.updateEligibility(eligible);
+    },
+    setForegroundTarget(target: PlaybackRetryTarget | null) {
+      foregroundRuntime.setTargetContext(target);
+    },
+    setForegroundMediaBinding(binding: ForegroundMediaBinding | null) {
+      foregroundRuntime.setMediaBinding(binding);
+    },
+    setUserPaused(userPaused: boolean) {
+      foregroundRuntime.setUserPaused(userPaused);
+    },
+    getActiveForegroundOperationId() {
+      return foregroundRuntime.getActiveOperationId();
+    },
+    getActiveResumeParticipants() {
+      return foregroundRuntime.getActiveParticipants();
+    },
+    getForegroundTarget() {
+      return foregroundRuntime.getCapturedTarget();
+    },
+
+    setNetworkWatchdogContext(params: {
+      platformEligible: boolean;
+      intentKey: string;
+      probe?: () => Promise<boolean>;
+    }) {
+      watchdogRuntime.setContext(params);
+    },
+    getNetworkWatchdogState() {
+      return watchdogRuntime.getState();
+    },
 
     getActiveSessionId() {
       return activeSessionId;
@@ -1001,6 +2119,12 @@ export function createPlaybackController(
     },
     getPendingAdoptionCandidatesCount() {
       return pendingAdoptionCandidates.size;
+    },
+    getHeartbeatSessionId() {
+      return heartbeatSessionId;
+    },
+    isHeartbeatSupervising() {
+      return heartbeatRuntime?.isSupervising() ?? false;
     },
   };
 }

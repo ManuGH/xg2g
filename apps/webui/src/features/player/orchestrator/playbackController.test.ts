@@ -31,6 +31,8 @@ function createMockDomainState(): PlaybackDomainState {
     explicitProfilePinned: false,
     hasSessionIntent: false,
     recovery: createRecoveryLadderState(),
+    leaseExpiresAt: null,
+    connectionLost: false,
   };
 }
 
@@ -99,6 +101,25 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       postStopIntent: vi.fn().mockImplementation(async ({ sessionId }) => {
         stopCalls.push({ sessionId });
       }),
+
+      postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => ({
+        status: 200,
+        data: {
+          acknowledged: true,
+          sessionId,
+          leaseExpiresAt: '2026-09-07T22:00:30Z',
+        },
+        headers: new Headers(),
+      })),
+
+      fetchSessionSnapshot: vi.fn().mockImplementation(async ({ sessionId }) => ({
+        status: 200,
+        data: {
+          sessionId,
+          state: 'READY',
+        },
+        headers: new Headers(),
+      })),
 
       ...overrides,
     };
@@ -1836,6 +1857,790 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         expect(t.postStopIntent).toHaveBeenCalledTimes(1);
       } finally {
         c.dispose();
+      }
+    });
+  });
+
+  describe('PlaybackController - Heartbeat & Lease Supervision Integration', () => {
+    it('supervises active session A while attempt B is in-flight, transferring to B upon ready', async () => {
+      const bStartDeferred = defer<StartIntentResult>();
+      const heartbeatCalls: string[] = [];
+
+      const transport = createMockTransport({
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: `http://localhost/${sessionId}.m3u8`,
+          heartbeatIntervalSeconds: sessionId === 's-B' ? 10 : 5,
+          leaseExpiresAt: sessionId === 's-B' ? '2026-09-09T13:00:00Z' : '2026-09-09T12:00:00Z',
+        })),
+        postStartIntent: vi.fn().mockImplementation(async (params) => {
+          const serviceRef = (params?.body as any)?.serviceRef;
+          if (serviceRef === 'channel-B') {
+            return bStartDeferred.promise;
+          }
+          return accepted('s-A');
+        }),
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          heartbeatCalls.push(sessionId);
+          return {
+            status: 200,
+            data: {
+              acknowledged: true,
+              sessionId,
+              leaseExpiresAt: '2026-09-09T12:05:00Z',
+            },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        // 1. Start Live A -> reaches ready
+        const resA = await controller.startLive({ serviceRef: 'channel-A' });
+        expect(resA.status).toBe('ready');
+        expect(controller.getActiveSessionId()).toBe('s-A');
+        expect(controller.getHeartbeatSessionId()).toBe('s-A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+        expect(controller.getState().leaseExpiresAt).toBe('2026-09-09T12:00:00Z');
+
+        // 2. Start attempt B (Live-to-Live)
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+
+        const startBPromise = controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+        await vi.advanceTimersByTimeAsync(0);
+
+        // s-A must still be active and supervised while B is starting
+        expect(controller.getActiveSessionId()).toBe('s-A');
+        expect(controller.getHeartbeatSessionId()).toBe('s-A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // 3. Advance timer by 5s -> s-A must receive its heartbeat!
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(heartbeatCalls).toContain('s-A');
+        expect(controller.getState().leaseExpiresAt).toBe('2026-09-09T12:05:00Z');
+
+        // 4. Accept attempt B
+        bStartDeferred.resolve(accepted('s-B'));
+        const resB = await startBPromise;
+        expect(resB.status).toBe('ready');
+
+        // 5. Supervision transferred to s-B and s-A was stopped
+        expect(controller.getActiveSessionId()).toBe('s-B');
+        expect(controller.getHeartbeatSessionId()).toBe('s-B');
+        expect(controller.getState().leaseExpiresAt).toBe('2026-09-09T13:00:00Z');
+        expect(transport.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's-A' }));
+
+        // 6. Advance timer by 10s -> s-B receives its heartbeat
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(heartbeatCalls).toContain('s-B');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('keeps session A active and supervised if attempt B fails before acceptance', async () => {
+      const heartbeatCalls: string[] = [];
+      let postStartAttempts = 0;
+
+      const transport = createMockTransport({
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 's-A',
+          playbackUrl: 'http://localhost/s-A.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: '2026-09-09T12:00:00Z',
+        }),
+        postStartIntent: vi.fn().mockImplementation(async () => {
+          postStartAttempts++;
+          if (postStartAttempts > 1) {
+            throw new Error('503 Service Unavailable');
+          }
+          return accepted('s-A');
+        }),
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          heartbeatCalls.push(sessionId);
+          return {
+            status: 200,
+            data: {
+              acknowledged: true,
+              sessionId,
+              leaseExpiresAt: '2026-09-09T12:05:00Z',
+            },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('s-A');
+        expect(controller.getHeartbeatSessionId()).toBe('s-A');
+
+        // Start B which will fail at postStartIntent
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+
+        const startBPromise = controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+        const rejectExpectation = expect(startBPromise).rejects.toThrow('503 Service Unavailable');
+        await vi.advanceTimersByTimeAsync(0);
+        await rejectExpectation;
+
+        // Session A was retained, its heartbeat is still supervising
+        expect(controller.getActiveSessionId()).toBe('s-A');
+        expect(controller.getHeartbeatSessionId()).toBe('s-A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Advance timer -> session A receives heartbeat
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(heartbeatCalls).toContain('s-A');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('stops heartbeat supervision cleanly on stop() while timer is waiting', async () => {
+      const heartbeatCalls: string[] = [];
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          heartbeatCalls.push(sessionId);
+          return {
+            status: 200,
+            data: { acknowledged: true, sessionId, leaseExpiresAt: '2026-09-09T12:05:00Z' },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Stop controller while waiting for next beat
+        await controller.stop('user_stop');
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+        expect(controller.getHeartbeatSessionId()).toBeNull();
+        expect(controller.getState().leaseExpiresAt).toBeNull();
+
+        // Advance timers by 10s: no heartbeats should fire
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(heartbeatCalls).toHaveLength(0);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('ignores late completion of in-flight heartbeat request if stop() occurs', async () => {
+      const beatDeferred = defer<any>();
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockReturnValue(beatDeferred.promise),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        // Advance timer by 5s to trigger in-flight heartbeat
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+
+        // While request is in-flight, user stops
+        const stopPromise = controller.stop('user_stop');
+        await vi.advanceTimersByTimeAsync(0);
+        await stopPromise;
+
+        // Late response arrives from server
+        beatDeferred.resolve({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'session-default-1', leaseExpiresAt: '2026-09-09T12:10:00Z' },
+          headers: new Headers(),
+        });
+        await vi.advanceTimersByTimeAsync(0);
+
+        // State remains stopped, leaseExpiresAt is not revived
+        expect(controller.getState().status).toBe('stopped');
+        expect(controller.getState().leaseExpiresAt).toBeNull();
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('stops heartbeat supervision synchronously upon mode switch to VOD', async () => {
+      const transport = createMockTransport();
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+        expect(controller.getActiveSessionId()).toBe('session-default-1');
+
+        // Mode switch away from LIVE
+        const epochVod = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochVod, 'VOD', 'starting', false);
+
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+        expect(controller.getHeartbeatSessionId()).toBeNull();
+        expect(controller.getState().leaseExpiresAt).toBeNull();
+        expect(controller.getState().connectionLost).toBe(false);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('restarts heartbeat supervision cleanly on Start -> Stop -> Start', async () => {
+      const heartbeatCalls: string[] = [];
+      let postCallNum = 0;
+      let callNum = 0;
+      const transport = createMockTransport({
+        postStartIntent: vi.fn().mockImplementation(async () => {
+          postCallNum++;
+          return accepted(`session-${postCallNum}`);
+        }),
+        waitForReady: vi.fn().mockImplementation(async () => {
+          callNum++;
+          return {
+            sessionId: `session-${callNum}`,
+            playbackUrl: `http://localhost/s${callNum}.m3u8`,
+            heartbeatIntervalSeconds: 5,
+            leaseExpiresAt: '2026-09-09T12:00:00Z',
+          };
+        }),
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          heartbeatCalls.push(sessionId);
+          return {
+            status: 200,
+            data: { acknowledged: true, sessionId, leaseExpiresAt: '2026-09-09T12:05:00Z' },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        // Start 1
+        await controller.startLive({ serviceRef: 'channel-1' });
+        expect(controller.getHeartbeatSessionId()).toBe('session-1');
+
+        // Stop
+        await controller.stop('user_stop');
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+
+        // Start 2
+        const epoch2 = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epoch2, 'LIVE', 'starting', true);
+        await controller.startLive({ epoch: epoch2, serviceRef: 'channel-2' });
+
+        expect(controller.getHeartbeatSessionId()).toBe('session-2');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Advance 5s -> session-2 receives heartbeat
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(heartbeatCalls).toEqual(['session-2']);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('handles reachability failures with 5s retry and sets connectionLost after 2 failures, clearing upon recovery', async () => {
+      let fail = true;
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockImplementation(async ({ sessionId }) => {
+          if (fail) {
+            return {
+              status: 502,
+              data: null,
+              headers: new Headers(),
+            };
+          }
+          return {
+            status: 200,
+            data: { acknowledged: true, sessionId, leaseExpiresAt: '2026-09-09T12:30:00Z' },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getState().connectionLost).toBe(false);
+
+        // Advance 5s -> failure 1 (retry scheduled after 5s, connectionLost remains false)
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().connectionLost).toBe(false);
+
+        // Advance 5s (retry delay) -> failure 2 (triggers connectionLost = true)
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().connectionLost).toBe(true);
+
+        // Recovery: turn off failure, advance 5s
+        fail = false;
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().connectionLost).toBe(false);
+        expect(controller.getState().leaseExpiresAt).toBe('2026-09-09T12:30:00Z');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('pauses media and dispatches failure event on terminal auth error (401)', async () => {
+      const commands: any[] = [];
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 401,
+          data: null,
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+        executeCommand: (cmd) => commands.push(cmd),
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        await vi.advanceTimersByTimeAsync(5000);
+
+        expect(controller.getState().status).toBe('error');
+        expect(controller.getState().failure?.code).toBe('SESSION_UNAUTHORIZED');
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+        expect(commands).toContainEqual({ type: 'command.media.pause' });
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('treats invalid contract payload (synthetic 502) as INVALID_HEARTBEAT_CONTRACT and pauses media', async () => {
+      const commands: any[] = [];
+      const transport = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: false }, // missing leaseExpiresAt & wrong sessionId
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        getTransport: () => transport,
+        createInitialState: createMockDomainState,
+        executeCommand: (cmd) => commands.push(cmd),
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        await vi.advanceTimersByTimeAsync(5000);
+
+        // Recovery ladder escalates recoverable session failures to 'recovering'
+        expect(controller.getState().status).toBe('recovering');
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+        expect(commands).toContainEqual({ type: 'command.media.pause' });
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('reports retained-session auth failure after a newer attempt has begun', async () => {
+      const commands: any[] = [];
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({ status: 202, data: { sessionId: 'A' }, headers: new Headers() }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 401,
+          data: {},
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+        executeCommand: (cmd) => commands.push(cmd),
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(commands).toContainEqual({ type: 'command.media.pause' });
+        expect(controller.getState().failure?.code).toBe('SESSION_UNAUTHORIZED');
+        expect(controller.getState().status).toBe('error');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('handles retained-session recoverable 404/410 failure during in-flight new attempt without cancelling new attempt', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveStartB!: (val: any) => void;
+      let attemptBReady!: (val: any) => void;
+      const transport = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce({ status: 202, data: { sessionId: 'A' }, headers: new Headers() })
+          .mockImplementationOnce(() => new Promise((resolve) => {
+            resolveStartB = () => resolve({ status: 202, data: { sessionId: 'B' }, headers: new Headers() });
+          })),
+        waitForReady: vi.fn()
+          .mockResolvedValueOnce({
+            sessionId: 'A',
+            playbackUrl: 'https://example.test/live-A.m3u8',
+            heartbeatIntervalSeconds: 5,
+            leaseExpiresAt: expiry,
+          })
+          .mockImplementationOnce(() => new Promise((resolve) => {
+            attemptBReady = () => resolve({
+              sessionId: 'B',
+              playbackUrl: 'https://example.test/live-B.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: expiry,
+            });
+          })),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 404,
+          data: {},
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Start attempt B (in-flight)
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+        const startBPromise = controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+
+        // Session A's heartbeat returns 404 while B is in flight
+        await vi.advanceTimersByTimeAsync(5000);
+
+        // Session A's supervision should stop, but attempt B is NOT cancelled
+        expect(controller.isHeartbeatSupervising()).toBe(false);
+
+        // Attempt B resolves start intent then ready
+        resolveStartB({});
+        await vi.advanceTimersByTimeAsync(10);
+        attemptBReady({});
+        const resB = await startBPromise;
+
+        expect(controller.getActiveSessionId()).toBe('B');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+        expect(resB.status).toBe('ready');
+        expect(controller.getState().sessionPhase).toBe('ready');
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('adopts same session ID cleanly without duplicate timers or leaking prior supervision', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport = createMockTransport({
+        postStartIntent: vi.fn().mockResolvedValue({ status: 202, data: { sessionId: 'A' }, headers: new Headers() }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Re-request same channel -> adopts session 'A'
+        await controller.startLive({ serviceRef: 'channel-A' });
+        expect(controller.getActiveSessionId()).toBe('A');
+        expect(controller.isHeartbeatSupervising()).toBe(true);
+
+        // Advance 5s -> heartbeat should be called exactly once for this period (not twice)
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(transport.postHeartbeat).toHaveBeenCalledTimes(1);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('does not switch existing session traffic when updated transport has a different apiBase', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const transport1 = createMockTransport({
+        apiBase: 'https://srv1.example.test/api/v3',
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+      const transport2 = createMockTransport({
+        apiBase: 'https://srv2.example.test/api/v3',
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId: 'A', leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const controller = createPlaybackController({
+        transport: transport1,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+
+        // Update transport with different apiBase
+        controller.updateTransport(transport2);
+
+        // Advance 5s -> heartbeat should continue using transport1 because apiBase changed
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(transport1.postHeartbeat).toHaveBeenCalledTimes(1);
+        expect(transport2.postHeartbeat).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('settles the new start promise when retained-session auth cancels its preflight', async () => {
+      const t = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({ status: 401, data: {}, headers: new Headers() }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        vi.mocked(t.fetchStreamInfo).mockImplementationOnce(() => new Promise(() => {}));
+        let settled = false;
+        void controller.startLive({ serviceRef: 'channel-B' }).then(
+          () => { settled = true; }, () => { settled = true; },
+        );
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().failure?.code).toBe('SESSION_UNAUTHORIZED');
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(settled).toBe(true);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('invalidates already allocated preparation after retained-session terminal auth failure', async () => {
+      const t = createMockTransport({
+        postHeartbeat: vi.fn().mockResolvedValue({ status: 403, data: {}, headers: new Headers() }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const epochB = controller.allocatePlaybackEpoch();
+        controller.beginPlaybackAttempt(epochB, 'LIVE', 'starting', true);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(controller.getState().failure?.code).toBe('SESSION_FORBIDDEN');
+        const result = await controller.startLive({ epoch: epochB, serviceRef: 'channel-B' });
+        expect(result.status).toBe('cancelled');
+        expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('uses a same-endpoint transport refresh that occurs while readiness is pending', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveReady!: (val: any) => void;
+      const readyPromise = new Promise<any>((r) => { resolveReady = r; });
+      const oldTransport = createMockTransport({
+        waitForReady: vi.fn().mockReturnValue(readyPromise),
+      });
+      const updatedTransport = createMockTransport();
+      const controller = createPlaybackController({
+        transport: oldTransport,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        const startup = controller.startLive({ serviceRef: 'channel-A' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(oldTransport.waitForReady).toHaveBeenCalledTimes(1);
+        controller.updateTransport(updatedTransport);
+        resolveReady({
+          sessionId: 'A',
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        });
+        await startup;
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(updatedTransport.postHeartbeat).toHaveBeenCalledTimes(1);
+        expect(oldTransport.postHeartbeat).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('retires a retained session after invalid heartbeat contract while another start is pending', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      let resolveStartB!: (val: any) => void;
+      const startBPromise = new Promise<any>((r) => { resolveStartB = r; });
+      const t = createMockTransport({
+        postStartIntent: vi.fn()
+          .mockResolvedValueOnce({ status: 202, data: { sessionId: 'A' }, headers: new Headers() })
+          .mockReturnValueOnce(startBPromise),
+        waitForReady: vi.fn().mockImplementation(async ({ sessionId }) => ({
+          sessionId,
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        })),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: false, sessionId: 'A' },
+          headers: new Headers(),
+        }),
+      });
+      const controller = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        const startupB = controller.startLive({ serviceRef: 'channel-B' });
+        await vi.advanceTimersByTimeAsync(5000);
+        resolveStartB({ status: 202, data: { sessionId: 'B' }, headers: new Headers() });
+        await startupB;
+        await controller.stop();
+        expect(vi.mocked(t.postStopIntent).mock.calls.some(([p]) => p.sessionId === 'A')).toBe(true);
+      } finally {
+        controller.dispose();
+      }
+    });
+
+    it('preserves each pending attempt endpoint when refreshing the retained session credentials', async () => {
+      const expiry = '2026-09-09T12:10:00Z';
+      const makeTransport = (apiBase = 'https://one.example.test/api/v3', sessionId = 'A'): LiveSessionTransport => ({
+        apiBase,
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 200,
+          data: {
+            mode: 'direct_stream', playbackDecisionToken: 'fixture',
+            decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+          },
+          headers: new Headers(),
+        }),
+        postStartIntent: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { sessionId },
+          headers: new Headers(),
+        }),
+        waitForReady: vi.fn().mockResolvedValue({
+          sessionId,
+          playbackUrl: 'https://example.test/live.m3u8',
+          heartbeatIntervalSeconds: 5,
+          leaseExpiresAt: expiry,
+        }),
+        postStopIntent: vi.fn().mockResolvedValue(undefined),
+        postHeartbeat: vi.fn().mockResolvedValue({
+          status: 200,
+          data: { acknowledged: true, sessionId, leaseExpiresAt: expiry },
+          headers: new Headers(),
+        }),
+      });
+
+      const endpointOne = makeTransport('https://one.example.test/api/v3', 'A');
+      const endpointTwo = makeTransport('https://two.example.test/api/v3', 'B');
+      const refreshedOne = makeTransport('https://one.example.test/api/v3', 'A');
+
+      let resolvePreflight!: (val: any) => void;
+      const pendingPreflight = new Promise<any>((r) => { resolvePreflight = r; });
+      vi.mocked(endpointTwo.fetchStreamInfo).mockReturnValue(pendingPreflight);
+
+      const controller = createPlaybackController({
+        transport: endpointOne,
+        createInitialState: createMockDomainState,
+      });
+
+      try {
+        await controller.startLive({ serviceRef: 'channel-A' });
+        controller.updateTransport(endpointTwo);
+        const startupB = controller.startLive({ serviceRef: 'channel-B' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(endpointTwo.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+        // Session A is retained on endpoint one; B was initiated on endpoint two.
+        controller.updateTransport(refreshedOne);
+        resolvePreflight({
+          status: 200,
+          data: {
+            mode: 'direct_stream', playbackDecisionToken: 'fixture',
+            decision: { mode: 'direct_stream', playbackDecisionToken: 'fixture' },
+          },
+          headers: new Headers(),
+        });
+        await startupB;
+        expect(
+          vi.mocked(endpointTwo.postStartIntent).mock.calls.length +
+          vi.mocked(refreshedOne.postStartIntent).mock.calls.length,
+        ).toBe(1);
+        expect(endpointTwo.postStartIntent).toHaveBeenCalledTimes(1);
+        expect(refreshedOne.postStartIntent).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
       }
     });
   });

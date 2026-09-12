@@ -80,9 +80,35 @@ export interface PlaybackDomainState {
   /** Whether the orchestrator is running an active backend intent (channel/recording) vs static src. */
   hasSessionIntent: boolean;
   recovery: PlaybackRecoveryState;
+  leaseExpiresAt: string | null;
+  connectionLost: boolean;
 }
 
 export type PlaybackStopReason = 'user_stop' | 'auto_recovery_restart';
+
+export interface PlaybackRetryTarget {
+  kind: 'live' | 'vod' | 'src';
+  serviceRef?: string;
+  recordingId?: string;
+  srcUrl?: string;
+  explicitProfile?: string;
+}
+
+export type PlaybackRetryResult =
+  | {
+      status: 'restarted';
+      epoch: number;
+    }
+  | {
+      status: 'cancelled';
+      reason:
+        | 'superseded'
+        | 'user_stop'
+        | 'disposed'
+        | 'terminal_auth'
+        | 'missing_target'
+        | 'error';
+    };
 
 export type PlaybackNormativeEvent =
   | {
@@ -188,6 +214,13 @@ export type PlaybackNormativeEvent =
       sessionEpoch: number;
       phase: SessionPhase;
       requestId?: string | null;
+    }
+  | {
+      type: 'normative.session.lease.updated';
+      epoch: number;
+      sessionEpoch: number;
+      leaseExpiresAt: string | null;
+      connectionLost: boolean;
     };
 
 export type PlaybackAdvisoryEvent = {
@@ -273,6 +306,10 @@ export type PlaybackCommand =
       holdBandwidth?: boolean;
       failureCode: string;
       failureClass: string;
+    }
+  | {
+      /** Instruct media element (video) to pause. */
+      type: 'command.media.pause';
     };
 
 export interface PlaybackMachineResult {

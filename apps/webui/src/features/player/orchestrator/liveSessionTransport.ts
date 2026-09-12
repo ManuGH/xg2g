@@ -23,7 +23,30 @@ export interface SessionReadyResult {
   [key: string]: unknown;
 }
 
+export interface PostHeartbeatParams {
+  sessionId: string;
+  signal?: AbortSignal;
+}
+
+export interface PostHeartbeatResult {
+  status: number;
+  data: unknown;
+  headers: Headers;
+}
+
+export interface FetchSessionSnapshotParams {
+  sessionId: string;
+  signal?: AbortSignal;
+}
+
+export interface FetchSessionSnapshotResult {
+  status: number;
+  data: unknown;
+  headers: Headers;
+}
+
 export interface LiveSessionTransport {
+  readonly apiBase?: string;
   fetchStreamInfo(params: {
     serviceRef: string;
     capabilities?: unknown;
@@ -46,6 +69,10 @@ export interface LiveSessionTransport {
     sessionId: string;
     signal?: AbortSignal;
   }): Promise<void>;
+
+  postHeartbeat?(params: PostHeartbeatParams): Promise<PostHeartbeatResult>;
+
+  fetchSessionSnapshot?(params: FetchSessionSnapshotParams): Promise<FetchSessionSnapshotResult>;
 }
 
 export class PlaybackHttpError extends Error {
@@ -160,6 +187,7 @@ export function createDefaultLiveSessionTransport({
   recoverSessionCookie,
 }: DefaultLiveSessionTransportOptions): LiveSessionTransport {
   return {
+    apiBase,
     async fetchStreamInfo({ serviceRef, capabilities, profileHeaders, signal }) {
       const headers = {
         ...authHeaders(true),
@@ -341,6 +369,72 @@ export function createDefaultLiveSessionTransport({
       });
       if (!res.ok) {
         throw new Error(`Stop intent failed with HTTP ${res.status}`);
+      }
+    },
+
+    async postHeartbeat({ sessionId, signal }) {
+      let recoveredSessionAuth = false;
+      while (true) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const headers = {
+          ...authHeaders(true),
+          'Content-Type': 'application/json',
+        };
+
+        const res = await fetchFn(`${apiBase}/sessions/${sessionId}/heartbeat`, {
+          method: 'POST',
+          headers,
+          signal,
+        });
+
+        if (res.status === 401 && recoverSessionCookie && !recoveredSessionAuth) {
+          const recovered = await recoverSessionCookie('liveSessionTransport.heartbeat');
+          if (recovered) {
+            recoveredSessionAuth = true;
+            continue;
+          }
+        }
+
+        const data = await parseResponseBody(res, signal);
+        return {
+          status: res.status,
+          data,
+          headers: res.headers,
+        };
+      }
+    },
+
+    async fetchSessionSnapshot({ sessionId, signal }) {
+      let recoveredSessionAuth = false;
+      while (true) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const headers = authHeaders(false);
+
+        const res = await fetchFn(`${apiBase}/sessions/${sessionId}`, {
+          headers,
+          signal,
+        });
+
+        if (res.status === 401 && recoverSessionCookie && !recoveredSessionAuth) {
+          const recovered = await recoverSessionCookie('liveSessionTransport.fetchSessionSnapshot');
+          if (recovered) {
+            recoveredSessionAuth = true;
+            continue;
+          }
+        }
+
+        const data = await parseResponseBody(res, signal);
+        return {
+          status: res.status,
+          data,
+          headers: res.headers,
+        };
       }
     },
   };
