@@ -240,7 +240,7 @@ describe('PlaybackController: Start Continuation / VOD Retry-After (Step 3e-B)',
       expect(await continuationPromise).toBe('cancelled');
     });
 
-    it('cancels continuation when beginPlaybackAttempt() advances playbackEpoch (C1)', async () => {
+    it('does not cancel the continuation when beginPlaybackAttempt() is called with an epoch the controller never allocated (epoch authority)', async () => {
       const epoch = controller.getEpoch();
       let resolvedOutcome: StartContinuationOutcome | undefined;
 
@@ -255,10 +255,18 @@ describe('PlaybackController: Start Continuation / VOD Retry-After (Step 3e-B)',
 
       expect(controller.getPendingStartContinuation()?.epoch).toBe(epoch);
 
-      // beginPlaybackAttempt with a newer epoch
-      const higherEpoch = epoch + 5;
-      controller.beginPlaybackAttempt(higherEpoch, 'VOD', 'buffering');
+      // An unallocated higher epoch is stale by definition (isStalePlaybackEpoch) and must be ignored:
+      // the controller epoch does not move and the continuation stays pending.
+      controller.beginPlaybackAttempt(epoch + 5, 'VOD', 'buffering');
 
+      expect(controller.getEpoch()).toBe(epoch);
+      expect(controller.getPendingStartContinuation()?.epoch).toBe(epoch);
+      await Promise.resolve();
+      expect(resolvedOutcome).toBeUndefined();
+
+      // The real advance happens through allocatePlaybackEpoch(); beginPlaybackAttempt then runs for that epoch.
+      const allocated = controller.allocatePlaybackEpoch();
+      controller.beginPlaybackAttempt(allocated, 'VOD', 'buffering');
       expect(controller.getPendingStartContinuation()).toBeNull();
       await Promise.resolve();
       expect(resolvedOutcome).toBe('cancelled');

@@ -952,15 +952,10 @@ export function createPlaybackController(
     }
 
     // Fence: a stale attempt must never mutate state, retire a newer session, or cancel an active retry!
-    if (epoch < playbackEpoch || stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch)) {
+    // Only epochs the controller allocated are current; an unknown higher epoch is not adopted.
+    if (isStalePlaybackEpoch(epoch)) {
       return;
     }
-
-    if (epoch > playbackEpoch) {
-      playbackEpoch = epoch;
-      sessionEpoch = 0;
-    }
-    cancelStartContinuationsBefore(playbackEpoch);
 
     if (activeRetry) {
       if (activeRetry.phase === 'restarting') {
