@@ -241,6 +241,88 @@ mutate "feed an empty run as a feed of its own" \
             return;
         };'
 
+# --- a payload unit start that establishes nothing ---------------------------
+#
+# One branch answers all four classes, so mutating it once would prove only that
+# something in there matters. Each mutation below lets exactly one class fall
+# through to the old behaviour and leaves the other three quarantined, so a
+# survivor names the class whose evidence is missing.
+
+mutate "let a start with a wrong prefix fall through" \
+  '            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }' \
+  '            PesStart::NotAStart => {
+                self.position = Position::InElementaryStream;
+                None
+            }
+            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }'
+
+mutate "let a start too short to read fall through" \
+  '            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }' \
+  '            PesStart::Truncated { .. } => {
+                self.position = Position::InElementaryStream;
+                None
+            }
+            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }'
+
+mutate "let a start with a stream id that is not audio fall through" \
+  '            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }' \
+  '            PesStart::Complete { .. } => {
+                self.position = Position::InElementaryStream;
+                None
+            }
+            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }'
+
+mutate "let a start carrying no optional header fall through" \
+  '            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }' \
+  '            PesStart::NoOptionalHeader { .. } => {
+                self.position = Position::InElementaryStream;
+                None
+            }
+            _ => {
+                self.position = Position::AwaitingStart;
+                None
+            }'
+
+mutate "leave the wait running through a valid audio start" \
+  '                self.pes_starts += 1;
+                self.position = Position::InElementaryStream;
+                Some(es)' \
+  '                self.pes_starts += 1;
+                Some(es)'
+
+mutate "answer a valid start with a wait instead of its header" \
+  '                self.position = Position::InHeader {
+                    remaining: remaining_header,
+                };
+                None' \
+  '                self.position = Position::AwaitingStart;
+                None'
+
+mutate "begin every stream by waiting for a start" \
+  '            position: Position::InElementaryStream,' \
+  '            position: Position::AwaitingStart,'
+
 # --- the header that reaches past its packet --------------------------------
 
 mutate "treat an incomplete header as a complete one" \
@@ -265,7 +347,7 @@ mutate "step over one byte too many of a header remainder" \
 
 mutate "carry the header state past the next payload unit start" \
   '            _ => {
-                self.position = Position::InElementaryStream;
+                self.position = Position::AwaitingStart;
                 None
             }' \
   '            _ => None,'

@@ -583,6 +583,37 @@ func audioTSCorpusCases() []audioTSCase {
 		cases = append(cases, b.done())
 	}
 
+	// A payload unit start that arrives scrambled. The packet says a PES packet
+	// begins in it, and its bytes are encrypted, so what it begins cannot be
+	// read - and the clear continuation after it is fed anyway.
+	//
+	// That is what both implementations do today, and it is pinned rather than
+	// changed. The reasoning that quarantines an unreadable clear start would
+	// apply here too, but a scrambled packet reaches this path through the
+	// scrambling branch, where the answer belongs beside the descramble grace
+	// window rather than beside the PES reader. The case exists so that
+	// deciding it later is a decision, and so that deciding it by accident
+	// shows up as a failure here.
+	{
+		b := audioTSNew("a_scrambled_payload_unit_start",
+			"an encrypted start is not quarantined, and that question is still open", audioTSProgram)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		encrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		// In send order, so the continuity counter runs the way a multiplexer
+		// writes it: a scrambled packet carries payload and advances it.
+		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
+		p1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), encrypted)
+		p1[3] |= 0x80
+		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
+		b.chunk(p0, p1, p2)
+		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c1, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
+		cases = append(cases, b.done())
+	}
+
 	// Audio-looking packets on a PID the table never named. Nothing follows
 	// that PID, so nothing is fed - the table decides which streams exist, not
 	// the bytes.
@@ -616,13 +647,20 @@ func audioTSCorpusCases() []audioTSCase {
 			"a video stream id on an audio PID starts nothing", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xE0, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
+		// The quarantine ends where a payload unit says where the elementary
+		// stream begins, and not before.
+		recovery := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 		)
-		b.feed(0, audioTSAudioA, c1, obsFrames(1))
-		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c2, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -635,13 +673,20 @@ func audioTSCorpusCases() []audioTSCase {
 			"0xFF carries no optional header and is not audio", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := audioTSPad(append([]byte{0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF}, audioTSAC3Frame(audioTSByte6Stereo)...))
-		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
+		// The quarantine ends where a payload unit says where the elementary
+		// stream begins, and not before.
+		recovery := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 		)
-		b.feed(0, audioTSAudioA, c1, obsFrames(1))
-		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c2, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -652,13 +697,20 @@ func audioTSCorpusCases() []audioTSCase {
 			"a prefix that is not 00 00 01 starts nothing", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := audioTSPad(append([]byte{0x00, 0x00, 0x02, 0xBD, 0x00, 0x00, 0x80, 0x00, 0x00}, audioTSAC3Frame(audioTSByte6Stereo)...))
-		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
+		// The quarantine ends where a payload unit says where the elementary
+		// stream begins, and not before.
+		recovery := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 		)
-		b.feed(0, audioTSAudioA, c1, obsFrames(1))
-		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c2, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -669,13 +721,20 @@ func audioTSCorpusCases() []audioTSCase {
 		b := audioTSNew("a_payload_unit_shorter_than_the_fixed_header",
 			"five bytes cannot say where the elementary stream begins", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
-		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
+		// The quarantine ends where a payload unit says where the elementary
+		// stream begins, and not before.
+		recovery := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSShortPacket(audioTSAudioA, true, b.next(audioTSAudioA), []byte{0x00, 0x00, 0x01, 0xBD, 0x00}),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 		)
-		b.feed(0, audioTSAudioA, c1, obsFrames(1))
-		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c2, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -879,14 +938,21 @@ func audioTSCorpusCases() []audioTSCase {
 		start := full[:184]
 		// A payload unit of its own, on an id this does not read.
 		other := pesStart(0xE0, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
+		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
+		// The quarantine ends where a payload unit says where the elementary
+		// stream begins, and not before.
+		recovery := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
+		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), other),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
+			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
+			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 		)
-		b.feed(0, audioTSAudioA, c1, obsFrames(1))
-		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
+		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
+		b.feed(0, audioTSAudioA, c2, obsFrames(2))
+		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -935,6 +1001,18 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSShortPacket(audioTSPMTPID, true, b.next(audioTSPMTPID), head),
 			audioTSPacket(audioTSPMTPID, false, b.next(audioTSPMTPID), audioTSPad(pmt[10:])),
 		)
+		// And then a payload unit that does begin an audio PES packet, on the
+		// same PID. It is still not this track's audio, because the table has
+		// already said what this PID carries.
+		//
+		// It is here because the packets above can no longer prove that on
+		// their own: a table packet read as audio is a payload unit start that
+		// establishes nothing, so a follower given one now quarantines what
+		// follows and feeds nothing either way. Only a start a follower would
+		// accept can tell "this PID was never routed to audio" apart from "it
+		// was routed, and nothing it received happened to be feedable".
+		b.chunk(audioTSPacket(audioTSPMTPID, true, b.next(audioTSPMTPID),
+			pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))))
 		b.stream(audioTSPMTPID, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}

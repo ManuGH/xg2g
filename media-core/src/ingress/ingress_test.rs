@@ -401,28 +401,176 @@ fn a_pes_header_ending_exactly_at_the_payload_end_feeds_nothing() {
     );
 }
 
+/// The four ways a payload unit start can fail to say where audio begins.
+fn unreadable_starts() -> Vec<(&'static str, Vec<u8>)> {
+    let mut no_prefix = vec![0x00, 0x00, 0x02, 0xBD, 0x00, 0x00, 0x80, 0x00, 0x00];
+    no_prefix.extend_from_slice(&ac3_run(SURROUND, 1));
+    no_prefix.truncate(184);
+
+    let mut video = pes_header(0xE0, 0);
+    video.extend_from_slice(&ac3_run(SURROUND, 1));
+    video.truncate(184);
+
+    // 0xFF carries no optional header at all, so byte eight is not a length.
+    let mut no_header = vec![0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF];
+    no_header.extend_from_slice(&ac3_run(SURROUND, 1));
+    no_header.truncate(184);
+
+    // An adaptation field of 178 bytes leaves five for the payload: too few to
+    // hold the fixed header, so neither the stream id nor the length of the
+    // optional header was ever read. Where the elementary stream begins is not
+    // unread here, it is unknowable from what arrived.
+    let mut short = vec![0xFFu8; 188];
+    short[0] = 0x47;
+    short[1] = 0x40 | u8::try_from((AUDIO_PID >> 8) & 0x1F).unwrap();
+    short[2] = u8::try_from(AUDIO_PID & 0xFF).unwrap();
+    short[3] = 0x30;
+    short[4] = 178;
+    short[5] = 0x00;
+    short[183..188].copy_from_slice(&[0x00, 0x00, 0x01, 0xBD, 0x00]);
+
+    vec![
+        (
+            "a start code prefix that is not 00 00 01",
+            ts_packet(AUDIO_PID, true, 0, &payload_of(&no_prefix)),
+        ),
+        ("a fixed header cut short by an adaptation field", short),
+        (
+            "a video stream id on a PID the table calls audio",
+            ts_packet(AUDIO_PID, true, 0, &payload_of(&video)),
+        ),
+        (
+            "a stream id that carries no optional header and is not audio",
+            ts_packet(AUDIO_PID, true, 0, &payload_of(&no_header)),
+        ),
+    ]
+}
+
 #[test]
-fn a_payload_unit_that_is_not_an_audio_pes_packet_feeds_nothing_and_stops_nothing() {
+fn a_payload_unit_that_is_not_an_audio_pes_packet_quarantines_what_follows() {
+    // A payload unit start is the start of a PES packet - 13818-1 2.4.3.6 - so
+    // when it is not one this path can read, the payloads until the next start
+    // are the body of that same unreadable packet. None of them is audio whose
+    // boundary anything established.
+    //
+    // The continuation below carries a valid 5.1 syncframe on a stereo
+    // programme. Fed, it would not merely be wasted: it would count a layout
+    // that was never broadcast.
+    for (what, start) in unreadable_starts() {
+        let mut ing = following_ac3();
+        let out = fed(&mut ing, 0, &start);
+        assert!(
+            out.is_empty(),
+            "{what}: where the elementary stream begins was not read"
+        );
+        assert_eq!(
+            position(&ing),
+            Position::AwaitingStart,
+            "{what}: and what follows is that packet's body"
+        );
+
+        let body = payload_of(&ac3_run(SURROUND, 1)[..128]);
+        let out = fed(&mut ing, 188, &ts_packet(AUDIO_PID, false, 1, &body));
+        assert!(
+            out.is_empty(),
+            "{what}: the continuation belongs to the unreadable packet"
+        );
+        assert_eq!(
+            position(&ing),
+            Position::AwaitingStart,
+            "{what}: and still nothing has said where audio begins"
+        );
+
+        // A payload unit that does say begins the stream again, from its own
+        // boundary rather than from where the wait started.
+        let recovery = ac3_start(STEREO, 1);
+        let out = fed(&mut ing, 376, &ts_packet(AUDIO_PID, true, 2, &recovery));
+        assert_eq!(out.len(), 1, "{what}: a valid audio start recovers");
+        assert_eq!(out[0].es, recovery[9..], "{what}: from after its header");
+        assert_eq!(position(&ing), Position::InElementaryStream);
+    }
+}
+
+#[test]
+fn a_valid_start_recovers_the_wait_even_when_its_own_header_is_incomplete() {
     let mut ing = following_ac3();
-    // A video stream id on an audio PID. The packet is not read, but what
-    // follows it is still this PID's payload.
-    let mut start = pes_header(0xE0, 0);
-    start.extend_from_slice(&ac3_run(STEREO, 2));
-    start.truncate(184);
-    let out = fed(
-        &mut ing,
-        0,
-        &ts_packet(AUDIO_PID, true, 0, &payload_of(&start)),
-    );
-    assert!(
-        out.is_empty(),
-        "where its elementary stream begins was not read"
+    let (_, refused) = unreadable_starts().remove(2);
+    fed(&mut ing, 0, &refused);
+    assert_eq!(position(&ing), Position::AwaitingStart);
+
+    // An audio PES packet whose optional header reaches past its packet is
+    // still an audio PES packet: it says where its elementary stream begins,
+    // just not inside this payload. That ends the wait and begins the header
+    // state - the recovery is into the right state, not merely out of the
+    // wrong one.
+    let header = payload_of(&pes_header(0xBD, 200)[..184]);
+    let out = fed(&mut ing, 188, &ts_packet(AUDIO_PID, true, 1, &header));
+    assert!(out.is_empty(), "the elementary stream has not begun");
+    assert_eq!(position(&ing), Position::InHeader { remaining: 25 });
+
+    let mut rest = vec![0x00; 25];
+    rest.extend_from_slice(&ac3_run(STEREO, 1)[..128]);
+    let rest = payload_of(&rest);
+    let out = fed(&mut ing, 376, &ts_packet(AUDIO_PID, false, 2, &rest));
+    assert_eq!(out.len(), 1, "and then the stream continues normally");
+    assert_eq!(out[0].es, &rest[25..]);
+}
+
+#[test]
+fn a_programme_change_does_not_carry_the_wait_into_the_new_stream() {
+    let mut ing = following_ac3();
+    let (_, refused) = unreadable_starts().remove(2);
+    fed(&mut ing, 0, &refused);
+    assert_eq!(position(&ing), Position::AwaitingStart);
+
+    // The same PID under a new table version is a different elementary stream,
+    // and nothing has been refused on that one.
+    let table = psi_packet(PMT_PID, 1, &pmt(1, AUDIO_PID, 0x06, &AC3_DESCRIPTOR));
+    ing.ingest(188, &table).expect("aligned");
+    assert_eq!(
+        position(&ing),
+        Position::InElementaryStream,
+        "a stream that has had nothing refused is not waiting"
     );
 
-    let body = payload_of(&ac3_run(STEREO, 2)[..184]);
-    let out = fed(&mut ing, 188, &ts_packet(AUDIO_PID, false, 1, &body));
-    assert_eq!(out.len(), 1, "the continuation is still elementary stream");
-    assert_eq!(out[0].es, body);
+    let body = payload_of(&ac3_run(STEREO, 1)[..128]);
+    let out = fed(&mut ing, 376, &ts_packet(AUDIO_PID, false, 1, &body));
+    assert_eq!(out.len(), 1, "so its continuation is elementary stream");
+}
+
+#[test]
+fn a_scrambled_payload_unit_start_does_not_begin_a_wait() {
+    // Pinned rather than decided. An encrypted payload unit start says a PES
+    // packet begins and does not say what it is, which is the same shape of
+    // problem as the four above - but a scrambled packet is turned away in the
+    // scrambling branch, before any of this is asked, and both this and the
+    // reference leave the position alone there.
+    //
+    // If that is ever changed it should be because someone decided to change
+    // it, beside the descramble grace window and with the reference. This test
+    // fails if it changes here by accident.
+    let mut ing = following_ac3();
+    let start = ac3_start(STEREO, 1);
+    let out = fed(&mut ing, 0, &ts_packet(AUDIO_PID, true, 0, &start));
+    assert_eq!(out.len(), 1);
+
+    let mut scrambled = ts_packet(AUDIO_PID, true, 1, &ac3_start(SURROUND, 1));
+    scrambled[3] |= 0x80;
+    let out = fed(&mut ing, 188, &scrambled);
+    assert!(out.is_empty(), "encrypted bytes reach no observer");
+    assert_eq!(
+        position(&ing),
+        Position::InElementaryStream,
+        "and the position is left where it was"
+    );
+
+    let body = payload_of(&ac3_run(STEREO, 1)[..128]);
+    let out = fed(&mut ing, 376, &ts_packet(AUDIO_PID, false, 2, &body));
+    assert_eq!(
+        out.len(),
+        1,
+        "so the clear continuation after it is still fed"
+    );
 }
 
 #[test]
