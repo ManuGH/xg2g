@@ -227,6 +227,14 @@ export function getApiBaseUrl(defaultBase: string = '/api/v3'): string {
   return (client.getConfig().baseUrl || defaultBase).replace(/\/$/, '');
 }
 
+// The wrapper is the only sanctioned place to reconfigure the generated client
+// (see scripts/verify-client-wrapper-boundary.sh). Tests that exercise the real
+// SDK under jsdom need an absolute base URL because the runtime cannot resolve a
+// relative one without a document base.
+export function setClientBaseUrl(baseUrl: string): void {
+  client.setConfig({ baseUrl: baseUrl.replace(/\/$/, '') });
+}
+
 // buildClientHeaders returns request-scoped headers that hey-api layers ON TOP of the
 // client config via mergeHeaders(config, requestHeaders). It deliberately returns a
 // plain object (not a Headers instance) so that a `null` override survives as a

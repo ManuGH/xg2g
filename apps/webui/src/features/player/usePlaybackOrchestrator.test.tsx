@@ -5,7 +5,7 @@ import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types
 import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
 import { buildPlaybackFailure } from './orchestrator/playbackMachine';
 import * as networkProbeModule from './utils/playbackNetworkProbe';
-import { client } from '../../client-ts/client.gen';
+import { setClientBaseUrl } from '../../services/clientWrapper';
 
 vi.mock('./lib/hlsRuntime', () => {
   const HlsMock = vi.fn();
@@ -1037,7 +1037,7 @@ describe('usePlaybackOrchestrator', () => {
     });
 
     it('routes real VOD retry request to recording playback', async () => {
-      client.setConfig({ baseUrl: 'http://localhost/api/v3' });
+      setClientBaseUrl('http://localhost/api/v3');
       let vodPlaybackCalls = 0;
       const vodPayload = {
         recordingId: 'rec-vod-retry',
