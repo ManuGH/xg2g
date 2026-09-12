@@ -1160,3 +1160,16 @@ v3.11.0 Modern iOS Home Hub, Robust Media Core, & Storage Hardening:
 - Storage Protection: Dedicated HLS/DVR scratch mount validation to prevent silent writes to root filesystem; deterministic CAS lease sweeper for ended sessions.
 - WebUI Modular Settings: Decomposed monolithic settings into scoped subsections and streamlined device pairing.
 - Zero-Vulnerability Baseline: Patched all active Dependabot security CVEs and stabilized deep CI suites.
+
+
+### Behavioral Changes (v3.12.0)
+v3.12.0 Hardware VPP Video Enhancement, Cinema AV1 Profile, Picture Modes & Resilient Media Core:
+
+- Intel VPP Hardware Pipeline ("Clean, then Sharpen"): Accelerates live DVB transcoding via full-GPU VPP filter chain (motion-adaptive deinterlace -> denoise_vaapi -> scale_vaapi=format=p010 -> sharpness_vaapi -> av1_vaapi) on Intel QuickSync / Xe-LPG with zero CPU penalty.
+- WebUI Picture Mode Toggle: Introduces live picture presets (Natural / Referenz, Brillant / Vivid TV • OLED-Punch, and Kino / Warm • D65) directly in the WebUI player with hardware-accelerated color grading.
+- Cinema (Referenz) AV1 Profile: Unlocks an ultra-high-fidelity AV1 profile calibrated to ICQ Q10 with TU1 quality preset (-compression_level 1) up to 35 Mbps alongside modernized player quality tiers.
+- A/V Timeline Synchronization & Stutter Prevention: Aligns EXT-X-START playlist directives across primary video and audio renditions, eliminating Hls.js liveSync buffer stalls at second 6.
+- WebUI Buffer Pacing: Locks playback rate to 1.0 during startup buffer accumulation, eliminating perceptual slow-motion artifacts during fast-motion content (tennis ball / sports).
+- Resilient Pipe Ingest & Audio Resampling: Protects transcoder against cardserver CW timeouts and packet loss with pipe err_detect ignore_err and stream-specific aresample synchronization.
+- Chrome Privacy Clamp Defense: Detects and bypasses synthetic 10 Mbps navigator.connection.downlink throttling in Chromium desktop browsers.
+- Media Core & PES Parsing Precision: Enforces strict stream ID optional header validation and boundary containment in the Rust media core for transport stream parsing.
