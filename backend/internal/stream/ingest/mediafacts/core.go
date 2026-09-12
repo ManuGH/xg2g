@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/esaudio"
@@ -145,6 +146,18 @@ type Core interface {
 	// is never asked again. That includes a result that is well-formed but
 	// incomplete, because a core that consumed less than it was given has moved
 	// past bytes the caller is about to throw away.
+	//
+	// A successful return is not by itself a result a caller may commit. The
+	// result says what it covers, and a caller may act only on the fields that
+	// coverage includes - see ParseCoverage. The two questions are separate:
+	//
+	//	did the call succeed          the error
+	//	is the answer complete enough  the coverage
+	//
+	// MasterRing requires ParseCoverageComplete before committing anything. A
+	// narrower result exists to let a second implementation be compared against
+	// this one during the media-core migration, and cannot be committed as
+	// stream truth.
 	Ingest(ctx context.Context, startOffset int64, data []byte) (ParseResult, error)
 
 	// SetTargetProgram selects which program of a multi-program transport is
@@ -202,8 +215,65 @@ type Event struct {
 	Joinable bool
 }
 
+// ParseCoverage says how much of a ParseResult is authoritative.
+//
+// It exists because a core may legitimately answer about part of what this
+// package describes. During the media-core migration the Rust core reads PSI and
+// nothing else: its PAT and PMT answers are real, and its RandomAccess,
+// Scrambling and parameter-set fields are not answers at all - they are the
+// fields of a struct nobody filled in.
+//
+// Without this the two are indistinguishable. A caller reading Facts.RandomAccess
+// from a PSI-only result would find a zero value that means "no entry point
+// seen", which is a statement, when the truth is "this core was never asked".
+// Absence has to be said out loud, because the zero value of every field this
+// package has is also a legitimate value of that field.
+//
+// So the zero value here is Unknown and fails closed. A result that never had a
+// coverage set is not a complete result that forgot to say so; it is a result
+// from something that does not know about this field, and a caller that requires
+// completeness must refuse it.
+type ParseCoverage uint8
+
+const (
+	// ParseCoverageUnknown is the zero value: a result whose coverage was never
+	// stated. Nothing may be read from it.
+	ParseCoverageUnknown ParseCoverage = iota
+
+	// ParseCoveragePSIOnly means the PSI-scoped fields are authoritative and the
+	// rest are absent: ProcessedThroughOffset, the PSI events, the PAT and PMT
+	// facts, the audio declarations and ActivePSI. Everything else in Facts is
+	// unfilled and must not be read.
+	ParseCoveragePSIOnly
+
+	// ParseCoverageComplete means every field of ParseResult is an answer. This
+	// is what GoCore returns and what a caller committing stream truth requires.
+	ParseCoverageComplete
+)
+
+// String names the coverage for an error message. Deliberately not a Stringer
+// over a range check: an unknown numeric value is reported as itself, because a
+// wire decoder that let one through is exactly what this would be diagnosing.
+func (c ParseCoverage) String() string {
+	switch c {
+	case ParseCoverageUnknown:
+		return "unknown"
+	case ParseCoveragePSIOnly:
+		return "psi-only"
+	case ParseCoverageComplete:
+		return "complete"
+	default:
+		return fmt.Sprintf("ParseCoverage(%d)", uint8(c))
+	}
+}
+
 // ParseResult is what one chunk meant.
 type ParseResult struct {
+	// Coverage says which of the fields below are answers. A caller must read no
+	// field this does not cover, and a caller committing stream truth must
+	// require ParseCoverageComplete - see the Core contract.
+	Coverage ParseCoverage
+
 	// ProcessedThroughOffset is the offset one past the last byte interpreted. A
 	// core that consumed less than it was given must say so here; the caller
 	// rejects the chunk rather than committing bytes whose meaning it does not
@@ -222,6 +292,11 @@ type ParseResult struct {
 	// PSI carries the tables in force for a caller that has to deliver them,
 	// uninterpreted, ahead of an entry point.
 	PSI ActivePSI
+}
+
+// Covers reports whether every field of a ParseResult is an answer.
+func (r ParseResult) Covers(want ParseCoverage) bool {
+	return r.Coverage == want
 }
 
 // ActivePSI is the accepted PAT and PMT sections of the current program.
@@ -379,7 +454,7 @@ type GoCore struct {
 	audioPIDs   []uint16
 	audioTracks []AudioTrackInfo
 
-	// audioObservers follow the audio payload of the tracks whose codec this path
+	// audioStreams follow the audio payload of the tracks whose codec this path
 	// can read, one per PID. They exist because the audio topology is not a
 	// property of the session start: a service moves between stereo and 5.1 on the
 	// same PID as programmes change, and a reading taken once at attach describes
@@ -387,7 +462,15 @@ type GoCore struct {
 	//
 	// Keyed by PID and rebuilt from scratch whenever the PMT changes, so an
 	// observation can never outlive the table that named the stream it came from.
-	audioObservers map[uint16]*esaudio.Observer
+	audioStreams map[uint16]*audioStream
+
+	// audioUnreadableStarts counts the payload units on an observable audio PID
+	// that did not begin an audio PES packet.
+	//
+	// Diagnostic and deliberately not a fact: nothing reads it to decide
+	// anything, and it does not reset with the programme, because it counts what
+	// this core has read rather than what the table in force says.
+	audioUnreadableStarts uint64
 
 	// shadow is a second observer of the same elementary stream bytes, attached
 	// for a migration and never for a decision. Everything about it is in
@@ -502,6 +585,11 @@ func (c *GoCore) result(through int64) ParseResult {
 	events := make([]Event, len(c.events))
 	copy(events, c.events)
 	return ParseResult{
+		// This core reads everything this package describes, so every field
+		// below is an answer. Stated on every result rather than assumed by the
+		// caller: what changed in the migration is that a core answering about
+		// less than this now exists.
+		Coverage:               ParseCoverageComplete,
 		ProcessedThroughOffset: through,
 		Events:                 events,
 		Facts:                  c.Snapshot(),
@@ -528,8 +616,8 @@ func (c *GoCore) Snapshot() Facts {
 	// the track is what makes a mid-programme change to 5.1 visible to the next
 	// snapshot instead of to the next PMT version.
 	for i := range tracks {
-		if obs := c.audioObservers[tracks[i].PID]; obs != nil {
-			tracks[i].Observed = obs.Current()
+		if stream := c.audioStreams[tracks[i].PID]; stream != nil {
+			tracks[i].Observed = stream.observer.Current()
 		}
 	}
 
@@ -636,6 +724,23 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 	}
 }
 
+// audioStream is one observable audio elementary stream: what reads it, and
+// whether the core knows where it currently is.
+type audioStream struct {
+	observer *esaudio.Observer
+
+	// awaitingStart means the last payload unit on this PID did not begin an
+	// audio PES packet, so where the elementary stream resumes was never
+	// established.
+	//
+	// It is not set before anything has been seen. A capture that begins in the
+	// middle of a PES packet carries audio from its first packet and nothing
+	// about it contradicts the table; a payload unit that was read and refused
+	// is a different thing, and the packets after it are the body of that same
+	// refused packet.
+	awaitingStart bool
+}
+
 // observeAudioPayloadLocked hands one clear audio packet's elementary stream
 // bytes to the observer for that PID.
 //
@@ -643,37 +748,58 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 // and nothing else - no PID, no packet, no PMT - so what it reads is a property
 // of the audio rather than of how the audio arrived.
 func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte) {
-	obs := c.audioObservers[pid]
-	if obs == nil {
+	stream := c.audioStreams[pid]
+	if stream == nil {
 		return
 	}
 
 	es := payload
 	if pusi {
-		// A PES packet starts here, so the elementary stream does not: skip the
-		// header. Audio arrives either as an audio stream id or, for AC-3 in DVB,
-		// as private_stream_1.
+		// A payload unit starts here, and on a PID carrying PES that means a PES
+		// packet does - ISO/IEC 13818-1 2.4.3.6. So the elementary stream does
+		// not start here: the header comes first. Audio arrives either as an
+		// audio stream id or, for AC-3 in DVB, as private_stream_1.
+		//
+		// When the payload unit is not one of those, the refusal is about the
+		// PES packet and not about this packet alone. Everything until the next
+		// payload unit start is the body of the packet just refused, so it is
+		// not this track's elementary stream either - and a frame parser given
+		// it can read a layout out of bytes the programme never carried.
 		if len(payload) < 9 || payload[0] != 0x00 || payload[1] != 0x00 || payload[2] != 0x01 {
+			c.beginAudioWaitLocked(stream)
 			return
 		}
 		if sid := payload[3]; sid != 0xBD && sid != 0xFD && (sid < 0xC0 || sid > 0xDF) {
+			c.beginAudioWaitLocked(stream)
 			return
 		}
+		// From here a PES packet this track's audio can come out of has begun,
+		// whatever happens to the rest of it.
+		stream.awaitingStart = false
 		esStart := 9 + int(payload[8])
 		if esStart >= len(payload) {
-			// The optional header ran past this packet. Rare, and not worth state of
-			// its own: the remainder is fed as if it were elementary stream, where it
-			// has to survive a syncword check and a run of agreeing frames before it
-			// could reach the observation.
+			// The optional header ran past this packet. Left as it is,
+			// deliberately: the elementary stream boundary was established and
+			// then ran out of room, which is a different question from one that
+			// was never established at all, and it is reviewed on its own.
 			return
 		}
 		es = payload[esStart:]
+	} else if stream.awaitingStart {
+		// The body of a payload unit whose audio boundary nothing established.
+		return
 	}
-	obs.Feed(es)
+	stream.observer.Feed(es)
 	// The same bytes, in the same piece, at the same moment. Anything else - the
 	// packet, the chunk, a re-derivation from transport - would be a different
 	// input, and agreement on a different input is not agreement.
-	c.captureAudioShadowFeedLocked(pid, es, obs)
+	c.captureAudioShadowFeedLocked(pid, es, stream.observer)
+}
+
+// beginAudioWaitLocked records that this stream's position is no longer known.
+func (c *GoCore) beginAudioWaitLocked(stream *audioStream) {
+	stream.awaitingStart = true
+	c.audioUnreadableStarts++
 }
 func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte) int {
 	if len(chunk) == 0 {
@@ -1082,10 +1208,10 @@ func (c *GoCore) processCompletePSISectionLocked(isPAT bool, table []byte) {
 								Declared:   declared,
 							})
 							if observableAudioCodec(codec) {
-								if c.audioObservers == nil {
-									c.audioObservers = make(map[uint16]*esaudio.Observer, 2)
+								if c.audioStreams == nil {
+									c.audioStreams = make(map[uint16]*audioStream, 2)
 								}
-								c.audioObservers[elemPID] = esaudio.NewObserver()
+								c.audioStreams[elemPID] = &audioStream{observer: esaudio.NewObserver()}
 							}
 						}
 					}
@@ -1162,7 +1288,7 @@ func (c *GoCore) resetProgramStateLocked() {
 	// Observations do not survive the table that named their stream. The same PID
 	// can carry a different elementary stream after a PMT change, and carrying the
 	// old layout across would describe audio that is no longer there.
-	c.audioObservers = nil
+	c.audioStreams = nil
 	// And the shadow's epoch turns here rather than on the event below, because
 	// this line is where the state it mirrors actually dies. Deriving it from
 	// EventProgramIdentityChanged later would put the boundary one step away from

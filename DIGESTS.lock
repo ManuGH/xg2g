@@ -99,6 +99,14 @@
     "v3.10.0": {
       "digest": "pending",
       "published_at": "pending"
+    },
+    "v3.11.0": {
+      "digest": "pending",
+      "published_at": "pending"
+    },
+    "v3.12.0": {
+      "digest": "pending",
+      "published_at": "pending"
     }
   }
 }

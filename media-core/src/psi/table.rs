@@ -195,13 +195,14 @@ impl SectionHeader {
 /// one would describe a programme by whichever half arrived first, and the half
 /// that describes the video is not more authoritative than the half that
 /// describes the audio.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct TableTracker {
     /// The generation being collected, if any.
     in_flight: Option<Generation>,
 }
 
 /// One version of one table, part-collected.
+#[derive(Debug)]
 struct Generation {
     /// The version every section of this generation carries.
     version: u8,

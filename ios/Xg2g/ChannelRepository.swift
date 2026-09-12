@@ -82,9 +82,22 @@ actor ChannelRepository {
         )
     }
 
-    /// Fetches the full EPG schedule for all channels or a specific bouquet.
-    func epgSchedule(bouquet: String? = nil) async throws -> [String: [NowNext.Entry]] {
-        let query = bouquet.map { [URLQueryItem(name: "bouquet", value: $0)] } ?? []
+    /// Fetches the full EPG schedule for all channels or a specific bouquet with bounded time horizon.
+    func epgSchedule(
+        bouquet: String? = nil,
+        from: Date? = nil,
+        to: Date? = nil
+    ) async throws -> [String: [NowNext.Entry]] {
+        var query: [URLQueryItem] = []
+        if let bouquet, !bouquet.isEmpty {
+            query.append(URLQueryItem(name: "bouquet", value: bouquet))
+        }
+
+        let startDate = from ?? Date.now.addingTimeInterval(-4 * 3600)
+        let endDate = to ?? Date.now.addingTimeInterval(7 * 24 * 3600)
+        query.append(URLQueryItem(name: "from", value: "\(Int(startDate.timeIntervalSince1970))"))
+        query.append(URLQueryItem(name: "to", value: "\(Int(endDate.timeIntervalSince1970))"))
+
         let items: [Xg2gContract.EpgItem] = try await api.send(
             APIRequest(method: .get, path: "epg", query: query)
         )

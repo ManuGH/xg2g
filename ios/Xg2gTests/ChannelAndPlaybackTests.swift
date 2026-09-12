@@ -375,8 +375,8 @@ struct TimersRepositoryTests {
         api.stub("timers", json: """
             {
                 "items": [
-                    {"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"waiting"},
-                    {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"running"}
+                    {"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"scheduled"},
+                    {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"recording"}
                 ]
             }
             """)
@@ -411,9 +411,9 @@ struct TimersRepositoryTests {
         api.stub("timers", json: """
             {
                 "items": [
-                    {"timerId":"t_invalid_1","name":"","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
-                    {"timerId":"t_valid","name":"Valid Timer","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
-                    {"timerId":"t_invalid_2","name":"Missing Ref","serviceRef":"  ","begin":1700010000,"end":1700011800,"state":"waiting"}
+                    {"timerId":"t_invalid_1","name":"","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"scheduled"},
+                    {"timerId":"t_valid","name":"Valid Timer","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"scheduled"},
+                    {"timerId":"t_invalid_2","name":"Missing Ref","serviceRef":"  ","begin":1700010000,"end":1700011800,"state":"scheduled"}
                 ]
             }
             """)
@@ -470,8 +470,6 @@ struct ChannelZappingNavigationTests {
     @Test func zappingWrapsAroundProperly() {
         let model = AppModel()
         let c1 = Channel(id: "1", name: "ORF1", number: "1", serviceRef: "ref1", logoURL: nil)
-        let c2 = Channel(id: "2", name: "ORF2", number: "2", serviceRef: "ref2", logoURL: nil)
-        let c3 = Channel(id: "3", name: "ATV", number: "3", serviceRef: "ref3", logoURL: nil)
 
         // In empty state
         #expect(model.channelAfter(c1) == nil)

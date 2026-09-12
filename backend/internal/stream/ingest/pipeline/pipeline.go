@@ -141,21 +141,41 @@ func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.Subscrib
 // PrimedAttachWithTimeout waits up to timeout for the first valid keyframe to arrive in the ring buffer.
 func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
 	deadline := time.Now().Add(timeout)
+	// Give the receiver's CAM/descrambler a grace window (typically 1-2.5s for ECM round-trip)
+	// before declaring scrambled packets conclusively terminal.
+	scrambleGrace := 2500 * time.Millisecond
+	if scrambleGrace > timeout {
+		scrambleGrace = timeout
+	}
+	scrambleDeadline := time.Now().Add(scrambleGrace)
+
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
+	var lastErr error
 	for {
 		attach, reader, err := p.PrimedAttach()
 		if err == nil {
 			return attach, reader, nil
 		}
-		// Only "not yet" is retried. Terminal conditions (closed ring, scrambled upstream)
-		// return straight away rather than consuming the full timeout budget.
-		if !errors.Is(err, ErrNoAttachAvailable) {
+		lastErr = err
+
+		if errors.Is(err, ring.ErrScrambledStream) {
+			// During cold zap to an encrypted channel, the tuner locks instantly but
+			// the softcam (e.g. OSCam) needs 1-2 seconds to exchange ECMs and load the CW.
+			// Only treat ErrScrambledStream as terminal once the descramble grace deadline has passed.
+			if time.Now().After(scrambleDeadline) {
+				return ring.PrimedAttachPoint{}, nil, err
+			}
+		} else if !errors.Is(err, ErrNoAttachAvailable) {
+			// Other terminal conditions (closed ring, etc.) return straight away.
 			return ring.PrimedAttachPoint{}, nil, err
 		}
 
 		if time.Now().After(deadline) {
+			if errors.Is(lastErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, lastErr
+			}
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
 
@@ -163,6 +183,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		case <-ctx.Done():
 			return ring.PrimedAttachPoint{}, nil, ctx.Err()
 		case <-p.doneCh:
+			if errors.Is(lastErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, lastErr
+			}
 			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 		case <-ticker.C:
 		}

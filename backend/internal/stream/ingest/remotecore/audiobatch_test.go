@@ -24,7 +24,7 @@ import (
 // is pinned here and not only in the observer's behaviour.
 var goldenObserveRequest = []byte{
 	0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-	0x02,                   // version
+	0x03,                   // version
 	0x05,                   // observe audio batch
 	0x00, 0x00, 0x00, 0x09, // request id 9
 	0x00, 0x00, 0x00, 0x01, // one batch
@@ -37,7 +37,7 @@ var goldenObserveRequest = []byte{
 
 var goldenObserveAnswer = []byte{
 	0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-	0x02,                   // version
+	0x03,                   // version
 	0x05,                   // observe audio batch
 	0x00, 0x00, 0x00, 0x09, // request id 9
 	0x00,                   // status ok

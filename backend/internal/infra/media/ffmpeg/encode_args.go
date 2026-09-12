@@ -52,15 +52,24 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
+		Float64("denoise", a.Config.TranscodeDenoise).
+		Float64("sharpen", a.Config.TranscodeSharpen).
 		Msg("pipeline video: vaapi")
 
-	filters := make([]string, 0, 2)
+	filters := make([]string, 0, 5)
 	if prof.Deinterlace {
 		// rate=field emits one frame per field - the GPU equivalent of bwdif's
 		// send_field, and the only way this path reaches 50p. Without it
 		// deinterlace_vaapi defaults to one frame per field PAIR, so the full-GPU
 		// chain silently produced 25p no matter what the runtime mode said.
 		filters = append(filters, vaapiDeinterlaceFilter(spec))
+	}
+	if prof.HDRToneMap {
+		// Hardware tonemapping from HDR/HLG (BT.2020) to SDR (BT.709)
+		filters = append(filters, "tonemap_vaapi=format=nv12:p=bt709:m=bt709:t=bt709")
+	}
+	if f := vaapiDenoiseFilter(a.Config.TranscodeDenoise, a.Config.GPUVendor); f != "" {
+		filters = append(filters, f)
 	}
 	// AV1 encodes 10-bit (see vaapiEncodeOnlyFilter): the extra precision cuts
 	// encoder-introduced banding on gradients even from an 8-bit source. Forcing
@@ -75,6 +84,9 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth, hwFormat)
 	}
 	filters = append(filters, scaleFilter)
+	if f := vaapiSharpnessFilter(a.Config.TranscodeSharpen, a.Config.GPUVendor); f != "" {
+		filters = append(filters, f)
+	}
 	args = append(args, "-vf", strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
@@ -214,6 +226,57 @@ func transcodeSharpenFilter(amount float64) string {
 	return fmt.Sprintf("unsharp=5:5:%.2f:5:5:0.0", amount)
 }
 
+// vaapiSharpnessFilter returns an Intel VPP hardware sharpness filter expression
+// for the full-GPU VAAPI transcode chain, or "" when disabled or on non-Intel hardware.
+// AMD Mesa Gallium VAAPI drivers do not implement VAProcFilterSharpening.
+// XG2G_TRANSCODE_SHARPEN is the sharpening amount (0 disables, default 2.0, capped at 3.0),
+// which maps linearly to the VAAPI hardware scale [1, 64] where Intel's default is 44
+// (2.0 * 22 = 44).
+func vaapiSharpnessFilter(amount float64, vendor string) string {
+	if amount <= 0 {
+		return ""
+	}
+	if vendor == "" {
+		vendor = string(hardware.DetectGPUVendor().Vendor)
+	}
+	if vendor != string(hardware.GPUVendorIntel) {
+		return ""
+	}
+	level := int(amount*22.0 + 0.5)
+	if level < 1 {
+		level = 1
+	}
+	if level > 64 {
+		level = 64
+	}
+	return fmt.Sprintf("sharpness_vaapi=sharpness=%d", level)
+}
+
+// vaapiDenoiseFilter returns an Intel VPP hardware noise reduction filter expression
+// for the full-GPU VAAPI transcode chain, or "" when disabled or on non-Intel hardware.
+// AMD Mesa Gallium VAAPI drivers do not implement VAProcFilterNoiseReduction.
+// XG2G_TRANSCODE_DENOISE is the denoise strength (0 disables, default 0.6, capped at 1.5),
+// which maps linearly to the VAAPI hardware scale [1, 64] (default 0.6 yields 12).
+func vaapiDenoiseFilter(amount float64, vendor string) string {
+	if amount <= 0 {
+		return ""
+	}
+	if vendor == "" {
+		vendor = string(hardware.DetectGPUVendor().Vendor)
+	}
+	if vendor != string(hardware.GPUVendorIntel) {
+		return ""
+	}
+	level := int(amount*20.0 + 0.5)
+	if level < 1 {
+		level = 1
+	}
+	if level > 64 {
+		level = 64
+	}
+	return fmt.Sprintf("denoise_vaapi=denoise=%d", level)
+}
+
 // transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode
 // chain, or "" when disabled. XG2G_TRANSCODE_DENOISE scales a conservative base
 // (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
@@ -289,6 +352,9 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			"-global_quality", strconv.Itoa(icqQuality),
 			"-async_depth", "1",
 		)
+		if prof.Intent == "cinema" {
+			args = append(args, "-compression_level", "1")
+		}
 		return args
 	}
 

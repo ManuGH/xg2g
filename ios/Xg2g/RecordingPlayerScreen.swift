@@ -25,14 +25,24 @@ struct RecordingPlayerScreen: View {
     @State private var statusObserver: NSKeyValueObservation?
     @State private var isPreparing = true
     @State private var errorMessage: String? = nil
+    @State private var verticalDragOffset: CGFloat = 0
+    @State private var isDraggingDown: Bool = false
 
     private var totalDuration: Double {
         let recDur = Double(recording.durationSeconds)
         return max(recDur, 1)
     }
 
+    private func minimizePlayer() {
+        verticalDragOffset = 0
+        isDraggingDown = false
+        Haptics.shared.impact(.medium)
+        model?.playbackManager.minimize()
+        dismiss()
+    }
+
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
 
             if errorMessage == nil {
@@ -44,9 +54,7 @@ struct RecordingPlayerScreen: View {
                         videoGravity: .resizeAspect,
                         showsPlaybackControls: true,
                         onDismiss: {
-                            cleanup()
-                            model?.playbackManager.stop()
-                            dismiss()
+                            minimizePlayer()
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,12 +67,54 @@ struct RecordingPlayerScreen: View {
                     cinematicLoadingStage
                         .transition(.opacity)
                 }
+
+                // Top Left Quick Minimize Button Overlay
+                Button {
+                    minimizePlayer()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .padding(.leading, 16)
+                .padding(.top, 12)
+                .zIndex(20)
             } else {
                 errorStateView
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all)
+        .offset(y: max(0, verticalDragOffset))
+        .scaleEffect(isDraggingDown ? max(0.85, 1.0 - (verticalDragOffset / 1200)) : 1.0)
+        .clipShape(RoundedRectangle(cornerRadius: isDraggingDown ? min(32, verticalDragOffset / 4) : 0, style: .continuous))
+        .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.85), value: verticalDragOffset)
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    if value.translation.height > 0 && abs(value.translation.height) > abs(value.translation.width) {
+                        isDraggingDown = true
+                        verticalDragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if isDraggingDown {
+                        if value.translation.height > 80 || value.predictedEndTranslation.height > 160 {
+                            minimizePlayer()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                verticalDragOffset = 0
+                                isDraggingDown = false
+                            }
+                        }
+                    }
+                }
+        )
         .onAppear {
             model?.playbackManager.registerRecordingCleanup {
                 self.cleanup()
@@ -72,8 +122,10 @@ struct RecordingPlayerScreen: View {
             setupPlayer()
         }
         .onDisappear {
-            model?.playbackManager.unregisterRecordingCleanup()
-            cleanup()
+            if model?.playbackManager.presentationMode != .miniplayer {
+                model?.playbackManager.unregisterRecordingCleanup()
+                cleanup()
+            }
         }
     }
 
@@ -209,6 +261,11 @@ struct RecordingPlayerScreen: View {
 
     private func setupPlayer() {
         AudioSessionManager.shared.configureForPlayback()
+        if let existing = model?.playbackManager.recordingPlayer {
+            self.player = existing
+            self.isPreparing = false
+            return
+        }
         Task {
             var sessionCookie: String? = nil
             var negotiatedPath: String? = nil
@@ -320,6 +377,7 @@ struct RecordingPlayerScreen: View {
                 }
 
                 self.player = p
+                self.model?.playbackManager.setRecordingPlayer(p)
             }
         }
     }
@@ -332,6 +390,7 @@ struct RecordingPlayerScreen: View {
         statusObserver?.invalidate()
         statusObserver = nil
         player?.pause()
+        model?.playbackManager.setRecordingPlayer(nil)
         AudioSessionManager.shared.deactivate()
     }
 }

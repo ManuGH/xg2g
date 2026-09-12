@@ -4,6 +4,7 @@
 
 import SwiftUI
 import Combine
+import AVFoundation
 
 public enum PlaybackPresentationMode: String, Sendable, Equatable {
     case hidden
@@ -37,7 +38,7 @@ struct PlayingRecordingItem: Identifiable, Equatable, Sendable {
 enum PlaybackState: Equatable, Sendable {
     case idle
     case live(Channel, mode: PlaybackPresentationMode)
-    case recording(PlayingRecordingItem)
+    case recording(PlayingRecordingItem, mode: PlaybackPresentationMode)
     case offline(OfflineRecording)
 }
 
@@ -54,6 +55,14 @@ final class PlaybackManager: ObservableObject {
     @Published private(set) var state: PlaybackState = .idle
     @Published private(set) var pipState: PiPState = .inactive
     @Published private(set) var backgroundState: BackgroundPlaybackState = .foreground
+    @Published private(set) var recordingPlayer: AVPlayer?
+
+    func setRecordingPlayer(_ player: AVPlayer?) {
+        if let current = self.recordingPlayer, current !== player {
+            current.pause()
+        }
+        self.recordingPlayer = player
+    }
 
     let coordinator: ZapCoordinator
     private let streamURLProvider: @MainActor (String) -> URL?
@@ -86,12 +95,15 @@ final class PlaybackManager: ObservableObject {
     }
 
     var presentationMode: PlaybackPresentationMode {
-        if case .live(_, let mode) = state { return mode }
-        return .hidden
+        switch state {
+        case .live(_, let mode): return mode
+        case .recording(_, let mode): return mode
+        case .idle, .offline: return .hidden
+        }
     }
 
     var activeRecordingItem: PlayingRecordingItem? {
-        if case .recording(let item) = state { return item }
+        if case .recording(let item, _) = state { return item }
         return nil
     }
 
@@ -109,7 +121,8 @@ final class PlaybackManager: ObservableObject {
         switch state {
         case .idle: return false
         case .live(_, let mode): return mode != .hidden && coordinator.playing != nil
-        case .recording, .offline: return true
+        case .recording(_, let mode): return mode != .hidden
+        case .offline: return true
         }
     }
 
@@ -175,7 +188,7 @@ final class PlaybackManager: ObservableObject {
         }
     }
 
-    func play(recording: Recording, startPosition: Double) async {
+    func play(recording: Recording, startPosition: Double, mode: PlaybackPresentationMode = .fullscreen) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
 
@@ -195,12 +208,12 @@ final class PlaybackManager: ObservableObject {
 
         // 4. Set canonical Recording state
         let item = PlayingRecordingItem(id: recording.id, recording: recording, initialPosition: startPosition)
-        self.state = .recording(item)
+        self.state = .recording(item, mode: mode)
     }
 
-    func play(recording: Recording, startPosition: Double) {
+    func play(recording: Recording, startPosition: Double, mode: PlaybackPresentationMode = .fullscreen) {
         Task { @MainActor in
-            await play(recording: recording, startPosition: startPosition)
+            await play(recording: recording, startPosition: startPosition, mode: mode)
         }
     }
 
@@ -233,13 +246,25 @@ final class PlaybackManager: ObservableObject {
     }
 
     func minimize() {
-        guard case .live(let channel, .fullscreen) = state else { return }
-        self.state = .live(channel, mode: .miniplayer)
+        switch state {
+        case .live(let channel, .fullscreen):
+            self.state = .live(channel, mode: .miniplayer)
+        case .recording(let item, .fullscreen):
+            self.state = .recording(item, mode: .miniplayer)
+        default:
+            break
+        }
     }
 
     func expand() {
-        guard case .live(let channel, .miniplayer) = state else { return }
-        self.state = .live(channel, mode: .fullscreen)
+        switch state {
+        case .live(let channel, .miniplayer):
+            self.state = .live(channel, mode: .fullscreen)
+        case .recording(let item, .miniplayer):
+            self.state = .recording(item, mode: .fullscreen)
+        default:
+            break
+        }
     }
 
     func stop() async {
@@ -251,6 +276,7 @@ final class PlaybackManager: ObservableObject {
         } else if case .recording = state {
             recordingCleanupHook?()
             recordingCleanupHook = nil
+            setRecordingPlayer(nil)
         }
 
         guard self.activeTransitionID == transactionID else { return }

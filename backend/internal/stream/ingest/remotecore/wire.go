@@ -34,7 +34,14 @@ import (
 // like a core that rejected this particular batch rather than one that cannot do
 // this at all. A peer either speaks 2 and can be asked, or it does not and is
 // refused before anything is sent.
-const Version uint8 = 2
+//
+// 3 makes ingest and set-target answer with what the core read rather than with
+// an offset alone, and makes the handshake's program number mean something. A v2
+// peer would answer both with the old short body and a v3 caller would read the
+// first bytes of it as a coverage and an offset that are not there - so this is
+// exactly the case the version exists for. There is no shim: a v2 peer is
+// refused at the handshake.
+const Version uint8 = 3
 
 // Message types. The set is closed on purpose - it is exactly the calls
 // mediafacts.Core makes, plus the two the connection itself needs.
@@ -100,10 +107,13 @@ var (
 //
 //	handshake       request  u16 target program
 //	                answer   u8 status
+//	                         The program number is the core's initial target and
+//	                         not a set-target call: it establishes state rather
+//	                         than changing it, so it produces no event.
 //	ingest          request  u64 start offset, then the chunk
-//	                answer   u8 status, u64 processed-through offset
+//	                answer   the PSI result envelope - see psiresult.go
 //	set target      request  u16 program number
-//	                answer   u8 status
+//	                answer   the PSI result envelope - see psiresult.go
 //	shutdown        request  empty
 //	                answer   u8 status
 //	observe audio   request  u32 batches, then per batch:

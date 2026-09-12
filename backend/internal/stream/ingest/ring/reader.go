@@ -73,6 +73,9 @@ func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader
 	defer r.mu.Unlock()
 
 	if r.isClosed {
+		if len(r.keyframeOffsets) == 0 && r.scrambledVideoConfirmedLocked() {
+			return PrimedAttachPoint{}, nil, ErrScrambledStream
+		}
 		return PrimedAttachPoint{}, nil, ErrRingClosed
 	}
 

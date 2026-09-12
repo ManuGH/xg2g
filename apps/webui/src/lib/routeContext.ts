@@ -26,11 +26,13 @@ const APP_NAME = 'xg2g';
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
   'setup',
+  'security',
   'household',
   'android-tv',
   'scan',
   'streaming',
   'advanced',
+  'about',
 ];
 
 const SETTINGS_TOOLS: SettingsTool[] = ['files', 'logs'];
@@ -66,7 +68,7 @@ export function getSettingsSectionLabel(section: SettingsSection, t: TranslateFn
     case 'household':
       return t('settings.household.title', { defaultValue: 'Household profiles' });
     case 'android-tv':
-      return t('settings.androidTv.title', { defaultValue: 'Android TV' });
+      return t('settings.devices.tabTitle', { defaultValue: t('settings.androidTv.title', { defaultValue: 'Geräte & Apps' }) });
     case 'scan':
       return t('settings.streaming.scan.title', { defaultValue: 'Media Truth Scan' });
     case 'streaming':
@@ -75,6 +77,8 @@ export function getSettingsSectionLabel(section: SettingsSection, t: TranslateFn
       return t('settings.security.title', { defaultValue: 'Security & Access' });
     case 'advanced':
       return t('settings.advanced.title', { defaultValue: 'Advanced tools' });
+    case 'about':
+      return t('settings.about.title', { defaultValue: 'About & Storage' });
     default:
       return String(section);
   }

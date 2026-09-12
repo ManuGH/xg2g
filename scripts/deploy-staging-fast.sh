@@ -108,7 +108,14 @@ REMOTE
 [[ -n "${expected_sha}" ]] || die "could not hash remote build artifact"
 
 echo "Deploying ${commit} (${expected_sha}) to staging :8089 on ${REMOTE_HOST}..."
-ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" "${expected_sha}" "${commit}" <<'REMOTE'
+# The storage preflight below is the same file the canonical Compose helper
+# uses; it is prepended to the remote script so both paths run one shared
+# implementation rather than two copies that can drift.
+storage_lib="${ROOT}/backend/scripts/lib/hls-storage.sh"
+[[ -r "${storage_lib}" ]] || die "shared storage preflight missing: ${storage_lib}"
+{
+cat "${storage_lib}"
+cat <<'REMOTE'
 set -euo pipefail
 binary="$1"
 expected_sha="$2"
@@ -158,36 +165,43 @@ mv "${candidate_overlay}.next" "${candidate_overlay}"
 compose_args+=(-f "${candidate_overlay}")
 hls_root="$(read_env_value XG2G_HLS_ROOT 2>/dev/null || true)"
 require_mount="$(read_env_value XG2G_HLS_REQUIRE_MOUNT 2>/dev/null || true)"
-case "${require_mount,,}" in
-  ""|0|1|false|true|no|yes|off|on) ;;
-  *)
-    echo "ERROR: staging XG2G_HLS_REQUIRE_MOUNT must be a boolean, got: ${require_mount}" >&2
-    exit 1
-    ;;
-esac
-if [[ -n "${hls_root}" && "${hls_root}" != /var/lib/xg2g/* && "${hls_root}" != "/var/lib/xg2g" ]]; then
-  [[ "${hls_root}" =~ ^/[A-Za-z0-9._/@+-]+$ ]] || {
-    echo "ERROR: staging XG2G_HLS_ROOT must be a safe absolute Linux path: ${hls_root}" >&2
-    exit 1
-  }
-  [[ -d "${hls_root}" && -w "${hls_root}" ]] || {
-    echo "ERROR: staging HLS/DVR scratch path must exist and be writable: ${hls_root}" >&2
-    exit 1
-  }
-  if [[ "${require_mount,,}" =~ ^(1|true|yes|on)$ ]]; then
-    data_mount="$(findmnt -T /var/lib/xg2g-staging -n -o TARGET)"
-    hls_mount="$(findmnt -T "${hls_root}" -n -o TARGET)"
-    [[ -n "${data_mount}" && -n "${hls_mount}" && "${data_mount}" != "${hls_mount}" ]] || {
-      echo "ERROR: staging requires a dedicated HLS mount, but data and DVR resolve to ${data_mount:-unknown}" >&2
-      exit 1
-    }
-  fi
+data_root="$(read_env_value XG2G_DATA 2>/dev/null || true)"
+: "${data_root:=/var/lib/xg2g}"
+: "${hls_root:=${data_root%/}/hls}"
+data_root_host="/var/lib/xg2g-staging"
+
+# XG2G_DATA and XG2G_HLS_ROOT are container paths; the mount topology that
+# decides whether DVR scratch can fill the root filesystem is the host's.
+# Resolve container paths onto the host before validating, so the check sees
+# the filesystem the container is actually about to be handed.
+if [[ "${hls_root}" == "${data_root}" || "${hls_root}" == "${data_root%/}/"* ]]; then
+  hls_root_host="${data_root_host}${hls_root#"${data_root}"}"
+else
+  hls_root_host="${hls_root}"
+fi
+
+echo "Staging storage topology (host view):"
+xg2g_hls_report_topology "${data_root_host}" "${hls_root_host}" "${require_mount}"
+
+# Unconditional: this runs for every configuration, including an HLS root
+# nested inside the data root. Nesting it behind an "is the path external"
+# test is what let XG2G_HLS_REQUIRE_MOUNT=true pass while HLS scratch was
+# being written to the staging root filesystem.
+xg2g_hls_validate_storage "${data_root_host}" "${hls_root_host}" "${require_mount}" || {
+  echo "ERROR: staging storage preflight failed; no container was changed" >&2
+  exit 1
+}
+
+# Only an HLS root that is not already covered by the data bind mount needs a
+# bind mount of its own. This is a mount-wiring question, not a safety one --
+# the safety question was answered above, for every configuration.
+if [[ "${hls_root_host}" != "${data_root_host}" && "${hls_root_host}" != "${data_root_host}/"* ]]; then
   cat > "${storage_overlay}" <<EOF
 services:
   xg2g:
     volumes:
       - type: bind
-        source: '${hls_root}'
+        source: '${hls_root_host}'
         target: '${hls_root}'
 EOF
   compose_args+=(-f "${storage_overlay}")
@@ -246,6 +260,7 @@ manifest_next="/srv/xg2g-staging/deploy-manifest.next"
 } >"${manifest_next}"
 mv "${manifest_next}" /srv/xg2g-staging/deploy-manifest
 REMOTE
+} | ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" "${expected_sha}" "${commit}"
 
 echo "Staging deployment complete: commit=${commit} sha256=${expected_sha} port=8089"
 echo "Production :8088 was not touched."

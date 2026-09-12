@@ -90,8 +90,14 @@ struct RootContentView: View {
             }
         }
         .fullScreenCover(item: Binding(
-            get: { playbackManager.activeRecordingItem },
-            set: { if $0 == nil { playbackManager.stop() } }
+            get: {
+                playbackManager.presentationMode == .fullscreen ? playbackManager.activeRecordingItem : nil
+            },
+            set: { item in
+                if item == nil && playbackManager.presentationMode == .fullscreen {
+                    playbackManager.minimize()
+                }
+            }
         )) { item in
             // No configured deployment means nothing to play. The screen used to
             // take a string and repair it; now the address either exists or the
@@ -137,6 +143,8 @@ struct AdaptiveAppNavigation: View {
                 iPadSidebar(model: model)
             } detail: {
                 switch model.selectedTab {
+                case .home:
+                    HomeHubView(model: model)
                 case .liveTV:
                     ChannelListView(model: model)
                 case .guide:
@@ -340,6 +348,12 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
+            HomeHubView(model: model)
+                .tabItem {
+                    Label(Tab.home.rawValue, systemImage: Tab.home.systemImage)
+                }
+                .tag(Tab.home)
+
             ChannelListView(model: model)
                 .tabItem {
                     Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
@@ -357,12 +371,6 @@ struct MainTabView: View {
                     Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
                 }
                 .tag(Tab.recordings)
-
-            TimersView(model: model)
-                .tabItem {
-                    Label(Tab.timers.rawValue, systemImage: Tab.timers.systemImage)
-                }
-                .tag(Tab.timers)
 
             SettingsView(model: model)
                 .tabItem {

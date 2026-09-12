@@ -622,12 +622,50 @@
         "android-tv": "Die TV-Übergabe ist jetzt ein eigener Bereich innerhalb der Einstellungen.",
         "scan": "Der Senderscan ist jetzt als direkter Unterbereich der Einstellungen erreichbar.",
         "streaming": "Streaming-Vorgaben liegen jetzt in einem klaren Unterbereich der Einstellungen.",
-        "advanced": "Expertenwerkzeuge liegen gesammelt unter dem erweiterten Einstellungsbereich."
+        "advanced": "Expertenwerkzeuge liegen gesammelt unter dem erweiterten Einstellungsbereich.",
+        "about": "Versionsinformationen, Systemstatus und Verwaltung des lokalen Browser-Caches."
       },
       "tool": {
         "files": "Playlist-, Guide- und Kompatibilitätsfeeds liegen jetzt unter dem Expertenbereich der Einstellungen.",
         "logs": "Diagnose- und Serverereignisse liegen jetzt unter dem Expertenbereich der Einstellungen."
       }
+    },
+    "security": {
+      "title": "Sicherheit & Passkeys",
+      "tabTitle": "Sicherheit & Passkeys"
+    },
+    "devices": {
+      "tabTitle": "Geräte & Apps koppeln",
+      "heroEyebrow": "UNIVERSAL ZERO-TRUST ENROLLMENT",
+      "heroTitle": "iPhone, Apple TV & Smart-TV mit PIN koppeln",
+      "heroCopy": "Starte die xg2g-App auf deinem iPhone, iPad, Apple TV oder Android TV und gib den auf dem Bildschirm angezeigten Code hier ein.",
+      "keyAuthLabel": "Geräteschlüssel freigeben (Device Authorization)",
+      "keyAuthHint": "Gib den 8-stelligen Code ein, der in deiner xg2g App angezeigt wird:",
+      "inputPlaceholder": "z.B. MCDA-R2GC oder MCDAR2GC",
+      "buttonPair": "Gerät jetzt koppeln",
+      "buttonPairing": "Autorisiere…",
+      "successFeedback": "Gerät erfolgreich autorisiert! Der TV-Stream öffnet sich jetzt auf dem Gerät.",
+      "errorDefault": "Kopplung konnte nicht autorisiert werden.",
+      "errorAuthRequired": "Admin-Authentifizierung erforderlich. Bitte gehe zuerst auf den Tab „Sicherheit“ und melde dich mit dem Admin-Token an.",
+      "errorPrefix": "Fehler: {{message}}"
+    },
+    "about": {
+      "title": "Über xg2g & Speicher",
+      "tabTitle": "Über xg2g & Speicher",
+      "subtitle": "System- und Versionsinformationen sowie Verwaltung des lokalen Browser-Speichers.",
+      "versionTitle": "Software-Versionen",
+      "clientVersion": "WebUI Client",
+      "protocol": "API-Protokoll",
+      "protocolVersion": "v3 Normative",
+      "serverStatus": "Server-Status",
+      "connected": "Verbunden",
+      "disconnected": "Nicht verbunden",
+      "storageTitle": "Lokaler Browser-Speicher",
+      "storageDescription": "Lokale Benutzereinstellungen (Audio-Modus, DVR-Modus, Passkeys-Token) im Browser zurücksetzen.",
+      "clearStorage": "Client-Cache & Einstellungen zurücksetzen",
+      "storageCleared": "Lokale Einstellungen wurden erfolgreich zurückgesetzt.",
+      "licenseTitle": "Lizenz",
+      "licenseText": "PolyForm Noncommercial License 1.0.0 (Nichtkommerzielle Nutzung)."
     },
     "advanced": {
       "title": "Expertenbereich",
@@ -684,6 +722,11 @@
     },
     "streaming": {
       "title": "Streaming",
+      "engineSubtitle": "xg2g regelt Video-Bitrate, Auflösung und Codecs vollautomatisch und adaptiv anhand deiner aktuellen Verbindung. Es ist kein starres manuelles Profil mehr nötig.",
+      "cardEngineText": "Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (720p bis hin zu nativem 1080p).",
+      "cardCodecsText": "Dynamische Aushandlung der besten Codecs: AV1 & HEVC (H.265) für maximale Qualität bei kleinstem Datenvolumen, H.264 für universelle Kompatibilität und MPEG-2 für verlustfreies Direct Play im Heimnetz.",
+      "cardContainersText": "Modernes Low-Latency HLS (fMP4 / CMAF) für schnelles Umschalten bei HD-Sendern sowie klassisches MPEG-TS für maximale Kompatibilität mit Receivern.",
+      "cardInterlacedText": "Progressive Sender (720p, 1080p) werden verlustfrei 1:1 durchgereicht. Interlaced Sender (z. B. 1080i / 576i) werden automatisch in flüssiges 50-fps-Progressive-Video ohne Kammartefakte deinterlaced.",
       "policy": {
         "label": "Auslieferungsprofil",
         "universal": "Universal (H.264/AAC/fMP4)",

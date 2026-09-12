@@ -626,7 +626,7 @@ func newPlaylistWriter(ctx context.Context, dir string, targetDuration int, list
 			pl.mediaLines = append(pl.mediaLines, line)
 			continue
 		}
-		if strings.HasPrefix(line, "#EXTINF:") || strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") || strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") {
+		if strings.HasPrefix(line, "#EXTINF:") || strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") || strings.HasPrefix(line, "#EXT-X-DISCONTINUITY") || strings.HasPrefix(line, "#EXT-X-DATERANGE:") {
 			if raw, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
 				// RFC 8216: #EXTINF:<duration>,[<title>] — strip the optional title.
 				if idx := strings.IndexByte(raw, ','); idx >= 0 {

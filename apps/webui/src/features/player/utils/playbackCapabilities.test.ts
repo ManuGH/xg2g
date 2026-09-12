@@ -16,6 +16,11 @@ const originalUserAgentDescriptor = Object.getOwnPropertyDescriptor(
   "userAgent",
 );
 
+const originalConnectionDescriptor = Object.getOwnPropertyDescriptor(
+  Navigator.prototype,
+  "connection",
+) || Object.getOwnPropertyDescriptor(window.navigator, "connection");
+
 vi.mock("./playbackProbe", () => ({
   probeRuntimePlaybackCapabilities: vi.fn(),
 }));
@@ -38,6 +43,12 @@ describe("gatherPlaybackCapabilities", () => {
     }
     if (originalMaxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, "maxTouchPoints", originalMaxTouchPointsDescriptor);
+    }
+    if (originalConnectionDescriptor) {
+      Object.defineProperty(window.navigator, "connection", originalConnectionDescriptor);
+    } else {
+      // @ts-expect-error test cleanup
+      delete window.navigator.connection;
     }
   });
 
@@ -354,5 +365,39 @@ describe("gatherPlaybackCapabilities", () => {
     expect(capabilities.videoCodecSignals).toEqual([
       { codec: "av1", supported: true, smooth: true },
     ]);
+  });
+
+  it("omits synthetic 10 Mbps browser privacy downlink clamp from capability network context", async () => {
+    vi.mocked(probeRuntimePlaybackCapabilities).mockResolvedValue({
+      version: 2,
+      usedRuntimeProbe: true,
+      nativeHls: false,
+      hlsJs: true,
+      preferredHlsEngine: "hlsjs",
+      hlsEngines: ["hlsjs"],
+      containers: ["mp4", "ts", "fmp4"],
+      videoCodecs: ["av1", "h264"],
+      videoCodecSignals: [{ codec: "av1", supported: true, smooth: true }],
+      audioCodecs: ["aac", "mp3"],
+      supportsRange: true,
+    });
+    vi.mocked(detectPlaybackClientIdentity).mockReturnValue({ platform: "macos", surface: "browser", browserEngine: "blink" });
+    Object.defineProperty(window.navigator, "connection", {
+      configurable: true,
+      value: {
+        effectiveType: "4g",
+        downlink: 10,
+        saveData: false,
+      },
+    });
+
+    const capabilities = await gatherPlaybackCapabilities("live");
+
+    expect(capabilities.networkContext).toEqual(
+      expect.objectContaining({
+        kind: "4g",
+        downlinkKbps: undefined,
+      }),
+    );
   });
 });

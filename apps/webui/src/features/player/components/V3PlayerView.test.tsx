@@ -264,4 +264,34 @@ describe('V3PlayerView', () => {
     // Channel name shown once, as the title (no separate eyebrow when there is no programme).
     expect(screen.getAllByText('ORF 1 HD')).toHaveLength(1);
   });
+
+  it('allows switching picture mode and applies vivid filter class', () => {
+    localStorage.clear();
+    const actions = createActions();
+    const viewState = createViewState({
+      showPlaybackChrome: true,
+    });
+
+    const { container } = render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    const video = container.querySelector('video')!;
+    expect(video.className).not.toContain('pictureModeVivid');
+
+    const button = screen.getByTitle('Bildmodus');
+    fireEvent.click(button);
+
+    const vividOption = screen.getByText('Brillant (TV • OLED-Punch)');
+    fireEvent.click(vividOption);
+
+    expect(video.className).toContain('pictureModeVivid');
+    expect(localStorage.getItem('xg2g.player.pictureMode')).toBe('vivid');
+  });
 });

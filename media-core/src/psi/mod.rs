@@ -41,11 +41,7 @@ use table::{SectionHeader, TABLE_ID_PAT, TABLE_ID_PMT, TableTracker};
 pub use descriptors::ChannelDeclaration;
 pub use pmt::{AudioTrack, VideoCodec};
 
-/// The size of a transport stream packet.
-pub const TS_PACKET_LEN: usize = 188;
-
-/// The byte every transport stream packet starts with.
-pub const SYNC_BYTE: u8 = 0x47;
+pub use crate::transport::{PacketView, SYNC_BYTE, TS_PACKET_LEN};
 
 /// The PID the programme association table is carried on.
 const PAT_PID: u16 = 0x0000;
@@ -161,7 +157,7 @@ pub struct Outcome {
 ///
 /// Not safe for concurrent use, and deliberately not internally synchronised:
 /// the caller already serialises access to the bytes it hands in.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PsiCore {
     /// The programme to follow, or 0 for whichever the PAT offers first.
     target_program_number: u16,
@@ -331,43 +327,41 @@ impl PsiCore {
 
     /// Routes one packet to the table it belongs to, if any.
     fn index_packet(&mut self, packet: &[u8]) {
-        if packet[0] != SYNC_BYTE {
+        // What a packet is gets decided in one place. A packet this layer cannot
+        // read - no sync byte, the reserved adaptation control, a field reaching
+        // past the end - is skipped rather than guessed at, which is what this
+        // code did when it read the header itself.
+        let Ok(view) = PacketView::parse(packet) else {
             return;
-        }
-        let pid = (u16::from(packet[1] & 0x1F) << 8) | u16::from(packet[2]);
-        let pusi = packet[1] & 0x40 != 0;
-        let adaptation = (packet[3] >> 4) & 0x03;
-        // 0x01 is payload only, 0x03 is an adaptation field ahead of a payload.
-        // The other two carry no payload at all.
-        if adaptation != 0x01 && adaptation != 0x03 {
+        };
+        // No payload means nothing for a table to be assembled from, whether the
+        // packet carries an adaptation field only or one that swallowed the
+        // payload it promised.
+        let Some(payload) = view.payload() else {
             return;
-        }
-        let mut payload_at = 4;
-        if adaptation == 0x03 {
-            payload_at = 5 + usize::from(packet[4]);
-            if payload_at >= TS_PACKET_LEN {
-                // The adaptation field claims the rest of the packet, so there
-                // is no payload behind it whatever the flag said.
-                return;
-            }
-        }
-        let payload = &packet[payload_at..];
+        };
 
+        let pid = view.pid();
         if pid == PAT_PID {
-            self.feed_table(true, packet, pusi, payload);
+            self.feed_table(true, &view, payload);
         } else if self.pmt_pid() > 0 && pid == self.pmt_pid() {
-            self.feed_table(false, packet, pusi, payload);
+            self.feed_table(false, &view, payload);
         }
         // Everything else is an elementary stream. This step reads tables only.
     }
 
     /// Assembles one packet's payload and interprets whatever it completed.
-    fn feed_table(&mut self, is_pat: bool, packet: &[u8], pusi: bool, payload: &[u8]) {
+    fn feed_table(&mut self, is_pat: bool, view: &PacketView<'_>, payload: &[u8]) {
         let expected = if is_pat { TABLE_ID_PAT } else { TABLE_ID_PMT };
+        let packet = view.bytes();
+        let cc = view.continuity_counter();
+        let pusi = view.payload_unit_start();
         let completed = if is_pat {
-            self.pat_assembler.accept(packet, pusi, payload, expected)
+            self.pat_assembler
+                .accept(packet, cc, pusi, payload, expected)
         } else {
-            self.pmt_assembler.accept(packet, pusi, payload, expected)
+            self.pmt_assembler
+                .accept(packet, cc, pusi, payload, expected)
         };
         for section in completed {
             self.accept_section(is_pat, &section.bytes);

@@ -239,8 +239,9 @@ func (t *Tracker) snapshot() (basePlaylist, openSegment, bool) {
 // AwaitAndRender blocks per the LL-HLS blocking-reload contract until the
 // playlist contains media sequence number wantMsn (and, when wantPart >= 0,
 // part index wantPart within it), then renders the LL playlist. A negative
-// wantMsn renders immediately. The wait is bounded by deadline.
-func (t *Tracker) AwaitAndRender(ctx context.Context, wantMsn, wantPart int, deadline time.Time) (string, error) {
+// wantMsn renders immediately. When skip is "YES" or "v2", a delta playlist
+// is rendered. The wait is bounded by deadline.
+func (t *Tracker) AwaitAndRender(ctx context.Context, wantMsn, wantPart int, skip string, deadline time.Time) (string, error) {
 	t.mu.Lock()
 	for wantMsn >= 0 && !t.closed {
 		if t.satisfiedLocked(wantMsn, wantPart) {
@@ -260,7 +261,7 @@ func (t *Tracker) AwaitAndRender(ctx context.Context, wantMsn, wantPart int, dea
 	if base.raw == "" {
 		return "", fmt.Errorf("playlist not ready")
 	}
-	return renderLLPlaylist(base, cur, t.partTargetMs), nil
+	return renderLLPlaylist(base, cur, t.partTargetMs, skip), nil
 }
 
 // satisfiedLocked implements the _HLS_msn/_HLS_part readiness rule.

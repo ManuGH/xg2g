@@ -322,6 +322,14 @@ func (r *reader) bytes(n int) ([]byte, bool) {
 	return out, true
 }
 
+func (r *reader) uint8() (uint8, bool) {
+	b, ok := r.bytes(1)
+	if !ok {
+		return 0, false
+	}
+	return b[0], true
+}
+
 func (r *reader) uint16() (uint16, bool) {
 	b, ok := r.bytes(2)
 	if !ok {

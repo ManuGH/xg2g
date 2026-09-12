@@ -502,6 +502,10 @@ func transformArgsForAvsyncPipeMode(args []string, orphan float64, insertTrim bo
 			i++ // skip the option value
 			continue
 		}
+		if insertTrim && !transcodeVideo && tok == "-af" && i+1 < len(args) {
+			i++ // skip preexisting -af value to avoid overriding composite atrim
+			continue
+		}
 		if insertTrim && !transcodeVideo && tok == "-c:a" && i+1 < len(args) && args[i+1] != "copy" {
 			out = append(out, "-af", fmt.Sprintf("aresample=async=1,atrim=start=%.3f", orphan))
 		}

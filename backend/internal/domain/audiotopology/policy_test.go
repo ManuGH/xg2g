@@ -32,13 +32,13 @@ func TestAudioOutputPolicy_51PassthroughForAppleClients(t *testing.T) {
 	require.True(t, plan.IsExecutable)
 	require.Len(t, plan.Tracks, 2)
 
-	// Stereo track -> Transcode to 192k AAC
+	// Stereo track -> Transcode to 320k AAC
 	assert.Equal(t, uint16(6120), plan.Tracks[0].PID)
 	assert.Equal(t, CodecStrategyTranscode, plan.Tracks[0].Strategy)
 	assert.Equal(t, "aac", plan.Tracks[0].EncoderCodec)
 	assert.Equal(t, "mp4a.40.2", plan.Tracks[0].HLSCodec)
 	assert.Equal(t, "2", plan.Tracks[0].HLSChannels)
-	assert.Equal(t, 192, plan.Tracks[0].BitrateKbps)
+	assert.Equal(t, 320, plan.Tracks[0].BitrateKbps)
 	assert.False(t, plan.Tracks[0].IsDefault)
 
 	// 5.1 Surround track -> AC-3 Passthrough

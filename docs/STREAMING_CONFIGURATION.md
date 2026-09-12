@@ -174,10 +174,22 @@ Notes:
   aggressive high-bitrate setting moves AV1 toward the maxrate row.
 - These cover live DVR segments only — recordings are accounted separately.
 
+## Intel QuickSync Hardware VPP & Transcoding Reference
+
+On Intel x86 systems with QuickSync / VAAPI (Gen 12+, Iris Xe, Arc, Core Ultra), xg2g activates a dedicated full-GPU Video Processing Pipeline (VPP) that performs deinterlacing, noise reduction, and edge sharpening entirely on the iGPU with zero CPU penalty:
+
+$$\text{deinterlace\_vaapi} \longrightarrow \mathbf{denoise\_vaapi} \longrightarrow \text{scale\_vaapi} \longrightarrow \mathbf{sharpness\_vaapi} \longrightarrow \text{encoder}$$
+
+- **Verified Reference Setup:** Intel(R) Core(TM) Ultra 9 285HX (Arrow Lake-HX) with Proxmox VE 8 / LXC passthrough.
+- **Denoise (`XG2G_TRANSCODE_DENOISE`):** Default `0.5` (maps to Intel VPP `denoise_vaapi=denoise=10`). Cleans MPEG broadcast compression noise before sharpening.
+- **Sharpening (`XG2G_TRANSCODE_SHARPEN`):** Default `2.0` (maps to Intel VPP `sharpness_vaapi=sharpness=44`). Accentuates edges, logos, scoreboard clocks, and fine textures.
+- **HLS Startup Readiness (`XG2G_HLS_READY_SEGMENTS`):** Default `2` (4 seconds initial playback buffer) ensures uninterrupted playback startup on live streams.
+
 ## Summary Checklist
 
 - [ ] `XG2G_E2_STREAM_PORT` is unset unless a direct fallback override is intentional.
 - [ ] `XG2G_E2_USER` and `XG2G_E2_PASS` are set.
 - [ ] `XG2G_FFMPEG_BIN` points to a valid binary (or `ffmpeg` is in PATH).
+- [ ] Intel QuickSync: `/dev/dri/renderD128` is mounted and `XG2G_HLS_READY_SEGMENTS=2` is set.
 
 Legacy receiver env aliases such as `XG2G_STREAM_PORT` now fail startup and should be removed instead of carried forward.

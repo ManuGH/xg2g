@@ -7,6 +7,7 @@ package ring
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -37,6 +38,22 @@ var ErrInvalidPacketSize = mediafacts.ErrInvalidPacketSize
 // was given. The chunk is refused rather than committed, because bytes the ring
 // cannot explain are worse than bytes it does not have.
 var ErrCoreIncomplete = errors.New("media facts core did not interpret the whole chunk")
+
+// ErrCoreIncompleteResult means the core answered about less than the ring
+// commits.
+//
+// Separate from ErrCoreIncomplete, which is about bytes: that one is a core that
+// read part of a chunk, this one is a core that read part of a *stream*. A core
+// answering only about PSI gives real PAT and PMT facts and leaves the rest of
+// Facts at its zero value - and every one of those zero values is also a
+// legitimate answer. No entry point seen, nothing scrambled, no parameter sets:
+// a ring committing that would publish an absence as an observation.
+//
+// This is the gate that keeps a differential from becoming a cutover. During the
+// media-core migration a second core is asked the same chunks as the first, and
+// it answers about PSI alone; the ring must be structurally unable to use it,
+// not merely not configured to.
+var ErrCoreIncompleteResult = errors.New("media facts core answered about less than the ring commits")
 
 // ErrCoreUnusable reports a core that has already failed once. A core that
 // errored or came back short may have consumed bytes the ring then refused, so
@@ -174,6 +191,13 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 	res, err := r.core.SetTargetProgram(callCtx, progNum)
 	if err != nil {
 		return r.retireCore(ctx, err)
+	}
+
+	// Before anything else is read from it. What the ring publishes is the whole
+	// of Facts, so a core that answers about part of the stream is refused here
+	// rather than having the covered part taken and the rest read as zeroes.
+	if !res.Covers(mediafacts.ParseCoverageComplete) {
+		return r.retireCore(ctx, fmt.Errorf("%w: coverage %s", ErrCoreIncompleteResult, res.Coverage))
 	}
 
 	// Same reasoning as in Push: a core that answered after the call stopped being
@@ -341,6 +365,13 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	}
 	if err := ingestCtx.Err(); err != nil {
 		return 0, r.retireCore(ctx, err)
+	}
+	// A core that answers about part of the stream is refused before its answer
+	// is used for anything. See ErrCoreIncompleteResult: the fields it did not
+	// fill are not empty, they are absent, and the ring cannot tell those apart
+	// once it has committed them.
+	if !res.Covers(mediafacts.ParseCoverageComplete) {
+		return 0, r.retireCore(ctx, fmt.Errorf("%w: coverage %s", ErrCoreIncompleteResult, res.Coverage))
 	}
 	// A core that interpreted less than it was given leaves the ring with bytes it
 	// has no meaning for. Committing them anyway is exactly the failure this

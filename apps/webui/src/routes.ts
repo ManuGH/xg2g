@@ -32,7 +32,8 @@ export type SettingsSection =
   | 'android-tv'
   | 'scan'
   | 'streaming'
-  | 'advanced';
+  | 'advanced'
+  | 'about';
 export type SettingsTool = 'files' | 'logs';
 
 function buildRouteWithQuery(path: string, params: Record<string, string | undefined>): string {

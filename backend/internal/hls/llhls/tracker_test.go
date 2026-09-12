@@ -51,7 +51,7 @@ func TestTrackerEndToEnd(t *testing.T) {
 
 	// Non-blocking render must eventually show part 0 of msn 1.
 	waitFor(t, 3*time.Second, func() bool {
-		out, err := tr.AwaitAndRender(ctx, -1, -1, time.Now())
+		out, err := tr.AwaitAndRender(ctx, -1, -1, "", time.Now())
 		return err == nil && strings.Contains(out, `URI="seg_000001.m4s"`) && strings.Contains(out, "BYTERANGE=")
 	})
 
@@ -72,7 +72,7 @@ func TestTrackerEndToEnd(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		out, err := tr.AwaitAndRender(ctx, 1, 1, time.Now().Add(5*time.Second))
+		out, err := tr.AwaitAndRender(ctx, 1, 1, "", time.Now().Add(5*time.Second))
 		done <- result{out, err}
 	}()
 

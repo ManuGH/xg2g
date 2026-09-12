@@ -1147,3 +1147,29 @@ v3.10.0 Mobile WebUI, Transcode Tuning & Startup Orchestration:
 - High-Fidelity Video Tuning: Elevated AV1 maxrate ceiling to 32Mbps (64Mbps burst buffer) and tuned unsharp filter (2.0) with QVBR 70 for reference-grade LAN streaming. Default audio bitrate raised to 320k.
 - Startup & Ringbuffer Engine: Integrated DVR ringbuffer engine, SnapshotReservation API, and budget-aware preflight startup orchestration with deadline clamping.
 - Dead-CSS Governance Gate: Added strict AST-level gate:no-dead-css:player into standard linting.
+
+
+### Behavioral Changes (v3.11.0)
+v3.11.0 Modern iOS Home Hub, Robust Media Core, & Storage Hardening:
+
+- iOS "Für dich" Home Hub: Adds modern landing surface with Spotlight Hero, Prime Time (20:15) highlights, Favoriten and Zuletzt geschaut rails, swipe-down MiniPlayer gesture, and Universal Smart Search.
+- Bitstream TS & Engine Selection: Explicit indicator pill and switcher between 100% Native Bitstream TS (Metal 50fps deinterlacing) and HLS DVR timeshift handover.
+- EPG Parity & SRef Mapping: Full 72-hour horizon pre-caching in iOS client and canonical OpenWebIF Service Reference backfill for zero-gap guide navigation.
+- Media Core & Rust PSI Parser: Hardened DVB PSI parsing over the RemoteCore v3 boundary with robust Enhanced AC-3 acceptance and corrupt packet recovery.
+- CAM / Softcam Descramble Grace Window: Introduces a 2.5s descramble grace window in PrimedAttachWithTimeout allowing CAM/OSCam ECM round-trips during cold channel zaps without premature R_UPSTREAM_SCRAMBLED termination.
+- Storage Protection: Dedicated HLS/DVR scratch mount validation to prevent silent writes to root filesystem; deterministic CAS lease sweeper for ended sessions.
+- WebUI Modular Settings: Decomposed monolithic settings into scoped subsections and streamlined device pairing.
+- Zero-Vulnerability Baseline: Patched all active Dependabot security CVEs and stabilized deep CI suites.
+
+
+### Behavioral Changes (v3.12.0)
+v3.12.0 Hardware VPP Video Enhancement, Cinema AV1 Profile, Picture Modes & Resilient Media Core:
+
+- Intel VPP Hardware Pipeline ("Clean, then Sharpen"): Accelerates live DVB transcoding via full-GPU VPP filter chain (motion-adaptive deinterlace -> denoise_vaapi -> scale_vaapi=format=p010 -> sharpness_vaapi -> av1_vaapi) on Intel QuickSync / Xe-LPG with zero CPU penalty.
+- WebUI Picture Mode Toggle: Introduces live picture presets (Natural / Referenz, Brillant / Vivid TV • OLED-Punch, and Kino / Warm • D65) directly in the WebUI player with hardware-accelerated color grading.
+- Cinema (Referenz) AV1 Profile: Unlocks an ultra-high-fidelity AV1 profile calibrated to ICQ Q10 with TU1 quality preset (-compression_level 1) up to 35 Mbps alongside modernized player quality tiers.
+- A/V Timeline Synchronization & Stutter Prevention: Aligns EXT-X-START playlist directives across primary video and audio renditions, eliminating Hls.js liveSync buffer stalls at second 6.
+- WebUI Buffer Pacing: Locks playback rate to 1.0 during startup buffer accumulation, eliminating perceptual slow-motion artifacts during fast-motion content (tennis ball / sports).
+- Resilient Pipe Ingest & Audio Resampling: Protects transcoder against cardserver CW timeouts and packet loss with pipe err_detect ignore_err and stream-specific aresample synchronization.
+- Chrome Privacy Clamp Defense: Detects and bypasses synthetic 10 Mbps navigator.connection.downlink throttling in Chromium desktop browsers.
+- Media Core & PES Parsing Precision: Enforces strict stream ID optional header validation and boundary containment in the Rust media core for transport stream parsing.

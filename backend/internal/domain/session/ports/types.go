@@ -148,8 +148,9 @@ type ProfileSpec struct {
 	BFrames           int    `json:"bframes,omitempty"`
 	AudioBitrateK     int    `json:"audioBitrateK,omitempty"`
 	Preset            string `json:"preset,omitempty"`
-	Container         string `json:"container,omitempty"` // "ts" (default) or "fmp4"
-	EnableABR         bool   `json:"enableAbr,omitempty"` // Opt-in 3-tier/2-tier HLS Adaptive Bitrate transcoding
+	Container         string `json:"container,omitempty"`  // "ts" (default) or "fmp4"
+	EnableABR         bool   `json:"enableAbr,omitempty"`  // Opt-in 3-tier/2-tier HLS Adaptive Bitrate transcoding
+	HDRToneMap        bool   `json:"hdrToneMap,omitempty"` // Hardware tone mapping from HDR/HLG (BT.2020) to SDR (BT.709)
 }
 
 func (p ProfileSpec) TranscodesAudio() bool {

@@ -107,11 +107,19 @@
   object-fit: contain;
   object-position: center center;
   background: var(--bg-video-stage);
-  transition: opacity 220ms ease;
+  transition: opacity 220ms ease, filter 200ms ease;
 }
 
 .videoElementHidden {
   opacity: 0.01;
+}
+
+.pictureModeVivid {
+  filter: contrast(1.06) saturate(1.14) brightness(1.02);
+}
+
+.pictureModeCinema {
+  filter: contrast(1.04) saturate(1.06) sepia(0.06);
 }
 
 .nativeBufferingMask {
