@@ -504,7 +504,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 		policySource := raw
 		if sessionDir != "" {
 			primaryVideoPath := filepath.Join(sessionDir, "stream_0.m3u8")
-			if vRaw, err := os.ReadFile(primaryVideoPath); err == nil && len(vRaw) > 0 {
+			if vRaw, err := os.ReadFile(primaryVideoPath); err == nil && len(vRaw) > 0 { // #nosec G304 -- sessionDir-confined playlist path
 				policySource = vRaw
 			}
 		}
