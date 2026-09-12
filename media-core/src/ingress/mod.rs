@@ -114,11 +114,11 @@ enum Position {
     /// A continuation payload is elementary stream as far as anything here can
     /// tell.
     ///
-    /// This is the ordinary state and also the honest answer after a payload
-    /// unit this layer could not read: the bytes after a PES header it did not
-    /// recognise are still that packet's payload, and a packet's payload on an
-    /// elementary stream PID is elementary stream. Refusing them would be
-    /// stricter without being truer.
+    /// This is the ordinary state, and it is also where a stream begins. A
+    /// capture that starts in the middle of a PES packet carries audio from its
+    /// first packet, and nothing about it contradicts the table that named the
+    /// stream. Having seen no payload unit start is not the same as having read
+    /// one and refused it.
     InElementaryStream,
 
     /// An optional PES header has not finished, and this many of its bytes are
@@ -130,10 +130,13 @@ enum Position {
 
     /// Nothing may be fed until a PES packet starts.
     ///
-    /// Entered only from [`Position::InHeader`], and only when the bytes that
-    /// would have completed that header cannot be accounted for: the transport
-    /// lost a packet, or the ones carrying it were scrambled. Feeding what
-    /// arrives next would mean feeding from an offset nothing established.
+    /// Entered two ways, and for one reason. From [`Position::InHeader`], when
+    /// the bytes that would have completed that header cannot be accounted for:
+    /// the transport lost a packet, or the ones carrying it were scrambled.
+    /// And from a payload unit start that is not an audio PES packet at all.
+    ///
+    /// In both cases feeding what arrives next would mean feeding from an
+    /// offset nothing established.
     AwaitingStart,
 }
 
@@ -210,11 +213,17 @@ impl Follower {
             // A payload unit that is not an audio PES packet: no start code, a
             // stream id that is not audio, too few bytes to say, or a stream id
             // that carries no optional header at all - none of which is an
-            // audio stream id. Nothing is fed from this payload, because where
-            // the elementary stream would begin in it is exactly what could not
-            // be read. What follows is still this PID's payload.
+            // audio stream id.
+            //
+            // Nothing is fed from this payload, because where the elementary
+            // stream would begin in it is exactly what could not be read. And
+            // nothing is fed from what follows either: a payload unit start is
+            // the start of a PES packet (13818-1 2.4.3.6), so the payloads until
+            // the next one are the body of the packet just refused. Reading them
+            // as audio would be reading from an offset nothing established - and
+            // a frame parser can find a layout in bytes that never carried one.
             _ => {
-                self.position = Position::InElementaryStream;
+                self.position = Position::AwaitingStart;
                 None
             }
         }
