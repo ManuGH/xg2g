@@ -74,9 +74,6 @@ export function useForegroundRecovery({
   useLayoutEffect(() => {
     setStatusRef.current = setStatus;
 
-    controller.setForegroundEligibility(isEligible);
-    controller.setForegroundTarget(target);
-    controller.setUserPaused(userPauseIntentRef.current);
     const currentVideo = videoRef.current;
     if (currentVideo !== committedVideoRef.current) {
       committedVideoRef.current = currentVideo;
@@ -119,11 +116,6 @@ export function useForegroundRecovery({
         controller.setForegroundMediaBinding(binding);
       }
     }
-
-    controller.reportBrowserConnectivity({
-      online: isOnline ?? true,
-      hasActiveSession: hasActiveSession ?? false,
-    });
 
     controller.endCommitPhase();
   });

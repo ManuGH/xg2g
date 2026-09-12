@@ -14,7 +14,6 @@ import type { PlaybackFailure, PlaybackRetryTarget } from './playbackTypes';
 describe('PlaybackNetworkWatchdogRuntime', () => {
   let status: PlayerStatus = 'idle';
   let failure: PlaybackFailure | null = null;
-  let epoch = 1;
   let disposed = false;
   let retryInFlight = false;
   let targetContext: PlaybackRetryTarget | null = { kind: 'live', serviceRef: '1:0:1:TEST' };
@@ -46,7 +45,6 @@ describe('PlaybackNetworkWatchdogRuntime', () => {
     return createPlaybackNetworkWatchdogRuntime({
       getDomainStatus: () => status,
       getFailure: () => failure,
-      getPlaybackEpoch: () => epoch,
       isDisposed: () => disposed,
       isRetryInFlight: () => retryInFlight,
       onRecover: (target) => {
@@ -61,7 +59,6 @@ describe('PlaybackNetworkWatchdogRuntime', () => {
     vi.useFakeTimers();
     status = 'idle';
     failure = null;
-    epoch = 1;
     disposed = false;
     retryInFlight = false;
     targetContext = { kind: 'live', serviceRef: '1:0:1:TEST' };

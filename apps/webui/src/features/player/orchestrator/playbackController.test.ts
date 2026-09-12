@@ -2643,6 +2643,63 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
         controller.dispose();
       }
     });
+
+    it('startLive with a fresh epoch leaves its attempt registered and un-cancelled after beginPlaybackAttempt', async () => {
+      const pendingStreamInfo = defer<StreamInfoResult>();
+      const transport = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(() => pendingStreamInfo.promise),
+      });
+      const controller = createPlaybackController({
+        createInitialState: createMockDomainState,
+        transport,
+      });
+      try {
+        const freshEpoch = controller.allocatePlaybackEpoch();
+        const startupPromise = controller.startLive({
+          serviceRef: 'channel-test-f4',
+          epoch: freshEpoch,
+        });
+
+        // The attempt must be registered and not immediately cancelled
+        expect(controller.getInFlightStartsCount()).toBe(1);
+        expect(controller.getState().playbackMode).toBe('LIVE');
+        expect(controller.getState().status).toBe('starting');
+        expect(controller.getState().hasSessionIntent).toBe(true);
+
+        // A cancelled attempt would have settled immediately with { status: 'cancelled' };
+        // verify it is still in flight
+        let settled = false;
+        void startupPromise.then(
+          () => {
+            settled = true;
+          },
+          () => {
+            settled = true;
+          },
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(settled).toBe(false);
+        expect(controller.getInFlightStartsCount()).toBe(1);
+
+        // Now resolve and verify it reaches ready cleanly
+        pendingStreamInfo.resolve({
+          status: 200,
+          data: {
+            mode: 'direct_stream',
+            playbackDecisionToken: 'tok-f4',
+            decision: { mode: 'direct_stream', playbackDecisionToken: 'tok-f4' },
+          },
+          headers: new Headers(),
+        });
+        const result = await startupPromise;
+        expect(result).toMatchObject({
+          status: 'ready',
+          sessionId: 'session-default-1',
+        });
+      } finally {
+        controller.dispose();
+      }
+    });
   });
 });
 
