@@ -501,7 +501,14 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 		// All media playlists (video & audio renditions) must receive the identical
 		// start tag to maintain strict A/V timeline synchronization. Master playlists
 		// are omitted so they do not introduce conflicting timeline offsets.
-		policy := deriveHLSStartupPolicy(rec, raw)
+		policySource := raw
+		if sessionDir != "" {
+			primaryVideoPath := filepath.Join(sessionDir, "stream_0.m3u8")
+			if vRaw, err := os.ReadFile(primaryVideoPath); err == nil && len(vRaw) > 0 {
+				policySource = vRaw
+			}
+		}
+		policy := deriveHLSStartupPolicy(rec, policySource)
 		startupPolicy = &policy
 		if startupPolicy.StartupHeadroomSec > 0 {
 			insertStartTag = fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=NO", startupPolicy.StartupHeadroomSec)

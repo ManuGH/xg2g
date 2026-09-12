@@ -31,11 +31,18 @@ func TestAV1QualityCalibration(t *testing.T) {
 		assert.Equal(t, 18, q)
 	})
 
-	t.Run("Intel AV1 VAAPI Compatible resolves ICQ Q22", func(t *testing.T) {
+	t.Run("Intel AV1 VAAPI Compatible does not activate unconstrained ICQ", func(t *testing.T) {
 		mode, q, ok := AV1QualityCalibration(GPUVendorIntel, "av1_vaapi", playbackprofile.IntentCompatible)
-		assert.True(t, ok)
-		assert.Equal(t, RateControlICQ, mode)
-		assert.Equal(t, 22, q)
+		assert.False(t, ok)
+		assert.Equal(t, "", mode)
+		assert.Equal(t, 0, q)
+	})
+
+	t.Run("Intel AV1 VAAPI IntentUnknown does not activate unconstrained ICQ", func(t *testing.T) {
+		mode, q, ok := AV1QualityCalibration(GPUVendorIntel, "av1_vaapi", playbackprofile.IntentUnknown)
+		assert.False(t, ok)
+		assert.Equal(t, "", mode)
+		assert.Equal(t, 0, q)
 	})
 
 	t.Run("AMD vendor never inherits Intel ICQ values", func(t *testing.T) {

@@ -4,6 +4,7 @@ import {
   buildPlaybackProfileHeaders,
   clearNetworkStarvationHold,
   createAutomaticProfileMemory,
+  gatherPlaybackClientContext,
   normalizePlaybackProfileSelection,
   noteNetworkStarvation,
   resolvePlaybackProfileForPreflight,
@@ -330,5 +331,36 @@ describe('resolvePlaybackRequestProfile memory', () => {
     clearNetworkStarvationHold(memory);
     expect(resolvePlaybackRequestProfile(mobile(120), buildCapabilities(), 'live', memory, 2_000))
       .toBe('quality');
+  });
+
+  it('omits synthetic 10 Mbps browser privacy downlink clamp in gatherPlaybackClientContext', () => {
+    const originalNavigator = globalThis.navigator;
+    try {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: {
+          onLine: true,
+          userAgent: 'Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36',
+          platform: 'MacIntel',
+          connection: {
+            effectiveType: '4g',
+            downlink: 10,
+            rtt: 50,
+            saveData: false,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      const context = gatherPlaybackClientContext();
+      expect(context.network?.downlinkMbps).toBeUndefined();
+      expect(context.network?.effectiveType).toBe('4g');
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });

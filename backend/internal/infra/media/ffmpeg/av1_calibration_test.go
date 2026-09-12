@@ -60,7 +60,7 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		assert.NotContains(t, args, "-bufsize")
 	})
 
-	t.Run("Intel + IntentCompatible emits -rc_mode ICQ -global_quality 22 without bitrate caps", func(t *testing.T) {
+	t.Run("Intel + IntentCompatible falls through to bitrate-capped branch", func(t *testing.T) {
 		prof := ports.ProfileSpec{
 			Name:          profiles.ProfileAV1HW,
 			Intent:        playbackprofile.IntentCompatible,
@@ -69,13 +69,9 @@ func TestAV1IntentCalibrationAndNonLeakage(t *testing.T) {
 		cfg := AdapterConfig{GPUVendor: string(hardware.GPUVendorIntel)}
 		args := appendVaapiRateControlArgs(nil, prof, "av1", cfg)
 
-		require.Contains(t, args, "-rc_mode")
-		require.Contains(t, args, "ICQ")
-		require.Contains(t, args, "-global_quality")
-		require.Contains(t, args, "22")
-		assert.NotContains(t, args, "-b:v")
-		assert.NotContains(t, args, "-maxrate")
-		assert.NotContains(t, args, "-bufsize")
+		require.Contains(t, args, "-maxrate")
+		require.Contains(t, args, "32000k")
+		assert.NotContains(t, args, "ICQ")
 	})
 
 	t.Run("AMD vendor NEVER emits Intel ICQ Q22 or Q24", func(t *testing.T) {

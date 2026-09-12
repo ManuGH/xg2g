@@ -36,8 +36,6 @@ func AV1QualityCalibration(
 		return RateControlICQ, 10, true
 	case playbackprofile.IntentQuality:
 		return RateControlICQ, 18, true
-	case playbackprofile.IntentCompatible, playbackprofile.IntentUnknown:
-		return RateControlICQ, 22, true
 	default:
 		return "", 0, false
 	}

@@ -159,8 +159,8 @@ function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined
   const isOnline = navigator.onLine !== false;
   
   const isSyntheticClamp = connection?.effectiveType === '4g' && connection?.downlink === 10;
-  const downlinkMbps = !isSyntheticClamp && connection && typeof connection.downlink === 'number'
-    ? connection.downlink
+  const downlinkMbps = connection && typeof connection.downlink === 'number'
+    ? (isSyntheticClamp ? undefined : connection.downlink)
     : estimateBandwidthFromResources();
 
   if (!connection) {

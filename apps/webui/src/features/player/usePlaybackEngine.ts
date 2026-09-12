@@ -904,7 +904,8 @@ export function usePlaybackEngine({
         if (
           reason !== 'vod' &&
           gateVideo &&
-          bufferedAheadSeconds() < HLS_STARTUP_POLICY.slowBuildTargetSeconds
+          bufferedAheadSeconds() < HLS_STARTUP_POLICY.slowBuildTargetSeconds &&
+          HLS_STARTUP_POLICY.slowBuildPlaybackRate < 1
         ) {
           slowBuildActive = true;
           gateVideo.playbackRate = HLS_STARTUP_POLICY.slowBuildPlaybackRate;
