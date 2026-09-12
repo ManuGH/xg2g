@@ -351,12 +351,10 @@ export function usePlaybackOrchestrator(
 
   const mounted = useRef<boolean>(false);
   const {
-    vodRetryRef,
     vodFetchRef,
     nativeVideoRevealTimerRef,
     nativeVideoVeilRevealTimerRef,
     nativeVideoVeilClearTimerRef,
-    clearVodRetry,
     clearVodFetch,
     clearNativeVideoVeilTimers,
     clearNativeVideoRevealTimer,
@@ -900,11 +898,10 @@ export function usePlaybackOrchestrator(
 
   const clearPlaybackState = useCallback(() => {
     clearPlaybackSelection();
-    clearVodRetry();
     clearVodFetch();
     clearSessionLeaseState();
     resetChromeState();
-  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, clearVodRetry, resetChromeState]);
+  }, [clearPlaybackSelection, clearSessionLeaseState, clearVodFetch, resetChromeState]);
 
   const cleanupPlaybackResources = useCallback(() => {
     const activeHls = hlsRef.current;
@@ -917,7 +914,6 @@ export function usePlaybackOrchestrator(
       activeVideo.src = '';
     }
 
-    clearVodRetry();
     clearVodFetch();
     clearPlaybackSelection();
     if (hasNativePlayback) {
@@ -926,7 +922,6 @@ export function usePlaybackOrchestrator(
   }, [
     clearPlaybackSelection,
     clearVodFetch,
-    clearVodRetry,
     hlsRef,
     isNativePlaybackHost,
     nativePlaybackState,
@@ -953,7 +948,6 @@ export function usePlaybackOrchestrator(
     const hadActivePlayback = hasActivePlayback();
 
     clearPlaybackSelection();
-    clearVodRetry();
     clearVodFetch();
     if (hadNativePlayback) {
       stopNativePlayback();
@@ -968,7 +962,6 @@ export function usePlaybackOrchestrator(
     clearPlaybackSelection,
     clearSessionLeaseState,
     clearVodFetch,
-    clearVodRetry,
     hasActivePlayback,
     isNativePlaybackHost,
     nativePlaybackState,
@@ -1104,7 +1097,14 @@ export function usePlaybackOrchestrator(
                   message: `${t('player.preparing')} (${seconds}s)`,
                   source: 'backend',
                 }]);
-                await sleep(seconds * 1000);
+                const outcome = await controller.scheduleStartContinuation({
+                  epoch: playbackEpoch,
+                  delayMs: seconds * 1000,
+                  reason: 'recording_retry_after',
+                });
+                if (outcome === 'cancelled') {
+                  return;
+                }
                 continue;
               } else {
                 throw new Error('503 Service Unavailable (No Retry-After)');
@@ -1217,13 +1217,14 @@ export function usePlaybackOrchestrator(
       }
 
       if (mode === 'native_hls' || mode === 'hlsjs' || mode === 'transcode') {
-        const controller = new AbortController();
-        abortController = controller;
-        vodFetchRef.current = controller;
+        const fetchController = new AbortController();
+        abortController = fetchController;
+        vodFetchRef.current = fetchController;
+        let continuationDelayMs: number | null = null;
         try {
           const res = await fetch(streamUrl, {
             method: 'HEAD',
-            signal: controller.signal
+            signal: fetchController.signal,
           });
 
           if (res.status === 404) {
@@ -1233,27 +1234,37 @@ export function usePlaybackOrchestrator(
           if (res.status === 503) {
             const retryAfter = res.headers.get('Retry-After');
             if (retryAfter) {
-              const delay = parseInt(retryAfter, 10) * 1000;
+              continuationDelayMs = parseInt(retryAfter, 10) * 1000;
               setStatus('building');
-              vodRetryRef.current = window.setTimeout(() => {
-                if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
-                  startRecordingPlayback(id, profileForAttempt, startOffsetMs);
-                }
-              }, delay);
-              return;
+            } else {
+              throw new Error('503 Service Unavailable (No Retry-After)');
             }
-            throw new Error('503 Service Unavailable (No Retry-After)');
+          } else {
+            if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+            setStatus('buffering');
+            const engine: 'native' | 'hlsjs' = mode === 'native_hls'
+              ? 'native'
+              : resolvePreferredHlsEngineForCapabilities(requestCaps);
+            playHls(streamUrl, engine);
+            setActiveHlsEngine(engine);
           }
-
-          if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-          setStatus('buffering');
-          const engine: 'native' | 'hlsjs' = mode === 'native_hls'
-            ? 'native'
-            : resolvePreferredHlsEngineForCapabilities(requestCaps);
-          playHls(streamUrl, engine);
-          setActiveHlsEngine(engine);
         } finally {
-          if (vodFetchRef.current === controller) vodFetchRef.current = null;
+          if (vodFetchRef.current === fetchController) vodFetchRef.current = null;
+        }
+
+        if (continuationDelayMs !== null) {
+          const outcome = await controller.scheduleStartContinuation({
+            epoch: playbackEpoch,
+            delayMs: continuationDelayMs,
+            reason: 'recording_retry_after',
+          });
+          if (outcome === 'cancelled') {
+            return;
+          }
+          if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
+            void startRecordingPlayback(id, profileForAttempt, startOffsetMs);
+          }
+          return;
         }
       }
     } catch (err: unknown) {
@@ -1272,6 +1283,7 @@ export function usePlaybackOrchestrator(
     apiBase,
     beginPlaybackAttempt,
     clearPlayerError,
+    controller,
     dispatchPlayback,
     ensureSessionCookie,
     explicitProfile,
@@ -1295,10 +1307,8 @@ export function usePlaybackOrchestrator(
     setStatus,
     setTraceId,
     setVodStreamMode,
-    sleep,
     t,
     vodFetchRef,
-    vodRetryRef,
   ]);
 
   const startStream = useCallback(async (

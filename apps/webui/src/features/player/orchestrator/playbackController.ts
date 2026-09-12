@@ -48,6 +48,20 @@ export type { PlaybackRetryTarget, PlaybackRetryResult } from './playbackTypes';
 export type { ForegroundMediaBinding, ResumeTrigger } from './playbackForegroundRuntime';
 export type { PlaybackNetworkWatchdogState } from './playbackNetworkWatchdogRuntime';
 
+export type StartContinuationOutcome = 'proceed' | 'cancelled';
+
+export interface ScheduleStartContinuationParams {
+  epoch: number;
+  delayMs: number;
+  reason: 'recording_retry_after';
+}
+
+export interface PendingStartContinuationInfo {
+  epoch: number;
+  delayMs: number;
+  reason: string;
+}
+
 export function isOkStatus(status: number): boolean {
   return status >= 200 && status < 300;
 }
@@ -143,6 +157,12 @@ export interface PlaybackController {
   ): void;
   cancelAutoFallback(epoch?: number): void;
   hasScheduledAutoFallback(epoch?: number): boolean;
+
+  scheduleStartContinuation(
+    params: ScheduleStartContinuationParams,
+  ): Promise<StartContinuationOutcome>;
+  cancelStartContinuation(epoch?: number): void;
+  getPendingStartContinuation(): PendingStartContinuationInfo | null;
 
   retry(target?: PlaybackRetryTarget): Promise<PlaybackRetryResult>;
   isRetryInFlight(): boolean;
@@ -338,6 +358,124 @@ export function createPlaybackController(
       return activeFallbacks.has(epoch);
     }
     return activeFallbacks.size > 0;
+  }
+
+  interface ActiveStartContinuationEntry {
+    epoch: number;
+    delayMs: number;
+    reason: 'recording_retry_after';
+    timer: ReturnType<typeof setTimeout>;
+    resolve: (outcome: StartContinuationOutcome) => void;
+  }
+  const activeStartContinuations = new Map<number, ActiveStartContinuationEntry>();
+
+  function cancelStartContinuation(epoch?: number): void {
+    if (epoch !== undefined) {
+      const continuation = activeStartContinuations.get(epoch);
+      if (continuation) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    } else {
+      for (const continuation of activeStartContinuations.values()) {
+        clearTimeout(continuation.timer);
+        continuation.resolve('cancelled');
+      }
+      activeStartContinuations.clear();
+    }
+  }
+
+  function cancelStartContinuationsBefore(targetEpoch: number): void {
+    for (const [epoch, continuation] of activeStartContinuations.entries()) {
+      if (epoch < targetEpoch) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    }
+  }
+
+  function cancelStartContinuationsUpTo(targetEpoch?: number): void {
+    if (targetEpoch === undefined) {
+      cancelStartContinuation();
+      return;
+    }
+    for (const [epoch, continuation] of activeStartContinuations.entries()) {
+      if (epoch <= targetEpoch) {
+        clearTimeout(continuation.timer);
+        activeStartContinuations.delete(epoch);
+        continuation.resolve('cancelled');
+      }
+    }
+  }
+
+  function getPendingStartContinuation(): PendingStartContinuationInfo | null {
+    if (activeStartContinuations.size === 0) {
+      return null;
+    }
+    if (activeStartContinuations.size > 1) {
+      throw new Error(
+        `Invariant violation: multiple active start continuations (${activeStartContinuations.size})`,
+      );
+    }
+    const entry = activeStartContinuations.values().next().value;
+    if (!entry) {
+      return null;
+    }
+    return {
+      epoch: entry.epoch,
+      delayMs: entry.delayMs,
+      reason: entry.reason,
+    };
+  }
+
+  function scheduleStartContinuation(
+    params: ScheduleStartContinuationParams,
+  ): Promise<StartContinuationOutcome> {
+    if (
+      isDisposed ||
+      isStalePlaybackEpoch(params.epoch) ||
+      stoppedEpochs.has(params.epoch) ||
+      terminalFencedEpochs.has(params.epoch)
+    ) {
+      return Promise.resolve('cancelled');
+    }
+
+    // Cancel any existing continuation for this epoch (replaces it synchronously)
+    const existing = activeStartContinuations.get(params.epoch);
+    if (existing) {
+      clearTimeout(existing.timer);
+      activeStartContinuations.delete(params.epoch);
+      existing.resolve('cancelled');
+    }
+
+    // Enforce C1 invariant: cancel any older continuations
+    cancelStartContinuationsBefore(params.epoch);
+
+    return new Promise<StartContinuationOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        activeStartContinuations.delete(params.epoch);
+        if (
+          isDisposed ||
+          isStalePlaybackEpoch(params.epoch) ||
+          stoppedEpochs.has(params.epoch) ||
+          terminalFencedEpochs.has(params.epoch)
+        ) {
+          resolve('cancelled');
+          return;
+        }
+        resolve('proceed');
+      }, params.delayMs);
+
+      activeStartContinuations.set(params.epoch, {
+        epoch: params.epoch,
+        delayMs: params.delayMs,
+        reason: params.reason,
+        timer,
+        resolve,
+      });
+    });
   }
 
   function scheduleAutoFallback(
@@ -593,6 +731,8 @@ export function createPlaybackController(
           stopHeartbeatSupervision();
         }
 
+        cancelStartContinuationsUpTo(typeof event.epoch === 'number' ? event.epoch : undefined);
+
         if (activeRetry && (event.epoch === undefined || event.epoch >= activeRetry.initialEpoch)) {
           cancelActiveRetry('terminal_auth');
         }
@@ -778,6 +918,7 @@ export function createPlaybackController(
     playbackEpoch += 1;
     sessionEpoch = 0;
     cancelAutoFallback();
+    cancelStartContinuationsBefore(playbackEpoch);
     options.onAttemptStarted?.(playbackEpoch);
 
     // Invalidate any in-flight live start immediately and idempotently
@@ -811,9 +952,15 @@ export function createPlaybackController(
     }
 
     // Fence: a stale attempt must never mutate state, retire a newer session, or cancel an active retry!
-    if (isStalePlaybackEpoch(epoch)) {
+    if (epoch < playbackEpoch || stoppedEpochs.has(epoch) || terminalFencedEpochs.has(epoch)) {
       return;
     }
+
+    if (epoch > playbackEpoch) {
+      playbackEpoch = epoch;
+      sessionEpoch = 0;
+    }
+    cancelStartContinuationsBefore(playbackEpoch);
 
     if (activeRetry) {
       if (activeRetry.phase === 'restarting') {
@@ -870,6 +1017,7 @@ export function createPlaybackController(
     terminalFencedEpochs.add(epoch);
     stoppedEpochs.add(epoch);
     cancelAutoFallback(epoch);
+    cancelStartContinuation(epoch);
     runtime.dispatch({
       type: 'normative.playback.stopped',
       epoch,
@@ -1534,11 +1682,13 @@ export function createPlaybackController(
     // 0. Synchronously stop heartbeat supervision and auto-fallback timers
     stopHeartbeatSupervision();
     cancelAutoFallback();
+    cancelStartContinuation();
     foregroundRuntime.onPlaybackStopped(playbackEpoch);
 
     // 1. Synchronously advance playbackEpoch to invalidate pending preparation
     playbackEpoch += 1;
     sessionEpoch = 0;
+    cancelStartContinuationsBefore(playbackEpoch);
     const stopEpoch = playbackEpoch;
     terminalFencedEpochs.add(stopEpoch);
     stoppedEpochs.add(stopEpoch);
@@ -1699,6 +1849,7 @@ export function createPlaybackController(
     // Cancel existing active retry if target changed
     cancelActiveRetry('superseded');
     foregroundRuntime.onRetryInitiated();
+    cancelStartContinuation();
 
     let resolvePublic!: (result: PlaybackRetryResult) => void;
     const publicPromise = new Promise<PlaybackRetryResult>((resolve) => {
@@ -1804,6 +1955,7 @@ export function createPlaybackController(
     cancelActiveRetry('disposed');
     stopHeartbeatSupervision();
     cancelAutoFallback();
+    cancelStartContinuation();
     foregroundRuntime.dispose();
     watchdogRuntime.dispose();
     terminalFencedEpochs.add(playbackEpoch);
@@ -1811,6 +1963,7 @@ export function createPlaybackController(
     playbackEpoch += 1;
     sessionEpoch = 0;
     stoppedEpochs.add(playbackEpoch);
+    cancelStartContinuationsBefore(playbackEpoch);
     if (currentAttempt && !currentAttempt.settled) {
       currentAttempt.ineligibleForAdoption = true;
       cancelInFlightAttempt(currentAttempt, 'user_stop');
@@ -1854,6 +2007,10 @@ export function createPlaybackController(
     scheduleAutoFallback,
     cancelAutoFallback,
     hasScheduledAutoFallback,
+
+    scheduleStartContinuation,
+    cancelStartContinuation,
+    getPendingStartContinuation,
 
     retry,
     isRetryInFlight,
