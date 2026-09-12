@@ -366,6 +366,13 @@ func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) m
 		return spec
 	}
 
+	// Chromium privacy-caps navigator.connection.downlink at 10 Mbps (10000 kbps)
+	// on broadband/WiFi for fingerprinting protection. Do not treat this synthetic ceiling
+	// as a constrained link < 15 Mbps.
+	if netCtx.DownlinkKbps == 10000 && (strings.EqualFold(strings.TrimSpace(netCtx.Kind), "4g") || strings.EqualFold(strings.TrimSpace(netCtx.Kind), "browser")) {
+		return spec
+	}
+
 	downlinkKbps := netCtx.DownlinkKbps
 	if !spec.TranscodeVideo && downlinkKbps >= 15000 && spec.Name != profiles.ProfileLow {
 		return spec

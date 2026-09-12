@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -2943,4 +2944,45 @@ func TestBuildVaapiVideoArgs_HDRToneMap(t *testing.T) {
 	require.True(t, ok, "must have -vf argument")
 	assert.Contains(t, vf, "tonemap_vaapi=format=nv12:p=bt709:m=bt709:t=bt709")
 	assert.Contains(t, vf, "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+}
+
+func TestBuildVaapiVideoArgs_IntelSharpness(t *testing.T) {
+	adapter := &LocalAdapter{
+		Config: AdapterConfig{
+			GPUVendor:        "intel",
+			TranscodeDenoise: 0.6,
+			TranscodeSharpen: 2.0,
+		},
+		VaapiDevice: "/dev/dri/renderD128",
+		Logger:      zerolog.Nop(),
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "sharpness-test-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Profile: ports.ProfileSpec{
+			Name:           "vaapi_av1",
+			HWAccel:        "vaapi",
+			TranscodeVideo: true,
+			VideoCodec:     "av1",
+			Deinterlace:    true,
+		},
+	}
+
+	args := adapter.buildVaapiVideoArgs(nil, spec, "av1", 50, 2)
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok, "must have -vf argument")
+	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, vf, "denoise_vaapi=denoise=12")
+	assert.Contains(t, vf, "scale_vaapi=format=p010")
+	assert.Contains(t, vf, "sharpness_vaapi=sharpness=44")
+
+	// Ensure pipeline order: deinterlace -> denoise -> scale -> sharpness
+	deintIdx := strings.Index(vf, "deinterlace_vaapi")
+	denoiseIdx := strings.Index(vf, "denoise_vaapi")
+	scaleIdx := strings.Index(vf, "scale_vaapi")
+	sharpIdx := strings.Index(vf, "sharpness_vaapi")
+	assert.True(t, deintIdx >= 0 && denoiseIdx > deintIdx && scaleIdx > denoiseIdx && sharpIdx > scaleIdx,
+		"pipeline order must be deinterlace -> denoise -> scale -> sharpness")
 }

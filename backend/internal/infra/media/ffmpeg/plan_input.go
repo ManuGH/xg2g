@@ -38,6 +38,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	probeSize := strings.TrimSpace(a.ProbeSize)
 	baseInputArgs := make([]string, 0, 20)
 	strictIngest := spec.Source.Type != ports.SourceFile &&
+		spec.Source.Type != ports.SourceTuner &&
 		spec.Profile.TranscodeVideo &&
 		strictLiveIngestCodec(spec.Profile.VideoCodec)
 	if v := strings.TrimSpace(a.IngestErrDetect); v != "" && !strictIngest {

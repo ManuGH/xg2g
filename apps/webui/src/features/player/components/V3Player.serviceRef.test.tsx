@@ -256,7 +256,7 @@ describe('V3Player ServiceRef Input', () => {
     });
 
     fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
+    fireEvent.click(screen.getByRole('button', { name: /Cinema/ }));
     resolveFirstPreflight(response('1'));
 
     await waitFor(() => {
@@ -267,7 +267,7 @@ describe('V3Player ServiceRef Input', () => {
       (call: any[]) => String(call[0]).includes('/live/stream-info')
     );
     expect(streamInfoCalls).toHaveLength(2);
-    expect(streamInfoCalls[1][1].headers['X-XG2G-Profile']).toBe('repair');
+    expect(streamInfoCalls[1][1].headers['X-XG2G-Profile']).toBe('cinema');
     expect(endAttemptSpy).toHaveBeenCalledWith('attempt_replaced');
   });
 
@@ -336,7 +336,7 @@ describe('V3Player ServiceRef Input', () => {
 
     // Queue a latest-wins restart while the first preflight is unresolved.
     fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
+    fireEvent.click(screen.getByRole('button', { name: /Cinema/ }));
     unmount();
 
     resolveFirstPreflight({

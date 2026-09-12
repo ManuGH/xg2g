@@ -53,7 +53,7 @@ describe('playbackEnginePolicy', () => {
     expect(HLS_STARTUP_POLICY).toEqual({
       bufferTargetSeconds: 4.5,
       timeoutMs: 6_000,
-      slowBuildPlaybackRate: 0.955,
+      slowBuildPlaybackRate: 1.0,
       slowBuildTargetSeconds: 8,
       slowBuildMaxMs: 150_000,
     });

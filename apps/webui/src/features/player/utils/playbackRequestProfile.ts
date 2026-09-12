@@ -1,8 +1,8 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair';
+export type PlaybackRequestProfile = 'direct' | 'cinema' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackProfileSelection = 'auto' | 'cinema' | 'direct' | 'quality' | 'compatible' | 'repair';
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -11,6 +11,7 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
     case 'copy':
     case 'passthrough':
       return 'direct';
+    case 'cinema':
     case 'quality':
     case 'compatible':
     case 'repair':
@@ -157,8 +158,9 @@ function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined
   const connection = nav.connection;
   const isOnline = navigator.onLine !== false;
   
+  const isSyntheticClamp = connection?.effectiveType === '4g' && connection?.downlink === 10;
   const downlinkMbps = connection && typeof connection.downlink === 'number'
-    ? connection.downlink
+    ? (isSyntheticClamp ? undefined : connection.downlink)
     : estimateBandwidthFromResources();
 
   if (!connection) {
@@ -386,9 +388,14 @@ export function resolvePlaybackRequestProfile(
 
   const previous = memory?.lastProfile;
 
-  if (downlinkMbps !== undefined) {
+  // Chromium privacy-caps navigator.connection.downlink at 10 Mbps.
+  // On an unmetered 4G/broadband connection, treat this as unconstrained rather than a link bottleneck.
+  const isChromePrivacyClamped = network?.kind === 'browser' && network?.effectiveType === '4g' && downlinkMbps === 10;
+  const effectiveDownlink = isChromePrivacyClamped ? undefined : downlinkMbps;
+
+  if (effectiveDownlink !== undefined) {
     const bandwidthCeiling = previous === 'bandwidth' ? BANDWIDTH_EXIT_MBPS : BANDWIDTH_ENTER_MBPS;
-    if (downlinkMbps < bandwidthCeiling) {
+    if (effectiveDownlink < bandwidthCeiling) {
       return settle('bandwidth');
     }
   }
@@ -399,7 +406,7 @@ export function resolvePlaybackRequestProfile(
     && !network?.saveData
     && !network?.metered
     && (network == null || QUALITY_ELIGIBLE_NETWORK_KINDS.has(network.kind))
-    && (downlinkMbps === undefined || downlinkMbps >= qualityFloor)
+    && (effectiveDownlink === undefined || effectiveDownlink >= qualityFloor)
   ) {
     return settle('quality');
   }

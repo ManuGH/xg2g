@@ -332,8 +332,15 @@ func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
 	assert.Equal(t, PublicProfileDirect, PublicProfileName(ProfileCopy))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName(ProfileRepair))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName("auto"))
-	assert.Equal(t, PublicProfileCompatible, PublicProfileName("universal"))
+	assert.Equal(t, PublicProfileCinema, PublicProfileName("cinema"))
 	assert.Equal(t, PublicProfileQuality, PublicProfileName("quality"))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName("repair"))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName("generic"))
+}
+
+func TestResolve_CinemaProfile(t *testing.T) {
+	spec := Resolve("cinema", "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
+	assert.Equal(t, ProfileAV1HW, spec.Name)
+	assert.Equal(t, "av1", spec.VideoCodec)
+	assert.Equal(t, "vaapi", spec.HWAccel)
 }

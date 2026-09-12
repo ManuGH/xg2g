@@ -164,7 +164,7 @@ for sizing and media tradeoffs.
 ### Decide how transcoding will run
 
 - **Auto-detect** is the recommended first choice.
-- **VAAPI** uses an Intel or AMD render device under `/dev/dri` on x86.
+- **VAAPI** uses an Intel or AMD render device under `/dev/dri` on x86. On Intel systems (Gen 12, Iris Xe, Arc, and Core Ultra / Arrow Lake), xg2g leverages the full-GPU VPP pipeline (`deinterlace_vaapi` motion-adaptive 50p, `denoise_vaapi` noise reduction, `sharpness_vaapi` edge enhancement, and 10-bit AV1/HEVC encoding). Verified reference setup: Intel Core Ultra 9 285HX.
 - **NVIDIA** requires a working NVIDIA driver and NVIDIA Container Toolkit.
 - **CPU only** works everywhere, but multiple MPEG-2/HEVC-to-H.264 streams can
   require substantial CPU. On `arm64`, software encoding is the supported path.

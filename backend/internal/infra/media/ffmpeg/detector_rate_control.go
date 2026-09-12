@@ -102,8 +102,11 @@ func (d *Detector) PreflightVAAPIRateControlModes() {
 
 // vaapiDeinterlaceModePreference is best-first. Weave is deliberately absent:
 // it interleaves both fields into one frame, which is the opposite of what a
-// 50p output needs.
-var vaapiDeinterlaceModePreference = []string{"motion_compensated", "motion_adaptive", "bob"}
+// 50p output needs. motion_compensated is also absent for broadcast DVB:
+// Intel VPP MCDI produces severe visual warping, tearing, and macroblock distortion
+// when temporal vector estimation breaks on interlaced field cadences or packet jitter.
+// motion_adaptive is the rock-solid gold standard for broadcast 1080i50.
+var vaapiDeinterlaceModePreference = []string{"motion_adaptive", "bob"}
 
 func (d *Detector) probeVAAPIDeinterlaceMode(mode string) error {
 	if d.deinterlaceProbeFn != nil {
