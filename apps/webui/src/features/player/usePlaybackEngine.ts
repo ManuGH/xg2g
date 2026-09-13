@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
@@ -108,6 +108,8 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
+  /** The browser rejected autoplay (even muted) for the current attempt; 'ready' is the resting state. */
+  autoplayBlocked: boolean;
 }
 
 export function usePlaybackEngine({
@@ -139,6 +141,10 @@ export function usePlaybackEngine({
   const decodeRecoveryInFlightRef = useRef(false);
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
+  // True once the browser rejected autoplay for the current attempt (even muted).
+  // The engine reports 'ready' in that case so the play control can appear; the
+  // orchestrator must not treat that 'ready' as transient startup buffering.
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
   const revealHoldRef = useRef(false);
   const revealTimerRef = useRef<number | null>(null);
@@ -181,10 +187,21 @@ export function usePlaybackEngine({
       pendingNativeAutoplayRef.current = null;
       onPlaybackMilestone?.('manifest');
       video.play().catch((err) => {
+        if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
+          debugWarn('[V3Player] Unmuted native playback blocked, falling back to muted autoplay', err);
+          video.muted = true;
+          void video.play().catch((fallbackErr) => {
+            debugWarn(label, fallbackErr);
+            setAutoplayBlocked(true);
+            setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+          });
+          return;
+        }
         debugWarn(label, err);
         // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
         // Mirror the hls.js path: clear the startup overlay and surface the play
         // control instead of leaving the status pinned on 'buffering' forever.
+        setAutoplayBlocked(true);
         setStatus((prev) => (prev === 'error' ? prev : 'ready'));
       });
     };
@@ -498,6 +515,7 @@ export function usePlaybackEngine({
 
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
+    setAutoplayBlocked(false);
     try {
       clearPendingNativeAutoplay();
       clearNativeStallRecovery();
@@ -801,6 +819,7 @@ export function usePlaybackEngine({
     const video = videoRef.current;
     if (!video) return;
 
+    setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
@@ -915,7 +934,19 @@ export function usePlaybackEngine({
           );
         }
         videoRef.current?.play().catch((err) => {
+          const videoEl = videoRef.current;
+          if (videoEl && (err as { name?: string } | null)?.name === 'NotAllowedError' && !videoEl.muted) {
+            debugWarn('[V3Player] Unmuted hls playback blocked, falling back to muted autoplay', err);
+            videoEl.muted = true;
+            void videoEl.play().catch((fallbackErr) => {
+              debugWarn('[V3Player] Fallback muted autoplay failed', fallbackErr);
+              setAutoplayBlocked(true);
+              setStatus('ready');
+            });
+            return;
+          }
           debugWarn('[V3Player] Autoplay failed', err);
+          setAutoplayBlocked(true);
           setStatus('ready');
         });
       };
@@ -962,6 +993,18 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
         if (!startGateOpen && bufferedAheadSeconds() >= HLS_STARTUP_POLICY.bufferTargetSeconds) {
+          const gateVideo = videoRef.current;
+          if (gateVideo && gateVideo.readyState < 2) {
+            const onCanPlay = () => {
+              gateVideo.removeEventListener('canplay', onCanPlay);
+              gateVideo.removeEventListener('loadeddata', onCanPlay);
+              openStartGate('buffer_target_ready');
+            };
+            gateVideo.addEventListener('canplay', onCanPlay, { once: true });
+            gateVideo.addEventListener('loadeddata', onCanPlay, { once: true });
+            window.setTimeout(() => openStartGate('buffer_target_timeout'), 200);
+            return;
+          }
           openStartGate('buffer_target');
         }
         if (
@@ -1278,6 +1321,7 @@ export function usePlaybackEngine({
   replayHlsRef.current = playHls;
 
   const playDirectMp4 = useCallback((url: string) => {
+    setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
@@ -1304,9 +1348,20 @@ export function usePlaybackEngine({
     video.src = url;
     video.load();
     video.play().catch((err) => {
+      if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
+        debugWarn('[V3Player] Unmuted direct playback blocked, falling back to muted autoplay', err);
+        video.muted = true;
+        void video.play().catch((fallbackErr) => {
+          debugWarn('Autoplay fallback failed', fallbackErr);
+          setAutoplayBlocked(true);
+          setStatus((prev) => (prev === 'error' ? prev : 'ready'));
+        });
+        return;
+      }
       debugWarn('Autoplay failed', err);
       // Autoplay rejected: clear the startup overlay and show the play control rather
       // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
+      setAutoplayBlocked(true);
       setStatus((prev) => (prev === 'error' ? prev : 'ready'));
     });
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
@@ -1341,8 +1396,8 @@ export function usePlaybackEngine({
         }
       }
 
-      if (videoEl.readyState >= 3 && bufferHealth > 0.5) {
-        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s)`);
+      if ((videoEl.readyState >= 3 || videoEl.currentTime < 0.5) && bufferHealth > 0.5) {
+        debugLog(`[V3Player] Event: waiting (ignored, buffer=${bufferHealth.toFixed(1)}s, ct=${videoEl.currentTime.toFixed(2)})`);
         clearNativeStallRecovery();
         clearHlsStallRecovery();
         return;
@@ -1727,5 +1782,6 @@ export function usePlaybackEngine({
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    autoplayBlocked,
   };
 }
