@@ -6,6 +6,7 @@ import {
   buildClientHeaders,
   CLIENT_AUTH_CHANGED_EVENT,
   ClientRequestError,
+  getApiBaseUrl,
   getClientAuthToken,
   getClientHouseholdProfileId,
   isApiError,
@@ -13,6 +14,7 @@ import {
   mapApiError,
   putJsonOrThrow,
   setClientAuthToken,
+  setClientBaseUrl,
   setClientHouseholdProfileId,
   throwOnClientResultError,
   unwrapClientResultOrThrow
@@ -23,6 +25,17 @@ describe('client-ts wrapper error mapping', () => {
     setClientAuthToken('');
     setClientHouseholdProfileId('');
     vi.restoreAllMocks();
+  });
+
+  it('sets the generated client base URL through the wrapper and strips a trailing slash', () => {
+    const previous = client.getConfig().baseUrl;
+    try {
+      setClientBaseUrl('http://localhost/api/v3/');
+      expect(client.getConfig().baseUrl).toBe('http://localhost/api/v3');
+      expect(getApiBaseUrl()).toBe('http://localhost/api/v3');
+    } finally {
+      client.setConfig({ baseUrl: previous });
+    }
   });
 
   it('updates auth and household headers independently', () => {

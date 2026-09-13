@@ -30,10 +30,19 @@ if (!hlsJsPath || !fs.existsSync(hlsJsPath)) {
 const hlsJsCode = fs.readFileSync(hlsJsPath, 'utf8');
 
 (async () => {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox']
-  });
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox']
+    });
+  } catch {
+    browser = await chromium.launch({
+      channel: 'chrome',
+      headless: true,
+      args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox']
+    });
+  }
 
   const page = await browser.newPage();
 

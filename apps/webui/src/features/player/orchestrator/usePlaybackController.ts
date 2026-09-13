@@ -16,6 +16,7 @@ import {
 } from './playbackController';
 import type { PlaybackCommandExecutor } from './playbackMachineRuntime';
 import type { LiveSessionTransport } from './liveSessionTransport';
+import type { V3SessionStatusResponse } from '../../../types/v3-player';
 import type {
   PlaybackDomainState,
   PlaybackMachineEvent,
@@ -27,6 +28,7 @@ export interface UsePlaybackControllerOptions {
   stopRequestTimeoutMs?: number;
   requestedDuration?: number | null;
   onAttemptStarted?: (epoch: number) => void;
+  onSessionSnapshot?: (snapshot: V3SessionStatusResponse) => void;
 }
 
 export interface UsePlaybackControllerResult {
@@ -58,21 +60,20 @@ export function usePlaybackController(
   executeCommand: PlaybackCommandExecutor,
   options?: UsePlaybackControllerOptions,
 ): UsePlaybackControllerResult {
-  const transportRef = useRef<LiveSessionTransport>(transport);
-  transportRef.current = transport;
+  const committedTransportRef = useRef<LiveSessionTransport>(transport);
 
   const optionsRef = useRef<UsePlaybackControllerOptions | undefined>(options);
   optionsRef.current = options;
 
-  const executorRef = useRef<PlaybackCommandExecutor | null>(executeCommand);
-  executorRef.current = executeCommand;
+  const committedExecutorRef = useRef<PlaybackCommandExecutor | null>(executeCommand);
 
   const [controller] = useState(() =>
     createPlaybackController({
-      getTransport: () => transportRef.current,
+      transport,
+      getTransport: () => committedTransportRef.current,
       createInitialState,
       executeCommand: (command) => {
-        executorRef.current?.(command);
+        return committedExecutorRef.current?.(command);
       },
       startSettlementTimeoutMs: options?.startSettlementTimeoutMs,
       httpRequestTimeoutMs: options?.httpRequestTimeoutMs,
@@ -83,19 +84,28 @@ export function usePlaybackController(
       onAttemptStarted: (epoch) => {
         optionsRef.current?.onAttemptStarted?.(epoch);
       },
+      onSessionSnapshot: (snapshot) => {
+        optionsRef.current?.onSessionSnapshot?.(snapshot);
+      },
     }),
   );
 
   useInsertionEffect(() => {
-    controller.setCommandExecutor((command) => executorRef.current?.(command));
+    committedExecutorRef.current = executeCommand;
+  });
+
+  useInsertionEffect(() => {
+    controller.setCommandExecutor((command) => committedExecutorRef.current?.(command));
     return () => {
       controller.setCommandExecutor(null);
     };
   }, [controller]);
 
   useLayoutEffect(() => {
-    controller.setCommandExecutor((command) => executorRef.current?.(command));
-  }, [controller]);
+    committedTransportRef.current = transport;
+    controller.updateTransport(transport);
+    controller.setCommandExecutor((command) => committedExecutorRef.current?.(command));
+  }, [controller, transport]);
 
   useEffect(() => {
     controller.activate();
