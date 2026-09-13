@@ -6,6 +6,7 @@ package watchdog
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,12 +179,17 @@ func (w *Watchdog) check() error {
 	case StateStarting:
 		if elapsed > w.startTimeout {
 			w.state = StateTimedOut
-			return context.DeadlineExceeded // Maps to 504
+			// Wraps context.DeadlineExceeded (maps to 504) and says what was
+			// last seen, so a kill can be told apart from an input stall, a
+			// starved output stream, or a muxer that never opened a file.
+			return fmt.Errorf("%w: no ffmpeg progress within %s of start (last out_time_ms=%d, total_size=%d)",
+				context.DeadlineExceeded, elapsed.Truncate(time.Millisecond), w.lastOutTimeMs, w.lastTotalSize)
 		}
 	case StateRunning:
 		if elapsed > w.stallTimeout {
 			w.state = StateStalled
-			return context.DeadlineExceeded // Maps to 504
+			return fmt.Errorf("%w: no ffmpeg progress for %s (last out_time_ms=%d, total_size=%d; progress = out_time_ms/total_size advancing or a new output segment opened)",
+				context.DeadlineExceeded, elapsed.Truncate(time.Millisecond), w.lastOutTimeMs, w.lastTotalSize)
 		}
 	}
 

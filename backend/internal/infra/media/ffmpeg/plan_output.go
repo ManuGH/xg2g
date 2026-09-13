@@ -167,6 +167,7 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 	_ = os.MkdirAll(sessionDir, 0750)
 	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
 
+	out.args = appendLiveMuxerInterleaveArgs(out.args)
 	out.args = append(out.args,
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
@@ -276,6 +277,7 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 	_ = os.MkdirAll(sessionDir, 0750)
 	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
 
+	out.args = appendLiveMuxerInterleaveArgs(out.args)
 	out.args = append(out.args,
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
@@ -440,6 +442,25 @@ const (
 	llhlsPartTargetMs   = 500
 )
 
+// liveMuxerMaxInterleaveDeltaUs bounds how long the hls muxer holds packets of
+// the streams that are still flowing while it waits for one that is not.
+//
+// FFmpeg's default is 10s. Seen on staging 2026-09-12 (Sky Sport F1): the
+// broadcaster removed the second audio PID from the PMT mid-stream, the
+// rendition starved, and video plus the surviving audio were held for the full
+// 10s before the muxer gave up waiting - an 11s hole in every playlist a viewer
+// was on, then permanent extra latency. The renditions live in separate
+// variant files, so cross-stream ordering buys them nothing; 2s (half a
+// segment) keeps the hole inside every client's buffer without touching
+// startup, where all renditions open their first segment within a second.
+const liveMuxerMaxInterleaveDeltaUs = 2_000_000
+
+// appendLiveMuxerInterleaveArgs applies liveMuxerMaxInterleaveDeltaUs to a live
+// HLS output. Output option: it has to sit after the last -i.
+func appendLiveMuxerInterleaveArgs(args []string) []string {
+	return append(args, "-max_interleave_delta", strconv.Itoa(liveMuxerMaxInterleaveDeltaUs))
+}
+
 func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, layout liveSegmentLayout, audioSel ...liveAudioSelection) []string {
 	var sel liveAudioSelection
 	if len(audioSel) > 0 {
@@ -477,6 +498,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	// This prevents Safari from downloading partially written segments.
 	hlsFlags += "+temp_file"
 
+	args = appendLiveMuxerInterleaveArgs(args)
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),

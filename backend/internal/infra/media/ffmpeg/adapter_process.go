@@ -550,14 +550,20 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 						Msg("ffmpeg first frame observed")
 				}
 			}
-			if !firstSegmentLogged {
-				if segmentPath, ok := extractStartupSegmentPath(line); ok {
+			if segmentPath, ok := extractStartupSegmentPath(line); ok {
+				// Every segment the muxer opens is progress, not just the first.
+				// FFmpeg's out_time_ms is the trailing dts across all output
+				// streams: when a broadcaster drops an audio PID from the PMT
+				// mid-stream, that rendition starves, out_time_ms freezes, and
+				// the encoder keeps delivering video and the surviving audio.
+				// Counting segment opens keeps the watchdog on the deliverable.
+				wd.ObserveProgress()
+				if !firstSegmentLogged {
 					firstSegmentLogged = true
 					sawFirstSegment.Store(true)
 					startupSpan.SetAttributes(attribute.Int64("xg2g.time_to_first_segment_ms", time.Since(spawnedAt).Milliseconds()))
 					startupSpan.SetStatus(codes.Ok, "")
 					endStartupSpan()
-					wd.ObserveProgress()
 					a.checkAndEmitTranscoderReady(observerCtx, handle, sessionID, dvrWindowSec, segmentPath)
 					if pathID != "" && !outputObserverStarted {
 						outputObserverStarted = true
