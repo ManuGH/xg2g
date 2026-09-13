@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react';
 import type { TFunction } from 'i18next';
 import Hls from './lib/hlsRuntime';
@@ -108,6 +108,8 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
+  /** The browser rejected autoplay (even muted) for the current attempt; 'ready' is the resting state. */
+  autoplayBlocked: boolean;
 }
 
 export function usePlaybackEngine({
@@ -139,6 +141,10 @@ export function usePlaybackEngine({
   const decodeRecoveryInFlightRef = useRef(false);
   const decodeRecoveryAttemptsRef = useRef(0);
   const pendingNativeAutoplayRef = useRef<(() => void) | null>(null);
+  // True once the browser rejected autoplay for the current attempt (even muted).
+  // The engine reports 'ready' in that case so the play control can appear; the
+  // orchestrator must not treat that 'ready' as transient startup buffering.
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
   const revealHoldRef = useRef(false);
   const revealTimerRef = useRef<number | null>(null);
@@ -186,6 +192,7 @@ export function usePlaybackEngine({
           video.muted = true;
           void video.play().catch((fallbackErr) => {
             debugWarn(label, fallbackErr);
+            setAutoplayBlocked(true);
             setStatus((prev) => (prev === 'error' ? prev : 'ready'));
           });
           return;
@@ -194,6 +201,7 @@ export function usePlaybackEngine({
         // Autoplay was rejected (e.g. Safari/iOS gesture policy or Low-Power-Mode).
         // Mirror the hls.js path: clear the startup overlay and surface the play
         // control instead of leaving the status pinned on 'buffering' forever.
+        setAutoplayBlocked(true);
         setStatus((prev) => (prev === 'error' ? prev : 'ready'));
       });
     };
@@ -507,6 +515,7 @@ export function usePlaybackEngine({
 
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
+    setAutoplayBlocked(false);
     try {
       clearPendingNativeAutoplay();
       clearNativeStallRecovery();
@@ -810,6 +819,7 @@ export function usePlaybackEngine({
     const video = videoRef.current;
     if (!video) return;
 
+    setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
@@ -930,11 +940,13 @@ export function usePlaybackEngine({
             videoEl.muted = true;
             void videoEl.play().catch((fallbackErr) => {
               debugWarn('[V3Player] Fallback muted autoplay failed', fallbackErr);
+              setAutoplayBlocked(true);
               setStatus('ready');
             });
             return;
           }
           debugWarn('[V3Player] Autoplay failed', err);
+          setAutoplayBlocked(true);
           setStatus('ready');
         });
       };
@@ -1309,6 +1321,7 @@ export function usePlaybackEngine({
   replayHlsRef.current = playHls;
 
   const playDirectMp4 = useCallback((url: string) => {
+    setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
     clearHlsStallRecovery();
@@ -1340,6 +1353,7 @@ export function usePlaybackEngine({
         video.muted = true;
         void video.play().catch((fallbackErr) => {
           debugWarn('Autoplay fallback failed', fallbackErr);
+          setAutoplayBlocked(true);
           setStatus((prev) => (prev === 'error' ? prev : 'ready'));
         });
         return;
@@ -1347,6 +1361,7 @@ export function usePlaybackEngine({
       debugWarn('Autoplay failed', err);
       // Autoplay rejected: clear the startup overlay and show the play control rather
       // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
+      setAutoplayBlocked(true);
       setStatus((prev) => (prev === 'error' ? prev : 'ready'));
     });
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
@@ -1767,5 +1782,6 @@ export function usePlaybackEngine({
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    autoplayBlocked,
   };
 }

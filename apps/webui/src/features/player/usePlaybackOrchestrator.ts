@@ -828,7 +828,8 @@ export function usePlaybackOrchestrator(
   const {
     resetPlaybackEngine,
     playHls,
-    playDirectMp4
+    playDirectMp4,
+    autoplayBlocked,
   } = usePlaybackEngine({
     videoRef,
     hlsRef,
@@ -1951,8 +1952,12 @@ export function usePlaybackOrchestrator(
     }
   }, [status]);
 
+  // 'ready' is transient during startup (set before playHls and on LEVEL_LOADED) and
+  // counts as startup buffering — unless the browser rejected autoplay, in which case
+  // 'ready' is the resting state and the play control must be reachable.
   const isInitialStartupBuffering =
-    !hasReachedPlayingRef.current && (status === 'buffering' || status === 'ready');
+    !hasReachedPlayingRef.current &&
+    (status === 'buffering' || (status === 'ready' && !autoplayBlocked));
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building' || isInitialStartupBuffering;
   const isNativeEngine = activeHlsEngine === 'native';
