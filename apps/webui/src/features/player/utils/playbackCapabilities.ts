@@ -247,10 +247,15 @@ function inferBrowserNetworkContext(): CapabilitySnapshot["networkContext"] {
     };
   };
 
+  // Chromium privacy-caps navigator.connection.downlink at 10 Mbps for fingerprint protection.
+  // Reporting 10000 kbps tricks the planner into thinking the link is bottlenecked < 15 Mbps.
+  const isChromePrivacyClamped =
+    nav.connection?.effectiveType === "4g" && nav.connection?.downlink === 10;
+
   return {
     kind: nav.connection?.effectiveType || "unknown",
     downlinkKbps:
-      typeof nav.connection?.downlink === "number"
+      typeof nav.connection?.downlink === "number" && !isChromePrivacyClamped
         ? Math.round(nav.connection.downlink * 1000)
         : undefined,
     metered:

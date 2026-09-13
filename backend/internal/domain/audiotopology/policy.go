@@ -334,7 +334,7 @@ func planSingleTrack(
 			plan.Strategy = CodecStrategyTranscode
 			plan.EncoderCodec = "aac"
 			plan.HLSCodec = "mp4a.40.2"
-			plan.BitrateKbps = 192
+			plan.BitrateKbps = 320
 			return plan
 		}
 		plan.Strategy = CodecStrategyUnsupported
@@ -375,7 +375,7 @@ func planSingleTrack(
 		plan.Strategy = CodecStrategyTranscode
 		plan.EncoderCodec = "aac"
 		plan.HLSCodec = "mp4a.40.2"
-		plan.BitrateKbps = 192
+		plan.BitrateKbps = 320
 		return plan
 	}
 

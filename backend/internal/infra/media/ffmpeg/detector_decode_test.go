@@ -79,9 +79,8 @@ func TestPreflightVAAPIDecode_NoDeviceIsNotProbed(t *testing.T) {
 // fields instead of deinterlacing and leaves combing in every 50p frame.
 func TestBestVAAPIDeinterlaceMode_NeverWeave(t *testing.T) {
 	hardware.SetVAAPIDeinterlaceModes(map[string]bool{
-		"motion_compensated": false,
-		"motion_adaptive":    false,
-		"bob":                true,
+		"motion_adaptive": false,
+		"bob":             true,
 	})
 	t.Cleanup(func() { hardware.SetVAAPIDeinterlaceModes(nil) })
 
@@ -91,13 +90,12 @@ func TestBestVAAPIDeinterlaceMode_NeverWeave(t *testing.T) {
 
 func TestBestVAAPIDeinterlaceMode_PrefersTheMostCapable(t *testing.T) {
 	hardware.SetVAAPIDeinterlaceModes(map[string]bool{
-		"motion_compensated": true,
-		"motion_adaptive":    true,
-		"bob":                true,
+		"motion_adaptive": true,
+		"bob":             true,
 	})
 	t.Cleanup(func() { hardware.SetVAAPIDeinterlaceModes(nil) })
 
-	assert.Equal(t, "motion_compensated", hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference))
+	assert.Equal(t, "motion_adaptive", hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference))
 }
 
 // Unprobed keeps FFmpeg's own default, which is correct on a capable driver.

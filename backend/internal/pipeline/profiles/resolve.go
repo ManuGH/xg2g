@@ -36,6 +36,7 @@ const (
 	PublicProfileBandwidth  = "bandwidth" // Deprecated legacy alias; quality ladder migration removes this later.
 	PublicProfileDirect     = string(playbackprofile.IntentDirect)
 	PublicProfileQuality    = string(playbackprofile.IntentQuality)
+	PublicProfileCinema     = string(playbackprofile.IntentCinema)
 	PublicProfileRepair     = string(playbackprofile.IntentRepair)
 )
 
@@ -62,6 +63,7 @@ var aliasMap = map[string]string{
 	"safari_hevc_hw_ll": ProfileSafariHEVCHWLL,
 	"safari_runtime_hq": ProfileSafariRuntimeHQ,
 	"safari_hq":         ProfileSafariRuntimeHQ, // Legacy internal name kept for persisted sessions and traces.
+	"cinema":            ProfileAV1HW,
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
 	"normalize":         ProfileH264FMP4,
@@ -301,6 +303,8 @@ func PublicProfileName(profile string) string {
 		return PublicProfileCompatible
 	case playbackprofile.IntentQuality:
 		return PublicProfileQuality
+	case playbackprofile.IntentCinema:
+		return PublicProfileCinema
 	case playbackprofile.IntentRepair:
 		return PublicProfileRepair
 	}

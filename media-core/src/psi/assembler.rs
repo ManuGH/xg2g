@@ -4,9 +4,11 @@
 
 //! Getting whole PSI sections back out of 188-byte packets.
 //!
-//! One of these follows one PSI PID. It owns the continuity counter for that
-//! PID and the bytes of a section that has not finished arriving, and nothing
-//! about how those bytes were carried.
+//! One of these follows one PSI PID. It owns the bytes of a section that has not
+//! finished arriving, and nothing about how those bytes were carried: the
+//! continuity counter belongs to the transport layer, which keeps it for this
+//! PID on the assembler's behalf so a later stage following its own PIDs gets
+//! the same answer from the same code.
 //!
 //! The packets are the transport's segmentation of a section. Once their bytes
 //! are in the buffer they have said everything they had to say, and keeping
@@ -15,6 +17,8 @@
 //! thousand, and both mean the same table.
 
 /// A section that has arrived in full.
+use crate::transport::{Continuity, ContinuityTracker};
+
 pub(crate) struct Completed {
     /// The section, from its `table_id` through its CRC.
     pub(crate) bytes: Vec<u8>,
@@ -27,17 +31,13 @@ pub(crate) struct SectionAssembler {
     buf: Vec<u8>,
     /// Its total length once the header has been read, otherwise 0.
     section_len: usize,
-    /// The continuity counter of the last packet accepted on this PID.
-    last_cc: u8,
-    /// Whether `last_cc` means anything yet.
-    has_cc: bool,
-    /// The last packet accepted, kept whole so an exact repeat can be told from
-    /// a different packet that reuses the counter.
+    /// The continuity counter of this PID.
     ///
-    /// The one packet this type retains, and bounded at one: telling a carousel
-    /// duplicate from a continuity error needs the previous packet and nothing
-    /// further back.
-    last_packet: Vec<u8>,
+    /// The counter is transport, not PSI, so it is kept by the transport layer's
+    /// tracker rather than reimplemented here. A later stage following its own
+    /// PIDs gets the same answer from the same code instead of a second one that
+    /// happens to agree today.
+    continuity: ContinuityTracker,
 }
 
 impl SectionAssembler {
@@ -62,7 +62,7 @@ impl SectionAssembler {
     /// packet is always held once a packet has been seen, and that is the bound.
     #[cfg(test)]
     pub(super) fn retained_bytes(&self) -> usize {
-        self.buf.len() + self.last_packet.len()
+        self.buf.len() + self.continuity.retained_bytes()
     }
 
     /// Forgets everything, the continuity counter included.
@@ -74,8 +74,7 @@ impl SectionAssembler {
     pub(crate) fn reset(&mut self) {
         self.buf.clear();
         self.section_len = 0;
-        self.has_cc = false;
-        self.last_packet.clear();
+        self.continuity.reset();
     }
 
     /// Drops the section in flight but keeps following the PID.
@@ -101,38 +100,32 @@ impl SectionAssembler {
     pub(crate) fn accept(
         &mut self,
         packet: &[u8],
+        continuity_counter: u8,
         pusi: bool,
         payload: &[u8],
         expected_table_id: u8,
     ) -> Vec<Completed> {
         let mut completed = Vec::new();
-        let cc = packet[3] & 0x0F;
 
-        if self.has_cc {
-            if cc == self.last_cc {
-                if packet == self.last_packet.as_slice() {
-                    // The transport saying the same thing twice, which is what a
-                    // repeated counter with identical bytes means.
-                    return completed;
-                }
-                // One counter value cannot describe two different packets, so
-                // whatever was in flight cannot be trusted.
-                self.reset();
-                if !pusi {
-                    return completed;
-                }
-            } else if cc != (self.last_cc.wrapping_add(1)) & 0x0F {
-                // A packet went missing, and it may have carried section bytes.
-                self.reset();
+        // The tracker has already recorded this packet by the time it answers,
+        // except for a duplicate, which leaves it untouched. That is why the
+        // break arm discards only the section: forgetting the counter as well
+        // would make the very next packet look like the start of a new stream,
+        // and the old code immediately undid exactly that by re-recording the
+        // counter it had just cleared.
+        match self.continuity.observe(packet, continuity_counter) {
+            // The transport saying the same thing twice.
+            Continuity::Duplicate => return completed,
+            // Either a packet went missing, or one counter value described two
+            // different packets. Whatever was in flight cannot be trusted.
+            Continuity::Broken => {
+                self.discard_section();
                 if !pusi {
                     return completed;
                 }
             }
+            Continuity::First | Continuity::Continuous => {}
         }
-        self.last_cc = cc;
-        self.has_cc = true;
-        self.last_packet.clear();
-        self.last_packet.extend_from_slice(packet);
 
         let mut at;
         if pusi {

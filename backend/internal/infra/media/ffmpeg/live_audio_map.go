@@ -253,13 +253,14 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 					bitrateKbps = spec.Profile.AudioBitrateK
 				}
 				if bitrateKbps <= 0 {
-					bitrateKbps = 192
+					bitrateKbps = 320
 				}
 				audioArgs = append(audioArgs,
 					fmt.Sprintf("-c:a:%d", i), encoderCodec,
 					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
 					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", tp.Channels),
 					fmt.Sprintf("-ar:a:%d", i), "48000",
+					fmt.Sprintf("-filter:a:%d", i), "aresample=async=1",
 				)
 			}
 
@@ -352,7 +353,7 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 	if spec.Profile.AudioBitrateK > 0 {
 		bitrateKbps = spec.Profile.AudioBitrateK
 	} else if bitrateKbps <= 0 {
-		bitrateKbps = 192
+		bitrateKbps = 320
 	}
 
 	// Not an unknown channel count - a planned track always carries a decided one.
@@ -369,6 +370,7 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 		"-b:a", fmt.Sprintf("%dk", bitrateKbps),
 		"-ac", fmt.Sprintf("%d", channels),
 		"-ar", "48000",
+		"-af", "aresample=async=1",
 		"-sn",
 	)
 }

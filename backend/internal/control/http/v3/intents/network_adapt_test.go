@@ -69,3 +69,22 @@ func TestAdaptStartProfileForNetworkContext_VeryLowBandwidth(t *testing.T) {
 	assert.Equal(t, 1280, got.VideoMaxWidth)
 	assert.Equal(t, 28, got.VideoCRF)
 }
+
+func TestAdaptStartProfileForNetworkContext_ChromePrivacyClampBypass(t *testing.T) {
+	intent := Intent{
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			NetworkContext: &capabilities.NetworkContext{
+				Kind:         "4g",
+				DownlinkKbps: 10000,
+			},
+		},
+	}
+	spec := model.ProfileSpec{
+		Name:          "av1_hw",
+		VideoMaxRateK: 12000,
+		VideoMaxWidth: 1920,
+	}
+	got := adaptStartProfileForNetworkContext(intent, spec)
+	assert.Equal(t, 12000, got.VideoMaxRateK, "chrome privacy clamp (10000 kbps on 4g) must not demote profile")
+	assert.Equal(t, 1920, got.VideoMaxWidth, "chrome privacy clamp must not scale down resolution")
+}

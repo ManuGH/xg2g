@@ -924,10 +924,21 @@ func transformArgsForTelemetryPipeMode(args []string) []string {
 		"-reconnect_on_network_error": true,
 		"-reconnect_on_http_error":    true,
 	}
-	out := make([]string, 0, len(args)+2)
+	hasErrDetect := false
+	for _, a := range args {
+		if a == "-err_detect" {
+			hasErrDetect = true
+			break
+		}
+	}
+	out := make([]string, 0, len(args)+4)
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
 		if tok == "-i" && i+1 < len(args) {
+			if !hasErrDetect {
+				out = append(out, "-err_detect", "ignore_err")
+				hasErrDetect = true
+			}
 			out = append(out, "-i", "pipe:0")
 			i++ // skip the URL value
 			continue

@@ -1,0 +1,147 @@
+# Step 5d: real VU+/DVB transport, captured once and replayed to both cores.
+#
+# The captures themselves are not in the repository - they are tens of megabytes
+# of real broadcast transport. This file is their identity: a run resolves each
+# name under XG2G_PSI_HARDWARE_DIR and refuses to proceed unless the bytes hash
+# to what is written here, so a result can never come from a capture other than
+# the one it names.
+#
+# Provenance: each capture is ONE connection to the receiver's :8001, opened,
+# read for a bounded time, and closed before the next was opened. Go and Rust
+# never talk to the receiver. Two simultaneous connections to the same encrypted
+# service can break the first one's descrambling, so the sequence a zap case
+# needs is built by replaying captures in order into one core - which is also
+# what MasterRing does in production, since it holds a single core for its
+# lifetime and a zap is SetTargetProgram on that same core.
+
+# Chunk sizes are packet counts times 188. The ingest contract refuses a slice
+# that is not 188-byte aligned - the reference says so directly - so a boundary
+# can only fall between packets. Sections still straddle those boundaries, which
+# is what the packetization cases exercise: a PSI header, a descriptor loop or a
+# CRC can and does span the packets a chunk boundary separates.
+
+version 1
+
+capture A_orf1hd     10395648 f9372888cb204a8014b7f17c0f76553b6bbd6d37d1dd1e8e4f71db39a6beb5b2
+capture A2_orf1hd     9625600 99b98d6919b6dd8a166e2c3f492e02c60ce8664193d2350557375c9f7b922dc3
+capture B1_puls4      2695168 99ceab1ca49d955ea6e465423759514b43cfba7838a854ddafd26752b2877510
+capture B2_schlager   5005312 15b176070107ac4cae57f3fd1bf5192a9bed8182f7434aabe89e70f04bf9f084
+
+# ORF1 HD: H.264 video, an AC3 track declaring 6 channels and German, and a
+# second MPEG audio track in another language. One capture, three cases.
+case A-h264-hd
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+end
+
+case C-multi-audio
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+end
+
+case D-ac3-declaration
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+end
+
+# PULS 4: real MPEG-2 video, and a PAT that carries four programmes, so the
+# target actually has to be chosen rather than being the only thing present.
+case B-mpeg2-sd
+  target 20007
+  chunk 65424
+  feed B1_puls4
+end
+
+# One service change, on one core, the way a zap reaches the parser.
+case E-service-change
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+  settarget 20007
+  feed B1_puls4
+end
+
+# A -> B -> A -> C -> A, all on the same core.
+case F-repeated-zap
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+  settarget 20007
+  feed B1_puls4
+  settarget 4911
+  feed A2_orf1hd
+  settarget 35
+  feed B2_schlager
+  settarget 4911
+  feed A2_orf1hd
+end
+
+# Target changes without new transport in between, including reselecting the
+# programme that is already selected - which must not behave like a change -
+# and target 0, which clears the selection.
+#
+# The case ends with transport after the last target change, because that is
+# what a reselect is in production: the target moves and the stream keeps
+# arriving. Ending on a bare SetTargetProgram would leave the core correctly
+# holding no PSI at all, which proves the reset and nothing about re-resolving
+# after it.
+case G-target-reselect
+  target 4911
+  chunk 65424
+  feed A_orf1hd
+  settarget 4911
+  settarget 20007
+  settarget 20007
+  settarget 4911
+  feed A2_orf1hd
+  settarget 0
+  settarget 4911
+  feed A2_orf1hd
+end
+
+capture H_pre          7700480 45b6c7e69f29a1b96e91233fe84660372ee7b2b8c1643cee3f4dff62937d1c8e
+capture H_post         9625600 4a6f2e1fb2047c9b7eb4d32c8aee0f72000b6d3be81e4542bd68bb6e11f6b63c
+
+# H: the source stops and comes back.
+#
+# Soft standby was measured NOT to interrupt transport on this receiver - it
+# served 1925120 bytes while reporting instandby=true - so the interruption is
+# an enigma2 restart, which kills the streaming process and keeps the network.
+# Deep standby is deliberately not used: it takes the network with it and the
+# receiver could not then be woken through the API.
+#
+# newcore, not invented bytes: production destroys the parser at an
+# interruption. SessionPipeline.Start closes the ring, and with it the GoCore,
+# when the upstream ends; connector.go then builds a new pipeline, ring and core
+# for the next connection. The case mirrors that, so what it proves about the
+# post-recovery state is what production would actually see.
+case H-standby-reconnect
+  target 4911
+  chunk 65424
+  feed H_pre
+  newcore
+  feed H_post
+end
+
+capture I_pre          5775360 66316b9f11f4222bb1f7ddeb7cf61831a70b22e4e9de74271aadb8179d35f736
+capture I_post        15400960 7ee2613b1eedaa53ac44f42c953ab5a5028a2d3582d78eba32d53339fd08ff2f
+
+# I: the receiver is restarted outright.
+#
+# Boot transport is the reason this case exists separately from H: a receiver
+# coming up can present its PSI carousel in an order a running one never does,
+# and the post-boot capture is long enough to contain several complete cycles
+# rather than only the first one.
+#
+# Same core boundary as H, for the same reason: production destroys the parser
+# when the upstream ends and builds a new one for the next connection.
+case I-receiver-restart
+  target 4911
+  chunk 65424
+  feed I_pre
+  newcore
+  feed I_post
+end

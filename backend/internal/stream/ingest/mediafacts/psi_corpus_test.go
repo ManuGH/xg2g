@@ -2704,13 +2704,13 @@ func TestPSI_TheAudioStreamsAgreeAboutWhichStreamsThereAre(t *testing.T) {
 	// The observers follow the accepted tracks, and only the codecs whose frame
 	// headers this path reads. An observer on anything else would be reading an
 	// elementary stream nobody declared.
-	for pid := range c.audioObservers {
+	for pid := range c.audioStreams {
 		if !trackSet[pid] {
 			t.Errorf("PID %d has an observer but no accepted track", pid)
 		}
 	}
 	for _, tr := range res.Facts.AudioTracks {
-		_, hasObserver := c.audioObservers[tr.PID]
+		_, hasObserver := c.audioStreams[tr.PID]
 		if want := observableAudioCodec(tr.Codec); hasObserver != want {
 			t.Errorf("PID %d codec %q: observer=%v, want %v", tr.PID, tr.Codec, hasObserver, want)
 		}

@@ -395,6 +395,7 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 		"-b:a", audioBitrate,
 		"-ac", chStr,
 		"-ar", "48000",
+		"-af", "aresample=async=1",
 		"-sn",
 	)
 }
