@@ -72,7 +72,6 @@ export interface StartLiveParams {
   capabilities?: unknown;
   profileHeaders?: Record<string, string>;
   requestedDuration?: number | null;
-  hasSessionIntent?: boolean;
   explicitProfilePinned?: boolean;
 }
 
@@ -665,7 +664,6 @@ export function createPlaybackController(
   const watchdogRuntime: PlaybackNetworkWatchdogRuntime = createPlaybackNetworkWatchdogRuntime({
     getDomainStatus: () => runtime.getState().status,
     getFailure: () => runtime.getState().failure,
-    getPlaybackEpoch: () => playbackEpoch,
     isDisposed: () => isDisposed,
     isRetryInFlight: () => isRetryInFlight(),
     onRecover: (target) => retry(target),
@@ -1637,7 +1635,7 @@ export function createPlaybackController(
       epoch,
       'LIVE',
       'starting',
-      params.hasSessionIntent ?? true,
+      true,
       params.explicitProfilePinned ?? false,
     );
 

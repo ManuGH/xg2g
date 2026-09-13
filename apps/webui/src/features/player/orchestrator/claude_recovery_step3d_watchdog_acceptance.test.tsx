@@ -95,7 +95,6 @@ describe('Step 3d watchdog — activation parity with the removed React predicat
     const runtime = createPlaybackNetworkWatchdogRuntime({
       getDomainStatus: () => status,
       getFailure: () => failure,
-      getPlaybackEpoch: () => 1,
       isDisposed: () => false,
       onRecover: () => {},
       getTargetContext: () => ({ kind: 'live', serviceRef: 'x' }),
@@ -117,7 +116,6 @@ describe('Step 3d watchdog — activation parity with the removed React predicat
       const runtime = createPlaybackNetworkWatchdogRuntime({
         getDomainStatus: () => status,
         getFailure: () => failure,
-        getPlaybackEpoch: () => 1,
         isDisposed: () => false,
         onRecover: () => {},
         getTargetContext: () => null,

@@ -35,7 +35,6 @@ export function shouldWatchForNetworkRecovery(failure: {
 export interface PlaybackNetworkWatchdogRuntimeOptions {
   getDomainStatus: () => PlayerStatus;
   getFailure: () => PlaybackFailure | null;
-  getPlaybackEpoch: () => number;
   isDisposed: () => boolean;
   isRetryInFlight?: () => boolean;
   onRecover: (target: PlaybackRetryTarget) => Promise<unknown> | void;

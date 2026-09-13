@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { useCallback, useInsertionEffect, useLayoutEffect } from 'react';
+import { useCallback, useLayoutEffect } from 'react';
 import type { PlaybackController } from './playbackController';
 import { timeoutSignal } from '../utils/requestTimeout';
 import { PROBE_TIMEOUT_MS } from './playbackNetworkWatchdogRuntime';
@@ -45,14 +45,6 @@ export function useNetworkRecoveryWatchdog({
       return false;
     }
   }, [apiBase]);
-
-  useInsertionEffect(() => {
-    controller.setNetworkWatchdogContext({
-      platformEligible: !isTv,
-      intentKey,
-      probe,
-    });
-  });
 
   useLayoutEffect(() => {
     controller.setNetworkWatchdogContext({
