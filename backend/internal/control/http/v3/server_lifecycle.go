@@ -10,8 +10,8 @@ import (
 
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/control/playback"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"

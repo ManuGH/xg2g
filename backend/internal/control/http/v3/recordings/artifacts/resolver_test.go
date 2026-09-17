@@ -428,4 +428,3 @@ func TestArtifactResolver_EnsurePreparedWithTarget_UsesSuppliedTargetProfile(t *
 	assert.NoError(t, err)
 	assert.NotEmpty(t, mgr.ActiveJobIDs(), "EnsurePreparedWithTarget should trigger a build job")
 }
-
