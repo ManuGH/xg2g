@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -48,58 +47,6 @@ type Service struct {
 	ServiceRef string `json:"serviceRef"`
 }
 
-// GetBouquets returns a deduplicated and sorted list of channel groups (bouquets).
-func GetBouquets(cfg config.AppConfig, snap config.Snapshot) ([]string, error) {
-	var bouquets []string
-	seen := make(map[string]bool)
-
-	playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
-	if playlistName != "" {
-		path, err := paths.ValidatePlaylistPath(cfg.DataDir, playlistName)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-		} else {
-			data, err := os.ReadFile(filepath.Clean(path))
-			if err == nil {
-				channels := m3u.Parse(string(data))
-				for _, ch := range channels {
-					if ch.Group != "" && !seen[ch.Group] {
-						bouquets = append(bouquets, ch.Group)
-						seen[ch.Group] = true
-					}
-				}
-			} else if !os.IsNotExist(err) {
-				return nil, err
-			}
-		}
-	}
-
-	// Fallback to configured bouquets if none found in playlist (or playlist missing)
-	if len(bouquets) == 0 {
-		configured := strings.Split(cfg.Bouquet, ",")
-		for _, b := range configured {
-			if trimmed := strings.TrimSpace(b); trimmed != "" {
-				if !seen[trimmed] {
-					bouquets = append(bouquets, trimmed)
-					seen[trimmed] = true
-				}
-			}
-		}
-	}
-
-	// CTO Requirement: Deterministic ordering
-	sort.Strings(bouquets)
-
-	// CTO Requirement: Return empty slice instead of nil for JSON consistency?
-	// User Requirement (Parity): "If Slice 5.x is truly legacy parity, change to return nil."
-	if len(bouquets) == 0 {
-		return nil, nil
-	}
-
-	return bouquets, nil
-}
 
 // BouquetWithCount represents a named bouquet with a service count.
 type BouquetWithCount struct {
@@ -174,33 +121,10 @@ func GetBouquetsWithCounts(cfg config.AppConfig, snap config.Snapshot) ([]Bouque
 		})
 	}
 
-	// 6. Handle Fallback if Playlist was Empty but Read Validly?
-	// Legacy logic for GetBouquets falls back if len=0.
-	// But User requires "Truthful". If M3U is valid but empty, result is [].
-	// However, if NO groups found, do we fall back?
-	// "Fallback to configured bouquets if none found in playlist"
-	// The legacy GetBouquets does exactly that (lines 76+).
-	// We should mirror that logic for consistency?
-	// User Requirement: "Fallback only on NotExist" was the instruction for errors.
-	// But what about efficient "empty playlist treated as fallback"?
-	// Let's stick to "Fallback on NotExist".
-	// If file exists and has no groups -> Return empty list (Truth).
-
-	// WAIT. Legacy GetBouquets (lines 76-86) explicitly falls back if `len(bouquets) == 0`.
-	// This happens if file exists but has no groups.
-	// We should probably respect that "No Groups Found" -> Fallback Config?
-	// But User said: "Fallback only on os.ErrNotExist... otherwise return error".
-	// That was about ERRORS. What about EMPTY SUCCESS?
-	// "If the underlying data source truly cannot provide per-bouquet contents... fallback to config count=0."
-	// An empty playlist TRULY provides 0 contents.
-	// But "Fallback to configured bouquets" implies we show bouquets that MIGHT be there?
-	// Actually, if playlist is empty, showing config names with 0 count is honest.
-	// Let's mirror the legacy "if len=0, try config" logic, it aligns with "System Availability".
-
-	// 6. Strict Truthfulness:
-	// If file existed but had no groups (len=0), we return empty list.
-	// We DO NOT fall back to config here. That would be "inventing" bouquets when we know the file is empty.
+	// 6. Truthfulness: If the playlist file exists but has no groups (len=0),
+	// return empty list without falling back to config. Fallback to config only applies on ErrNotExist.
 	return result, false, nil
+
 }
 
 func getFallbackBouquetsWithCounts(cfg config.AppConfig) []BouquetWithCount {
