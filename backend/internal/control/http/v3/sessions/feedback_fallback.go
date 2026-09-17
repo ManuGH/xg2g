@@ -12,6 +12,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
+// Deprecated: SafariFallbackBrowserUA is retained only for backward-compatibility.
+// Profiles now set Container = "mpegts" directly on TS fallback plans without UA synthesis.
 const SafariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
 
 type playbackFeedbackFallbackPlanID string
@@ -82,7 +84,8 @@ func buildPlaybackFeedbackRepairPlan(current model.ProfileSpec) playbackFeedback
 }
 
 func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, SafariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, "", current.DVRWindowSec, profileResolver)
+	next.Container = "mpegts"
 	next.DisableSafariForceCopy = true
 	return playbackFeedbackFallbackPlan{
 		id:      playbackFeedbackFallbackPlanSafariBrowserTS,
@@ -92,7 +95,7 @@ func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec, profileResolver
 }
 
 func buildSafariFeedbackRepairTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, SafariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, "", current.DVRWindowSec, profileResolver)
 	next.Container = "mpegts"
 	next.Deinterlace = true
 	next.HWAccel = ""
