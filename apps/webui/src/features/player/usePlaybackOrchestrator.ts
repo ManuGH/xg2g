@@ -797,6 +797,11 @@ export function usePlaybackOrchestrator(
     startUnix,
     anchorStartSec,
     onSeekOffset: (targetSec: number) => {
+      const video = videoRef.current;
+      if (video && video.readyState >= 1 && (status === 'playing' || status === 'paused' || status === 'buffering')) {
+        video.currentTime = Math.max(0, targetSec);
+        return;
+      }
       if (activeRecordingRef.current) {
         startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(targetSec * 1000));
       }
@@ -1190,7 +1195,7 @@ export function usePlaybackOrchestrator(
 
         setCanSeek(normalizedContract.playback.seekable);
         if (normalizedContract.media.startUnix) setStartUnix(normalizedContract.media.startUnix);
-        setAnchorStartSec(normalizedContract.media.anchorStartSec ?? (startOffsetMs ? startOffsetMs / 1000 : 0));
+        setAnchorStartSec(0);
 
         const nextResume = resolveResumeStateFromContract(normalizedContract, playbackDurationSeconds);
         if (
@@ -1222,6 +1227,9 @@ export function usePlaybackOrchestrator(
         setStatus('buffering');
         setActiveHlsEngine(null);
         playDirectMp4(streamUrl);
+        if (startOffsetMs && startOffsetMs > 0) {
+          seekWhenReady(startOffsetMs / 1000);
+        }
         return;
       }
 
@@ -1256,6 +1264,9 @@ export function usePlaybackOrchestrator(
               : resolvePreferredHlsEngineForCapabilities(requestCaps);
             playHls(streamUrl, engine);
             setActiveHlsEngine(engine);
+            if (startOffsetMs && startOffsetMs > 0) {
+              seekWhenReady(startOffsetMs / 1000);
+            }
           }
         } finally {
           if (vodFetchRef.current === fetchController) vodFetchRef.current = null;
@@ -1310,6 +1321,7 @@ export function usePlaybackOrchestrator(
     reportPlaybackFailure,
     resolvePreferredHlsEngineForCapabilities,
     setActiveHlsEngine,
+    seekWhenReady,
     setCanSeek,
     setDurationSeconds,
     setStartUnix,
@@ -2551,18 +2563,16 @@ export function usePlaybackOrchestrator(
         startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(positionSeconds * 1000));
       } else if (activeRecordingRef.current) {
         startRecordingPlayback(activeRecordingRef.current, undefined, 0);
-      } else {
-        seekWhenReady(positionSeconds);
       }
+      seekWhenReady(positionSeconds);
     },
     startOver() {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
       setShowResumeOverlay(false);
       if (activeRecordingRef.current) {
         startRecordingPlayback(activeRecordingRef.current, undefined, 0);
-      } else {
-        seekWhenReady(0);
       }
+      seekWhenReady(0);
     },
     changeProfile(profile: string) {
       const normalizedProfile = normalizePlaybackProfileSelection(profile);

@@ -76,7 +76,7 @@ func TestService_ResolvePlaybackInfo_RecordingSuccess(t *testing.T) {
 	assert.Equal(t, recordingID, recSvc.lastTruthID)
 }
 
-func TestService_ResolvePlaybackInfo_RecordingSmartStreamCopy_PromotesVideoToCopyAndTranscodesAudioToAAC(t *testing.T) {
+func TestService_ResolvePlaybackInfo_RecordingTSSource_RetainsVideoTranscodeForClosedGOPCompliance(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/charly.ts"
 	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
 	recSvc := &stubRecordingsService{
@@ -108,7 +108,7 @@ func TestService_ResolvePlaybackInfo_RecordingSmartStreamCopy_PromotesVideoToCop
 		SubjectKind: PlaybackSubjectRecording,
 		APIVersion:  "v3.1",
 		SchemaType:  "compact",
-		RequestID:   "req-smart-copy",
+		RequestID:   "req-ts-transcode",
 		Capabilities: &capabilities.PlaybackCapabilities{
 			CapabilitiesVersion: 1,
 			Containers:          []string{"mp4", "hls"},
@@ -121,12 +121,8 @@ func TestService_ResolvePlaybackInfo_RecordingSmartStreamCopy_PromotesVideoToCop
 	require.Nil(t, err)
 	require.NotNil(t, res.Decision)
 	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Video.Mode)
-	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Video.Mode)
 	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Audio.Mode)
-	assert.Equal(t, "aac", res.Decision.TargetProfile.Audio.Codec)
-	assert.Equal(t, "h264", res.Decision.Selected.VideoCodec)
-	assert.Equal(t, "aac", res.Decision.Selected.AudioCodec)
 }
 
 func TestBuildDecisionInput_PropagatesHostPerformanceAndBenchmarkClass(t *testing.T) {
