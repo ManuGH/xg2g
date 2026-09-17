@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/rs/zerolog"
 )
@@ -41,6 +42,20 @@ type startReplayResolution struct {
 	correlationID string
 }
 
+func canReplaySession(session *model.SessionRecord) bool {
+	if session == nil {
+		return false
+	}
+	if session.State.IsTerminal() {
+		return false
+	}
+	switch session.State {
+	case model.SessionStopping, model.SessionDraining:
+		return false
+	}
+	return true
+}
+
 func resolveStartReplay(ctx context.Context, store SessionStore, idempotencyKey, existingID, fallbackCorrelation string) (*startReplayResolution, bool, error) {
 	replayCorrelation := fallbackCorrelation
 
@@ -56,15 +71,19 @@ func resolveStartReplay(ctx context.Context, store SessionStore, idempotencyKey,
 				replayCorrelation = cid
 			}
 		}
-		if !existingSession.State.IsTerminal() {
+		if canReplaySession(existingSession) {
 			return &startReplayResolution{correlationID: replayCorrelation}, false, nil
 		}
 	}
 
 	cleaner, ok := store.(sessionstore.IdempotencyCleaner)
 	if !ok {
-		// Stores without cleanup support treat the idempotency mapping as authoritative.
-		// This preserves non-blocking replay semantics even if session visibility lags.
+		// Stores without cleanup support treat the idempotency mapping as authoritative
+		// only when session visibility lags (existingSession == nil). A known terminal
+		// or stopping session must never be served as an active replay.
+		if existingSession != nil {
+			return nil, false, nil
+		}
 		return &startReplayResolution{correlationID: replayCorrelation}, false, nil
 	}
 	if _, err := cleaner.DeleteIdempotencyIfMatch(ctx, idempotencyKey, existingID); err != nil {
