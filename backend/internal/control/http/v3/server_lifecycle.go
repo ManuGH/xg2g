@@ -9,6 +9,9 @@ import (
 	"time"
 
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/playback"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -25,6 +28,96 @@ func (s *Server) StartMonitor(ctx context.Context) {
 		go s.storageMonitor.Start(ctx, 5*time.Minute, s)
 		log.L().Info().Msg("storage_monitor: background loop started")
 	}
+}
+
+// StartAutoPrepareWorker starts a background task to pre-package completed recordings to SSD cache.
+func (s *Server) StartAutoPrepareWorker(ctx context.Context) {
+	go s.startAutoPrepareWorkerLoop(ctx)
+}
+
+func (s *Server) startAutoPrepareWorkerLoop(ctx context.Context) {
+	enabled := config.ParseBool("XG2G_DVR_AUTOPREPARE", true)
+	if !enabled {
+		log.L().Info().Msg("dvr_autoprepare: worker disabled by configuration (XG2G_DVR_AUTOPREPARE=false)")
+		return
+	}
+
+	adapter := &serverAutoPrepareAdapter{s: s}
+	worker := recservice.NewAutoPrepareWorker(recservice.AutoPrepareConfig{
+		Enabled:       true,
+		Interval:      60 * time.Second,
+		MaxConcurrent: 1,
+	}, adapter, adapter, s.vodManager)
+
+	worker.RunLoop(ctx)
+}
+
+type serverAutoPrepareAdapter struct {
+	s *Server
+}
+
+func (a *serverAutoPrepareAdapter) ResolvePlayback(ctx context.Context, recordingID, profile string) (recservice.PlaybackResolution, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.PlaybackResolution{}, errors.New("recordings service unavailable")
+	}
+	return svc.ResolvePlayback(ctx, recordingID, profile)
+}
+
+func (a *serverAutoPrepareAdapter) List(ctx context.Context, in recservice.ListInput) (recservice.ListResult, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.ListResult{}, errors.New("recordings service unavailable")
+	}
+	return svc.List(ctx, in)
+}
+
+func (a *serverAutoPrepareAdapter) GetPlaybackInfo(ctx context.Context, in recservice.PlaybackInfoInput) (recservice.PlaybackInfoResult, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.PlaybackInfoResult{}, errors.New("recordings service unavailable")
+	}
+	return svc.GetPlaybackInfo(ctx, in)
+}
+
+func (a *serverAutoPrepareAdapter) GetStatus(ctx context.Context, in recservice.StatusInput) (recservice.StatusResult, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.StatusResult{}, errors.New("recordings service unavailable")
+	}
+	return svc.GetStatus(ctx, in)
+}
+
+func (a *serverAutoPrepareAdapter) GetMediaTruth(ctx context.Context, recordingID string) (playback.MediaTruth, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return playback.MediaTruth{}, errors.New("recordings service unavailable")
+	}
+	return svc.GetMediaTruth(ctx, recordingID)
+}
+
+func (a *serverAutoPrepareAdapter) Stream(ctx context.Context, in recservice.StreamInput) (recservice.StreamResult, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.StreamResult{}, errors.New("recordings service unavailable")
+	}
+	return svc.Stream(ctx, in)
+}
+
+func (a *serverAutoPrepareAdapter) Delete(ctx context.Context, in recservice.DeleteInput) (recservice.DeleteResult, error) {
+	svc := a.s.RecordingsService()
+	if svc == nil {
+		return recservice.DeleteResult{}, errors.New("recordings service unavailable")
+	}
+	return svc.Delete(ctx, in)
+}
+
+func (a *serverAutoPrepareAdapter) EnsurePrepared(ctx context.Context, recordingID string) error {
+	art := a.s.ArtifactsResolver()
+	if art == nil {
+		return errors.New("artifacts resolver unavailable")
+	}
+	return art.EnsurePrepared(ctx, recordingID)
 }
 
 // StartRecordingCacheEvicter starts a background task to clean up old recording cache entries.

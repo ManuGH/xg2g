@@ -49,6 +49,11 @@ func (m *MockArtifactsResolver) ResolvePlaylistState(ctx context.Context, record
 	return args.Get(0).(artifacts.ArtifactOK), nil
 }
 
+func (m *MockArtifactsResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
+	args := m.Called(ctx, recordingID)
+	return args.Error(0)
+}
+
 func createTestServerP34(svc recservice.Service, art artifacts.Resolver) *Server {
 	cfg := config.AppConfig{}
 	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"

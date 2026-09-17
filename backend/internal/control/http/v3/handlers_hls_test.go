@@ -48,6 +48,11 @@ func (m *MockArtifactResolver) ResolvePlaylistState(ctx context.Context, recordi
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
 
+func (m *MockArtifactResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
+	args := m.Called(ctx, recordingID)
+	return args.Error(0)
+}
+
 func TestHLSHandlers_Matrix(t *testing.T) {
 	tmpDir := t.TempDir()
 	segContent := make([]byte, 1024)

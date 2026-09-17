@@ -492,7 +492,7 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 	// when the video itself needs transcoding (video.Mode == transcode).
 	sourceContainer := strings.ToLower(strings.TrimSpace(dec.Selected.Container))
 	sourceIsTS := sourceContainer == "ts" || sourceContainer == "mpegts"
-	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy && !sourceIsTS {
+	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy && (!sourceIsTS || req.SubjectKind == PlaybackSubjectRecording) {
 		// Surface the audio transcode the target already specifies
 		// (buildTargetProfile forces Audio -> transcode/AAC when the video stays
 		// copy) so the selected formats match the executed stream. Leave the
@@ -501,6 +501,37 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 			dec.Selected.AudioCodec = audioCodec
 		}
 		return
+	}
+
+	// Smart Stream-Copy: If client supports source video codec directly (H.264 / HEVC)
+	// and dimensions are within limits, preserve video on the copy path and transcode
+	// only audio to AAC. Avoids heavy 280% CPU transcoding for standard DVB recordings.
+	if req.SubjectKind == PlaybackSubjectRecording {
+		sourceVideoCodec := strings.ToLower(strings.TrimSpace(dec.Selected.VideoCodec))
+		if dec.TargetProfile != nil && (sourceVideoCodec == "h264" || sourceVideoCodec == "hevc" || sourceVideoCodec == "h265") &&
+			stringSliceContainsFold(resolvedCaps.VideoCodecs, sourceVideoCodec) {
+			withinLimits := true
+			if resolvedCaps.MaxVideo != nil {
+				if resolvedCaps.MaxVideo.Width > 0 && dec.TargetProfile.Video.Width > resolvedCaps.MaxVideo.Width {
+					withinLimits = false
+				}
+				if resolvedCaps.MaxVideo.Height > 0 && dec.TargetProfile.Video.Height > resolvedCaps.MaxVideo.Height {
+					withinLimits = false
+				}
+				if resolvedCaps.MaxVideo.Fps > 0 && dec.TargetProfile.Video.FPS > float64(resolvedCaps.MaxVideo.Fps) {
+					withinLimits = false
+				}
+			}
+			if withinLimits {
+				dec.TargetProfile.Video.Mode = playbackprofile.MediaModeCopy
+				dec.TargetProfile.Video.Codec = sourceVideoCodec
+				dec.TargetProfile.Audio.Mode = playbackprofile.MediaModeTranscode
+				dec.TargetProfile.Audio.Codec = "aac"
+				dec.Selected.VideoCodec = sourceVideoCodec
+				dec.Selected.AudioCodec = "aac"
+				return
+			}
+		}
 	}
 
 	profileID := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, clientAV1Disabled, iosNativeHEVCHWMode)
