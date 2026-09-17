@@ -381,3 +381,18 @@ func TestArtifactResolver_ResolvePlaylistState_SQLiteReadCutover(t *testing.T) {
 		assert.Equal(t, CodeNotFound, err.Code)
 	})
 }
+
+func TestArtifactResolver_EnsurePrepared_StartsSmartStreamCopyBuild(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{Root: t.TempDir()},
+	}
+	runner := &captureRunner{}
+	mgr, _ := vod.NewManager(runner, &dummyProber{}, nil)
+	t.Cleanup(mgr.Shutdown)
+	r := New(cfg, mgr, nil)
+
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+	err := r.EnsurePrepared(context.Background(), validID)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, mgr.ActiveJobIDs(), "EnsurePrepared should trigger a build job")
+}

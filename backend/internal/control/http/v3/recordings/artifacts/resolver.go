@@ -333,13 +333,27 @@ func (r *DefaultResolver) EnsurePrepared(ctx context.Context, recordingID string
 	if !ok {
 		ref = recordingID
 	}
-	target := recordingTargetProfile("")
-	if target == nil {
-		target = &playbackprofile.TargetPlaybackProfile{
-			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
-		}
+	target := playbackprofile.TargetPlaybackProfile{
+		Container: "mpegts",
+		Packaging: playbackprofile.PackagingTS,
+		Video: playbackprofile.VideoTarget{
+			Mode: playbackprofile.MediaModeCopy,
+		},
+		Audio: playbackprofile.AudioTarget{
+			Mode:       playbackprofile.MediaModeTranscode,
+			Codec:      "aac",
+			BitrateKbps: 256,
+			Channels:   2,
+			SampleRate: 48000,
+		},
+		HLS: playbackprofile.HLSTarget{
+			Enabled:          true,
+			SegmentContainer: "mpegts",
+			SegmentSeconds:   6,
+		},
+		HWAccel: playbackprofile.HWAccelNone,
 	}
-	canonical := playbackprofile.CanonicalizeTarget(*target)
+	canonical := playbackprofile.CanonicalizeTarget(target)
 	variant := canonical.Hash()
 	metaID := recservice.RecordingVariantMetadataKey(ref, variant)
 
