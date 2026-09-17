@@ -205,7 +205,7 @@ export function usePlaybackOrchestrator(
   const activeServiceRef = useRef<string>(sRef);
   activeServiceRef.current = sRef;
   const activeChannelRef = useRef<string>(
-    (channel?.serviceRef || channel?.id || '').trim()
+    (channel?.serviceRef || channel?.id || explicitSRefProp || sRef || '').trim()
   );
   const [explicitProfile, setExplicitProfile] = useState<PlaybackProfileSelection>(() => {
     try {
@@ -1364,15 +1364,16 @@ export function usePlaybackOrchestrator(
         return;
       }
 
+      const committedLiveRef = (activeChannelRef.current || activeServiceRef.current || sRef || '').trim();
       if (
         explicitTarget.kind === 'live' &&
         explicitTarget.serviceRef &&
-        (sRef || activeServiceRef.current) &&
-        explicitTarget.serviceRef !== (sRef || activeServiceRef.current)?.trim()
+        committedLiveRef &&
+        explicitTarget.serviceRef !== committedLiveRef
       ) {
         debugWarn('[V3Player] Explicit live target disagrees with committed serviceRef; superseding restart.', {
           explicit: explicitTarget.serviceRef,
-          committed: sRef || activeServiceRef.current,
+          committed: committedLiveRef,
         });
         controller.cancelRetry('superseded');
         return;
@@ -1996,22 +1997,19 @@ export function usePlaybackOrchestrator(
 
   // Update sRef and switch stream on channel change (explicit sRef prop keeps its fallback).
   useEffect(() => {
-    if (!channel) {
-      if (explicitSRefProp) setSRef(explicitSRefProp);
-      return;
-    }
-    const ref = (channel.serviceRef || channel.id || '').trim();
-    if (!ref) return;
+    const targetRef = (channel?.serviceRef || channel?.id || explicitSRefProp || '').trim();
+    if (!targetRef) return;
 
-    if (ref !== activeChannelRef.current) {
-      activeChannelRef.current = ref;
-      setSRef(ref);
+    if (targetRef !== activeChannelRef.current) {
+      activeChannelRef.current = targetRef;
+      activeServiceRef.current = targetRef;
+      setSRef(targetRef);
       if (mounted.current) {
         dispatchPlayback({
           type: 'intent.start.requested',
           epoch: allocatePlaybackEpoch(),
           kind: 'live',
-          serviceRef: ref,
+          serviceRef: targetRef,
           explicitProfile: explicitProfile,
         });
       }
@@ -2517,11 +2515,18 @@ export function usePlaybackOrchestrator(
     updateServiceRef: setSRef,
     submitServiceRef(nextValue) {
       const ref = (nextValue || '').trim();
-      if (ref) activeChannelRef.current = ref;
+      if (ref) {
+        activeChannelRef.current = ref;
+        activeServiceRef.current = ref;
+      }
       void startStream(ref);
     },
     startStream(refToUse) {
-      if (refToUse) activeChannelRef.current = refToUse.trim();
+      const ref = (refToUse || '').trim();
+      if (ref) {
+        activeChannelRef.current = ref;
+        activeServiceRef.current = ref;
+      }
       void startStream(refToUse);
     },
     enterDVRMode,
