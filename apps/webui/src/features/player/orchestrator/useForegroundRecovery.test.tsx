@@ -835,4 +835,50 @@ describe('useForegroundRecovery (React hook & adapter integration)', () => {
       expect(startCmd.serviceRef).toBe('speculative-b');
     }
   });
+
+  it('skips onHlsReload startLoad when video is already actively playing with readyState >= 3', () => {
+    const controller = createTestController('playing');
+    const hlsStartLoadSpy = vi.fn();
+
+    function ActivePlayer({ visible, paused, readyState }: { visible: boolean; paused: boolean; readyState: number }) {
+      const videoRef = useRef<HTMLVideoElement | null>(null);
+      const hlsRef = useRef<{ startLoad: () => void }>({ startLoad: hlsStartLoadSpy });
+      const userPauseIntentRef = useRef(false);
+      const [, setStatus] = useState<PlayerStatus>('playing');
+
+      useForegroundRecovery({
+        controller,
+        videoRef,
+        hlsRef: hlsRef as any,
+        isEligible: true,
+        isDocumentVisible: visible,
+        target: { kind: 'live', serviceRef: 'test-stream' },
+        userPauseIntentRef,
+        setStatus,
+      });
+
+      return (
+        <video
+          ref={(el) => {
+            if (el) {
+              Object.defineProperty(el, 'paused', { value: paused, configurable: true });
+              Object.defineProperty(el, 'readyState', { value: readyState, configurable: true });
+              el.play = vi.fn().mockReturnValue(Promise.resolve());
+            }
+            videoRef.current = el;
+          }}
+        />
+      );
+    }
+
+    const { rerender } = render(<ActivePlayer visible={true} paused={false} readyState={4} />);
+    // Tab hides
+    rerender(<ActivePlayer visible={false} paused={false} readyState={4} />);
+    // Tab reveals while video was still playing smoothly in background
+    rerender(<ActivePlayer visible={true} paused={false} readyState={4} />);
+
+    // startLoad should NOT be called because playback is already active
+    expect(hlsStartLoadSpy).not.toHaveBeenCalled();
+  });
 });
+

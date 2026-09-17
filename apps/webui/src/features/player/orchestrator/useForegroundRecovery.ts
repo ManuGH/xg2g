@@ -89,6 +89,11 @@ export function useForegroundRecovery({
           mediaId,
           onHlsReload: () => {
             if (hlsRef.current) {
+              // If the video element is actively playing and not paused/stalled,
+              // restarting HLS loading is disruptive and causes audio/video stutter.
+              if (currentVideo && !currentVideo.paused && currentVideo.readyState >= 3) {
+                return;
+              }
               try {
                 hlsRef.current.startLoad();
               } catch (err) {

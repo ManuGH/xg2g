@@ -120,7 +120,12 @@ export function startResumePlaybackRecovery(
   // caller transitions status as part of the same render cycle), so the first
   // attempt must not be deferred past cleanup. The initial synchronous call is a
   // free attempt that never counts toward the maxAttempts bound.
-  void video.play().catch((err: unknown) => options.onBlocked?.(err));
+  // However, if the element is already playing (paused === false), calling play()
+  // synchronously into an active media pipeline can introduce micro-stutter/judder
+  // on tab foreground.
+  if (video.paused !== false) {
+    void video.play().catch((err: unknown) => options.onBlocked?.(err));
+  }
 
   // Observe: if the stream didn't recover after the first nudge, keep trying
   // until it advances or attempts are exhausted.

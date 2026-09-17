@@ -159,4 +159,28 @@ describe('startResumePlaybackRecovery (observe-first)', () => {
     expect(settledSpy).toHaveBeenCalledTimes(1);
     expect(settledSpy).toHaveBeenCalledWith('cancelled');
   });
+
+  it('skips synchronous play when element is already unpaused (paused === false) and settles clean on advance', () => {
+    const v = fakeVideo(10) as any;
+    v.paused = false;
+    const settledSpy = vi.fn();
+    startResumePlaybackRecovery(v, { observeMs: 400, onSettled: settledSpy });
+    // Synchronous play() is skipped to prevent stutter on an already playing pipeline
+    expect(v.play).not.toHaveBeenCalled();
+    v.currentTime = 10.5;
+    vi.advanceTimersByTime(400);
+    expect(v.play).not.toHaveBeenCalled();
+    expect(settledSpy).toHaveBeenCalledWith('recovered');
+  });
+
+  it('intervenes with nudge if unpaused element (paused === false) is frozen and fails to advance', () => {
+    const v = fakeVideo(10) as any;
+    v.paused = false;
+    startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250 });
+    expect(v.play).not.toHaveBeenCalled();
+    // Time advances but currentTime stayed stuck -> nudge intervenes
+    vi.advanceTimersByTime(400);
+    expect(v.play).toHaveBeenCalledTimes(1);
+  });
 });
+
