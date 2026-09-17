@@ -11,6 +11,7 @@ import (
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -116,6 +117,26 @@ func (a *serverAutoPrepareAdapter) EnsurePrepared(ctx context.Context, recording
 	art := a.s.ArtifactsResolver()
 	if art == nil {
 		return errors.New("artifacts resolver unavailable")
+	}
+	processor := a.s.recordingsProcessor()
+	if processor != nil {
+		reqID := recordingID
+		if !recservice.ValidRecordingID(reqID) {
+			reqID = recservice.EncodeRecordingID(reqID)
+		}
+		res, pErr := processor.ResolvePlaybackInfo(ctx, v3recordings.PlaybackInfoRequest{
+			SubjectID:   reqID,
+			SubjectKind: v3recordings.PlaybackSubjectRecording,
+			APIVersion:  "v3.1",
+			SchemaType:  "compact",
+		})
+		if pErr == nil && res.Decision != nil && res.Decision.TargetProfile != nil {
+			return art.EnsurePreparedWithTarget(ctx, reqID, res.Decision.TargetProfile)
+		}
+		if pErr != nil && pErr.Kind == v3recordings.PlaybackInfoErrorPreparing {
+			log.L().Debug().Str("recordingID", recordingID).Msg("dvr_autoprepare: recording is currently being probed; deferring prepare")
+			return nil
+		}
 	}
 	return art.EnsurePrepared(ctx, recordingID)
 }

@@ -29,6 +29,7 @@ type Resolver interface {
 	ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError)
 	ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError)
 	EnsurePrepared(ctx context.Context, recordingID string) error
+	EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error
 }
 
 type DefaultResolver struct {
@@ -329,31 +330,40 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 // EnsurePrepared initiates background pre-packaging of a recording using smart stream-copy.
 // If the artifact is already ready or actively building, it returns nil immediately without blocking.
 func (r *DefaultResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
+	return r.EnsurePreparedWithTarget(ctx, recordingID, nil)
+}
+
+// EnsurePreparedWithTarget initiates background pre-packaging of a recording using a specific target profile.
+// If target is nil, it falls back to the canonical smart stream-copy profile.
+func (r *DefaultResolver) EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error {
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		ref = recordingID
 	}
-	target := playbackprofile.TargetPlaybackProfile{
-		Container: "mpegts",
-		Packaging: playbackprofile.PackagingTS,
-		Video: playbackprofile.VideoTarget{
-			Mode: playbackprofile.MediaModeCopy,
-		},
-		Audio: playbackprofile.AudioTarget{
-			Mode:       playbackprofile.MediaModeTranscode,
-			Codec:      "aac",
-			BitrateKbps: 256,
-			Channels:   2,
-			SampleRate: 48000,
-		},
-		HLS: playbackprofile.HLSTarget{
-			Enabled:          true,
-			SegmentContainer: "mpegts",
-			SegmentSeconds:   6,
-		},
-		HWAccel: playbackprofile.HWAccelNone,
+	var canonical playbackprofile.TargetPlaybackProfile
+	if target != nil {
+		canonical = playbackprofile.CanonicalizeTarget(*target)
+	} else {
+		canonical = playbackprofile.CanonicalizeTarget(playbackprofile.TargetPlaybackProfile{
+			Container: "mpegts",
+			Packaging: playbackprofile.PackagingTS,
+			Video: playbackprofile.VideoTarget{
+				Mode: playbackprofile.MediaModeCopy,
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:        playbackprofile.MediaModeTranscode,
+				Codec:       "aac",
+				BitrateKbps: 256,
+				Channels:    2,
+				SampleRate:  48000,
+			},
+			HLS: playbackprofile.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: "mpegts",
+			},
+			HWAccel: playbackprofile.HWAccelNone,
+		})
 	}
-	canonical := playbackprofile.CanonicalizeTarget(target)
 	variant := canonical.Hash()
 	metaID := recservice.RecordingVariantMetadataKey(ref, variant)
 

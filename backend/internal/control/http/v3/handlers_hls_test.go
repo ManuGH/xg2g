@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -50,6 +51,11 @@ func (m *MockArtifactResolver) ResolvePlaylistState(ctx context.Context, recordi
 
 func (m *MockArtifactResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
 	args := m.Called(ctx, recordingID)
+	return args.Error(0)
+}
+
+func (m *MockArtifactResolver) EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error {
+	args := m.Called(ctx, recordingID, target)
 	return args.Error(0)
 }
 

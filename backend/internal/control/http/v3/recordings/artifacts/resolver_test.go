@@ -396,3 +396,36 @@ func TestArtifactResolver_EnsurePrepared_StartsSmartStreamCopyBuild(t *testing.T
 	assert.NoError(t, err)
 	assert.NotEmpty(t, mgr.ActiveJobIDs(), "EnsurePrepared should trigger a build job")
 }
+
+func TestArtifactResolver_EnsurePreparedWithTarget_UsesSuppliedTargetProfile(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{Root: t.TempDir()},
+	}
+	runner := &captureRunner{}
+	mgr, _ := vod.NewManager(runner, &dummyProber{}, nil)
+	t.Cleanup(mgr.Shutdown)
+	r := New(cfg, mgr, nil)
+
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+	target := &playbackprofile.TargetPlaybackProfile{
+		Container: "mpegts",
+		Packaging: playbackprofile.PackagingTS,
+		Video: playbackprofile.VideoTarget{
+			Mode:  playbackprofile.MediaModeCopy,
+			Codec: "h264",
+		},
+		Audio: playbackprofile.AudioTarget{
+			Mode:        playbackprofile.MediaModeTranscode,
+			Codec:       "aac",
+			BitrateKbps: 256,
+		},
+		HLS: playbackprofile.HLSTarget{
+			Enabled:          true,
+			SegmentContainer: "mpegts",
+		},
+	}
+	err := r.EnsurePreparedWithTarget(context.Background(), validID, target)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, mgr.ActiveJobIDs(), "EnsurePreparedWithTarget should trigger a build job")
+}
+
