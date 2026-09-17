@@ -1836,7 +1836,7 @@ export function usePlaybackOrchestrator(
         setStatus('error');
       }
     } catch (err) {
-      if (!isLifecycleActive(lifecycleGeneration)) return;
+      if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
       debugError(err);
       reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.streamFailed')), {
         source: 'orchestrator',
