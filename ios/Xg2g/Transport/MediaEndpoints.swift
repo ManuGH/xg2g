@@ -98,4 +98,17 @@ struct MediaEndpoints: Sendable {
         guard address.apiScope.contains(url) else { return nil }
         return url
     }
+
+    #if DEBUG
+    /// Default direct receiver base URL used for demo and UI-testing fixtures.
+    static let debugDemoReceiverBaseURL = "http://10.10.55.64:8001"
+
+    /// Debug fallback stream URL when no backend server address has been configured.
+    static func debugFallbackLiveStream(serviceRef: String) -> URL? {
+        let trimmed = serviceRef.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty && !trimmed.hasPrefix("preview_") else { return nil }
+        return URL(string: "https://xg2g.home.matrixcentral.de/api/v3/stream/live/\(trimmed)")
+    }
+    #endif
 }
+

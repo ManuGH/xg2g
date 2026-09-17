@@ -4,7 +4,7 @@ Measured 2026-08-22 ~22:10–22:45 CEST against the Vu+ Uno 4K (OpenATV 8.0) via
 the Enigma2 stream server. One capture per service (8 s, retried at 12 s for
 every service that produced nothing).
 
-`iOS sees` is what `ios/Xg2g/TSPacketParser.swift` classifies today. `backend`
+`iOS sees` is what `ios/Xg2g/Playback/TransportStream/TSPacketParser.swift` classifies today. `backend`
 is `isAudioStreamType` in `backend/internal/stream/ingest/ring/randomaccess.go`.
 A row where iOS finds nothing decodable but the backend counts audio is a row
 where today's `CriterionAudio` would report READY on a channel that stays mute.

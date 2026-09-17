@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "5A3D1CAD-095D-4911-9197-3FEC2076AF62",
+      "name" : "Default",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "environmentVariableEntries" : [
+      {
+        "key" : "XG2G_CONTRACT_BASE_URL",
+        "value" : "http://127.0.0.1:18422"
+      }
+    ]
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Xg2g.xcodeproj",
+        "identifier" : "AAAA0000000000000000AAAE",
+        "name" : "Xg2gTests"
+      }
+    }
+  ],
+  "version" : 1
+}

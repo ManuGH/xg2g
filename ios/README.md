@@ -57,12 +57,12 @@ without touching `Xg2g.xcodeproj`.
 
 ```bash
 xcodebuild -project ios/Xg2g.xcodeproj -scheme Xg2g \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
 ```
 
 ```bash
 xcodebuild -project ios/Xg2g.xcodeproj -scheme Xg2g \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 ```
 
 No signing identity is required: the simulator signs ad-hoc ("Sign to Run
@@ -77,10 +77,18 @@ builds.
 
 ## Layout
 
-- `Xg2g/` application sources (synchronized group — no project edit to add files)
-- `Xg2gTests/` unit tests (synchronized group)
+- `Xg2g/` sources compiled by both apps, grouped into `App`, `Features`,
+  `Playback`, `Identity`, `Transport`, `DesignSystem`, `Support`, and `Generated`
+- `Platforms/iOS/` iOS entry point and assets; target/scheme `Xg2g`
+- `Platforms/tvOS/` tvOS entry point and assets; target/scheme `Xg2gTV`
+- `Xg2gTests/` tests grouped by domain, plus shared `Fixtures` (synchronized group)
 - `Support/Info.plist` bundle configuration for **Release**
 - `Support/Info-Debug.plist` bundle configuration for **Debug**
+
+See [STRUCTURE.md](STRUCTURE.md) for naming conventions and target membership.
+Platform folders are synchronized independently and belong only to their own
+app target. The tvOS app is still a prototype; source organization does not
+establish feature parity with iOS.
 
 ## App Transport Security
 
@@ -195,7 +203,7 @@ the server, so treating them as traversal here would be a second parser opinion
 than the network stack is not safer, it is merely different, and different is
 the bug.
 
-`Xg2gTests/URLContainmentAttackTests.swift` asserts twice per case: that
+`Xg2gTests/Transport/URLContainmentAttackTests.swift` asserts twice per case: that
 `URLRequest` carries the URL byte-for-byte unchanged, and what the verdict is.
 The first assertion is what keeps the second honest — if Foundation ever starts
 rewriting one of these, the test fails before the verdict silently becomes a
@@ -417,8 +425,17 @@ tests stay green with a broken Keychain setup, so without them a build can look
 entirely healthy while the whole auth stack is inoperative — which is exactly
 what `CODE_SIGNING_ALLOWED=NO` caused before it was removed.
 
-There is no iOS workflow in `.github/workflows` yet; adding one needs a macOS
-runner.
+[Architecture Convergence](../.github/workflows/architecture-convergence.yml)
+already runs the iOS backend contract suite. Both Apple jobs use the
+[`xcode-27` runner](https://github.blog/changelog/2026-09-10-xcode-27-runner-image-now-runs-on-macos-27/)
+to match the project's toolchain and tvOS 27 SDK requirement. The tvOS job builds
+Debug and Release, and both results are required by the workflow's merge gate.
+The iOS contract job selects `BackendContractTests`; it is not a full unit-suite
+run. The tvOS job verifies compilation only, not UI or playback behavior.
+
+Run the same tvOS gate locally with `make verify-tvos-build`, or select one
+configuration with `ios/scripts/verify-tvos-build.sh Debug`. A missing or older
+tvOS SDK fails the gate rather than silently skipping it.
 
 ### Host encoding: punycode only
 
@@ -464,10 +481,11 @@ colon so `demo.example:8080` still works. Both cases are covered by tests.
 
 ## Verified Against Android
 
-`Xg2gTests/ServerTargetResolverTests.swift` mirrors every case in
-`android/app/src/test/java/io/github/manugh/xg2g/android/ServerTargetResolverTest.kt`
-one-for-one, then adds the hardening cases above. Keep both suites in step when
-the contract changes.
+`Xg2gTests/Transport/ServerAddressTests.swift` covers the Apple client's server
+address parsing and URL containment; `ServerOriginTests.swift` covers origin
+normalization. Android's `ServerTargetResolverTest.kt` covers its own resolver.
+Keep shared wire and URL contracts aligned without assuming these suites are
+one-for-one copies.
 
 ## Backend Notes
 

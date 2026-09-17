@@ -83,7 +83,7 @@ jobs:
 
   ios-client:
     name: iOS Generated Contract and Backend Round Trip
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 35
     env:
       GOTOOLCHAIN: auto
@@ -121,10 +121,28 @@ jobs:
       - name: Exercise generated iOS contracts against the Go router
         run: ./ios/scripts/run-contract-tests.sh "${{ steps.simulator.outputs.udid }}"
 
+  tvos-client:
+    name: tvOS Simulator Build (${{ matrix.configuration }})
+    runs-on: xcode-27
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Build tvOS app
+        env:
+          XG2G_TVOS_CONFIGURATION: ${{ matrix.configuration }}
+          XG2G_TVOS_DERIVED_DATA: ${{ runner.temp }}/xg2g-tvos
+        run: ./ios/scripts/verify-tvos-build.sh "${XG2G_TVOS_CONFIGURATION}"
+
   merge-gate:
     name: Architecture Convergence / Merge Gate
     if: always()
-    needs: [contract-boundary, android-client, ios-client]
+    needs: [contract-boundary, android-client, ios-client, tvos-client]
     runs-on: ubuntu-latest
     steps:
       - name: Require every architecture line
@@ -132,8 +150,10 @@ jobs:
           CONTRACT_RESULT: ${{ needs.contract-boundary.result }}
           ANDROID_RESULT: ${{ needs.android-client.result }}
           IOS_RESULT: ${{ needs.ios-client.result }}
+          TVOS_RESULT: ${{ needs.tvos-client.result }}
         run: |
           set -euo pipefail
           test "$CONTRACT_RESULT" = success
           test "$ANDROID_RESULT" = success
           test "$IOS_RESULT" = success
+          test "$TVOS_RESULT" = success

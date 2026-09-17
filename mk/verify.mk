@@ -199,3 +199,11 @@ verify-codec-path-matrix: ## Verify x264/x265/AV1 codec-path matrix and iOS code
 
 verify-ios-build: ## Verify that the iOS app and test targets compile cleanly
 	@./ios/scripts/verify-ios-build.sh
+
+.PHONY: test-ios
+test-ios: ## Run iOS unit and integration test suite on iPhone 18 Pro simulator
+	@./ios/scripts/run-ios-tests.sh
+
+.PHONY: verify-tvos-build
+verify-tvos-build: ## Verify tvOS Debug and Release simulator builds (requires macOS/Xcode)
+	@./ios/scripts/verify-tvos-build.sh

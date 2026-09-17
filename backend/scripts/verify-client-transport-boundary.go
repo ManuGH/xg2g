@@ -79,7 +79,7 @@ var platforms = []platform{
 	{
 		name:           "ios",
 		enforced:       true,
-		roots:          []string{"../ios/Xg2g", "../ios/Xg2gTests"},
+		roots:          []string{"../ios/Xg2g", "../ios/Platforms", "../ios/Xg2gTests"},
 		exts:           []string{".swift"},
 		transportZones: []string{"ios/Xg2g/Transport/"},
 		generatedZones: []string{"ios/Xg2g/Generated/"},

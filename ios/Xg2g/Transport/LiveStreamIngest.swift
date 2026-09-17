@@ -125,7 +125,6 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate, @unchecked Senda
         config.allowsCellularAccess = true
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
-        config.httpShouldUsePipelining = true
 
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1

@@ -10,7 +10,7 @@ import Foundation
 // It exists as its own file, in the transport zone, so the two sides stay
 // separable: `Xg2gContract` is regenerated from api/openapi.yaml and must carry
 // no behaviour, while the domain types must not be shaped by whatever the
-// contract does next. Everything that bridges them is here, and nowhere else.
+// contract does next. Channel and EPG adapters live in ChannelContractMapping.
 
 extension Xg2gContract.ECPublicKeyJWK {
 
