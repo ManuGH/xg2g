@@ -852,57 +852,74 @@ export default function RecordingsList() {
         </div>
 
         <div className={styles.watchPageBody}>
-          <Suspense fallback={
-            <div className={styles.watchPageFallback}>
-              <div className={[styles.preplayStage, styles.watchPageFallbackStage].join(' ')} aria-hidden="true">
-                <div className={styles.preplayStageCenter}>
-                  <PlayCircleIcon className={styles.preplayStageIcon} />
-                </div>
-                {playingProgressPercent !== null && (
-                  <div className={styles.preplayStageProgress}>
-                    <div
-                      className={styles.preplayStageProgressFill}
-                      style={{ '--xg2g-progress-width': `${playingProgressPercent}%` } as CSSProperties}
-                    ></div>
+          <div className={styles.watchPageStage}>
+            <Suspense fallback={
+              <div className={styles.watchPageFallback}>
+                <div className={[styles.preplayStage, styles.watchPageFallbackStage].join(' ')} aria-hidden="true">
+                  <div className={styles.preplayStageCenter}>
+                    <PlayCircleIcon className={styles.preplayStageIcon} />
                   </div>
-                )}
-                <div className={styles.preplayStageDock}>
-                  <div className={styles.preplayStageCopy}>
-                    <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
-                    <h1 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h1>
-                    <div className={styles.preplayMeta}>
-                      {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
-                      <span>{playing.lengthLabel}</span>
+                  {playingProgressPercent !== null && (
+                    <div className={styles.preplayStageProgress}>
+                      <div
+                        className={styles.preplayStageProgressFill}
+                        style={{ '--xg2g-progress-width': `${playingProgressPercent}%` } as CSSProperties}
+                      ></div>
                     </div>
-                  </div>
-                  <div className={styles.preplayStageActions}>
-                    <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
-                      <div className={styles.playerLaunchCopy}>
-                        <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
-                        <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                  )}
+                  <div className={styles.preplayStageDock}>
+                    <div className={styles.preplayStageCopy}>
+                      <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
+                      <h1 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h1>
+                      <div className={styles.preplayMeta}>
+                        {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
+                        <span>{playing.lengthLabel}</span>
+                      </div>
+                    </div>
+                    <div className={styles.preplayStageActions}>
+                      <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
+                        <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
+                        <div className={styles.playerLaunchCopy}>
+                          <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
+                          <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+            }>
+              <V3Player
+                recordingId={playing.recordingId}
+                recordingTitle={playing.title}
+                recordingDescription={playing.description}
+                recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
+                recordingLengthLabel={playing.lengthLabel}
+                layoutMode="page"
+                token={auth.token || undefined}
+                autoStart={true}
+                onClose={handlePlayerClose}
+                duration={playing.durationSeconds}
+                startPositionSeconds={playing.startPositionSeconds}
+                suppressResumePrompt={playing.suppressResumePrompt}
+              />
+            </Suspense>
+          </div>
+
+          <div className={styles.watchPageDetails}>
+            <div className={styles.watchPageTitleRow}>
+              <h1 className={styles.watchPageTitle}>{playing.title || t('recordings.untitled')}</h1>
+              <div className={styles.watchPageMeta}>
+                {playing.beginUnixSeconds ? (
+                  <span className={styles.watchPageMetaItem}>{formatTime(playing.beginUnixSeconds)}</span>
+                ) : null}
+                <span className={styles.watchPageMetaItem}>{playing.lengthLabel}</span>
+              </div>
             </div>
-          }>
-            <V3Player
-              recordingId={playing.recordingId}
-              recordingTitle={playing.title}
-              recordingDescription={playing.description}
-              recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
-              recordingLengthLabel={playing.lengthLabel}
-              layoutMode="page"
-              token={auth.token || undefined}
-              autoStart={true}
-              onClose={handlePlayerClose}
-              duration={playing.durationSeconds}
-              startPositionSeconds={playing.startPositionSeconds}
-              suppressResumePrompt={playing.suppressResumePrompt}
-            />
-          </Suspense>
+            {playing.description ? (
+              <p className={styles.watchPageDescription}>{playing.description}</p>
+            ) : null}
+          </div>
         </div>
       </div>
     );

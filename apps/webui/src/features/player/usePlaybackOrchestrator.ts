@@ -195,6 +195,8 @@ export function usePlaybackOrchestrator(
   const recordingId = 'recordingId' in props ? props.recordingId : undefined;
   const explicitSRefProp = 'sRef' in props ? String((props as any).sRef ?? '').trim() || undefined : undefined;
   const recordingTitle = 'recordingTitle' in props ? props.recordingTitle : undefined;
+  const recordingDescription = 'recordingDescription' in props ? props.recordingDescription : undefined;
+  const layoutMode = ('layoutMode' in props && props.layoutMode) ? props.layoutMode : 'overlay';
   const recordingDateLabel = 'recordingDateLabel' in props ? props.recordingDateLabel : undefined;
   const zapChannels = 'channels' in props ? props.channels : undefined;
   const onSwitchChannel = 'onSwitchChannel' in props ? props.onSwitchChannel : undefined;
@@ -2400,6 +2402,9 @@ export function usePlaybackOrchestrator(
     playbackMode,
     liveNowPlaying,
     onClose,
+    layoutMode,
+    recordingTitle,
+    recordingDescription,
     isIdle,
     status,
     showStats,

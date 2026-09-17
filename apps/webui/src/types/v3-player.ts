@@ -63,6 +63,7 @@ export interface V3PlayerBaseProps {
   token?: string;
   autoStart?: boolean;
   onClose?: () => void;
+  layoutMode?: 'overlay' | 'page';
   duration?: number; // Duration in seconds (enables VOD mode)
   startPositionSeconds?: number;
   suppressResumePrompt?: boolean;
