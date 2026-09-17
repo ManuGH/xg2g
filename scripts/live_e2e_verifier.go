@@ -200,7 +200,7 @@ func main() {
 	// 2. Start Pairing
 	fmt.Print("[2/7] 📲 Initiating Device Pairing (/api/v3/pairing/start)... ")
 	startBody, _ := json.Marshal(map[string]interface{}{
-		"deviceName": "iOS Test Runner (iPhone 17 Pro)",
+		"deviceName": "iOS Test Runner (iPhone 18 Pro)",
 		"deviceType": "ios",
 	})
 	startReq, _ := http.NewRequest("POST", baseURL+"/api/v3/pairing/start", bytes.NewReader(startBody))
