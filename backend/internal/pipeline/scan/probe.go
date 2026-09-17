@@ -393,6 +393,9 @@ func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalUR
 	if err == nil {
 		return res, initialProbeURL, nil
 	}
+	if ctx.Err() != nil {
+		return nil, "", err
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		metrics.IncScanProbeTimeout()
 	}
@@ -419,6 +422,10 @@ func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalUR
 			return resFallback, fallbackURL, nil
 		}
 		log.L().Warn().Err(errFallback).Str("sref", serviceRef).Msg("scan: fallback 8001 probe failed")
+	}
+
+	if ctx.Err() != nil {
+		return nil, "", err
 	}
 
 	origCtx, origCancel := context.WithTimeout(ctx, resolveM3UTimeout)
