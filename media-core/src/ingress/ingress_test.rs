@@ -539,16 +539,10 @@ fn a_programme_change_does_not_carry_the_wait_into_the_new_stream() {
 }
 
 #[test]
-fn a_scrambled_payload_unit_start_does_not_begin_a_wait() {
-    // Pinned rather than decided. An encrypted payload unit start says a PES
-    // packet begins and does not say what it is, which is the same shape of
-    // problem as the four above - but a scrambled packet is turned away in the
-    // scrambling branch, before any of this is asked, and both this and the
-    // reference leave the position alone there.
-    //
-    // If that is ever changed it should be because someone decided to change
-    // it, beside the descramble grace window and with the reference. This test
-    // fails if it changes here by accident.
+fn a_scrambled_payload_unit_start_quarantines_until_next_clear_pusi() {
+    // An encrypted payload unit start says a PES packet begins and does not say
+    // what it is. The stream is quarantined (Position::AwaitingStart) so that
+    // subsequent clear continuations from an unknown offset cannot be misread.
     let mut ing = following_ac3();
     let start = ac3_start(STEREO, 1);
     let out = fed(&mut ing, 0, &ts_packet(AUDIO_PID, true, 0, &start));
@@ -560,17 +554,22 @@ fn a_scrambled_payload_unit_start_does_not_begin_a_wait() {
     assert!(out.is_empty(), "encrypted bytes reach no observer");
     assert_eq!(
         position(&ing),
-        Position::InElementaryStream,
-        "and the position is left where it was"
+        Position::AwaitingStart,
+        "and the position is set to AwaitingStart"
     );
 
     let body = payload_of(&ac3_run(STEREO, 1)[..128]);
     let out = fed(&mut ing, 376, &ts_packet(AUDIO_PID, false, 2, &body));
-    assert_eq!(
-        out.len(),
-        1,
-        "so the clear continuation after it is still fed"
+    assert!(
+        out.is_empty(),
+        "so the clear continuation after scrambled PUSI is quarantined"
     );
+
+    // Stream recovers cleanly at the next clear PUSI.
+    let next_start = ac3_start(STEREO, 1);
+    let out = fed(&mut ing, 564, &ts_packet(AUDIO_PID, true, 3, &next_start));
+    assert_eq!(out.len(), 1, "recovers at next clear PUSI");
+    assert_eq!(position(&ing), Position::InElementaryStream);
 }
 
 #[test]

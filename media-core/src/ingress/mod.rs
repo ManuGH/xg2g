@@ -443,7 +443,11 @@ impl AudioIngress {
             // header either: a header whose remainder arrived scrambled has not
             // been read, and the next clear payload begins somewhere nothing
             // here knows.
-            if matches!(follower.position, Position::InHeader { .. }) {
+            //
+            // If the scrambled packet asserts a payload unit start, the PES
+            // packet begins under encryption and cannot be parsed. The stream
+            // is quarantined until the next clear unit start.
+            if view.payload_unit_start() || matches!(follower.position, Position::InHeader { .. }) {
                 follower.position = Position::AwaitingStart;
             }
             return;
