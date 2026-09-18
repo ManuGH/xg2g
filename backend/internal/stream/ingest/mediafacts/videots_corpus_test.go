@@ -1141,30 +1141,116 @@ func videoTSCorpusCases() []videoTSCase {
 			facts(h264().ps(true).irap(1).clear(1).cleanrap(1))
 		cases = append(cases, b.done())
 	}
+	// ===== Transport Hardening: Duplicates, Continuity, TEI & DI (Step 7.0h) ==
+
 	{
 		b := vNew("duplicate_pes_start_packet_begins_a_second_access_unit",
-			"the same PES-start packet twice, same counter and bytes: video keeps no continuity, so the copy ends one access unit and begins another (contract question 14A, pinned as current behaviour, not decided)", videoTSProgram)
+			"the same PES-start packet twice, same counter and bytes: video keeps no continuity, so the copy ends one access unit and begins another (defect)", videoTSProgram)
+		b.diverges("defect", "an exact duplicate of a PES start packet repeats transport without advancing it; it must not be treated as a new PES boundary or begin a second access unit")
 		first := b.start(v, h264SPS, h264PPS, h264SliceI)
 		b.chunk(b.psi(0, h264Stream(v)), first, first).
-			ev(identityEv, identityEv, rapAt(pkt2, true)).
-			facts(h264().ps(true).intra(1).clear(2).cleanrap(1).cleanau(1))
+			ev(identityEv, identityEv).
+			facts(h264().ps(true).clear(1)).
+			refEv(identityEv, identityEv, rapAt(pkt2, true)).
+			refFacts(h264().ps(true).intra(1).clear(2).cleanrap(1).cleanau(1))
 		b.chunk(b.start(v, h264SliceP)).
-			ev(rapAt(pkt3, true)).
-			facts(h264().ps(false).intra(2).clear(3).cleanrap(2).cleanau(2))
+			ev(rapAt(pkt2, true)).
+			facts(h264().ps(false).intra(1).clear(2).cleanrap(1).cleanau(1)).
+			refEv(rapAt(pkt3, true)).
+			refFacts(h264().ps(false).intra(2).clear(3).cleanrap(2).cleanau(2))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("duplicate_video_continuation_must_not_alter_access_unit_facts",
+			"a continuation packet duplicated with identical bytes and counter: must be dropped and not scanned twice (defect)", videoTSProgram)
+		b.diverges("defect", "duplicate continuation packets on the video PID are not filtered and corrupt elementary stream scanning")
+		first := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00, 0x01, 0x65, sliceI})
+		c1 := b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66})
+		b.chunk(b.psi(0, h264Stream(v)), first, c1, c1).
+			ev(identityEv, identityEv, rapAt(pkt2, true)).
+			facts(h264().ps(true).irap(1).clear(2).cleanrap(1)).
+			refFacts(h264().ps(true).irap(1).clear(3).cleanrap(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("continuity_gap_on_video_is_not_tracked",
-			"a skipped continuity counter between the slice header's two halves: the halves are still joined (no video continuity contract, pinned)", videoTSProgram)
+			"a skipped continuity counter between the slice header's two halves: the corrupted slice must not be joined (defect)", videoTSProgram)
+		b.diverges("defect", "an unannounced continuity counter gap is ignored and the slice halves are joined across the missing packet, fabricating an intra picture")
 		b.next(v) // the counter value that is never sent
 		first := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00, 0x01, 0x41, sliceI})
 		b.next(v) // and the gap before the continuation
 		b.chunk(b.psi(0, h264Stream(v)), first,
 			b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66})).
-			ev(identityEv, identityEv)
+			ev(identityEv, identityEv).
+			facts(h264().ps(true).clear(2))
 		b.chunk(b.start(v, h264SliceP)).
-			ev(rapAt(pkt2, true)).
-			facts(h264().ps(false).intra(1).clear(3).cleanrap(1).cleanau(1))
+			ev().
+			facts(h264().ps(false).clear(3).cleanau(1)).
+			refEv(rapAt(pkt2, true)).
+			refFacts(h264().ps(false).intra(1).clear(3).cleanrap(1).cleanau(1))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("tei_on_video_pusi_is_refused",
+			"a video PUSI packet with TEI set carrying SPS, PPS and IDR: damaged transport must be dropped, no entry point admitted (defect)", videoTSProgram)
+		b.diverges("defect", "a video PUSI packet marked with TEI is scanned as valid transport, admitting an unverified entry point")
+		badStart := withTEI(b.start(v, h264SPS, h264PPS, h264IDR))
+		b.chunk(b.psi(0, h264Stream(v)), badStart).
+			ev(identityEv, identityEv).
+			facts(h264().clear(0)).
+			refEv(identityEv, identityEv, rapAt(pkt2, true)).
+			refFacts(h264().ps(true).irap(1).clear(1).cleanrap(1))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("tei_on_video_continuation_is_refused",
+			"a video continuation packet with TEI set: damaged slice data must be dropped and not joined (defect)", videoTSProgram)
+		b.diverges("defect", "a video continuation packet marked with TEI is scanned as valid elementary stream")
+		p0 := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00})
+		p1 := withTEI(b.cont(v, []byte{0x01, 0x65, sliceI, 0x84, 0x21, 0xA0, 0x33, 0xFF}))
+		b.chunk(b.psi(0, h264Stream(v)), p0, p1).
+			ev(identityEv, identityEv).
+			facts(h264().ps(true).clear(1)).
+			refEv(identityEv, identityEv, rapAt(pkt2, true)).
+			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("video_discontinuity_indicator_with_expected_next_cc",
+			"discontinuity indicator with sequential CC on video PID is continuous", videoTSProgram)
+		first := b.start(v, h264SPS, h264PPS, h264IDR)
+		cont := audioTSShortPacketWithDI(v, false, b.next(v), []byte{0x11, 0x22, 0x33})
+		b.chunk(b.psi(0, h264Stream(v)), first, cont).
+			ev(identityEv, identityEv, rapAt(pkt2, true)).
+			facts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("video_discontinuity_indicator_while_in_header_discards_incomplete_pes",
+			"discontinuity indicator while video PES header is incomplete discards PES and awaits next start (defect)", videoTSProgram)
+		b.diverges("defect", "an announced discontinuity while a PES header is incomplete means header bytes were lost; the partial PES must be discarded")
+		start := audioTSShortPacket(v, true, b.next(v), []byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05})
+		b.next(v) // jump CC
+		c1 := audioTSShortPacketWithDI(v, false, b.next(v), cat(h264SPS, h264PPS, h264IDR))
+		b.chunk(b.psi(0, h264Stream(v)), start, c1).
+			ev(identityEv, identityEv).
+			facts(h264().clear(1)).
+			refEv(identityEv, identityEv, rapAt(pkt2, true)).
+			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+		cases = append(cases, b.done())
+	}
+	{
+		b := vNew("video_unannounced_cc_jump_while_in_header_discards_incomplete_pes",
+			"unannounced CC gap while video PES header is incomplete discards partial PES (defect)", videoTSProgram)
+		b.diverges("defect", "an unannounced continuity counter gap while a PES header is incomplete invalidates header resolution and forces AwaitingStart")
+		start := audioTSShortPacket(v, true, b.next(v), []byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05})
+		b.next(v) // skip a counter value (unannounced gap)
+		c1 := b.cont(v, h264SPS, h264PPS, h264IDR)
+		b.chunk(b.psi(0, h264Stream(v)), start, c1).
+			ev(identityEv, identityEv).
+			facts(h264().clear(1)).
+			refEv(identityEv, identityEv, rapAt(pkt2, true)).
+			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
 		cases = append(cases, b.done())
 	}
 
@@ -1874,21 +1960,28 @@ func TestVideoTSCorpus_TheCheckedInFileMatchesTheCases(t *testing.T) {
 // what it claims.
 func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
-		"h264_unreadable_slice_header":                                     "quirk",
-		"h264_sei_longer_than_the_capture_budget_hides_the_recovery_point": "limitation",
-		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":          "limitation",
-		"mpeg2_predicted_pictures_are_not_entry_points":                    "quirk",
-		"scrambled_packet_after_the_idr_header_in_its_access_unit":         "defect",
-		"invalid_pusi_wrong_prefix_after_a_valid_pes":                      "defect",
-		"invalid_pusi_without_a_prior_pes_fabricates_configuration":        "defect",
-		"invalid_pusi_payload_shorter_than_a_pes_header":                   "defect",
-		"invalid_pusi_audio_stream_id_on_the_video_pid":                    "defect",
-		"invalid_pusi_padding_stream_id":                                   "defect",
-		"invalid_pusi_hevc_irap_inside":                                    "defect",
-		"invalid_pusi_mpeg2_i_picture_inside":                              "defect",
-		"invalid_pusi_continuations_are_quarantined_until_a_valid_pes":     "defect",
-		"invalid_pusi_with_no_nal_like_bytes":                              "defect",
-		"video_pes_header_reaching_past_its_packet":                        "divergence",
+		"h264_unreadable_slice_header":                                          "quirk",
+		"h264_sei_longer_than_the_capture_budget_hides_the_recovery_point":      "limitation",
+		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":               "limitation",
+		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
+		"scrambled_packet_after_the_idr_header_in_its_access_unit":              "defect",
+		"invalid_pusi_wrong_prefix_after_a_valid_pes":                           "defect",
+		"invalid_pusi_without_a_prior_pes_fabricates_configuration":             "defect",
+		"invalid_pusi_payload_shorter_than_a_pes_header":                        "defect",
+		"invalid_pusi_audio_stream_id_on_the_video_pid":                         "defect",
+		"invalid_pusi_padding_stream_id":                                        "defect",
+		"invalid_pusi_hevc_irap_inside":                                         "defect",
+		"invalid_pusi_mpeg2_i_picture_inside":                                   "defect",
+		"invalid_pusi_continuations_are_quarantined_until_a_valid_pes":          "defect",
+		"invalid_pusi_with_no_nal_like_bytes":                                   "defect",
+		"video_pes_header_reaching_past_its_packet":                             "divergence",
+		"duplicate_pes_start_packet_begins_a_second_access_unit":                "defect",
+		"duplicate_video_continuation_must_not_alter_access_unit_facts":         "defect",
+		"continuity_gap_on_video_is_not_tracked":                                "defect",
+		"tei_on_video_pusi_is_refused":                                          "defect",
+		"tei_on_video_continuation_is_refused":                                  "defect",
+		"video_discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
+		"video_unannounced_cc_jump_while_in_header_discards_incomplete_pes":     "defect",
 	}
 	got := map[string]string{}
 	for _, c := range videoTSCorpusCases() {
