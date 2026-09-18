@@ -346,26 +346,50 @@ fn only_the_classified_divergences_exist() {
     let want = [
         ("a_pes_header_reaching_past_its_packet", "divergence"),
         ("a_scrambled_payload_unit_start", "defect"),
-        ("scrambled_audio_pusi_followed_by_clear_continuation", "defect"),
-        ("scrambled_audio_pusi_followed_by_several_clear_continuations", "defect"),
+        (
+            "scrambled_audio_pusi_followed_by_clear_continuation",
+            "defect",
+        ),
+        (
+            "scrambled_audio_pusi_followed_by_several_clear_continuations",
+            "defect",
+        ),
         ("scrambled_audio_pusi_recovers_at_next_clear_pusi", "defect"),
         ("scrambled_packet_while_in_header", "defect"),
         ("duplicate_packet_with_complete_ac3_frame", "defect"),
         ("duplicate_packet_with_partial_ac3_frame", "defect"),
-        ("duplicate_immediately_before_frame_completion_prevents_phantom_layout", "defect"),
+        (
+            "duplicate_immediately_before_frame_completion_prevents_phantom_layout",
+            "defect",
+        ),
         ("duplicate_after_stable_layout_already_exists", "defect"),
         ("same_cc_identical_packet_is_duplicate", "defect"),
         ("same_cc_different_packet_is_broken", "defect"),
         ("tei_on_pat_is_refused", "defect"),
         ("tei_on_pmt_is_refused", "defect"),
         ("tei_on_pmt_preserves_existing_active_psi", "defect"),
-        ("tei_mid_section_assembly_discards_partial_and_preserves_table", "defect"),
+        (
+            "tei_mid_section_assembly_discards_partial_and_preserves_table",
+            "defect",
+        ),
         ("tei_on_audio_pusi_is_refused", "defect"),
         ("tei_on_audio_continuation_is_refused", "defect"),
-        ("tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear", "defect"),
-        ("tei_on_audio_header_incomplete_continuation_refuses_packet", "defect"),
-        ("discontinuity_indicator_while_in_header_discards_incomplete_pes", "defect"),
-        ("unannounced_cc_jump_while_in_header_discards_incomplete_pes", "defect"),
+        (
+            "tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear",
+            "defect",
+        ),
+        (
+            "tei_on_audio_header_incomplete_continuation_refuses_packet",
+            "defect",
+        ),
+        (
+            "discontinuity_indicator_while_in_header_discards_incomplete_pes",
+            "defect",
+        ),
+        (
+            "unannounced_cc_jump_while_in_header_discards_incomplete_pes",
+            "defect",
+        ),
     ];
     let want_map: std::collections::BTreeMap<&str, &str> = want.into_iter().collect();
 
