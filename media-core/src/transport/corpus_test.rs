@@ -377,6 +377,133 @@ fn only_the_low_four_bits_of_the_counter_are_the_counter() {
     assert_eq!(t.observe(&p, 0x01), Continuity::Duplicate);
 }
 
+// --- Area D: Discontinuity Indicator transport audit -----------------------
+//
+// Orthogonal Dimensions of Transport State (Step 7.0h Contract Definition):
+// 1. CC verdict: First | Continuous | Duplicate | Broken (tracked by ContinuityTracker)
+// 2. Transport annotation: announced_discontinuity = true | false (read by PacketView)
+//
+// Three distinct state levels must not be conflated:
+// - Level 1 (CC state): DI + CC jump resets expected counter without reporting an
+//   unexplained error, whereas unannounced jump is Broken.
+// - Level 2 (PES state): Incomplete PES header discarded on discontinuity (transitions
+//   to AwaitingStart); DI alone does NOT constitute an automatic PES boundary.
+// - Level 3 (ES / AU state): Elementary stream continuity break flagged; observer resyncs
+//   on syncword/access unit; DI alone does NOT constitute an automatic AU boundary.
+
+fn cc_packet_with_di(counter: u8, fill: u8) -> Vec<u8> {
+    let mut p = packet(0x00, 0x64, 0x30 | (counter & 0x0F), fill);
+    p[4] = 1;
+    p[5] = 0x80;
+    p
+}
+
+fn adaptation_only_packet_with_di(counter: u8) -> Vec<u8> {
+    let mut p = vec![0xFF; TS_PACKET_LEN];
+    p[0] = SYNC_BYTE;
+    p[1] = 0x00;
+    p[2] = 0x64;
+    p[3] = 0x20 | (counter & 0x0F);
+    p[4] = 183;
+    p[5] = 0x80;
+    p
+}
+
+#[test]
+fn discontinuity_indicator_with_expected_next_cc() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(1, 0xAA);
+    let p1 = cc_packet_with_di(2, 0xBB);
+    let v1 = PacketView::parse(&p1).expect("well formed");
+    assert!(v1.discontinuity_indicator());
+    assert_eq!(t.observe(&p0, 1), Continuity::First);
+    assert_eq!(t.observe(&p1, 2), Continuity::Continuous);
+}
+
+#[test]
+fn discontinuity_indicator_with_cc_jump_currently_verdicts_broken_in_tracker() {
+    // Pinned current behavior: ContinuityTracker does not yet receive the DI flag,
+    // so an announced discontinuity with a CC jump is classified as Broken.
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(1, 0xAA);
+    let p1 = cc_packet_with_di(5, 0xBB);
+    let v1 = PacketView::parse(&p1).expect("well formed");
+    assert!(v1.discontinuity_indicator());
+    assert_eq!(t.observe(&p0, 1), Continuity::First);
+    assert_eq!(t.observe(&p1, 5), Continuity::Broken);
+}
+
+#[test]
+fn discontinuity_indicator_on_adaptation_only_packet_does_not_advance_continuity() {
+    let p = adaptation_only_packet_with_di(3);
+    let v = PacketView::parse(&p).expect("well formed");
+    assert!(v.has_adaptation());
+    assert!(!v.has_payload());
+    assert!(v.discontinuity_indicator());
+    assert_eq!(v.continuity_counter(), 3);
+}
+
+#[test]
+fn discontinuity_indicator_with_payload_carries_both() {
+    let p = cc_packet_with_di(4, 0xCC);
+    let v = PacketView::parse(&p).expect("well formed");
+    assert!(v.has_adaptation());
+    assert!(v.has_payload());
+    assert!(v.discontinuity_indicator());
+    assert_eq!(v.payload().expect("payload").len(), 182);
+    assert_eq!(v.payload().expect("payload")[0], 0xCC);
+}
+
+#[test]
+fn discontinuity_indicator_immediately_before_pusi() {
+    let p_di = adaptation_only_packet_with_di(3);
+    let v_di = PacketView::parse(&p_di).expect("well formed");
+    assert!(v_di.discontinuity_indicator());
+    assert!(!v_di.payload_unit_start());
+
+    let mut p_pusi = cc_packet(3, 0xDD);
+    p_pusi[1] |= 0x40;
+    let v_pusi = PacketView::parse(&p_pusi).expect("well formed");
+    assert!(v_pusi.payload_unit_start());
+    assert!(!v_pusi.discontinuity_indicator());
+}
+
+#[test]
+fn discontinuity_indicator_repeated_identical_packet_is_duplicate() {
+    let mut t = ContinuityTracker::new();
+    let p = cc_packet_with_di(7, 0xEE);
+    assert_eq!(t.observe(&p, 7), Continuity::First);
+    assert_eq!(t.observe(&p, 7), Continuity::Duplicate);
+}
+
+#[test]
+fn unannounced_cc_jump_is_broken_without_discontinuity_indicator() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(1, 0x11);
+    let p1 = cc_packet(6, 0x22);
+    let v1 = PacketView::parse(&p1).expect("well formed");
+    assert!(!v1.discontinuity_indicator());
+    assert_eq!(t.observe(&p0, 1), Continuity::First);
+    assert_eq!(t.observe(&p1, 6), Continuity::Broken);
+}
+
+#[test]
+fn adaptation_flags_other_than_discontinuity_do_not_trigger_indicator() {
+    let mut p = packet(0x00, 0x64, 0x30, 0x00);
+    p[4] = 1;
+    p[5] = 0x7F;
+    let v = PacketView::parse(&p).expect("well formed");
+    assert!(!v.discontinuity_indicator());
+}
+
+#[test]
+fn zero_length_adaptation_field_has_no_discontinuity_indicator() {
+    let mut p = packet(0x00, 0x64, 0x30, 0x00);
+    p[4] = 0;
+    let v = PacketView::parse(&p).expect("well formed");
+    assert!(!v.discontinuity_indicator());
+}
+
 /// Reads the archived Step 5d captures through the packet reader and reports
 /// what real broadcast looks like to it.
 ///
