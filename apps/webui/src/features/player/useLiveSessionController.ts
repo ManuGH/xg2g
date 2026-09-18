@@ -81,6 +81,7 @@ interface LiveSessionController {
   reportSessionTimeline: (reason: string, timeline: string[]) => Promise<void>;
   ensureSessionCookie: () => Promise<void>;
   recoverSessionCookie: (source: string) => Promise<boolean>;
+  invalidateSessionCookie: () => void;
   primePlaybackAuth: (playbackUrl: string, source: string) => Promise<void>;
   setActiveSessionId: (sessionId: string | null) => void;
   activateLiveSession: (session: SessionReadyResult) => void;
@@ -201,6 +202,7 @@ export function useLiveSessionController({
 
   const ensureSessionCookie = useCallback(async (): Promise<void> => {
     if (!token) return;
+    if (sessionCookieRef.current.token === token) return;
     if (sessionCookieRef.current.pending) return sessionCookieRef.current.pending;
 
     const pending = (async () => {
@@ -228,6 +230,7 @@ export function useLiveSessionController({
     }
 
     debugWarn('[V3Player][Auth] Session cookie lost, attempting recovery', { source });
+    sessionCookieRef.current.token = null;
     await ensureSessionCookie();
     return true;
   }, [ensureSessionCookie, token]);
@@ -307,10 +310,15 @@ export function useLiveSessionController({
     onSessionSnapshot?.(toV3SessionSnapshot(session));
   }, [onSessionSnapshot, setDurationSeconds, setPlaybackMode]);
 
+  const invalidateSessionCookie = useCallback(() => {
+    sessionCookieRef.current.token = null;
+  }, []);
+
   const clearSessionLeaseState = useCallback(() => {
     sessionIdRef.current = null;
     stopSentRef.current = null;
     setSessionId(null);
+    sessionCookieRef.current.token = null;
   }, []);
 
   const sendStopIntent = useCallback(async (idToStop: string | null, force: boolean = false): Promise<void> => {
@@ -717,6 +725,7 @@ export function useLiveSessionController({
     reportSessionTimeline,
     ensureSessionCookie,
     recoverSessionCookie,
+    invalidateSessionCookie,
     primePlaybackAuth,
     setActiveSessionId,
     activateLiveSession,

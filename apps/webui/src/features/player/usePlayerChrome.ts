@@ -387,28 +387,10 @@ export function usePlayerChrome({
     if (playbackMode === 'VOD') {
       const anchor = anchorStartSec ?? 0;
       const localTarget = targetSeconds - anchor;
-
-      let localBufferedStart = 0;
-      let localBufferedEnd = 0;
-      try {
-        if (video.seekable && video.seekable.length > 0) {
-          localBufferedStart = video.seekable.start(0);
-          localBufferedEnd = video.seekable.end(video.seekable.length - 1);
-        }
-      } catch {
-        // ignore
-      }
-
-      // Check if the seek target is within the locally buffered/transcoded HLS window
-      const isWithinLocalWindow = localBufferedEnd > localBufferedStart &&
-        localTarget >= localBufferedStart &&
-        localTarget <= Math.max(localBufferedStart, localBufferedEnd - 0.5);
-
-      if (isWithinLocalWindow) {
+      if (video.readyState >= 1) {
         video.currentTime = Math.max(0, localTarget);
       } else if (onSeekOffset) {
         onSeekOffset(targetSeconds);
-        return;
       } else {
         video.currentTime = Math.max(0, localTarget);
       }

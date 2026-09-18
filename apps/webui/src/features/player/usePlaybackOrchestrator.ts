@@ -581,6 +581,7 @@ export function usePlaybackOrchestrator(
     clearSessionLeaseState: clearSessionLeaseStateBase,
     waitForSessionReady,
     recoverSessionCookie,
+    invalidateSessionCookie,
   } = useLiveSessionController({
     token,
     apiBase,
@@ -798,7 +799,7 @@ export function usePlaybackOrchestrator(
     anchorStartSec,
     onSeekOffset: (targetSec: number) => {
       const video = videoRef.current;
-      if (video && video.readyState >= 1 && (status === 'playing' || status === 'paused' || status === 'buffering')) {
+      if (video && video.readyState >= 1) {
         video.currentTime = Math.max(0, targetSec);
         return;
       }
@@ -1227,9 +1228,8 @@ export function usePlaybackOrchestrator(
         setStatus('buffering');
         setActiveHlsEngine(null);
         playDirectMp4(streamUrl);
-        if (startOffsetMs && startOffsetMs > 0) {
-          seekWhenReady(startOffsetMs / 1000);
-        }
+        const targetSeekSec = typeof startOffsetMs === 'number' ? Math.max(0, startOffsetMs / 1000) : 0;
+        seekWhenReady(targetSeekSec);
         return;
       }
 
@@ -1264,9 +1264,8 @@ export function usePlaybackOrchestrator(
               : resolvePreferredHlsEngineForCapabilities(requestCaps);
             playHls(streamUrl, engine);
             setActiveHlsEngine(engine);
-            if (startOffsetMs && startOffsetMs > 0) {
-              seekWhenReady(startOffsetMs / 1000);
-            }
+            const targetSeekSec = typeof startOffsetMs === 'number' ? Math.max(0, startOffsetMs / 1000) : 0;
+            seekWhenReady(targetSeekSec);
           }
         } finally {
           if (vodFetchRef.current === fetchController) vodFetchRef.current = null;
@@ -1917,6 +1916,7 @@ export function usePlaybackOrchestrator(
   }, [controller, onClose]);
 
   const handleRetry = useCallback((): Promise<PlaybackRetryResult> => {
+    invalidateSessionCookie();
     const target: PlaybackRetryTarget = recordingId
       ? {
           kind: 'vod',
@@ -2559,6 +2559,12 @@ export function usePlaybackOrchestrator(
     resumeFrom(positionSeconds) {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
       setShowResumeOverlay(false);
+      const video = videoRef.current;
+      if (video && video.readyState >= 1) {
+        video.currentTime = Math.max(0, positionSeconds);
+        void video.play().catch((err) => debugWarn('resumeFrom play failed', err));
+        return;
+      }
       if (activeRecordingRef.current && positionSeconds > 0) {
         startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(positionSeconds * 1000));
       } else if (activeRecordingRef.current) {
@@ -2569,6 +2575,12 @@ export function usePlaybackOrchestrator(
     startOver() {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
       setShowResumeOverlay(false);
+      const video = videoRef.current;
+      if (video && video.readyState >= 1) {
+        video.currentTime = 0;
+        void video.play().catch((err) => debugWarn('startOver play failed', err));
+        return;
+      }
       if (activeRecordingRef.current) {
         startRecordingPlayback(activeRecordingRef.current, undefined, 0);
       }
