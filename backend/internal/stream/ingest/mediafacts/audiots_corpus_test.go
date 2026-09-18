@@ -1161,8 +1161,7 @@ func audioTSCorpusCases() []audioTSCase {
 	// Area B: Exact Duplicate TS Packets
 	{
 		b := audioTSNew("duplicate_packet_with_complete_ac3_frame",
-			"exact duplicate TS packet with complete AC3 frame must be dropped (defect)", audioTSProgram)
-		b.diverges("defect", "exact duplicate TS packets (same CC and identical payload) must be dropped before elementary stream interpretation")
+			"exact duplicate TS packet with complete AC3 frame must be dropped", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
@@ -1171,17 +1170,11 @@ func audioTSCorpusCases() []audioTSCase {
 		// Authored: duplicate dropped -> 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: feeds duplicate -> 2 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("duplicate_packet_with_partial_ac3_frame",
-			"exact duplicate TS packet with partial AC3 frame must be dropped without corrupting frame assembly (defect)", audioTSProgram)
-		b.diverges("defect", "exact duplicate of a partial frame packet must be discarded rather than corrupting the elementary stream assembly")
+			"exact duplicate TS packet with partial AC3 frame must be dropped without corrupting frame assembly", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		frame := audioTSAC3Frame(audioTSByte6Stereo)
 		part1 := frame[:60]
@@ -1195,18 +1188,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, p1[4:], obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(1))
-
-		// Reference: feeds p0, p0Dup, p1
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, p1[4:], obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 3, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("duplicate_immediately_before_frame_completion_prevents_phantom_layout",
-			"duplicate packet before 3rd frame completion must not manufacture phantom layout (defect)", audioTSProgram)
-		b.diverges("defect", "duplicate TS packet manufactures phantom audio frames and prematurely establishes channel layout")
+			"duplicate packet before 3rd frame completion must not manufacture phantom layout", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1221,19 +1207,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.feed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 3, obs(2, false, 2, 3))
-
-		// Reference: p1Dup feeds phantom frame 3, establishing channels=2 prematurely!
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(2))
-		b.refFeed(0, audioTSAudioA, c1, obs(2, false, 2, 3))
-		b.refFeed(0, audioTSAudioA, c2, obs(2, false, 2, 4))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 4, obs(2, false, 2, 4))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("duplicate_after_stable_layout_already_exists",
-			"duplicate packets must be rejected even after layout is established (defect)", audioTSProgram)
-		b.diverges("defect", "duplicate packets must be rejected even after audio layout is stable")
+			"duplicate packets must be rejected even after layout is established", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1248,19 +1226,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.feed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 3, obs(2, false, 2, 3))
-
-		// Reference: feeds p2Dup as 4th feed
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(2))
-		b.refFeed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
-		b.refFeed(0, audioTSAudioA, c2, obs(2, false, 2, 4))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 4, obs(2, false, 2, 4))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("same_cc_identical_packet_is_duplicate",
-			"same CC with identical bytes constitutes an exact duplicate (defect)", audioTSProgram)
-		b.diverges("defect", "same CC and identical bytes constitutes an exact transport duplicate")
+			"same CC with identical bytes constitutes an exact duplicate", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, 5, start)
@@ -1269,11 +1239,6 @@ func audioTSCorpusCases() []audioTSCase {
 		// Authored: 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: 2 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1930,11 +1895,6 @@ func TestAudioTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
 		"a_pes_header_reaching_past_its_packet":                                         "divergence",
 		"scrambled_packet_while_in_header":                                              "defect",
-		"duplicate_packet_with_complete_ac3_frame":                                      "defect",
-		"duplicate_packet_with_partial_ac3_frame":                                       "defect",
-		"duplicate_immediately_before_frame_completion_prevents_phantom_layout":         "defect",
-		"duplicate_after_stable_layout_already_exists":                                  "defect",
-		"same_cc_identical_packet_is_duplicate":                                         "defect",
 		"same_cc_different_packet_is_broken":                                            "defect",
 		"tei_on_pat_is_refused":                                                         "defect",
 		"tei_on_pmt_is_refused":                                                         "defect",

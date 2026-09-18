@@ -1145,31 +1145,24 @@ func videoTSCorpusCases() []videoTSCase {
 
 	{
 		b := vNew("duplicate_pes_start_packet_begins_a_second_access_unit",
-			"the same PES-start packet twice, same counter and bytes: video keeps no continuity, so the copy ends one access unit and begins another (defect)", videoTSProgram)
-		b.diverges("defect", "an exact duplicate of a PES start packet repeats transport without advancing it; it must not be treated as a new PES boundary or begin a second access unit")
+			"the same PES-start packet twice, same counter and bytes: video keeps no continuity, so the copy ends one access unit and begins another", videoTSProgram)
 		first := b.start(v, h264SPS, h264PPS, h264SliceI)
 		b.chunk(b.psi(0, h264Stream(v)), first, first).
 			ev(identityEv, identityEv).
-			facts(h264().ps(true).clear(1)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).intra(1).clear(2).cleanrap(1).cleanau(1))
+			facts(h264().ps(true).clear(1))
 		b.chunk(b.start(v, h264SliceP)).
 			ev(rapAt(pkt2, true)).
-			facts(h264().ps(false).intra(1).clear(2).cleanrap(1).cleanau(1)).
-			refEv(rapAt(pkt3, true)).
-			refFacts(h264().ps(false).intra(2).clear(3).cleanrap(2).cleanau(2))
+			facts(h264().ps(false).intra(1).clear(2).cleanrap(1).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("duplicate_video_continuation_must_not_alter_access_unit_facts",
-			"a continuation packet duplicated with identical bytes and counter: must be dropped and not scanned twice (defect)", videoTSProgram)
-		b.diverges("defect", "duplicate continuation packets on the video PID are not filtered and corrupt elementary stream scanning")
+			"a continuation packet duplicated with identical bytes and counter: must be dropped and not scanned twice", videoTSProgram)
 		first := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00, 0x01, 0x65, sliceI})
 		c1 := b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66})
 		b.chunk(b.psi(0, h264Stream(v)), first, c1, c1).
 			ev(identityEv, identityEv, rapAt(pkt2, true)).
-			facts(h264().ps(true).irap(1).clear(2).cleanrap(1)).
-			refFacts(h264().ps(true).irap(1).clear(3).cleanrap(1))
+			facts(h264().ps(true).irap(1).clear(2).cleanrap(1))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1975,8 +1968,6 @@ func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 		"invalid_pusi_continuations_are_quarantined_until_a_valid_pes":          "defect",
 		"invalid_pusi_with_no_nal_like_bytes":                                   "defect",
 		"video_pes_header_reaching_past_its_packet":                             "divergence",
-		"duplicate_pes_start_packet_begins_a_second_access_unit":                "defect",
-		"duplicate_video_continuation_must_not_alter_access_unit_facts":         "defect",
 		"continuity_gap_on_video_is_not_tracked":                                "defect",
 		"tei_on_video_pusi_is_refused":                                          "defect",
 		"tei_on_video_continuation_is_refused":                                  "defect",
