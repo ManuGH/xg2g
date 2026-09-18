@@ -714,6 +714,11 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 			if (pkt[3]>>6)&0x03 != 0 {
 				c.scrambledAudioPackets++
 				c.audioClearRun = 0
+				if pusi {
+					if stream := c.audioStreams[apid]; stream != nil {
+						c.beginAudioWaitLocked(stream)
+					}
+				}
 				return
 			}
 			c.clearAudioPackets++
