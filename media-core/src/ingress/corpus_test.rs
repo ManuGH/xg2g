@@ -274,20 +274,56 @@ fn compare(name: &str, what: &str, got: &[Feed], want: &[Feed]) {
 /// Explicit H-A Lag Registry:
 /// Cases where the Go reference was fixed in Step H-A1 (scrambled Audio-PUSI
 /// now properly sets awaitingStart and drops subsequent continuations),
-/// while Rust AudioIngress parity is pending in Step H-A2.
+/// while Rust `AudioIngress` parity is pending in Step H-A2.
 ///
 /// For these 4 cases:
 ///   authored = new Go reference
 ///   Rust     = old behavior
 ///   status   = H-A2 pending
 ///
-/// In Step H-A2 (Rust AudioIngress Parity), this registry must shrink to 0 entries.
+/// In Step H-A2 (Rust `AudioIngress` Parity), this registry must shrink to 0 entries.
 const H_A_PENDING_RUST_PARITY: [&str; 4] = [
     "a_scrambled_payload_unit_start",
     "scrambled_audio_pusi_followed_by_clear_continuation",
     "scrambled_audio_pusi_followed_by_several_clear_continuations",
     "scrambled_audio_pusi_recovers_at_next_clear_pusi",
 ];
+
+fn assert_h_a_pending_rust_parity(case: &Case, feeds: &[Feed], streams: &[Stream]) {
+    match case.name.as_str() {
+        "scrambled_audio_pusi_followed_by_clear_continuation" => {
+            assert_eq!(
+                feeds.len(),
+                1,
+                "{}: old feed count (H-A2 pending)",
+                case.name
+            );
+            assert_eq!(streams.len(), 1, "{}: old stream count", case.name);
+            assert_eq!(
+                streams[0].observation.frames, 1,
+                "{}: old frame count",
+                case.name
+            );
+        }
+        "a_scrambled_payload_unit_start"
+        | "scrambled_audio_pusi_followed_by_several_clear_continuations"
+        | "scrambled_audio_pusi_recovers_at_next_clear_pusi" => {
+            assert_eq!(
+                feeds.len(),
+                2,
+                "{}: old feed count (H-A2 pending)",
+                case.name
+            );
+            assert_eq!(streams.len(), 1, "{}: old stream count", case.name);
+            assert_eq!(
+                streams[0].observation.frames, 2,
+                "{}: old frame count",
+                case.name
+            );
+        }
+        _ => unreachable!(),
+    }
+}
 
 #[test]
 fn the_rust_ingress_answers_the_shared_corpus() {
@@ -298,6 +334,11 @@ fn the_rust_ingress_answers_the_shared_corpus() {
         let authored = canonical(&case.want);
         let reference = canonical(&case.reference);
 
+        if H_A_PENDING_RUST_PARITY.contains(&case.name.as_str()) {
+            assert_h_a_pending_rust_parity(case, &feeds, &streams);
+            continue;
+        }
+
         // Rust matches authored when the case agrees or when Rust already implements
         // the proper PES-header quarantine state machine.
         let rust_meets_authored = case.diverges.is_none()
@@ -306,89 +347,7 @@ fn the_rust_ingress_answers_the_shared_corpus() {
             || case.name == "discontinuity_indicator_while_in_header_discards_incomplete_pes"
             || case.name == "unannounced_cc_jump_while_in_header_discards_incomplete_pes";
 
-        if H_A_PENDING_RUST_PARITY.contains(&case.name.as_str()) {
-            // Step H-A1: Go reference fixed; Rust AudioIngress parity pending in Step H-A2.
-            // Verify that Rust exhibits the known unpatched behavior until H-A2 lands.
-            match case.name.as_str() {
-                "a_scrambled_payload_unit_start" => {
-                    assert_eq!(
-                        feeds.len(),
-                        2,
-                        "{}: old unpatched feed count (H-A2 pending)",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams.len(),
-                        1,
-                        "{}: old unpatched stream count",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams[0].observation.frames, 2,
-                        "{}: old unpatched frame count",
-                        case.name
-                    );
-                }
-                "scrambled_audio_pusi_followed_by_clear_continuation" => {
-                    assert_eq!(
-                        feeds.len(),
-                        1,
-                        "{}: old unpatched feed count (H-A2 pending)",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams.len(),
-                        1,
-                        "{}: old unpatched stream count",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams[0].observation.frames, 1,
-                        "{}: old unpatched frame count",
-                        case.name
-                    );
-                }
-                "scrambled_audio_pusi_followed_by_several_clear_continuations" => {
-                    assert_eq!(
-                        feeds.len(),
-                        2,
-                        "{}: old unpatched feed count (H-A2 pending)",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams.len(),
-                        1,
-                        "{}: old unpatched stream count",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams[0].observation.frames, 2,
-                        "{}: old unpatched frame count",
-                        case.name
-                    );
-                }
-                "scrambled_audio_pusi_recovers_at_next_clear_pusi" => {
-                    assert_eq!(
-                        feeds.len(),
-                        2,
-                        "{}: old unpatched feed count (H-A2 pending)",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams.len(),
-                        1,
-                        "{}: old unpatched stream count",
-                        case.name
-                    );
-                    assert_eq!(
-                        streams[0].observation.frames, 2,
-                        "{}: old unpatched frame count",
-                        case.name
-                    );
-                }
-                _ => unreachable!(),
-            }
-        } else if rust_meets_authored {
+        if rust_meets_authored {
             compare(&case.name, "feed", &feeds, &authored);
             assert_eq!(
                 streams.len(),
