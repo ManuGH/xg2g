@@ -387,12 +387,22 @@ export function usePlayerChrome({
     if (playbackMode === 'VOD') {
       const anchor = anchorStartSec ?? 0;
       const localTarget = targetSeconds - anchor;
+      let target = Math.max(0, localTarget);
+
+      // Guard against seeking past the buffered/generated HLS window.
+      // When a VOD transcode is still in progress (or if seekable bounds are smaller than target),
+      // seeking beyond the end of the playlist causes AVPlayer to halt, stall or 503 on missing chunks.
+      const bounds = readActualSeekableBounds(video);
+      if (bounds && bounds.end > 0 && target > bounds.end) {
+        target = Math.max(0, bounds.end - 1);
+      }
+
       if (video.readyState >= 1) {
-        video.currentTime = Math.max(0, localTarget);
+        video.currentTime = target;
       } else if (onSeekOffset) {
         onSeekOffset(targetSeconds);
       } else {
-        video.currentTime = Math.max(0, localTarget);
+        video.currentTime = target;
       }
     } else {
       let clamped = Math.max(0, targetSeconds);
@@ -402,23 +412,29 @@ export function usePlayerChrome({
       video.currentTime = clamped;
     }
 
-    // Live/DVR seeks land on un-buffered (transcoded) or evicted data; Safari
-    // leaves the element PAUSED after such a seek, so the picture freezes/blacks
-    // and never resumes until a manual Play. Re-assert playback intent unless
-    // the user deliberately paused. Mirrors seekWhenReady's readyState gate; the
-    // `video.paused` guard makes this a no-op on in-buffer seeks that keep
-    // playing, so it never fights the shipped isInMemorySeekTarget path.
-    if (!userPauseIntentRef.current && video.paused) {
+    // Seeks (both Live/DVR and VOD) that land on un-buffered data cause Safari
+    // AVPlayer to asynchronously pause the media element during buffering.
+    // Re-assert playback intent on completion ('seeked' and 'canplay') unless
+    // the user deliberately paused. The `video.paused` check inside resume makes
+    // this a safe no-op on in-buffer seeks that continue playing without pause.
+    if (!userPauseIntentRef.current) {
       const resume = () => {
-        video.play().catch((err) => debugWarn('Live seek resume play failed', err));
+        if (!userPauseIntentRef.current && video.paused) {
+          video.play().catch((err) => debugWarn('Seek resume play failed', err));
+        }
       };
-      if (video.readyState >= 1) {
-        resume();
-      } else {
-        video.addEventListener('loadedmetadata', resume, { once: true });
+
+      if (video.paused) {
+        if (video.readyState >= 1) {
+          resume();
+        } else {
+          video.addEventListener('loadedmetadata', resume, { once: true });
+        }
       }
+      video.addEventListener('seeked', resume, { once: true });
+      video.addEventListener('canplay', resume, { once: true });
     }
-  }, [anchorStartSec, canRunSeekCommand, onSeekOffset, playbackMode, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
+  }, [anchorStartSec, canRunSeekCommand, onSeekOffset, playbackMode, readActualSeekableBounds, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;

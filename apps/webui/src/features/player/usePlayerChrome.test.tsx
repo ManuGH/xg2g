@@ -652,4 +652,67 @@ describe('usePlayerChrome', () => {
 
     expect(currentTime).toBeLessThan(119);
   });
+
+  it('clamps VOD seek target within seekable bounds when media transcode is in progress', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        playbackMode="VOD"
+        canSeek={true}
+        durationSeconds={3000}
+      />
+    );
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 10;
+    Object.defineProperty(video, 'currentTime', { configurable: true, get: () => currentTime, set: (v: number) => { currentTime = v; } });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => false });
+    Object.defineProperty(video, 'readyState', { configurable: true, get: () => 4 });
+    // Simulate transcode in progress: duration is 3000s, but seekable only goes up to 100s so far
+    Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => 100 }) });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    // Seeking beyond 100 (e.g. to 500) must clamp to max seekable (100 - 1 = 99)
+    fireEvent.click(screen.getByRole('button', { name: 'seekto' })); // seekTo(50) -> within bounds, should be 50
+    expect(currentTime).toBe(50);
+
+    // Call seekTo with value past seekable horizon (e.g. 500)
+    // We trigger a seek to 500 by setting seekable end to 40
+    Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => 40 }) });
+    fireEvent.click(screen.getByRole('button', { name: 'seekto' })); // target is 50, but seekable end is 40 -> clamps to 39
+    expect(currentTime).toBe(39);
+  });
+
+  it('re-asserts play when Safari pauses asynchronously on seeked event', async () => {
+    render(
+      <HookHarness
+        shouldForceNativeMobileHls={() => false}
+        playbackMode="VOD"
+        canSeek={true}
+        durationSeconds={3000}
+      />
+    );
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    let currentTime = 10;
+    let paused = false; // Initially playing
+    Object.defineProperty(video, 'currentTime', { configurable: true, get: () => currentTime, set: (v: number) => { currentTime = v; } });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => paused });
+    Object.defineProperty(video, 'readyState', { configurable: true, get: () => 4 });
+    Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => 3000 }) });
+    const playSpy = vi.fn().mockResolvedValue(undefined);
+    video.play = playSpy;
+    fireEvent(video, new Event('loadedmetadata'));
+
+    // User is playing (paused = false), triggers seekTo(50)
+    fireEvent.click(screen.getByRole('button', { name: 'seekto' }));
+    expect(currentTime).toBe(50);
+    // At seek invocation, play was not called because video was not yet paused
+    expect(playSpy).not.toHaveBeenCalled();
+
+    // Now Safari media engine finishes seek and pauses the element asynchronously
+    paused = true;
+    fireEvent(video, new Event('seeked'));
+
+    // The seeked listener must detect paused=true with userPauseIntent=false and call video.play()
+    expect(playSpy).toHaveBeenCalledTimes(1);
+  });
 });
