@@ -613,8 +613,7 @@ func audioTSCorpusCases() []audioTSCase {
 	// shows up as a failure here.
 	{
 		b := audioTSNew("a_scrambled_payload_unit_start",
-			"an encrypted start is quarantined, and clear continuations after it are not fed (defect, #968 gap)", audioTSProgram)
-		b.diverges("defect", "a scrambled PUSI establishes a PES boundary that cannot be interpreted; clear continuations after it must be quarantined until the next clear PUSI")
+			"an encrypted start is quarantined, and clear continuations after it are not fed (#968 resolved)", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		encrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
@@ -629,11 +628,6 @@ func audioTSCorpusCases() []audioTSCase {
 		// Authored: p0 is fed, p1 is scrambled, p2 is quarantined -> 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: feeds p0 AND c1 -> 2 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -1097,8 +1091,7 @@ func audioTSCorpusCases() []audioTSCase {
 	// Area A: Scrambled Audio PUSI
 	{
 		b := audioTSNew("scrambled_audio_pusi_followed_by_clear_continuation",
-			"a scrambled PUSI establishes a PES boundary that cannot be interpreted; clear continuation must not be fed (defect, #968 gap)", audioTSProgram)
-		b.diverges("defect", "a scrambled PUSI establishes a PES boundary that cannot be interpreted; subsequent clear continuations must not be fed as elementary stream until the next valid clear PUSI")
+			"a scrambled PUSI establishes a PES boundary that cannot be interpreted; clear continuation must not be fed (#968 resolved)", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1108,16 +1101,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(p0, p1)
 		// Authored: 0 feeds (p0 scrambled, p1 uninterpretable continuation)
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: feeds p1 as elementary stream!
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("scrambled_audio_pusi_followed_by_several_clear_continuations",
-			"multiple clear continuations after an unreadable scrambled PUSI must all be dropped (defect)", audioTSProgram)
-		b.diverges("defect", "multiple clear continuations following an unreadable scrambled PUSI remain uninterpretable and must be dropped")
+			"multiple clear continuations after an unreadable scrambled PUSI must all be dropped (#968 resolved)", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1129,17 +1117,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(p0, p1, p2)
 		// Authored: 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: feeds both
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c2, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("scrambled_audio_pusi_recovers_at_next_clear_pusi",
-			"recovery from a scrambled PUSI occurs strictly at the next valid clear PUSI (defect)", audioTSProgram)
-		b.diverges("defect", "recovery from a scrambled PUSI occurs strictly at the next valid clear PUSI, not at intermediate clear continuations")
+			"recovery from a scrambled PUSI occurs strictly at the next valid clear PUSI (#968 resolved)", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1152,11 +1134,6 @@ func audioTSCorpusCases() []audioTSCase {
 		// Authored: p0 and p1 dropped; p2 recovers cleanly
 		b.feed(0, audioTSAudioA, esOf(startClear, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: feeds p1 AND p2
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(1))
-		b.refFeed(0, audioTSAudioA, esOf(startClear, 0), obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1952,10 +1929,6 @@ func TestAudioTSCorpus_TheCheckedInFileMatchesTheCases(t *testing.T) {
 func TestAudioTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
 		"a_pes_header_reaching_past_its_packet":                                         "divergence",
-		"a_scrambled_payload_unit_start":                                                "defect",
-		"scrambled_audio_pusi_followed_by_clear_continuation":                           "defect",
-		"scrambled_audio_pusi_followed_by_several_clear_continuations":                  "defect",
-		"scrambled_audio_pusi_recovers_at_next_clear_pusi":                              "defect",
 		"scrambled_packet_while_in_header":                                              "defect",
 		"duplicate_packet_with_complete_ac3_frame":                                      "defect",
 		"duplicate_packet_with_partial_ac3_frame":                                       "defect",
