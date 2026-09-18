@@ -464,6 +464,10 @@ type GoCore struct {
 	// observation can never outlive the table that named the stream it came from.
 	audioStreams map[uint16]*audioStream
 
+	// esTrackers tracks exact duplicate TS packets per selected ES PID (video and audio).
+	// Reset whenever the program state resets.
+	esTrackers map[uint16]*esPacketTracker
+
 	// audioUnreadableStarts counts the payload units on an observable audio PID
 	// that did not begin an audio PES packet.
 	//
@@ -701,6 +705,9 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 
 	// 3. Video Elementary Stream Keyframe / IDR Indexing
 	if c.videoPID > 0 && pid == c.videoPID {
+		if c.isExactDuplicateESPacketLocked(pid, pkt) {
+			return
+		}
 		c.parseVideoPacketLocked(pkt, offset, pusi, payload)
 		return
 	}
@@ -711,6 +718,9 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 	//    channel count above two can be read at all.
 	for _, apid := range c.audioPIDs {
 		if pid == apid {
+			if c.isExactDuplicateESPacketLocked(pid, pkt) {
+				return
+			}
 			if (pkt[3]>>6)&0x03 != 0 {
 				c.scrambledAudioPackets++
 				c.audioClearRun = 0
@@ -1294,6 +1304,7 @@ func (c *GoCore) resetProgramStateLocked() {
 	// can carry a different elementary stream after a PMT change, and carrying the
 	// old layout across would describe audio that is no longer there.
 	c.audioStreams = nil
+	c.esTrackers = nil
 	// And the shadow's epoch turns here rather than on the event below, because
 	// this line is where the state it mirrors actually dies. Deriving it from
 	// EventProgramIdentityChanged later would put the boundary one step away from
@@ -1636,4 +1647,41 @@ func appendAudioTrack(list []AudioTrackInfo, track AudioTrackInfo) []AudioTrackI
 		}
 	}
 	return append(list, track)
+}
+
+// esPacketTracker tracks the latest TS packet on a selected elementary stream PID
+// to suppress exact duplicate transport packets.
+type esPacketTracker struct {
+	hasLast bool
+	lastCC  byte
+	last    [TSPacketSize]byte
+}
+
+func (t *esPacketTracker) observeExactDuplicate(pkt []byte) bool {
+	if len(pkt) < TSPacketSize {
+		return false
+	}
+	cc := pkt[3] & 0x0F
+	if t.hasLast && cc == t.lastCC && bytes.Equal(t.last[:], pkt[:TSPacketSize]) {
+		// Exact duplicate: drop, retain previous reference.
+		return true
+	}
+	// Different CC, or same CC with different full packet, or first packet:
+	// Process and remember this packet as latest reference.
+	t.hasLast = true
+	t.lastCC = cc
+	copy(t.last[:], pkt[:TSPacketSize])
+	return false
+}
+
+func (c *GoCore) isExactDuplicateESPacketLocked(pid uint16, pkt []byte) bool {
+	if c.esTrackers == nil {
+		c.esTrackers = make(map[uint16]*esPacketTracker, 4)
+	}
+	tracker := c.esTrackers[pid]
+	if tracker == nil {
+		tracker = &esPacketTracker{}
+		c.esTrackers[pid] = tracker
+	}
+	return tracker.observeExactDuplicate(pkt)
 }

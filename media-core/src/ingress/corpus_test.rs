@@ -271,6 +271,56 @@ fn compare(name: &str, what: &str, got: &[Feed], want: &[Feed]) {
     }
 }
 
+/// Temporary registry of audio cases where Go exact-duplicate suppression was implemented (Step H-B1),
+/// but Rust `AudioIngress` parity is deferred to Step H-B2.
+const H_B_DUP_PENDING_RUST_PARITY: [&str; 5] = [
+    "duplicate_packet_with_complete_ac3_frame",
+    "duplicate_packet_with_partial_ac3_frame",
+    "duplicate_immediately_before_frame_completion_prevents_phantom_layout",
+    "duplicate_after_stable_layout_already_exists",
+    "same_cc_identical_packet_is_duplicate",
+];
+
+/// Assert unpatched Rust behavior for exact duplicate audio cases pending Step H-B2.
+fn assert_h_b_pending_rust_parity(case: &Case, feeds: &[Feed], streams: &[Stream]) {
+    assert_eq!(
+        feeds.len(),
+        case.want.len() + 1,
+        "{}: feed count with unsuppressed duplicate",
+        case.name
+    );
+    assert_eq!(
+        streams.len(),
+        case.streams.len(),
+        "{}: streams followed count",
+        case.name
+    );
+    let s = &streams[0];
+    let want_s = &case.streams[0];
+    assert_eq!(s.pid, want_s.pid, "{}: stream PID", case.name);
+    assert_eq!(s.codec, want_s.codec, "{}: stream codec", case.name);
+    assert_eq!(
+        s.feeds,
+        want_s.feeds + 1,
+        "{}: stream feeds count with unsuppressed duplicate",
+        case.name
+    );
+    match case.name.as_str() {
+        "duplicate_packet_with_complete_ac3_frame" | "same_cc_identical_packet_is_duplicate" => {
+            assert_eq!(s.observation.frames, 2, "{}: frames", case.name);
+        }
+        "duplicate_packet_with_partial_ac3_frame" => {
+            assert_eq!(s.observation.frames, 1, "{}: frames", case.name);
+        }
+        "duplicate_immediately_before_frame_completion_prevents_phantom_layout"
+        | "duplicate_after_stable_layout_already_exists" => {
+            assert_eq!(s.observation.frames, 4, "{}: frames", case.name);
+            assert_eq!(s.observation.channels, 2, "{}: channels", case.name);
+        }
+        other => panic!("unexpected H-B pending case: {other}"),
+    }
+}
+
 #[test]
 fn the_rust_ingress_answers_the_shared_corpus() {
     let text = std::fs::read_to_string(corpus_path()).expect("the corpus is checked in");
@@ -282,13 +332,16 @@ fn the_rust_ingress_answers_the_shared_corpus() {
 
         // Rust matches authored when the case agrees or when Rust already implements
         // the proper PES-header quarantine state machine.
-        let rust_meets_authored = case.diverges.is_none()
+        let rust_meets_authored = (case.diverges.is_none()
+            && !H_B_DUP_PENDING_RUST_PARITY.contains(&case.name.as_str()))
             || case.name == "a_pes_header_reaching_past_its_packet"
             || case.name == "scrambled_packet_while_in_header"
             || case.name == "discontinuity_indicator_while_in_header_discards_incomplete_pes"
             || case.name == "unannounced_cc_jump_while_in_header_discards_incomplete_pes";
 
-        if rust_meets_authored {
+        if H_B_DUP_PENDING_RUST_PARITY.contains(&case.name.as_str()) {
+            assert_h_b_pending_rust_parity(case, &feeds, &streams);
+        } else if rust_meets_authored {
             compare(&case.name, "feed", &feeds, &authored);
             assert_eq!(
                 streams.len(),
@@ -346,14 +399,6 @@ fn only_the_classified_divergences_exist() {
     let want = [
         ("a_pes_header_reaching_past_its_packet", "divergence"),
         ("scrambled_packet_while_in_header", "defect"),
-        ("duplicate_packet_with_complete_ac3_frame", "defect"),
-        ("duplicate_packet_with_partial_ac3_frame", "defect"),
-        (
-            "duplicate_immediately_before_frame_completion_prevents_phantom_layout",
-            "defect",
-        ),
-        ("duplicate_after_stable_layout_already_exists", "defect"),
-        ("same_cc_identical_packet_is_duplicate", "defect"),
         ("same_cc_different_packet_is_broken", "defect"),
         ("tei_on_pat_is_refused", "defect"),
         ("tei_on_pmt_is_refused", "defect"),

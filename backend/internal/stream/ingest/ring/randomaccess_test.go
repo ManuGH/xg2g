@@ -295,11 +295,8 @@ func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
 func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
 	r, vpid := h264Ring(t, 256)
 
-	clear := createVideoPESPacket(vpid, true, 0, nal(nalHdrNonIDR, sliceHeaderP))
-	scrambled := createVideoPESPacket(vpid, true, 1, nal(nalHdrNonIDR, sliceHeaderP))
-	scrambled[3] |= 0xC0 // transport_scrambling_control = odd key
-
 	for i := 0; i < 3; i++ {
+		clear := createVideoPESPacket(vpid, true, uint8(i), nal(nalHdrNonIDR, sliceHeaderP))
 		if _, err := r.Push(context.Background(), clear); err != nil {
 			t.Fatalf("push clear: %v", err)
 		}
@@ -308,6 +305,8 @@ func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
 		t.Fatalf("after three clear packets: %+v", got)
 	}
 
+	scrambled := createVideoPESPacket(vpid, true, 3, nal(nalHdrNonIDR, sliceHeaderP))
+	scrambled[3] |= 0xC0 // transport_scrambling_control = odd key
 	if _, err := r.Push(context.Background(), scrambled); err != nil {
 		t.Fatalf("push scrambled: %v", err)
 	}
