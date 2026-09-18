@@ -56,6 +56,32 @@ struct LiveToRecordingLifecycleTests {
         })
     }
 
+    /// Starts the older transition and returns only once its coordinator stop is suspended.
+    /// The hook is removed before returning so newer transitions and cleanup can stop normally.
+    private func beginTransitionWithSuspendedStop(
+        on manager: PlaybackManager,
+        transition: @escaping @MainActor () async -> Void
+    ) async -> (task: Task<Void, Never>, resume: @MainActor () -> Void) {
+        var reachedBarrier: CheckedContinuation<Void, Never>?
+        var releaseBarrier: CheckedContinuation<Void, Never>?
+        manager.coordinator.stopYieldHook = {
+            await withCheckedContinuation { continuation in
+                releaseBarrier = continuation
+                reachedBarrier?.resume()
+                reachedBarrier = nil
+            }
+        }
+
+        let task = Task { @MainActor in await transition() }
+        // Register before yielding the main actor to the newly created task.
+        await withCheckedContinuation { reachedBarrier = $0 }
+        manager.coordinator.stopYieldHook = nil
+        return (task, {
+            releaseBarrier?.resume()
+            releaseBarrier = nil
+        })
+    }
+
     // MARK: - Invariant 1: Canonical State Integrity & Derived Properties
 
     @Test("Initial state is idle and derived properties are clean")
@@ -275,14 +301,14 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.currentChannel == channelA)
 
         // 2. Launch Live -> Recording and supersede with Live B
-        let recordingTask = Task { @MainActor in
+        let recordingTransition = await beginTransitionWithSuspendedStop(on: manager) {
             await manager.play(recording: testRecording, startPosition: 10.0)
         }
-        await Task.yield()
 
         // 3. Immediately launch Live B to supersede Recording
         await manager.play(channel: channelB, mode: .fullscreen)
-        _ = await recordingTask.value
+        recordingTransition.resume()
+        await recordingTransition.task.value
 
         // 4. Assert Live B won exclusively and recording state was never committed
         #expect(manager.state == .live(channelB, mode: .fullscreen))
@@ -302,14 +328,14 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.currentChannel == channelA)
 
         // 2. Launch Live -> Offline and supersede with Recording
-        let offlineTask = Task { @MainActor in
+        let offlineTransition = await beginTransitionWithSuspendedStop(on: manager) {
             await manager.play(offline: testOffline)
         }
-        await Task.yield()
 
         // 3. Immediately launch Recording to supersede Offline
         await manager.play(recording: testRecording, startPosition: 55.0)
-        _ = await offlineTask.value
+        offlineTransition.resume()
+        await offlineTransition.task.value
 
         // 4. Assert Recording won exclusively and offline was discarded
         #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0), mode: .fullscreen))
@@ -347,11 +373,13 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(channel: channelA, mode: .fullscreen)
         #expect(manager.currentChannel == channelA)
 
-        // 2. Begin stop/transition to recording concurrently with switching to Live B
-        async let stopOrRecording: Void = manager.play(recording: testRecording, startPosition: 0)
-        async let switchToLiveB: Void = manager.play(channel: channelB, mode: .fullscreen)
-
-        _ = await (stopOrRecording, switchToLiveB)
+        // 2. Suspend the older recording transition's stop before Live B starts.
+        let recordingTransition = await beginTransitionWithSuspendedStop(on: manager) {
+            await manager.play(recording: testRecording, startPosition: 0)
+        }
+        await manager.play(channel: channelB, mode: .fullscreen)
+        recordingTransition.resume()
+        await recordingTransition.task.value
 
         // 3. Assert Live B is active and was not torn down by the superseded stop
         #expect(manager.state == .live(channelB, mode: .fullscreen))
@@ -374,29 +402,12 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.coordinator.presentedServiceRef == channelA.serviceRef)
         #expect(manager.state == .live(channelA, mode: .fullscreen))
 
-        // 2. Setup a deterministic async barrier in stopYieldHook
-        var stopReachedBarrierContinuation: CheckedContinuation<Void, Never>?
-        var releaseStopBarrierContinuation: CheckedContinuation<Void, Never>?
-
-        manager.coordinator.stopYieldHook = {
-            await withCheckedContinuation { cont in
-                releaseStopBarrierContinuation = cont
-                stopReachedBarrierContinuation?.resume()
-                stopReachedBarrierContinuation = nil
-            }
-        }
-
-        // 3. Start older stop() in background Task
-        let oldStopTask = Task { @MainActor in
+        // 2. Suspend the older coordinator stop before starting Live B.
+        let oldStop = await beginTransitionWithSuspendedStop(on: manager) {
             await manager.coordinator.stop()
         }
 
-        // 4. Wait until old stop() is suspended exactly at the barrier inside await abandonInFlight
-        await withCheckedContinuation { cont in
-            stopReachedBarrierContinuation = cont
-        }
-
-        // 5. While old stop() is suspended at the barrier, start and completely finish Live B zap
+        // 3. While old stop() is suspended at the barrier, start and completely finish Live B zap
         await manager.play(channel: channelB, mode: .fullscreen)
         let sessionB = manager.coordinator.playing
         #expect(sessionB != nil)
@@ -404,12 +415,11 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.coordinator.presentedServiceRef == channelB.serviceRef)
         #expect(manager.state == .live(channelB, mode: .fullscreen))
 
-        // 6. Now release the suspended old stop() barrier
-        manager.coordinator.stopYieldHook = nil
-        releaseStopBarrierContinuation?.resume()
-        _ = await oldStopTask.value
+        // 4. Now release the suspended old stop() barrier
+        oldStop.resume()
+        await oldStop.task.value
 
-        // 7. Verify Invariants:
+        // 5. Verify Invariants:
         // - Session B is STILL playing
         // - Session B is STILL presented
         // - State is STILL .live(channelB)
