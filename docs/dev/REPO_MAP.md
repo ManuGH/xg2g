@@ -20,7 +20,9 @@ Read these in order:
 | `.github/` | GitHub workflows, PR templates, security config, and workflow docs |
 | `.devcontainer/` | Containerized workstation definition |
 | `backend/` | Go backend, API contracts, generated server code, scripts, tests, vendored Go deps |
+| `media-core/` | High-performance Rust TS/PES ingress & demuxing core |
 | `apps/webui/` | React/Vite WebUI source, tests, design gates, generated TypeScript API client |
+| `ios/` | Native Swift 6 client (iOS & tvOS app targets, custom Metal video pipeline) |
 | `android/` | Android/TV companion app and smoke assets |
 | `infra/systemd/` | Production Compose, systemd, reverse-proxy, and deployment sources |
 | `docs/` | Architecture, operations, release, WebUI, and contributor documentation |
@@ -35,12 +37,12 @@ development or test runs. Treat them as runtime state, not as source areas.
 
 | Class | Paths | Rule |
 | :--- | :--- | :--- |
-| Primary source | `backend/internal/`, `backend/cmd/`, `apps/webui/src/`, `android/` | Edit directly with matching tests |
+| Primary source | `backend/internal/`, `backend/cmd/`, `media-core/src/`, `apps/webui/src/`, `ios/Xg2g/`, `ios/Platforms/`, `android/` | Edit directly with matching tests |
 | Contracts | `backend/api/openapi.yaml`, `backend/contracts/`, `docs/decision/`, `docs/ops/*CONTRACT*` | Treat as normative; update generated artifacts when changed |
-| Generated but committed | `backend/internal/control/http/v3/server_gen.go`, `apps/webui/src/client-ts/`, `backend/internal/control/http/dist/` | Regenerate through Make/npm targets; do not hand-edit unless the generator source is broken |
+| Generated but committed | `backend/internal/control/http/v3/server_gen.go`, `apps/webui/src/client-ts/`, `backend/internal/control/http/dist/`, `ios/Xg2g/Generated/` | Regenerate through Make/npm/codegen targets; do not hand-edit unless the generator source is broken |
 | Vendored dependencies | `backend/vendor/` | Updated through Go module/vendor workflow only |
-| Committed test assets | `backend/testdata/`, `backend/fixtures/`, selected Android assets | Keep intentional and small enough for repo-health gates |
-| Local-only outputs | `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`, `.venv/`, `bin/`, `apps/webui/dist/` | Do not commit; clean only when you know the running service does not need them |
+| Committed test assets | `backend/testdata/`, `backend/fixtures/`, `ios/Xg2gTests/`, selected Android assets | Keep intentional and small enough for repo-health gates |
+| Local-only outputs | `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`, `.venv/`, `bin/`, `apps/webui/dist/`, `media-core/target/` | Do not commit; clean only when you know the running service does not need them |
 
 ## Common Change Paths
 
@@ -48,7 +50,9 @@ development or test runs. Treat them as runtime state, not as source areas.
 | :--- | :--- | :--- |
 | Backend API behavior | `backend/internal/control/http/v3/`, then domain/control package from `PACKAGE_LAYOUT.md` | `cd backend && go test ./...` or `make ci-pr` |
 | Playback decision behavior | `backend/internal/control/playback/`, `backend/internal/domain/`, decision docs | Backend tests plus relevant WebUI contract tests |
+| Media facts / Rust core | `media-core/src/` | `cargo test --manifest-path media-core/Cargo.toml` |
 | WebUI feature work | `apps/webui/src/features/` | `npm --prefix apps/webui test` and `npm --prefix apps/webui run lint` |
+| iOS & tvOS native app | `ios/Xg2g/`, `ios/Platforms/` | `make verify-ios-build` and `make verify-tvos-build` |
 | Embedded WebUI dist | `apps/webui/` source first | `make ui-build` and `make verify-embedded-webui-dist` |
 | Config surface | `backend/internal/config/registry.go` | `make generate-config` and `make verify-config` |
 | OpenAPI/client contract | `backend/api/openapi.yaml` | `make gen-openapi-hard` and `make verify-openapi-hard-mode` |

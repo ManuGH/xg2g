@@ -2,7 +2,7 @@
 
 **Status:** Active current-state reference
 
-**Snapshot date:** 2026-07-28
+**Snapshot date:** 2026-09-17
 
 **Scope:** Repository layout, supported host runtime, network edge, storage,
 application boundaries, and operator lifecycle
@@ -18,9 +18,11 @@ record earlier states and must not be used as current deployment instructions.
 | :--- | :--- |
 | Server host | Linux `amd64` or `arm64` with systemd |
 | Container runtime | Docker Engine with the Compose v2 plugin |
-| Backend | Go 1.26.5, one OCI image with pinned FFmpeg |
+| Backend | Go 1.26.5, one OCI image with pinned FFmpeg 8.1 |
+| Media Core | High-performance Rust engine under `media-core/` for TS/PES demuxing |
 | WebUI | React/Vite under `apps/webui`, built and embedded into the backend image |
-| API | Versioned `/api/v3`, generated from `backend/api/openapi.yaml` |
+| Native Apple Client | Swift 6 strict concurrency under `ios/` (iOS & tvOS, custom Metal video pipeline) |
+| API & Auth | Versioned `/api/v3` (OpenAPI codegen), bearer tokens with ADR-032 DPoP device binding |
 | Production supervisor | `xg2g.service` → canonical Compose resolver |
 | Backend listener | `127.0.0.1:8088` by default |
 | Remote browser access | HTTPS through an existing same-host proxy or explicitly managed Caddy |

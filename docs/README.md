@@ -42,6 +42,7 @@ make ci-pr
 | [**Deployment Guide**](ops/DEPLOYMENT.md) | Docker Compose, systemd unit supervision, and updates. |
 | [**Security Operations**](ops/SECURITY.md) | Auth tokens, session secret, TLS proxy setup, and security model. |
 | [**Client Profiles**](ops/CLIENT_PROFILES.md) | Client capabilities, browser probes, and codec fallback rules. |
+| [**Apple Client (iOS/tvOS)**](../ios/README.md) | Native Swift 6 client, Metal video pipeline, and test harness. |
 
 ---
 

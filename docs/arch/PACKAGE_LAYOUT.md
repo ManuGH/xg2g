@@ -1,23 +1,24 @@
 # Package Layout Policy
 
-**Status:** Active (updated 2026-07-28)
-**Scope:** All code in `internal/`
+**Status:** Active (updated 2026-09-17)
+**Scope:** All Go backend code in `backend/internal/`
 
 This document defines the **non-negotiable rules** for where code lives in the xg2g codebase.
 
-## Goals
+## Ecosystem Architecture & Multi-Language Boundaries
 
-1. **Prevent drift:** No ambiguity about where new code belongs
-2. **Enforce layering:** HTTP layer cannot directly import infra layer
-3. **Feature ownership:** Each feature has a clear home
-4. **No "utils hell":** Reject catch-all packages like `common/`, `helpers/`, `utils/`
+xg2g is organized into distinct domain-isolated subsystems:
+- **`backend/`**: Go 1.26 daemon, control plane, OpenAPI v3, and SQLite session store.
+- **`media-core/`**: High-performance Rust engine for TS/PES demuxing and packet analysis.
+- **`apps/webui/`**: React/Vite web application embedded into the Go daemon.
+- **`ios/`**: Native Swift 6 client application supporting iOS & tvOS with Metal video rendering.
 
 ---
 
-## Top-Level Structure
+## Top-Level Backend Structure
 
 ```
-internal/
+backend/internal/
 ├── api/              # Top-level HTTP lifecycle, composition, compatibility
 ├── app/              # Application bootstrap & wiring (DI container)
 ├── config/           # Configuration parsing, validation, hot-reload
