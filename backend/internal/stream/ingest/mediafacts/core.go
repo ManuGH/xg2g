@@ -412,6 +412,12 @@ type GoCore struct {
 	annexBState      uint32 // 4-byte shift register for startcode scanning
 	expectingNALByte bool
 
+	// videoAwaitingStart records that the last payload unit start on the video
+	// PID was not a valid video PES packet, so the elementary stream boundary
+	// was refused. Packets following it until the next payload unit start are
+	// quarantined as the body of the refused unit.
+	videoAwaitingStart bool
+
 	// Random access classification for the access unit currently being assembled.
 	// Held per access unit because joinability is a property of all of its slices,
 	// which is only known once the next access unit begins.
@@ -1291,6 +1297,7 @@ func (c *GoCore) resetProgramStateLocked() {
 	c.pesHasVPS = false
 	c.annexBState = 0xFFFFFFFF
 	c.expectingNALByte = false
+	c.videoAwaitingStart = false
 	c.activePMTSections = nil
 	c.scrambledVideoPackets = 0
 	c.clearVideoPackets = 0
@@ -1333,13 +1340,14 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	c.clearVideoPackets++
 	c.videoClearRun++
 
-	esData := payload
+	var esData []byte
 
 	if pusi {
 		// Video PES packet start: verify PES startcode prefix (00 00 01 E0..EF)
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
-			// Whether an access unit is joinable depends on every slice in it, which
-			// is only known once it ends - and it ends where the next one begins.
+			// A new valid video PES packet begins here. Consistent with the Go parser's
+			// existing PES/AU lifecycle contract, finalize the access unit from the
+			// preceding PES packet before resetting state for the new one.
 			c.finalizeAccessUnitLocked()
 
 			c.currentPESOffset = offset
@@ -1350,6 +1358,7 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			c.annexBState = 0xFFFFFFFF
 			c.expectingNALByte = false
 			c.resetAccessUnitStateLocked()
+			c.videoAwaitingStart = false
 
 			pesHeaderDataLen := int(payload[8])
 			esStart := 9 + pesHeaderDataLen
@@ -1358,7 +1367,31 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			} else {
 				esData = nil
 			}
+		} else {
+			// A payload unit start was signaled (PUSI=1), but the payload does not carry
+			// a valid video PES header (wrong prefix, invalid stream id, or truncated).
+			// Consistent with the Go parser's existing PES/AU lifecycle contract, close
+			// the open access unit, discard the previous PES coordinate, and quarantine
+			// subsequent bytes until a new valid PES start arrives.
+			c.finalizeAccessUnitLocked()
+
+			c.currentPESOffset = -1
+			c.pesHasKeyframe = false
+			c.pesHasSPS = false
+			c.pesHasPPS = false
+			c.pesHasVPS = false
+			c.annexBState = 0xFFFFFFFF
+			c.expectingNALByte = false
+			c.resetAccessUnitStateLocked()
+			c.videoAwaitingStart = true
+			esData = nil
 		}
+	} else if c.videoAwaitingStart {
+		// Continuation packet of a refused payload unit: quarantined until the
+		// next valid payload unit start.
+		return
+	} else {
+		esData = payload
 	}
 
 	if len(esData) == 0 {

@@ -794,164 +794,108 @@ case video_unannounced_cc_jump_while_in_header_discards_incomplete_pes
 end
 
 case invalid_pusi_wrong_prefix_after_a_valid_pes
-  desc a payload unit starting 00 00 02 with an IDR inside, after a P picture's PES: no entry point; the reference reports one at the P picture's coordinate (V1, defect)
+  desc a payload unit starting 00 00 02 with an IDR inside, after a P picture's PES: no entry point (V1)
   program 1
-  diverges defect: a payload unit that is not a video PES start is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a400ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e0000080000000000165888421a033ff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_without_a_prior_pes_fabricates_configuration
-  desc a refused payload unit carrying SPS and PPS, before any PES start: not a configuration; the reference sets ParameterSetsSeen from bytes it never established as video (V1, defect)
+  desc a refused payload unit carrying SPS and PPS, before any PES start: not a configuration (V1)
   program 1
-  diverges defect: SPS and PPS inside a refused payload unit are recorded as the current PES's configuration
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e000008000000000016742c01eda0280f68000000168ce388000000165888421a033ff
   event identity
   event identity
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a500ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e0000080000000000141c021a033ff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-facts ps=0 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_payload_shorter_than_a_pes_header
-  desc a six-byte payload unit that is an IDR start code and header, after a P picture's PES (V1, defect)
+  desc a six-byte payload unit that is an IDR start code and header, after a P picture's PES (V1)
   program 1
-  diverges defect: a payload unit too short to be a PES header is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031b100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001658884
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_audio_stream_id_on_the_video_pid
-  desc a well-formed PES header whose stream id is private_stream_1, with an IDR inside (V1, defect)
+  desc a well-formed PES header whose stream id is private_stream_1, with an IDR inside (V1)
   program 1
-  diverges defect: a PES packet with a non-video stream id on the video PID is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a400ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001bd000080000000000165888421a033ff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_padding_stream_id
-  desc a padding_stream PES packet (0xBE, no optional header) with an IDR inside (V1, defect)
+  desc a padding_stream PES packet (0xBE, no optional header) with an IDR inside (V1)
   program 1
-  diverges defect: a padding_stream PES packet on the video PID is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a300ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001be001400000165888421a033ffffffffff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_hevc_irap_inside
-  desc the same refusal on HEVC, with VPS, SPS, PPS and an IDR in the refused unit (V1, defect)
+  desc the same refusal on HEVC, with VPS, SPS, PPS and an IDR in the refused unit (V1)
   program 1
-  diverges defect: a payload unit that is not a video PES start is scanned as elementary stream, and an IRAP in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f00024e100f000c545df5cffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100308c00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e0000080000000000140010c01ffff0000014201010160aa0000014401c172b40000010201d01e33
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h265
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h265
   chunk 474100318c00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e0000080000000000140010c01ffff0000014201010160aa0000014401c172b40000012601af1e33
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h265
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h265
 end
 
 case invalid_pusi_mpeg2_i_picture_inside
-  desc MPEG-2: a PES with only sequence and GOP headers, then a refused unit carrying an I picture (V1, defect)
+  desc MPEG-2: a PES with only sequence and GOP headers, then a refused unit carrying an I picture (V1)
   program 1
-  diverges defect: a payload unit that is not a video PES start is scanned as elementary stream, and an I picture in it is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f00002e100f00074ce926affffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309a00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e00000800000000001b31400f013ffffe018000001b800080040
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=mpeg2
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=mpeg2
   chunk 474100319e00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e00000800000000001000008fff8000001011a5bc3ff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=mpeg2
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=mpeg2
 end
 
 case invalid_pusi_continuations_are_quarantined_until_a_valid_pes
-  desc a refused unit, its continuation carrying an IDR, then a valid PES with an IDR: one entry point, at the valid PES (V1, defect)
+  desc a refused unit, its continuation carrying an IDR, then a valid PES with an IDR: one entry point, at the valid PES (V1)
   program 1
-  diverges defect: the continuations of a refused payload unit are scanned as elementary stream, and an IDR in them is reported at the previous PES's coordinate
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e000008000000000016742c01eda0280f68047010032a600ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000168ce388000000165888421a033ff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=3 vrun=3 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=376 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=3 vrun=3 cleanrap=1 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 474100339100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000165888421a033ff
   event rap offset=940 joinable=1
   facts ps=1 irap=1 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=4 vrun=4 cleanrap=1 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=940 joinable=1
-  ref-facts ps=1 irap=2 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=4 vrun=4 cleanrap=2 cleanau=1 scrconf=0 vpid=0100 codec=h264
 end
 
 case invalid_pusi_with_no_nal_like_bytes
   desc a refused unit carrying nothing that looks like a NAL: the difference is only when the open access unit is completed (V1, the finalize question for 7.0b)
   program 1
-  diverges defect: a refused payload unit does not complete the access unit before it; the reference completes it at the next valid PES start instead
   chunk 474000100000b00d0001c100000001f0002ab104b2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff475000100002b0120001c10000f000f0001be100f000fff8fcedffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff474100309200ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000141c021a033ff
   event identity
   event identity
   facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
-  ref-event identity
-  ref-event identity
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=1 vrun=1 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 47410031a800ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000002e00000800000ffffffffffff
   facts ps=0 irap=0 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-facts ps=1 irap=0 intra=0 rpsei=0 predrej=0 unread=0 vscr=0 vclr=2 vrun=2 cleanrap=0 cleanau=0 scrconf=0 vpid=0100 codec=h264
   chunk 474100329100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000001e000008000000000016742c01eda0280f68000000168ce388000000165888421a033ff
   event rap offset=752 joinable=1
   facts ps=1 irap=1 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=3 vrun=3 cleanrap=1 cleanau=1 scrconf=0 vpid=0100 codec=h264
-  ref-event rap offset=752 joinable=1
-  ref-facts ps=1 irap=1 intra=0 rpsei=0 predrej=1 unread=0 vscr=0 vclr=3 vrun=3 cleanrap=1 cleanau=1 scrconf=0 vpid=0100 codec=h264
 end
 
 case video_pes_header_reaching_past_its_packet
