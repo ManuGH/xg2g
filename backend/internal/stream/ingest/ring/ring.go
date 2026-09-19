@@ -760,6 +760,14 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 	}
 }
 
+// ScrambledVideoConfirmed reports whether the video stream is conclusively scrambled
+// without any clear packets observed.
+func (r *MasterRing) ScrambledVideoConfirmed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.scrambledVideoConfirmedLocked()
+}
+
 // scrambledVideoConfirmedLocked asks the core's verdict. The reader goes through
 // the ring because the ring holds the lock, not because the ring decides.
 func (r *MasterRing) scrambledVideoConfirmedLocked() bool {

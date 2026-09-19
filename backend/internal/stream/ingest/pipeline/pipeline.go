@@ -184,8 +184,13 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		case <-ctx.Done():
 			return ring.PrimedAttachPoint{}, nil, ctx.Err()
 		case <-p.doneCh:
-			if errors.Is(lastErr, ring.ErrScrambledStream) {
-				return ring.PrimedAttachPoint{}, nil, lastErr
+			// The upstream ingest has terminated. Check the ring one final time now that all
+			// pushed packets are committed, ensuring that terminal verdicts (e.g. scrambled stream)
+			// take precedence over a generic EOF pipeline-closed error.
+			if attach, reader, err := p.PrimedAttach(); err == nil {
+				return attach, reader, nil
+			} else if errors.Is(err, ring.ErrScrambledStream) || errors.Is(lastErr, ring.ErrScrambledStream) || p.ring.ScrambledVideoConfirmed() {
+				return ring.PrimedAttachPoint{}, nil, ring.ErrScrambledStream
 			}
 			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 		case <-ticker.C:
