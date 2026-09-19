@@ -104,6 +104,12 @@ type MasterRing struct {
 	maxKeyframes    int
 	generation      uint64
 
+	// generationResumeFloor is the conservative byte offset below which audio
+	// recovery after an identity change must not resume. For a successfully
+	// committed Push with an identity change, it is published at the commit end;
+	// for SetTargetProgram, at the committed head. Guarded by mu.
+	generationResumeFloor int64
+
 	// ingestMu serialises writers and owns the core for the length of a call. It
 	// exists so the core can run without r.mu: a core behind a socket may hang,
 	// and a hung core must not take subscribers, readiness and Close with it.
@@ -224,7 +230,12 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 		r.coreUnusable = true
 		return ErrRingClosed
 	}
+	genBefore := r.generation
 	r.applyLocked(res)
+	if r.generation != genBefore {
+		r.generationResumeFloor = r.head
+		r.notEmpty.Broadcast()
+	}
 	return nil
 }
 
@@ -420,6 +431,7 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 		return 0, r.retireCore(ctx, ErrRingAdvanced)
 	}
 
+	genBefore := r.generation
 	r.applyLocked(res)
 
 	// 4. Write data into circular buffer safely, supporting len(data) > capacity without panic
@@ -446,6 +458,10 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 			r.tail = r.head - int64(r.capacity)
 			r.pruneKeyframesLocked()
 		}
+	}
+
+	if r.generation != genBefore {
+		r.generationResumeFloor = r.head
 	}
 
 	r.notEmpty.Broadcast()
@@ -560,6 +576,14 @@ func (r *MasterRing) Generation() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.generation
+}
+
+// GenerationResumeFloor returns the conservative recovery floor byte offset
+// established by the latest committed identity change.
+func (r *MasterRing) GenerationResumeFloor() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.generationResumeFloor
 }
 
 // VideoDetails returns authoritative video PID and Codec discovered from PMT.
