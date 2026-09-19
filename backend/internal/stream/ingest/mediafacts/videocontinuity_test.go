@@ -823,3 +823,78 @@ func TestVideoContinuity_SameCC_ExactDuplicateVsDifferentDistinction(t *testing.
 	}
 }
 
+// 17. MPEG-2 picture header pending capture across packet boundary:
+// When the next PUSI packet arrives with a broken boundary (same-CC-different or gap),
+// finalizeAccessUnitLocked() consumes the pending MPEG-2 Intra header, emitting a provisional RAP.
+// The broken boundary must immediately invalidate this RAP before resetting AU state, ensuring
+// no stale keyframe offset or CleanEntryPoints remain.
+func TestVideoContinuity_MPEG2PendingPictureHeader_BrokenPUSIBoundaryCannotLeaveRAP(t *testing.T) {
+	b := vNew("test", "test", videoTSProgram)
+	core := NewGoCore(videoTSProgram)
+	ctx := context.Background()
+	v := uint16(videoTSPID)
+
+	psi := b.psi(0, mpeg2Stream(v))
+
+	// Packet 1 (CC = 0): MPEG-2 sequence header, picture start code (00 00 01 00),
+	// followed by first 2 bytes of the 3-byte picture header capture.
+	// temporal_reference = 0x00, picture_coding_type = 1 (Intra / I-Frame: (0x08 >> 3) & 0x07 == 1).
+	// Because only 2 of 3 bytes are provided, captureMPEG2PictureHeader remains in-flight!
+	b.cc[v] = 0
+	p0 := b.start(v, m2Seq, []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x08})
+	p0Offset := int64(len(psi))
+
+	res1, err := core.Ingest(ctx, 0, cat(psi, p0))
+	if err != nil {
+		t.Fatalf("ingest p0: %v", err)
+	}
+	// While capture is in-flight, no RAP is emitted yet
+	for _, ev := range res1.Events {
+		if ev.Kind == EventRandomAccessPoint {
+			t.Fatalf("no RAP should be emitted while picture header capture is incomplete")
+		}
+	}
+
+	// Packet 2: PUSI arrives with same CC = 0 (broken boundary: esSameCCDifferent!)
+	// When PUSI arrives, finalizeAccessUnitLocked() consumes the pending NAL capture,
+	// which recognizes the Intra picture header and publishes a provisional RAP.
+	// The broken boundary MUST immediately invalidate that RAP!
+	p1BrokenPUSI := audioTSShortPacket(v, true, 0, cat(audioTSPESHeader(0xE0, 0), m2Slice))
+	res2, err := core.Ingest(ctx, int64(len(psi)+len(p0)), p1BrokenPUSI)
+	if err != nil {
+		t.Fatalf("ingest p1BrokenPUSI: %v", err)
+	}
+
+	var gotRAP, gotInvalidated bool
+	for _, ev := range res2.Events {
+		if ev.Kind == EventRandomAccessPoint {
+			if ev.Offset != p0Offset {
+				t.Fatalf("expected provisional RAP at %d, got %+v", p0Offset, ev)
+			}
+			gotRAP = true
+		}
+		if ev.Kind == EventRandomAccessPointInvalidated {
+			if ev.Offset != p0Offset {
+				t.Fatalf("expected invalidation at %d, got %+v", p0Offset, ev)
+			}
+			gotInvalidated = true
+		}
+	}
+
+	if !gotRAP {
+		t.Fatalf("expected provisional RAP to be emitted by consumeNALCaptureLocked during finalization")
+	}
+	if !gotInvalidated {
+		t.Fatalf("expected EventRandomAccessPointInvalidated for MPEG-2 RAP due to broken PUSI boundary")
+	}
+	if core.cleanRAPCount != 0 {
+		t.Fatalf("expected cleanRAPCount=0, got %d", core.cleanRAPCount)
+	}
+	if res2.Facts.CleanEntryPoints != 0 {
+		t.Fatalf("expected CleanEntryPoints=0, got %d", res2.Facts.CleanEntryPoints)
+	}
+	if !core.videoAwaitingStart {
+		t.Fatalf("expected videoAwaitingStart=true (conflicting PUSI quarantined)")
+	}
+}
+

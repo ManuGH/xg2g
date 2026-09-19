@@ -1348,13 +1348,17 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	var esData []byte
 
 	if pusi {
-		if seq == esGap || seq == esSameCCDifferent {
+		brokenBoundary := seq == esGap || seq == esSameCCDifferent
+		if brokenBoundary {
 			c.auContinuityBroken = true
-			c.invalidatePublishedRAPLocked()
 		}
 		// A new payload unit begins here: finalize the access unit from the
 		// preceding PES packet before evaluating the new payload unit.
 		c.finalizeAccessUnitLocked()
+
+		if brokenBoundary {
+			c.invalidatePublishedRAPLocked()
+		}
 
 		c.currentPESOffset = -1
 		c.pesHasKeyframe = false
