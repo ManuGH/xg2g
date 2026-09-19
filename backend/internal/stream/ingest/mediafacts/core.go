@@ -1348,8 +1348,9 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	var esData []byte
 
 	if pusi {
-		if seq == esGap {
+		if seq == esGap || seq == esSameCCDifferent {
 			c.auContinuityBroken = true
+			c.invalidatePublishedRAPLocked()
 		}
 		// A new payload unit begins here: finalize the access unit from the
 		// preceding PES packet before evaluating the new payload unit.
@@ -1377,6 +1378,13 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		c.clearVideoPackets++
 		c.videoClearRun++
 
+		if seq == esSameCCDifferent {
+			// Conflicting same-CC PUSI: physical clear packet, but corrupt transport.
+			// Quarantine immediately; do not parse payload or establish PES/RAP.
+			c.videoAwaitingStart = true
+			return
+		}
+
 		// Video PES packet start: verify PES startcode prefix (00 00 01 E0..EF)
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
 			c.currentPESOffset = offset
@@ -1403,17 +1411,7 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			c.scrambledVideoPackets++
 			c.auScrambledPackets++
 			c.videoClearRun = 0
-			if c.auCleanRAPIncremented {
-				c.cleanRAPCount--
-				c.auCleanRAPIncremented = false
-			}
-			if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
-				c.auRAPInvalidated = true
-				c.events = append(c.events, Event{
-					Kind:   EventRandomAccessPointInvalidated,
-					Offset: c.auPublishedRAPOffset,
-				})
-			}
+			c.invalidatePublishedRAPLocked()
 			return
 		}
 		c.clearVideoPackets++
@@ -1423,11 +1421,11 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			// Continuation packet of a refused payload unit: quarantined until the
 			// next valid payload unit start.
 			return
-		} else if seq == esGap {
-			// An unannounced continuity counter gap inside an in-flight payload unit.
-			// Abort any in-progress NAL capture, reset Annex-B shift register, mark
-			// the open access unit broken, and quarantine continuation packets until
-			// the next valid payload unit start.
+		} else if seq == esGap || seq == esSameCCDifferent {
+			// An unannounced continuity counter gap or conflicting same-CC packet inside
+			// an in-flight payload unit. Abort any in-progress NAL capture, reset
+			// Annex-B shift register, mark the open access unit broken, and quarantine
+			// continuation packets until the next valid payload unit start.
 			c.nalKind = captureNone
 			c.nalLeft = 0
 			c.nalSkip = 0
@@ -1436,17 +1434,7 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			c.expectingNALByte = false
 			c.auContinuityBroken = true
 			c.videoAwaitingStart = true
-			if c.auCleanRAPIncremented {
-				c.cleanRAPCount--
-				c.auCleanRAPIncremented = false
-			}
-			if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
-				c.auRAPInvalidated = true
-				c.events = append(c.events, Event{
-					Kind:   EventRandomAccessPointInvalidated,
-					Offset: c.auPublishedRAPOffset,
-				})
-			}
+			c.invalidatePublishedRAPLocked()
 			return
 		} else {
 			esData = payload
@@ -1710,6 +1698,21 @@ func (c *GoCore) indexRandomAccessPointLocked(irap bool) {
 		Joinable: c.auScrambledPackets == 0,
 	})
 }
+
+func (c *GoCore) invalidatePublishedRAPLocked() {
+	if c.auCleanRAPIncremented {
+		c.cleanRAPCount--
+		c.auCleanRAPIncremented = false
+	}
+	if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
+		c.auRAPInvalidated = true
+		c.events = append(c.events, Event{
+			Kind:   EventRandomAccessPointInvalidated,
+			Offset: c.auPublishedRAPOffset,
+		})
+	}
+}
+
 func (c *GoCore) resetAccessUnitStateLocked() {
 	c.auHasIRAP = false
 	c.auHasRecoveryPt = false
