@@ -156,28 +156,13 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// Overtaken by the write head: the ring discarded bytes this subscriber had
 		// not read yet. Resuming at the tail would put a decoder at whatever offset
 		// the eviction happened to leave behind, which is mid-GOP in all but the
-		// luckiest case. Recovery re-enters at a random access point instead, with
+		// luckiest case. Recovery re-enters at a decodable boundary instead, with
 		// the active topology restated in front of it.
 		if s.readOffset < s.ring.tail {
 			s.droppedBytes += s.ring.tail - s.readOffset
 			s.overruns++
 			s.readOffset = s.ring.tail
-
-			// Whether the tail is an acceptable place to resume has three answers,
-			// and collapsing the first two is how a video service gets a mid-GOP
-			// entry during startup:
-			//
-			//	topology unknown       - no complete PMT parsed yet. Nothing is known
-			//	                         about this stream, so nothing licenses the
-			//	                         tail. Wait; a service that turns out to
-			//	                         carry video must not already have been given
-			//	                         bytes from the middle of a picture.
-			//	topology known, audio  - the PMT names no decodable video. There are
-			//	                         no random access points to wait for and no
-			//	                         decoder state to corrupt, so the tail is the
-			//	                         only entry point there is, and a legal one.
-			//	topology known, video  - only a random access point will do.
-			s.awaitingRandomAccess = !s.ring.facts.HasPMT || s.ring.facts.VideoPID != 0
+			s.awaitingRandomAccess = true
 		}
 
 		// The wait is a state, not a single pass. Without it the next push would
@@ -221,23 +206,54 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 	}
 }
 
-// resyncToRandomAccessLocked moves the read cursor to the newest random access point
-// the ring still holds and queues the active PAT/PMT ahead of it. It reports false
-// when there is no such point right now, which is a transient state rather than an
-// error: the next GOP boundary, or the first one of a new generation, is still ahead.
+// resyncToRandomAccessLocked restores decodable alignment for a subscriber that
+// overran, had its preamble invalidated by an identity change, or was awaiting
+// topology resolution. It queues the active PAT/PMT ahead of the resumed data.
+// It reports false when decodable alignment cannot be established right now
+// (e.g. topology unknown, or next video GOP boundary still ahead).
 //
-// Bytes skipped between the tail and the chosen keyframe are accounted separately
-// from the overrun itself. They were available; recovery chose not to deliver them.
+// Bytes skipped between the tail and the chosen keyframe (or conservative recovery
+// floor) are accounted separately from the overrun itself as ResyncSkippedBytes.
 func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
-	latest, ok := s.ring.latestKeyframeOffsetLocked()
-	if !ok {
+	facts := s.ring.facts
+
+	// 1. Topology unknown: no complete PMT parsed yet. A service that turns out
+	// to carry video must not have been given bytes from the middle of a picture.
+	// Remain blocked.
+	if !facts.HasPMT {
 		return false
 	}
 
-	if latest > s.readOffset {
-		s.resyncSkippedBytes += latest - s.readOffset
+	// 2. Topology known, video: only a random access point will do.
+	if facts.VideoPID != 0 {
+		latest, ok := s.ring.latestKeyframeOffsetLocked()
+		if !ok {
+			return false
+		}
+
+		if latest > s.readOffset {
+			s.resyncSkippedBytes += latest - s.readOffset
+		}
+		s.readOffset = latest
+		s.pendingPrefix = s.ring.patpmtPreambleLocked()
+		s.pendingPrefixGeneration = s.ring.generation
+		return true
 	}
-	s.readOffset = latest
+
+	// 3. Topology known, audio-only: the PMT names no decodable video.
+	// There are no random access points to wait for.
+	// Eviction up to the retained tail is accounted first:
+	if s.readOffset < s.ring.tail {
+		s.droppedBytes += s.ring.tail - s.readOffset
+		s.overruns++
+		s.readOffset = s.ring.tail
+	}
+	// Advance past any retained bytes of a previous generation up to the
+	// recovery floor:
+	if s.readOffset < s.ring.generationResumeFloor {
+		s.resyncSkippedBytes += s.ring.generationResumeFloor - s.readOffset
+		s.readOffset = s.ring.generationResumeFloor
+	}
 	s.pendingPrefix = s.ring.patpmtPreambleLocked()
 	s.pendingPrefixGeneration = s.ring.generation
 	return true
