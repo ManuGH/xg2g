@@ -1265,128 +1265,102 @@ func videoTSCorpusCases() []videoTSCase {
 
 	{
 		b := vNew("invalid_pusi_wrong_prefix_after_a_valid_pes",
-			"a payload unit starting 00 00 02 with an IDR inside, after a P picture's PES: no entry point; the reference reports one at the P picture's coordinate (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a payload unit that is not a video PES start is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate")
+			"a payload unit starting 00 00 02 with an IDR inside, after a P picture's PES: no entry point (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(bogusPESPrefix, h264IDR))).
 			ev().
-			facts(h264().ps(false).predrej(1).clear(2).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().ps(false).predrej(1).clear(2).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_without_a_prior_pes_fabricates_configuration",
-			"a refused payload unit carrying SPS and PPS, before any PES start: not a configuration; the reference sets ParameterSetsSeen from bytes it never established as video (V1, defect)", videoTSProgram)
-		b.diverges("defect", "SPS and PPS inside a refused payload unit are recorded as the current PES's configuration")
+			"a refused payload unit carrying SPS and PPS, before any PES start: not a configuration (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.raw(v, true, cat(bogusPESPrefix, h264SPS, h264PPS, h264IDR))).
 			ev(identityEv, identityEv).
-			facts(h264().clear(1)).
-			refFacts(h264().ps(true).clear(1))
+			facts(h264().clear(1))
 		b.chunk(b.start(v, h264SliceP)).
 			facts(h264().clear(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_payload_shorter_than_a_pes_header",
-			"a six-byte payload unit that is an IDR start code and header, after a P picture's PES (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a payload unit too short to be a PES header is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate")
+			"a six-byte payload unit that is an IDR start code and header, after a P picture's PES (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, []byte{0x00, 0x00, 0x01, 0x65, sliceI, 0x84})).
 			ev().
-			facts(h264().ps(false).predrej(1).clear(2).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().ps(false).predrej(1).clear(2).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_audio_stream_id_on_the_video_pid",
-			"a well-formed PES header whose stream id is private_stream_1, with an IDR inside (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a PES packet with a non-video stream id on the video PID is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate")
+			"a well-formed PES header whose stream id is private_stream_1, with an IDR inside (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(audioTSPESHeader(0xBD, 0), h264IDR))).
 			ev().
-			facts(h264().ps(false).predrej(1).clear(2).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().ps(false).predrej(1).clear(2).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_padding_stream_id",
-			"a padding_stream PES packet (0xBE, no optional header) with an IDR inside (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a padding_stream PES packet on the video PID is scanned as elementary stream, and an IDR in it is reported at the previous PES's coordinate")
+			"a padding_stream PES packet (0xBE, no optional header) with an IDR inside (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat([]byte{0x00, 0x00, 0x01, 0xBE, 0x00, 0x14}, h264IDR, repeat(0xFF, 4)))).
 			ev().
-			facts(h264().ps(false).predrej(1).clear(2).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().ps(false).predrej(1).clear(2).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_hevc_irap_inside",
-			"the same refusal on HEVC, with VPS, SPS, PPS and an IDR in the refused unit (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a payload unit that is not a video PES start is scanned as elementary stream, and an IRAP in it is reported at the previous PES's coordinate")
+			"the same refusal on HEVC, with VPS, SPS, PPS and an IDR in the refused unit (V1)", videoTSProgram)
 		b.chunk(b.psi(0, hevcStream(v)), b.start(v, hevcVPS, hevcSPS, hevcPPS, hevcTrail)).
 			ev(identityEv, identityEv).
 			facts(hevc().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(bogusPESPrefix, hevcVPS, hevcSPS, hevcPPS, hevcIDR))).
 			ev().
-			facts(hevc().ps(false).predrej(1).clear(2).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(hevc().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(hevc().ps(false).predrej(1).clear(2).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_mpeg2_i_picture_inside",
-			"MPEG-2: a PES with only sequence and GOP headers, then a refused unit carrying an I picture (V1, defect)", videoTSProgram)
-		b.diverges("defect", "a payload unit that is not a video PES start is scanned as elementary stream, and an I picture in it is reported at the previous PES's coordinate")
+			"MPEG-2: a PES with only sequence and GOP headers, then a refused unit carrying an I picture (V1)", videoTSProgram)
 		b.chunk(b.psi(0, mpeg2Stream(v)), b.start(v, m2Seq, m2GOP)).
 			ev(identityEv, identityEv).
 			facts(mpeg2().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(bogusPESPrefix, m2PicI, m2Slice))).
 			ev().
-			facts(mpeg2().clear(2)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(mpeg2().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(mpeg2().clear(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_continuations_are_quarantined_until_a_valid_pes",
-			"a refused unit, its continuation carrying an IDR, then a valid PES with an IDR: one entry point, at the valid PES (V1, defect)", videoTSProgram)
-		b.diverges("defect", "the continuations of a refused payload unit are scanned as elementary stream, and an IDR in them is reported at the previous PES's coordinate")
+			"a refused unit, its continuation carrying an IDR, then a valid PES with an IDR: one entry point, at the valid PES (V1)", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(bogusPESPrefix, h264SPS)), b.cont(v, h264PPS, h264IDR)).
 			ev().
-			facts(h264().ps(false).predrej(1).clear(3).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(3).cleanrap(1))
+			facts(h264().ps(false).predrej(1).clear(3).cleanau(1))
 		b.chunk(b.start(v, h264SPS, h264PPS, h264IDR)).
 			ev(rapAt(pkt5, true)).
-			facts(h264().ps(true).irap(1).predrej(1).clear(4).cleanrap(1).cleanau(1)).
-			refFacts(h264().ps(true).irap(2).clear(4).cleanrap(2).cleanau(1))
+			facts(h264().ps(true).irap(1).predrej(1).clear(4).cleanrap(1).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("invalid_pusi_with_no_nal_like_bytes",
 			"a refused unit carrying nothing that looks like a NAL: the difference is only when the open access unit is completed (V1, the finalize question for 7.0b)", videoTSProgram)
-		b.diverges("defect", "a refused payload unit does not complete the access unit before it; the reference completes it at the next valid PES start instead")
 		b.chunk(b.psi(0, h264Stream(v)), b.start(v, h264SPS, h264PPS, h264SliceP)).
 			ev(identityEv, identityEv).
 			facts(h264().ps(true).clear(1))
 		b.chunk(b.raw(v, true, cat(bogusPESPrefix, repeat(0xFF, 6)))).
-			facts(h264().ps(false).predrej(1).clear(2).cleanau(1)).
-			refFacts(h264().ps(true).clear(2))
+			facts(h264().ps(false).predrej(1).clear(2).cleanau(1))
 		b.chunk(b.start(v, h264SPS, h264PPS, h264IDR)).
 			ev(rapAt(pkt4, true)).
 			facts(h264().ps(true).irap(1).predrej(1).clear(3).cleanrap(1).cleanau(1))
@@ -1958,15 +1932,6 @@ func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":               "limitation",
 		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
 		"scrambled_packet_after_the_idr_header_in_its_access_unit":              "defect",
-		"invalid_pusi_wrong_prefix_after_a_valid_pes":                           "defect",
-		"invalid_pusi_without_a_prior_pes_fabricates_configuration":             "defect",
-		"invalid_pusi_payload_shorter_than_a_pes_header":                        "defect",
-		"invalid_pusi_audio_stream_id_on_the_video_pid":                         "defect",
-		"invalid_pusi_padding_stream_id":                                        "defect",
-		"invalid_pusi_hevc_irap_inside":                                         "defect",
-		"invalid_pusi_mpeg2_i_picture_inside":                                   "defect",
-		"invalid_pusi_continuations_are_quarantined_until_a_valid_pes":          "defect",
-		"invalid_pusi_with_no_nal_like_bytes":                                   "defect",
 		"video_pes_header_reaching_past_its_packet":                             "divergence",
 		"continuity_gap_on_video_is_not_tracked":                                "defect",
 		"tei_on_video_pusi_is_refused":                                          "defect",
