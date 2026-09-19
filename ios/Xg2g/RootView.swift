@@ -14,6 +14,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: AppModel
     @State private var composition: AppComposition
+    @State private var wasInBackground = false
 
     init() {
         let model = AppModel()
@@ -28,8 +29,13 @@ struct RootView: View {
             .tint(Theme.Colors.accentAction)
             .task { await model.start() }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
-                    Task { await model.handleAppBecameActive() }
+                if newPhase == .background {
+                    wasInBackground = true
+                } else if newPhase == .active {
+                    if wasInBackground {
+                        wasInBackground = false
+                        Task { await model.handleAppBecameActive() }
+                    }
                 }
             }
             .task(id: scenePhase) {
@@ -41,9 +47,6 @@ struct RootView: View {
                         await model.refreshSchedule()
                     }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                Task { await model.handleAppBecameActive() }
             }
             .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
                 guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }

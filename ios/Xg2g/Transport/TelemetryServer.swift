@@ -17,6 +17,7 @@ public final class TelemetryServer: @unchecked Sendable {
     private let maxLogEntries = 500
     private var currentTelemetryProvider: (@Sendable () -> [String: Any])?
     private var screenshotProvider: (@MainActor @Sendable () -> Data?)?
+    private var restartWorkItem: DispatchWorkItem?
 
     /// Reused: constructing a formatter per log line is expensive, and `log` is
     /// called from the render path. `ISO8601DateFormatter` is documented as safe
@@ -66,6 +67,8 @@ public final class TelemetryServer: @unchecked Sendable {
 #if !DEBUG
         return
 #else
+        lock.lock()
+        defer { lock.unlock() }
         guard listener == nil else { return }
 
         do {
@@ -77,7 +80,8 @@ public final class TelemetryServer: @unchecked Sendable {
                 self?.handleConnection(connection)
             }
 
-            listener.stateUpdateHandler = { state in
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self = self else { return }
                 switch state {
                 case .ready:
                     print("[TelemetryServer] 🚀 Live Telemetry Server listening on port \(self.port)")
@@ -97,6 +101,10 @@ public final class TelemetryServer: @unchecked Sendable {
     }
 
     public func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        restartWorkItem?.cancel()
+        restartWorkItem = nil
         listener?.cancel()
         listener = nil
     }
@@ -110,12 +118,20 @@ public final class TelemetryServer: @unchecked Sendable {
     /// it had gone with the same lock.
     ///
     /// `start()` returns early while a listener object survives, dead or not, so
-    /// the old one has to go first.
+    /// the old one has to go first. Multiple rapid foreground transitions are
+    /// debounced so the listener is rebuilt only once.
     public func restartAfterForeground() {
-        stop()
-        queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        lock.lock()
+        defer { lock.unlock() }
+        restartWorkItem?.cancel()
+        listener?.cancel()
+        listener = nil
+
+        let item = DispatchWorkItem { [weak self] in
             self?.start()
         }
+        restartWorkItem = item
+        queue.asyncAfter(deadline: .now() + 0.3, execute: item)
     }
 
     private func handleConnection(_ connection: NWConnection) {
