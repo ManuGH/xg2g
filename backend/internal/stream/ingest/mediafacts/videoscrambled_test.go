@@ -275,3 +275,61 @@ func TestVideoScrambled_CleanIDRFullyPreserved(t *testing.T) {
 		t.Fatalf("expected CleanAccessUnits=1, got %d", res.Facts.CleanAccessUnits)
 	}
 }
+
+// 6. A scrambled PUSI=1 packet begins a new payload unit and must NOT invalidate
+// the previously finalized clean Access Unit or its published RAP.
+func TestVideoScrambled_ScrambledPUSIOfNextPESDoesNotInvalidatePreviousCleanRAP(t *testing.T) {
+	b := vNew("test", "test", videoTSProgram)
+	core := NewGoCore(videoTSProgram)
+	ctx := context.Background()
+	v := uint16(videoTSPID)
+
+	psi := b.psi(0, h264Stream(v))
+
+	// Ingest #1: clean SPS, PPS, and IDR start
+	idrPkt := b.start(v, h264SPS, h264PPS, h264IDR)
+	chunk1 := cat(psi, idrPkt)
+	res1, err := core.Ingest(ctx, 0, chunk1)
+	if err != nil {
+		t.Fatalf("ingest chunk1: %v", err)
+	}
+
+	idrOffset := int64(len(psi))
+	var gotRAP bool
+	for _, ev := range res1.Events {
+		if ev.Kind == EventRandomAccessPoint && ev.Offset == idrOffset && ev.Joinable {
+			gotRAP = true
+		}
+	}
+	if !gotRAP {
+		t.Fatalf("expected Joinable RAP at offset %d, got %+v", idrOffset, res1.Events)
+	}
+	if res1.Facts.CleanEntryPoints != 1 {
+		t.Fatalf("expected CleanEntryPoints=1 after clear IDR header, got %d", res1.Facts.CleanEntryPoints)
+	}
+
+	// Ingest #2: scrambled packet with PUSI=1 (beginning of the next PES)
+	scrPUSIPkt := scrambled(b.start(v, h264SliceP))
+	res2, err := core.Ingest(ctx, int64(len(chunk1)), scrPUSIPkt)
+	if err != nil {
+		t.Fatalf("ingest chunk2: %v", err)
+	}
+
+	for _, ev := range res2.Events {
+		if ev.Kind == EventRandomAccessPointInvalidated {
+			t.Fatalf("unexpected RAP invalidation for previous clean IDR on scrambled PUSI of next PES: %+v", ev)
+		}
+	}
+	if res2.Facts.CleanEntryPoints != 1 {
+		t.Fatalf("expected CleanEntryPoints=1 to remain preserved, got %d", res2.Facts.CleanEntryPoints)
+	}
+	if res2.Facts.CleanAccessUnits != 1 {
+		t.Fatalf("expected CleanAccessUnits=1 for the finalized clean IDR AU, got %d", res2.Facts.CleanAccessUnits)
+	}
+	if res2.Facts.Scrambling.VideoScrambled != 1 {
+		t.Fatalf("expected VideoScrambled=1, got %d", res2.Facts.Scrambling.VideoScrambled)
+	}
+	if res2.Facts.Scrambling.VideoClear != 1 {
+		t.Fatalf("expected VideoClear=1, got %d", res2.Facts.Scrambling.VideoClear)
+	}
+}

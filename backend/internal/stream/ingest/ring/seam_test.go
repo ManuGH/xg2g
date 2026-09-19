@@ -228,6 +228,39 @@ func TestSeam_RandomAccessPointInvalidatedRemovesKeyframeOffset(t *testing.T) {
 	}
 }
 
+// A scrambled PUSI packet starting the next PES does not emit an invalidation event,
+// ensuring the previously published keyframe offset remains valid and indexed in the ring.
+func TestSeam_ScrambledPUSIOfNextPESPreservesPreviousKeyframe(t *testing.T) {
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+
+	// Ingest #1 emits a clean joinable RAP at offset 100.
+	r.mu.Lock()
+	r.applyLocked(mediafacts.ParseResult{
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 100, Joinable: true},
+		},
+	})
+	r.mu.Unlock()
+
+	got := r.KeyframeOffsets()
+	if len(got) != 1 || got[0] != 100 {
+		t.Fatalf("KeyframeOffsets = %v, want [100]", got)
+	}
+
+	// Ingest #2 is a scrambled PUSI=1 packet; parser emits no invalidation for offset 100.
+	r.mu.Lock()
+	r.applyLocked(mediafacts.ParseResult{
+		Events: nil,
+	})
+	r.mu.Unlock()
+
+	got = r.KeyframeOffsets()
+	if len(got) != 1 || got[0] != 100 {
+		t.Fatalf("KeyframeOffsets = %v, want [100] preserved in ring", got)
+	}
+}
+
 // A snapshot the caller can write through is not a snapshot. The pre-seam code
 // copied these slices on the way out; the boundary made that easy to lose,
 // because the cached facts already look like a private copy - they are, of the

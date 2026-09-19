@@ -1345,50 +1345,41 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		return
 	}
 
-	// transport_scrambling_control != 0 means the payload is encrypted. Feeding it to the
-	// Annex-B scanner would index random bytes as NAL units, so it is never parsed. The
-	// observation is recorded instead, allowing attach to fail fast with ErrScrambledStream.
-	if (pkt[3]>>6)&0x03 != 0 {
-		c.scrambledVideoPackets++
-		c.auScrambledPackets++
-		c.videoClearRun = 0
-		if c.auCleanRAPIncremented {
-			c.cleanRAPCount--
-			c.auCleanRAPIncremented = false
-		}
-		if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
-			c.auRAPInvalidated = true
-			c.events = append(c.events, Event{
-				Kind:   EventRandomAccessPointInvalidated,
-				Offset: c.auPublishedRAPOffset,
-			})
-		}
-		return
-	}
-	c.clearVideoPackets++
-	c.videoClearRun++
-
 	var esData []byte
 
 	if pusi {
 		if seq == esGap {
 			c.auContinuityBroken = true
 		}
+		// A new payload unit begins here: finalize the access unit from the
+		// preceding PES packet before evaluating the new payload unit.
+		c.finalizeAccessUnitLocked()
+
+		c.currentPESOffset = -1
+		c.pesHasKeyframe = false
+		c.pesHasSPS = false
+		c.pesHasPPS = false
+		c.pesHasVPS = false
+		c.annexBState = 0xFFFFFFFF
+		c.expectingNALByte = false
+		c.resetAccessUnitStateLocked()
+
+		// transport_scrambling_control != 0 means the payload is encrypted. Feeding it to the
+		// Annex-B scanner would index random bytes as NAL units, so it is never parsed. The
+		// observation is recorded instead, allowing attach to fail fast with ErrScrambledStream.
+		if (pkt[3]>>6)&0x03 != 0 {
+			c.scrambledVideoPackets++
+			c.auScrambledPackets++
+			c.videoClearRun = 0
+			c.videoAwaitingStart = true
+			return
+		}
+		c.clearVideoPackets++
+		c.videoClearRun++
+
 		// Video PES packet start: verify PES startcode prefix (00 00 01 E0..EF)
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
-			// A new valid video PES packet begins here. Consistent with the Go parser's
-			// existing PES/AU lifecycle contract, finalize the access unit from the
-			// preceding PES packet before resetting state for the new one.
-			c.finalizeAccessUnitLocked()
-
 			c.currentPESOffset = offset
-			c.pesHasKeyframe = false
-			c.pesHasSPS = false
-			c.pesHasPPS = false
-			c.pesHasVPS = false
-			c.annexBState = 0xFFFFFFFF
-			c.expectingNALByte = false
-			c.resetAccessUnitStateLocked()
 			c.videoAwaitingStart = false
 
 			pesHeaderDataLen := int(payload[8])
@@ -1401,53 +1392,65 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		} else {
 			// A payload unit start was signaled (PUSI=1), but the payload does not carry
 			// a valid video PES header (wrong prefix, invalid stream id, or truncated).
-			// Consistent with the Go parser's existing PES/AU lifecycle contract, close
-			// the open access unit, discard the previous PES coordinate, and quarantine
-			// subsequent bytes until a new valid PES start arrives.
-			c.finalizeAccessUnitLocked()
-
-			c.currentPESOffset = -1
-			c.pesHasKeyframe = false
-			c.pesHasSPS = false
-			c.pesHasPPS = false
-			c.pesHasVPS = false
-			c.annexBState = 0xFFFFFFFF
-			c.expectingNALByte = false
-			c.resetAccessUnitStateLocked()
+			// Discard the previous PES coordinate and quarantine subsequent bytes until
+			// a new valid PES start arrives.
 			c.videoAwaitingStart = true
 			esData = nil
 		}
-	} else if c.videoAwaitingStart {
-		// Continuation packet of a refused payload unit: quarantined until the
-		// next valid payload unit start.
-		return
-	} else if seq == esGap {
-		// An unannounced continuity counter gap inside an in-flight payload unit.
-		// Abort any in-progress NAL capture, reset Annex-B shift register, mark
-		// the open access unit broken, and quarantine continuation packets until
-		// the next valid payload unit start.
-		c.nalKind = captureNone
-		c.nalLeft = 0
-		c.nalSkip = 0
-		c.nalBuf = c.nalBuf[:0]
-		c.annexBState = 0xFFFFFFFF
-		c.expectingNALByte = false
-		c.auContinuityBroken = true
-		c.videoAwaitingStart = true
-		if c.auCleanRAPIncremented {
-			c.cleanRAPCount--
-			c.auCleanRAPIncremented = false
-		}
-		if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
-			c.auRAPInvalidated = true
-			c.events = append(c.events, Event{
-				Kind:   EventRandomAccessPointInvalidated,
-				Offset: c.auPublishedRAPOffset,
-			})
-		}
-		return
 	} else {
-		esData = payload
+		// Continuation packet (pusi == false)
+		if (pkt[3]>>6)&0x03 != 0 {
+			c.scrambledVideoPackets++
+			c.auScrambledPackets++
+			c.videoClearRun = 0
+			if c.auCleanRAPIncremented {
+				c.cleanRAPCount--
+				c.auCleanRAPIncremented = false
+			}
+			if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
+				c.auRAPInvalidated = true
+				c.events = append(c.events, Event{
+					Kind:   EventRandomAccessPointInvalidated,
+					Offset: c.auPublishedRAPOffset,
+				})
+			}
+			return
+		}
+		c.clearVideoPackets++
+		c.videoClearRun++
+
+		if c.videoAwaitingStart {
+			// Continuation packet of a refused payload unit: quarantined until the
+			// next valid payload unit start.
+			return
+		} else if seq == esGap {
+			// An unannounced continuity counter gap inside an in-flight payload unit.
+			// Abort any in-progress NAL capture, reset Annex-B shift register, mark
+			// the open access unit broken, and quarantine continuation packets until
+			// the next valid payload unit start.
+			c.nalKind = captureNone
+			c.nalLeft = 0
+			c.nalSkip = 0
+			c.nalBuf = c.nalBuf[:0]
+			c.annexBState = 0xFFFFFFFF
+			c.expectingNALByte = false
+			c.auContinuityBroken = true
+			c.videoAwaitingStart = true
+			if c.auCleanRAPIncremented {
+				c.cleanRAPCount--
+				c.auCleanRAPIncremented = false
+			}
+			if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
+				c.auRAPInvalidated = true
+				c.events = append(c.events, Event{
+					Kind:   EventRandomAccessPointInvalidated,
+					Offset: c.auPublishedRAPOffset,
+				})
+			}
+			return
+		} else {
+			esData = payload
+		}
 	}
 
 	if len(esData) == 0 {
