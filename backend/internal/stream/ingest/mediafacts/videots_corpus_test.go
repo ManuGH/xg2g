@@ -1063,13 +1063,13 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("scrambled_pes_start_is_invisible_and_merges_access_units",
-			"the packet that starts the IDR's PES is scrambled: no start is seen, the P picture's access unit runs on until the next clear start (contract question 14B, pinned as current behaviour, not decided)", videoTSProgram)
+			"the packet that starts the next PES is scrambled: the previous clear access unit is cleanly finalized, and the scrambled payload does not contaminate it", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)),
 			b.start(v, h264SPS, h264PPS, h264SliceP),
 			scrambled(b.start(v, h264SPS, h264PPS, h264IDR)),
 			b.start(v, h264SliceP)).
 			ev(identityEv, identityEv).
-			facts(h264().ps(false).predrej(1).vscr(1).vclr(2).vrun(1))
+			facts(h264().ps(false).predrej(1).vscr(1).vclr(2).vrun(1).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
