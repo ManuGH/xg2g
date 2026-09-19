@@ -202,6 +202,12 @@ const (
 	// EventRandomAccessPoint reports an access unit a decoder can be started on,
 	// at Offset in the caller's coordinate system.
 	EventRandomAccessPoint
+
+	// EventRandomAccessPointInvalidated reports that a previously emitted
+	// EventRandomAccessPoint at Offset was corrupted later in its own access unit
+	// (e.g. by a scrambled transport packet or continuity counter gap) and must
+	// no longer be used as an attach point.
+	EventRandomAccessPointInvalidated
 )
 
 // Event is one ordered occurrence within an ingested chunk.
@@ -428,13 +434,16 @@ type GoCore struct {
 	// auScrambledPackets counts scrambled packets inside the access unit being
 	// assembled. An entry point whose own access unit was partly encrypted is not
 	// one a decoder can be started on.
-	auScrambledPackets int
-	auContinuityBroken bool
-	cleanRAPCount      uint64
-	cleanAccessUnits   uint64
-	nalBuf             []byte
-	nalKind            nalCaptureKind
-	nalLeft            int
+	auScrambledPackets    int
+	auContinuityBroken    bool
+	auCleanRAPIncremented bool
+	auPublishedRAPOffset  int64
+	auRAPInvalidated      bool
+	cleanRAPCount         uint64
+	cleanAccessUnits      uint64
+	nalBuf                []byte
+	nalKind               nalCaptureKind
+	nalLeft               int
 	// nalSkip is the number of bytes of the NAL header still to pass over before
 	// the capture starts. H.264 has a one byte header, which is already consumed by
 	// the classification step; HEVC has two, and capturing from the first of the
@@ -498,6 +507,7 @@ type GoCore struct {
 func NewGoCore(targetProgramNumber uint16) *GoCore {
 	c := &GoCore{targetProgramNumber: targetProgramNumber}
 	c.currentPESOffset = -1
+	c.auPublishedRAPOffset = -1
 	c.annexBState = 0xFFFFFFFF
 	c.videoCodec = CodecUnknown
 	return c
@@ -1297,6 +1307,9 @@ func (c *GoCore) resetProgramStateLocked() {
 	c.expectingNALByte = false
 	c.videoAwaitingStart = false
 	c.auContinuityBroken = false
+	c.auCleanRAPIncremented = false
+	c.auPublishedRAPOffset = -1
+	c.auRAPInvalidated = false
 	c.activePMTSections = nil
 	c.scrambledVideoPackets = 0
 	c.clearVideoPackets = 0
@@ -1339,6 +1352,17 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		c.scrambledVideoPackets++
 		c.auScrambledPackets++
 		c.videoClearRun = 0
+		if c.auCleanRAPIncremented {
+			c.cleanRAPCount--
+			c.auCleanRAPIncremented = false
+		}
+		if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
+			c.auRAPInvalidated = true
+			c.events = append(c.events, Event{
+				Kind:   EventRandomAccessPointInvalidated,
+				Offset: c.auPublishedRAPOffset,
+			})
+		}
 		return
 	}
 	c.clearVideoPackets++
@@ -1410,6 +1434,17 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		c.expectingNALByte = false
 		c.auContinuityBroken = true
 		c.videoAwaitingStart = true
+		if c.auCleanRAPIncremented {
+			c.cleanRAPCount--
+			c.auCleanRAPIncremented = false
+		}
+		if c.auPublishedRAPOffset >= 0 && !c.auRAPInvalidated {
+			c.auRAPInvalidated = true
+			c.events = append(c.events, Event{
+				Kind:   EventRandomAccessPointInvalidated,
+				Offset: c.auPublishedRAPOffset,
+			})
+		}
 		return
 	} else {
 		esData = payload
@@ -1659,7 +1694,9 @@ func (c *GoCore) indexRandomAccessPointLocked(irap bool) {
 	// decoder can be started on, however well it classified.
 	if c.auScrambledPackets == 0 {
 		c.cleanRAPCount++
+		c.auCleanRAPIncremented = true
 	}
+	c.auPublishedRAPOffset = c.currentPESOffset
 
 	// Reported in the caller's own byte coordinate system, so the offset can be
 	// handed straight to a reader without translation. Indexing it, ageing it out
@@ -1677,6 +1714,9 @@ func (c *GoCore) resetAccessUnitStateLocked() {
 	c.auIntraVCLCount = 0
 	c.auScrambledPackets = 0
 	c.auContinuityBroken = false
+	c.auCleanRAPIncremented = false
+	c.auPublishedRAPOffset = -1
+	c.auRAPInvalidated = false
 	c.nalKind = captureNone
 	c.nalLeft = 0
 	c.nalSkip = 0

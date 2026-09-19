@@ -269,9 +269,18 @@ func (r *MasterRing) applyLocked(res mediafacts.ParseResult) {
 			r.keyframeOffsets = r.keyframeOffsets[:0]
 			r.generation++
 		case mediafacts.EventRandomAccessPoint:
-			r.keyframeOffsets = append(r.keyframeOffsets, ev.Offset)
-			if len(r.keyframeOffsets) > r.maxKeyframes {
-				r.keyframeOffsets = r.keyframeOffsets[1:]
+			if ev.Joinable {
+				r.keyframeOffsets = append(r.keyframeOffsets, ev.Offset)
+				if len(r.keyframeOffsets) > r.maxKeyframes {
+					r.keyframeOffsets = r.keyframeOffsets[1:]
+				}
+			}
+		case mediafacts.EventRandomAccessPointInvalidated:
+			for i, off := range r.keyframeOffsets {
+				if off == ev.Offset {
+					r.keyframeOffsets = append(r.keyframeOffsets[:i], r.keyframeOffsets[i+1:]...)
+					break
+				}
 			}
 		default:
 			// EventUnknown, or a kind this build does not know. Both are refused

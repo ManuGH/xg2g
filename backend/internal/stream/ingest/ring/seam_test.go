@@ -188,10 +188,10 @@ func TestSeam_EveryIdentityChangeBecomesExactlyOneGeneration(t *testing.T) {
 // stream that no longer exists.
 func TestSeam_EntryPointsBeforeAnIdentityChangeAreDropped(t *testing.T) {
 	events := []mediafacts.Event{
-		{Kind: mediafacts.EventRandomAccessPoint, Offset: 100},
-		{Kind: mediafacts.EventRandomAccessPoint, Offset: 200},
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 100, Joinable: true},
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
 		{Kind: mediafacts.EventProgramIdentityChanged},
-		{Kind: mediafacts.EventRandomAccessPoint, Offset: 300},
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 300, Joinable: true},
 	}
 
 	r := NewMasterRing(400 * TSPacketSize)
@@ -204,6 +204,27 @@ func TestSeam_EntryPointsBeforeAnIdentityChangeAreDropped(t *testing.T) {
 	got := r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 300 {
 		t.Errorf("KeyframeOffsets = %v, want only the entry point that arrived after the identity change", got)
+	}
+}
+
+// An entry point invalidated later in its access unit is removed from the ring's keyframe index.
+func TestSeam_RandomAccessPointInvalidatedRemovesKeyframeOffset(t *testing.T) {
+	events := []mediafacts.Event{
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 100, Joinable: true},
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
+		{Kind: mediafacts.EventRandomAccessPointInvalidated, Offset: 200},
+	}
+
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+
+	r.mu.Lock()
+	r.applyLocked(mediafacts.ParseResult{Events: events})
+	r.mu.Unlock()
+
+	got := r.KeyframeOffsets()
+	if len(got) != 1 || got[0] != 100 {
+		t.Fatalf("KeyframeOffsets = %v, want [100] after 200 was invalidated", got)
 	}
 }
 

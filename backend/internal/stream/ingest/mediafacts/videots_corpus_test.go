@@ -65,6 +65,10 @@ func rapAt(offset int64, joinable bool) videoTSEvent {
 	return videoTSEvent{kind: "rap", offset: offset, joinable: joinable}
 }
 
+func rapInvalidatedAt(offset int64) videoTSEvent {
+	return videoTSEvent{kind: "rap_invalidated", offset: offset}
+}
+
 var identityEv = videoTSEvent{kind: "identity"}
 
 // videoTSFacts is the video-scoped part of Facts, as the corpus states it.
@@ -1034,18 +1038,14 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("scrambled_packet_after_the_idr_header_in_its_access_unit",
-			"the IDR header is clear, a later packet of the same picture is not: by their own definitions Joinable and CleanEntryPoints describe the whole access unit; the reference decides both at the header (V11, defect candidate; where the event is emitted is a separate design question)", videoTSProgram)
-		b.diverges("defect", "Joinable and CleanEntryPoints are decided when the IDR header is read, so a scrambled packet later in the same access unit does not reach them")
+			"the IDR header is clear, a later packet of the same picture is not: the provisional entry point is invalidated and CleanEntryPoints stays zero", videoTSProgram)
 		b.chunk(b.psi(0, h264Stream(v)),
 			b.start(v, h264SPS, h264PPS, h264IDR),
 			scrambled(b.cont(v, []byte{0xAA, 0xBB}))).
-			ev(identityEv, identityEv, rapAt(pkt2, false)).
-			facts(h264().ps(true).irap(1).vscr(1).vclr(1).vrun(0)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).vscr(1).vclr(1).vrun(0).cleanrap(1))
+			ev(identityEv, identityEv, rapAt(pkt2, true), rapInvalidatedAt(pkt2)).
+			facts(h264().ps(true).irap(1).vscr(1).vclr(1).vrun(0))
 		b.chunk(b.start(v, h264SliceP)).
-			facts(h264().ps(false).irap(1).vscr(1).vclr(2).vrun(1)).
-			refFacts(h264().ps(false).irap(1).vscr(1).vclr(2).vrun(1).cleanrap(1))
+			facts(h264().ps(false).irap(1).vscr(1).vclr(2).vrun(1))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1632,6 +1632,8 @@ func videoTSEventsOf(events []Event) []videoTSEvent {
 		switch e.Kind {
 		case EventRandomAccessPoint:
 			out = append(out, rapAt(e.Offset, e.Joinable))
+		case EventRandomAccessPointInvalidated:
+			out = append(out, rapInvalidatedAt(e.Offset))
 		case EventProgramIdentityChanged:
 			out = append(out, identityEv)
 		default:
@@ -1646,6 +1648,9 @@ func videoTSEventsOf(events []Event) []videoTSEvent {
 func videoTSEventLine(kind string, e videoTSEvent) string {
 	if e.kind == "rap" {
 		return fmt.Sprintf("  %s rap offset=%d joinable=%d", kind, e.offset, b2i(e.joinable))
+	}
+	if e.kind == "rap_invalidated" {
+		return fmt.Sprintf("  %s rap_invalidated offset=%d", kind, e.offset)
 	}
 	return fmt.Sprintf("  %s %s", kind, e.kind)
 }
@@ -1674,6 +1679,9 @@ func renderVideoTSCorpus(cases []videoTSCase) string {
 	b.WriteString("#                   a random access point the preceding call emitted, in order;\n")
 	b.WriteString("#                   offset is the caller's byte coordinate of the packet that\n")
 	b.WriteString("#                   began the access unit's PES packet\n")
+	b.WriteString("#   event rap_invalidated offset=<n>\n")
+	b.WriteString("#                   a previously emitted random access point was corrupted later\n")
+	b.WriteString("#                   in its access unit and is no longer an attach point\n")
 	b.WriteString("#   event identityEv  a programme identityEv change the preceding call emitted\n")
 	b.WriteString("#   facts ...       the video facts after the preceding call, where stated:\n")
 	b.WriteString("#                   ps ParameterSetsSeen; irap intra rpsei predrej unread the\n")
@@ -1925,7 +1933,6 @@ func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 		"h264_sei_longer_than_the_capture_budget_hides_the_recovery_point":      "limitation",
 		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":               "limitation",
 		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
-		"scrambled_packet_after_the_idr_header_in_its_access_unit":              "defect",
 		"video_pes_header_reaching_past_its_packet":                             "divergence",
 		"tei_on_video_pusi_is_refused":                                          "defect",
 		"tei_on_video_continuation_is_refused":                                  "defect",
