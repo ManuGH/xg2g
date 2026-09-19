@@ -432,3 +432,81 @@ A clean, pushed GitHub commit may be propagated one-way into the isolated
 `/srv/xg2g-build` checkout and then explicitly deployed to staging. No tool may
 silently synchronize uncommitted files between hosts or build from a runtime
 surface.
+
+## iOS Client & Agentic Xcode Tooling Truth
+
+The native iOS client (`ios/Xg2g.xcodeproj`, `ios/Xg2g/`) is built on **Swift 6 with full strict concurrency** and features a custom hardware-accelerated, low-latency video and audio pipeline (`MetalVideoView`, `NativeTSVideoPipeline`, `HardwareVideoDecoder`, `TSPacketParser`, `AudioPESAssembler`).
+
+### Agentic IDE & Tooling Capabilities (Xcode Agentic Architecture / MCP / ACP)
+Agents working on the iOS client (Codex, Antigravity, Claude) should leverage native agent capabilities and protocols (Model Context Protocol / MCP, Agent Client Protocol / ACP) whenever interacting with the Apple/Xcode development toolchain:
+- **Visual Validation over Blind CLI:** Do not rely exclusively on headless CLI compilation (`xcodebuild`). Utilize preview rendering and `#Preview(arguments:)` parameter grids to validate complex SwiftUI states (such as EPG `GuideGrid`, `LivePlayerScreen` overlay states, landscape quick-zap bars, and dynamic type).
+- **Device Hub Automation:** Use Device Hub integration to run and test interactive flows (zapping transitions, mini-player pip/docking, audio session and background playback recovery) across unified simulated and physical devices with dynamic canvas resizing.
+- **Swift Concurrency & Pipeline Profiling:** For playback pipeline and demux issues, leverage Swift Executor instruments (cooperative thread pool contention, actor activity) and Organizer Hitch/Drop-frame metrics rather than speculative trial-and-error debugging.
+- **DVB/TV Terminology Localization:** Employ agent-assisted String Catalogs to maintain domain-consistent translations (e.g. Bouquets, Transponders, EPG, Timeshift, Audio-PIDs).
+- **Multi-Platform Evolution:** Utilize built-in agent modernization skills (universal sizing, focus engine, App Intents) when expanding iOS views toward Phase 5 (tvOS) and Phase 6 (Mac Catalyst).
+
+### Xcode 27 MCP Server & Bridge Runbook (Agent Integration Guide)
+
+All coding agents (Antigravity, Codex, Claude Code) have direct programmatic access to Xcode 27 IDE services and 53 native MCP tools via `xcrun mcpbridge` and `xcrun mcp-server`.
+
+#### 1. Verifying Server Status & Opening the Project
+Ensure the MCP server is enabled and the workspace is attached:
+```bash
+xcrun mcp-server status
+# If mcp-server is not running or Xg2g is not attached:
+xcrun mcp-server open /Users/manuel/StudioProjects/xg2g/ios/Xg2g.xcodeproj
+```
+
+#### 2. Agent Build-Version Symlink Setup
+Xcode validates agent binaries against the active Xcode build version under `~/Library/Developer/Xcode/CodingAssistant/Agents/XcodeVersions/<BuildVersion>/<agent>`.
+When Xcode is updated to a new build, ensure the agent symlink exists:
+```bash
+BUILD=$(xcodebuild -version | awk '/Build version/{print $3}')
+mkdir -p ~/Library/Developer/Xcode/CodingAssistant/Agents/XcodeVersions/${BUILD}
+# Example for Claude:
+ln -sfn ~/Library/Developer/Xcode/CodingAssistant/Agents/claude/2.1.175 ~/Library/Developer/Xcode/CodingAssistant/Agents/XcodeVersions/${BUILD}/claude
+```
+
+#### 3. MCP Handshake Sequence (STDIO via `xcrun mcpbridge`)
+Agents connecting directly over stdio to `/Applications/Xcode.app/Contents/Developer/usr/bin/mcpbridge` MUST follow this exact JSON-RPC 2.0 handshake:
+1. **`initialize` request:**
+   ```json
+   {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "AgentName", "version": "1.0"}}}
+   ```
+2. **`notifications/initialized` notification:**
+   ```json
+   {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+   ```
+   *Critical:* This MUST be a notification without an `id` field. Sending an `id` causes Xcode to return an "unknown method" error.
+3. **Folder Approval & Workspace Binding (`XcodeOpenWorkspace`):**
+   ```json
+   {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "XcodeOpenWorkspace", "arguments": {"path": "/Users/manuel/StudioProjects/xg2g/ios/Xg2g.xcodeproj"}}}
+   ```
+   *Result:* Xcode grants workspace access and returns a `workspaceIdentifier` (e.g. `workspace-gIGiRO4p0s`).
+4. **Tool Invocations:**
+   Pass the returned `workspaceIdentifier` in the arguments of subsequent calls (e.g. `BuildProject`, `RenderPreview`, `DeviceInteraction*`, `RunAllTests`, `XcodeRefreshCodeIssuesInFile`, `StringCatalog*`).
+
+#### 4. Turnkey CLI Helper Script (`ios/scripts/xcode-mcp.py`)
+To avoid manual JSON-RPC boilerplate, agents should use the checked-in repository helper:
+```bash
+# Check status and open workspace
+python3 ios/scripts/xcode-mcp.py status
+
+# List schemes and simulator/device destinations
+python3 ios/scripts/xcode-mcp.py schemes
+python3 ios/scripts/xcode-mcp.py destinations
+
+# List all 53 available MCP tools
+python3 ios/scripts/xcode-mcp.py list-tools
+
+# Build scheme via MCP
+python3 ios/scripts/xcode-mcp.py build
+python3 ios/scripts/xcode-mcp.py build --for-testing
+
+# Call any generic tool
+python3 ios/scripts/xcode-mcp.py call <ToolName> '{"param": "value"}'
+# Example: Render SwiftUI preview
+python3 ios/scripts/xcode-mcp.py call RenderPreview '{"previewContext": ...}'
+# Example: Device Hub automated tap / gesture
+python3 ios/scripts/xcode-mcp.py call DeviceInteractionSynthesize '{"events": [...]}'
+```
