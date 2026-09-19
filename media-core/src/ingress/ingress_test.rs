@@ -91,6 +91,30 @@ fn pmt(version: u8, pid: u16, stream_type: u8, descriptors: &[u8]) -> Vec<u8> {
     section(0x02, PROGRAM, version, &payload)
 }
 
+fn pmt_two(version: u8, pid1: u16, desc1: &[u8], pid2: u16, desc2: &[u8]) -> Vec<u8> {
+    let mut payload = vec![
+        0xE0 | u8::try_from(pid1 >> 8).unwrap(),
+        u8::try_from(pid1 & 0xFF).unwrap(),
+        0xF0,
+        0x00,
+        0x06,
+        0xE0 | u8::try_from(pid1 >> 8).unwrap(),
+        u8::try_from(pid1 & 0xFF).unwrap(),
+        0xF0,
+        u8::try_from(desc1.len()).unwrap(),
+    ];
+    payload.extend_from_slice(desc1);
+    payload.extend_from_slice(&[
+        0x06,
+        0xE0 | u8::try_from(pid2 >> 8).unwrap(),
+        u8::try_from(pid2 & 0xFF).unwrap(),
+        0xF0,
+        u8::try_from(desc2.len()).unwrap(),
+    ]);
+    payload.extend_from_slice(desc2);
+    section(0x02, PROGRAM, version, &payload)
+}
+
 /// The DVB AC-3 descriptor, which is how AC-3 on stream type 0x06 says so.
 const AC3_DESCRIPTOR: [u8; 2] = [0x6A, 0x00];
 /// The DVB enhanced AC-3 descriptor.
@@ -809,5 +833,217 @@ fn a_layout_change_inside_one_stream_is_seen_without_the_table_changing() {
         out.last().expect("fed").observation.channels,
         6,
         "the observation moves with the audio, not with the table"
+    );
+}
+
+// --- transport duplicate suppression ---------------------------------------
+
+#[test]
+fn duplicate_pusi_packet_does_not_restart_pes_or_increment_starts() {
+    let mut ing = following_ac3();
+    let p = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+    let mut chunk = p.clone();
+    chunk.extend_from_slice(&p);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert_eq!(
+        out.feeds.len(),
+        1,
+        "exact duplicate packet must not produce a second feed"
+    );
+    assert_eq!(
+        out.processed_through, 376,
+        "both 188-byte packets are consumed in processed_through"
+    );
+
+    let followed = ing.followed();
+    assert_eq!(
+        followed[0].pes_starts, 1,
+        "pes_starts must not increment on duplicate"
+    );
+    assert_eq!(
+        followed[0].clear_packets, 1,
+        "clear_packets must not increment on duplicate"
+    );
+    assert_eq!(
+        followed[0].feeds, 1,
+        "stream feeds count must not increment on duplicate"
+    );
+}
+
+#[test]
+fn duplicate_continuation_does_not_feed_or_advance_counters() {
+    let mut ing = following_ac3();
+    let p0 = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+    let p1 = ts_packet(AUDIO_PID, false, 1, &payload_of(&ac3_frame(STEREO)));
+    let mut chunk = p0;
+    chunk.extend_from_slice(&p1);
+    chunk.extend_from_slice(&p1);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert_eq!(
+        out.feeds.len(),
+        2,
+        "duplicate continuation must be dropped (only p0 and p1 fed)"
+    );
+    assert_eq!(out.processed_through, 564);
+
+    let followed = ing.followed();
+    assert_eq!(followed[0].clear_packets, 2);
+    assert_eq!(followed[0].feeds, 2);
+}
+
+#[test]
+fn duplicate_scrambled_packet_does_not_increment_scrambled_counter() {
+    let mut ing = following_ac3();
+    let mut scr = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+    scr[3] |= 0xC0;
+
+    let mut chunk = scr.clone();
+    chunk.extend_from_slice(&scr);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert!(out.feeds.is_empty(), "scrambled packets produce no feeds");
+    assert_eq!(out.processed_through, 376);
+
+    let followed = ing.followed();
+    assert_eq!(
+        followed[0].scrambled_packets, 1,
+        "scrambled counter must not increment on duplicate"
+    );
+    assert_eq!(followed[0].clear_packets, 0);
+}
+
+#[test]
+fn same_cc_different_packet_is_not_suppressed() {
+    let mut ing = following_ac3();
+    let p0 = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+    let mut p0_diff = p0.clone();
+    p0_diff[10] ^= 0xFF;
+
+    let mut chunk = p0;
+    chunk.extend_from_slice(&p0_diff);
+
+    let _out = ing.ingest(0, &chunk).expect("aligned");
+    let followed = ing.followed();
+    assert_eq!(
+        followed[0].clear_packets, 2,
+        "same CC with different bytes is not duplicate"
+    );
+}
+
+#[test]
+fn program_identity_change_discards_duplicate_history() {
+    let mut ing = following_ac3();
+    let p0 = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+
+    let out1 = ing.ingest(0, &p0).expect("aligned");
+    assert_eq!(out1.feeds.len(), 1);
+
+    let rep = program(1, &AC3_DESCRIPTOR);
+    ing.ingest(188, &rep).expect("aligned");
+
+    let out2 = ing
+        .ingest(188 + i64::try_from(rep.len()).unwrap(), &p0)
+        .expect("aligned");
+    assert_eq!(
+        out2.feeds.len(),
+        1,
+        "after identity change, same packet is accepted anew"
+    );
+}
+
+#[test]
+fn adaptation_only_packet_does_not_replace_payload_tracker_reference() {
+    let mut ing = following_ac3();
+    let p0 = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+
+    let mut adapt_only = vec![0xFF; 188];
+    adapt_only[0] = 0x47;
+    adapt_only[1] = u8::try_from((AUDIO_PID >> 8) & 0x1F).unwrap();
+    adapt_only[2] = u8::try_from(AUDIO_PID & 0xFF).unwrap();
+    adapt_only[3] = 0x20;
+    adapt_only[4] = 183;
+    adapt_only[5] = 0x00;
+
+    let mut chunk = p0.clone();
+    chunk.extend_from_slice(&adapt_only);
+    chunk.extend_from_slice(&p0);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert_eq!(
+        out.feeds.len(),
+        1,
+        "p0 must still be recognized as duplicate even after intervening adaptation-only packet"
+    );
+    assert_eq!(ing.followed()[0].clear_packets, 1);
+}
+
+#[test]
+fn sequential_packets_and_cc_wrap_around_are_accepted() {
+    let mut ing = following_ac3();
+    let p14 = ts_packet(AUDIO_PID, true, 14, &ac3_start(STEREO, 1));
+    let p15 = ts_packet(AUDIO_PID, false, 15, &payload_of(&ac3_frame(STEREO)));
+    let p0 = ts_packet(AUDIO_PID, false, 0, &payload_of(&ac3_frame(STEREO)));
+    let p1 = ts_packet(AUDIO_PID, false, 1, &payload_of(&ac3_frame(STEREO)));
+
+    let mut chunk = p14;
+    chunk.extend_from_slice(&p15);
+    chunk.extend_from_slice(&p0);
+    chunk.extend_from_slice(&p1);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert_eq!(
+        out.feeds.len(),
+        4,
+        "all sequential and wrap packets are accepted"
+    );
+    let followed = ing.followed();
+    assert_eq!(followed[0].clear_packets, 4);
+    assert_eq!(followed[0].feeds, 4);
+}
+
+#[test]
+fn interleaved_audio_pids_maintain_independent_duplicate_histories() {
+    let mut ing = AudioIngress::new(PROGRAM);
+    let mut setup = psi_packet(0, 0, &pat(0));
+    setup.extend_from_slice(&psi_packet(
+        PMT_PID,
+        0,
+        &pmt_two(0, AUDIO_PID, &AC3_DESCRIPTOR, 0x0101, &AC3_DESCRIPTOR),
+    ));
+    ing.ingest(0, &setup).expect("aligned");
+    assert_eq!(ing.followed().len(), 2);
+
+    let track_one_start = ts_packet(AUDIO_PID, true, 0, &ac3_start(STEREO, 1));
+    let track_two_start = ts_packet(0x0101, true, 0, &ac3_start(STEREO, 1));
+    let track_two_continuation = ts_packet(0x0101, false, 1, &payload_of(&ac3_frame(STEREO)));
+
+    let mut chunk = track_one_start.clone();
+    chunk.extend_from_slice(&track_two_start);
+    // Duplicate of track_one_start on PID 0x100
+    chunk.extend_from_slice(&track_one_start);
+    // Normal continuation on PID 0x101
+    chunk.extend_from_slice(&track_two_continuation);
+    // Duplicate of track_two_continuation on PID 0x101
+    chunk.extend_from_slice(&track_two_continuation);
+
+    let out = ing.ingest(0, &chunk).expect("aligned");
+    assert_eq!(
+        out.feeds.len(),
+        3,
+        "starts and continuation accepted; duplicates dropped"
+    );
+
+    let followed = ing.followed();
+    assert_eq!(followed[0].pid, AUDIO_PID);
+    assert_eq!(
+        followed[0].clear_packets, 1,
+        "0x100 had 1 clear packet (duplicate dropped)"
+    );
+    assert_eq!(followed[1].pid, 0x0101);
+    assert_eq!(
+        followed[1].clear_packets, 2,
+        "0x101 had 2 clear packets (duplicate dropped)"
     );
 }
