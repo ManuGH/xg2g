@@ -1181,6 +1181,20 @@ func videoTSCorpusCases() []videoTSCase {
 		cases = append(cases, b.done())
 	}
 	{
+		b := vNew("same_cc_different_packet_on_video_continuation_breaks_access_unit",
+			"same CC with different bytes on video continuation is broken transport: corrupted slice must not be joined", videoTSProgram)
+		first := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00, 0x01, 0x41, sliceI})
+		c1 := b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33})
+		c1Diff := audioTSShortPacket(v, false, (b.cc[v]-1)&0x0F, []byte{0xFF, 0xEE, 0xDD, 0xCC})
+		b.chunk(b.psi(0, h264Stream(v)), first, c1, c1Diff).
+			ev(identityEv, identityEv).
+			facts(h264().ps(true).clear(3))
+		b.chunk(b.start(v, h264SliceP)).
+			ev().
+			facts(h264().ps(false).clear(4).cleanau(1))
+		cases = append(cases, b.done())
+	}
+	{
 		b := vNew("tei_on_video_pusi_is_refused",
 			"a video PUSI packet with TEI set carrying SPS, PPS and IDR: damaged transport must be dropped, no entry point admitted (defect)", videoTSProgram)
 		b.diverges("defect", "a video PUSI packet marked with TEI is scanned as valid transport, admitting an unverified entry point")
