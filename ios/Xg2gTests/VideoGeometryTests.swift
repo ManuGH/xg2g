@@ -401,11 +401,16 @@ struct VideoGeometryTests {
             view.enqueueFrame(frame)
         }
 
-        // Wait for async presentation pump to process fields
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // The main-queue pump and renderer readiness callback must both get a turn.
+        // Wait for observable progress, allowing extra startup time on a cold simulator.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while presenter.enqueuedCount <= initialEnqueued && clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
-        // Verify presenter received all fields and generation was preserved
-        #expect(presenter.enqueuedCount > initialEnqueued)
+        // Verify presentation made progress and generation was preserved.
+        #expect(presenter.enqueuedCount > initialEnqueued, "Presenter made no enqueue progress within 5 seconds")
         #expect(view.currentGeneration == generation)
 
         // Verify telemetry recorded ZERO dropped frames
