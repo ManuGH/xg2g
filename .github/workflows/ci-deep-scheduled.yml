@@ -55,6 +55,15 @@ jobs:
           set -euo pipefail
           make ui-build
 
+      - name: Install Playwright (P6.1b browser harness prereq)
+        run: |
+          set -euo pipefail
+          # ui-build leaves apps/webui/node_modules/hls.js behind, which un-skips
+          # TestP6_1b_BrowserDownswitchAgainstLiveSpike; its harness imports
+          # @playwright/test from the root package.json and launches Chromium.
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Install ffmpeg
         run: |
           set -euo pipefail
