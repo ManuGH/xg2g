@@ -1,9 +1,11 @@
-import { createRef, useRef, useState } from 'react';
+import { StrictMode, createRef, useRef, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
 import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
+import { buildPlaybackFailure } from './orchestrator/playbackMachine';
 import * as networkProbeModule from './utils/playbackNetworkProbe';
+import { setClientBaseUrl } from '../../services/clientWrapper';
 
 vi.mock('./lib/hlsRuntime', () => {
   const HlsMock = vi.fn();
@@ -412,6 +414,1302 @@ describe('usePlaybackOrchestrator', () => {
         });
         expect(stopCalls.length).toBeGreaterThanOrEqual(1);
       });
+    });
+
+    it('supervises Live session heartbeat and reflects lease state through orchestrator facade', async () => {
+      let heartbeatCallCount = 0;
+
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'tok-hb',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'tok-hb' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          if (body.type === 'stream.start') {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: 'sess-hb-live' }),
+              text: async () => JSON.stringify({ sessionId: 'sess-hb-live' }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-hb-live/heartbeat')) {
+          heartbeatCallCount++;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              acknowledged: true,
+              sessionId: 'sess-hb-live',
+              leaseExpiresAt: `2026-09-09T22:05:${10 * heartbeatCallCount}Z`,
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/sessions/sess-hb-live')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-hb-live',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/live.m3u8',
+              heartbeatIntervalSeconds: 1,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      function HeartbeatFacadeHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, playbackState } = usePlaybackOrchestrator(
+          { autoStart: false } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        return (
+          <div>
+            <span data-testid="status">{playbackState.status}</span>
+            <span data-testid="mode">{playbackState.playbackMode}</span>
+            <span data-testid="lease">{playbackState.leaseExpiresAt ?? 'none'}</span>
+            <button onClick={() => void actions.startStream('1:0:1:BB')} type="button">
+              start-live
+            </button>
+            <button onClick={() => void actions.stopStream(false)} type="button">
+              stop-live
+            </button>
+          </div>
+        );
+      }
+
+      render(<HeartbeatFacadeHarness />);
+
+      // Start Live -> ready
+      fireEvent.click(screen.getByRole('button', { name: 'start-live' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('ready');
+        expect(screen.getByTestId('mode')).toHaveTextContent('LIVE');
+        expect(screen.getByTestId('lease')).toHaveTextContent('2026-09-09T22:00:00Z');
+      });
+
+      // Wait for 1st heartbeat to extend lease
+      await waitFor(() => {
+        expect(heartbeatCallCount).toBeGreaterThanOrEqual(1);
+        expect(screen.getByTestId('lease')).not.toHaveTextContent('2026-09-09T22:00:00Z');
+      });
+
+      // Stop stream
+      fireEvent.click(screen.getByRole('button', { name: 'stop-live' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('stopped');
+        expect(screen.getByTestId('lease')).toHaveTextContent('none');
+      });
+
+      // Stop intent was sent
+      const intentCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/intents'));
+      const stopCalls = intentCalls.filter((c: any[]) => {
+        const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+        return body?.type === 'stream.stop' && body?.sessionId === 'sess-hb-live';
+      });
+      expect(stopCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('demonstrates machine failure -> facade target capture -> controller timer -> actual restart path', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockReturnValue(Promise.resolve(null as any));
+
+        let streamInfoCalls = 0;
+        fetchMock = vi.fn().mockImplementation((url: string) => {
+          const u = String(url);
+          if (u.includes('/live/stream-info')) {
+            streamInfoCalls += 1;
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({
+                mode: 'direct_stream',
+                playbackDecisionToken: `token-auto-fb-${streamInfoCalls}`,
+                decision: { mode: 'direct_stream', playbackDecisionToken: `token-auto-fb-${streamInfoCalls}` },
+              }),
+              text: async () => JSON.stringify({}),
+            });
+          }
+          if (u.includes('/intents')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: `sess-auto-fb-${streamInfoCalls}` }),
+              text: async () => JSON.stringify({ sessionId: `sess-auto-fb-${streamInfoCalls}` }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        let exposedController!: any;
+        let exposedActions!: any;
+
+        function FallbackFacadeHarness() {
+          const containerRef = useRef<HTMLDivElement>(null);
+          const videoRef = useRef<VideoElementRef>(null);
+          const hlsRef = useRef<HlsInstanceRef>(null);
+          const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+          const { controller, playbackState, actions } = usePlaybackOrchestrator(
+            { autoStart: false } as unknown as V3PlayerProps,
+            { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+          );
+          exposedController = controller;
+          exposedActions = actions;
+
+          return (
+            <div>
+              <span data-testid="status">{playbackState.status}</span>
+              <button onClick={() => void actions.startStream('1:0:1:CC')} type="button">
+                start-live
+              </button>
+            </div>
+          );
+        }
+
+        render(<FallbackFacadeHarness />);
+        expect(exposedController).toBeDefined();
+
+        // Start initial stream
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(1);
+        const currentEpoch = exposedController.getEpoch();
+
+        // Controller should not have scheduled fallback initially
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(false);
+
+        // Machine failure occurs: dispatch normative.playback.failure.raised
+        // State machine decides recovery ladder restart and generates command.playback.schedule_auto_fallback
+        // Orchestrator executes command, captures facade target ('1:0:1:CC', 'repair'), and schedules via controller
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: currentEpoch,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+
+        // Controller now has the timer scheduled
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(true);
+        expect(streamInfoCalls).toBe(1); // No restart yet before deadline
+
+        // Advance timers by 249ms: timer has not fired yet
+        await act(async () => {
+          vi.advanceTimersByTime(249);
+        });
+        expect(streamInfoCalls).toBe(1);
+
+        // Advance 1ms to reach 250ms deadline: controller fires, dispatches start request,
+        // orchestrator receives command.playback.start and executes actual restart
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1);
+        });
+
+        expect(streamInfoCalls).toBe(2);
+        expect(exposedController.hasScheduledAutoFallback(currentEpoch)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels scheduled recovery fallback on stop and channel replacement', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockReturnValue(Promise.resolve(null as any));
+
+        let streamInfoCalls = 0;
+        fetchMock = vi.fn().mockImplementation((url: string) => {
+          const u = String(url);
+          if (u.includes('/live/stream-info')) {
+            streamInfoCalls += 1;
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({
+                mode: 'direct_stream',
+                playbackDecisionToken: `token-cancel-${streamInfoCalls}`,
+                decision: { mode: 'direct_stream', playbackDecisionToken: `token-cancel-${streamInfoCalls}` },
+              }),
+              text: async () => JSON.stringify({}),
+            });
+          }
+          if (u.includes('/intents')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ sessionId: `sess-cancel-${streamInfoCalls}` }),
+              text: async () => JSON.stringify({ sessionId: `sess-cancel-${streamInfoCalls}` }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        let exposedController!: any;
+        let exposedActions!: any;
+
+        function FallbackCancelHarness() {
+          const containerRef = useRef<HTMLDivElement>(null);
+          const videoRef = useRef<VideoElementRef>(null);
+          const hlsRef = useRef<HlsInstanceRef>(null);
+          const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+          const { controller, playbackState, actions } = usePlaybackOrchestrator(
+            { autoStart: false } as unknown as V3PlayerProps,
+            { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+          );
+          exposedController = controller;
+          exposedActions = actions;
+
+          return (
+            <div>
+              <span data-testid="status">{playbackState.status}</span>
+              <button onClick={() => void actions.startStream('1:0:1:CC')} type="button">
+                start-live
+              </button>
+              <button onClick={() => void actions.stopStream(false)} type="button">
+                stop-live
+              </button>
+            </div>
+          );
+        }
+
+        render(<FallbackCancelHarness />);
+
+        // --- Part A: Cancellation on stop ---
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(1);
+        const epoch1 = exposedController.getEpoch();
+
+        // Trigger failure -> schedule fallback
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: epoch1,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch1)).toBe(true);
+
+        // Explicit user stop cancels the fallback
+        await act(async () => {
+          await exposedActions.stopStream(false);
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch1)).toBe(false);
+
+        // Advance timers past deadline: no restart fires
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(streamInfoCalls).toBe(1);
+
+        // --- Part B: Cancellation on channel change (source replacement) ---
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:CC');
+        });
+        expect(streamInfoCalls).toBe(2);
+        const epoch2 = exposedController.getEpoch();
+
+        // Trigger failure for epoch 2 -> schedule fallback
+        act(() => {
+          exposedController.dispatch({
+            type: 'normative.playback.failure.raised',
+            epoch: epoch2,
+            failure: buildPlaybackFailure(
+              { title: 'Decoder exhausted', code: 'DECODE_EXHAUSTED', retryable: true },
+              'media-element',
+              { recoverable: true },
+            ),
+          });
+        });
+        expect(exposedController.hasScheduledAutoFallback(epoch2)).toBe(true);
+
+        // Tune to channel D -> supersedes epoch 2 and cancels fallback
+        await act(async () => {
+          await exposedActions.startStream('1:0:1:DD');
+        });
+        expect(streamInfoCalls).toBe(3); // One start for channel D
+        expect(exposedController.hasScheduledAutoFallback(epoch2)).toBe(false);
+
+        // Advance timers: old channel fallback never fires
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(streamInfoCalls).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('executes controller-owned retry sequencing through actions.retry without calling onClose', async () => {
+      let streamInfoCalls = 0;
+      let onCloseCalled = false;
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-retry-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-retry-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-retry-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-retry-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/stop')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+
+      function FacadeRetryHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { playbackState, actions } = usePlaybackOrchestrator(
+          {
+            autoStart: false,
+            sRef: '1:0:1:RETRY',
+            onClose: () => {
+              onCloseCalled = true;
+            },
+          } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+
+        return (
+          <div>
+            <span data-testid="status">{playbackState.status}</span>
+          </div>
+        );
+      }
+
+      render(<FacadeRetryHarness />);
+
+      // Initial start
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:RETRY');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Call actions.retry()
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+
+      expect(retryResult.status).toBe('restarted');
+      expect(onCloseCalled).toBe(false);
+      // streamInfo called again for the restart
+      expect(streamInfoCalls).toBe(2);
+    });
+
+    it('cancels retry when actions.stopStream is called while retry teardown is deferred', async () => {
+      let streamInfoCalls = 0;
+      let stopIntentEntered = false;
+      let stopDeferredResolve!: () => void;
+      const stopDeferred = new Promise<void>((resolve) => {
+        stopDeferredResolve = resolve;
+      });
+
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-stop-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-stop-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const bodyStr = typeof init?.body === 'string' ? init.body : '';
+          if (bodyStr.includes('stream.stop')) {
+            stopIntentEntered = true;
+            return stopDeferred.then(() => ({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({}),
+              text: async () => JSON.stringify({}),
+            }));
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-stop-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-stop-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/sessions/sess-stop-')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: `sess-stop-${streamInfoCalls}`,
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: `http://test/sess-stop-${streamInfoCalls}.m3u8`,
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedController!: any;
+      let exposedActions!: any;
+
+      function FacadeStopCancelHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { controller, actions } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:STOP' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedController = controller;
+        exposedActions = actions;
+
+        return <div />;
+      }
+
+      render(<FacadeStopCancelHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:STOP');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Begin retry (awaits deferred stop)
+      let retryPromise: Promise<any>;
+      act(() => {
+        retryPromise = exposedActions.retry();
+      });
+
+      // Wait for the asynchronous teardown to reach the backend stop intent in /intents
+      await waitFor(() => {
+        expect(stopIntentEntered).toBe(true);
+      });
+
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // External user stop
+      let stopPromise: Promise<void>;
+      act(() => {
+        stopPromise = exposedActions.stopStream();
+      });
+
+      // The retry promise MUST settle promptly with cancelled user_stop
+      const retryResult = await retryPromise!;
+      expect(retryResult).toEqual({ status: 'cancelled', reason: 'user_stop' });
+
+      // Resolve the deferred backend stop
+      stopDeferredResolve();
+      await act(async () => {
+        await stopPromise;
+      });
+
+      // Stream info must NOT have been called again (zero restarts)
+      expect(streamInfoCalls).toBe(1);
+    });
+
+    it('routes real VOD retry request to recording playback', async () => {
+      setClientBaseUrl('http://localhost/api/v3');
+      let vodPlaybackCalls = 0;
+      const vodPayload = {
+        recordingId: 'rec-vod-retry',
+        mode: 'direct',
+        playbackUrl: 'http://test/vod-retry.m3u8',
+      };
+      fetchMock = vi.fn().mockImplementation((input: any) => {
+        const u = typeof input === 'string' ? input : (input?.url ?? String(input));
+        if (u.includes('/recordings/rec-vod-retry/stream-info')) {
+          vodPlaybackCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Type': 'application/json' }),
+            json: async () => vodPayload,
+            text: async () => JSON.stringify(vodPayload),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      function VodHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions } = usePlaybackOrchestrator(
+          { autoStart: false, recordingId: 'rec-vod-retry' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        return <div />;
+      }
+
+      render(<VodHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream();
+      });
+      expect(vodPlaybackCalls).toBe(1);
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+      expect(vodPlaybackCalls).toBe(2);
+    });
+
+    it('routes real direct src retry request', async () => {
+      let exposedActions!: any;
+      let exposedState!: any;
+      function SrcHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, playbackState } = usePlaybackOrchestrator(
+          { autoStart: false, src: 'https://test.example/live.m3u8' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedState = playbackState;
+        return <div />;
+      }
+
+      render(<SrcHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream();
+      });
+      expect(exposedState.playbackMode).toBe('LIVE');
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+    });
+
+    it('cancels retry as superseded when committed source changes during deferred teardown', async () => {
+      let stopDeferredResolve!: () => void;
+      const stopDeferred = new Promise<void>((resolve) => {
+        stopDeferredResolve = resolve;
+      });
+
+      let channelACalls = 0;
+      let stopIntentEntered = false;
+
+      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const bodyStr = typeof init?.body === 'string' ? init.body : '';
+        if (u.includes('/live/stream-info') && bodyStr.includes('1:0:1:SRC-A')) {
+          channelACalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-A-${channelACalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-A-${channelACalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          const bodyStr = typeof init?.body === 'string' ? init.body : '';
+          if (bodyStr.includes('stream.stop')) {
+            stopIntentEntered = true;
+            return stopDeferred.then(() => ({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({}),
+              text: async () => JSON.stringify({}),
+            }));
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: 'sess-A' }),
+            text: async () => JSON.stringify({ sessionId: 'sess-A' }),
+          });
+        }
+        if (u.includes('/sessions/sess-A')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-A',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/sess-A.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      function DynamicSourceHarness({ sRef }: { sRef: string }) {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedController = controller;
+        return <div />;
+      }
+
+      const { rerender } = render(<DynamicSourceHarness sRef="1:0:1:SRC-A" />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:SRC-A');
+      });
+      expect(channelACalls).toBe(1);
+
+      // Begin retry for SRC-A (awaits deferred stop)
+      let retryPromise: Promise<any>;
+      act(() => {
+        retryPromise = exposedActions.retry();
+      });
+
+      await waitFor(() => {
+        expect(stopIntentEntered).toBe(true);
+      });
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // Rerender with changed committed source prop SRC-B while teardown is deferred
+      act(() => {
+        rerender(<DynamicSourceHarness sRef="1:0:1:SRC-B" />);
+      });
+
+      // Retry promise must settle promptly with cancelled superseded
+      const retryResult = await retryPromise!;
+      expect(retryResult).toEqual({ status: 'cancelled', reason: 'superseded' });
+
+      // Resolve the deferred stop teardown
+      stopDeferredResolve();
+      await act(async () => {});
+
+      // SRC-A must NOT have been restarted
+      expect(channelACalls).toBe(1);
+    });
+
+    it('executes retry correctly under React.StrictMode without duplicated commands', async () => {
+      let streamInfoCalls = 0;
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-strict-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-strict-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-strict-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-strict-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/sessions/sess-strict-')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: `sess-strict-${streamInfoCalls}`,
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/strict.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      function StrictHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:STRICT' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        return <div />;
+      }
+
+      render(
+        <StrictMode>
+          <StrictHarness />
+        </StrictMode>,
+      );
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:STRICT');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      let retryResult: any;
+      await act(async () => {
+        retryResult = await exposedActions.retry();
+      });
+      expect(retryResult.status).toBe('restarted');
+      expect(streamInfoCalls).toBe(2);
+    });
+
+    it('cancels retry as disposed when component unmounts during pending preparation', async () => {
+      let releaseProbe!: (value: any) => void;
+      const pendingProbe = new Promise<any>((resolve) => {
+        releaseProbe = resolve;
+      });
+      const probeSpy = vi.spyOn(networkProbeModule, 'measurePlaybackNetwork').mockResolvedValueOnce(undefined as any).mockReturnValue(pendingProbe);
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-unmount',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'token-unmount' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      function UnmountHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:UNMOUNT' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+        exposedActions = actions;
+        exposedController = controller;
+        return <div />;
+      }
+
+      const view = render(<UnmountHarness />);
+
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:UNMOUNT');
+      });
+      expect(probeSpy).toHaveBeenCalledTimes(1);
+
+      // Begin retry: synchronous epoch allocation initiates restart and resolves public promise as restarted
+      let retryResult: any;
+      act(() => {
+        void exposedActions.retry().then((r: any) => { retryResult = r; });
+      });
+
+      // Wait until retry's restart preparation has actively entered measurePlaybackNetwork (the deferred probe)
+      await waitFor(() => {
+        expect(probeSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(retryResult).toEqual({ status: 'restarted', epoch: expect.any(Number) });
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      // Unmount while deferred probe is actively pending
+      act(() => {
+        view.unmount();
+      });
+
+      // Controller is disposed and in-flight retry tracking is cleared
+      expect(exposedController.isRetryInFlight()).toBe(false);
+
+      // Clean up deferred probe and verify no unhandled rejections
+      releaseProbe(undefined);
+      await act(async () => {});
+    });
+  });
+
+  describe('Facade browser foreground recovery and lifecycle', () => {
+    let originalVisibilityState: PropertyDescriptor | undefined;
+
+    beforeEach(() => {
+      originalVisibilityState = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    });
+
+    afterEach(() => {
+      if (originalVisibilityState) {
+        Object.defineProperty(document, 'visibilityState', originalVisibilityState);
+      }
+    });
+
+    it('cleans up document and window visibility event listeners on unmount', () => {
+      const docAdd = vi.spyOn(document, 'addEventListener');
+      const docRemove = vi.spyOn(document, 'removeEventListener');
+      const winAdd = vi.spyOn(window, 'addEventListener');
+      const winRemove = vi.spyOn(window, 'removeEventListener');
+
+      const view = render(<Harness props={{ autoStart: false } as unknown as V3PlayerProps} />);
+      expect(docAdd).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(winAdd).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      expect(winAdd).toHaveBeenCalledWith('pagehide', expect.any(Function));
+
+      view.unmount();
+      expect(docRemove).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(winRemove).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      expect(winRemove).toHaveBeenCalledWith('pagehide', expect.any(Function));
+    });
+
+    it('triggers play and kicks hls.startLoad on document reveal when paused', async () => {
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      let exposedController!: any;
+      const startLoadSpy = vi.fn();
+      let playCallCount = 0;
+
+      function ForegroundFacadeHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>({
+          startLoad: startLoadSpy,
+          destroy: vi.fn(),
+        } as any);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:FACADE' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedController = controller;
+
+        return (
+          <div ref={containerRef}>
+            <video
+              ref={(el) => {
+                if (el) {
+                  el.play = vi.fn().mockImplementation(() => {
+                    playCallCount++;
+                    return Promise.resolve();
+                  });
+                }
+                videoRef.current = el;
+              }}
+            />
+          </div>
+        );
+      }
+
+      const view = render(<ForegroundFacadeHarness />);
+
+      // Establish playback attempt in playing state
+      act(() => {
+        const epoch = exposedController.allocatePlaybackEpoch();
+        exposedController.beginPlaybackAttempt(epoch, 'LIVE', 'playing', true);
+      });
+
+      // Document hidden
+      act(() => {
+        visibility = 'hidden';
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      expect(exposedController.getActiveForegroundOperationId()).toBeNull();
+
+      // Document reveal
+      act(() => {
+        visibility = 'visible';
+        fireEvent(document, new Event('visibilitychange'));
+      });
+
+      // HLS startLoad kicked synchronously on reveal
+      expect(startLoadSpy).toHaveBeenCalledTimes(1);
+
+      // Programmatic play called and foreground operation active
+      expect(playCallCount).toBe(1);
+      expect(exposedController.getActiveForegroundOperationId()).not.toBeNull();
+
+      view.unmount();
+      expect(exposedController.getActiveForegroundOperationId()).toBeNull();
+    });
+
+    it('coalesces concurrent retries between facade retry action and controller recovery', async () => {
+      let exposedActions!: any;
+      let exposedController!: any;
+
+      function RetryCoalesceHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>({ destroy: vi.fn() } as any);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:COALESCE' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedActions = actions;
+        exposedController = controller;
+
+        return <div ref={containerRef} />;
+      }
+
+      const view = render(<RetryCoalesceHarness />);
+
+      // Two concurrent retry requests on the facade return the exact same in-flight promise
+      let p1: any;
+      let p2: any;
+      act(() => {
+        p1 = exposedActions.retry();
+        p2 = exposedActions.retry();
+      });
+
+      expect(p1).toBe(p2);
+      expect(exposedController.isRetryInFlight()).toBe(true);
+
+      view.unmount();
+    });
+
+    it('handles simultaneous foreground reveal and online reconnection events with shared controller retry coalescing', async () => {
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => visibility,
+        configurable: true,
+      });
+
+      let streamInfoCalls = 0;
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          streamInfoCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: `token-coalesce-${streamInfoCalls}`,
+              decision: { mode: 'direct_stream', playbackDecisionToken: `token-coalesce-${streamInfoCalls}` },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: `sess-coalesce-${streamInfoCalls}` }),
+            text: async () => JSON.stringify({ sessionId: `sess-coalesce-${streamInfoCalls}` }),
+          });
+        }
+        if (u.includes('/stop')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({}),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      let exposedActions!: any;
+      let exposedController!: any;
+      let exposedHlsRef!: any;
+      const startLoadSpy = vi.fn();
+
+      function CombinedRecoveryHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        exposedHlsRef = hlsRef;
+
+        const { actions, controller } = usePlaybackOrchestrator(
+          { autoStart: false, sRef: '1:0:1:COMBINED' } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        exposedActions = actions;
+        exposedController = controller;
+
+        return (
+          <div ref={containerRef}>
+            <video
+              ref={(el) => {
+                if (el) {
+                  el.play = vi.fn().mockResolvedValue(undefined);
+                }
+                videoRef.current = el;
+              }}
+            />
+          </div>
+        );
+      }
+
+      const view = render(<CombinedRecoveryHarness />);
+
+      // 1. Initial stream start
+      await act(async () => {
+        await exposedActions.startStream('1:0:1:COMBINED');
+      });
+      expect(streamInfoCalls).toBe(1);
+
+      // Attach mock HLS engine for active playback
+      exposedHlsRef.current = {
+        startLoad: startLoadSpy,
+        destroy: vi.fn(),
+      };
+
+      // 2. Simulate document going hidden and network going offline
+      act(() => {
+        visibility = 'hidden';
+        fireEvent(document, new Event('visibilitychange'));
+        fireEvent(window, new Event('offline'));
+      });
+
+      // 3. Inject playback failure to put player into error status
+      const currentEpoch = exposedController.getState().epoch.playback;
+      act(() => {
+        exposedController.dispatch({
+          type: 'normative.playback.failure.raised',
+          epoch: currentEpoch,
+          failure: buildPlaybackFailure(
+            { title: 'Network Outage', code: 'NETWORK_TIMEOUT', retryable: true },
+            'orchestrator',
+            { recoverable: true },
+          ),
+        });
+      });
+      expect(exposedController.getState().status).toBe('error');
+
+      startLoadSpy.mockClear();
+
+      // 4. Trigger simultaneous foreground reveal and online reconnection events
+      await act(async () => {
+        visibility = 'visible';
+        fireEvent(document, new Event('visibilitychange'));
+        fireEvent(window, new Event('online'));
+      });
+
+      // 5. Observable outcomes:
+      // Both branches observe the event edge and request recovery:
+      // HLS startLoad was called
+      expect(startLoadSpy).toHaveBeenCalled();
+
+      // Both recovery branches coalesce at the controller retry:
+      // Exactly 1 restart was performed (streamInfoCalls was 1, now 2; not 3!)
+      await waitFor(() => {
+        expect(streamInfoCalls).toBe(2);
+      });
+
+      view.unmount();
     });
   });
 });

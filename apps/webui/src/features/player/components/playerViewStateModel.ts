@@ -128,6 +128,9 @@ export interface BuildViewStateInput {
   playbackMode: string;
   liveNowPlaying: { title: string | null; desc: string | null };
   onClose?: (() => void) | undefined;
+  layoutMode?: 'overlay' | 'page';
+  recordingTitle?: string;
+  recordingDescription?: string;
   isIdle: boolean;
   status: PlayerStatus;
   showStats: boolean;
@@ -307,13 +310,19 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     ].filter((row): row is V3PlayerLabeledValue => row !== null)
     : [];
 
+  const isPageLayout = input.layoutMode === 'page';
+  const programmeTitle = input.recordingTitle
+    || input.liveNowPlaying?.title
+    || (input.playbackMode === 'LIVE' ? null : (input.channel?.name ?? null));
+  const programmeDesc = input.recordingDescription || input.liveNowPlaying?.desc || null;
+
   return {
     channelName: input.channel?.name ?? null,
-    programmeTitle: input.liveNowPlaying?.title || (input.playbackMode === 'LIVE' ? null : (input.channel?.name ?? null)),
-    programmeDesc: input.liveNowPlaying?.desc || null,
-    useOverlayLayout: Boolean(input.onClose),
+    programmeTitle,
+    programmeDesc,
+    useOverlayLayout: !isPageLayout && Boolean(input.onClose),
     userIdle: input.isIdle,
-    showCloseButton: Boolean(input.onClose),
+    showCloseButton: !isPageLayout && Boolean(input.onClose),
     closeButtonLabel: t('player.closePlayer'),
     showStatsOverlay: input.showStats && input.showPlaybackChrome,
     statsTitle,

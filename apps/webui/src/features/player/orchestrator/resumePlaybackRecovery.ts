@@ -39,6 +39,8 @@ export function resumeRecoverySettled(
   return resumeStreamRecovered(startTime, currentTime, ended) || attempts >= maxAttempts;
 }
 
+export type ResumeRecoveryOutcome = 'recovered' | 'exhausted' | 'cancelled';
+
 export interface ResumePlaybackRecoveryOptions {
   observeMs?: number;
   intervalMs?: number;
@@ -50,6 +52,7 @@ export interface ResumePlaybackRecoveryOptions {
   // decideForegroundResume; this protects against a pause DURING the ~2s window.)
   shouldContinue?: () => boolean;
   onFailed?: () => void;
+  onSettled?: (outcome: ResumeRecoveryOutcome) => void;
 }
 
 // startResumePlaybackRecovery observes first, then nudges play() until the stream
@@ -66,8 +69,27 @@ export function startResumePlaybackRecovery(
   let attempts = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
+  let settled = false;
 
-  const alive = (): boolean => !cancelled && (options.shouldContinue?.() ?? true);
+  const settle = (outcome: ResumeRecoveryOutcome): void => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    options.onSettled?.(outcome);
+  };
+
+  const alive = (): boolean => {
+    if (cancelled) {
+      settle('cancelled');
+      return false;
+    }
+    if (options.shouldContinue && !options.shouldContinue()) {
+      settle('cancelled');
+      return false;
+    }
+    return true;
+  };
 
   const nudge = (): void => {
     if (!alive()) {
@@ -82,7 +104,10 @@ export function startResumePlaybackRecovery(
       attempts += 1;
       if (resumeRecoverySettled(startTime, video.currentTime, video.ended, attempts, maxAttempts)) {
         if (!resumeStreamRecovered(startTime, video.currentTime, video.ended)) {
+          settle('exhausted');
           options.onFailed?.();
+        } else {
+          settle('recovered');
         }
         return;
       }
@@ -95,7 +120,12 @@ export function startResumePlaybackRecovery(
   // caller transitions status as part of the same render cycle), so the first
   // attempt must not be deferred past cleanup. The initial synchronous call is a
   // free attempt that never counts toward the maxAttempts bound.
-  void video.play().catch((err: unknown) => options.onBlocked?.(err));
+  // However, if the element is already playing (paused === false), calling play()
+  // synchronously into an active media pipeline can introduce micro-stutter/judder
+  // on tab foreground.
+  if (video.paused !== false) {
+    void video.play().catch((err: unknown) => options.onBlocked?.(err));
+  }
 
   // Observe: if the stream didn't recover after the first nudge, keep trying
   // until it advances or attempts are exhausted.
@@ -105,6 +135,7 @@ export function startResumePlaybackRecovery(
       return;
     }
     if (resumeStreamRecovered(observeStart, video.currentTime, video.ended)) {
+      settle('recovered');
       return; // recovered on its own — never touch a waking element
     }
     // First play() didn't take — continue nudging on interval.
@@ -117,5 +148,6 @@ export function startResumePlaybackRecovery(
     if (timer !== undefined) {
       clearTimeout(timer);
     }
+    settle('cancelled');
   };
 }

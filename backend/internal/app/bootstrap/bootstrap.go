@@ -856,6 +856,7 @@ func (c *Container) Start(ctx context.Context) error {
 		}
 
 		go c.Server.StartRecordingCacheEvicter(ctx)
+		go c.Server.StartAutoPrepareWorker(ctx)
 
 		if c.verificationWork != nil {
 			go c.verificationWork.Start(ctx)

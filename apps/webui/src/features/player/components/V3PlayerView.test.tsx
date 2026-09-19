@@ -6,6 +6,8 @@ import type {
   V3PlayerViewState,
 } from '../usePlaybackOrchestrator';
 import { V3PlayerView } from './V3PlayerView';
+import { buildPlayerViewState } from './playerViewStateModel';
+import styles from './V3Player.module.css';
 
 function createActions(): PlaybackOrchestratorActions {
   return {
@@ -293,5 +295,144 @@ describe('V3PlayerView', () => {
 
     expect(video.className).toContain('pictureModeVivid');
     expect(localStorage.getItem('xg2g.player.pictureMode')).toBe('vivid');
+  });
+
+  it('renders topHeader in fullscreen when playing a recording even without close button', () => {
+    const actions = createActions();
+    const viewState = createViewState({
+      showCloseButton: false,
+      fullscreenActive: true,
+      programmeTitle: 'Unser Charly',
+    });
+
+    const { container } = render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    expect(container.querySelector(`.${styles.topHeader}`)).not.toBeNull();
+    expect(screen.getAllByText('Unser Charly').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('buildPlayerViewState disables overlay and close button in page layout mode', () => {
+    const state = buildPlayerViewState({
+      t: ((k: string, opts?: any) => opts?.defaultValue || k) as any,
+      formatClock: ((s: number) => String(s)) as any,
+      channel: undefined,
+      playbackMode: 'VOD',
+      liveNowPlaying: { title: null, desc: null },
+      onClose: () => {},
+      layoutMode: 'page',
+      recordingTitle: 'Tatort',
+      recordingDescription: 'Krimi aus Münster',
+      isIdle: false,
+      status: 'playing',
+      showStats: false,
+      showPlaybackChrome: true,
+      isWebKitFullscreenActive: false,
+      isFullscreen: false,
+      prefersDesktopNativeFullscreen: false,
+      supportsNativeFullscreen: true,
+      mseAv1Readout: '',
+      effectiveSessionId: null,
+      sessionPlaybackTrace: null,
+      traceId: '123',
+      effectiveClientPath: null,
+      effectiveRequestProfile: null,
+      effectiveRequestedIntent: null,
+      effectiveResolvedIntent: null,
+      effectiveQualityRung: null,
+      effectiveAudioQualityRung: null,
+      effectiveVideoQualityRung: null,
+      effectiveDegradedFrom: null,
+      effectiveHostPressureBand: null,
+      effectiveHostOverrideApplied: false,
+      effectiveForcedIntent: null,
+      effectiveOperatorMaxQualityRung: null,
+      effectiveOperatorRuleName: null,
+      effectiveOperatorRuleScope: null,
+      effectiveClientFallbackDisabled: false,
+      effectiveOperatorOverrideApplied: false,
+      sourceProfileSummary: '-',
+      effectiveTargetProfile: null,
+      effectiveTargetProfileHash: null,
+      ffmpegPlanSummary: '-',
+      firstFrameLabel: '-',
+      fallbackSummary: '-',
+      stopSummary: '-',
+      hostPressureSummary: '-',
+      playbackObservability: null,
+      showNativeBufferingMask: false,
+      stats: {
+        resolution: '1920x1080',
+        bandwidth: 0,
+        fps: 50,
+        droppedFrames: 0,
+        buffer: 0,
+        bufferHealth: 0,
+        latency: null,
+        levelIndex: 0,
+      },
+      hlsRefCurrent: false,
+      seekableStart: 0,
+      seekableEnd: 100,
+      currentPlaybackTime: 0,
+      windowDuration: 100,
+      hasSeekWindow: true,
+      isCompactTouchLayout: false,
+      currentPositionDisplay: '0:00',
+      dvrPreviewBaseUrl: null,
+      dvrPreviewSegmentSeconds: 10,
+      dvrPreviewWindowStartUnix: null,
+      useMinimalStartupChrome: false,
+      showStartupOverlay: false,
+      showSpinnerCard: false,
+      useNativeBufferingSafeOverlay: false,
+      overlayStatus: 'idle',
+      spinnerLabel: '',
+      spinnerSupport: '',
+      startupPhaseSteps: [],
+      startupProgressPercent: 0,
+      startupElapsedSeconds: 0,
+      autoStart: true,
+      error: null,
+      showErrorDetails: false,
+      effectiveSessionLabel: '',
+      isPlaying: true,
+      ttffMetrics: null,
+      startTimeDisplay: '0:00',
+      endTimeDisplay: '1:40',
+      relativePosition: 0,
+      isLiveMode: false,
+      isAtLiveEdge: false,
+      recordingId: 'rec-1',
+      sRef: '',
+      startIntentInFlightRef: false,
+      showDvrModeButton: false,
+      canToggleFullscreen: true,
+      canEnterNativeFullscreen: false,
+      canToggleMute: true,
+      isMuted: false,
+      canAdjustVolume: true,
+      volume: 1,
+      canTogglePiP: false,
+      isPip: false,
+      showResumeOverlay: false,
+      resumeState: null,
+      explicitProfile: 'auto',
+      audioTracks: [],
+      activeAudioTrack: -1,
+      durationSeconds: 100,
+    });
+
+    expect(state.useOverlayLayout).toBe(false);
+    expect(state.showCloseButton).toBe(false);
+    expect(state.programmeTitle).toBe('Tatort');
+    expect(state.programmeDesc).toBe('Krimi aus Münster');
   });
 });

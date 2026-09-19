@@ -15,7 +15,9 @@ export function createHlsRuntimeConfig(link: PlaybackLinkProfile = 'stable'): Pa
     lowLatencyMode: tuning.lowLatencyMode,
     backBufferLength: 300,
     maxBufferLength: tuning.maxBufferLength,
-    capLevelToPlayerSize: true,
+    // Disabled to prevent micro-stutter/judder when exiting fullscreen,
+    // resizing the player, or restoring an occluded/background tab.
+    capLevelToPlayerSize: false,
     liveSyncDuration: tuning.liveSyncDuration,
     // Rate-based live catch-up caused visible judder and compressed audio.
     // A multi-hour DVR window makes slow drift safer than playback-rate churn.

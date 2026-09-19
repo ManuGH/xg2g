@@ -76,6 +76,55 @@ func TestService_ResolvePlaybackInfo_RecordingSuccess(t *testing.T) {
 	assert.Equal(t, recordingID, recSvc.lastTruthID)
 }
 
+func TestService_ResolvePlaybackInfo_RecordingTSSource_RetainsVideoTranscodeForClosedGOPCompliance(t *testing.T) {
+	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/charly.ts"
+	recordingID := domainrecordings.EncodeRecordingID(serviceRef)
+	recSvc := &stubRecordingsService{
+		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
+			return playback.MediaTruth{
+				Status:     playback.MediaStatusReady,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+				Interlaced: true,
+			}, nil
+		},
+	}
+
+	svc := NewService(stubDeps{
+		svc: recSvc,
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	})
+
+	allowTranscode := true
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   recordingID,
+		SubjectKind: PlaybackSubjectRecording,
+		APIVersion:  "v3.1",
+		SchemaType:  "compact",
+		RequestID:   "req-ts-transcode",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 1,
+			Containers:          []string{"mp4", "hls"},
+			VideoCodecs:         []string{"h264"},
+			AudioCodecs:         []string{"aac"},
+			SupportsHLS:         true,
+			AllowTranscode:      &allowTranscode,
+		},
+	})
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.NotNil(t, res.Decision.TargetProfile)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Video.Mode)
+	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Audio.Mode)
+}
+
 func TestBuildDecisionInput_PropagatesHostPerformanceAndBenchmarkClass(t *testing.T) {
 	allowTranscode := true
 	input := buildDecisionInput(
