@@ -88,6 +88,16 @@ impl SectionAssembler {
         self.section_len = 0;
     }
 
+    /// Refuses a packet marked damaged in transit (TEI).
+    ///
+    /// Observes the continuity counter so subsequent packets do not see an
+    /// artificial gap, but discards any section in flight and interprets
+    /// nothing from the payload.
+    pub(super) fn refuse_damaged(&mut self, packet: &[u8], continuity_counter: u8) {
+        let _ = self.continuity.observe(packet, continuity_counter);
+        self.discard_section();
+    }
+
     /// Takes one packet's payload and returns the sections it completed, in the
     /// order they finished.
     ///

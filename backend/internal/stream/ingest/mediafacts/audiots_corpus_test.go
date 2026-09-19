@@ -1265,38 +1265,29 @@ func audioTSCorpusCases() []audioTSCase {
 	// Area C: TEI (Transport Error Indicator)
 	{
 		b := audioTSNew("tei_on_pat_is_refused",
-			"PAT with TEI set must be refused and not establish program (defect)", audioTSProgram)
-		b.diverges("defect", "a PAT packet with TEI set is damaged in transit and must not be used to establish program mapping")
+			"PAT with TEI set must be refused and not establish program", audioTSProgram)
 		patPkt := withTEI(audioTSPSIPacket(0, b.next(0), audioTSPAT(audioTSProgram)))
 		pmtPkt := audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), audioTSPMT(audioTSProgram, 0, ac3Stream(audioTSAudioA)))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		b.chunk(patPkt, pmtPkt, audioPkt)
 		// Authored: PAT refused -> 0 feeds, 0 streams
-		// Reference: PAT accepted -> 1 feed
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_pmt_is_refused",
-			"PMT with TEI set must be refused and not declare tracks (defect)", audioTSProgram)
-		b.diverges("defect", "a PMT packet with TEI set is damaged in transit and must not be used to declare elementary streams")
+			"PMT with TEI set must be refused and not declare tracks", audioTSProgram)
 		patPkt := audioTSPSIPacket(0, b.next(0), audioTSPAT(audioTSProgram))
 		pmtPkt := withTEI(audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), audioTSPMT(audioTSProgram, 0, ac3Stream(audioTSAudioA))))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		b.chunk(patPkt, pmtPkt, audioPkt)
 		// Authored: PMT refused -> 0 feeds, 0 streams
-		// Reference: PMT accepted -> 1 feed
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_pmt_preserves_existing_active_psi",
-			"subsequent PMT with TEI set must be refused and preserve existing valid ActivePSI (defect)", audioTSProgram)
-		b.diverges("defect", "a damaged subsequent PMT packet must not evict previously accepted valid ActivePSI (ISO/IEC 13818-1:2025 fail-closed retention)")
+			"subsequent PMT with TEI set must be refused and preserve existing valid ActivePSI", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
@@ -1310,16 +1301,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
-
-		// Reference: parses badPMT -> switches audio PID to AudioB -> only audioPkt1 was fed
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refStream(audioTSAudioB, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_mid_section_assembly_discards_partial_and_preserves_table",
-			"a TEI packet in the middle of section assembly discards the partial section and preserves the accepted table (defect)", audioTSProgram)
-		b.diverges("defect", "a damaged continuation packet in section assembly corrupts table assembly; the partial section must be discarded while retaining existing ActivePSI (ISO/IEC 13818-1:2025)")
+			"a TEI packet in the middle of section assembly discards the partial section and preserves the accepted table", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
@@ -1337,32 +1323,22 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
-
-		// Reference: ignores TEI, completes PMT v1 -> switches audio PID to AudioB -> audioPkt2 discarded
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refStream(audioTSAudioB, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_audio_pusi_is_refused",
-			"audio PUSI with TEI set must be dropped and transition to AwaitingStart (defect)", audioTSProgram)
-		b.diverges("defect", "an audio PUSI with TEI set must be dropped to prevent adversarial/damaged payload from asserting media facts")
+			"audio PUSI with TEI set must be dropped and transition to AwaitingStart", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := withTEI(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start))
 		b.chunk(p0)
 		// Authored: dropped -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: fed -> 1 feed
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_audio_continuation_is_refused",
-			"audio continuation with TEI set must be dropped (defect)", audioTSProgram)
-		b.diverges("defect", "an audio continuation with TEI set must not be fed into the audio elementary stream observer")
+			"audio continuation with TEI set must be dropped", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1372,17 +1348,11 @@ func audioTSCorpusCases() []audioTSCase {
 		// Authored: p0 fed (1 feed), p1 dropped
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: feeds p0 AND p1 -> 2 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear",
-			"TEI on audio continuation drops corrupt bytes without forcing AwaitingStart; subsequent clear continuation is fed (defect)", audioTSProgram)
-		b.diverges("defect", "damaged continuation bytes must not generate elementary stream facts; subsequent clear packets may be fed subject to observer resync")
+			"TEI on audio continuation drops corrupt bytes without forcing AwaitingStart; subsequent clear continuation is fed", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1Corrupt := audioTSPad([]byte{0xFF, 0xFF, 0x00, 0x00})
@@ -1395,18 +1365,11 @@ func audioTSCorpusCases() []audioTSCase {
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2Clear, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
-
-		// Reference: feeds p0, p1TEI AND p2Clear -> 3 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c1Corrupt, obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c2Clear, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 3, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_audio_header_incomplete_continuation_refuses_packet",
-			"TEI on packet completing optional header corrupts header resolution and forces AwaitingStart (defect)", audioTSProgram)
-		b.diverges("defect", "a damaged continuation packet during PES header assembly corrupts header boundary resolution and requires awaiting the next valid PUSI")
+			"TEI on packet completing optional header corrupts header resolution and forces AwaitingStart", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
@@ -1420,11 +1383,6 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(p0, p1TEI, p2)
 		// Authored: p1TEI corrupted header -> AwaitingStart -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: feeds p1TEI and p2 -> 2 feeds
-		b.refFeed(0, audioTSAudioA, p1, obsFrames(1))
-		b.refFeed(0, audioTSAudioA, c2, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -1893,19 +1851,11 @@ func TestAudioTSCorpus_TheCheckedInFileMatchesTheCases(t *testing.T) {
 // what it claims.
 func TestAudioTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
-		"a_pes_header_reaching_past_its_packet":                                         "divergence",
-		"scrambled_packet_while_in_header":                                              "defect",
-		"same_cc_different_packet_is_broken":                                            "defect",
-		"tei_on_pat_is_refused":                                                         "defect",
-		"tei_on_pmt_is_refused":                                                         "defect",
-		"tei_on_pmt_preserves_existing_active_psi":                                      "defect",
-		"tei_mid_section_assembly_discards_partial_and_preserves_table":                 "defect",
-		"tei_on_audio_pusi_is_refused":                                                  "defect",
-		"tei_on_audio_continuation_is_refused":                                          "defect",
-		"tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear": "defect",
-		"tei_on_audio_header_incomplete_continuation_refuses_packet":                    "defect",
-		"discontinuity_indicator_while_in_header_discards_incomplete_pes":               "defect",
-		"unannounced_cc_jump_while_in_header_discards_incomplete_pes":                   "defect",
+		"a_pes_header_reaching_past_its_packet":                           "divergence",
+		"scrambled_packet_while_in_header":                                "defect",
+		"same_cc_different_packet_is_broken":                              "defect",
+		"discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
+		"unannounced_cc_jump_while_in_header_discards_incomplete_pes":     "defect",
 	}
 	got := map[string]string{}
 	for _, c := range audioTSCorpusCases() {
