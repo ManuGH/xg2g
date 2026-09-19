@@ -20,9 +20,9 @@ func TestVideoContinuity_Wrap15To0_Continuous(t *testing.T) {
 
 	// Fast-forward CC counter to 14
 	b.cc[v] = 14
-	pkt14 := b.start(v, h264SPS, h264PPS) // CC = 14
+	pkt14 := b.start(v, h264SPS, h264PPS)                      // CC = 14
 	pkt15 := b.cont(v, []byte{0x00, 0x00, 0x01, 0x41, sliceI}) // CC = 15
-	pkt0 := b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33, 0xFF})   // CC = 0 (wrap)
+	pkt0 := b.cont(v, []byte{0x84, 0x21, 0xA0, 0x33, 0xFF})    // CC = 0 (wrap)
 
 	chunk := cat(psi, pkt14, pkt15, pkt0)
 	res, err := core.Ingest(ctx, 0, chunk)
@@ -51,7 +51,7 @@ func TestVideoContinuity_ExactDuplicate_DroppedWithoutCorruptingSequence(t *test
 	psi := b.psi(0, h264Stream(v))
 
 	b.cc[v] = 0
-	startPkt := b.start(v, h264SPS, h264PPS) // CC = 0
+	startPkt := b.start(v, h264SPS, h264PPS)   // CC = 0
 	dupPkt := append([]byte(nil), startPkt...) // Exact duplicate CC = 0
 	contPkt := b.cont(v, h264SliceP)           // CC = 1 (expected next)
 
@@ -332,7 +332,7 @@ func TestVideoContinuity_AudioPIDIsolation(t *testing.T) {
 	// Video packet with a CC gap
 	b.cc[v] = 0
 	vPkt0 := b.start(v, h264SPS, h264PPS)
-	b.next(v) // skip video CC 1
+	b.next(v)                      // skip video CC 1
 	vPkt2 := b.cont(v, h264SliceP) // video CC 2 (gap)
 
 	// Audio packet at CC 1 (expected next for audio)
