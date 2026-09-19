@@ -299,10 +299,6 @@ fn the_rust_ingress_answers_the_shared_corpus() {
             for (got, want) in streams.iter().zip(&case.streams) {
                 assert_eq!(got, want, "{}: stream", case.name);
             }
-        } else if case.name == "tei_on_audio_header_incomplete_continuation_refuses_packet" {
-            // Rust does not yet filter TEI (Step 7.0h finding), but applies header-remainder skipping.
-            assert_eq!(feeds.len(), 2, "{}: feed count", case.name);
-            assert_eq!(streams.len(), 1, "{}: streams followed", case.name);
         } else {
             // In all other defect cases, Rust currently behaves identically to the Go reference.
             compare(&case.name, "feed", &feeds, &reference);
@@ -347,23 +343,6 @@ fn only_the_classified_divergences_exist() {
         ("a_pes_header_reaching_past_its_packet", "divergence"),
         ("scrambled_packet_while_in_header", "defect"),
         ("same_cc_different_packet_is_broken", "defect"),
-        ("tei_on_pat_is_refused", "defect"),
-        ("tei_on_pmt_is_refused", "defect"),
-        ("tei_on_pmt_preserves_existing_active_psi", "defect"),
-        (
-            "tei_mid_section_assembly_discards_partial_and_preserves_table",
-            "defect",
-        ),
-        ("tei_on_audio_pusi_is_refused", "defect"),
-        ("tei_on_audio_continuation_is_refused", "defect"),
-        (
-            "tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear",
-            "defect",
-        ),
-        (
-            "tei_on_audio_header_incomplete_continuation_refuses_packet",
-            "defect",
-        ),
         (
             "discontinuity_indicator_while_in_header_discards_incomplete_pes",
             "defect",

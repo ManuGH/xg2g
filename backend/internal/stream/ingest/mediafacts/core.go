@@ -735,6 +735,23 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 			if c.isExactDuplicateESPacketLocked(pid, pkt) {
 				return
 			}
+			tei := (pkt[1] & 0x80) != 0
+			if tei {
+				// Damaged in transit: do NOT increment clear/scrambled counters,
+				// and do NOT modify audioClearRun.
+				if stream := c.audioStreams[apid]; stream != nil {
+					if pusi {
+						c.beginAudioWaitLocked(stream)
+					} else if stream.headerRemaining > 0 {
+						// Damaged continuation during incomplete header assembly:
+						// header boundary is lost, forcing AwaitingStart.
+						c.beginAudioWaitLocked(stream)
+					}
+					// If in elementary stream (!awaitingStart && headerRemaining == 0),
+					// payload is dropped without feeding observer and without forcing AwaitingStart.
+				}
+				return
+			}
 			if (pkt[3]>>6)&0x03 != 0 {
 				c.scrambledAudioPackets++
 				c.audioClearRun = 0
@@ -768,6 +785,13 @@ type audioStream struct {
 	// is a different thing, and the packets after it are the body of that same
 	// refused packet.
 	awaitingStart bool
+
+	// headerRemaining is purely TEI-detection state: tracks remaining optional
+	// header bytes across packet boundaries. If a TEI packet arrives while
+	// headerRemaining > 0, the boundary resolution is corrupted and transitions
+	// to awaitingStart. For clear continuations, normal Go feed behavior is
+	// preserved to keep the existing classified divergence intact.
+	headerRemaining int
 }
 
 // observeAudioPayloadLocked hands one clear audio packet's elementary stream
@@ -807,16 +831,24 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 		stream.awaitingStart = false
 		esStart := 9 + int(payload[8])
 		if esStart >= len(payload) {
-			// The optional header ran past this packet. Left as it is,
-			// deliberately: the elementary stream boundary was established and
-			// then ran out of room, which is a different question from one that
-			// was never established at all, and it is reviewed on its own.
+			// The optional header ran past this packet. Track remaining bytes
+			// for TEI detection.
+			stream.headerRemaining = esStart - len(payload)
 			return
 		}
+		stream.headerRemaining = 0
 		es = payload[esStart:]
 	} else if stream.awaitingStart {
 		// The body of a payload unit whose audio boundary nothing established.
 		return
+	} else if stream.headerRemaining > 0 {
+		// Decrement headerRemaining for TEI detection, but keep feeding payload
+		// to observer as Go currently does (preserving existing divergence).
+		if len(payload) >= stream.headerRemaining {
+			stream.headerRemaining = 0
+		} else {
+			stream.headerRemaining -= len(payload)
+		}
 	}
 	stream.observer.Feed(es)
 	// The same bytes, in the same piece, at the same moment. Anything else - the
@@ -828,6 +860,7 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 // beginAudioWaitLocked records that this stream's position is no longer known.
 func (c *GoCore) beginAudioWaitLocked(stream *audioStream) {
 	stream.awaitingStart = true
+	stream.headerRemaining = 0
 	c.audioUnreadableStarts++
 }
 func (c *GoCore) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte) int {
@@ -926,6 +959,15 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 	assembler.lastCC = cc
 	assembler.hasCC = true
 	assembler.lastPacket = cloneSlice(pkt)
+
+	if pkt[1]&0x80 != 0 {
+		// Damaged in transit (TEI). The continuity counter has been recorded
+		// so subsequent packets do not see an artificial gap, but any in-flight
+		// section is discarded and the payload is never interpreted.
+		assembler.buf = assembler.buf[:0]
+		assembler.sectionLen = 0
+		return
+	}
 
 	offset := 0
 
@@ -1344,6 +1386,7 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	if seq == esExactDuplicate {
 		return
 	}
+	tei := (pkt[1] & 0x80) != 0
 
 	var esData []byte
 
@@ -1368,6 +1411,14 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		c.annexBState = 0xFFFFFFFF
 		c.expectingNALByte = false
 		c.resetAccessUnitStateLocked()
+
+		if tei {
+			// Damaged in transit (TEI). Neither clear nor scrambled counters are incremented,
+			// and videoClearRun is unmodified. The new payload unit is quarantined immediately
+			// without parsing PES header or asserting media facts.
+			c.videoAwaitingStart = true
+			return
+		}
 
 		// transport_scrambling_control != 0 means the payload is encrypted. Feeding it to the
 		// Annex-B scanner would index random bytes as NAL units, so it is never parsed. The
@@ -1411,6 +1462,23 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 		}
 	} else {
 		// Continuation packet (pusi == false)
+		if tei {
+			// Damaged in transit: do NOT increment clear/scrambled counters,
+			// and do NOT modify videoClearRun.
+			if !c.videoAwaitingStart {
+				c.nalKind = captureNone
+				c.nalLeft = 0
+				c.nalSkip = 0
+				c.nalBuf = c.nalBuf[:0]
+				c.annexBState = 0xFFFFFFFF
+				c.expectingNALByte = false
+				c.auContinuityBroken = true
+				c.videoAwaitingStart = true
+				c.invalidatePublishedRAPLocked()
+			}
+			return
+		}
+
 		if (pkt[3]>>6)&0x03 != 0 {
 			c.scrambledVideoPackets++
 			c.auScrambledPackets++

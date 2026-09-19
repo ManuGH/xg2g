@@ -1133,14 +1133,6 @@ func videoTSCorpusCases() []videoTSCase {
 			facts(h264())
 		cases = append(cases, b.done())
 	}
-	{
-		b := vNew("transport_error_indicator_is_not_acted_on",
-			"a packet marked damaged in transit is read like any other; neither implementation refuses it (pinned)", videoTSProgram)
-		b.chunk(b.psi(0, h264Stream(v)), withTEI(b.start(v, h264SPS, h264PPS, h264IDR))).
-			ev(identityEv, identityEv, rapAt(pkt2, true)).
-			facts(h264().ps(true).irap(1).clear(1).cleanrap(1))
-		cases = append(cases, b.done())
-	}
 	// ===== Transport Hardening: Duplicates, Continuity, TEI & DI (Step 7.0h) ==
 
 	{
@@ -1196,27 +1188,21 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("tei_on_video_pusi_is_refused",
-			"a video PUSI packet with TEI set carrying SPS, PPS and IDR: damaged transport must be dropped, no entry point admitted (defect)", videoTSProgram)
-		b.diverges("defect", "a video PUSI packet marked with TEI is scanned as valid transport, admitting an unverified entry point")
+			"a video PUSI packet with TEI set carrying SPS, PPS and IDR: damaged transport must be dropped, no entry point admitted", videoTSProgram)
 		badStart := withTEI(b.start(v, h264SPS, h264PPS, h264IDR))
 		b.chunk(b.psi(0, h264Stream(v)), badStart).
 			ev(identityEv, identityEv).
-			facts(h264().clear(0)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(1).cleanrap(1))
+			facts(h264().clear(0))
 		cases = append(cases, b.done())
 	}
 	{
 		b := vNew("tei_on_video_continuation_is_refused",
-			"a video continuation packet with TEI set: damaged slice data must be dropped and not joined (defect)", videoTSProgram)
-		b.diverges("defect", "a video continuation packet marked with TEI is scanned as valid elementary stream")
+			"a video continuation packet with TEI set: damaged slice data must be dropped and not joined", videoTSProgram)
 		p0 := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00})
 		p1 := withTEI(b.cont(v, []byte{0x01, 0x65, sliceI, 0x84, 0x21, 0xA0, 0x33, 0xFF}))
 		b.chunk(b.psi(0, h264Stream(v)), p0, p1).
 			ev(identityEv, identityEv).
-			facts(h264().ps(true).clear(1)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().ps(true).clear(1))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1948,8 +1934,6 @@ func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":               "limitation",
 		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
 		"video_pes_header_reaching_past_its_packet":                             "divergence",
-		"tei_on_video_pusi_is_refused":                                          "defect",
-		"tei_on_video_continuation_is_refused":                                  "defect",
 		"video_discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
 	}
 	got := map[string]string{}

@@ -385,6 +385,17 @@ impl PsiCore {
 
     /// Assembles one packet's payload and interprets whatever it completed.
     fn feed_table(&mut self, is_pat: bool, view: &PacketView<'_>, payload: &[u8]) {
+        if view.transport_error_indicator() {
+            if is_pat {
+                self.pat_assembler
+                    .refuse_damaged(view.bytes(), view.continuity_counter());
+            } else {
+                self.pmt_assembler
+                    .refuse_damaged(view.bytes(), view.continuity_counter());
+            }
+            return;
+        }
+
         let expected = if is_pat { TABLE_ID_PAT } else { TABLE_ID_PMT };
         let packet = view.bytes();
         let cc = view.continuity_counter();

@@ -442,6 +442,13 @@ impl AudioIngress {
             return;
         }
 
+        if view.transport_error_indicator() {
+            if view.payload_unit_start() || matches!(follower.position, Position::InHeader { .. }) {
+                follower.position = Position::AwaitingStart;
+            }
+            return;
+        }
+
         if view.scrambling_control() != 0 {
             follower.scrambled_packets += 1;
             // Encrypted bytes are not fed, and they are not counted towards a
