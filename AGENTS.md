@@ -80,6 +80,27 @@ That symptom means the service is running far enough to answer readiness, but sy
 
 If the repo template, the checked-in runbook, and the live host disagree, update [docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md](docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md) with the exact observed delta before doing larger cleanup work.
 
+## Investigation and Architecture Truth (added 2026-09-19)
+
+Do not prioritize refactoring, optimizations, or architectural changes before
+tracing the actual runtime request and media paths:
+
+- **Inventory before optimizing:** Before restructuring an ingest, pipeline, or
+  delay component, trace whether the targeted code is actually on the active
+  execution path. (Seen 2026-09: a two-second tuner delay was treated as an
+  urgent optimization target even though default direct TS streaming returned
+  early and bypassed it entirely; transponder ingest was prioritized before
+  inventorying existing TS/CMAF/readiness building blocks).
+- **Measure stage boundaries:** Measure baseline latency and cost across
+  concrete boundaries — tune request, first socket bytes, usable PAT/PMT
+  acquisition, first random access point (RAP), first muxer output, and first
+  decoded frame — before asserting performance wins or redesigning paths.
+- **Architectural means are not user deliverables:** Process isolation, Rust
+  adoption, or actor patterns are engineering choices, not proof of instant
+  zapping, client concurrency immunity, or receiver resilience. Never claim an
+  architectural or language transition alone solves an operational or
+  user-visible problem without end-to-end measurement.
+
 ## Collaboration Contract
 
 This repository is worked on by Codex, Gemini/Antigravity, Claude Code,
@@ -126,6 +147,25 @@ otherwise) without a fix commit on the PR head or a written reply in the
 thread is prohibited. Bot reviewers (e.g. gemini-code-assist) count as
 reviewers: their findings get a fix or a one-sentence justification in the
 thread before the thread is resolved — never a silent resolve.
+
+#### Reviewer burden of proof and stable review base (added 2026-09-19)
+
+- A review finding is a hypothesis until proven. Reviewers (human or automated)
+  must not mandate code changes based on speculative defects without:
+  1. A minimal reproducing test or probe that fails on the reviewed commit,
+  2. A verified execution trace proving the condition is reachable from a live
+     production entry point, or
+  3. A conclusive static/code-path proof demonstrating the defect or violated
+     invariant.
+  Unproven concerns must be classified as `question` or `unproven-hypothesis`,
+  not blocking defects. (Seen 2026-09, Incident R9: an asserted normalizer bug
+  was unreachable on the live production path, forcing the implementer to
+  waste cycles constructing a negative reachability proof).
+- Review against a fixed commit SHA. Batch reviews against an exact snapshot.
+  Do not force in-flight PRs through repeated rebasing and verification cycles
+  merely because unrelated commits landed on `main`, unless a genuine semantic
+  conflict exists or repository merge policy explicitly requires an updated
+  base.
 
 ### Merge policy
 
@@ -377,6 +417,46 @@ At handoff, compare the result with the original contract and record:
 - acceptance criteria satisfied and the evidence for each,
 - remaining temporary paths, debt, risks, and their next owner/action.
 
+#### Scope discipline and progress metrics (added 2026-09-19)
+
+- **Prohibition of denominator-free percentages:** Never report milestone or
+  project progress as a bare percentage (e.g. "73% of 4.0 completed") without
+  a mathematically defined, versioned, finite deliverable checklist. Denominators
+  drift across conversations and turn percentage estimates into misleading
+  fiction.
+- **Discrete deliverable states:** Report status strictly using verifiable states:
+  `planned` $\rightarrow$ `in-progress` $\rightarrow$ `parity-verified` $\rightarrow$
+  `integrated` $\rightarrow$ `hardware-validated` $\rightarrow$ `production-ready`.
+- **No unverified marketing claims in technical artifacts:** Architecture
+  blueprints, ADRs, and plans must not contain unverified physical promises or
+  slogans (e.g. "0% server load", "instant zapping", or arbitrary line-count
+  budgets). Remuxing and transcoding decisions must separate video-copy, audio
+  processing, subtitle handling, and segment boundaries explicitly rather than
+  assuming a single format flag covers all client capabilities.
+
+#### State machine and lifecycle test completeness (added 2026-09-19)
+
+- **Matrix verification for stateful components:** Concurrent and stateful
+  components (ring buffers, readers, workers, demuxers) must not be declared
+  complete based on isolated unit guarantees alone. Acceptance requires an
+  explicit state-transition test matrix covering all reachable topology
+  transitions and representative boundary-condition combinations, with exhaustive
+  cross-product coverage for combinations known to interact:
+  - Topology transitions (e.g. Video $\rightarrow$ Video, Video $\rightarrow$ Audio-only,
+    Unknown $\rightarrow$ Audio-only, dynamic multi-audio track addition/removal).
+  - Combined with boundary conditions: partial/fragmented preambles, ring
+    overruns, resynchronizations, reader cancellation, and ring closure.
+  - (Seen 2026-09-19: an overrun reader reading a partial preamble followed by a
+    Video $\rightarrow$ Audio-only switch hung waiting for a video keyframe that the
+    stream could never produce). A consumer must never enter an indefinite wait
+    for a condition impossible under the current active topology.
+- **Upfront domain and consumer contracts:** Specify elementary stream vs.
+  container declaration contracts before implementation. Distinguish declared
+  metadata (PMT) from observed elementary stream facts. Specify simultaneous
+  multi-track handling (dynamic 0..N tracks), field vs. frame semantics, picture
+  vs. slice boundaries (VCL NALUs are not frames), and timing bases upfront
+  rather than discovering them incrementally during review.
+
 ### Validation and handoff
 
 Run `make pre-push` before every push (or install the hook once via
@@ -398,6 +478,35 @@ If a required external service, model provider, credential, or approval is
 unavailable, stop the affected lane and report the blocker. Do not compensate
 by spawning another writer, switching providers silently, or creating another
 worktree.
+
+#### Evidence integrity: test accounting and parity vs. correctness (added 2026-09-19)
+
+- **No false-green passes on missing dependencies:** Tests that depend on
+  external assets, hardware archives, or environment variables (e.g.
+  `audio_hardware.rs:240`) must NEVER return `ok / passed` when the prerequisite
+  is absent. If a prerequisite is missing, the test must explicitly report
+  `SKIPPED` / `IGNORED`, or fail closed when run through its dedicated
+  differential script. Standard `cargo test` or `go test` counts must NEVER be
+  cited as proof of hardware or archive validation.
+- **Parity is not correctness:** In migration phases where a new component
+  replicates an existing implementation (e.g. Rust matching Go parser output),
+  matching outputs proves migration fidelity, NOT domain correctness.
+  - Known reference defects accepted for parity must be strictly classified as
+    `known-defect-reference` or `parity-exception`.
+  - Never declare a subsystem "RAP-safe" or "complete" when it merely
+    reproduces known reference flaws (e.g. invalid PES starts, unhandled
+    continuity gaps, or scrambled packets in access units). Production Go
+    defects remain defects even if Rust matches them.
+- **Categorized evidence reporting:** Implementation handoffs must report
+  verification results by category, never as an undifferentiated number:
+  1. Unit tests (pure algorithmic logic),
+  2. Authored-correct corpus cases (verified against format specifications),
+  3. Reference parity cases (verified against existing Go behavior, including
+     classified defects),
+  4. Hardware/archive replays (executed with verified archives and diff logs),
+  5. Mutation test suites (stating exact target and coverage),
+  6. Linux kernel / runtime capabilities (e.g. `pidfd` lifecycle, verified in
+     a Linux environment, not macOS).
 
 ## Linux-first Repository Topology
 
