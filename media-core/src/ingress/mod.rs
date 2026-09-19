@@ -148,8 +148,9 @@ struct Follower {
     codec: String,
     observer: Observer,
     position: Position,
-    /// The PID's own continuity, used for one decision and no other: whether
-    /// the bytes that were to complete a PES header actually arrived. Audio
+    /// The PID's own continuity, used for two decisions: suppressing exact
+    /// transport duplicates before processing, and determining whether the
+    /// bytes that were to complete a PES header actually arrived. Audio
     /// observation itself does not react to the counter - a stream that lost a
     /// packet is a stream with a gap in it, not a stream whose channel layout
     /// has been withdrawn.
@@ -436,6 +437,10 @@ impl AudioIngress {
         let continuity = follower
             .continuity
             .observe(view.bytes(), view.continuity_counter());
+
+        if continuity == Continuity::Duplicate {
+            return;
+        }
 
         if view.scrambling_control() != 0 {
             follower.scrambled_packets += 1;
