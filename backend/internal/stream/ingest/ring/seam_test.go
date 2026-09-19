@@ -432,3 +432,23 @@ func TestSeam_PMTPIDFollowsThePAT(t *testing.T) {
 		t.Error("a PAT that moved the program to another PMT PID reported no identity change")
 	}
 }
+
+// An MPEG-2 provisional RAP emitted during finalization on a broken PUSI boundary
+// is immediately followed by EventRandomAccessPointInvalidated. Applying both events
+// to MasterRing must leave keyframeOffsets completely empty.
+func TestSeam_MPEG2PendingPictureHeader_BrokenBoundaryLeavesNoKeyframeInRing(t *testing.T) {
+	events := []mediafacts.Event{
+		{Kind: mediafacts.EventRandomAccessPoint, Offset: 500, Joinable: true},
+		{Kind: mediafacts.EventRandomAccessPointInvalidated, Offset: 500},
+	}
+	r := NewMasterRing(400 * TSPacketSize)
+	defer r.Close()
+
+	r.mu.Lock()
+	r.applyLocked(mediafacts.ParseResult{Events: events})
+	r.mu.Unlock()
+
+	if got := r.KeyframeOffsets(); len(got) != 0 {
+		t.Fatalf("KeyframeOffsets = %v, want empty after immediate invalidation", got)
+	}
+}
