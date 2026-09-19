@@ -429,6 +429,7 @@ type GoCore struct {
 	// assembled. An entry point whose own access unit was partly encrypted is not
 	// one a decoder can be started on.
 	auScrambledPackets int
+	auContinuityBroken bool
 	cleanRAPCount      uint64
 	cleanAccessUnits   uint64
 	nalBuf             []byte
@@ -711,9 +712,6 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 
 	// 3. Video Elementary Stream Keyframe / IDR Indexing
 	if c.videoPID > 0 && pid == c.videoPID {
-		if c.isExactDuplicateESPacketLocked(pid, pkt) {
-			return
-		}
 		c.parseVideoPacketLocked(pkt, offset, pusi, payload)
 		return
 	}
@@ -1298,6 +1296,7 @@ func (c *GoCore) resetProgramStateLocked() {
 	c.annexBState = 0xFFFFFFFF
 	c.expectingNALByte = false
 	c.videoAwaitingStart = false
+	c.auContinuityBroken = false
 	c.activePMTSections = nil
 	c.scrambledVideoPackets = 0
 	c.clearVideoPackets = 0
@@ -1328,6 +1327,11 @@ func (c *GoCore) resetProgramStateLocked() {
 	c.events = append(c.events, Event{Kind: EventProgramIdentityChanged})
 }
 func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, payload []byte) {
+	seq := c.classifyESPacketLocked(c.videoPID, pkt)
+	if seq == esExactDuplicate {
+		return
+	}
+
 	// transport_scrambling_control != 0 means the payload is encrypted. Feeding it to the
 	// Annex-B scanner would index random bytes as NAL units, so it is never parsed. The
 	// observation is recorded instead, allowing attach to fail fast with ErrScrambledStream.
@@ -1343,6 +1347,9 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	var esData []byte
 
 	if pusi {
+		if seq == esGap {
+			c.auContinuityBroken = true
+		}
 		// Video PES packet start: verify PES startcode prefix (00 00 01 E0..EF)
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
 			// A new valid video PES packet begins here. Consistent with the Go parser's
@@ -1389,6 +1396,20 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	} else if c.videoAwaitingStart {
 		// Continuation packet of a refused payload unit: quarantined until the
 		// next valid payload unit start.
+		return
+	} else if seq == esGap {
+		// An unannounced continuity counter gap inside an in-flight payload unit.
+		// Abort any in-progress NAL capture, reset Annex-B shift register, mark
+		// the open access unit broken, and quarantine continuation packets until
+		// the next valid payload unit start.
+		c.nalKind = captureNone
+		c.nalLeft = 0
+		c.nalSkip = 0
+		c.nalBuf = c.nalBuf[:0]
+		c.annexBState = 0xFFFFFFFF
+		c.expectingNALByte = false
+		c.auContinuityBroken = true
+		c.videoAwaitingStart = true
 		return
 	} else {
 		esData = payload
@@ -1580,6 +1601,10 @@ func (c *GoCore) finalizeAccessUnitLocked() {
 		c.cleanAccessUnits++
 	}
 
+	if c.auContinuityBroken {
+		return
+	}
+
 	if c.pesHasKeyframe {
 		return
 	}
@@ -1651,6 +1676,7 @@ func (c *GoCore) resetAccessUnitStateLocked() {
 	c.auVCLCount = 0
 	c.auIntraVCLCount = 0
 	c.auScrambledPackets = 0
+	c.auContinuityBroken = false
 	c.nalKind = captureNone
 	c.nalLeft = 0
 	c.nalSkip = 0
@@ -1682,29 +1708,89 @@ func appendAudioTrack(list []AudioTrackInfo, track AudioTrackInfo) []AudioTrackI
 	return append(list, track)
 }
 
+// esPacketSequence classifies the relationship of an incoming TS packet to
+// the preceding packet on the same elementary stream PID.
+type esPacketSequence uint8
+
+const (
+	esFirst esPacketSequence = iota
+	esSequential
+	esExactDuplicate
+	esSameCCDifferent
+	esGap
+)
+
 // esPacketTracker tracks the latest TS packet on a selected elementary stream PID
-// to suppress exact duplicate transport packets.
+// to classify transport sequence continuity and suppress exact duplicate packets.
 type esPacketTracker struct {
 	hasLast bool
 	lastCC  byte
 	last    [TSPacketSize]byte
 }
 
-func (t *esPacketTracker) observeExactDuplicate(pkt []byte) bool {
+func (t *esPacketTracker) classify(pkt []byte) esPacketSequence {
 	if len(pkt) < TSPacketSize {
-		return false
+		return esSequential
 	}
 	cc := pkt[3] & 0x0F
-	if t.hasLast && cc == t.lastCC && bytes.Equal(t.last[:], pkt[:TSPacketSize]) {
-		// Exact duplicate: drop, retain previous reference.
-		return true
+	if !t.hasLast {
+		t.hasLast = true
+		t.lastCC = cc
+		copy(t.last[:], pkt[:TSPacketSize])
+		return esFirst
 	}
-	// Different CC, or same CC with different full packet, or first packet:
-	// Process and remember this packet as latest reference.
-	t.hasLast = true
+
+	if cc == t.lastCC {
+		if bytes.Equal(t.last[:], pkt[:TSPacketSize]) {
+			// Exact duplicate: drop, retain previous reference.
+			return esExactDuplicate
+		}
+		// Different bytes with same CC: update reference, do not advance sequence.
+		copy(t.last[:], pkt[:TSPacketSize])
+		return esSameCCDifferent
+	}
+
+	expectedCC := (t.lastCC + 1) & 0x0F
+	if cc == expectedCC {
+		t.lastCC = cc
+		copy(t.last[:], pkt[:TSPacketSize])
+		return esSequential
+	}
+
+	// CC jump: check if Discontinuity Indicator is set in the adaptation field.
+	// ISO/IEC 13818-1: AFC bits 5..4 == 0b10 (adaptation only) or 0b11 (adaptation + payload).
+	afc := (pkt[3] >> 4) & 0x03
+	if (afc == 0x02 || afc == 0x03) && len(pkt) > 5 {
+		afl := int(pkt[4])
+		if afl > 0 && (pkt[5]&0x80) != 0 {
+			// Announced discontinuity: DI hardening remains a separate defect.
+			// Treat as sequential transition so existing DI tests are unaffected.
+			t.lastCC = cc
+			copy(t.last[:], pkt[:TSPacketSize])
+			return esSequential
+		}
+	}
+
+	// Unannounced CC jump:
 	t.lastCC = cc
 	copy(t.last[:], pkt[:TSPacketSize])
-	return false
+	return esGap
+}
+
+func (t *esPacketTracker) observeExactDuplicate(pkt []byte) bool {
+	return t.classify(pkt) == esExactDuplicate
+}
+
+func (c *GoCore) classifyESPacketLocked(pid uint16, pkt []byte) esPacketSequence {
+	if c.esTrackers == nil {
+		c.esTrackers = make(map[uint16]*esPacketTracker, 4)
+	}
+	tracker := c.esTrackers[pid]
+	if tracker == nil {
+		tracker = &esPacketTracker{}
+		c.esTrackers[pid] = tracker
+	}
+	return tracker.classify(pkt)
 }
 
 func (c *GoCore) isExactDuplicateESPacketLocked(pid uint16, pkt []byte) bool {
