@@ -1167,8 +1167,7 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("continuity_gap_on_video_is_not_tracked",
-			"a skipped continuity counter between the slice header's two halves: the corrupted slice must not be joined (defect)", videoTSProgram)
-		b.diverges("defect", "an unannounced continuity counter gap is ignored and the slice halves are joined across the missing packet, fabricating an intra picture")
+			"a skipped continuity counter between the slice header's two halves: the corrupted slice must not be joined", videoTSProgram)
 		b.next(v) // the counter value that is never sent
 		first := b.start(v, h264SPS, h264PPS, []byte{0x00, 0x00, 0x01, 0x41, sliceI})
 		b.next(v) // and the gap before the continuation
@@ -1178,9 +1177,7 @@ func videoTSCorpusCases() []videoTSCase {
 			facts(h264().ps(true).clear(2))
 		b.chunk(b.start(v, h264SliceP)).
 			ev().
-			facts(h264().ps(false).clear(3).cleanau(1)).
-			refEv(rapAt(pkt2, true)).
-			refFacts(h264().ps(false).intra(1).clear(3).cleanrap(1).cleanau(1))
+			facts(h264().ps(false).clear(3).cleanau(1))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1234,16 +1231,13 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("video_unannounced_cc_jump_while_in_header_discards_incomplete_pes",
-			"unannounced CC gap while video PES header is incomplete discards partial PES (defect)", videoTSProgram)
-		b.diverges("defect", "an unannounced continuity counter gap while a PES header is incomplete invalidates header resolution and forces AwaitingStart")
+			"unannounced CC gap while video PES header is incomplete discards partial PES", videoTSProgram)
 		start := audioTSShortPacket(v, true, b.next(v), []byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05})
 		b.next(v) // skip a counter value (unannounced gap)
 		c1 := b.cont(v, h264SPS, h264PPS, h264IDR)
 		b.chunk(b.psi(0, h264Stream(v)), start, c1).
 			ev(identityEv, identityEv).
-			facts(h264().clear(1)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().clear(2))
 		cases = append(cases, b.done())
 	}
 
@@ -1933,11 +1927,9 @@ func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
 		"scrambled_packet_after_the_idr_header_in_its_access_unit":              "defect",
 		"video_pes_header_reaching_past_its_packet":                             "divergence",
-		"continuity_gap_on_video_is_not_tracked":                                "defect",
 		"tei_on_video_pusi_is_refused":                                          "defect",
 		"tei_on_video_continuation_is_refused":                                  "defect",
 		"video_discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
-		"video_unannounced_cc_jump_while_in_header_discards_incomplete_pes":     "defect",
 	}
 	got := map[string]string{}
 	for _, c := range videoTSCorpusCases() {
