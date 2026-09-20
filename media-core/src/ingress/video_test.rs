@@ -3,6 +3,10 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 use super::VideoIngress;
+use super::video::{
+    BitReader, SCRAMBLED_CONFIRMED_THRESHOLD, h264_slice_is_intra, mpeg2_picture_is_intra,
+    remove_emulation_prevention, sei_has_recovery_point,
+};
 use crate::psi::VideoCodec;
 use crate::transport::TS_PACKET_LEN;
 
@@ -457,7 +461,7 @@ fn scrambling_counters_and_confirmation_at_100_packets() {
 
     let facts3 = ingress2.facts();
     assert_eq!(facts3.clear_packets, 0);
-    assert_eq!(facts3.scrambled_packets, 100);
+    assert_eq!(facts3.scrambled_packets, SCRAMBLED_CONFIRMED_THRESHOLD);
     assert_eq!(facts3.clear_run, 0);
     assert!(facts3.scrambled_confirmed);
 
@@ -515,4 +519,292 @@ fn tei_packet_does_not_increment_counters_and_quarantines() {
     assert_eq!(facts3.clear_packets, 4);
     assert_eq!(facts3.clear_run, 4);
     assert!(!facts3.awaiting_start);
+}
+
+#[test]
+fn test_bit_reader_and_exp_golomb() {
+    // 0 -> '1'
+    let data_zero = [0b1000_0000];
+    let mut r = BitReader::new(&data_zero);
+    assert_eq!(r.read_ue(), Some(0));
+
+    // 1 -> '010'
+    let data_one = [0b0100_0000];
+    let mut r = BitReader::new(&data_one);
+    assert_eq!(r.read_ue(), Some(1));
+
+    // 2 -> '011'
+    let data_two = [0b0110_0000];
+    let mut r = BitReader::new(&data_two);
+    assert_eq!(r.read_ue(), Some(2));
+
+    // Truncated: 00001 (expects 4 suffix bits, but only 3 remain)
+    let data_trunc = [0b0000_1000];
+    let mut r = BitReader::new(&data_trunc);
+    assert_eq!(r.read_ue(), None);
+
+    // Run of >32 leading zeros is rejected
+    let data_zeros = [0x00; 5];
+    let mut r = BitReader::new(&data_zeros);
+    assert_eq!(r.read_ue(), None);
+}
+
+#[test]
+fn test_remove_emulation_prevention() {
+    // 00 00 03 01 -> 00 00 01
+    let input = [0x00, 0x00, 0x03, 0x01];
+    assert_eq!(remove_emulation_prevention(&input), vec![0x00, 0x00, 0x01]);
+
+    // Non-emulation: 01 02 03
+    let input2 = [0x01, 0x02, 0x03];
+    assert_eq!(remove_emulation_prevention(&input2), vec![0x01, 0x02, 0x03]);
+
+    // Multiple emulation bytes: 00 00 03 00 00 03
+    let input3 = [0x00, 0x00, 0x03, 0x00, 0x00, 0x03];
+    assert_eq!(
+        remove_emulation_prevention(&input3),
+        vec![0x00, 0x00, 0x00, 0x00]
+    );
+}
+
+#[test]
+fn test_h264_slice_is_intra() {
+    // first_mb = 0 ('1'), slice_type = 2 (I-slice, '011') -> 1011 0000 = 0xB0
+    assert_eq!(h264_slice_is_intra(&[0xB0]), (true, true));
+
+    // first_mb = 0 ('1'), slice_type = 4 (SI-slice, '00101') -> 1001 0100 = 0x94
+    assert_eq!(h264_slice_is_intra(&[0x94]), (true, true));
+
+    // first_mb = 0 ('1'), slice_type = 0 (P-slice, '1') -> 1100 0000 = 0xC0
+    assert_eq!(h264_slice_is_intra(&[0xC0]), (false, true));
+
+    // first_mb = 0 ('1'), slice_type = 1 (B-slice, '010') -> 1010 0000 = 0xA0
+    assert_eq!(h264_slice_is_intra(&[0xA0]), (false, true));
+
+    // Malformed / truncated
+    assert_eq!(h264_slice_is_intra(&[]), (false, false));
+    assert_eq!(h264_slice_is_intra(&[0x00]), (false, false));
+}
+
+#[test]
+fn test_sei_has_recovery_point() {
+    // Single SEI message: recovery_point (payload_type = 6, size = 1, body = [0x80])
+    let sei1 = [0x06, 0x01, 0x80];
+    assert!(sei_has_recovery_point(&sei1));
+
+    // Multiple SEI messages: pic_timing (type 1, size 2) then recovery_point (type 6, size 1)
+    let sei2 = [0x01, 0x02, 0x11, 0x22, 0x06, 0x01, 0x80];
+    assert!(sei_has_recovery_point(&sei2));
+
+    // No recovery point: only pic_timing (type 1)
+    let sei3 = [0x01, 0x02, 0x11, 0x22];
+    assert!(!sei_has_recovery_point(&sei3));
+
+    // Extended length runs (payload_type = 255 + 6 = 261 != 6)
+    let sei4 = [0xFF, 0x06, 0x01, 0x00];
+    assert!(!sei_has_recovery_point(&sei4));
+
+    // Empty or trailing bits only
+    assert!(!sei_has_recovery_point(&[]));
+    assert!(!sei_has_recovery_point(&[0x80]));
+}
+
+#[test]
+fn test_mpeg2_picture_is_intra() {
+    // picture_coding_type = 1 (I-Frame): bits 5..3 of byte 1 -> 0x08
+    assert_eq!(mpeg2_picture_is_intra(&[0x00, 0x08]), (true, true));
+
+    // picture_coding_type = 2 (P-Frame): 0x10
+    assert_eq!(mpeg2_picture_is_intra(&[0x00, 0x10]), (false, true));
+
+    // picture_coding_type = 3 (B-Frame): 0x18
+    assert_eq!(mpeg2_picture_is_intra(&[0x00, 0x18]), (false, true));
+
+    // Invalid picture coding type 0 or 4
+    assert_eq!(mpeg2_picture_is_intra(&[0x00, 0x00]), (false, false));
+    assert_eq!(mpeg2_picture_is_intra(&[0x00, 0x20]), (false, false));
+
+    // Truncated (< 2 bytes)
+    assert_eq!(mpeg2_picture_is_intra(&[0x00]), (false, false));
+    assert_eq!(mpeg2_picture_is_intra(&[]), (false, false));
+}
+
+// --- The 4 Explicit User-Required Regressions --------------------------------
+
+fn make_pusi_sps_pps_payload() -> Vec<u8> {
+    vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS NAL (type 7)
+        0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS NAL (type 8)
+    ]
+}
+
+#[test]
+fn regression_valid_pusi_then_tei_pusi_clears_offset_and_param_sets() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Valid PUSI with SPS and PPS arrives at offset 376.
+    let payload1 = make_pusi_sps_pps_payload();
+    let pusi_pkt = make_ts_packet(VIDEO_PID, true, 0, 0, false, &payload1);
+    ingress.ingest(offset, &pusi_pkt).expect("valid pusi");
+    let facts1 = ingress.facts();
+    assert_eq!(facts1.current_pes_offset, Some(offset));
+    assert!(facts1.parameter_sets_seen);
+    assert_eq!(facts1.clear_packets, 1);
+    assert_eq!(facts1.scrambled_packets, 0);
+    assert_eq!(facts1.clear_run, 1);
+    assert!(!facts1.awaiting_start);
+
+    offset += PACKET_LEN_I64;
+
+    // 2. TEI-damaged PUSI arrives.
+    let tei_pusi_pkt = make_ts_packet(VIDEO_PID, true, 1, 0, true, &payload1); // tei = true
+    ingress.ingest(offset, &tei_pusi_pkt).expect("tei pusi");
+    let facts2 = ingress.facts();
+
+    // Invariant: current_pes_offset cleared, parameter_sets_seen cleared, awaiting_start entered,
+    // counters NOT incremented by TEI packet.
+    assert_eq!(facts2.current_pes_offset, None);
+    assert!(!facts2.parameter_sets_seen);
+    assert!(facts2.awaiting_start);
+    assert_eq!(facts2.clear_packets, 1);
+    assert_eq!(facts2.scrambled_packets, 0);
+    assert_eq!(facts2.clear_run, 1);
+}
+
+#[test]
+fn regression_valid_pusi_then_scrambled_pusi_clears_offset_and_param_sets() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Valid PUSI with SPS and PPS.
+    let payload1 = make_pusi_sps_pps_payload();
+    let pusi_pkt = make_ts_packet(VIDEO_PID, true, 0, 0, false, &payload1);
+    ingress.ingest(offset, &pusi_pkt).expect("valid pusi");
+    let facts1 = ingress.facts();
+    assert_eq!(facts1.current_pes_offset, Some(offset));
+    assert!(facts1.parameter_sets_seen);
+
+    offset += PACKET_LEN_I64;
+
+    // 2. Scrambled PUSI arrives (scrambling_control = 2).
+    let scrambled_pusi_pkt = make_ts_packet(VIDEO_PID, true, 1, 2, false, &payload1);
+    ingress
+        .ingest(offset, &scrambled_pusi_pkt)
+        .expect("scrambled pusi");
+    let facts2 = ingress.facts();
+
+    // Invariant: current_pes_offset cleared, parameter_sets_seen cleared, vscr incremented,
+    // vrun reset to 0, awaiting_start entered.
+    assert_eq!(facts2.current_pes_offset, None);
+    assert!(!facts2.parameter_sets_seen);
+    assert_eq!(facts2.scrambled_packets, 1);
+    assert_eq!(facts2.clear_run, 0);
+    assert!(facts2.awaiting_start);
+}
+
+#[test]
+fn regression_valid_pusi_then_invalid_clear_pusi_clears_offset_and_param_sets() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Valid PUSI with SPS and PPS.
+    let payload1 = make_pusi_sps_pps_payload();
+    let pusi_pkt = make_ts_packet(VIDEO_PID, true, 0, 0, false, &payload1);
+    ingress.ingest(offset, &pusi_pkt).expect("valid pusi");
+    let facts1 = ingress.facts();
+    assert_eq!(facts1.current_pes_offset, Some(offset));
+    assert!(facts1.parameter_sets_seen);
+
+    offset += PACKET_LEN_I64;
+
+    // 2. Invalid clear PUSI arrives (bad prefix: 00 00 00 00).
+    let invalid_payload = vec![0x00, 0x00, 0x00, 0x00, 0x11, 0x22];
+    let invalid_pusi_pkt = make_ts_packet(VIDEO_PID, true, 1, 0, false, &invalid_payload);
+    ingress
+        .ingest(offset, &invalid_pusi_pkt)
+        .expect("invalid pusi");
+    let facts2 = ingress.facts();
+
+    // Invariant: current_pes_offset cleared, parameter_sets_seen cleared, awaiting_start entered.
+    assert_eq!(facts2.current_pes_offset, None);
+    assert!(!facts2.parameter_sets_seen);
+    assert!(facts2.awaiting_start);
+}
+
+#[test]
+fn regression_valid_pusi_then_duplicate_pusi_preserves_offset_and_param_sets() {
+    let (mut ingress, offset) = standard_setup();
+
+    // 1. Valid PUSI with SPS and PPS.
+    let payload1 = make_pusi_sps_pps_payload();
+    let pusi_pkt = make_ts_packet(VIDEO_PID, true, 0, 0, false, &payload1);
+    ingress.ingest(offset, &pusi_pkt).expect("valid pusi");
+    let facts1 = ingress.facts();
+    assert_eq!(facts1.current_pes_offset, Some(offset));
+    assert!(facts1.parameter_sets_seen);
+
+    let dup_offset = offset + PACKET_LEN_I64;
+
+    // 2. Exact duplicate of the same PUSI packet arrives.
+    ingress
+        .ingest(dup_offset, &pusi_pkt)
+        .expect("duplicate pusi");
+    let facts2 = ingress.facts();
+
+    // Invariant: Duplicate packet is discarded; current_pes_offset and parameter_sets_seen
+    // remain completely preserved!
+    assert_eq!(facts2.current_pes_offset, Some(offset));
+    assert!(facts2.parameter_sets_seen);
+    assert_eq!(facts2.clear_packets, 1);
+    assert_eq!(facts2.clear_run, 1);
+    assert!(!facts2.awaiting_start);
+}
+
+#[test]
+fn continuation_spanning_nal_units_across_packets() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // Packet 1: PUSI with PES header and start of SPS (startcode + NAL header + 2 bytes).
+    let pusi_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00,
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &pusi_payload);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += PACKET_LEN_I64;
+
+    let facts1 = ingress.facts();
+    assert!(facts1.pes_has_sps);
+    assert!(!facts1.pes_has_pps);
+    assert!(!facts1.parameter_sets_seen);
+
+    // Packet 2: Continuation packet with rest of SPS, then PPS.
+    let cont_payload = vec![0x1E, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80];
+    let p2 = make_ts_packet(VIDEO_PID, false, 1, 0, false, &cont_payload);
+    ingress.ingest(offset, &p2).expect("p2");
+
+    let facts2 = ingress.facts();
+    assert!(facts2.pes_has_sps);
+    assert!(facts2.pes_has_pps);
+    assert!(facts2.parameter_sets_seen);
+}
+
+#[test]
+fn transport_break_on_continuation_resets_annex_b_scanner() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // PUSI with valid PES start.
+    let pusi_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x67, // SPS start
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &pusi_payload);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += PACKET_LEN_I64;
+
+    // Continuation with CC jump (cc 0 -> cc 5, without DI): Broken gap.
+    let cont_payload = vec![0x42, 0x00];
+    let p2 = make_ts_packet(VIDEO_PID, false, 5, 0, false, &cont_payload);
+    ingress.ingest(offset, &p2).expect("p2 broken");
+
+    let facts = ingress.facts();
+    assert!(facts.awaiting_start);
 }

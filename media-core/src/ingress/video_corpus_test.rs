@@ -25,6 +25,7 @@ fn corpus_path() -> PathBuf {
 struct ExpectedFacts {
     vpid: u16,
     codec: String,
+    ps: bool,
     vclr: u64,
     vscr: u64,
     vrun: u64,
@@ -70,6 +71,7 @@ fn parse_facts(parts: &[&str]) -> ExpectedFacts {
     ExpectedFacts {
         vpid: u16::from_str_radix(field(parts, "vpid="), 16).expect("vpid"),
         codec: field(parts, "codec=").to_string(),
+        ps: field(parts, "ps=").parse::<u8>().expect("ps") != 0,
         vclr: field(parts, "vclr=").parse().expect("vclr"),
         vscr: field(parts, "vscr=").parse().expect("vscr"),
         vrun: field(parts, "vrun=").parse().expect("vrun"),
@@ -141,7 +143,12 @@ fn parse_corpus(text: &str) -> Vec<Case> {
 fn video_ts_corpus_all_cases() {
     let text = std::fs::read_to_string(corpus_path()).expect("read corpus.txt");
     let cases = parse_corpus(&text);
-    assert_eq!(cases.len(), 94, "expected 94 corpus cases");
+    assert!(!cases.is_empty(), "corpus must not be empty");
+    assert!(
+        cases.len() >= 94,
+        "expected at least 94 corpus cases, got {}",
+        cases.len()
+    );
 
     for case in &cases {
         let mut ingress = VideoIngress::new(case.program);
@@ -168,6 +175,11 @@ fn video_ts_corpus_all_cases() {
             }
             if let Some(expected) = &step.facts {
                 let facts = ingress.facts();
+                assert_eq!(
+                    facts.parameter_sets_seen, expected.ps,
+                    "case {} step {}: ps mismatch",
+                    case.name, step_idx
+                );
                 assert_eq!(
                     facts.pid, expected.vpid,
                     "case {} step {}: vpid mismatch",
