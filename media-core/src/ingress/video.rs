@@ -41,7 +41,7 @@
 //! validation.
 
 use crate::pes::{self, PesStart};
-use crate::psi::{IngestError, PsiCore, PsiEvent, VideoCodec};
+use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
 /// Minimum consecutive scrambled packets required to conclusively confirm a stream as scrambled.
@@ -868,6 +868,17 @@ pub struct VideoFacts {
     pub clean_access_units: u64,
 }
 
+/// A point-in-time projection of PSI facts, active tables, and video facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoSnapshot {
+    /// What the core knows about the transport programme's PSI tables.
+    pub psi: PsiFacts,
+    /// The active table sections in force.
+    pub active_psi: ActivePsi,
+    /// The current facts established about the video stream.
+    pub video: VideoFacts,
+}
+
 /// Follows the observable video stream of one transport programme.
 #[derive(Debug)]
 pub struct VideoIngress {
@@ -884,6 +895,17 @@ impl VideoIngress {
             psi: PsiCore::new(target_program_number),
             follower: None,
             incarnation: 0,
+        }
+    }
+
+    /// A point-in-time projection of PSI and video facts.
+    #[must_use]
+    pub fn snapshot(&self) -> VideoSnapshot {
+        let psi_snap = self.psi.snapshot();
+        VideoSnapshot {
+            psi: psi_snap.facts,
+            active_psi: psi_snap.active,
+            video: self.facts(),
         }
     }
 

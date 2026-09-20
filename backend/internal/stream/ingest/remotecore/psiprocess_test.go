@@ -175,7 +175,7 @@ func agree(t *testing.T, what string, goRes, rustRes mediafacts.ParseResult) {
 	if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 		t.Fatalf("%s: the reference reported coverage %s", what, goRes.Coverage)
 	}
-	if !rustRes.Covers(mediafacts.ParseCoveragePSIOnly) {
+	if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
 		t.Fatalf("%s: the real core reported coverage %s", what, rustRes.Coverage)
 	}
 	if bad := scopeOf(goRes).diff(scopeOf(rustRes), "go  ", "rust"); len(bad) > 0 {

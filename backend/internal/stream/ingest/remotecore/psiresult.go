@@ -11,7 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 )
 
-// The PSI result envelope, protocol v3.
+// The PSI+Video result envelope, protocol v4.
 //
 // One layout for both answers that carry a result - ingest and set-target -
 // because they return the same thing: what the core knows now. A second layout
@@ -40,6 +40,17 @@ import (
 //	          u8   declared channels
 //	          u8   flags            bit 0 multichannel, bit 1 has component type
 //	          u8   component type
+//	u8      video facts flags       bit 0 parameter sets seen, bit 1 scrambled confirmed
+//	u64     clean entry points
+//	u64     clean access units
+//	u64     IRAP points
+//	u64     intra points
+//	u64     recovery point SEIs
+//	u64     predicted rejected
+//	u64     unreadable slices
+//	u64     video scrambled packets
+//	u64     video clear packets
+//	u64     video clear run
 //	u16     PAT section count
 //	          u16  length, then that many bytes
 //	u16     PMT section count
@@ -62,6 +73,7 @@ const (
 	wireCoverageUnknown  uint8 = 0
 	wireCoveragePSIOnly  uint8 = 1
 	wireCoverageComplete uint8 = 2
+	wireCoveragePSIVideo uint8 = 3
 )
 
 const (
@@ -80,10 +92,11 @@ const (
 	wireAudioCodecDTS     uint8 = 5
 )
 
-// wireEventProgramIdentityChanged is the only event kind a PSI-only core may
-// report. A random access point is a statement about video payload, which is not
-// in this coverage; a peer sending one is describing something it did not read.
-const wireEventProgramIdentityChanged uint8 = 1
+const (
+	wireEventProgramIdentityChanged       uint8 = 1
+	wireEventRandomAccessPoint            uint8 = 2
+	wireEventRandomAccessPointInvalidated uint8 = 3
+)
 
 const (
 	wireFactHasPAT uint8 = 1 << 0
@@ -93,6 +106,9 @@ const (
 
 	wireTrackMultichannel     uint8 = 1 << 0
 	wireTrackHasComponentType uint8 = 1 << 1
+
+	wireVideoFactParameterSetsSeen  uint8 = 1 << 0
+	wireVideoFactScrambledConfirmed uint8 = 1 << 1
 )
 
 // Fixed sizes, named so the bound checks below read as arithmetic about the
@@ -153,8 +169,12 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 	}
 	var parsed mediafacts.ParseResult
 	switch rawCoverage {
+	case wireCoveragePSIVideo:
+		parsed.Coverage = mediafacts.ParseCoveragePSIVideo
 	case wireCoveragePSIOnly:
-		parsed.Coverage = mediafacts.ParseCoveragePSIOnly
+		return mediafacts.ParseResult{}, fmt.Errorf(
+			"%w: peer claims psi-only coverage, which is not valid in protocol v4",
+			mediafacts.ErrCoreInvalidResponse)
 	case wireCoverageComplete:
 		// Refused rather than accepted. Nothing on the other side of this
 		// protocol reads anything but PSI, so a peer claiming to cover the whole
@@ -210,9 +230,6 @@ func decodeEvents(r *reader) ([]mediafacts.Event, error) {
 		if !ok {
 			return nil, short("event kind")
 		}
-		if kind != wireEventProgramIdentityChanged {
-			return nil, fmt.Errorf("%w: event kind %d", mediafacts.ErrCoreInvalidResponse, kind)
-		}
 		offset, ok := r.uint64()
 		if !ok {
 			return nil, short("event offset")
@@ -224,14 +241,37 @@ func decodeEvents(r *reader) ([]mediafacts.Event, error) {
 		if !ok {
 			return nil, short("event flags")
 		}
-		if flags&^wireEventJoinable != 0 {
-			return nil, fmt.Errorf("%w: event flags %#02x", mediafacts.ErrCoreInvalidResponse, flags)
+		switch kind {
+		case wireEventProgramIdentityChanged:
+			if offset != 0 || flags != 0 {
+				return nil, fmt.Errorf("%w: program identity changed event has offset %d flags %#02x",
+					mediafacts.ErrCoreInvalidResponse, offset, flags)
+			}
+			out = append(out, mediafacts.Event{
+				Kind: mediafacts.EventProgramIdentityChanged,
+			})
+		case wireEventRandomAccessPoint:
+			if flags&^wireEventJoinable != 0 {
+				return nil, fmt.Errorf("%w: random access point event flags %#02x",
+					mediafacts.ErrCoreInvalidResponse, flags)
+			}
+			out = append(out, mediafacts.Event{
+				Kind:     mediafacts.EventRandomAccessPoint,
+				Offset:   int64(offset),
+				Joinable: flags&wireEventJoinable != 0,
+			})
+		case wireEventRandomAccessPointInvalidated:
+			if flags != 0 {
+				return nil, fmt.Errorf("%w: random access point invalidated event flags %#02x",
+					mediafacts.ErrCoreInvalidResponse, flags)
+			}
+			out = append(out, mediafacts.Event{
+				Kind:   mediafacts.EventRandomAccessPointInvalidated,
+				Offset: int64(offset),
+			})
+		default:
+			return nil, fmt.Errorf("%w: event kind %d", mediafacts.ErrCoreInvalidResponse, kind)
 		}
-		out = append(out, mediafacts.Event{
-			Kind:     mediafacts.EventProgramIdentityChanged,
-			Offset:   int64(offset),
-			Joinable: flags&wireEventJoinable != 0,
-		})
 	}
 	return out, nil
 }
@@ -283,9 +323,53 @@ func decodeFacts(r *reader) (mediafacts.Facts, error) {
 	if f.AudioPIDs, err = decodeAudioPIDs(r); err != nil {
 		return f, err
 	}
+	f.Scrambling.AudioPIDs = append([]uint16(nil), f.AudioPIDs...)
 	if f.AudioTracks, err = decodeAudioTracks(r); err != nil {
 		return f, err
 	}
+
+	// 81-byte Video Facts Block
+	videoFlags, ok := r.uint8()
+	if !ok {
+		return f, short("video facts flags")
+	}
+	if videoFlags&^(wireVideoFactParameterSetsSeen|wireVideoFactScrambledConfirmed) != 0 {
+		return f, fmt.Errorf("%w: video facts flags %#02x", mediafacts.ErrCoreInvalidResponse, videoFlags)
+	}
+	f.ParameterSetsSeen = videoFlags&wireVideoFactParameterSetsSeen != 0
+	f.ScrambledVideoConfirmed = videoFlags&wireVideoFactScrambledConfirmed != 0
+
+	if f.CleanEntryPoints, ok = r.uint64(); !ok {
+		return f, short("clean entry points")
+	}
+	if f.CleanAccessUnits, ok = r.uint64(); !ok {
+		return f, short("clean access units")
+	}
+	if f.RandomAccess.IRAPPoints, ok = r.uint64(); !ok {
+		return f, short("IRAP points")
+	}
+	if f.RandomAccess.IntraPoints, ok = r.uint64(); !ok {
+		return f, short("intra points")
+	}
+	if f.RandomAccess.RecoveryPointSEIs, ok = r.uint64(); !ok {
+		return f, short("recovery point SEIs")
+	}
+	if f.RandomAccess.PredictedRejected, ok = r.uint64(); !ok {
+		return f, short("predicted rejected")
+	}
+	if f.RandomAccess.UnreadableSlices, ok = r.uint64(); !ok {
+		return f, short("unreadable slices")
+	}
+	if f.Scrambling.VideoScrambled, ok = r.uint64(); !ok {
+		return f, short("video scrambled packets")
+	}
+	if f.Scrambling.VideoClear, ok = r.uint64(); !ok {
+		return f, short("video clear packets")
+	}
+	if f.Scrambling.VideoClearRun, ok = r.uint64(); !ok {
+		return f, short("video clear run")
+	}
+
 	return f, nil
 }
 

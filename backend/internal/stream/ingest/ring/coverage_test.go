@@ -56,6 +56,7 @@ func TestCoverage_ARingCommitsNothingFromAnIncompleteResult(t *testing.T) {
 		coverage mediafacts.ParseCoverage
 	}{
 		{"psi only", mediafacts.ParseCoveragePSIOnly},
+		{"psi+video", mediafacts.ParseCoveragePSIVideo},
 		// The zero value, which is what a core that has never heard of coverage
 		// returns. It must fail closed rather than read as complete.
 		{"unstated", mediafacts.ParseCoverageUnknown},
@@ -109,20 +110,31 @@ func TestCoverage_ARingCommitsNothingFromAnIncompleteResult(t *testing.T) {
 // TestCoverage_ATargetChangeIsRefusedTheSameWay covers the other call that
 // commits a core result. Both paths publish facts, so both have to gate.
 func TestCoverage_ATargetChangeIsRefusedTheSameWay(t *testing.T) {
-	r := NewMasterRing(400 * TSPacketSize)
-	defer r.Close()
-	core := &narrowCore{Core: r.core, coverage: mediafacts.ParseCoveragePSIOnly}
-	r.core = core
+	for _, tc := range []struct {
+		name     string
+		coverage mediafacts.ParseCoverage
+	}{
+		{"psi only", mediafacts.ParseCoveragePSIOnly},
+		{"psi+video", mediafacts.ParseCoveragePSIVideo},
+		{"unstated", mediafacts.ParseCoverageUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewMasterRing(400 * TSPacketSize)
+			defer r.Close()
+			core := &narrowCore{Core: r.core, coverage: tc.coverage}
+			r.core = core
 
-	factsBefore := r.facts
-	if err := r.SetTargetProgram(context.Background(), 7); !errors.Is(err, ErrCoreIncompleteResult) {
-		t.Fatalf("SetTargetProgram returned %v, want ErrCoreIncompleteResult", err)
-	}
-	if got := r.facts; !reflect.DeepEqual(got, factsBefore) {
-		t.Errorf("facts changed to %+v", got)
-	}
-	if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
-		t.Errorf("the core stayed usable after answering incompletely: %v", err)
+			factsBefore := r.facts
+			if err := r.SetTargetProgram(context.Background(), 7); !errors.Is(err, ErrCoreIncompleteResult) {
+				t.Fatalf("SetTargetProgram returned %v, want ErrCoreIncompleteResult", err)
+			}
+			if got := r.facts; !reflect.DeepEqual(got, factsBefore) {
+				t.Errorf("facts changed to %+v", got)
+			}
+			if _, err := r.Push(context.Background(), onePacket()); !errors.Is(err, ErrCoreUnusable) {
+				t.Errorf("the core stayed usable after answering incompletely: %v", err)
+			}
+		})
 	}
 }
 

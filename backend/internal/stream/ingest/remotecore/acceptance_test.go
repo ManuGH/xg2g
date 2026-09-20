@@ -43,6 +43,13 @@ func TestAcceptance_AFullChunkRoundTripsInsideTheDeadline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("measurement, not a smoke test")
 	}
+	if os.Getenv("XG2G_TEST_ALLOW_DARWIN_CORE") == "1" {
+		useIdentity(t, func(pid int) (processIdentity, error) {
+			return &darwinTestIdentity{pid: pid}, nil
+		})
+	} else {
+		requireOwnableCore(t)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

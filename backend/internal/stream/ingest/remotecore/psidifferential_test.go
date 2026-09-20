@@ -59,6 +59,8 @@ func scopeOf(res mediafacts.ParseResult) psiScope {
 			names = append(names, "identity")
 		case mediafacts.EventRandomAccessPoint:
 			names = append(names, fmt.Sprintf("rap@%d", ev.Offset))
+		case mediafacts.EventRandomAccessPointInvalidated:
+			names = append(names, fmt.Sprintf("rap_invalidated@%d", ev.Offset))
 		default:
 			names = append(names, fmt.Sprintf("unknown(%d)", ev.Kind))
 		}
@@ -164,11 +166,11 @@ func TestPSIDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 
 				// The one place the two are allowed to differ, and it is said
 				// out loud rather than inferred: the reference covers the whole
-				// stream, the Rust core covers PSI.
+				// stream, the Rust core covers PSI and video.
 				if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d: the reference reported coverage %s", i+1, goRes.Coverage)
 				}
-				if !rustRes.Covers(mediafacts.ParseCoveragePSIOnly) {
+				if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
 					t.Fatalf("call %d: the real core reported coverage %s", i+1, rustRes.Coverage)
 				}
 

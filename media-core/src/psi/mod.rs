@@ -12,9 +12,9 @@
 //! against that file, so agreement is a property of a reviewable artefact rather
 //! than of anybody's memory of what the other one does.
 //!
-//! Nothing here is authoritative. This is a library that answers the corpus; it
-//! is not wired into the core's socket, and Go remains the parser production
-//! reads.
+//! The tables decoded here feed [`crate::ingress::video::VideoIngress`] and the
+//! IPC protocol that serves the Go ingest pipeline over a local Unix domain
+//! socket.
 //!
 //! The transport this file understands is only what PSI needs: packet framing,
 //! the PID, the payload unit start flag, the continuity counter, the adaptation
@@ -138,6 +138,15 @@ pub struct ActivePsi {
     pub pat_sections: Vec<Vec<u8>>,
     /// The accepted sections of the PMT in force.
     pub pmt_sections: Vec<Vec<u8>>,
+}
+
+/// A point-in-time projection of PSI facts and active tables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PsiSnapshot {
+    /// What the core knows about the stream.
+    pub facts: PsiFacts,
+    /// The active table sections in force.
+    pub active: ActivePsi,
 }
 
 /// What one call meant.
@@ -292,8 +301,9 @@ impl PsiCore {
         self.selection.map_or(0, |s| s.program_number)
     }
 
-    /// Builds the answer for the call that is ending.
-    fn outcome(&self, processed_through: i64) -> Outcome {
+    /// A point-in-time projection of PSI facts and active tables without events.
+    #[must_use]
+    pub fn snapshot(&self) -> PsiSnapshot {
         // What the two tables together may cost, checked where they are handed
         // out. Not a policy: a section is at most 1024 bytes and a table at most
         // 256 sections, so this follows.
@@ -305,9 +315,7 @@ impl PsiCore {
                 .sum::<usize>()
                 <= table::MAX_ACTIVE_PSI_BYTES
         );
-        Outcome {
-            processed_through,
-            events: self.events.clone(),
+        PsiSnapshot {
             facts: PsiFacts {
                 has_pat: self.has_pat_version,
                 has_pmt: self.has_pmt_version,
@@ -323,6 +331,17 @@ impl PsiCore {
                 pat_sections: self.active_pat_sections.clone(),
                 pmt_sections: self.active_pmt_sections.clone(),
             },
+        }
+    }
+
+    /// Builds the answer for the call that is ending.
+    fn outcome(&self, processed_through: i64) -> Outcome {
+        let snapshot = self.snapshot();
+        Outcome {
+            processed_through,
+            events: self.events.clone(),
+            facts: snapshot.facts,
+            active: snapshot.active,
         }
     }
 
