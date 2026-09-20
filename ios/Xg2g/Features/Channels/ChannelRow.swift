@@ -48,7 +48,7 @@ struct ChannelRow: View {
                     HStack(spacing: 5) {
                         if let number = channel.number {
                             Text(number)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -56,13 +56,13 @@ struct ChannelRow: View {
                         }
 
                         Text(channel.name)
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.app(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
                         if isFavorite {
                             Image(systemName: "star.fill")
-                                .font(.system(size: 10))
+                                .font(.app(size: 10))
                                 .foregroundStyle(.yellow)
                         }
                     }
@@ -78,7 +78,7 @@ struct ChannelRow: View {
                         }
                         if currentGenre != .all {
                             Text(currentGenre.rawValue)
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.app(size: 10, weight: .semibold))
                                 .foregroundStyle(timeFilter == .now ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2.5)
@@ -96,7 +96,7 @@ struct ChannelRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .top) {
                         Text(show.title)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.app(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
@@ -108,7 +108,7 @@ struct ChannelRow: View {
                             onShowInfo(show)
                         } label: {
                             Image(systemName: "info.circle")
-                                .font(.system(size: 14))
+                                .font(.app(size: 14))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .padding(2)
                         }
@@ -117,23 +117,23 @@ struct ChannelRow: View {
 
                     HStack(spacing: 6) {
                         Text(show.formattedTimeRange)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.app(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textSecondary)
 
                         if timeFilter == .now, let remaining = show.remainingMinutes(at: .now) {
                             Text("• noch \(remaining) Min")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         } else {
                             Text("• \(show.durationMinutes) Min")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.app(size: 11, weight: .regular))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
                     }
 
                     if let desc = show.description, !desc.isEmpty {
                         Text(desc)
-                            .font(.system(size: 12))
+                            .font(.app(size: 12))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(1)
                             .padding(.top, 1)
@@ -173,15 +173,15 @@ struct ChannelRow: View {
             if timeFilter == .now, let next = nowNext?.next {
                 HStack(spacing: 6) {
                     Text("DANACH:")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.app(size: 9, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textTertiary)
 
                     Text(next.formattedStartTime)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.app(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
 
                     Text(next.title)
-                        .font(.system(size: 11))
+                        .font(.app(size: 11))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
 

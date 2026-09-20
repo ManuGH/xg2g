@@ -33,7 +33,7 @@ struct RecordingDetailSheet: View {
                                 .aspectRatio(16/9, contentMode: .fit)
                                 .overlay(
                                     Image(systemName: palette.icon)
-                                        .font(.system(size: 120, weight: .ultraLight))
+                                        .font(.app(size: 120, weight: .ultraLight))
                                         .foregroundStyle(palette.accent.opacity(0.18))
                                         .offset(x: 60, y: -10),
                                     alignment: .trailing
@@ -236,10 +236,10 @@ struct RecordingDetailSheet: View {
     private func specPill(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.app(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textTertiary)
             Text(value)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -22,7 +22,7 @@ struct ProgramSpotlightHero: View {
                     HStack(spacing: 5) {
                         if let number = channel.number {
                             Text(number)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -30,18 +30,18 @@ struct ProgramSpotlightHero: View {
                         }
 
                         Text(channel.name)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.app(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
 
                         Image(systemName: "star.fill")
-                            .font(.system(size: 10))
+                            .font(.app(size: 10))
                             .foregroundStyle(.yellow)
                     }
 
                     HStack(spacing: 5) {
                         PulsingLiveDot(size: 6)
                         Text(model.selectedTimeFilter == .now ? "FAVORIT JETZT LIVE" : "FAVORIT HIGHLIGHT")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.app(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentLive)
                     }
                 }
@@ -51,7 +51,7 @@ struct ProgramSpotlightHero: View {
                 let g = entry.genre(channelName: channel.name)
                 if g != .all {
                     Label(g.rawValue, systemImage: g.icon)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.app(size: 11, weight: .bold))
                         .foregroundStyle(Theme.Colors.accentLive)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
@@ -90,9 +90,9 @@ struct ProgramSpotlightHero: View {
                 Button(action: onPlay) {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.app(size: 13, weight: .bold))
                         Text("Jetzt ansehen")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.app(size: 14, weight: .bold))
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
@@ -105,9 +105,9 @@ struct ProgramSpotlightHero: View {
                 Button(action: onRecord) {
                     HStack(spacing: 5) {
                         Image(systemName: "record.circle")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.app(size: 13, weight: .semibold))
                         Text("Aufnehmen")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.app(size: 13, weight: .semibold))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -120,7 +120,7 @@ struct ProgramSpotlightHero: View {
                 // Info / Wiederholungen Button
                 Button(action: onShowInfo) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 16))
+                        .font(.app(size: 16))
                         .padding(10)
                         .background(Theme.Colors.surfaceElevated, in: Circle())
                         .foregroundStyle(Theme.Colors.textSecondary)

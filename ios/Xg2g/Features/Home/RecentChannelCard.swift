@@ -22,7 +22,7 @@ struct RecentChannelCard: View {
                     HStack(spacing: 5) {
                         if let number = channel.number {
                             Text(number)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -30,7 +30,7 @@ struct RecentChannelCard: View {
                         }
 
                         Text(channel.name)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.app(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                     }
@@ -39,7 +39,7 @@ struct RecentChannelCard: View {
                         HStack(spacing: 5) {
                             PulsingLiveDot(size: 5)
                             Text(now.formattedTimeRange)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.app(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
                     }
@@ -49,7 +49,7 @@ struct RecentChannelCard: View {
 
                 if let now = nowNext?.now, let remaining = now.remainingMinutes(at: .now) {
                     Text("noch \(remaining)m")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.app(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentLive)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -62,7 +62,7 @@ struct RecentChannelCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .top) {
                         Text(now.title)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.app(size: 13, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
@@ -73,7 +73,7 @@ struct RecentChannelCard: View {
                             onShowInfo(now)
                         } label: {
                             Image(systemName: "info.circle")
-                                .font(.system(size: 13))
+                                .font(.app(size: 13))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .padding(2)
                         }
@@ -113,9 +113,9 @@ struct RecentChannelCard: View {
             HStack {
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.app(size: 10, weight: .bold))
                     Text("Fortsetzen")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.app(size: 11, weight: .bold))
                         .lineLimit(1)
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -129,7 +129,7 @@ struct RecentChannelCard: View {
 
                 if let next = nowNext?.next {
                     Text("Danach: \(next.title)")
-                        .font(.system(size: 10))
+                        .font(.app(size: 10))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .lineLimit(1)
                         .frame(maxWidth: 110, alignment: .trailing)

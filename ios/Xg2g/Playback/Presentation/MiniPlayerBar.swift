@@ -46,13 +46,13 @@ struct MiniPlayerBar: View {
                     HStack(spacing: 6) {
                         PulsingLiveDot(size: 6)
                         Text(channel.name)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.app(size: 13, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
                         if let plan = playbackManager.displayedPlan {
                             Text(plan.userSummary)
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 9, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -70,21 +70,21 @@ struct MiniPlayerBar: View {
                             .fill(Theme.Colors.accentAction.opacity(0.2))
                             .frame(width: 36, height: 36)
                         Image(systemName: "film.stack.fill")
-                            .font(.system(size: 16))
+                            .font(.app(size: 16))
                             .foregroundStyle(Theme.Colors.accentAction)
                     }
                 ),
                 eyebrow: AnyView(
                     HStack(spacing: 6) {
                         Text("AUFNAHME")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .font(.app(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentAction)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Theme.Colors.accentAction.opacity(0.15), in: Capsule())
 
                         Text(rec.recording.title)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.app(size: 13, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                     }
@@ -106,7 +106,7 @@ struct MiniPlayerBar: View {
                     eyebrow
 
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .font(.app(size: 12))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
                 }
@@ -125,7 +125,7 @@ struct MiniPlayerBar: View {
                 playbackManager.togglePlayPause()
             } label: {
                 Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .background(Color.white.opacity(0.12), in: Circle())
@@ -138,7 +138,7 @@ struct MiniPlayerBar: View {
                 playbackManager.stop()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.app(size: 12, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .background(Theme.Colors.statusError.opacity(0.85), in: Circle())

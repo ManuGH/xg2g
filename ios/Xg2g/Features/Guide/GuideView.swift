@@ -60,7 +60,10 @@ struct GuideView: View {
                 ToolbarItem(placement: .principal) { modePicker }
                 ToolbarItem(placement: .topBarTrailing) { genreMenu }
             }
+#if !os(tvOS)
+            // tvOS routes search through its own tab (`SearchView`).
             .searchable(text: $guideSearchText, prompt: "Sendung oder Sender suchen…")
+#endif
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
@@ -129,9 +132,9 @@ struct GuideView: View {
             } label: {
                 HStack(spacing: 5) {
                     Text(dayTitle(for: selectedDayOffset))
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.app(size: 13, weight: .bold))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.app(size: 10, weight: .bold))
                 }
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .padding(.horizontal, 11)
@@ -151,7 +154,7 @@ struct GuideView: View {
                             }
                         } label: {
                             Text(option.rawValue)
-                                .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
+                                .font(.app(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 6)
                                 .background(
@@ -221,7 +224,7 @@ struct GuideView: View {
             }
         } label: {
             Image(systemName: "tv.badge.wifi")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Colors.accentAction)
         }
         .accessibilityLabel("Senderliste: \(model.selectedBouquet?.name ?? "Alle Sender")")
@@ -245,7 +248,7 @@ struct GuideView: View {
             }
         } label: {
             Image(systemName: selectedGenre == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
         }
         .accessibilityLabel("Genre: \(selectedGenre.rawValue)")

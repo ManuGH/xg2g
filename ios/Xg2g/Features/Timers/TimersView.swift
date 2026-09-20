@@ -107,7 +107,7 @@ struct TimerRow: View {
                         if timer.isRunning {
                             PulsingLiveDot(size: 5)
                             Text("NIMMT AUF")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(.app(size: 9, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.statusError)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -115,7 +115,7 @@ struct TimerRow: View {
                         }
 
                         Text(timer.name)
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.app(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                     }
@@ -137,7 +137,7 @@ struct TimerRow: View {
 
             HStack {
                 Label(timer.formattedTimeRange, systemImage: "calendar")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.app(size: 11, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
 
                 Spacer()

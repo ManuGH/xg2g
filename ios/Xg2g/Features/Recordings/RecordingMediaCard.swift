@@ -30,7 +30,7 @@ struct RecordingMediaCard: View {
                         .overlay(
                             // Watermark Genre Icon
                             Image(systemName: palette.icon)
-                                .font(.system(size: 72, weight: .ultraLight))
+                                .font(.app(size: 72, weight: .ultraLight))
                                 .foregroundStyle(palette.accent.opacity(0.15))
                                 .offset(x: 35, y: -10),
                             alignment: .trailing
@@ -54,7 +54,7 @@ struct RecordingMediaCard: View {
                         HStack(spacing: 6) {
                             // Genre Badge
                             Text(palette.label)
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.app(size: 9, weight: .bold))
                                 .foregroundStyle(palette.accent)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
@@ -65,7 +65,7 @@ struct RecordingMediaCard: View {
 
                             // Format Badge
                             Text("1080i")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(.app(size: 9, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
@@ -86,7 +86,7 @@ struct RecordingMediaCard: View {
                             .shadow(color: Color.black.opacity(0.35), radius: 6, y: 2)
 
                         Image(systemName: hasResume ? "play.fill" : "play.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.app(size: 16, weight: .bold))
                             .foregroundStyle(hasResume ? Theme.Colors.accentAction : Color.white)
                             .offset(x: 1.5)
                     }
@@ -95,21 +95,21 @@ struct RecordingMediaCard: View {
                     // Bottom Content Overlay
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recording.title)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.app(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                             .shadow(color: .black.opacity(0.9), radius: 3, y: 1)
 
                         HStack(spacing: 6) {
                             Text(recording.formattedDate)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.app(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             Text("•")
                                 .foregroundStyle(Theme.Colors.textDisabled)
 
                             Text(recording.formattedDuration)
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(palette.accent)
 
                             if hasResume {
@@ -117,7 +117,7 @@ struct RecordingMediaCard: View {
                                     .foregroundStyle(Theme.Colors.textDisabled)
                                 let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
                                 Text("Noch \(remainingMin)m")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .font(.app(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                             }
                         }
@@ -152,12 +152,12 @@ struct RecordingMediaCard: View {
                 HStack(spacing: 8) {
                     if let desc = recording.description, !desc.isEmpty {
                         Text(desc)
-                            .font(.system(size: 11))
+                            .font(.app(size: 11))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)
                     } else {
                         Text("Aufnahme bereit")
-                            .font(.system(size: 11))
+                            .font(.app(size: 11))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
 
@@ -166,7 +166,7 @@ struct RecordingMediaCard: View {
                     // Info Button
                     Button(action: onShowInfo) {
                         Image(systemName: "info.circle")
-                            .font(.system(size: 15))
+                            .font(.app(size: 15))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .padding(4)
                     }

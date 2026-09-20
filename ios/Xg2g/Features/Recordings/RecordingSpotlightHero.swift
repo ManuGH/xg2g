@@ -30,7 +30,7 @@ struct RecordingSpotlightHero: View {
                     .overlay(
                         // Ambient Watermark Icon
                         Image(systemName: palette.icon)
-                            .font(.system(size: 140, weight: .ultraLight))
+                            .font(.app(size: 140, weight: .ultraLight))
                             .foregroundStyle(palette.accent.opacity(0.12))
                             .offset(x: 80, y: -20),
                         alignment: .trailing
@@ -55,9 +55,9 @@ struct RecordingSpotlightHero: View {
                         // Badge: WEITERSCHAUEN / NEUESTE AUFNAHME
                         HStack(spacing: 5) {
                             Image(systemName: hasResume ? "play.circle.fill" : "sparkles.tv")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.app(size: 10, weight: .bold))
                             Text(hasResume ? "WEITERSCHAUEN" : "NEUESTE AUFNAHME")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(hasResume ? Theme.Colors.accentAction : palette.accent)
                         .padding(.horizontal, 9)
@@ -70,11 +70,11 @@ struct RecordingSpotlightHero: View {
                         // Tech Specs: 1080i HD • 5.1 Dolby
                         HStack(spacing: 4) {
                             Text("1080i")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                             Text("•")
                                 .foregroundStyle(Theme.Colors.textDisabled)
                             Text("5.1")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .padding(.horizontal, 8)
@@ -91,7 +91,7 @@ struct RecordingSpotlightHero: View {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recording.title)
-                            .font(.system(size: 22, weight: .heavy))
+                            .font(.app(size: 22, weight: .heavy))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(2)
                             .shadow(color: .black.opacity(0.8), radius: 4, y: 2)
@@ -107,14 +107,14 @@ struct RecordingSpotlightHero: View {
 
                         HStack(spacing: 8) {
                             Text(recording.formattedDate)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .font(.app(size: 12, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             Text("•")
                                 .foregroundStyle(Theme.Colors.textDisabled)
 
                             Text(recording.formattedDuration)
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 12, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(palette.accent)
 
                             if hasResume {
@@ -122,7 +122,7 @@ struct RecordingSpotlightHero: View {
                                     .foregroundStyle(Theme.Colors.textDisabled)
                                 let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
                                 Text("Noch \(remainingMin)m verbleibend")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .font(.app(size: 12, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                             }
                         }
@@ -159,9 +159,9 @@ struct RecordingSpotlightHero: View {
                         Button(action: onPlay) {
                             HStack(spacing: 8) {
                                 Image(systemName: hasResume ? "play.fill" : "play.circle.fill")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .font(.app(size: 15, weight: .bold))
                                 Text(hasResume ? "Fortsetzen bei \(RecordingTimeFormatter.string(from: resumePos))" : "Jetzt abspielen")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.app(size: 14, weight: .bold))
                             }
                             .padding(.horizontal, 20)
                             .padding(.vertical, 12)
@@ -176,9 +176,9 @@ struct RecordingSpotlightHero: View {
                         Button(action: onShowInfo) {
                             HStack(spacing: 6) {
                                 Image(systemName: "info.circle")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.app(size: 14, weight: .semibold))
                                 Text("Details")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.app(size: 13, weight: .semibold))
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)

@@ -19,7 +19,7 @@ struct ServerSetupView: View {
                 Spacer()
 
                 Image(systemName: "tv")
-                    .font(.system(size: 64))
+                    .font(.app(size: 64))
                     .foregroundStyle(Theme.Colors.accentAction)
                     .padding()
                     .background(Theme.Colors.surfaceGlass, in: Circle())

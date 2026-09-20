@@ -34,12 +34,25 @@ struct RootContentView: View {
             get: { playbackManager.presentationMode == .fullscreen && playbackManager.currentChannel != nil },
             set: { isPresented in
                 if !isPresented && playbackManager.presentationMode == .fullscreen {
+#if os(tvOS)
+                    // Menu leaves the player. A mini-player bar over the
+                    // list is a phone idiom; on a television leaving means
+                    // stopping, and "Zuletzt gespielt" on the hub resumes.
+                    playbackManager.stop()
+#else
                     playbackManager.minimize()
+#endif
                 }
             }
         )) {
             if let channel = playbackManager.currentChannel {
                 LivePlayerScreen(model: model, playbackManager: playbackManager, channel: channel)
+#if os(tvOS)
+                    // tvOS lays the cover out inside the 80/60 pt overscan
+                    // insets, which leaves the hub visible around the video.
+                    // A television player owns the whole panel.
+                    .ignoresSafeArea()
+#endif
             }
         }
         .fullScreenCover(item: Binding(

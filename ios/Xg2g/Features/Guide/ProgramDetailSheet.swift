@@ -92,7 +92,7 @@ struct ProgramDetailSheet: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "chevron.left")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.app(size: 11, weight: .bold))
                                     if let prev = previousEntry {
                                         Text(prev.title)
                                             .lineLimit(1)
@@ -112,7 +112,7 @@ struct ProgramDetailSheet: View {
                             Spacer()
 
                             Text("\(currentIndex + 1) von \(allShows.count)")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.app(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
 
                             Spacer()
@@ -129,7 +129,7 @@ struct ProgramDetailSheet: View {
                                         Text("Danach")
                                     }
                                     Image(systemName: "chevron.right")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.app(size: 11, weight: .bold))
                                 }
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(hasNext ? Theme.Colors.textPrimary : Theme.Colors.textDisabled)
@@ -158,7 +158,7 @@ struct ProgramDetailSheet: View {
                                         .foregroundStyle(Theme.Colors.textPrimary)
 
                                     Text(currentEntry.formattedDayHeader)
-                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
 
                                     Text("\(currentEntry.formattedTimeRange) (\(currentEntry.durationMinutes) Min)")
@@ -362,7 +362,7 @@ struct ExpandableRerunCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text(rerun.channel.name)
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.app(size: 13, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             Text("•")
@@ -370,7 +370,7 @@ struct ExpandableRerunCard: View {
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             Text(rerun.formattedRelativeTime)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
                         }
 
@@ -390,7 +390,7 @@ struct ExpandableRerunCard: View {
                     Spacer()
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.app(size: 11, weight: .bold))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
@@ -409,25 +409,25 @@ struct ExpandableRerunCard: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text(rerun.entry.title)
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.app(size: 14, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             Spacer()
 
                             Text("\(rerun.entry.formattedTimeRange) (\(rerun.entry.durationMinutes) Min)")
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .font(.app(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
 
                         if let desc = rerun.entry.description, !desc.isEmpty {
                             Text(desc)
-                                .font(.system(size: 13))
+                                .font(.app(size: 13))
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .lineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
                             Text("Keine separate Folgen-Beschreibung vorhanden.")
-                                .font(.system(size: 12))
+                                .font(.app(size: 12))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
                     }
@@ -452,11 +452,11 @@ struct ExpandableRerunCard: View {
                             } else if recordSuccess {
                                 Image(systemName: "checkmark")
                                 Text("Folge programmiert")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                             } else {
                                 Image(systemName: "record.circle")
                                 Text("Diese Folge aufnehmen")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                             }
                             Spacer()
                         }

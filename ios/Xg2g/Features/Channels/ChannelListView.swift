@@ -66,7 +66,7 @@ struct ChannelListView: View {
                                 HStack(spacing: 5) {
                                     PulsingLiveDot(size: 6)
                                     Text("Jetzt Live")
-                                        .font(.system(size: 13, weight: isNow ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isNow ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -91,9 +91,9 @@ struct ChannelListView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: isFav ? "star.fill" : "star")
-                                            .font(.system(size: 11))
+                                            .font(.app(size: 11))
                                         Text("Favoriten")
-                                            .font(.system(size: 13, weight: isFav ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isFav ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 7)
@@ -114,9 +114,9 @@ struct ChannelListView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "popcorn.fill")
-                                        .font(.system(size: 11))
+                                        .font(.app(size: 11))
                                     Text("20:15")
-                                        .font(.system(size: 13, weight: isPrime ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isPrime ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -136,9 +136,9 @@ struct ChannelListView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "moon.fill")
-                                        .font(.system(size: 11))
+                                        .font(.app(size: 11))
                                     Text("22:00")
-                                        .font(.system(size: 13, weight: isLate ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isLate ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -163,9 +163,9 @@ struct ChannelListView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: genre.icon)
-                                            .font(.system(size: 11))
+                                            .font(.app(size: 11))
                                         Text(genre.rawValue)
-                                            .font(.system(size: 13, weight: isGenreSelected ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isGenreSelected ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 7)
@@ -267,7 +267,7 @@ struct ChannelListView: View {
                                         Spacer()
 
                                         Text("\(currentChannels.count) Sender")
-                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                     }
                                     .padding(.horizontal, 2)
@@ -441,7 +441,7 @@ struct ChannelListView: View {
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Image(systemName: "chevron.down.circle.fill")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.app(size: 13, weight: .semibold))
                                 .foregroundStyle(Theme.Colors.accentAction)
                         }
                         .padding(.horizontal, 10)
@@ -461,7 +461,7 @@ struct ChannelListView: View {
                         }
                     } label: {
                         Image(systemName: model.selectedGenre == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .font(.system(size: 19))
+                            .font(.app(size: 19))
                             .foregroundStyle(model.selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
                     }
                 }

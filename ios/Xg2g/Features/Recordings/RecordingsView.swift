@@ -71,18 +71,18 @@ struct RecordingsView: View {
                                                 .font(.caption2)
                                         }
                                         Text(filter.rawValue)
-                                            .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isSelected ? .bold : .medium))
 
                                         // Badge count for all or downloads
                                         if filter == .all && !model.recordings.isEmpty {
                                             Text("\(model.recordings.count)")
-                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                                 .padding(.horizontal, 5)
                                                 .padding(.vertical, 1)
                                                 .background(isSelected ? Theme.Colors.bgBase.opacity(0.3) : Theme.Colors.surfaceElevated, in: Capsule())
                                         } else if filter == .offline && !downloadManager.offlineRecordings.isEmpty {
                                             Text("\(downloadManager.offlineRecordings.count)")
-                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                                 .padding(.horizontal, 5)
                                                 .padding(.vertical, 1)
                                                 .background(isSelected ? Theme.Colors.bgBase.opacity(0.3) : Theme.Colors.statusSuccess.opacity(0.25), in: Capsule())
@@ -265,7 +265,7 @@ struct RecordingsView: View {
                         Spacer()
 
                         Text("\(filtered.count) Videos")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .font(.app(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .padding(.horizontal, 2)

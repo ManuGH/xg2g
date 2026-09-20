@@ -74,7 +74,7 @@ struct HomeHubView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
                         Image(systemName: "sparkles.tv")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.app(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.Colors.accentLive)
                         Text("xg2g TV")
                             .font(.headline.weight(.bold))
@@ -86,7 +86,7 @@ struct HomeHubView: View {
                     HStack(spacing: 8) {
                         // Playback Engine Badge
                         Text(model.playbackEngine == .native ? "NATIVE TS" : "HLS")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .font(.app(size: 9, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2.5)
                             .background(
@@ -199,16 +199,16 @@ struct HomeHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "moon.stars.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.app(size: 12, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
                 Text("HEUTE 20:15 UHR")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.app(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
 
                 Text("Prime Time")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.app(size: 11, weight: .medium))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
 
@@ -241,10 +241,10 @@ struct HomeHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "play.rectangle.on.rectangle.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.app(size: 12, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
                 Text("AUFNAHMEN")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.app(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
@@ -253,7 +253,7 @@ struct HomeHubView: View {
                     model.selectedTab = .recordings
                 } label: {
                     Text("Alle anzeigen")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
             }
@@ -325,25 +325,25 @@ private struct HomePrimeTimeCard: View {
                 ChannelLogo(url: pick.channel.logoURL, name: pick.channel.name, size: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(pick.channel.name)
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.app(size: 12, weight: .bold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(1)
                     Text("20:15 Uhr")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.app(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
                 Spacer()
             }
 
             Text(pick.entry.title)
-                .font(.system(size: 13, weight: .bold))
+                .font(.app(size: 13, weight: .bold))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
                 .frame(height: 34, alignment: .topLeading)
 
             if let desc = pick.entry.description, !desc.isEmpty {
                 Text(desc)
-                    .font(.system(size: 11))
+                    .font(.app(size: 11))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(2)
                     .frame(height: 28, alignment: .topLeading)
@@ -354,9 +354,9 @@ private struct HomePrimeTimeCard: View {
             Button(action: onRecord) {
                 HStack(spacing: 5) {
                     Image(systemName: "record.circle")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.app(size: 11, weight: .bold))
                     Text("Aufnehmen")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.app(size: 11, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
@@ -388,25 +388,25 @@ private struct HomeRecordingCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(recording.formattedDuration)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.app(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                     Spacer()
                     Image(systemName: "play.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.app(size: 16))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
 
                 Text(recording.title)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)
                     .frame(height: 34, alignment: .topLeading)
 
                 Text(recording.formattedDate)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.app(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .padding(12)

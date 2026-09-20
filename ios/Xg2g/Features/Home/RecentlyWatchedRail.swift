@@ -16,16 +16,16 @@ struct RecentlyWatchedRail: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.app(size: 11, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
                 Text("ZULETZT GESPIELT")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.app(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
 
                 Text("\(channels.count) Sender")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.app(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .padding(.horizontal, 2)

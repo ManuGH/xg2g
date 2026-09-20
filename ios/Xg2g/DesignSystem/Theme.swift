@@ -148,7 +148,7 @@ struct SettingsIconBadge: View {
                 .frame(width: 28, height: 28)
 
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
         }
         .frame(width: 28, height: 28)

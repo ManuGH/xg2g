@@ -37,7 +37,7 @@ struct DownloadButton: View {
                 }
             } label: {
                 Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 22))
+                    .font(.app(size: 22))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
@@ -57,7 +57,7 @@ struct DownloadButton: View {
                         .stroke(Theme.Colors.accentAction, lineWidth: 2.5)
                         .rotationEffect(.degrees(-90))
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 8))
+                        .font(.app(size: 8))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
                 .frame(width: 22, height: 22)
@@ -68,7 +68,7 @@ struct DownloadButton: View {
 
         case .downloaded:
             Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 22))
+                .font(.app(size: 22))
                 .foregroundStyle(Theme.Colors.statusSuccess)
                 .frame(width: 36, height: 36)
         }

@@ -54,17 +54,17 @@ struct SmartSearchResultsView: View {
                                                 VStack(alignment: .leading, spacing: 1) {
                                                     if let number = channel.number {
                                                         Text("CH \(number)")
-                                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                            .font(.app(size: 9, weight: .bold, design: .monospaced))
                                                             .foregroundStyle(Theme.Colors.accentAction)
                                                     }
                                                     Text(channel.name)
-                                                        .font(.system(size: 13, weight: .bold))
+                                                        .font(.app(size: 13, weight: .bold))
                                                         .foregroundStyle(Theme.Colors.textPrimary)
                                                         .lineLimit(1)
                                                 }
 
                                                 Image(systemName: "play.circle.fill")
-                                                    .font(.system(size: 18))
+                                                    .font(.app(size: 18))
                                                     .foregroundStyle(Theme.Colors.accentAction)
                                                     .padding(.leading, 4)
                                             }
@@ -151,17 +151,17 @@ struct SmartSearchResultsView: View {
     private func sectionHeader(title: String, icon: String, count: Int, color: Color) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .bold))
+                .font(.app(size: 11, weight: .bold))
                 .foregroundStyle(color)
 
             Text(title)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.app(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textSecondary)
 
             Spacer()
 
             Text("\(count)")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(color)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -190,7 +190,7 @@ private struct LiveSearchResultCard: View {
                 ChannelLogo(url: item.channel.logoURL, name: item.channel.name, size: 26)
 
                 Text(item.channel.name)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
@@ -198,7 +198,7 @@ private struct LiveSearchResultCard: View {
                 HStack(spacing: 4) {
                     PulsingLiveDot(size: 6)
                     Text("LIVE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.app(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentLive)
                 }
                 .padding(.horizontal, 7)
@@ -209,13 +209,13 @@ private struct LiveSearchResultCard: View {
             // Title & description
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.entry.title)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.app(size: 16, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)
 
                 if let desc = item.entry.description, !desc.isEmpty {
                     Text(desc)
-                        .font(.system(size: 12))
+                        .font(.app(size: 12))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(2)
                 }
@@ -228,14 +228,14 @@ private struct LiveSearchResultCard: View {
 
                     HStack {
                         Text(item.entry.formattedTimeRange)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.app(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
 
                         Spacer()
 
                         if let rem = item.remainingMinutes {
                             Text("noch \(rem) Min")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
                     }
@@ -247,9 +247,9 @@ private struct LiveSearchResultCard: View {
                 Button(action: onPlay) {
                     HStack(spacing: 5) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.app(size: 11, weight: .bold))
                         Text("Live ansehen")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.app(size: 13, weight: .bold))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
@@ -261,9 +261,9 @@ private struct LiveSearchResultCard: View {
                 Button(action: onRecord) {
                     HStack(spacing: 4) {
                         Image(systemName: "record.circle")
-                            .font(.system(size: 12))
+                            .font(.app(size: 12))
                         Text("Aufnehmen")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.app(size: 12, weight: .medium))
                     }
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
@@ -277,7 +277,7 @@ private struct LiveSearchResultCard: View {
 
                 Button(action: onOpenDetail) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 15))
+                        .font(.app(size: 15))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .padding(6)
                 }
@@ -312,7 +312,7 @@ private struct UpcomingSearchResultCard: View {
                 // Time & Channel Header
                 HStack(spacing: 6) {
                     Text(item.formattedBadge)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -322,7 +322,7 @@ private struct UpcomingSearchResultCard: View {
                         .foregroundStyle(Theme.Colors.textDisabled)
 
                     Text(item.channel.name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.app(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
 
@@ -331,13 +331,13 @@ private struct UpcomingSearchResultCard: View {
 
                 // Show Title
                 Text(item.entry.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.app(size: 15, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)
 
                 if let desc = item.entry.description, !desc.isEmpty {
                     Text(desc)
-                        .font(.system(size: 11))
+                        .font(.app(size: 11))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .lineLimit(1)
                 }
@@ -350,9 +350,9 @@ private struct UpcomingSearchResultCard: View {
                 Button(action: onRecord) {
                     HStack(spacing: 4) {
                         Image(systemName: "record.circle")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.app(size: 12, weight: .bold))
                         Text("Timer")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.app(size: 11, weight: .bold))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
@@ -364,7 +364,7 @@ private struct UpcomingSearchResultCard: View {
 
                 Button(action: onOpenDetail) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 14))
+                        .font(.app(size: 14))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .padding(4)
                 }

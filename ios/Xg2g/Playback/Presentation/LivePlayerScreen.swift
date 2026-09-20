@@ -299,7 +299,7 @@ public struct LivePlayerScreen: View {
                                         .tint(Theme.Colors.accentLive)
                                         .scaleEffect(0.9)
                                     Text("Timeshift wird vorbereitet…")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.app(size: 12, weight: .semibold))
                                         .foregroundStyle(.white)
                                 }
                                 .padding(.horizontal, 14)
@@ -396,10 +396,10 @@ public struct LivePlayerScreen: View {
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(requested.name)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.app(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
                                     Text("Wird vorbereitet…")
-                                        .font(.system(size: 10, weight: .regular))
+                                        .font(.app(size: 10, weight: .regular))
                                         .foregroundStyle(.white.opacity(0.8))
                                 }
                             }
@@ -589,7 +589,7 @@ public struct LivePlayerScreen: View {
                         closePlayer()
                     } label: {
                         Image(systemName: isLandscape ? "xmark.circle.fill" : "chevron.down")
-                            .font(.system(size: isLandscape ? 20 : 14, weight: .bold))
+                            .font(.app(size: isLandscape ? 20 : 14, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
@@ -606,7 +606,7 @@ public struct LivePlayerScreen: View {
                         HStack(spacing: 5) {
                             if let num = currentChannel.number {
                                 Text(num)
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .font(.app(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
@@ -614,14 +614,14 @@ public struct LivePlayerScreen: View {
                             }
 
                             Text(displayedChannelName)
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.app(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
                             if engineMode == .nativeDirectLive {
                                 let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE • DIRECT"
                                 Text(liveTag)
-                                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                                    .font(.app(size: 9, weight: .black, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentLive)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1.5)
@@ -630,7 +630,7 @@ public struct LivePlayerScreen: View {
                                 HStack(spacing: 3) {
                                     let isLiveHLS = abs(timeshiftOffsetSeconds) <= 5
                                     Text(isLiveHLS ? "LIVE • HLS" : "TIMESHIFT")
-                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                        .font(.app(size: 9, weight: .black, design: .monospaced))
                                         .foregroundStyle(isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning)
                                         .padding(.horizontal, 4)
                                         .padding(.vertical, 1.5)
@@ -638,7 +638,7 @@ public struct LivePlayerScreen: View {
 
                                     if !isLiveHLS {
                                         Text(formattedTimeshiftOffset)
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .font(.app(size: 9, weight: .bold, design: .monospaced))
                                             .foregroundStyle(.white)
                                             .padding(.horizontal, 4)
                                             .padding(.vertical, 1.5)
@@ -650,7 +650,7 @@ public struct LivePlayerScreen: View {
 
                         if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
                             Text(preset.epgNow)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.app(size: 10, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.8))
                                 .lineLimit(1)
                         }
@@ -666,7 +666,7 @@ public struct LivePlayerScreen: View {
                             HStack(spacing: 4) {
                                 PulsingLiveDot(size: 5)
                                 Text("Zur Live-Kante")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.app(size: 11, weight: .bold))
                             }
                             .padding(.horizontal, 9)
                             .padding(.vertical, 6)
@@ -685,9 +685,9 @@ public struct LivePlayerScreen: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                             Text(viewPreset.shortLabel)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.app(size: 11, weight: .bold, design: .monospaced))
                         }
                         .fixedSize()
                         .foregroundStyle(.white)
@@ -707,7 +707,7 @@ public struct LivePlayerScreen: View {
                             coordinator.surface.startPictureInPicture()
                         } label: {
                             Image(systemName: "pip.enter")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.app(size: 14, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 36, height: 36)
                                 .background(.ultraThinMaterial, in: Circle())
@@ -849,7 +849,7 @@ public struct LivePlayerScreen: View {
                         }
                     } label: {
                         Image(systemName: showHUD ? "ellipsis.circle.fill" : "ellipsis.circle")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.app(size: 16, weight: .semibold))
                             .foregroundStyle(showHUD ? Theme.Colors.accentLive : Color.white)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
@@ -870,7 +870,7 @@ public struct LivePlayerScreen: View {
                         zapRelative(delta: -1)
                     } label: {
                         Image(systemName: "backward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
@@ -886,7 +886,7 @@ public struct LivePlayerScreen: View {
                         }
                     } label: {
                         Image(systemName: "gobackward.30")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
@@ -898,7 +898,7 @@ public struct LivePlayerScreen: View {
                         togglePlayPause()
                     } label: {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 30, weight: .bold))
+                            .font(.app(size: 30, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(18)
                             .background(Theme.Colors.accentAction.opacity(0.9), in: Circle())
@@ -915,7 +915,7 @@ public struct LivePlayerScreen: View {
                         }
                     } label: {
                         Image(systemName: "goforward.30")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(engineMode == .timeshiftHLS ? .white : .white.opacity(0.35))
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
@@ -928,7 +928,7 @@ public struct LivePlayerScreen: View {
                         zapRelative(delta: 1)
                     } label: {
                         Image(systemName: "forward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
@@ -966,10 +966,10 @@ public struct LivePlayerScreen: View {
                     HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Image(systemName: "waveform")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentAction)
                             Text("\(tele.audioCodec) (\(tele.audioChannels == 6 ? "5.1 Surround" : "\(tele.audioChannels) ch"))")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         .padding(.horizontal, 8)
@@ -978,12 +978,12 @@ public struct LivePlayerScreen: View {
 
                         HStack(spacing: 6) {
                             Image(systemName: "tv")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
                             let renderMode = tele.isInterlaced ? "HW Bob" : "HW Direct"
                             let scanText = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(renderMode)" : "Video \(renderMode)"
                             Text(scanText)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         .padding(.horizontal, 8)
@@ -991,7 +991,7 @@ public struct LivePlayerScreen: View {
                         .background(.ultraThinMaterial, in: Capsule())
 
                         Text(String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.app(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.7))
 
                         Spacer()
@@ -1004,9 +1004,9 @@ public struct LivePlayerScreen: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "list.bullet")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                                 Text("Sender")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12)
@@ -1025,10 +1025,10 @@ public struct LivePlayerScreen: View {
                             if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
                                 HStack(spacing: 6) {
                                     Image(systemName: "tv")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.app(size: 11, weight: .bold))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                     Text(preset.epgNow)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.app(size: 12, weight: .semibold))
                                         .foregroundStyle(.white.opacity(0.9))
                                         .lineLimit(1)
                                 }
@@ -1046,9 +1046,9 @@ public struct LivePlayerScreen: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "list.bullet")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.app(size: 14, weight: .bold))
                                     Text("Senderliste")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.app(size: 14, weight: .bold))
                                 }
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 20)
@@ -1078,7 +1078,7 @@ public struct LivePlayerScreen: View {
                         .fill(Theme.Colors.accentLive)
                         .frame(width: 6, height: 6)
                     Text("SENDERLISTE")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
 
@@ -1091,7 +1091,7 @@ public struct LivePlayerScreen: View {
                     }
                 } label: {
                     Image(systemName: "chevron.down.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.app(size: 20))
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -1167,7 +1167,7 @@ public struct LivePlayerScreen: View {
                 // Quick Zap Channel Presets
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SENDER")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     ForEach(presets) { preset in
@@ -1199,7 +1199,7 @@ public struct LivePlayerScreen: View {
                                             .controlSize(.mini)
                                             .tint(Theme.Colors.accentLive)
                                         Text("WÄRMT…")
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .font(.app(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.accentLive)
                                     }
                                     .padding(.horizontal, 6)
@@ -1207,7 +1207,7 @@ public struct LivePlayerScreen: View {
                                     .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                                 } else if isPresented {
                                     Text("AKTIV")
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .font(.app(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -1228,7 +1228,7 @@ public struct LivePlayerScreen: View {
                 // Custom Stream URL Bar
                 VStack(alignment: .leading, spacing: 8) {
                     Text("BENUTZERDEFINIERTE STREAM-URL")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     HStack(spacing: 8) {
@@ -1262,10 +1262,10 @@ public struct LivePlayerScreen: View {
     private func badgeItem(icon: String, label: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .bold))
+                .font(.app(size: 10, weight: .bold))
                 .foregroundStyle(color)
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.9))
         }
         .padding(.horizontal, 8)
@@ -1820,7 +1820,7 @@ public struct LivePlayerScreen: View {
     private func hudSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.yellow)
             content()
         }
@@ -1831,11 +1831,11 @@ public struct LivePlayerScreen: View {
     private func hudRow(_ label: String, _ value: String, highlight: Bool = false, alert: Bool = false) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.app(size: 10, design: .monospaced))
                 .foregroundStyle(Color.gray)
             Spacer()
             Text(value)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(alert ? Color.red : (highlight ? Color.green : Color.white))
         }
     }
@@ -1913,7 +1913,7 @@ struct UnplayableFormatNotice: View {
 
             VStack(spacing: 14) {
                 Image(systemName: "tv.slash")
-                    .font(.system(size: 40, weight: .light))
+                    .font(.app(size: 40, weight: .light))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Text("\(channelName) sendet in einem Format, das die Direktwiedergabe nicht darstellen kann")
@@ -1961,10 +1961,10 @@ struct TimeshiftTimelineBar: View {
                         .fill(Theme.Colors.statusWarning)
                         .frame(width: 6, height: 6)
                     Text("TIMESHIFT")
-                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .font(.app(size: 10, weight: .black, design: .monospaced))
                         .foregroundStyle(Theme.Colors.statusWarning)
                     Text(currentOffset)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white)
                 }
                 .padding(.horizontal, 8)
@@ -1977,7 +1977,7 @@ struct TimeshiftTimelineBar: View {
                     HStack(spacing: 4) {
                         PulsingLiveDot(size: 5)
                         Text("Zur Live-Kante")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.app(size: 10, weight: .bold))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)

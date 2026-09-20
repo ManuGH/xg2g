@@ -36,7 +36,7 @@ struct GuideLeadingLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+            .font(.app(size: 13, weight: .semibold, design: .monospaced))
             .foregroundStyle(isLive ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
             .frame(width: GuideMetrics.timeColumnWidth, alignment: .leading)
             .monospacedDigit()
@@ -118,13 +118,13 @@ struct GuideShowRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if showsChannel {
                         Text(channel.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.app(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(1)
                     }
 
                     Text(show.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.app(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -135,12 +135,12 @@ struct GuideShowRow: View {
                             GuideProgressBar(progress: progress)
                                 .frame(maxWidth: 120)
                             Text("noch \(remaining) Min")
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .font(.app(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
                     } else {
                         Text("\(show.durationMinutes) Min")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.app(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                 }
@@ -151,7 +151,7 @@ struct GuideShowRow: View {
 
             Button(action: onRecord) {
                 Image(systemName: "record.circle")
-                    .font(.system(size: 19))
+                    .font(.app(size: 19))
                     .foregroundStyle(Theme.Colors.statusError)
             }
             .buttonStyle(.plain)
@@ -174,7 +174,7 @@ struct GuideSlotHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(Self.formatter.string(from: start))
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .font(.app(size: 22, weight: .bold, design: .monospaced))
                 .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
                 .monospacedDigit()
 
@@ -183,7 +183,7 @@ struct GuideSlotHeader: View {
             }
 
             Text("\(count) \(count == 1 ? "Sendung" : "Sendungen")")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.app(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textTertiary)
 
             Spacer()

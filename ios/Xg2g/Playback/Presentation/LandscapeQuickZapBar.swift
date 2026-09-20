@@ -22,7 +22,7 @@ struct LandscapeQuickZapBar: View {
                         .fill(Theme.Colors.accentLive)
                         .frame(width: 6, height: 6)
                     Text("SCHNELL-ZAPPING")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
 
@@ -30,7 +30,7 @@ struct LandscapeQuickZapBar: View {
 
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
+                        .font(.app(size: 18))
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -57,17 +57,17 @@ struct LandscapeQuickZapBar: View {
                                         HStack(spacing: 5) {
                                             if let num = ch.number {
                                                 Text(num)
-                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                    .font(.app(size: 11, weight: .bold, design: .monospaced))
                                                     .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
                                             }
                                             Text(ch.name)
-                                                .font(.system(size: 13, weight: .bold))
+                                                .font(.app(size: 13, weight: .bold))
                                                 .foregroundStyle(isCurrent ? .white : Theme.Colors.textPrimary)
                                                 .lineLimit(1)
 
                                             if isCurrent {
                                                 Text("LIVE")
-                                                    .font(.system(size: 8, weight: .black, design: .monospaced))
+                                                    .font(.app(size: 8, weight: .black, design: .monospaced))
                                                     .foregroundStyle(.white)
                                                     .padding(.horizontal, 4)
                                                     .padding(.vertical, 1)
@@ -77,7 +77,7 @@ struct LandscapeQuickZapBar: View {
 
                                         if let title = nowEntry?.title {
                                             Text(title)
-                                                .font(.system(size: 11, weight: .medium))
+                                                .font(.app(size: 11, weight: .medium))
                                                 .foregroundStyle(isCurrent ? Color.white.opacity(0.9) : Theme.Colors.textSecondary)
                                                 .lineLimit(1)
                                         }
