@@ -56,6 +56,8 @@ public struct LivePlayerScreen: View {
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
+    @State private var zappingOSDChannel: ChannelPreset?
+    @State private var hideZapOSDTask: Task<Void, Never>?
     @State private var currentSubtitleImage: CGImage?
     @State private var verticalDragOffset: CGFloat = 0
     @State private var isDraggingDown: Bool = false
@@ -431,8 +433,13 @@ public struct LivePlayerScreen: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
                     }
-                    .overlay(alignment: .center) {
-                        if let zapToast {
+                    .overlay(alignment: .bottom) {
+                        if let osd = zappingOSDChannel {
+                            zappingOSDBanner(for: osd)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, isLandscape ? 28 : (showPortraitDrawer ? 20 : 80))
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else if let zapToast {
                             Text(zapToast)
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(.white)
@@ -441,6 +448,7 @@ public struct LivePlayerScreen: View {
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                 .shadow(color: Color.black.opacity(0.4), radius: 8)
+                                .padding(.bottom, isLandscape ? 36 : 90)
                                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                         }
                     }
@@ -1747,6 +1755,7 @@ public struct LivePlayerScreen: View {
     }
 
     private func switchTo(preset: ChannelPreset) {
+        displayZappingOSD(preset)
         if model?.playbackEngine == .hls {
             teardownTimeshift()
             currentChannelName = preset.name
@@ -2085,6 +2094,117 @@ public struct LivePlayerScreen: View {
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.25)) {
                 zapToast = nil
+            }
+        }
+    }
+
+    private func displayZappingOSD(_ preset: ChannelPreset) {
+        hideZapOSDTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            zappingOSDChannel = preset
+        }
+        hideZapOSDTask = Task {
+            try? await Task.sleep(for: .milliseconds(2800))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                zappingOSDChannel = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func zappingOSDBanner(for preset: ChannelPreset) -> some View {
+        let channel = model?.channels.first(where: { $0.serviceRef == preset.serviceRef || $0.name == preset.name })
+        let nowNext = model?.schedule[preset.serviceRef]
+        let showTitle = (nowNext?.now?.title.isEmpty == false) ? nowNext!.now!.title : (!preset.epgNow.isEmpty ? preset.epgNow : "Live-Kanal wiedergeben")
+
+        HStack(spacing: 12) {
+            ChannelLogo(url: channel?.logoURL ?? logoURL(forPreset: preset), name: preset.name, size: 42)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    if let number = channel?.number {
+                        Text(number)
+                            .font(.app(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text(preset.name)
+                        .font(.app(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Text("LIVE")
+                        .font(.app(size: 9, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.Colors.accentLive)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+
+                    Spacer()
+
+                    if let now = nowNext?.now, let rem = now.remainingMinutes(at: .now) {
+                        Text("noch \(rem) Min")
+                            .font(.app(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                    }
+                }
+
+                HStack {
+                    Text(showTitle)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    if let next = nowNext?.next {
+                        Text("Danach: \(next.title)")
+                            .font(.app(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                }
+
+                if let fraction = nowNext?.now?.progress(at: .now) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.15)).frame(height: 2.5)
+                            Capsule()
+                                .fill(LinearGradient(colors: [Theme.Colors.accentAction, Theme.Colors.accentLive], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(fraction))), height: 2.5)
+                        }
+                    }
+                    .frame(height: 2.5)
+                    .padding(.top, 1)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 540)
+        .background(
+            LinearGradient(
+                colors: [
+                    Theme.Colors.surfaceElevated.opacity(0.96),
+                    Color(red: 0.07, green: 0.09, blue: 0.14).opacity(0.96)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.Gradients.liveAuraBorder, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.5), radius: 16, y: 6)
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.2)) {
+                zappingOSDChannel = nil
             }
         }
     }

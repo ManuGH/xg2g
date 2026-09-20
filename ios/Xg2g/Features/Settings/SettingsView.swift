@@ -205,24 +205,36 @@ struct SettingsView: View {
                             }
                         }
 
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Receiver-Adresse (Experten-Fallback)")
-                                    .foregroundStyle(Theme.Colors.textPrimary)
+#if !os(tvOS)
+                        DisclosureGroup {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Direkter Receiver-Stream (Port 8001)")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
                                 TextField(ServerAddress.receiverPlaceholder, text: $model.receiverStreamBaseURL)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                     .keyboardType(.URL)
                                     .font(.subheadline.monospaced())
                                     .foregroundStyle(Theme.Colors.textSecondary)
+                                    .padding(8)
+                                    .background(Theme.Colors.bgBase, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .padding(.vertical, 4)
+                        } label: {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
+                                Text("Experten-Fallback (Direct Ingest)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
                             }
                         }
+#endif
                     } header: {
                         Text("Verbindung & Infrastruktur")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Die Receiver-Adresse dient ausschließlich als optionaler lokaler Fallback für unmanaged Direct-Ingest im Heimnetz. Standardmäßig koordiniert xg2g alle Streams.")
+                        Text("xg2g koordiniert alle Streams und Senderlisten automatisch über den Server.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }

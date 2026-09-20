@@ -68,12 +68,15 @@ struct PairingView: View {
                             .padding(.top, 8)
                         }
                     } else if isStarting {
-                        VStack(spacing: 12) {
+                        VStack(spacing: 8) {
                             ProgressView()
                                 .tint(Theme.Colors.accentAction)
-                            Text("Generiere P-256 Hardwareschlüssel & starte Kopplung…")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                            Text("Sichere Verbindung wird eingerichtet…")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text("Schlüsselspeicher wird vorbereitet")
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
                         .padding(.vertical, 24)
                     } else {
