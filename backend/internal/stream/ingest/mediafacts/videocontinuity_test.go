@@ -71,10 +71,10 @@ func TestVideoContinuity_ExactDuplicate_DroppedWithoutCorruptingSequence(t *test
 }
 
 // 3. Discontinuity Indicator (DI) hardening:
-// - An announced CC jump on a continuation packet (pusi=false) breaks the in-flight AU,
-//   forces videoAwaitingStart, but counts physical clear packets.
-// - An announced CC jump on a PUSI packet (pusi=true) breaks prior AU boundary,
-//   but cleanly starts a new PES without forcing videoAwaitingStart.
+//   - An announced CC jump on a continuation packet (pusi=false) breaks the in-flight AU,
+//     forces videoAwaitingStart, but counts physical clear packets.
+//   - An announced CC jump on a PUSI packet (pusi=true) breaks prior AU boundary,
+//     but cleanly starts a new PES without forcing videoAwaitingStart.
 func TestVideoContinuity_DiscontinuityIndicator_MidAU_BreaksAU(t *testing.T) {
 	b := vNew("test", "test", videoTSProgram)
 	core := NewGoCore(videoTSProgram)
@@ -933,4 +933,3 @@ func TestVideoContinuity_MPEG2PendingPictureHeader_BrokenPUSIBoundaryCannotLeave
 		t.Fatalf("expected videoAwaitingStart=true (conflicting PUSI quarantined)")
 	}
 }
-
