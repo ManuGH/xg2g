@@ -7,6 +7,7 @@ package remotecore
 import (
 	"bytes"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
@@ -165,6 +166,9 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	if len(f.AudioPIDs) != 1 || f.AudioPIDs[0] != 258 {
 		t.Errorf("audio PIDs %v", f.AudioPIDs)
 	}
+	if !reflect.DeepEqual(f.Scrambling.AudioPIDs, f.AudioPIDs) {
+		t.Errorf("scrambling audio PIDs %v, want %v", f.Scrambling.AudioPIDs, f.AudioPIDs)
+	}
 	if len(f.AudioTracks) != 1 {
 		t.Fatalf("%d audio tracks", len(f.AudioTracks))
 	}
@@ -269,6 +273,7 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 		{"empty body", nil},
 		{"status only", good[:1]},
 		{"coverage unknown", replace(1, 0x00)},
+		{"coverage psi-only", replace(1, 0x01)},
 		{"coverage complete", replace(1, 0x02)},
 		{"coverage nobody defined", replace(1, 0x7F)},
 		{"an offset past what an offset can be", replace(2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)},

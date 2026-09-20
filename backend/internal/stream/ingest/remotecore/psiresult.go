@@ -169,10 +169,12 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 	}
 	var parsed mediafacts.ParseResult
 	switch rawCoverage {
-	case wireCoveragePSIOnly:
-		parsed.Coverage = mediafacts.ParseCoveragePSIOnly
 	case wireCoveragePSIVideo:
 		parsed.Coverage = mediafacts.ParseCoveragePSIVideo
+	case wireCoveragePSIOnly:
+		return mediafacts.ParseResult{}, fmt.Errorf(
+			"%w: peer claims psi-only coverage, which is not valid in protocol v4",
+			mediafacts.ErrCoreInvalidResponse)
 	case wireCoverageComplete:
 		// Refused rather than accepted. Nothing on the other side of this
 		// protocol reads anything but PSI, so a peer claiming to cover the whole
@@ -321,6 +323,7 @@ func decodeFacts(r *reader) (mediafacts.Facts, error) {
 	if f.AudioPIDs, err = decodeAudioPIDs(r); err != nil {
 		return f, err
 	}
+	f.Scrambling.AudioPIDs = append([]uint16(nil), f.AudioPIDs...)
 	if f.AudioTracks, err = decodeAudioTracks(r); err != nil {
 		return f, err
 	}
