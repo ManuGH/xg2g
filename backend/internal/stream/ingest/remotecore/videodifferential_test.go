@@ -8,12 +8,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -529,29 +527,6 @@ func TestVideoDifferential_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	}
 }
 
-type darwinTestIdentity struct {
-	pid int
-}
-
-func (d *darwinTestIdentity) SignalGroup(sig syscall.Signal) error {
-	return syscall.Kill(-d.pid, sig)
-}
-
-func (d *darwinTestIdentity) GroupExists() (bool, error) {
-	err := syscall.Kill(-d.pid, 0)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, syscall.ESRCH) {
-		return false, nil
-	}
-	return false, err
-}
-
-func (d *darwinTestIdentity) Close() error {
-	return nil
-}
-
 func requireVideoRealCore(t *testing.T) string {
 	t.Helper()
 	bin := os.Getenv("XG2G_MEDIA_CORE_BIN")
@@ -622,12 +597,12 @@ func TestVideoDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 					t.Fatalf("step %d (%s): the real core failed: %v", i+1, step, rustErr)
 				}
 
-				// Coverage assertion: Reference is ParseCoverageComplete, Rust is ParseCoveragePSIVideo
+				// Coverage assertion: Reference and Rust are both ParseCoverageComplete
 				if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("step %d: the reference reported coverage %s, want complete", i+1, goRes.Coverage)
 				}
-				if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
-					t.Fatalf("step %d: the real core reported coverage %s, want psi+video", i+1, rustRes.Coverage)
+				if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
+					t.Fatalf("step %d: the real core reported coverage %s, want complete", i+1, rustRes.Coverage)
 				}
 
 				// Offset assertion

@@ -25,6 +25,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/receivertopology/topologytest"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -79,7 +80,7 @@ func TestPipeline_CoalescedDial_20ConcurrentAcquires(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		atomic.AddInt32(&dialCount, 1)
 		pr, pw := io.Pipe()
@@ -150,7 +151,7 @@ func TestPipeline_UpstreamDies_ReacquireRedialsHealthyPipeline(t *testing.T) {
 	var pipeWriterMu sync.Mutex
 	var activePipeWriter io.Closer
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 
@@ -246,7 +247,7 @@ func TestPipeline_ImmediateUpstreamEOF_BeforeWatcherRegistration_EvictsSession(t
 		samplePkt := make([]byte, ring.TSPacketSize)
 		samplePkt[0] = ring.SyncByte
 
-		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg := DefaultTestConnectorConfig("", 8001)
 		connectorCfg.NormConfig.StartupReservoirMs = 0.0
 		connectorCfg.NormConfig.PacerIntervalMs = 5.0
 
@@ -368,7 +369,7 @@ func TestPipeline_PrimedAttachWithoutKeyframeFailsDeterministically(t *testing.T
 	normCfg := normalizer.DefaultConfig()
 	normCfg.StartupReservoirMs = 0.0
 
-	pipe, err := NewSessionPipeline(normCfg, 10000*ring.TSPacketSize, 0)
+	pipe, err := NewSessionPipelineWithCore(normCfg, 10000*ring.TSPacketSize, mediafacts.NewGoCore(0), nil)
 	if err != nil {
 		t.Fatalf("create pipeline failed: %v", err)
 	}
@@ -447,7 +448,7 @@ func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.RingCapacity = smallRingCapacity
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
@@ -564,7 +565,7 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
@@ -642,7 +643,7 @@ func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
 		t.Fatalf("read capture failed: %v", err)
 	}
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 50.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 	connectorCfg.NormConfig.InitialBitrateKbps = 20000.0
@@ -773,7 +774,7 @@ func TestPipeline_TopologyAdmissionFailed_ZeroDials(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 	connectorCfg.TopologyService = topSvc
@@ -840,7 +841,7 @@ func TestPipeline_TopologyAdmissionSucceeds_DialFails_ReleasesLease(t *testing.T
 	}
 	topologytest.SeedService(t, topSvc)
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		return nil, errors.New("simulated network connection refused")
@@ -879,7 +880,7 @@ func TestPipeline_TopologyCoalescedLease_20SubscribersOneLease(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		atomic.AddInt32(&dialCount, 1)
@@ -936,7 +937,7 @@ func TestPipeline_TopologyWarmHold_PreservesLease(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		atomic.AddInt32(&dialCount, 1)
@@ -1003,7 +1004,7 @@ func TestPipeline_TopologyUpstreamEOF_ReleasesLeaseImmediately(t *testing.T) {
 	var activePipeWriter io.Closer
 	var pwMu sync.Mutex
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		pr, pw := io.Pipe()
@@ -1057,7 +1058,7 @@ func TestPipeline_TopologyLease_ConcurrentTeardownReleasesExactlyOnce(t *testing
 	}
 	topologytest.SeedService(t, topSvc)
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		pr, pw := io.Pipe()
@@ -1106,7 +1107,7 @@ func TestPipeline_TransponderSharing_SameRFMultiplexSharesDemod(t *testing.T) {
 	samplePkt := make([]byte, ring.TSPacketSize)
 	samplePkt[0] = ring.SyncByte
 
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
 	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		atomic.AddInt32(&dialCount, 1)
@@ -1172,7 +1173,7 @@ func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *te
 		}
 		topologytest.SeedService(t, topSvc)
 
-		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg := DefaultTestConnectorConfig("", 8001)
 		connectorCfg.TopologyService = topSvc
 		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 			pr, pw := io.Pipe()
@@ -1215,7 +1216,7 @@ func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *te
 		}
 		topologytest.SeedService(t, topSvc)
 
-		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg := DefaultTestConnectorConfig("", 8001)
 		connectorCfg.TopologyService = topSvc
 		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 			pr, pw := io.Pipe()
@@ -1259,7 +1260,7 @@ func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *te
 			t.Fatalf("create audit-only topology service failed: %v", err)
 		}
 
-		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg := DefaultTestConnectorConfig("", 8001)
 		connectorCfg.TopologyService = topSvc
 		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 			pr, pw := io.Pipe()

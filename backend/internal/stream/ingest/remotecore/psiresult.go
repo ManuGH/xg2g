@@ -40,6 +40,10 @@ import (
 //	          u8   declared channels
 //	          u8   flags            bit 0 multichannel, bit 1 has component type
 //	          u8   component type
+//	          u8   observed channels
+//	          u8   observed flags   bit 0 LFE, bit 1 has acmod, bit 2 dependent substream
+//	          u8   observed acmod
+//	          u64  observed frames
 //	u8      video facts flags       bit 0 parameter sets seen, bit 1 scrambled confirmed
 //	u64     clean entry points
 //	u64     clean access units
@@ -51,6 +55,9 @@ import (
 //	u64     video scrambled packets
 //	u64     video clear packets
 //	u64     video clear run
+//	u64     audio scrambled packets
+//	u64     audio clear packets
+//	u64     audio clear run
 //	u16     PAT section count
 //	          u16  length, then that many bytes
 //	u16     PMT section count
@@ -107,6 +114,10 @@ const (
 	wireTrackMultichannel     uint8 = 1 << 0
 	wireTrackHasComponentType uint8 = 1 << 1
 
+	wireObsFlagLFE                uint8 = 1 << 0
+	wireObsFlagHasACMod           uint8 = 1 << 1
+	wireObsFlagDependentSubstream uint8 = 1 << 2
+
 	wireVideoFactParameterSetsSeen  uint8 = 1 << 0
 	wireVideoFactScrambledConfirmed uint8 = 1 << 1
 )
@@ -114,12 +125,16 @@ const (
 // Fixed sizes, named so the bound checks below read as arithmetic about the
 // format rather than as magic numbers.
 const (
-	wireLanguageSize       = 3
-	wireSectionHeaderBytes = 3
-	wireEventSize          = 1 + 8 + 1
-	wireAudioPIDSize       = 2
-	wireAudioTrackSize     = 2 + 1 + 1 + wireLanguageSize + 1 + 1 + 1
-	wireSectionMinSize     = 2
+	wireLanguageSize         = 3
+	wireSectionHeaderBytes   = 3
+	wireEventSize            = 1 + 8 + 1
+	wireAudioPIDSize         = 2
+	wireAudioObservationSize = 1 + 1 + 1 + 8
+	wireAudioTrackSize       = 2 + 1 + 1 + wireLanguageSize + 1 + 1 + 1 + wireAudioObservationSize
+	wireVideoFactsSize       = 1 + 8 + 8 + (5 * 8) + (3 * 8)
+	wireAudioScramblingSize  = 3 * 8
+	wireFactsBlockSize       = wireVideoFactsSize + wireAudioScramblingSize
+	wireSectionMinSize       = 2
 )
 
 // maxActiveTableBytes is what one table in force may cost, from the bounds
@@ -169,19 +184,15 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 	}
 	var parsed mediafacts.ParseResult
 	switch rawCoverage {
-	case wireCoveragePSIVideo:
-		parsed.Coverage = mediafacts.ParseCoveragePSIVideo
+	case wireCoverageComplete:
+		parsed.Coverage = mediafacts.ParseCoverageComplete
 	case wireCoveragePSIOnly:
 		return mediafacts.ParseResult{}, fmt.Errorf(
-			"%w: peer claims psi-only coverage, which is not valid in protocol v4",
+			"%w: peer claims psi-only coverage, which is not valid in protocol v5",
 			mediafacts.ErrCoreInvalidResponse)
-	case wireCoverageComplete:
-		// Refused rather than accepted. Nothing on the other side of this
-		// protocol reads anything but PSI, so a peer claiming to cover the whole
-		// stream is claiming something this build knows it cannot do - and that
-		// claim is the one thing that would let the ring commit it.
+	case wireCoveragePSIVideo:
 		return mediafacts.ParseResult{}, fmt.Errorf(
-			"%w: peer claims complete coverage, which no core on this protocol provides",
+			"%w: peer claims psi-video coverage, which is not valid in protocol v5",
 			mediafacts.ErrCoreInvalidResponse)
 	default:
 		return mediafacts.ParseResult{}, fmt.Errorf("%w: coverage %d",
@@ -370,6 +381,17 @@ func decodeFacts(r *reader) (mediafacts.Facts, error) {
 		return f, short("video clear run")
 	}
 
+	// 24-byte Audio Scrambling Block
+	if f.Scrambling.AudioScrambled, ok = r.uint64(); !ok {
+		return f, short("audio scrambled packets")
+	}
+	if f.Scrambling.AudioClear, ok = r.uint64(); !ok {
+		return f, short("audio clear packets")
+	}
+	if f.Scrambling.AudioClearRun, ok = r.uint64(); !ok {
+		return f, short("audio clear run")
+	}
+
 	return f, nil
 }
 
@@ -459,6 +481,37 @@ func decodeAudioTracks(r *reader) ([]mediafacts.AudioTrackInfo, error) {
 		if t.Declared.ComponentType, ok = r.uint8(); !ok {
 			return nil, short("track component type")
 		}
+
+		// 11-byte Audio Observation: channels (1), flags (1), acmod (1), frames (8)
+		obsChannels, ok := r.uint8()
+		if !ok {
+			return nil, short("track observed channels")
+		}
+		t.Observed.Channels = int(obsChannels)
+
+		obsFlags, ok := r.uint8()
+		if !ok {
+			return nil, short("track observed flags")
+		}
+		if obsFlags&^(wireObsFlagLFE|wireObsFlagHasACMod|wireObsFlagDependentSubstream) != 0 {
+			return nil, fmt.Errorf("%w: track observed flags %#02x", mediafacts.ErrCoreInvalidResponse, obsFlags)
+		}
+		t.Observed.LFE = obsFlags&wireObsFlagLFE != 0
+		t.Observed.HasAcmod = obsFlags&wireObsFlagHasACMod != 0
+		t.Observed.DependentSubstream = obsFlags&wireObsFlagDependentSubstream != 0
+
+		obsAcmod, ok := r.uint8()
+		if !ok {
+			return nil, short("track observed acmod")
+		}
+		t.Observed.Acmod = obsAcmod
+
+		obsFrames, ok := r.uint64()
+		if !ok {
+			return nil, short("track observed frames")
+		}
+		t.Observed.Frames = obsFrames
+
 		out = append(out, t)
 	}
 	return out, nil

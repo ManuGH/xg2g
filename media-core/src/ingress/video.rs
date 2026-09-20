@@ -40,6 +40,8 @@
 //! *before* evaluating TEI, transport scrambling, same-CC conflict, or PES header
 //! validation.
 
+use crate::audio::observer::Observation;
+use crate::ingress::audio::{AudioTrackState, AudioTracker};
 use crate::pes::{self, PesStart};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
@@ -868,7 +870,7 @@ pub struct VideoFacts {
     pub clean_access_units: u64,
 }
 
-/// A point-in-time projection of PSI facts, active tables, and video facts.
+/// A point-in-time projection of PSI facts, active tables, video facts, and audio facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoSnapshot {
     /// What the core knows about the transport programme's PSI tables.
@@ -877,6 +879,10 @@ pub struct VideoSnapshot {
     pub active_psi: ActivePsi,
     /// The current facts established about the video stream.
     pub video: VideoFacts,
+    /// Global audio scrambling facts: (`audio_scrambled`, `audio_clear`, `audio_clear_run`).
+    pub audio_scrambling: (u64, u64, u64),
+    /// Per-track observations in the order of declared audio tracks: (pid, observation).
+    pub audio_observations: Vec<(u16, Observation)>,
 }
 
 /// Follows the observable video stream of one transport programme.
@@ -884,6 +890,7 @@ pub struct VideoSnapshot {
 pub struct VideoIngress {
     psi: PsiCore,
     follower: Option<VideoFollower>,
+    audio: AudioTracker,
     incarnation: u64,
 }
 
@@ -894,19 +901,46 @@ impl VideoIngress {
         Self {
             psi: PsiCore::new(target_program_number),
             follower: None,
+            audio: AudioTracker::new(),
             incarnation: 0,
         }
     }
 
-    /// A point-in-time projection of PSI and video facts.
+    /// A point-in-time projection of PSI, video, and audio facts.
     #[must_use]
     pub fn snapshot(&self) -> VideoSnapshot {
         let psi_snap = self.psi.snapshot();
+        let audio_observations = psi_snap
+            .facts
+            .audio_tracks
+            .iter()
+            .map(|track| {
+                let obs = self
+                    .audio
+                    .tracks
+                    .iter()
+                    .find(|t| t.pid == track.pid)
+                    .map_or_else(Observation::default, AudioTrackState::observation);
+                (track.pid, obs)
+            })
+            .collect();
         VideoSnapshot {
             psi: psi_snap.facts,
             active_psi: psi_snap.active,
             video: self.facts(),
+            audio_scrambling: (
+                self.audio.scrambled_packets,
+                self.audio.clear_packets,
+                self.audio.clear_run,
+            ),
+            audio_observations,
         }
+    }
+
+    /// Reference to the audio tracker holding all audio streams and scrambling counters.
+    #[must_use]
+    pub fn audio_tracker(&self) -> &AudioTracker {
+        &self.audio
     }
 
     /// Selects the programme to follow, returning any identity events emitted.
@@ -1036,6 +1070,7 @@ impl VideoIngress {
         } else {
             self.follower = None;
         }
+        self.audio.reset_with_tracks(self.psi.audio_tracks());
     }
 
     /// Routes one packet to the video follower.
@@ -1049,6 +1084,13 @@ impl VideoIngress {
     ) {
         let pid = view.pid();
         if pid == 0 || pid == self.psi.pmt_pid() {
+            return;
+        }
+        let is_video = self.follower.as_ref().is_some_and(|f| f.pid == pid);
+        if !is_video {
+            if self.audio.handles_pid(pid) {
+                self.audio.route(view);
+            }
             return;
         }
         let Some(ref mut follower) = self.follower else {

@@ -45,8 +45,24 @@ type processIdentity interface {
 	Close() error
 }
 
-// acquireIdentity binds an identity to a process that has just been started.
-//
-// A variable so a test can put its own ownership layer underneath the lifecycle
-// and prove that the lifecycle never reaches around it.
 var acquireIdentity = acquireProcessIdentity
+
+// ProcessIdentity is an interface used when tests need to supply an identity
+// implementation on non-Linux platforms.
+type ProcessIdentity interface {
+	SignalGroup(sig syscall.Signal) error
+	GroupExists() (bool, error)
+	Close() error
+}
+
+// SetProcessIdentityFactoryForTest replaces acquireIdentity during tests and restores
+// the original implementation via cleanup.
+func SetProcessIdentityFactoryForTest(cleanup func(func()), factory func(pid int) (ProcessIdentity, error)) {
+	original := acquireIdentity
+	acquireIdentity = func(pid int) (processIdentity, error) {
+		return factory(pid)
+	}
+	if cleanup != nil {
+		cleanup(func() { acquireIdentity = original })
+	}
+}

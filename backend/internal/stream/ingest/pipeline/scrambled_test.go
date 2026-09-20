@@ -75,7 +75,7 @@ func TestPipeline_ScrambledUpstream_FailsFastWithDiagnosis(t *testing.T) {
 
 	// Same pacing as the clear-stream end-to-end test, so the only variable is the
 	// transport_scrambling_control field.
-	connectorCfg := DefaultConnectorConfig("http://127.0.0.1", 8001)
+	connectorCfg := DefaultTestConnectorConfig("http://127.0.0.1", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 50.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 	connectorCfg.NormConfig.InitialBitrateKbps = 20000.0

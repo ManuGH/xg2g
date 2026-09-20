@@ -25,6 +25,7 @@
 
 use std::io::{self, Read, Write};
 
+use xg2g_media_core::audio::observer::Observation;
 use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
 use xg2g_media_core::ingress::video::{VideoEvent, VideoFacts, VideoIngress, VideoSnapshot};
 use xg2g_media_core::psi::{ActivePsi, PsiFacts, VideoCodec};
@@ -45,7 +46,11 @@ use xg2g_media_core::psi::{ActivePsi, PsiFacts, VideoCodec};
 ///
 /// 4 brings video facts (81 bytes) and video events across the wire with coverage
 /// `COVERAGE_PSI_VIDEO` (3).
-pub const VERSION: u8 = 4;
+///
+/// 5 brings audio facts (21-byte tracks with 11-byte observation) and audio
+/// scrambling counters (24-byte block, fixed facts block total = 105 bytes) with
+/// coverage `COVERAGE_COMPLETE` (2).
+pub const VERSION: u8 = 5;
 
 pub const MSG_HANDSHAKE: u8 = 1;
 pub const MSG_INGEST: u8 = 2;
@@ -73,10 +78,9 @@ const OBSERVE_OBSERVATION_SIZE: usize = 2 + 8 + 1 + 1 + 1 + 8;
 
 /// What a result covers. Mirrors `mediafacts.ParseCoverage`.
 ///
-/// This core reads PSI and video, so every result it produces says so. A caller that
-/// commits stream truth requires complete coverage and must refuse this until
-/// observed audio is integrated in Step 7d-B.
-const COVERAGE_PSI_VIDEO: u8 = 3;
+/// This core reads PSI, video, and audio, so every result it produces in Protocol v5
+/// delivers complete stream authority (`COVERAGE_COMPLETE = 2`).
+const COVERAGE_COMPLETE: u8 = 2;
 
 /// Event kinds on the wire.
 const EVENT_PROGRAM_IDENTITY_CHANGED: u8 = 1;
@@ -91,6 +95,12 @@ const VIDEO_FACT_SCRAMBLED_CONFIRMED: u8 = 1 << 1;
 
 /// The size of the video facts block: 1 byte flags + 2*8 clean counts + 5*8 random access + 3*8 scrambling = 81 bytes.
 const VIDEO_FACTS_SIZE: usize = 1 + 8 + 8 + (5 * 8) + (3 * 8);
+
+/// The size of the audio scrambling facts block: 3 * 8 bytes = 24 bytes.
+const AUDIO_SCRAMBLING_SIZE: usize = 3 * 8;
+
+/// The total fixed facts block size: 81 bytes video + 24 bytes audio = 105 bytes.
+const FACTS_BLOCK_SIZE: usize = VIDEO_FACTS_SIZE + AUDIO_SCRAMBLING_SIZE;
 
 const TRACK_MULTICHANNEL: u8 = 1 << 0;
 const TRACK_HAS_COMPONENT_TYPE: u8 = 1 << 1;
@@ -112,14 +122,19 @@ const AUDIO_CODEC_DTS: u8 = 5;
 /// A language is always three bytes: the descriptor's three, or those of `und`.
 const LANGUAGE_LEN: usize = 3;
 
+/// Observation size: channels (1) + flags (1) + acmod (1) + frames (8) = 11 bytes.
+const AUDIO_OBSERVATION_SIZE: usize = 1 + 1 + 1 + 8;
+
+/// Fixed size per audio track: 10 bytes declared + 11 bytes observed = 21 bytes.
+const AUDIO_TRACK_SIZE: usize = 2 + 1 + 1 + LANGUAGE_LEN + 1 + 1 + 1 + AUDIO_OBSERVATION_SIZE;
+
 /// The fixed part of a result: status, coverage, offset, event count, facts
 /// flags, PMT version, programme number, PMT PID, video PID, video codec, the
-/// two audio counts, the video facts block, and the two section counts.
+/// two audio counts, the 105-byte facts block, and the two section counts.
 const RESULT_FIXED_SIZE: usize =
-    1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + VIDEO_FACTS_SIZE + 2 + 2;
+    1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + FACTS_BLOCK_SIZE + 2 + 2;
 const EVENT_SIZE: usize = 1 + 8 + 1;
 const AUDIO_PID_SIZE: usize = 2;
-const AUDIO_TRACK_SIZE: usize = 2 + 1 + 1 + LANGUAGE_LEN + 1 + 1 + 1;
 const SECTION_PREFIX: usize = 2;
 
 /// Transport packets are 188 bytes and a chunk is whole packets. Checked here as
@@ -526,12 +541,20 @@ fn encode_video_result(
 
     let mut body = Vec::with_capacity(size);
     body.push(STATUS_OK);
-    body.push(COVERAGE_PSI_VIDEO);
+    body.push(COVERAGE_COMPLETE);
     #[allow(clippy::cast_sign_loss)] // an offset is never negative; the caller checks it too
     body.extend_from_slice(&(processed_through as u64).to_be_bytes());
 
     encode_events(&mut body, events);
-    if encode_facts(&mut body, &snapshot.psi, &snapshot.video).is_none() {
+    if encode_facts(
+        &mut body,
+        &snapshot.psi,
+        &snapshot.video,
+        snapshot.audio_scrambling,
+        &snapshot.audio_observations,
+    )
+    .is_none()
+    {
         // A declaration this protocol has no way to say. Refused rather than
         // sent as the nearest thing that fits: see wire_audio_codec.
         return vec![STATUS_MALFORMED];
@@ -597,7 +620,13 @@ fn wire_audio_codec(codec: &str) -> Option<u8> {
 }
 
 /// Lays out the facts, or reports that they cannot be said on this protocol.
-fn encode_facts(body: &mut Vec<u8>, psi: &PsiFacts, video: &VideoFacts) -> Option<()> {
+fn encode_facts(
+    body: &mut Vec<u8>,
+    psi: &PsiFacts,
+    video: &VideoFacts,
+    audio_scrambling: (u64, u64, u64),
+    audio_observations: &[(u16, Observation)],
+) -> Option<()> {
     let mut flags = 0u8;
     if psi.has_pat {
         flags |= FACT_HAS_PAT;
@@ -647,6 +676,28 @@ fn encode_facts(body: &mut Vec<u8>, psi: &PsiFacts, video: &VideoFacts) -> Optio
         }
         body.push(track_flags);
         body.push(track.declared.component_type);
+
+        // 11-byte audio observation: channels (1), flags (1), acmod (1), frames (8)
+        let obs = audio_observations
+            .iter()
+            .find(|(pid, _)| *pid == track.pid)
+            .map(|(_, o)| o)
+            .copied()
+            .unwrap_or_default();
+        body.push(obs.channels);
+        let mut obs_flags = 0u8;
+        if obs.lfe {
+            obs_flags |= OBS_FLAG_LFE;
+        }
+        if obs.has_acmod {
+            obs_flags |= OBS_FLAG_HAS_ACMOD;
+        }
+        if obs.dependent_substream {
+            obs_flags |= OBS_FLAG_DEPENDENT_SUBSTREAM;
+        }
+        body.push(obs_flags);
+        body.push(obs.acmod);
+        body.extend_from_slice(&obs.frames.to_be_bytes());
     }
 
     // 81-byte Video Facts Block
@@ -668,6 +719,11 @@ fn encode_facts(body: &mut Vec<u8>, psi: &PsiFacts, video: &VideoFacts) -> Optio
     body.extend_from_slice(&video.scrambled_packets.to_be_bytes());
     body.extend_from_slice(&video.clear_packets.to_be_bytes());
     body.extend_from_slice(&video.clear_run.to_be_bytes());
+
+    // 24-byte Audio Scrambling Block
+    body.extend_from_slice(&audio_scrambling.0.to_be_bytes());
+    body.extend_from_slice(&audio_scrambling.1.to_be_bytes());
+    body.extend_from_slice(&audio_scrambling.2.to_be_bytes());
 
     Some(())
 }
@@ -708,7 +764,7 @@ mod tests {
     /// from drifting apart.
     const GOLDEN_EMPTY_RESULT: &[u8] = &[
         0x00, // status ok
-        0x03, // coverage: PSI + Video (COVERAGE_PSI_VIDEO)
+        0x02, // coverage: Complete (COVERAGE_COMPLETE)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
         0x00, 0x00, 0x00, 0x00, // no events
         0x00, // no PAT, no PMT
@@ -731,6 +787,10 @@ mod tests {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_scrambled = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear_run = 0
+        // Audio scrambling facts (24 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_scrambled = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear_run = 0
         0x00, 0x00, // no PAT sections
         0x00, 0x00, // no PMT sections
     ];
@@ -763,6 +823,8 @@ mod tests {
                 clean_rap_count: 0,
                 clean_access_units: 0,
             },
+            audio_scrambling: (0, 0, 0),
+            audio_observations: Vec::new(),
         };
         assert_eq!(
             encode_video_result(1066, &[], &snapshot),
@@ -774,7 +836,7 @@ mod tests {
     /// stream with facts and one audio track with a full declaration.
     const GOLDEN_FULL_RESULT: &[u8] = &[
         0x00, // status ok
-        0x03, // coverage: PSI + Video
+        0x02, // coverage: Complete
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
         0x00, 0x00, 0x00, 0x03, // 3 events
         0x01, // event 1: program identity changed
@@ -802,6 +864,11 @@ mod tests {
         0x02, // two channels
         0x02, // has a component type, not multichannel
         0x04, // component type 4
+        // Audio observation for track 258 (11 bytes):
+        0x06, // channels: 6
+        0x03, // flags: OBS_FLAG_LFE | OBS_FLAG_HAS_ACMOD
+        0x07, // acmod: 7
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xB4, // frames: 1460
         // Video facts (81 bytes)
         0x03, // video facts flags: parameter_sets_seen | scrambled_confirmed
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // clean_rap_count = 1
@@ -814,6 +881,10 @@ mod tests {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, // video_scrambled = 8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // video_clear = 9
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, // video_clear_run = 10
+        // Audio scrambling facts (24 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, // audio_scrambled = 11
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, // audio_clear = 12
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0D, // audio_clear_run = 13
         0x00, 0x01, // one PAT section
         0x00, 0x04, // four bytes
         0x00, 0xB0, 0x0D, 0x99, //
@@ -882,6 +953,18 @@ mod tests {
                 clean_rap_count: 1,
                 clean_access_units: 2,
             },
+            audio_scrambling: (11, 12, 13),
+            audio_observations: vec![(
+                258,
+                Observation {
+                    channels: 6,
+                    lfe: true,
+                    has_acmod: true,
+                    acmod: 7,
+                    frames: 1460,
+                    dependent_substream: false,
+                },
+            )],
         };
         assert_eq!(
             encode_video_result(188, &events, &snapshot),
@@ -940,6 +1023,8 @@ mod tests {
                 clean_rap_count: 0,
                 clean_access_units: 0,
             },
+            audio_scrambling: (0, 0, 0),
+            audio_observations: Vec::new(),
         };
 
         // The values the parser actually produces are all sayable, including
@@ -1094,7 +1179,7 @@ mod tests {
     // produce these exact lengths to pass.
     const GOLDEN_OBSERVE_REQUEST: &[u8] = &[
         0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-        0x04, // version 4
+        0x05, // version 5
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, 0x00, 0x00, 0x01, // one batch
@@ -1107,7 +1192,7 @@ mod tests {
 
     const GOLDEN_OBSERVE_ANSWER: &[u8] = &[
         0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-        0x04, // version 4
+        0x05, // version 5
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, // status ok

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -122,6 +123,10 @@ type ConnectorConfig struct {
 	// expressed through the caller's context, because that context dies with the connect
 	// attempt while the body must keep streaming, so it is enforced on the transport.
 	ConnectTimeout time.Duration
+	// PipelineFn optionally overrides session pipeline creation.
+	// When nil (the default in production), NewSessionPipeline is called (which fails closed
+	// if xg2g-media-core is not found). Tests that require GoCore or mocked pipelines inject it here.
+	PipelineFn func(ctx context.Context, normCfg normalizer.Config, ringCapacity int, targetProgram uint16) (*SessionPipeline, error)
 }
 
 // DefaultConnectorConfig returns production defaults for pipeline connector.
@@ -136,6 +141,16 @@ func DefaultConnectorConfig(receiverBaseURL string, streamPort int) ConnectorCon
 		RingCapacity:    20000 * ring.TSPacketSize, // ~3.76 MB (approx 6-8 seconds buffer)
 		ConnectTimeout:  defaultConnectTimeout,
 	}
+}
+
+// DefaultTestConnectorConfig returns a ConnectorConfig configured with an in-memory GoCore
+// pipeline factory for unit tests running in environments where xg2g-media-core is not installed.
+func DefaultTestConnectorConfig(receiverBaseURL string, streamPort int) ConnectorConfig {
+	cfg := DefaultConnectorConfig(receiverBaseURL, streamPort)
+	cfg.PipelineFn = func(ctx context.Context, normCfg normalizer.Config, ringCapacity int, targetProgram uint16) (*SessionPipeline, error) {
+		return NewSessionPipelineWithCore(normCfg, ringCapacity, mediafacts.NewGoCore(targetProgram), nil)
+	}
+	return cfg
 }
 
 // LivePipelineConnector implements session.UpstreamConnector.
@@ -209,7 +224,12 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 	}
 
 	// 3. Create and start SessionPipeline
-	pipeline, err := NewSessionPipeline(c.cfg.NormConfig, c.cfg.RingCapacity, key.TargetProgram)
+	var pipeline *SessionPipeline
+	if c.cfg.PipelineFn != nil {
+		pipeline, err = c.cfg.PipelineFn(ctx, c.cfg.NormConfig, c.cfg.RingCapacity, key.TargetProgram)
+	} else {
+		pipeline, err = NewSessionPipeline(ctx, c.cfg.NormConfig, c.cfg.RingCapacity, key.TargetProgram)
+	}
 	if err != nil {
 		_ = upstream.Close()
 		if upstreamCancel != nil {

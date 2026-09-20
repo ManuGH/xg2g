@@ -44,7 +44,11 @@ import (
 //
 // 4 brings video facts (81 bytes) and video events (RandomAccessPoint and
 // RandomAccessPointInvalidated) across the wire, with coverage wireCoveragePSIVideo (3).
-const Version uint8 = 4
+//
+// 5 brings audio facts (21-byte tracks with 11-byte observation) and audio
+// scrambling counters (24-byte block, fixed facts block total = 105 bytes) with
+// coverage wireCoverageComplete (2).
+const Version uint8 = 5
 
 // Message types. The set is closed on purpose - it is exactly the calls
 // mediafacts.Core makes, plus the two the connection itself needs.

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/tsfixture"
@@ -101,7 +102,7 @@ func TestPipeline_VariantWorkerSurvivesFirstClientDisconnect(t *testing.T) {
 	normCfg := normalizer.DefaultConfig()
 	normCfg.StartupReservoirMs = 0.0
 
-	pipe, err := NewSessionPipeline(normCfg, 20000*ring.TSPacketSize, 0)
+	pipe, err := NewSessionPipelineWithCore(normCfg, 20000*ring.TSPacketSize, mediafacts.NewGoCore(0), nil)
 	if err != nil {
 		t.Fatalf("create pipeline: %v", err)
 	}
