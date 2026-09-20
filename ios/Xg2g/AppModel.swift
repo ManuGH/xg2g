@@ -143,6 +143,9 @@ final class AppModel {
     private var playback: PlaybackCoordinator?
     private var session: SessionCoordinator?
     private var enrollment: EnrollmentCoordinator?
+    /// Builds every client `configure(with:)` needs. Injected so a test can
+    /// drive the whole pairing-to-ready flow against a scripted API.
+    private let makeAPIClient: (ServerAddress, any RequestAuthorizer) -> any APIClient
     private var revokeCoordinator: RevokeCoordinator?
     private var api: (any APIClient)?
 
@@ -833,11 +836,15 @@ final class AppModel {
     init(
         addressStore: ServerAddressStore = ServerAddressStore(),
         credentials: CredentialStore = KeychainCredentialStore(backend: SecItemKeychainBackend()),
-        keyStore: DeviceKeyStore = SecureEnclaveDeviceKeyStore()
+        keyStore: DeviceKeyStore = SecureEnclaveDeviceKeyStore(),
+        makeAPIClient: @escaping (ServerAddress, any RequestAuthorizer) -> any APIClient = {
+            HTTPAPIClient(address: $0, authorizer: $1)
+        }
     ) {
         self.addressStore = addressStore
         self.credentials = credentials
         self.keyStore = keyStore
+        self.makeAPIClient = makeAPIClient
     }
 
     // MARK: - Launch
@@ -890,17 +897,14 @@ final class AppModel {
         self.address = address
         self.identity = identity
 
-        let refreshClient = HTTPAPIClient(
-            address: address,
-            authorizer: DeviceProofAuthorizer(keyStore: keyStore)
-        )
+        let refreshClient = makeAPIClient(address, DeviceProofAuthorizer(keyStore: keyStore))
 
         let sessionCoord = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
         self.session = sessionCoord
 
-        let authorized = HTTPAPIClient(
-            address: address,
-            authorizer: DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
+        let authorized = makeAPIClient(
+            address,
+            DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
         )
         self.api = authorized
 
@@ -910,7 +914,7 @@ final class AppModel {
         playback = PlaybackCoordinator(address: address, api: authorized)
         enrollment = EnrollmentCoordinator(
             identity: identity,
-            api: HTTPAPIClient(address: address),
+            api: makeAPIClient(address, UnauthenticatedRequests()),
             keyStore: keyStore,
             credentials: credentials
         )
@@ -970,9 +974,21 @@ final class AppModel {
         do {
             _ = try await enrollment.completeEnrollment()
             await session?.resetAfterReenrollment()
-            state = .ready
             lastError = nil
+
+            // Load before announcing `.ready`. The pairing screen's task is
+            // what awaits this call, and SwiftUI cancels that task the moment
+            // the ready screen replaces it. With the flip first, the initial
+            // requests died with -999 and the app came up with no channels —
+            // on tvOS nothing reloads on the way to the home hub, so it stayed
+            // that way. `start()` is not affected: its caller is the root view.
+            let stateBeforeLoad = state
             await loadInitialData()
+
+            // The load can move the state itself — a 401 routes to re-pairing
+            // through `handle`, "Anderen Server wählen" to setup. Those win.
+            guard state == stateBeforeLoad else { return }
+            state = .ready
         } catch {
             lastError = "Pairing could not be completed: \(error.localizedDescription)"
         }

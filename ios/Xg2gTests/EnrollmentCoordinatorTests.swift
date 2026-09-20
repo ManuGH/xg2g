@@ -52,6 +52,12 @@ final class ScriptedAPI: APIClient, @unchecked Sendable {
     }
 
     func send<Response>(_ request: APIRequest<Response>) async throws -> Response where Response: Decodable & Sendable {
+        // URLSession never answers a cancelled task; it fails with -999, which
+        // the client maps to `.transport(.cancelled)`. Mirror that, otherwise a
+        // load that outlived its caller's cancellation looks the same as one
+        // that did not.
+        if Task.isCancelled { throw APIError.transport(.cancelled) }
+
         let next = recordAndTake(request.method, request.path, request.body)
 
         guard let next else {
