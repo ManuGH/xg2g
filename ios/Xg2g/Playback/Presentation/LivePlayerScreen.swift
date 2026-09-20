@@ -482,7 +482,8 @@ public struct LivePlayerScreen: View {
                     } label: {
                         Color.clear
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TVPlayerInvisibleButtonStyle())
+                    .focusEffectDisabled()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                     .onMoveCommand { direction in
@@ -2556,6 +2557,14 @@ struct TVPlayerTransportButtonStyle: ButtonStyle {
             .scaleEffect(isFocused ? 1.2 : 1.0)
             .shadow(color: isFocused ? Color.white.opacity(0.4) : Color.black.opacity(0.4), radius: isFocused ? 16 : 6)
             .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+/// A completely transparent button style for full-screen tvOS gesture receivers.
+/// Suppresses tvOS's default focused white platter/highlight across the screen.
+struct TVPlayerInvisibleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 #endif
