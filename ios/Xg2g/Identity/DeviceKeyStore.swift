@@ -48,6 +48,7 @@ actor SecureEnclaveDeviceKeyStore: DeviceKeyStore {
     private let policy: DeviceKeyPolicy
     private let tag: Data
     private let secureEnclaveProbe: @Sendable () -> Bool
+    private var cachedKey: SecKey?
 
     /// - Parameter secureEnclaveProbe: overridable so the "a software key is
     ///   never accepted under a hardware policy" invariant can be exercised on
@@ -131,6 +132,7 @@ actor SecureEnclaveDeviceKeyStore: DeviceKeyStore {
     }
 
     func destroyKey() throws {
+        cachedKey = nil
         let query: [String: Any] = [
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: tag,
@@ -189,14 +191,20 @@ actor SecureEnclaveDeviceKeyStore: DeviceKeyStore {
             throw DeviceKeyError.keyGenerationFailed
         }
 
+        self.cachedKey = key
         return try attestation(for: key)
     }
 
     private func loadKey() throws -> SecKey? {
+        if let cachedKey {
+            return cachedKey
+        }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: tag,
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
             kSecReturnRef as String: true,
         ]
 
@@ -208,7 +216,9 @@ actor SecureEnclaveDeviceKeyStore: DeviceKeyStore {
             guard let item = result else { return nil }
             // CFTypeRef -> SecKey without an unchecked bridge.
             guard CFGetTypeID(item) == SecKeyGetTypeID() else { return nil }
-            return (item as! SecKey)
+            let key = (item as! SecKey)
+            self.cachedKey = key
+            return key
         case errSecItemNotFound:
             return nil
         default:

@@ -1128,12 +1128,20 @@ final class AppModel {
     // MARK: - Device description
 
     private static var deviceType: DeviceType {
-        UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+#if os(tvOS)
+        return .appleTV
+#else
+        return UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+#endif
     }
 
     private static var deviceName: String {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
+#if os(tvOS)
+        return name.isEmpty ? "Apple TV" : name
+#else
         return name.isEmpty ? "iPhone" : name
+#endif
     }
 
     // MARK: - Download Auth Access
