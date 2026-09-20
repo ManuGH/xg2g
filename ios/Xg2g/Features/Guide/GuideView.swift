@@ -18,6 +18,7 @@ import SwiftUI
 struct GuideView: View {
 
     @Bindable var model: AppModel
+    var hubMode: Binding<TVGuideHubView.TVGuideHubMode>? = nil
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     @State private var mode: GuideMode = .onAir
@@ -57,8 +58,36 @@ struct GuideView: View {
 #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { bouquetMenu }
-                ToolbarItem(placement: .principal) { modePicker }
-                ToolbarItem(placement: .topBarTrailing) { genreMenu }
+                ToolbarItem(placement: .principal) {
+                    if let hubMode {
+                        Picker("Ansicht", selection: hubMode) {
+                            Text("Sender").tag(TVGuideHubView.TVGuideHubMode.channels)
+                            Text("Programm").tag(TVGuideHubView.TVGuideHubMode.guide)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    } else {
+                        modePicker
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 8) {
+                        if hubMode != nil {
+                            Menu {
+                                Picker("Darstellung", selection: $mode.animation(.easeInOut(duration: 0.2))) {
+                                    ForEach(GuideMode.allCases) { m in
+                                        Label(m.rawValue, systemImage: m.symbol).tag(m)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: mode.symbol)
+                                    .font(.app(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                            }
+                        }
+                        genreMenu
+                    }
+                }
             }
 #if !os(tvOS)
             // tvOS routes search through its own tab (`SearchView`).

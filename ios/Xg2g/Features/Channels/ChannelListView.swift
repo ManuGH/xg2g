@@ -12,6 +12,7 @@ private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
 struct ChannelListView: View {
 
     @Bindable var model: AppModel
+    var hubMode: Binding<TVGuideHubView.TVGuideHubMode>? = nil
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
@@ -427,63 +428,21 @@ struct ChannelListView: View {
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        Button {
-                            triggerHaptic(.light)
-                            Task { await model.selectBouquet(nil) }
-                        } label: {
-                            HStack {
-                                Text("Alle Sender (\(model.channels.count))")
-                                if model.selectedBouquet == nil {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
+                if let hubMode {
+                    ToolbarItem(placement: .topBarLeading) {
+                        bouquetMenu
+                    }
+                    ToolbarItem(placement: .principal) {
+                        Picker("Ansicht", selection: hubMode) {
+                            Text("Sender").tag(TVGuideHubView.TVGuideHubMode.channels)
+                            Text("Programm").tag(TVGuideHubView.TVGuideHubMode.guide)
                         }
-
-                        if !model.favoriteChannelIDs.isEmpty {
-                            Button {
-                                triggerHaptic(.light)
-                                Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
-                            } label: {
-                                HStack {
-                                    Text("Favoriten (\(model.favoriteChannelIDs.count))")
-                                    if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-
-                        if !model.bouquets.isEmpty {
-                            Divider()
-                            ForEach(model.bouquets) { bouquet in
-                                Button {
-                                    triggerHaptic(.light)
-                                    Task { await model.selectBouquet(bouquet) }
-                                } label: {
-                                    HStack {
-                                        Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
-                                        if model.selectedBouquet?.id == bouquet.id {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(model.selectedBouquet?.name ?? "Alle Sender")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Image(systemName: "chevron.down.circle.fill")
-                                .font(.app(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accentAction)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Theme.Colors.surfaceElevated.opacity(0.8), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    }
+                } else {
+                    ToolbarItem(placement: .principal) {
+                        bouquetMenu
                     }
                 }
 
@@ -524,6 +483,66 @@ struct ChannelListView: View {
                     }
                 )
             }
+        }
+    }
+
+    private var bouquetMenu: some View {
+        Menu {
+            Button {
+                triggerHaptic(.light)
+                Task { await model.selectBouquet(nil) }
+            } label: {
+                HStack {
+                    Text("Alle Sender (\(model.channels.count))")
+                    if model.selectedBouquet == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            if !model.favoriteChannelIDs.isEmpty {
+                Button {
+                    triggerHaptic(.light)
+                    Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                } label: {
+                    HStack {
+                        Text("Favoriten (\(model.favoriteChannelIDs.count))")
+                        if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+
+            if !model.bouquets.isEmpty {
+                Divider()
+                ForEach(model.bouquets) { bouquet in
+                    Button {
+                        triggerHaptic(.light)
+                        Task { await model.selectBouquet(bouquet) }
+                    } label: {
+                        HStack {
+                            Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
+                            if model.selectedBouquet?.id == bouquet.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(model.selectedBouquet?.name ?? "Alle Sender")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Image(systemName: "chevron.down.circle.fill")
+                    .font(.app(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.accentAction)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.Colors.surfaceElevated.opacity(0.8), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         }
     }
 

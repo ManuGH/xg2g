@@ -52,8 +52,8 @@ enum AppState: Equatable, Sendable {
 
 /// Top-level sections in the Broadcast Console.
 enum Tab: String, CaseIterable, Identifiable, Sendable {
-    case home = "Für dich"
-    case liveTV = "Live TV"
+    case home = "Home"
+    case liveTV = "TV & Guide"
     case guide = "Programm"
     case recordings = "Aufnahmen"
     case timers = "Timer"
@@ -78,25 +78,22 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .home: return "1"
         case .liveTV: return "2"
-        case .guide: return "3"
-        case .recordings: return "4"
-        case .timers: return "5"
-        case .search: return "6"
+        case .guide: return "2"
+        case .recordings: return "3"
+        case .timers: return "4"
+        case .search: return "5"
         case .settings: return ","
         }
     }
 
     /// The tabs a platform lists in its top-level navigation.
     ///
-    /// On iPhone and iPad the search field lives in the Home hub's navigation
-    /// bar, so `search` is not a destination there. tvOS has no navigation-bar
-    /// search: a focused text field expands the inline keyboard and pushes the
-    /// content off screen, so search gets its own tab like every Apple TV app.
+    /// Consolidates Live TV and EPG into a unified "TV & Guide" screen.
     static var navigationCases: [Tab] {
 #if os(tvOS)
-        allCases
+        [.home, .liveTV, .recordings, .search, .settings]
 #else
-        allCases.filter { $0 != .search }
+        [.home, .liveTV, .recordings, .settings]
 #endif
     }
 }

@@ -30,13 +30,9 @@ struct MainTabView: View {
                 .tabItem { tabLabel(.home) }
                 .tag(Tab.home)
 
-            TVChannelGridView(model: model)
+            TVOSGuideHubView(model: model)
                 .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
-
-            TVGuideView(model: model)
-                .tabItem { tabLabel(.guide) }
-                .tag(Tab.guide)
 
             TVRecordingsView(model: model)
                 .tabItem { tabLabel(.recordings) }
@@ -54,13 +50,9 @@ struct MainTabView: View {
                 .tabItem { tabLabel(.home) }
                 .tag(Tab.home)
 
-            ChannelListView(model: model)
+            TVGuideHubView(model: model)
                 .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
-
-            GuideView(model: model)
-                .tabItem { tabLabel(.guide) }
-                .tag(Tab.guide)
 
             RecordingsView(model: model)
                 .tabItem { tabLabel(.recordings) }
