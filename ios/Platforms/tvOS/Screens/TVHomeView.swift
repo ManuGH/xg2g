@@ -141,8 +141,9 @@ struct TVHomeView: View {
     private func record(_ channel: Channel, _ entry: NowNext.Entry) {
         Task {
             let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
-            guard ok else { return }
-            withAnimation { recordConfirmationMessage = "„\(entry.title)“ programmiert" }
+            withAnimation {
+                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+            }
             try? await Task.sleep(for: .seconds(3))
             withAnimation { recordConfirmationMessage = nil }
         }

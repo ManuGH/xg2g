@@ -43,9 +43,11 @@ struct ChannelListView: View {
                                     let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
                                     if ok {
                                         triggerHaptic(.medium)
-                                        withAnimation {
-                                            recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                        }
+                                    } else {
+                                        Haptics.shared.notification(.error)
+                                    }
+                                    withAnimation {
+                                        recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                     }
                                 }
                             }
@@ -231,9 +233,11 @@ struct ChannelListView: View {
                                                     let ok = await model.scheduleProgramTimer(channel: spotlight.channel, entry: spotlight.entry)
                                                     if ok {
                                                         triggerHaptic(.medium)
-                                                        withAnimation {
-                                                            recordConfirmationMessage = "„\(spotlight.entry.title)“ programmiert"
-                                                        }
+                                                    } else {
+                                                        Haptics.shared.notification(.error)
+                                                    }
+                                                    withAnimation {
+                                                        recordConfirmationMessage = ok ? "„\(spotlight.entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                                     }
                                                 }
                                             }
@@ -309,9 +313,11 @@ struct ChannelListView: View {
                                                         let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
                                                         if success {
                                                             triggerHaptic(.medium)
-                                                            withAnimation {
-                                                                recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                                            }
+                                                        } else {
+                                                            Haptics.shared.notification(.error)
+                                                        }
+                                                        withAnimation {
+                                                            recordConfirmationMessage = success ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                                         }
                                                     }
                                                 }
@@ -331,7 +337,17 @@ struct ChannelListView: View {
                                                     }
 
                                                     Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: now) }
+                                                        Task {
+                                                            let ok = await model.scheduleProgramTimer(channel: channel, entry: now)
+                                                            if ok {
+                                                                triggerHaptic(.medium)
+                                                            } else {
+                                                                Haptics.shared.notification(.error)
+                                                            }
+                                                            withAnimation {
+                                                                recordConfirmationMessage = ok ? "„\(now.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+                                                            }
+                                                        }
                                                     } label: {
                                                         Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
                                                     }
@@ -339,7 +355,17 @@ struct ChannelListView: View {
 
                                                 if let next = model.schedule[channel.serviceRef]?.next {
                                                     Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: next) }
+                                                        Task {
+                                                            let ok = await model.scheduleProgramTimer(channel: channel, entry: next)
+                                                            if ok {
+                                                                triggerHaptic(.medium)
+                                                            } else {
+                                                                Haptics.shared.notification(.error)
+                                                            }
+                                                            withAnimation {
+                                                                recordConfirmationMessage = ok ? "„\(next.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+                                                            }
+                                                        }
                                                     } label: {
                                                         Label("„\(next.title)“ aufnehmen", systemImage: "record.circle")
                                                     }
@@ -488,9 +514,11 @@ struct ChannelListView: View {
                             let ok = await model.scheduleProgramTimer(channel: payload.channel, entry: entry)
                             if ok {
                                 triggerHaptic(.medium)
-                                withAnimation {
-                                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                }
+                            } else {
+                                Haptics.shared.notification(.error)
+                            }
+                            withAnimation {
+                                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                             }
                         }
                     }

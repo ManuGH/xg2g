@@ -677,8 +677,13 @@ public struct LivePlayerScreen: View {
                 let userFriendly: String
                 if reason.contains("scrambled") || reason.contains("descrambled") {
                     userFriendly = "Verschlüsselt (Smartcard erforderlich)"
-                } else if reason.contains("admission") || reason.contains("tuner") {
-                    userFriendly = "Alle Tuner belegt"
+                } else if reason.contains("admission") || reason.contains("tuner") || reason.contains("busy") || reason.contains("R_LEASE_BUSY") || reason.contains("1452") {
+                    let now = Date()
+                    if let activeTimer = model?.timers.first(where: { $0.isRunning || ($0.beginDate <= now && $0.endDate >= now) }) {
+                        userFriendly = "Tuner belegt durch Aufnahme: „\(activeTimer.name)“"
+                    } else {
+                        userFriendly = "Alle Tuner belegt (Aufnahme oder Receiver ausgelastet)"
+                    }
                 } else if reason.contains("unpresentable") || reason.contains("attach") {
                     userFriendly = "Kein Signal / Stream nicht empfangbar"
                 } else if isNetworkFailure {
@@ -1823,36 +1828,51 @@ public struct LivePlayerScreen: View {
     }
 
     private func performInitialTimeshiftSeek(player: AVPlayer, seekBackSeconds: Double) async {
-        let maxAttempts = 30
+        let maxAttempts = 50 // 5.0 seconds budget to tolerate Wi-Fi jitter and backend HLS playlist generation
         for _ in 0..<maxAttempts {
-            if let item = player.currentItem,
-               item.status == .readyToPlay,
-               let range = item.seekableTimeRanges.last?.timeRangeValue,
-               range.duration.seconds > 0 {
-                let liveEnd = range.end.seconds
-                let target = max(range.start.seconds, liveEnd - seekBackSeconds)
-                await withCheckedContinuation { continuation in
-                    player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                        continuation.resume()
-                    }
+            if let item = player.currentItem {
+                if item.status == .failed {
+                    let errStr = item.error?.localizedDescription ?? "Initialisierungsfehler"
+                    displayZapToast("Timeshift fehlgeschlagen: \(errStr)")
+                    jumpToLiveEdge()
+                    return
                 }
-                player.play()
-                self.isPlaying = true
-                self.isTimeshiftLoading = false
-                NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
-                displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
-                return
+                if item.status == .readyToPlay,
+                   let range = item.seekableTimeRanges.last?.timeRangeValue,
+                   range.duration.seconds > 0 {
+                    let liveEnd = range.end.seconds
+                    let target = max(range.start.seconds, liveEnd - seekBackSeconds)
+                    await withCheckedContinuation { continuation in
+                        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                            continuation.resume()
+                        }
+                    }
+                    player.play()
+                    self.isPlaying = true
+                    self.isTimeshiftLoading = false
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+                    displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
+                    return
+                }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
             if self.engineMode != .timeshiftHLS || self.timeshiftPlayer !== player {
                 return
             }
         }
-        player.play()
-        self.isPlaying = true
-        self.isTimeshiftLoading = false
-        NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
-        displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
+
+        // If timed out waiting for seekable range, don't falsely claim a rewind
+        if let item = player.currentItem, item.status == .readyToPlay {
+            player.play()
+            self.isPlaying = true
+            self.isTimeshiftLoading = false
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+            displayZapToast("▶ Live (Puffer wird im Hintergrund aufgebaut)")
+        } else {
+            self.isTimeshiftLoading = false
+            displayZapToast("Timeshift-Verbindung verzögert – Live-TV aktiv")
+            jumpToLiveEdge()
+        }
     }
 
     private func enterTimeshift(seekBackSeconds: Double = 0, autoPlay: Bool = false) {
@@ -1905,7 +1925,18 @@ public struct LivePlayerScreen: View {
                 }
             } catch {
                 isTimeshiftLoading = false
-                displayZapToast("Fehler bei HLS-Stream: \(error.localizedDescription)")
+                let err = error.localizedDescription
+                let isTunerBusy = err.contains("admission") || err.contains("tuner") || err.contains("busy") || err.contains("R_LEASE_BUSY") || err.contains("1452")
+                if isTunerBusy {
+                    let now = Date()
+                    if let activeTimer = model.timers.first(where: { $0.isRunning || ($0.beginDate <= now && $0.endDate >= now) }) {
+                        displayZapToast("Tuner belegt durch Aufnahme: „\(activeTimer.name)“")
+                    } else {
+                        displayZapToast("Alle Tuner belegt – Timeshift nicht möglich")
+                    }
+                } else {
+                    displayZapToast("Fehler bei HLS-Stream: \(err)")
+                }
                 jumpToLiveEdge()
             }
         }

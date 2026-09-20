@@ -157,14 +157,12 @@ struct TVGuideView: View {
     private func scheduleRecord(_ entry: NowNext.Entry, on channel: Channel) {
         Task {
             let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
-            if success {
-                withAnimation {
-                    toastMessage = "„\(entry.title)“ programmiert"
-                }
-                try? await Task.sleep(for: .seconds(3))
-                withAnimation {
-                    toastMessage = nil
-                }
+            withAnimation {
+                toastMessage = success ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+            }
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation {
+                toastMessage = nil
             }
         }
     }

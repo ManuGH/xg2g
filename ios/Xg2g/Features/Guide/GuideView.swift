@@ -427,9 +427,11 @@ struct GuideView: View {
             let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
             if ok {
                 triggerHaptic(.medium)
-                withAnimation {
-                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                }
+            } else {
+                Haptics.shared.notification(.error)
+            }
+            withAnimation {
+                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
             }
         }
     }

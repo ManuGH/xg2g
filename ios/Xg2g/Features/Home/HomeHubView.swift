@@ -279,13 +279,15 @@ struct HomeHubView: View {
             let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
             if ok {
                 Haptics.shared.impact(.medium)
-                withAnimation {
-                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                }
-                try? await Task.sleep(for: .seconds(3))
-                withAnimation {
-                    recordConfirmationMessage = nil
-                }
+            } else {
+                Haptics.shared.notification(.error)
+            }
+            withAnimation {
+                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+            }
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation {
+                recordConfirmationMessage = nil
             }
         }
     }
