@@ -740,6 +740,11 @@ final class AppModel {
         self.addressStore = addressStore
         self.credentials = credentials
         self.keyStore = keyStore
+        if CommandLine.arguments.contains("--tab-recordings") {
+            self.selectedTab = .recordings
+        } else if CommandLine.arguments.contains("--tab-search") {
+            self.selectedTab = .search
+        }
     }
 
     // MARK: - Launch

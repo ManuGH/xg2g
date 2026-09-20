@@ -109,7 +109,118 @@ struct SearchView: View {
 
     // MARK: - Discovery Content for Empty Search State
 
+    @ViewBuilder
     private var searchDiscoveryView: some View {
+#if os(tvOS)
+        tvDiscoveryView
+#else
+        iosDiscoveryView
+#endif
+    }
+
+#if os(tvOS)
+    private var tvDiscoveryView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 36) {
+                // 1. Kategorien & Genres zum Entdecken
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                        Text("Kategorien entdecken")
+                            .font(TVDesign.Font.heading)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.adaptive(minimum: 320, maximum: 440), spacing: TVDesign.Layout.gutter)
+                        ],
+                        spacing: TVDesign.Layout.gutter
+                    ) {
+                        ForEach(discoveryGenres, id: \.title) { item in
+                            Button {
+                                Haptics.shared.impact(.light)
+                                searchText = item.title
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Image(systemName: item.icon)
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundStyle(item.color)
+                                        .frame(width: 48, height: 48)
+                                        .background(item.color.opacity(0.15), in: Circle())
+
+                                    Text(item.title)
+                                        .font(TVDesign.Font.body)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 16)
+                                .frame(height: 80)
+                            }
+                            .buttonStyle(TVCardButtonStyle())
+                        }
+                    }
+                }
+
+                // 2. Beliebte Sender / Favoriten
+                let topChannels = model.favoriteChannels.isEmpty ? Array(model.channels.prefix(6)) : model.favoriteChannels
+                if !topChannels.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "tv.fill")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(Theme.Colors.accentLive)
+                            Text(model.favoriteChannels.isEmpty ? "Beliebte Sender" : "Deine Favoriten")
+                                .font(TVDesign.Font.heading)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 20) {
+                                ForEach(topChannels) { channel in
+                                    let nowTitle = model.schedule[channel.serviceRef]?.now?.title ?? "Live TV"
+                                    Button {
+                                        Haptics.shared.impact(.light)
+                                        model.playingChannel = channel
+                                    } label: {
+                                        HStack(spacing: 16) {
+                                            ChannelLogo(url: channel.logoURL, name: channel.name, size: 48)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(channel.name)
+                                                    .font(TVDesign.Font.body)
+                                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                                    .lineLimit(1)
+                                                Text(nowTitle)
+                                                    .font(TVDesign.Font.meta)
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                                    .lineLimit(1)
+                                            }
+                                            Image(systemName: "play.circle.fill")
+                                                .font(.system(size: 24))
+                                                .foregroundStyle(Theme.Colors.accentLive)
+                                                .padding(.leading, 2)
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 14)
+                                        .frame(height: 90)
+                                    }
+                                    .buttonStyle(TVCardButtonStyle())
+                                }
+                            }
+                            .padding(.vertical, 16)
+                        }
+                    }
+                }
+            }
+            .padding(48)
+        }
+    }
+#else
+    private var iosDiscoveryView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // 1. Kategorien & Genres zum Entdecken
@@ -218,6 +329,7 @@ struct SearchView: View {
             .padding(16)
         }
     }
+#endif
 
     private struct DiscoveryGenre {
         let title: String

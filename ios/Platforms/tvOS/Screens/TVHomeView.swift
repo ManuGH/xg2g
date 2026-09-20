@@ -62,7 +62,10 @@ struct TVHomeView: View {
                     if !model.recordings.isEmpty {
                         TVShelf(title: "Aufnahmen") {
                             ForEach(model.recordings.prefix(12)) { recording in
-                                TVRecordingCard(recording: recording) {
+                                TVRecordingCard(
+                                    recording: recording,
+                                    channelName: model.channels.first(where: { $0.serviceRef == recording.serviceRef })?.name
+                                ) {
                                     model.playbackManager.play(recording: recording, startPosition: 0)
                                 }
                             }
@@ -279,6 +282,7 @@ struct TVProgramCard: View {
 struct TVRecordingCard: View {
     let recording: Recording
     var resumePos: Double? = nil
+    var channelName: String? = nil
     var onPlay: () -> Void
     var onDelete: (() -> Void)? = nil
 
@@ -286,35 +290,70 @@ struct TVRecordingCard: View {
         let resumeSecs = resumePos ?? 0
         let duration = Double(recording.durationSeconds)
         let progress = duration > 0 ? min(1.0, resumeSecs / duration) : 0
+        let palette = RecordingArtworkTheme.palette(for: recording)
 
         Button(action: onPlay) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: "play.rectangle.fill")
-                        .font(TVDesign.Font.body)
-                        .foregroundStyle(Theme.Colors.accentAction)
+            ZStack(alignment: .bottomLeading) {
+                // Background Gradient & Watermark
+                RoundedRectangle(cornerRadius: TVDesign.Layout.cornerRadius, style: .continuous)
+                    .fill(palette.gradient)
+                    .overlay(
+                        Image(systemName: palette.icon)
+                            .font(.system(size: 80, weight: .ultraLight))
+                            .foregroundStyle(palette.accent.opacity(0.12))
+                            .offset(x: 25, y: -10),
+                        alignment: .trailing
+                    )
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        // Genre Badge
+                        Text(palette.label)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(palette.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+
+                        Spacer(minLength: 0)
+
+                        Text(recording.formattedDuration)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+
                     Spacer(minLength: 0)
-                    Text(recording.formattedDuration)
-                        .font(TVDesign.Font.meta)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                Spacer(minLength: 0)
-                Text(recording.title)
-                    .font(TVDesign.Font.body)
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                if resumeSecs > 10 {
-                    TVProgressLine(progress: progress)
-                }
+                    Text(recording.title)
+                        .font(TVDesign.Font.body)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(recording.formattedDate)
-                    .font(TVDesign.Font.meta)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    if resumeSecs > 10 {
+                        TVProgressLine(progress: progress)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text(recording.formattedDate)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+
+                        if let channel = channelName, !channel.isEmpty {
+                            Text("•")
+                                .font(TVDesign.Font.meta)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                            Text(channel)
+                                .font(TVDesign.Font.meta)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(20)
             }
-            .padding(20)
             .frame(width: TVDesign.Layout.cardWidth, height: TVDesign.Layout.cardHeight)
         }
         .buttonStyle(TVCardButtonStyle())

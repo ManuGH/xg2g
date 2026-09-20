@@ -60,6 +60,7 @@ struct TVRecordingsView: View {
                             TVRecordingHero(
                                 recording: hero,
                                 resumePosition: model.resumePosition(for: hero.id),
+                                channelName: model.channels.first(where: { $0.serviceRef == hero.serviceRef })?.name,
                                 onPlay: { play(hero) },
                                 onPlayFromBeginning: { play(hero, fromBeginning: true) },
                                 onDelete: { confirmDeleteRecording = hero }
@@ -73,6 +74,7 @@ struct TVRecordingsView: View {
                                     TVRecordingCard(
                                         recording: rec,
                                         resumePos: model.resumePosition(for: rec.id),
+                                        channelName: model.channels.first(where: { $0.serviceRef == rec.serviceRef })?.name,
                                         onPlay: { play(rec) },
                                         onDelete: { confirmDeleteRecording = rec }
                                     )
@@ -80,16 +82,29 @@ struct TVRecordingsView: View {
                             }
                         }
 
-                        // 4. All Recordings Shelf / Grid
-                        TVShelf(title: "Alle Aufnahmen") {
-                            ForEach(recordings) { rec in
-                                TVRecordingCard(
-                                    recording: rec,
-                                    resumePos: model.resumePosition(for: rec.id),
-                                    onPlay: { play(rec) },
-                                    onDelete: { confirmDeleteRecording = rec }
-                                )
+                        // 4. All Recordings Grid
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Alle Aufnahmen")
+                                .font(TVDesign.Font.heading)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.adaptive(minimum: TVDesign.Layout.cardWidth, maximum: 400), spacing: TVDesign.Layout.gutter)
+                                ],
+                                spacing: TVDesign.Layout.gutter
+                            ) {
+                                ForEach(recordings) { rec in
+                                    TVRecordingCard(
+                                        recording: rec,
+                                        resumePos: model.resumePosition(for: rec.id),
+                                        channelName: model.channels.first(where: { $0.serviceRef == rec.serviceRef })?.name,
+                                        onPlay: { play(rec) },
+                                        onDelete: { confirmDeleteRecording = rec }
+                                    )
+                                }
                             }
+                            .padding(.vertical, 16)
                         }
                     }
                     .padding(.horizontal, 48)
@@ -138,6 +153,7 @@ struct TVRecordingsView: View {
 struct TVRecordingHero: View {
     let recording: Recording
     let resumePosition: Double?
+    var channelName: String? = nil
     var onPlay: () -> Void
     var onPlayFromBeginning: () -> Void
     var onDelete: () -> Void
@@ -147,15 +163,16 @@ struct TVRecordingHero: View {
         let hasResume = resumeSecs > 10
         let duration = Double(recording.durationSeconds)
         let progress = duration > 0 ? min(1.0, resumeSecs / duration) : 0
+        let palette = RecordingArtworkTheme.palette(for: recording)
 
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 14) {
-                Image(systemName: "film.stack.fill")
+                Image(systemName: palette.icon)
                     .font(TVDesign.Font.meta)
-                    .foregroundStyle(Theme.Colors.accentAction)
-                Text("Aufnahme")
+                    .foregroundStyle(palette.accent)
+                Text(palette.label)
                     .font(TVDesign.Font.meta)
-                    .foregroundStyle(Theme.Colors.accentAction)
+                    .foregroundStyle(palette.accent)
                 Text("•")
                     .font(TVDesign.Font.meta)
                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -168,6 +185,14 @@ struct TVRecordingHero: View {
                 Text(recording.formattedDuration)
                     .font(TVDesign.Font.meta)
                     .foregroundStyle(Theme.Colors.textSecondary)
+                if let channel = channelName, !channel.isEmpty {
+                    Text("•")
+                        .font(TVDesign.Font.meta)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    Text(channel)
+                        .font(TVDesign.Font.meta)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
             }
 
             Text(recording.title)
@@ -220,11 +245,18 @@ struct TVRecordingHero: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Theme.Gradients.cardSurface)
+                .fill(palette.gradient)
+                .overlay(
+                    Image(systemName: palette.icon)
+                        .font(.system(size: 160, weight: .ultraLight))
+                        .foregroundStyle(palette.accent.opacity(0.12))
+                        .offset(x: 40, y: -20),
+                    alignment: .trailing
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1)
+                .strokeBorder(palette.accent.opacity(0.35), lineWidth: 1)
         )
     }
 }
