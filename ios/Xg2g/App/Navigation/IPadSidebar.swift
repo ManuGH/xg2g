@@ -42,6 +42,7 @@ struct IPadSidebar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .modifier(TabShortcutModifier(character: tab.shortcutCharacter))
                     .listRowBackground(
                         isSelected
                             ? RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -178,5 +179,21 @@ struct IPadSidebar: View {
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
         Haptics.shared.impact(style)
+    }
+}
+
+private struct TabShortcutModifier: ViewModifier {
+    let character: Character?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if let character {
+            content.keyboardShortcut(KeyEquivalent(character), modifiers: .command)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

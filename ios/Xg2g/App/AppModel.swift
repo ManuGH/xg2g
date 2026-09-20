@@ -74,6 +74,18 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var shortcutCharacter: Character? {
+        switch self {
+        case .home: return "1"
+        case .liveTV: return "2"
+        case .guide: return "3"
+        case .recordings: return "4"
+        case .timers: return "5"
+        case .search: return "6"
+        case .settings: return ","
+        }
+    }
+
     /// The tabs a platform lists in its top-level navigation.
     ///
     /// On iPhone and iPad the search field lives in the Home hub's navigation

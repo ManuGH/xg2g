@@ -359,6 +359,21 @@ public struct LivePlayerScreen: View {
                         }
                     }
 #if os(iOS)
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active:
+                            if !showControls {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showControls = true
+                                }
+                            }
+                            scheduleControlsAutoHide()
+                        case .ended:
+                            scheduleControlsAutoHide()
+                        }
+                    }
+#endif
+#if os(iOS)
                     .gesture(
                         DragGesture(minimumDistance: 15)
                             .onChanged { value in
@@ -518,6 +533,51 @@ public struct LivePlayerScreen: View {
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+
+#if os(iOS)
+                LivePlayerKeyboardShortcuts(
+                    isLandscape: isLandscape,
+                    engineMode: engineMode,
+                    presentationPath: presentationPath,
+                    togglePlayPause: {
+                        togglePlayPause()
+                        scheduleControlsAutoHide()
+                    },
+                    zapRelative: { delta in
+                        zapRelative(delta: delta)
+                        scheduleControlsAutoHide()
+                    },
+                    seekTimeshiftRelative: { delta in
+                        seekTimeshiftRelative(delta)
+                        scheduleControlsAutoHide()
+                    },
+                    enterTimeshift: { secs in
+                        enterTimeshift(seekBackSeconds: secs)
+                        scheduleControlsAutoHide()
+                    },
+                    displayZapToast: { msg in
+                        displayZapToast(msg)
+                    },
+                    toggleZapDrawer: { isLand in
+                        handleKeyboardToggleZapDrawer(isLandscape: isLand)
+                    },
+                    cycleViewPreset: {
+                        cycleViewPreset()
+                    },
+                    toggleHUD: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showHUD.toggle()
+                        }
+                    },
+                    startPiP: {
+                        Haptics.shared.impact(.light)
+                        coordinator.surface.startPictureInPicture()
+                    },
+                    handleEscape: {
+                        handleKeyboardEscape()
+                    }
+                )
+#endif
             }
 #if !os(tvOS)
             .statusBarHidden(isLandscape)
@@ -1963,6 +2023,43 @@ public struct LivePlayerScreen: View {
         displayZapToast("Bildformat: \(viewPreset.rawValue)")
     }
 
+#if os(iOS)
+    private func handleKeyboardToggleZapDrawer(isLandscape: Bool) {
+        if isLandscape {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showLandscapeZapBar.toggle()
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showPortraitDrawer.toggle()
+            }
+        }
+        scheduleControlsAutoHide()
+    }
+
+    private func handleKeyboardEscape() {
+        if showLandscapeZapBar {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showLandscapeZapBar = false
+            }
+        } else if showPortraitDrawer {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showPortraitDrawer = false
+            }
+        } else if showHUD {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showHUD = false
+            }
+        } else if showControls {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showControls = false
+            }
+        } else {
+            closePlayer()
+        }
+    }
+#endif
+
     private func displayZapToast(_ message: String) {
         hideZapToastTask?.cancel()
         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -2293,6 +2390,76 @@ struct TVPlayerTransportButtonStyle: ButtonStyle {
             .scaleEffect(isFocused ? 1.2 : 1.0)
             .shadow(color: isFocused ? Color.white.opacity(0.4) : Color.black.opacity(0.4), radius: isFocused ? 16 : 6)
             .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+#endif
+
+#if os(iOS)
+private struct LivePlayerKeyboardShortcuts: View {
+    let isLandscape: Bool
+    let engineMode: LivePlayerScreen.PlaybackEngineMode
+    let presentationPath: MetalVideoView.PresentationPath
+    let togglePlayPause: () -> Void
+    let zapRelative: (Int) -> Void
+    let seekTimeshiftRelative: (Double) -> Void
+    let enterTimeshift: (Double) -> Void
+    let displayZapToast: (String) -> Void
+    let toggleZapDrawer: (Bool) -> Void
+    let cycleViewPreset: () -> Void
+    let toggleHUD: () -> Void
+    let startPiP: () -> Void
+    let handleEscape: () -> Void
+
+    var body: some View {
+        Group {
+            Button("") { togglePlayPause() }
+                .keyboardShortcut(.space, modifiers: [])
+
+            Button("") { zapRelative(1) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+
+            Button("") { zapRelative(-1) }
+                .keyboardShortcut(.downArrow, modifiers: [])
+
+            Button("") {
+                if engineMode == .timeshiftHLS {
+                    seekTimeshiftRelative(-30)
+                } else {
+                    enterTimeshift(30)
+                }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [])
+
+            Button("") {
+                if engineMode == .timeshiftHLS {
+                    seekTimeshiftRelative(30)
+                } else {
+                    displayZapToast("Bereits an der Live-Kante")
+                }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [])
+
+            Button("") { toggleZapDrawer(isLandscape) }
+                .keyboardShortcut("z", modifiers: [])
+
+            Button("") { cycleViewPreset() }
+                .keyboardShortcut("f", modifiers: [])
+
+            Button("") { toggleHUD() }
+                .keyboardShortcut("i", modifiers: [])
+
+            Button("") {
+                if presentationPath == .systemLayer {
+                    startPiP()
+                }
+            }
+            .keyboardShortcut("p", modifiers: [])
+
+            Button("") { handleEscape() }
+                .keyboardShortcut(.escape, modifiers: [])
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
     }
 }
 #endif
