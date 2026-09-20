@@ -114,6 +114,33 @@ func TestDITracker_AdaptationOnlyDISurvivesExactDuplicate(t *testing.T) {
 	}
 }
 
+func TestDITracker_AdaptationOnlyDISurvivesExactDuplicateAndSequentialIsSequential(t *testing.T) {
+	tracker := &esPacketTracker{}
+	p0 := makeTSPacket(0x100, false, 0x01, 4, nil, bytes.Repeat([]byte{0xAA}, 184))
+	tracker.classify(p0)
+
+	// Adaptation-only DI arms pendingDiscontinuity
+	tracker.pendingDiscontinuity = true
+
+	// Exact duplicate of CC 4 arrives
+	dup := append([]byte(nil), p0...)
+	if seq := tracker.classify(dup); seq != esExactDuplicate {
+		t.Fatalf("exact duplicate: got %v, want esExactDuplicate", seq)
+	}
+	if !tracker.pendingDiscontinuity {
+		t.Fatalf("pendingDiscontinuity must survive exact duplicate")
+	}
+
+	// Sequential CC 5 arrives without DI
+	p1 := makeTSPacket(0x100, false, 0x01, 5, nil, bytes.Repeat([]byte{0xBB}, 184))
+	if seq := tracker.classify(p1); seq != esSequential {
+		t.Fatalf("sequential packet after pending DI: got %v, want esSequential", seq)
+	}
+	if tracker.pendingDiscontinuity {
+		t.Fatalf("pendingDiscontinuity must be cleared after sequential packet")
+	}
+}
+
 func TestDITracker_ResetClearsPendingDiscontinuity(t *testing.T) {
 	tracker := &esPacketTracker{}
 	tracker.pendingDiscontinuity = true
