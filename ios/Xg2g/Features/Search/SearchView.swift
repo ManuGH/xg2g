@@ -14,7 +14,12 @@ import SwiftUI
 struct SearchView: View {
 
     @Bindable var model: AppModel
-    @State private var searchText = ""
+    @State private var searchText: String = {
+        if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--search-query=") }) {
+            return String(arg.dropFirst("--search-query=".count))
+        }
+        return ""
+    }()
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
 

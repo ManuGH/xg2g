@@ -14,7 +14,11 @@ enum RecordingArtworkTheme {
     }
 
     static func palette(for recording: Recording) -> Palette {
-        switch recording.genre {
+        palette(for: recording.genre)
+    }
+
+    static func palette(for genre: EPGGenre) -> Palette {
+        switch genre {
         case .movie:
             return Palette(
                 gradient: LinearGradient(

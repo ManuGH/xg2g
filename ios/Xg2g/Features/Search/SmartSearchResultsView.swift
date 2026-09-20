@@ -17,138 +17,248 @@ struct SmartSearchResultsView: View {
 
     var body: some View {
         if result.isEmpty {
-            VStack(spacing: 16) {
-                Spacer()
-                ContentUnavailableView(
-                    "Keine Treffer für „\(result.query)“",
-                    systemImage: "magnifyingglass",
-                    description: Text("Weder Sender noch laufende oder kommende Sendungen entsprechen deiner Suche.")
-                )
-                .foregroundStyle(Theme.Colors.textSecondary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            emptyView
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    // MARK: - 1. SENDER MATCHES
-                    if !result.channels.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            sectionHeader(
-                                title: "SENDER",
-                                icon: "tv",
-                                count: result.channels.count,
-                                color: Theme.Colors.accentAction
-                            )
+#if os(tvOS)
+            tvSearchResultsView
+#else
+            iosSearchResultsView
+#endif
+        }
+    }
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
-                                    ForEach(result.channels) { channel in
-                                        Button {
-                                            triggerHaptic(.light)
-                                            onPlayChannel(channel)
-                                        } label: {
-                                            HStack(spacing: 8) {
-                                                ChannelLogo(url: channel.logoURL, name: channel.name, size: 28)
+    private var emptyView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ContentUnavailableView(
+                "Keine Treffer für „\(result.query)“",
+                systemImage: "magnifyingglass",
+                description: Text("Weder Sender noch laufende oder kommende Sendungen entsprechen deiner Suche.")
+            )
+            .foregroundStyle(Theme.Colors.textSecondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-                                                VStack(alignment: .leading, spacing: 1) {
-                                                    if let number = channel.number {
-                                                        Text("CH \(number)")
-                                                            .font(.app(size: 9, weight: .bold, design: .monospaced))
-                                                            .foregroundStyle(Theme.Colors.accentAction)
-                                                    }
-                                                    Text(channel.name)
-                                                        .font(.app(size: 13, weight: .bold))
-                                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                                        .lineLimit(1)
-                                                }
+#if os(tvOS)
+    // MARK: - tvOS 10-Foot Scuderia Media Grid
 
-                                                Image(systemName: "play.circle.fill")
-                                                    .font(.app(size: 18))
-                                                    .foregroundStyle(Theme.Colors.accentAction)
-                                                    .padding(.leading, 4)
-                                            }
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                    .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
+    private var tvSearchResultsView: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: TVDesign.Layout.gutter * 1.5) {
+                // 1. SENDER MATCHES
+                if !result.channels.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        tvSectionHeader(title: "Sender", count: result.channels.count, icon: "tv.fill")
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: TVDesign.Layout.gutter) {
+                                ForEach(result.channels) { channel in
+                                    TVChannelSearchCard(channel: channel, onPlay: {
+                                        triggerHaptic(.medium)
+                                        onPlayChannel(channel)
+                                    })
                                 }
-                                .padding(.horizontal, 16)
                             }
+                            .padding(.vertical, 16)
                         }
                     }
+                }
 
-                    // MARK: - 2. JETZT LIVE AUF SENDUNG
-                    if !result.liveShows.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            sectionHeader(
-                                title: "JETZT LIVE",
-                                icon: "dot.radiowaves.left.and.right",
-                                count: result.liveShows.count,
-                                color: Theme.Colors.accentLive
-                            )
+                // 2. JETZT LIVE AUF SENDUNG
+                if !result.liveShows.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        tvSectionHeader(title: "Jetzt Live auf Sendung", count: result.liveShows.count, icon: "dot.radiowaves.left.and.right")
 
-                            VStack(spacing: 10) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: TVDesign.Layout.gutter) {
                                 ForEach(result.liveShows) { item in
-                                    LiveSearchResultCard(
+                                    TVLiveSearchCard(
                                         item: item,
                                         onPlay: {
                                             triggerHaptic(.medium)
                                             onPlayChannel(item.channel)
                                         },
-                                        onOpenDetail: {
-                                            onOpenShowDetail(item.channel, item.entry)
-                                        },
-                                        onRecord: {
-                                            onRecordShow(item.channel, item.entry)
-                                        }
+                                        onOpenDetail: { onOpenShowDetail(item.channel, item.entry) },
+                                        onRecord: { onRecordShow(item.channel, item.entry) }
                                     )
                                 }
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.vertical, 16)
                         }
                     }
+                }
 
-                    // MARK: - 3. DEMNÄCHST IM PROGRAMM
-                    if !result.upcomingShows.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            sectionHeader(
-                                title: "DEMNÄCHST IM PROGRAMM",
-                                icon: "calendar.badge.clock",
-                                count: result.upcomingShows.count,
-                                color: Theme.Colors.accentAction
-                            )
+                // 3. DEMNÄCHST IM PROGRAMM
+                if !result.upcomingShows.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        tvSectionHeader(title: "Demnächst im Programm", count: result.upcomingShows.count, icon: "calendar.badge.clock")
 
-                            VStack(spacing: 10) {
-                                ForEach(result.upcomingShows) { item in
-                                    UpcomingSearchResultCard(
-                                        item: item,
-                                        onOpenDetail: {
-                                            onOpenShowDetail(item.channel, item.entry)
-                                        },
-                                        onRecord: {
-                                            onRecordShow(item.channel, item.entry)
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.adaptive(minimum: TVDesign.Layout.cardWidth, maximum: 440), spacing: TVDesign.Layout.gutter)
+                            ],
+                            spacing: TVDesign.Layout.gutter
+                        ) {
+                            ForEach(result.upcomingShows) { item in
+                                TVUpcomingSearchCard(
+                                    item: item,
+                                    onOpenDetail: { onOpenShowDetail(item.channel, item.entry) },
+                                    onRecord: { onRecordShow(item.channel, item.entry) }
+                                )
+                            }
+                        }
+                        .padding(.vertical, 16)
+                    }
+                }
+            }
+            .padding(.horizontal, 48)
+            .padding(.vertical, 24)
+        }
+    }
+
+    private func tvSectionHeader(title: String, count: Int, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.Colors.accentAction)
+
+            Text(title)
+                .font(TVDesign.Font.heading)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            Text("\(count)")
+                .font(TVDesign.Font.meta)
+                .foregroundStyle(Theme.Colors.accentAction)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(Theme.Colors.accentAction.opacity(0.18), in: Capsule())
+        }
+    }
+#endif
+
+    // MARK: - iOS Compact Search Results
+    private var iosSearchResultsView: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                // 1. SENDER MATCHES
+                if !result.channels.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        iosSectionHeader(
+                            title: "SENDER",
+                            icon: "tv",
+                            count: result.channels.count,
+                            color: Theme.Colors.accentAction
+                        )
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(result.channels) { channel in
+                                    Button {
+                                        triggerHaptic(.light)
+                                        onPlayChannel(channel)
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            ChannelLogo(url: channel.logoURL, name: channel.name, size: 28)
+
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                if let number = channel.number {
+                                                    Text("CH \(number)")
+                                                        .font(.app(size: 9, weight: .bold, design: .monospaced))
+                                                        .foregroundStyle(Theme.Colors.accentAction)
+                                                }
+                                                Text(channel.name)
+                                                    .font(.app(size: 13, weight: .bold))
+                                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Image(systemName: "play.circle.fill")
+                                                .font(.app(size: 18))
+                                                .foregroundStyle(Theme.Colors.accentAction)
+                                                .padding(.leading, 4)
                                         }
-                                    )
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
                         }
                     }
                 }
-                .padding(.vertical, 14)
-                .safeAreaPadding(.bottom, 80)
+
+                // 2. JETZT LIVE AUF SENDUNG
+                if !result.liveShows.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        iosSectionHeader(
+                            title: "JETZT LIVE",
+                            icon: "dot.radiowaves.left.and.right",
+                            count: result.liveShows.count,
+                            color: Theme.Colors.accentLive
+                        )
+
+                        VStack(spacing: 10) {
+                            ForEach(result.liveShows) { item in
+                                LiveSearchResultCard(
+                                    item: item,
+                                    onPlay: {
+                                        triggerHaptic(.medium)
+                                        onPlayChannel(item.channel)
+                                    },
+                                    onOpenDetail: {
+                                        onOpenShowDetail(item.channel, item.entry)
+                                    },
+                                    onRecord: {
+                                        onRecordShow(item.channel, item.entry)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // 3. DEMNÄCHST IM PROGRAMM
+                if !result.upcomingShows.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        iosSectionHeader(
+                            title: "DEMNÄCHST IM PROGRAMM",
+                            icon: "calendar.badge.clock",
+                            count: result.upcomingShows.count,
+                            color: Theme.Colors.accentAction
+                        )
+
+                        VStack(spacing: 10) {
+                            ForEach(result.upcomingShows) { item in
+                                UpcomingSearchResultCard(
+                                    item: item,
+                                    onOpenDetail: {
+                                        onOpenShowDetail(item.channel, item.entry)
+                                    },
+                                    onRecord: {
+                                        onRecordShow(item.channel, item.entry)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
             }
+            .padding(.vertical, 14)
+            .safeAreaPadding(.bottom, 80)
         }
     }
 
-    private func sectionHeader(title: String, icon: String, count: Int, color: Color) -> some View {
+    private func iosSectionHeader(title: String, icon: String, count: Int, color: Color) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.app(size: 11, weight: .bold))
@@ -175,7 +285,238 @@ struct SmartSearchResultsView: View {
     }
 }
 
-// MARK: - Live Search Result Card
+#if os(tvOS)
+// MARK: - tvOS Specific Cards
+
+private struct TVChannelSearchCard: View {
+    let channel: Channel
+    var onPlay: () -> Void
+
+    var body: some View {
+        Button(action: onPlay) {
+            HStack(spacing: 18) {
+                ChannelLogo(url: channel.logoURL, name: channel.name, size: 56)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if let number = channel.number {
+                        Text("KANAL \(number)")
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                    }
+
+                    Text(channel.name)
+                        .font(TVDesign.Font.body)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                        Text("Live schauen")
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .frame(width: 320, height: 130)
+        }
+        .buttonStyle(TVCardButtonStyle())
+    }
+}
+
+private struct TVLiveSearchCard: View {
+    let item: SmartSearchShowItem
+    var onPlay: () -> Void
+    var onOpenDetail: () -> Void
+    var onRecord: () -> Void
+
+    var body: some View {
+        let genre = EPGGenreClassifier.classify(
+            title: item.entry.title,
+            description: item.entry.description,
+            channelName: item.channel.name
+        )
+        let palette = RecordingArtworkTheme.palette(for: genre)
+
+        Button(action: onPlay) {
+            ZStack(alignment: .bottomLeading) {
+                // Background Gradient & Watermark
+                RoundedRectangle(cornerRadius: TVDesign.Layout.cornerRadius, style: .continuous)
+                    .fill(palette.gradient)
+                    .overlay(
+                        Image(systemName: palette.icon)
+                            .font(.system(size: 80, weight: .ultraLight))
+                            .foregroundStyle(palette.accent.opacity(0.12))
+                            .offset(x: 25, y: -10),
+                        alignment: .trailing
+                    )
+
+                VStack(alignment: .leading, spacing: 10) {
+                    // Header: Channel Logo + Channel Name + LIVE badge
+                    HStack(spacing: 10) {
+                        ChannelLogo(url: item.channel.logoURL, name: item.channel.name, size: 36)
+
+                        Text(item.channel.name)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 0)
+
+                        HStack(spacing: 6) {
+                            PulsingLiveDot(size: 8)
+                            Text("LIVE")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.accentLive)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Theme.Colors.accentLive.opacity(0.18), in: Capsule())
+                    }
+
+                    Spacer(minLength: 0)
+
+                    // Title
+                    Text(item.entry.title)
+                        .font(TVDesign.Font.body)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    // Progress Bar
+                    if let progress = item.progress {
+                        TVProgressLine(progress: progress)
+                    }
+
+                    // Time Range & Remaining
+                    HStack {
+                        Text(item.entry.formattedTimeRange)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+
+                        Spacer(minLength: 0)
+
+                        if let rem = item.remainingMinutes {
+                            Text("noch \(rem) Min")
+                                .font(TVDesign.Font.meta)
+                                .foregroundStyle(palette.accent)
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .frame(width: 380, height: 210)
+        }
+        .buttonStyle(TVCardButtonStyle())
+        .contextMenu {
+            Button("Live ansehen", systemImage: "play.fill", action: onPlay)
+            Button("„\(item.entry.title)“ aufnehmen", systemImage: "record.circle", action: onRecord)
+            Button("Details ansehen", systemImage: "info.circle", action: onOpenDetail)
+        }
+    }
+}
+
+private struct TVUpcomingSearchCard: View {
+    let item: SmartSearchShowItem
+    var onOpenDetail: () -> Void
+    var onRecord: () -> Void
+
+    var body: some View {
+        let genre = EPGGenreClassifier.classify(
+            title: item.entry.title,
+            description: item.entry.description,
+            channelName: item.channel.name
+        )
+        let palette = RecordingArtworkTheme.palette(for: genre)
+
+        Button(action: onOpenDetail) {
+            ZStack(alignment: .bottomLeading) {
+                // Background Gradient & Watermark
+                RoundedRectangle(cornerRadius: TVDesign.Layout.cornerRadius, style: .continuous)
+                    .fill(palette.gradient)
+                    .overlay(
+                        Image(systemName: palette.icon)
+                            .font(.system(size: 80, weight: .ultraLight))
+                            .foregroundStyle(palette.accent.opacity(0.12))
+                            .offset(x: 25, y: -10),
+                        alignment: .trailing
+                    )
+
+                VStack(alignment: .leading, spacing: 10) {
+                    // Header: Channel Logo + Channel Name + Date/Time Badge
+                    HStack(spacing: 8) {
+                        ChannelLogo(url: item.channel.logoURL, name: item.channel.name, size: 32)
+
+                        Text(item.channel.name)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 0)
+
+                        Text(item.formattedBadge)
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Theme.Colors.accentAction.opacity(0.18), in: Capsule())
+                    }
+
+                    Spacer(minLength: 0)
+
+                    // Title
+                    Text(item.entry.title)
+                        .font(TVDesign.Font.body)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    // Description
+                    if let desc = item.entry.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
+                    }
+
+                    // Bottom Row: Genre Pill + Timer Action
+                    HStack {
+                        Text(palette.label)
+                            .font(TVDesign.Font.meta)
+                            .foregroundStyle(palette.accent)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.ultraThinMaterial, in: Capsule())
+
+                        Spacer(minLength: 0)
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "record.circle")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Timer")
+                                .font(TVDesign.Font.meta)
+                        }
+                        .foregroundStyle(Theme.Colors.accentAction)
+                    }
+                }
+                .padding(20)
+            }
+            .frame(width: TVDesign.Layout.cardWidth, height: 210)
+        }
+        .buttonStyle(TVCardButtonStyle())
+        .contextMenu {
+            Button("Details ansehen", systemImage: "info.circle", action: onOpenDetail)
+            Button("„\(item.entry.title)“ aufnehmen", systemImage: "record.circle", action: onRecord)
+        }
+    }
+}
+#endif
+
+// MARK: - iOS Live Search Result Card
 
 private struct LiveSearchResultCard: View {
     let item: SmartSearchShowItem
@@ -296,7 +637,7 @@ private struct LiveSearchResultCard: View {
     }
 }
 
-// MARK: - Upcoming Search Result Card
+// MARK: - iOS Upcoming Search Result Card
 
 private struct UpcomingSearchResultCard: View {
     let item: SmartSearchShowItem
