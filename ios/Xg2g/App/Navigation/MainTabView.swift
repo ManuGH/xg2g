@@ -23,6 +23,17 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
+#if os(tvOS)
+            // The television has its own home and channel screens on the
+            // shared model: one card size, three text sizes, focus-driven.
+            TVHomeView(model: model)
+                .tabItem { tabLabel(.home) }
+                .tag(Tab.home)
+
+            TVChannelGridView(model: model)
+                .tabItem { tabLabel(.liveTV) }
+                .tag(Tab.liveTV)
+#else
             HomeHubView(model: model)
                 .tabItem { tabLabel(.home) }
                 .tag(Tab.home)
@@ -30,6 +41,7 @@ struct MainTabView: View {
             ChannelListView(model: model)
                 .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
+#endif
 
             GuideView(model: model)
                 .tabItem { tabLabel(.guide) }
