@@ -1243,22 +1243,16 @@ func audioTSCorpusCases() []audioTSCase {
 	}
 	{
 		b := audioTSNew("same_cc_different_packet_is_broken",
-			"same CC with different bytes is broken transport, not a duplicate (defect)", audioTSProgram)
-		b.diverges("defect", "same CC with different payload indicates transport corruption/broken continuity, not a duplicate packet")
+			"same CC with different bytes is broken transport, not a duplicate", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		diffPayload := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		p0 := audioTSPacket(audioTSAudioA, true, 5, start)
 		p1Broken := audioTSPacket(audioTSAudioA, false, 5, diffPayload)
 		b.chunk(p0, p1Broken)
-		// Authored: 1 feed (broken continuation discarded/continuity broken)
+		// 1 feed (broken continuation discarded/continuity broken)
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
-
-		// Reference: feeds p1Broken blindly -> 2 feeds
-		b.refFeed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
-		b.refFeed(0, audioTSAudioA, diffPayload, obsFrames(2))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
 		cases = append(cases, b.done())
 	}
 
@@ -1423,8 +1417,7 @@ func audioTSCorpusCases() []audioTSCase {
 	}
 	{
 		b := audioTSNew("unannounced_cc_jump_while_in_header_discards_incomplete_pes",
-			"unannounced CC gap while PES header is incomplete discards partial PES (defect)", audioTSProgram)
-		b.diverges("defect", "an unannounced continuity counter gap while a PES header is incomplete invalidates header resolution and forces AwaitingStart")
+			"unannounced CC gap while PES header is incomplete discards partial PES", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
@@ -1433,12 +1426,8 @@ func audioTSCorpusCases() []audioTSCase {
 		b.next(audioTSAudioA) // skip a counter value
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
 		b.chunk(p0, p1)
-		// Authored: 0 feeds
+		// 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: feeds p1 -> 1 feed
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 
@@ -1853,9 +1842,7 @@ func TestAudioTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
 		"a_pes_header_reaching_past_its_packet":                           "divergence",
 		"scrambled_packet_while_in_header":                                "defect",
-		"same_cc_different_packet_is_broken":                              "defect",
 		"discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
-		"unannounced_cc_jump_while_in_header_discards_incomplete_pes":     "defect",
 	}
 	got := map[string]string{}
 	for _, c := range audioTSCorpusCases() {

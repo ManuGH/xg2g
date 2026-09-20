@@ -231,9 +231,20 @@ impl Follower {
     }
 
     /// Reads a payload that continues a payload unit already under way.
-    fn cont<'a>(&mut self, payload: &'a [u8], continuity: Continuity) -> Option<&'a [u8]> {
+    fn cont<'a>(
+        &mut self,
+        payload: &'a [u8],
+        continuity: Continuity,
+        same_cc_conflict: bool,
+    ) -> Option<&'a [u8]> {
         match self.position {
-            Position::InElementaryStream => Some(payload),
+            Position::InElementaryStream => {
+                if same_cc_conflict {
+                    None
+                } else {
+                    Some(payload)
+                }
+            }
             Position::AwaitingStart => None,
             Position::InHeader { remaining } => match continuity {
                 // The transport says bytes are missing. How many of them were
@@ -434,6 +445,8 @@ impl AudioIngress {
         let incarnation = self.incarnation;
         let follower = &mut self.followers[index];
 
+        let is_same_cc = follower.continuity.is_same_cc(view.continuity_counter());
+
         let continuity = follower
             .continuity
             .observe(view.bytes(), view.continuity_counter());
@@ -441,6 +454,9 @@ impl AudioIngress {
         if continuity == Continuity::Duplicate {
             return;
         }
+
+        let same_cc_conflict =
+            continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
 
         if view.transport_error_indicator() {
             if view.payload_unit_start() || matches!(follower.position, Position::InHeader { .. }) {
@@ -467,9 +483,14 @@ impl AudioIngress {
         follower.clear_packets += 1;
 
         let es = if view.payload_unit_start() {
-            follower.start(payload)
+            if same_cc_conflict {
+                follower.position = Position::AwaitingStart;
+                None
+            } else {
+                follower.start(payload)
+            }
         } else {
-            follower.cont(payload, continuity)
+            follower.cont(payload, continuity, same_cc_conflict)
         };
 
         // An empty run is not a feed. It is what a PES header ending exactly at

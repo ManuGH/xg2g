@@ -732,7 +732,8 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 	//    channel count above two can be read at all.
 	for _, apid := range c.audioPIDs {
 		if pid == apid {
-			if c.isExactDuplicateESPacketLocked(pid, pkt) {
+			seq := c.classifyESPacketLocked(pid, pkt)
+			if seq == esExactDuplicate {
 				return
 			}
 			tei := (pkt[1] & 0x80) != 0
@@ -764,7 +765,7 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 			}
 			c.clearAudioPackets++
 			c.audioClearRun++
-			c.observeAudioPayloadLocked(apid, pusi, payload)
+			c.observeAudioPayloadLocked(apid, pusi, payload, seq, pkt)
 			return
 		}
 	}
@@ -800,14 +801,20 @@ type audioStream struct {
 // This is where transport ends. The observer is given elementary stream payload
 // and nothing else - no PID, no packet, no PMT - so what it reads is a property
 // of the audio rather than of how the audio arrived.
-func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte) {
+func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte, seq esPacketSequence, pkt []byte) {
 	stream := c.audioStreams[pid]
 	if stream == nil {
 		return
 	}
 
+	sameCCConflict := seq == esSameCCDifferent && !hasDiscontinuityIndicator(pkt)
+
 	es := payload
 	if pusi {
+		if sameCCConflict {
+			c.beginAudioWaitLocked(stream)
+			return
+		}
 		// A payload unit starts here, and on a PID carrying PES that means a PES
 		// packet does - ISO/IEC 13818-1 2.4.3.6. So the elementary stream does
 		// not start here: the header comes first. Audio arrives either as an
@@ -832,7 +839,7 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 		esStart := 9 + int(payload[8])
 		if esStart >= len(payload) {
 			// The optional header ran past this packet. Track remaining bytes
-			// for TEI detection.
+			// for TEI/continuity detection.
 			stream.headerRemaining = esStart - len(payload)
 			return
 		}
@@ -842,7 +849,14 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 		// The body of a payload unit whose audio boundary nothing established.
 		return
 	} else if stream.headerRemaining > 0 {
-		// Decrement headerRemaining for TEI detection, but keep feeding payload
+		if seq == esGap || sameCCConflict {
+			// An unannounced continuity counter gap or conflicting same-CC packet
+			// while the optional PES header is incomplete means header bytes were lost.
+			// Discard the partial PES and await the next valid PUSI start.
+			c.beginAudioWaitLocked(stream)
+			return
+		}
+		// Decrement headerRemaining for TEI/continuity detection, but keep feeding payload
 		// to observer as Go currently does (preserving existing divergence).
 		if len(payload) >= stream.headerRemaining {
 			stream.headerRemaining = 0
@@ -850,6 +864,13 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 			stream.headerRemaining -= len(payload)
 		}
 	}
+
+	if sameCCConflict {
+		// Same CC with different bytes in elementary stream: transport corruption.
+		// Do not feed to audio observer.
+		return
+	}
+
 	stream.observer.Feed(es)
 	// The same bytes, in the same piece, at the same moment. Anything else - the
 	// packet, the chunk, a re-derivation from transport - would be a different
@@ -1846,6 +1867,20 @@ type esPacketTracker struct {
 	last    [TSPacketSize]byte
 }
 
+// hasDiscontinuityIndicator reports whether an MPEG-TS packet carries an
+// adaptation field with the discontinuity_indicator bit set (ISO/IEC 13818-1 2.4.3.5).
+func hasDiscontinuityIndicator(pkt []byte) bool {
+	if len(pkt) <= 5 {
+		return false
+	}
+	afc := (pkt[3] >> 4) & 0x03
+	if afc != 0x02 && afc != 0x03 {
+		return false
+	}
+	afl := int(pkt[4])
+	return afl > 0 && (pkt[5]&0x80) != 0
+}
+
 func (t *esPacketTracker) classify(pkt []byte) esPacketSequence {
 	if len(pkt) < TSPacketSize {
 		return esSequential
@@ -1876,27 +1911,18 @@ func (t *esPacketTracker) classify(pkt []byte) esPacketSequence {
 	}
 
 	// CC jump: check if Discontinuity Indicator is set in the adaptation field.
-	// ISO/IEC 13818-1: AFC bits 5..4 == 0b10 (adaptation only) or 0b11 (adaptation + payload).
-	afc := (pkt[3] >> 4) & 0x03
-	if (afc == 0x02 || afc == 0x03) && len(pkt) > 5 {
-		afl := int(pkt[4])
-		if afl > 0 && (pkt[5]&0x80) != 0 {
-			// Announced discontinuity: DI hardening remains a separate defect.
-			// Treat as sequential transition so existing DI tests are unaffected.
-			t.lastCC = cc
-			copy(t.last[:], pkt[:TSPacketSize])
-			return esSequential
-		}
+	if hasDiscontinuityIndicator(pkt) {
+		// Announced discontinuity: DI hardening remains a separate defect.
+		// Treat as sequential transition so existing DI tests are unaffected.
+		t.lastCC = cc
+		copy(t.last[:], pkt[:TSPacketSize])
+		return esSequential
 	}
 
 	// Unannounced CC jump:
 	t.lastCC = cc
 	copy(t.last[:], pkt[:TSPacketSize])
 	return esGap
-}
-
-func (t *esPacketTracker) observeExactDuplicate(pkt []byte) bool {
-	return t.classify(pkt) == esExactDuplicate
 }
 
 func (c *GoCore) classifyESPacketLocked(pid uint16, pkt []byte) esPacketSequence {
@@ -1909,16 +1935,4 @@ func (c *GoCore) classifyESPacketLocked(pid uint16, pkt []byte) esPacketSequence
 		c.esTrackers[pid] = tracker
 	}
 	return tracker.classify(pkt)
-}
-
-func (c *GoCore) isExactDuplicateESPacketLocked(pid uint16, pkt []byte) bool {
-	if c.esTrackers == nil {
-		c.esTrackers = make(map[uint16]*esPacketTracker, 4)
-	}
-	tracker := c.esTrackers[pid]
-	if tracker == nil {
-		tracker = &esPacketTracker{}
-		c.esTrackers[pid] = tracker
-	}
-	return tracker.observeExactDuplicate(pkt)
 }
