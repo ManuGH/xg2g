@@ -186,3 +186,32 @@ extension View {
         modifier(Theme.FadingHorizontalEdgesModifier(fadeWidth: fadeWidth))
     }
 }
+
+enum AppHoverEffectStyle: Sendable {
+    case highlight
+    case lift
+    case automatic
+}
+
+#if os(iOS)
+extension View {
+    @ViewBuilder
+    func appHoverEffect(_ style: AppHoverEffectStyle = .highlight) -> some View {
+        switch style {
+        case .highlight:
+            self.hoverEffect(.highlight)
+        case .lift:
+            self.hoverEffect(.lift)
+        case .automatic:
+            self.hoverEffect(.automatic)
+        }
+    }
+}
+#else
+extension View {
+    @ViewBuilder
+    func appHoverEffect(_ style: AppHoverEffectStyle = .highlight) -> some View {
+        self
+    }
+}
+#endif

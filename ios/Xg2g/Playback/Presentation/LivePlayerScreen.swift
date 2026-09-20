@@ -724,6 +724,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
 #endif
 
                     // 2. Channel Info (Compact & Non-overflowing)
@@ -915,6 +916,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
 
                     if isLandscape {
                         // 4. Picture in Picture Button (Landscape direct access, 44x44 hitbox)
@@ -932,6 +934,7 @@ public struct LivePlayerScreen: View {
                         .buttonStyle(.plain)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
+                        .appHoverEffect(.highlight)
                         .disabled(presentationPath != .systemLayer)
                         .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
 
@@ -1073,6 +1076,7 @@ public struct LivePlayerScreen: View {
                     }
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
 #endif
                 }
                 .padding(.horizontal, sideInset)
@@ -1098,6 +1102,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
 #else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 #endif
 
                     // Timeshift Rewind 30s
@@ -1120,6 +1125,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
 #else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 #endif
 
                     // Play / Pause Toggle
@@ -1140,6 +1146,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(TVPlayerTransportButtonStyle(size: 72, isPrimary: true))
 #else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 #endif
 
                     // Timeshift Forward 30s (active in Timeshift)
@@ -1162,6 +1169,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
 #else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 #endif
                     .disabled(engineMode != .timeshiftHLS)
 
@@ -1181,6 +1189,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
 #else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 #endif
                 }
 
@@ -1268,6 +1277,7 @@ public struct LivePlayerScreen: View {
                         .buttonStyle(TVPlayerPillButtonStyle())
 #else
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
 #endif
                     }
                     .padding(.horizontal, sideInset)
@@ -2457,9 +2467,52 @@ private struct LivePlayerKeyboardShortcuts: View {
 
             Button("") { handleEscape() }
                 .keyboardShortcut(.escape, modifiers: [])
+
+            Button("") { handleEscape() }
+                .keyboardShortcut(".", modifiers: .command)
         }
         .frame(width: 0, height: 0)
         .opacity(0)
+        .onReceive(NotificationCenter.default.publisher(for: .playerTogglePlayPause)) { _ in
+            togglePlayPause()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerZapNext)) { _ in
+            zapRelative(1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerZapPrevious)) { _ in
+            zapRelative(-1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerSeekBackward)) { _ in
+            if engineMode == .timeshiftHLS {
+                seekTimeshiftRelative(-30)
+            } else {
+                enterTimeshift(30)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerSeekForward)) { _ in
+            if engineMode == .timeshiftHLS {
+                seekTimeshiftRelative(30)
+            } else {
+                displayZapToast("Bereits an der Live-Kante")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerToggleZapDrawer)) { _ in
+            toggleZapDrawer(isLandscape)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerCycleAspect)) { _ in
+            cycleViewPreset()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerToggleHUD)) { _ in
+            toggleHUD()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerStartPiP)) { _ in
+            if presentationPath == .systemLayer {
+                startPiP()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerClose)) { _ in
+            handleEscape()
+        }
     }
 }
 #endif

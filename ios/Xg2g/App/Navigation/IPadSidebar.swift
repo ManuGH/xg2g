@@ -43,6 +43,7 @@ struct IPadSidebar: View {
                     }
                     .buttonStyle(.plain)
                     .modifier(TabShortcutModifier(character: tab.shortcutCharacter))
+                    .appHoverEffect(.highlight)
                     .listRowBackground(
                         isSelected
                             ? RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -82,6 +83,7 @@ struct IPadSidebar: View {
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 
                     // Favoriten
                     if !model.favoriteChannelIDs.isEmpty {
@@ -111,6 +113,7 @@ struct IPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
                     }
 
                     // Bouquets
@@ -144,6 +147,7 @@ struct IPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
                     }
                 }
             }

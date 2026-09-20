@@ -37,6 +37,11 @@ struct RootView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 Task { await model.handleAppBecameActive() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .selectAppTab)) { notification in
+                if let tab = notification.userInfo?["tab"] as? Tab {
+                    model.selectedTab = tab
+                }
+            }
             .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
                 guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
                 Task { @MainActor in

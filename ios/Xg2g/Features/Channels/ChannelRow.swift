@@ -29,6 +29,7 @@ struct ChannelRow: View {
 #else
         card
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .appHoverEffect(.highlight)
             .onTapGesture {
                 Haptics.shared.impact(.light)
                 onPlay()

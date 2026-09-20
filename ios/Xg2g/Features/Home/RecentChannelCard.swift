@@ -155,6 +155,7 @@ struct RecentChannelCard: View {
         )
         .shadow(color: Theme.Colors.accentLive.opacity(0.08), radius: 8, y: 3)
         .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .appHoverEffect(.lift)
         .onTapGesture {
             Haptics.shared.impact(.light)
             onPlay()
