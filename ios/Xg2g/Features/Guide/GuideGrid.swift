@@ -295,6 +295,7 @@ struct GuideGrid: View {
             }
             .frame(width: Metrics.channelColumnWidth, height: Metrics.rowHeight)
             .contentShape(Rectangle())
+            .appHoverEffect(.highlight)
         }
         .buttonStyle(.plain)
     }
@@ -432,6 +433,7 @@ private struct GuideGridBlock: View {
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .appHoverEffect(.highlight)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)")
     }

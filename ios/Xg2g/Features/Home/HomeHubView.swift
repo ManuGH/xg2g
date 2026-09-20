@@ -81,27 +81,6 @@ struct HomeHubView: View {
                             .foregroundStyle(Theme.Colors.textPrimary)
                     }
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 8) {
-                        // Playback Engine Badge
-                        Text(model.playbackEngine == .native ? "NATIVE TS" : "HLS")
-                            .font(.app(size: 9, weight: .bold, design: .monospaced))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2.5)
-                            .background(
-                                model.playbackEngine == .native
-                                    ? Theme.Colors.accentAction.opacity(0.2)
-                                    : Theme.Colors.accentLive.opacity(0.2),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(
-                                model.playbackEngine == .native
-                                    ? Theme.Colors.accentAction
-                                    : Theme.Colors.accentLive
-                            )
-                    }
-                }
             }
 #if !os(tvOS)
             // tvOS routes search through its own tab (`SearchView`): a focused
@@ -199,16 +178,16 @@ struct HomeHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "moon.stars.fill")
-                    .font(.app(size: 12, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
-                Text("HEUTE 20:15 UHR")
-                    .font(.app(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                Text("Prime Time heute")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
 
                 Spacer()
 
-                Text("Prime Time")
-                    .font(.app(size: 11, weight: .medium))
+                Text("20:15 Uhr")
+                    .font(.subheadline)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
 
@@ -241,11 +220,11 @@ struct HomeHubView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "play.rectangle.on.rectangle.fill")
-                    .font(.app(size: 12, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
-                Text("AUFNAHMEN")
-                    .font(.app(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                Text("Aufnahmen")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
 
                 Spacer()
 
@@ -253,7 +232,7 @@ struct HomeHubView: View {
                     model.selectedTab = .recordings
                 } label: {
                     Text("Alle anzeigen")
-                        .font(.app(size: 11, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
             }
@@ -362,6 +341,8 @@ private struct HomePrimeTimeCard: View {
                 .padding(.vertical, 6)
                 .background(Theme.Colors.accentAction.opacity(0.15), in: Capsule())
                 .foregroundStyle(Theme.Colors.accentAction)
+                .contentShape(Capsule())
+                .appHoverEffect(.highlight)
             }
             .buttonStyle(.plain)
         }
@@ -372,7 +353,8 @@ private struct HomePrimeTimeCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
         )
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .appHoverEffect(.highlight)
         .onTapGesture {
             onSelect()
         }
@@ -416,6 +398,8 @@ private struct HomeRecordingCard: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .appHoverEffect(.highlight)
         }
         .buttonStyle(.plain)
     }

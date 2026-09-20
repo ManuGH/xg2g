@@ -255,7 +255,7 @@ struct TVGuideChannelRow: View {
                                 .padding(.top, 2)
                         }
                     } else {
-                        Text("Keine Programminformationen")
+                        Text("Live-Kanal wiedergeben")
                             .font(TVDesign.Font.meta)
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }

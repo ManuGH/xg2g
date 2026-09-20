@@ -164,10 +164,15 @@ struct ChannelRow: View {
                     .padding(.top, 2)
                 }
             } else {
-                Text("Keine Programminformationen verfügbar")
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.vertical, 4)
+                HStack(spacing: 6) {
+                    Image(systemName: "tv")
+                        .font(.app(size: 13))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text("Live-Kanal wiedergeben")
+                        .font(.app(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .padding(.vertical, 4)
             }
 
             // MARK: - Next Show Preview ("Danach")

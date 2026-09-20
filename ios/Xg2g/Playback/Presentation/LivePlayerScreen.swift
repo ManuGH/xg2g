@@ -742,44 +742,44 @@ public struct LivePlayerScreen: View {
                             }
 
                             Text(displayedChannelName)
-                                .font(.app(size: 13, weight: .bold))
+                                .font(.app(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
                             if engineMode == .nativeDirectLive {
-                                let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE • DIRECT"
-                                Text(liveTag)
-                                    .font(.app(size: 9, weight: .black, design: .monospaced))
+                                Text("LIVE")
+                                    .font(.app(size: 10, weight: .black, design: .rounded))
                                     .foregroundStyle(Theme.Colors.accentLive)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1.5)
-                                    .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             } else {
                                 HStack(spacing: 3) {
                                     let isLiveHLS = abs(timeshiftOffsetSeconds) <= 5
-                                    Text(isLiveHLS ? "LIVE • HLS" : "TIMESHIFT")
-                                        .font(.app(size: 9, weight: .black, design: .monospaced))
+                                    Text(isLiveHLS ? "LIVE" : "TIMESHIFT")
+                                        .font(.app(size: 10, weight: .black, design: .rounded))
                                         .foregroundStyle(isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning)
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1.5)
-                                        .background((isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.25), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background((isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.25), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
 
                                     if !isLiveHLS {
                                         Text(formattedTimeshiftOffset)
-                                            .font(.app(size: 9, weight: .bold, design: .monospaced))
+                                            .font(.app(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(.white)
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1.5)
-                                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 2)
+                                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                     }
                                 }
                             }
                         }
 
-                        if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
-                            Text(preset.epgNow)
-                                .font(.app(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.8))
+                        let epgTitle = presentedPreset?.epgNow ?? presets.first(where: { $0.url == streamURLString })?.epgNow ?? ""
+                        if !epgTitle.isEmpty {
+                            Text(epgTitle)
+                                .font(.app(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
                         }
                     }
@@ -1034,37 +1034,42 @@ public struct LivePlayerScreen: View {
                             }
                         } label: {
                             Label(
-                                showHUD ? "Stream-Info ausblenden" : "Stream-Info (Inspector)",
+                                showHUD ? "Entwickler-Statistiken verbergen" : "Entwickler-Statistiken einblenden",
                                 systemImage: showHUD ? "chart.bar.fill" : "chart.bar"
                             )
                         }
 
-                        // Presentation Path Toggle (Layer vs Metal)
-                        Button {
-                            Haptics.shared.impact(.light)
-                            presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
-                        } label: {
-                            Label(
-                                presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
-                                systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
-                            )
-                        }
+                        // Erweiterte Optionen (Labor / Diagnostik)
+                        Menu {
+                            // Presentation Path Toggle (Layer vs Metal)
+                            Button {
+                                Haptics.shared.impact(.light)
+                                presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
+                            } label: {
+                                Label(
+                                    presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
+                                    systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
+                                )
+                            }
 
-                        // Stream-Routing (Labor / Bench A/B Test)
-                        Menu("Stream-Routing (Labor)") {
-                            ForEach(StreamRouteMode.allCases, id: \.self) { mode in
-                                Button {
-                                    streamRouteMode = mode
-                                    if isStreaming { startCurrentPreset() }
-                                } label: {
-                                    HStack {
-                                        Text(mode.rawValue)
-                                        if streamRouteMode == mode {
-                                            Image(systemName: "checkmark")
+                            // Stream-Routing (Labor / Bench A/B Test)
+                            Menu("Stream-Routing") {
+                                ForEach(StreamRouteMode.allCases, id: \.self) { mode in
+                                    Button {
+                                        streamRouteMode = mode
+                                        if isStreaming { startCurrentPreset() }
+                                    } label: {
+                                        HStack {
+                                            Text(mode.rawValue)
+                                            if streamRouteMode == mode {
+                                                Image(systemName: "checkmark")
+                                            }
                                         }
                                     }
                                 }
                             }
+                        } label: {
+                            Label("Erweiterte Optionen", systemImage: "wrench.and.screwdriver")
                         }
                     } label: {
                         Image(systemName: showHUD ? "ellipsis.circle.fill" : "ellipsis.circle")

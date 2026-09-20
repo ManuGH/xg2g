@@ -98,6 +98,8 @@ struct ProgramSpotlightHero: View {
                     .padding(.vertical, 10)
                     .background(Theme.Colors.accentAction, in: Capsule())
                     .foregroundStyle(.white)
+                    .contentShape(Capsule())
+                    .appHoverEffect(.highlight)
                 }
                 .buttonStyle(.plain)
 
@@ -114,6 +116,8 @@ struct ProgramSpotlightHero: View {
                     .background(Theme.Colors.surfaceElevated, in: Capsule())
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    .contentShape(Capsule())
+                    .appHoverEffect(.highlight)
                 }
                 .buttonStyle(.plain)
 
@@ -125,6 +129,8 @@ struct ProgramSpotlightHero: View {
                         .background(Theme.Colors.surfaceElevated, in: Circle())
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .contentShape(Circle())
+                        .appHoverEffect(.highlight)
                 }
                 .buttonStyle(.plain)
             }

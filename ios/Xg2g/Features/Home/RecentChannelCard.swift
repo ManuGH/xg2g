@@ -30,7 +30,7 @@ struct RecentChannelCard: View {
                         }
 
                         Text(channel.name)
-                            .font(.app(size: 14, weight: .bold))
+                            .font(.app(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                     }
@@ -39,7 +39,7 @@ struct RecentChannelCard: View {
                         HStack(spacing: 5) {
                             PulsingLiveDot(size: 5)
                             Text(now.formattedTimeRange)
-                                .font(.app(size: 10, weight: .medium, design: .monospaced))
+                                .font(.app(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
                     }
@@ -62,7 +62,7 @@ struct RecentChannelCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .top) {
                         Text(now.title)
-                            .font(.app(size: 13, weight: .bold))
+                            .font(.app(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
@@ -103,10 +103,15 @@ struct RecentChannelCard: View {
                     }
                 }
             } else {
-                Text("Keine Programminformationen")
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.vertical, 2)
+                HStack(spacing: 5) {
+                    Image(systemName: "play.circle")
+                        .font(.app(size: 13))
+                        .foregroundStyle(Theme.Colors.accentAction)
+                    Text("Live-Kanal wiedergeben")
+                        .font(.app(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .padding(.vertical, 2)
             }
 
             // Bottom: Action Pill
@@ -129,7 +134,7 @@ struct RecentChannelCard: View {
 
                 if let next = nowNext?.next {
                     Text("Danach: \(next.title)")
-                        .font(.app(size: 10))
+                        .font(.app(size: 11))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .lineLimit(1)
                         .frame(maxWidth: 110, alignment: .trailing)

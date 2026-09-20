@@ -75,6 +75,8 @@ struct ChannelListView: View {
                                 .overlay { if !isNow { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             // ⭐️ Favoriten
                             if !model.favoriteChannelIDs.isEmpty {
@@ -102,6 +104,8 @@ struct ChannelListView: View {
                                     .overlay { if !isFav { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .appHoverEffect(.highlight)
                             }
 
                             // 🍿 20:15
@@ -125,6 +129,8 @@ struct ChannelListView: View {
                                 .overlay { if !isPrime { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             // 🌙 22:00
                             let isLate = model.selectedTimeFilter == .lateNightTonight
@@ -147,6 +153,8 @@ struct ChannelListView: View {
                                 .overlay { if !isLate { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             Divider()
                                 .frame(height: 18)
@@ -174,6 +182,8 @@ struct ChannelListView: View {
                                     .overlay { if !isGenreSelected { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .appHoverEffect(.highlight)
                             }
                         }
                         .padding(.horizontal, 16)
