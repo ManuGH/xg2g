@@ -180,6 +180,7 @@ public final class SystemVideoPresenter: NSObject {
     /// seconds to get there. A commit that hands the surface straight from one prepared
     /// session to another does it in one step, and the app terminated on the exception.
     private var pendingSynchronizer: AVSampleBufferRenderSynchronizer?
+    private var isRemovingRenderer = false
 
     public func attach(to synchronizer: AVSampleBufferRenderSynchronizer) {
         guard attachedSynchronizer !== synchronizer else { return }
@@ -189,16 +190,26 @@ public final class SystemVideoPresenter: NSObject {
         // surface now, not on whichever move happened to finish last.
         pendingSynchronizer = synchronizer
 
+        if isRemovingRenderer {
+            // A removal is already in flight (from detach or a prior attach).
+            // completeAttach will be invoked once that removal finishes.
+            return
+        }
+
         guard let previous = attachedSynchronizer else {
             completeAttach(to: synchronizer)
             return
         }
 
         attachedSynchronizer = nil
+        isRemovingRenderer = true
         previous.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let target = self.pendingSynchronizer else { return }
-                self.completeAttach(to: target)
+                guard let self else { return }
+                self.isRemovingRenderer = false
+                if let target = self.pendingSynchronizer {
+                    self.completeAttach(to: target)
+                }
             }
         }
     }
@@ -213,9 +224,20 @@ public final class SystemVideoPresenter: NSObject {
 
     public func detach(from synchronizer: AVSampleBufferRenderSynchronizer) {
         if pendingSynchronizer === synchronizer { pendingSynchronizer = nil }
-        synchronizer.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { _ in }
+        guard attachedSynchronizer === synchronizer || isRemovingRenderer else { return }
+
         if attachedSynchronizer === synchronizer {
             attachedSynchronizer = nil
+            isRemovingRenderer = true
+            synchronizer.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.isRemovingRenderer = false
+                    if let target = self.pendingSynchronizer {
+                        self.completeAttach(to: target)
+                    }
+                }
+            }
         }
     }
 
@@ -401,6 +423,7 @@ public final class SystemVideoPresenter: NSObject {
             // shed against 13 delivered, and every other counter healthy.
             if pullInvocations > 0, readyTrue == 0, pendingSamples.count >= Self.maxPendingSamples {
                 raise("Display layer has not accepted a frame in \(String(format: "%.0f", now - lastDiagnosticLog + 2.0))s — \(pullInvocations) pulls, none ready, queue full at \(pendingSamples.count). Playback is stopped, not slow.")
+                recoverStalledRenderer()
             }
 
             pullInvocations = 0
@@ -456,6 +479,19 @@ public final class SystemVideoPresenter: NSObject {
             renderer.stopRequestingMediaData()
             isRequestingData = false
         }
+    }
+
+    /// Snaps the display layer out of an internal stall when isReadyForMoreMediaData
+    /// remains false despite incoming decoded frames.
+    private func recoverStalledRenderer() {
+        let renderer = displayLayer.sampleBufferRenderer
+        if isRequestingData {
+            renderer.stopRequestingMediaData()
+            isRequestingData = false
+        }
+        renderer.flush()
+        needsImmediateDisplay = true
+        drainPendingSamples()
     }
 
     /// Rebuilds the format description only when the dimensions actually change.

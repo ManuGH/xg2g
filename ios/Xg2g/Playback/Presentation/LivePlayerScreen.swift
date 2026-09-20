@@ -615,6 +615,9 @@ public struct LivePlayerScreen: View {
                 closePlayer()
             }
         }
+        .onPlayPauseCommand {
+            togglePlayPause()
+        }
         .onChange(of: showControls) { _, isShowing in
             if isShowing {
                 isPlayPauseFocused = true
@@ -1922,7 +1925,13 @@ public struct LivePlayerScreen: View {
                 } else {
                     isTimeshiftLoading = false
                     displayZapToast("HLS-Wiedergabe konnte nicht gestartet werden")
-                    jumpToLiveEdge()
+                    if seekBackSeconds > 0 || autoPlay {
+                        jumpToLiveEdge()
+                    } else {
+                        self.isPlaying = false
+                        self.engineMode = .nativeDirectLive
+                        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+                    }
                 }
             } catch {
                 isTimeshiftLoading = false
@@ -1938,7 +1947,13 @@ public struct LivePlayerScreen: View {
                 } else {
                     displayZapToast("Fehler bei HLS-Stream: \(err)")
                 }
-                jumpToLiveEdge()
+                if seekBackSeconds > 0 || autoPlay {
+                    jumpToLiveEdge()
+                } else {
+                    self.isPlaying = false
+                    self.engineMode = .nativeDirectLive
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+                }
             }
         }
     }
@@ -2064,13 +2079,33 @@ public struct LivePlayerScreen: View {
     private func togglePlayPause() {
         if engineMode == .timeshiftHLS {
             toggleTimeshiftPlayPause()
+        } else if model?.playbackEngine == .native {
+            if isPlaying {
+                pauseNativeLive()
+            } else {
+                resumeNativeLive()
+            }
         } else {
             if isPlaying {
                 enterTimeshift(seekBackSeconds: 0)
             } else {
-                startCurrentPreset()
+                resumeNativeLive()
             }
         }
+    }
+
+    private func pauseNativeLive() {
+        isPlaying = false
+        Task { await coordinator.stop() }
+        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+        displayZapToast("❚❚ Pausiert")
+    }
+
+    private func resumeNativeLive() {
+        isPlaying = true
+        startCurrentPreset()
+        NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+        displayZapToast("▶ Live-TV")
     }
 
     private func cycleViewPreset() {
