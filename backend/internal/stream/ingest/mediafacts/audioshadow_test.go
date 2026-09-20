@@ -97,12 +97,14 @@ func shadowAudioPackets(pid uint16, es []byte) ([]byte, [][]byte) {
 	var out []byte
 	var feeds [][]byte
 	first := true
+	cc := byte(0)
 	for len(es) > 0 {
 		pkt := make([]byte, TSPacketSize)
 		pkt[0] = SyncByte
 		pkt[1] = byte((pid >> 8) & 0x1F)
 		pkt[2] = byte(pid & 0xFF)
-		pkt[3] = 0x10
+		pkt[3] = 0x10 | (cc & 0x0F)
+		cc = (cc + 1) & 0x0F
 
 		body := 4
 		if first {

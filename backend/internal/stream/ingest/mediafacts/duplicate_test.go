@@ -34,36 +34,36 @@ func TestESPacketTracker_DirectTransitions(t *testing.T) {
 	pktWrap0 := makeTestTSPacket(0x100, false, 0, []byte("packet-wrapped-zero"))
 
 	// 1. First packet -> not duplicate, remembered
-	if tracker.observeExactDuplicate(pkt1) {
+	if tracker.classify(pkt1) == esExactDuplicate {
 		t.Fatalf("first packet must not be diagnosed as duplicate")
 	}
 
 	// 2. Same CC + identical packet -> duplicate
-	if !tracker.observeExactDuplicate(pkt1Copy) {
+	if tracker.classify(pkt1Copy) != esExactDuplicate {
 		t.Fatalf("same CC + identical full 188-byte packet must be detected as duplicate")
 	}
 
 	// 3. Same CC + different packet -> not duplicate (processed with current behavior)
-	if tracker.observeExactDuplicate(pkt1Different) {
+	if tracker.classify(pkt1Different) == esExactDuplicate {
 		t.Fatalf("same CC with different packet content must NOT be suppressed as exact duplicate")
 	}
 
 	// 4. Next sequential packet -> not duplicate
-	if tracker.observeExactDuplicate(pkt2) {
+	if tracker.classify(pkt2) == esExactDuplicate {
 		t.Fatalf("next sequential packet (different CC) must not be duplicate")
 	}
 
 	// 5. CC wrap 15 -> 0 -> not duplicate
-	if tracker.observeExactDuplicate(pktWrap15) {
+	if tracker.classify(pktWrap15) == esExactDuplicate {
 		t.Fatalf("packet at CC 15 must not be duplicate")
 	}
-	if tracker.observeExactDuplicate(pktWrap0) {
+	if tracker.classify(pktWrap0) == esExactDuplicate {
 		t.Fatalf("packet at CC 0 after CC 15 must not be duplicate")
 	}
 
 	// 6. Reset -> same packet again -> first/not duplicate
 	*tracker = esPacketTracker{}
-	if tracker.observeExactDuplicate(pktWrap0) {
+	if tracker.classify(pktWrap0) == esExactDuplicate {
 		t.Fatalf("after reset, initial packet must not be duplicate")
 	}
 }

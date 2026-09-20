@@ -285,6 +285,13 @@ impl ContinuityTracker {
         self.last_packet.len()
     }
 
+    /// Returns true if the tracker has observed a counter and the given counter
+    /// matches that previous counter value.
+    #[must_use]
+    pub(crate) fn is_same_cc(&self, continuity_counter: u8) -> bool {
+        self.has_cc && (continuity_counter & 0x0F) == self.last_cc
+    }
+
     /// Compares one payload-carrying packet against the one before it.
     ///
     /// A duplicate leaves the tracker untouched, because the packet it repeats

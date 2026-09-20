@@ -285,8 +285,7 @@ fn the_rust_ingress_answers_the_shared_corpus() {
         let rust_meets_authored = case.diverges.is_none()
             || case.name == "a_pes_header_reaching_past_its_packet"
             || case.name == "scrambled_packet_while_in_header"
-            || case.name == "discontinuity_indicator_while_in_header_discards_incomplete_pes"
-            || case.name == "unannounced_cc_jump_while_in_header_discards_incomplete_pes";
+            || case.name == "discontinuity_indicator_while_in_header_discards_incomplete_pes";
 
         if rust_meets_authored {
             compare(&case.name, "feed", &feeds, &authored);
@@ -342,13 +341,8 @@ fn only_the_classified_divergences_exist() {
     let want = [
         ("a_pes_header_reaching_past_its_packet", "divergence"),
         ("scrambled_packet_while_in_header", "defect"),
-        ("same_cc_different_packet_is_broken", "defect"),
         (
             "discontinuity_indicator_while_in_header_discards_incomplete_pes",
-            "defect",
-        ),
-        (
-            "unannounced_cc_jump_while_in_header_discards_incomplete_pes",
             "defect",
         ),
     ];

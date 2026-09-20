@@ -115,13 +115,15 @@ func langDescriptor(lang string) []byte {
 func audioPackets(pid uint16, es []byte, scrambled bool) [][]byte {
 	var out [][]byte
 	first := true
+	cc := byte(0)
 
 	for len(es) > 0 {
 		pkt := make([]byte, TSPacketSize)
 		pkt[0] = SyncByte
 		pkt[2] = byte(pid & 0xFF)
 		pkt[1] = byte((pid >> 8) & 0x1F)
-		pkt[3] = 0x10
+		pkt[3] = 0x10 | (cc & 0x0F)
+		cc = (cc + 1) & 0x0F
 		if scrambled {
 			pkt[3] |= 0x80
 		}
