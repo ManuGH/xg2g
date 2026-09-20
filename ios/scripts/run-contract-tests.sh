@@ -147,13 +147,13 @@ fi
 # xcodebuild reports a fully skipped suite as TEST SUCCEEDED. That is precisely
 # how a contract test comes to mean nothing while looking green, so the skip is
 # treated as a failure of this script rather than a result.
-if grep -q "Suite BackendContractTests skipped" "${OUTPUT}"; then
+if grep -qiE "(Suite BackendContractTests skipped|Test suite 'BackendContractTests' skipped)" "${OUTPUT}"; then
   echo "!! the contract suite was SKIPPED - it never reached the server." >&2
   echo "   XG2G_CONTRACT_BASE_URL did not arrive in the test runner." >&2
   exit 1
 fi
 
-if ! grep -qE "Suite BackendContractTests passed" "${OUTPUT}"; then
+if ! grep -qiE "(Suite BackendContractTests passed|Test case 'BackendContractTests/.* passed)" "${OUTPUT}"; then
   echo "!! the contract suite did not report a pass; refusing to call this green." >&2
   exit 1
 fi
