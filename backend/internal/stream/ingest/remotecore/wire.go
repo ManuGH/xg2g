@@ -41,7 +41,10 @@ import (
 // first bytes of it as a coverage and an offset that are not there - so this is
 // exactly the case the version exists for. There is no shim: a v2 peer is
 // refused at the handshake.
-const Version uint8 = 3
+//
+// 4 brings video facts (81 bytes) and video events (RandomAccessPoint and
+// RandomAccessPointInvalidated) across the wire, with coverage wireCoveragePSIVideo (3).
+const Version uint8 = 4
 
 // Message types. The set is closed on purpose - it is exactly the calls
 // mediafacts.Core makes, plus the two the connection itself needs.

@@ -254,11 +254,15 @@ func psiEvents(res mediafacts.ParseResult) string {
 	return strings.Join(names, " ")
 }
 
-// rustNonPSIEvents counts events a PSI-only core has no business reporting.
-func rustNonPSIEvents(res mediafacts.ParseResult) int {
+// rustIllegalEvents counts events outside PSI+Video coverage.
+func rustIllegalEvents(res mediafacts.ParseResult) int {
 	n := 0
 	for _, ev := range res.Events {
-		if ev.Kind != mediafacts.EventProgramIdentityChanged {
+		switch ev.Kind {
+		case mediafacts.EventProgramIdentityChanged,
+			mediafacts.EventRandomAccessPoint,
+			mediafacts.EventRandomAccessPointInvalidated:
+		default:
 			n++
 		}
 	}
@@ -334,11 +338,11 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 				if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d (%s): the reference reported coverage %s", call, what, goRes.Coverage)
 				}
-				if !rustRes.Covers(mediafacts.ParseCoveragePSIOnly) {
+				if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
 					t.Fatalf("call %d (%s): the real core reported coverage %s", call, what, rustRes.Coverage)
 				}
-				if n := rustNonPSIEvents(rustRes); n > 0 {
-					t.Fatalf("call %d (%s): the psi-only core reported %d event(s) outside PSI coverage",
+				if n := rustIllegalEvents(rustRes); n > 0 {
+					t.Fatalf("call %d (%s): the psi+video core reported %d event(s) outside PSI+Video coverage",
 						call, what, n)
 				}
 				raps += goRandomAccessPoints(goRes)
@@ -433,8 +437,7 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 		t.Fatal("no calls were compared; a hardware differential that compares nothing is not evidence")
 	}
 	t.Logf("hardware differential: %d cases, %d calls, all exact "+
-		"(reference also saw %d random access points, which a psi-only core "+
-		"does not report and was checked not to)", len(cases), compared, raps)
+		"(reference also saw %d random access points)", len(cases), compared, raps)
 }
 
 // TestPSIHardware_PacketizationInvariance replays the same captured bytes at
@@ -510,8 +513,8 @@ func TestPSIHardware_PacketizationInvariance(t *testing.T) {
 					if rustErr != nil {
 						t.Fatalf("offset %d: the real core failed: %v", offset, rustErr)
 					}
-					if n := rustNonPSIEvents(rustRes); n > 0 {
-						t.Fatalf("offset %d: the psi-only core reported %d event(s) outside PSI", offset, n)
+					if n := rustIllegalEvents(rustRes); n > 0 {
+						t.Fatalf("offset %d: the psi+video core reported %d event(s) outside PSI+Video", offset, n)
 					}
 					goScope, rustScope := scopeOf(goRes), scopeOf(rustRes)
 					goScope.events, rustScope.events = psiEvents(goRes), psiEvents(rustRes)

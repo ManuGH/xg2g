@@ -255,6 +255,15 @@ const (
 	// ParseCoverageComplete means every field of ParseResult is an answer. This
 	// is what GoCore returns and what a caller committing stream truth requires.
 	ParseCoverageComplete
+
+	// ParseCoveragePSIVideo means the result covers PSI fields, video fields
+	// (RandomAccess, CleanEntryPoints, CleanAccessUnits, ParameterSetsSeen,
+	// ScrambledVideoConfirmed, and Scrambling video counters: VideoScrambled,
+	// VideoClear, VideoClearRun), and declared Audio fields (AudioPIDs, AudioTracks
+	// declaration: PID, stream type, codec, language, declared channels/multichannel/component type).
+	// It does NOT cover observed audio fields (AudioTracks.Observed, or
+	// Scrambling audio counters: AudioScrambled, AudioClear, AudioClearRun).
+	ParseCoveragePSIVideo
 )
 
 // String names the coverage for an error message. Deliberately not a Stringer
@@ -268,6 +277,8 @@ func (c ParseCoverage) String() string {
 		return "psi-only"
 	case ParseCoverageComplete:
 		return "complete"
+	case ParseCoveragePSIVideo:
+		return "psi+video"
 	default:
 		return fmt.Sprintf("ParseCoverage(%d)", uint8(c))
 	}

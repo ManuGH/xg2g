@@ -56,6 +56,7 @@ func TestCoverage_ARingCommitsNothingFromAnIncompleteResult(t *testing.T) {
 		coverage mediafacts.ParseCoverage
 	}{
 		{"psi only", mediafacts.ParseCoveragePSIOnly},
+		{"psi+video", mediafacts.ParseCoveragePSIVideo},
 		// The zero value, which is what a core that has never heard of coverage
 		// returns. It must fail closed rather than read as complete.
 		{"unstated", mediafacts.ParseCoverageUnknown},

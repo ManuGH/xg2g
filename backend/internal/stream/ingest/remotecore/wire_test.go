@@ -21,7 +21,7 @@ import (
 // two red.
 var goldenHandshakeRequest = []byte{
 	0x00, 0x00, 0x00, 0x08, // length: header 6 + body 2
-	0x03,                   // version
+	0x04,                   // version
 	0x01,                   // handshake
 	0x00, 0x00, 0x00, 0x01, // request id 1
 	0x00, 0x01, // target programme 1
@@ -67,6 +67,13 @@ func TestEndToEnd_TheRealCoreAnswersWhatItWasGiven(t *testing.T) {
 	}
 	if _, err := os.Stat(bin); err != nil {
 		t.Skipf("media core binary not usable: %v", err)
+	}
+	if os.Getenv("XG2G_TEST_ALLOW_DARWIN_CORE") == "1" {
+		useIdentity(t, func(pid int) (processIdentity, error) {
+			return &darwinTestIdentity{pid: pid}, nil
+		})
+	} else {
+		requireOwnableCore(t)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -26,9 +26,8 @@
 use std::io::{self, Read, Write};
 
 use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
-use xg2g_media_core::psi::{
-    ActivePsi, Outcome as PsiOutcome, PsiCore, PsiEvent, PsiFacts, VideoCodec,
-};
+use xg2g_media_core::ingress::video::{VideoEvent, VideoFacts, VideoIngress, VideoSnapshot};
+use xg2g_media_core::psi::{ActivePsi, PsiFacts, VideoCodec};
 
 /// The protocol version this build speaks. Checked once, fatal when it differs.
 ///
@@ -43,7 +42,10 @@ use xg2g_media_core::psi::{
 /// target. A v2 peer answers the old short body, which a v3 caller would read as
 /// a coverage and an offset that are not there - so this is exactly what the
 /// version is for. There is no shim.
-pub const VERSION: u8 = 3;
+///
+/// 4 brings video facts (81 bytes) and video events across the wire with coverage
+/// `COVERAGE_PSI_VIDEO` (3).
+pub const VERSION: u8 = 4;
 
 pub const MSG_HANDSHAKE: u8 = 1;
 pub const MSG_INGEST: u8 = 2;
@@ -71,18 +73,24 @@ const OBSERVE_OBSERVATION_SIZE: usize = 2 + 8 + 1 + 1 + 1 + 8;
 
 /// What a result covers. Mirrors `mediafacts.ParseCoverage`.
 ///
-/// This core reads PSI, so every result it produces says so. A caller that
-/// commits stream truth requires complete coverage and must refuse this - which
-/// is the point: the absence of the fields this core does not fill has to be a
-/// statement, because their zero values are all legitimate answers.
-const COVERAGE_PSI_ONLY: u8 = 1;
+/// This core reads PSI and video, so every result it produces says so. A caller that
+/// commits stream truth requires complete coverage and must refuse this until
+/// observed audio is integrated in Step 7d-B.
+const COVERAGE_PSI_VIDEO: u8 = 3;
 
-/// Event kinds on the wire. A random access point is a statement about video
-/// payload, which this coverage does not include, so there is exactly one.
+/// Event kinds on the wire.
 const EVENT_PROGRAM_IDENTITY_CHANGED: u8 = 1;
+const EVENT_RANDOM_ACCESS_POINT: u8 = 2;
+const EVENT_RANDOM_ACCESS_POINT_INVALIDATED: u8 = 3;
 
 const FACT_HAS_PAT: u8 = 1 << 0;
 const FACT_HAS_PMT: u8 = 1 << 1;
+
+const VIDEO_FACT_PARAMETER_SETS_SEEN: u8 = 1 << 0;
+const VIDEO_FACT_SCRAMBLED_CONFIRMED: u8 = 1 << 1;
+
+/// The size of the video facts block: 1 byte flags + 2*8 clean counts + 5*8 random access + 3*8 scrambling = 81 bytes.
+const VIDEO_FACTS_SIZE: usize = 1 + 8 + 8 + (5 * 8) + (3 * 8);
 
 const TRACK_MULTICHANNEL: u8 = 1 << 0;
 const TRACK_HAS_COMPONENT_TYPE: u8 = 1 << 1;
@@ -106,8 +114,9 @@ const LANGUAGE_LEN: usize = 3;
 
 /// The fixed part of a result: status, coverage, offset, event count, facts
 /// flags, PMT version, programme number, PMT PID, video PID, video codec, the
-/// two audio counts and the two section counts.
-const RESULT_FIXED_SIZE: usize = 1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + 2 + 2;
+/// two audio counts, the video facts block, and the two section counts.
+const RESULT_FIXED_SIZE: usize =
+    1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + VIDEO_FACTS_SIZE + 2 + 2;
 const EVENT_SIZE: usize = 1 + 8 + 1;
 const AUDIO_PID_SIZE: usize = 2;
 const AUDIO_TRACK_SIZE: usize = 2 + 1 + 1 + LANGUAGE_LEN + 1 + 1 + 1;
@@ -216,14 +225,14 @@ pub enum Outcome {
 /// sharing one with an authoritative core.
 #[derive(Debug, Default)]
 pub struct Session {
-    /// The PSI parser for this connection, established by the handshake.
+    /// The video ingress parser for this connection, established by the handshake.
     ///
-    /// One connection is one stream, so one PSI lifecycle: the answer to the
+    /// One connection is one stream, so one ingress lifecycle: the answer to the
     /// second chunk depends on the first, and a core rebuilt per request would
     /// have no table in force to answer with. Absent until the handshake, so an
     /// ingest before one is a protocol error rather than a core invented on the
     /// spot with a target nobody chose.
-    psi: Option<PsiCore>,
+    video: Option<VideoIngress>,
     audio: Registry,
 }
 
@@ -256,18 +265,19 @@ impl Session {
                 // nothing to the programme already being followed is a change the
                 // stream never made. The handshake answers a status alone, so
                 // there is nowhere for such an event to go even if it existed.
-                self.psi = Some(PsiCore::new(target));
+                self.video = Some(VideoIngress::new(target));
                 Outcome::Answer(vec![STATUS_OK])
             }
             MSG_SET_TARGET_PROGRAM => {
                 let Some(target) = two_byte_program(&frame.body) else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
-                let Some(psi) = self.psi.as_mut() else {
+                let Some(video) = self.video.as_mut() else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
-                let outcome = psi.set_target_program(target);
-                Outcome::Answer(encode_psi_result(&outcome))
+                let events = video.set_target_program(target);
+                let snapshot = video.snapshot();
+                Outcome::Answer(encode_video_result(0, &events, &snapshot))
             }
             MSG_INGEST => {
                 if frame.body.len() < 8 {
@@ -285,15 +295,20 @@ impl Session {
                 let Ok(start) = i64::try_from(start) else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
-                let Some(psi) = self.psi.as_mut() else {
+                let Some(video) = self.video.as_mut() else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
-                let Ok(outcome) = psi.ingest(start, chunk) else {
+                let Ok(outcome) = video.ingest(start, chunk) else {
                     // The parser refuses what it cannot interpret. Its refusal is
                     // this answer's refusal; nothing is invented in between.
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
-                Outcome::Answer(encode_psi_result(&outcome))
+                let snapshot = video.snapshot();
+                Outcome::Answer(encode_video_result(
+                    outcome.processed_through,
+                    &outcome.events,
+                    &snapshot,
+                ))
             }
             MSG_OBSERVE_AUDIO_BATCH => Outcome::Answer(self.observe_audio(&frame.body)),
             MSG_SHUTDOWN => {
@@ -461,18 +476,21 @@ fn two_byte_program(body: &[u8]) -> Option<u16> {
 /// cannot fit the frame must fail rather than be discovered half-written: the
 /// alternative is allocating megabytes to find out they were not wanted, which
 /// is the same mistake as trusting a length prefix, made from the other side.
-fn psi_result_size(outcome: &PsiOutcome) -> Option<usize> {
+fn video_result_size(events: &[VideoEvent], snapshot: &VideoSnapshot) -> Option<usize> {
     let mut size = RESULT_FIXED_SIZE;
-    size = size.checked_add(outcome.events.len().checked_mul(EVENT_SIZE)?)?;
-    size = size.checked_add(outcome.facts.audio_pids.len().checked_mul(AUDIO_PID_SIZE)?)?;
+    size = size.checked_add(events.len().checked_mul(EVENT_SIZE)?)?;
+    size = size.checked_add(snapshot.psi.audio_pids.len().checked_mul(AUDIO_PID_SIZE)?)?;
     size = size.checked_add(
-        outcome
-            .facts
+        snapshot
+            .psi
             .audio_tracks
             .len()
             .checked_mul(AUDIO_TRACK_SIZE)?,
     )?;
-    for table in [&outcome.active.pat_sections, &outcome.active.pmt_sections] {
+    for table in [
+        &snapshot.active_psi.pat_sections,
+        &snapshot.active_psi.pmt_sections,
+    ] {
         for section in table {
             size = size
                 .checked_add(SECTION_PREFIX)?
@@ -487,8 +505,15 @@ fn psi_result_size(outcome: &PsiOutcome) -> Option<usize> {
 /// The two answers that carry a result use this one function, because they carry
 /// the same thing: what the core knows now. A second layout would be a second
 /// place for the two implementations to drift.
-fn encode_psi_result(outcome: &PsiOutcome) -> Vec<u8> {
-    let Some(size) = psi_result_size(outcome) else {
+fn encode_video_result(
+    processed_through: i64,
+    events: &[VideoEvent],
+    snapshot: &VideoSnapshot,
+) -> Vec<u8> {
+    debug_assert_eq!(snapshot.video.pid, snapshot.psi.video_pid);
+    debug_assert_eq!(snapshot.video.codec, snapshot.psi.video_codec);
+
+    let Some(size) = video_result_size(events, snapshot) else {
         return vec![STATUS_MALFORMED];
     };
     if size > MAX_FRAME_SIZE - HEADER_SIZE {
@@ -501,17 +526,17 @@ fn encode_psi_result(outcome: &PsiOutcome) -> Vec<u8> {
 
     let mut body = Vec::with_capacity(size);
     body.push(STATUS_OK);
-    body.push(COVERAGE_PSI_ONLY);
+    body.push(COVERAGE_PSI_VIDEO);
     #[allow(clippy::cast_sign_loss)] // an offset is never negative; the caller checks it too
-    body.extend_from_slice(&(outcome.processed_through as u64).to_be_bytes());
+    body.extend_from_slice(&(processed_through as u64).to_be_bytes());
 
-    encode_events(&mut body, &outcome.events);
-    if encode_facts(&mut body, &outcome.facts).is_none() {
+    encode_events(&mut body, events);
+    if encode_facts(&mut body, &snapshot.psi, &snapshot.video).is_none() {
         // A declaration this protocol has no way to say. Refused rather than
         // sent as the nearest thing that fits: see wire_audio_codec.
         return vec![STATUS_MALFORMED];
     }
-    encode_active_psi(&mut body, &outcome.active);
+    encode_active_psi(&mut body, &snapshot.active_psi);
 
     debug_assert_eq!(
         body.len(),
@@ -521,16 +546,25 @@ fn encode_psi_result(outcome: &PsiOutcome) -> Vec<u8> {
     body
 }
 
-fn encode_events(body: &mut Vec<u8>, events: &[PsiEvent]) {
+fn encode_events(body: &mut Vec<u8>, events: &[VideoEvent]) {
     body.extend_from_slice(&count32(events.len()).to_be_bytes());
     for event in events {
-        match event {
-            PsiEvent::ProgramIdentityChanged => {
+        match *event {
+            VideoEvent::ProgramIdentityChanged => {
                 body.push(EVENT_PROGRAM_IDENTITY_CHANGED);
-                // Offset and joinable are the Go event's shape. A PSI event
-                // carries neither, and says so as zeroes rather than by being a
-                // different size from the events a later step will add.
                 body.extend_from_slice(&0u64.to_be_bytes());
+                body.push(0);
+            }
+            VideoEvent::RandomAccessPoint { offset, joinable } => {
+                body.push(EVENT_RANDOM_ACCESS_POINT);
+                #[allow(clippy::cast_sign_loss)]
+                body.extend_from_slice(&(offset as u64).to_be_bytes());
+                body.push(u8::from(joinable));
+            }
+            VideoEvent::RandomAccessPointInvalidated { offset } => {
+                body.push(EVENT_RANDOM_ACCESS_POINT_INVALIDATED);
+                #[allow(clippy::cast_sign_loss)]
+                body.extend_from_slice(&(offset as u64).to_be_bytes());
                 body.push(0);
             }
         }
@@ -563,33 +597,33 @@ fn wire_audio_codec(codec: &str) -> Option<u8> {
 }
 
 /// Lays out the facts, or reports that they cannot be said on this protocol.
-fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) -> Option<()> {
+fn encode_facts(body: &mut Vec<u8>, psi: &PsiFacts, video: &VideoFacts) -> Option<()> {
     let mut flags = 0u8;
-    if facts.has_pat {
+    if psi.has_pat {
         flags |= FACT_HAS_PAT;
     }
-    if facts.has_pmt {
+    if psi.has_pmt {
         flags |= FACT_HAS_PMT;
     }
     body.push(flags);
-    body.push(facts.pmt_version);
-    body.extend_from_slice(&facts.program_number.to_be_bytes());
-    body.extend_from_slice(&facts.pmt_pid.to_be_bytes());
-    body.extend_from_slice(&facts.video_pid.to_be_bytes());
-    body.push(match facts.video_codec {
+    body.push(psi.pmt_version);
+    body.extend_from_slice(&psi.program_number.to_be_bytes());
+    body.extend_from_slice(&psi.pmt_pid.to_be_bytes());
+    body.extend_from_slice(&psi.video_pid.to_be_bytes());
+    body.push(match psi.video_codec {
         VideoCodec::Unknown => VIDEO_CODEC_UNKNOWN,
         VideoCodec::H264 => VIDEO_CODEC_H264,
         VideoCodec::H265 => VIDEO_CODEC_H265,
         VideoCodec::Mpeg2 => VIDEO_CODEC_MPEG2,
     });
 
-    body.extend_from_slice(&count32(facts.audio_pids.len()).to_be_bytes());
-    for pid in &facts.audio_pids {
+    body.extend_from_slice(&count32(psi.audio_pids.len()).to_be_bytes());
+    for pid in &psi.audio_pids {
         body.extend_from_slice(&pid.to_be_bytes());
     }
 
-    body.extend_from_slice(&count32(facts.audio_tracks.len()).to_be_bytes());
-    for track in &facts.audio_tracks {
+    body.extend_from_slice(&count32(psi.audio_tracks.len()).to_be_bytes());
+    for track in &psi.audio_tracks {
         body.extend_from_slice(&track.pid.to_be_bytes());
         body.push(track.stream_type);
         body.push(wire_audio_codec(&track.codec)?);
@@ -614,6 +648,27 @@ fn encode_facts(body: &mut Vec<u8>, facts: &PsiFacts) -> Option<()> {
         body.push(track_flags);
         body.push(track.declared.component_type);
     }
+
+    // 81-byte Video Facts Block
+    let mut video_flags = 0u8;
+    if video.parameter_sets_seen {
+        video_flags |= VIDEO_FACT_PARAMETER_SETS_SEEN;
+    }
+    if video.scrambled_confirmed {
+        video_flags |= VIDEO_FACT_SCRAMBLED_CONFIRMED;
+    }
+    body.push(video_flags);
+    body.extend_from_slice(&video.clean_rap_count.to_be_bytes());
+    body.extend_from_slice(&video.clean_access_units.to_be_bytes());
+    body.extend_from_slice(&video.irap_points.to_be_bytes());
+    body.extend_from_slice(&video.intra_points.to_be_bytes());
+    body.extend_from_slice(&video.recovery_point_seis.to_be_bytes());
+    body.extend_from_slice(&video.predicted_rejected.to_be_bytes());
+    body.extend_from_slice(&video.unreadable_slices.to_be_bytes());
+    body.extend_from_slice(&video.scrambled_packets.to_be_bytes());
+    body.extend_from_slice(&video.clear_packets.to_be_bytes());
+    body.extend_from_slice(&video.clear_run.to_be_bytes());
+
     Some(())
 }
 
@@ -645,7 +700,7 @@ fn count16(n: usize) -> u16 {
 mod tests {
     use super::*;
 
-    /// An empty PSI result: nothing read, nothing in force.
+    /// An empty result: nothing read, nothing in force.
     ///
     /// The same bytes the Go side asserts. If either edits its encoder, one of
     /// the two tests goes red rather than both silently agreeing on something
@@ -653,7 +708,7 @@ mod tests {
     /// from drifting apart.
     const GOLDEN_EMPTY_RESULT: &[u8] = &[
         0x00, // status ok
-        0x01, // coverage: PSI only
+        0x03, // coverage: PSI + Video (COVERAGE_PSI_VIDEO)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
         0x00, 0x00, 0x00, 0x00, // no events
         0x00, // no PAT, no PMT
@@ -664,31 +719,73 @@ mod tests {
         0x00, // video codec unknown
         0x00, 0x00, 0x00, 0x00, // no audio PIDs
         0x00, 0x00, 0x00, 0x00, // no audio tracks
+        // Video facts (81 bytes)
+        0x00, // video facts flags (no ps, no scrconf)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // clean_rap_count = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // clean_access_units = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // irap_points = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // intra_points = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // recovery_point_seis = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // predicted_rejected = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // unreadable_slices = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_scrambled = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear_run = 0
         0x00, 0x00, // no PAT sections
         0x00, 0x00, // no PMT sections
     ];
 
     #[test]
     fn an_empty_result_is_on_the_wire_exactly_as_agreed() {
-        let outcome = PsiOutcome {
-            processed_through: 1066,
-            events: Vec::new(),
-            facts: PsiFacts::default(),
-            active: ActivePsi::default(),
+        let snapshot = VideoSnapshot {
+            psi: PsiFacts::default(),
+            active_psi: ActivePsi::default(),
+            video: VideoFacts {
+                pid: 0,
+                codec: VideoCodec::Unknown,
+                clear_packets: 0,
+                scrambled_packets: 0,
+                clear_run: 0,
+                scrambled_confirmed: false,
+                awaiting_start: false,
+                current_pes_offset: None,
+                pes_starts: 0,
+                parameter_sets_seen: false,
+                pes_has_sps: false,
+                pes_has_pps: false,
+                pes_has_vps: false,
+                pes_has_recovery_point: false,
+                unreadable_slices: 0,
+                irap_points: 0,
+                intra_points: 0,
+                recovery_point_seis: 0,
+                predicted_rejected: 0,
+                clean_rap_count: 0,
+                clean_access_units: 0,
+            },
         };
-        assert_eq!(encode_psi_result(&outcome), GOLDEN_EMPTY_RESULT);
+        assert_eq!(
+            encode_video_result(1066, &[], &snapshot),
+            GOLDEN_EMPTY_RESULT
+        );
     }
 
-    /// A result with everything in it: an event, both tables in force, a video
-    /// stream and one audio track with a full declaration.
+    /// A result with everything in it: events of each kind, both tables in force, a video
+    /// stream with facts and one audio track with a full declaration.
     const GOLDEN_FULL_RESULT: &[u8] = &[
         0x00, // status ok
-        0x01, // coverage: PSI only
+        0x03, // coverage: PSI + Video
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
-        0x00, 0x00, 0x00, 0x01, // one event
-        0x01, // programme identity changed
+        0x00, 0x00, 0x00, 0x03, // 3 events
+        0x01, // event 1: program identity changed
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // offset 0
-        0x00, // not joinable
+        0x00, // flags 0
+        0x02, // event 2: random access point
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // offset 188
+        0x01, // flags 1 (joinable)
+        0x03, // event 3: random access point invalidated
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // offset 188
+        0x00, // flags 0
         0x03, // has PAT and PMT
         0x05, // PMT version 5
         0x00, 0x01, // programme 1
@@ -705,6 +802,18 @@ mod tests {
         0x02, // two channels
         0x02, // has a component type, not multichannel
         0x04, // component type 4
+        // Video facts (81 bytes)
+        0x03, // video facts flags: parameter_sets_seen | scrambled_confirmed
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // clean_rap_count = 1
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // clean_access_units = 2
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, // irap_points = 3
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, // intra_points = 4
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // recovery_point_seis = 5
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, // predicted_rejected = 6
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, // unreadable_slices = 7
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, // video_scrambled = 8
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // video_clear = 9
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, // video_clear_run = 10
         0x00, 0x01, // one PAT section
         0x00, 0x04, // four bytes
         0x00, 0xB0, 0x0D, 0x99, //
@@ -715,10 +824,16 @@ mod tests {
 
     #[test]
     fn a_full_result_is_on_the_wire_exactly_as_agreed() {
-        let outcome = PsiOutcome {
-            processed_through: 188,
-            events: vec![PsiEvent::ProgramIdentityChanged],
-            facts: PsiFacts {
+        let events = vec![
+            VideoEvent::ProgramIdentityChanged,
+            VideoEvent::RandomAccessPoint {
+                offset: 188,
+                joinable: true,
+            },
+            VideoEvent::RandomAccessPointInvalidated { offset: 188 },
+        ];
+        let snapshot = VideoSnapshot {
+            psi: PsiFacts {
                 has_pat: true,
                 has_pmt: true,
                 pmt_version: 5,
@@ -740,12 +855,38 @@ mod tests {
                     },
                 }],
             },
-            active: ActivePsi {
+            active_psi: ActivePsi {
                 pat_sections: vec![vec![0x00, 0xB0, 0x0D, 0x99]],
                 pmt_sections: vec![vec![0x02, 0xB0, 0x21]],
             },
+            video: VideoFacts {
+                pid: 257,
+                codec: VideoCodec::H264,
+                clear_packets: 9,
+                scrambled_packets: 8,
+                clear_run: 10,
+                scrambled_confirmed: true,
+                awaiting_start: false,
+                current_pes_offset: Some(188),
+                pes_starts: 1,
+                parameter_sets_seen: true,
+                pes_has_sps: true,
+                pes_has_pps: true,
+                pes_has_vps: false,
+                pes_has_recovery_point: false,
+                unreadable_slices: 7,
+                irap_points: 3,
+                intra_points: 4,
+                recovery_point_seis: 5,
+                predicted_rejected: 6,
+                clean_rap_count: 1,
+                clean_access_units: 2,
+            },
         };
-        assert_eq!(encode_psi_result(&outcome), GOLDEN_FULL_RESULT);
+        assert_eq!(
+            encode_video_result(188, &events, &snapshot),
+            GOLDEN_FULL_RESULT
+        );
     }
 
     /// A chunk that is not whole transport packets is not a chunk. The caller
@@ -763,10 +904,8 @@ mod tests {
     /// rather than a loud refusal.
     #[test]
     fn a_declaration_this_protocol_cannot_say_is_refused() {
-        let track = |codec: &str, language: &str| PsiOutcome {
-            processed_through: 188,
-            events: Vec::new(),
-            facts: PsiFacts {
+        let track = |codec: &str, language: &str| VideoSnapshot {
+            psi: PsiFacts {
                 audio_pids: vec![258],
                 audio_tracks: vec![xg2g_media_core::psi::AudioTrack {
                     pid: 258,
@@ -777,20 +916,43 @@ mod tests {
                 }],
                 ..PsiFacts::default()
             },
-            active: ActivePsi::default(),
+            active_psi: ActivePsi::default(),
+            video: VideoFacts {
+                pid: 0,
+                codec: VideoCodec::Unknown,
+                clear_packets: 0,
+                scrambled_packets: 0,
+                clear_run: 0,
+                scrambled_confirmed: false,
+                awaiting_start: false,
+                current_pes_offset: None,
+                pes_starts: 0,
+                parameter_sets_seen: false,
+                pes_has_sps: false,
+                pes_has_pps: false,
+                pes_has_vps: false,
+                pes_has_recovery_point: false,
+                unreadable_slices: 0,
+                irap_points: 0,
+                intra_points: 0,
+                recovery_point_seis: 0,
+                predicted_rejected: 0,
+                clean_rap_count: 0,
+                clean_access_units: 0,
+            },
         };
 
         // The values the parser actually produces are all sayable, including
         // the two that mean "nothing was declared".
         for codec in ["unknown", "mp2", "aac", "ac3", "eac3", "dts"] {
-            let answer = encode_psi_result(&track(codec, "und"));
+            let answer = encode_video_result(188, &[], &track(codec, "und"));
             assert_eq!(
                 answer[0], STATUS_OK,
                 "codec {codec} with language und was refused"
             );
         }
         for language in ["und", "deu", "eng"] {
-            let answer = encode_psi_result(&track("ac3", language));
+            let answer = encode_video_result(188, &[], &track("ac3", language));
             assert_eq!(answer[0], STATUS_OK, "language {language} was refused");
         }
 
@@ -803,7 +965,7 @@ mod tests {
             ("ac3", "deutsch", "a language of seven bytes"),
             ("ac3", "", "no language at all"),
         ] {
-            let answer = encode_psi_result(&track(codec, language));
+            let answer = encode_video_result(188, &[], &track(codec, language));
             assert_eq!(
                 answer,
                 vec![STATUS_MALFORMED],
@@ -932,7 +1094,7 @@ mod tests {
     // produce these exact lengths to pass.
     const GOLDEN_OBSERVE_REQUEST: &[u8] = &[
         0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-        0x03, // version
+        0x04, // version 4
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, 0x00, 0x00, 0x01, // one batch
@@ -945,7 +1107,7 @@ mod tests {
 
     const GOLDEN_OBSERVE_ANSWER: &[u8] = &[
         0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-        0x03, // version
+        0x04, // version 4
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, // status ok

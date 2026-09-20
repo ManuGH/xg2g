@@ -23,7 +23,7 @@ import (
 // goldenEmptyResult is a core that has read nothing: no tables, no events.
 var goldenEmptyResult = []byte{
 	0x00,                                           // status ok
-	0x01,                                           // coverage: PSI only
+	0x03,                                           // coverage: PSI + Video (wireCoveragePSIVideo)
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
 	0x00, 0x00, 0x00, 0x00, // no events
 	0x00,       // no PAT, no PMT
@@ -34,20 +34,38 @@ var goldenEmptyResult = []byte{
 	0x00,                   // video codec unknown
 	0x00, 0x00, 0x00, 0x00, // no audio PIDs
 	0x00, 0x00, 0x00, 0x00, // no audio tracks
+	// Video facts (81 bytes)
+	0x00,                                           // video facts flags (no ps, no scrconf)
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // clean_rap_count = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // clean_access_units = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // irap_points = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // intra_points = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // recovery_point_seis = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // predicted_rejected = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // unreadable_slices = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_scrambled = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear_run = 0
 	0x00, 0x00, // no PAT sections
 	0x00, 0x00, // no PMT sections
 }
 
-// goldenFullResult carries one of everything: an event, both tables, a video
-// stream, and an audio track with a complete declaration.
+// goldenFullResult carries one of everything: events of each kind, both tables, a video
+// stream with facts, and an audio track with a complete declaration.
 var goldenFullResult = []byte{
 	0x00,                                           // status ok
-	0x01,                                           // coverage: PSI only
+	0x03,                                           // coverage: PSI + Video
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
-	0x00, 0x00, 0x00, 0x01, // one event
-	0x01,                                           // programme identity changed
+	0x00, 0x00, 0x00, 0x03, // 3 events
+	0x01,                                           // event 1: programme identity changed
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // offset 0
-	0x00,       // not joinable
+	0x00,                                           // flags 0
+	0x02,                                           // event 2: random access point
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // offset 188
+	0x01,                                           // flags 1 (joinable)
+	0x03,                                           // event 3: random access point invalidated
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // offset 188
+	0x00,       // flags 0
 	0x03,       // has PAT and PMT
 	0x05,       // PMT version 5
 	0x00, 0x01, // programme 1
@@ -61,9 +79,21 @@ var goldenFullResult = []byte{
 	0x06,          // stream type 0x06
 	0x03,          // ac3
 	'd', 'e', 'u', // language
-	0x02,       // two channels
-	0x02,       // has a component type, not multichannel
-	0x04,       // component type 4
+	0x02, // two channels
+	0x02, // has a component type, not multichannel
+	0x04, // component type 4
+	// Video facts (81 bytes)
+	0x03,                                           // video facts flags: parameter_sets_seen | scrambled_confirmed
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // clean_rap_count = 1
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // clean_access_units = 2
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, // irap_points = 3
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, // intra_points = 4
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // recovery_point_seis = 5
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, // predicted_rejected = 6
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, // unreadable_slices = 7
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, // video_scrambled = 8
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // video_clear = 9
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, // video_clear_run = 10
 	0x00, 0x01, // one PAT section
 	0x00, 0x04, // four bytes
 	0x00, 0xB0, 0x0D, 0x99,
@@ -77,8 +107,8 @@ func TestPSIResult_TheEmptyEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.Covers(mediafacts.ParseCoveragePSIOnly) {
-		t.Errorf("coverage %s, want psi-only", got.Coverage)
+	if !got.Covers(mediafacts.ParseCoveragePSIVideo) {
+		t.Errorf("coverage %s, want psi+video", got.Coverage)
 	}
 	if got.ProcessedThroughOffset != 1066 {
 		t.Errorf("through %d, want 1066", got.ProcessedThroughOffset)
@@ -88,6 +118,9 @@ func TestPSIResult_TheEmptyEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	}
 	if got.Facts.HasPAT || got.Facts.HasPMT {
 		t.Errorf("facts claim a table: %+v", got.Facts)
+	}
+	if got.Facts.ParameterSetsSeen || got.Facts.ScrambledVideoConfirmed {
+		t.Errorf("video facts non-zero in empty result: %+v", got.Facts)
 	}
 	if len(got.PSI.PATSections) != 0 || len(got.PSI.PMTSections) != 0 {
 		t.Errorf("sections present in an empty result")
@@ -100,14 +133,23 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
+	if !got.Covers(mediafacts.ParseCoveragePSIVideo) {
+		t.Errorf("coverage %s, want psi+video", got.Coverage)
+	}
 	if got.ProcessedThroughOffset != 188 {
 		t.Errorf("through %d, want 188", got.ProcessedThroughOffset)
 	}
-	if len(got.Events) != 1 || got.Events[0].Kind != mediafacts.EventProgramIdentityChanged {
-		t.Fatalf("events %+v", got.Events)
+	if len(got.Events) != 3 {
+		t.Fatalf("events count = %d, want 3: %+v", len(got.Events), got.Events)
 	}
-	if got.Events[0].Offset != 0 || got.Events[0].Joinable {
-		t.Errorf("event %+v, want offset 0 and not joinable", got.Events[0])
+	if got.Events[0].Kind != mediafacts.EventProgramIdentityChanged || got.Events[0].Offset != 0 || got.Events[0].Joinable {
+		t.Errorf("event 0: %+v", got.Events[0])
+	}
+	if got.Events[1].Kind != mediafacts.EventRandomAccessPoint || got.Events[1].Offset != 188 || !got.Events[1].Joinable {
+		t.Errorf("event 1: %+v", got.Events[1])
+	}
+	if got.Events[2].Kind != mediafacts.EventRandomAccessPointInvalidated || got.Events[2].Offset != 188 || got.Events[2].Joinable {
+		t.Errorf("event 2: %+v", got.Events[2])
 	}
 
 	f := got.Facts
@@ -137,6 +179,44 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 		t.Errorf("component type %+v", tr.Declared)
 	}
 
+	// Video Facts verification
+	if !f.ParameterSetsSeen {
+		t.Error("ParameterSetsSeen = false, want true")
+	}
+	if !f.ScrambledVideoConfirmed {
+		t.Error("ScrambledVideoConfirmed = false, want true")
+	}
+	if f.CleanEntryPoints != 1 {
+		t.Errorf("CleanEntryPoints = %d, want 1", f.CleanEntryPoints)
+	}
+	if f.CleanAccessUnits != 2 {
+		t.Errorf("CleanAccessUnits = %d, want 2", f.CleanAccessUnits)
+	}
+	if f.RandomAccess.IRAPPoints != 3 {
+		t.Errorf("IRAPPoints = %d, want 3", f.RandomAccess.IRAPPoints)
+	}
+	if f.RandomAccess.IntraPoints != 4 {
+		t.Errorf("IntraPoints = %d, want 4", f.RandomAccess.IntraPoints)
+	}
+	if f.RandomAccess.RecoveryPointSEIs != 5 {
+		t.Errorf("RecoveryPointSEIs = %d, want 5", f.RandomAccess.RecoveryPointSEIs)
+	}
+	if f.RandomAccess.PredictedRejected != 6 {
+		t.Errorf("PredictedRejected = %d, want 6", f.RandomAccess.PredictedRejected)
+	}
+	if f.RandomAccess.UnreadableSlices != 7 {
+		t.Errorf("UnreadableSlices = %d, want 7", f.RandomAccess.UnreadableSlices)
+	}
+	if f.Scrambling.VideoScrambled != 8 {
+		t.Errorf("VideoScrambled = %d, want 8", f.Scrambling.VideoScrambled)
+	}
+	if f.Scrambling.VideoClear != 9 {
+		t.Errorf("VideoClear = %d, want 9", f.Scrambling.VideoClear)
+	}
+	if f.Scrambling.VideoClearRun != 10 {
+		t.Errorf("VideoClearRun = %d, want 10", f.Scrambling.VideoClearRun)
+	}
+
 	// The section bytes come back exactly, which is the whole point of carrying
 	// them rather than re-deriving them on this side.
 	if len(got.PSI.PATSections) != 1 || !bytes.Equal(got.PSI.PATSections[0], []byte{0x00, 0xB0, 0x0D, 0x99}) {
@@ -155,11 +235,16 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 	// A body that decodes cleanly, so each case below differs from it in one way.
 	good := append([]byte(nil), goldenFullResult...)
 
-	// The offsets below are counted from the layout, not guessed: status 0,
-	// coverage 1, through 2, event count 10, the event 14, facts flags 24,
-	// version 25, programme 26, PMT PID 28, video PID 30, video codec 32, audio
-	// PID count 33, track count 39, the track 43. A wrong one here would make a
-	// case pass for a reason that has nothing to do with its name.
+	// The offsets below are counted from the layout, not guessed:
+	// status 0, coverage 1, through 2..9, event count 10..13,
+	// event 1 (14..23: 14 kind, 15..22 offset, 23 flags),
+	// event 2 (24..33: 24 kind, 25..32 offset, 33 flags),
+	// event 3 (34..43: 34 kind, 35..42 offset, 43 flags),
+	// facts flags 44, version 45, programme 46..47, PMT PID 48..49, video PID 50..51,
+	// video codec 52, audio PID count 53..56, audio PID 57..58,
+	// track count 59..62, track 63..72 (63..64 PID, 65 stream type, 66 codec, 67..69 lang, 70 channels, 71 flags, 72 comp),
+	// video facts 73..153 (73 flags, 74..81 clean_rap, 82..89 clean_au, 90..97 irap, 98..105 intra, 106..113 rpsei, 114..121 predrej, 122..129 unread, 130..137 vscr, 138..145 vclr, 146..153 vrun),
+	// PAT sections 154..
 	replace := func(at int, with ...byte) []byte {
 		out := append([]byte(nil), good...)
 		copy(out[at:], with)
@@ -187,18 +272,23 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 		{"coverage complete", replace(1, 0x02)},
 		{"coverage nobody defined", replace(1, 0x7F)},
 		{"an offset past what an offset can be", replace(2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)},
-		{"an event kind this build does not know", replace(14, 0x02)},
-		{"event flags nobody defined", replace(23, 0x80)},
-		{"facts flags nobody defined", replace(24, 0x80)},
-		{"a video codec this build does not know", replace(32, 0x7F)},
-		{"an audio codec this build does not know", replace(46, 0x7F)},
-		{"track flags nobody defined", replace(51, 0x80)},
+		{"an event kind this build does not know", replace(14, 0x04)},
+		{"event 1 (identity) with non-zero offset", replace(15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)},
+		{"event 1 (identity) with non-zero flags", replace(23, 0x01)},
+		{"event 2 (rap) with invalid flag bits", replace(33, 0x02)},
+		{"event 3 (rap invalidated) with non-zero flags", replace(43, 0x01)},
+		{"facts flags nobody defined", replace(44, 0x80)},
+		{"a video codec this build does not know", replace(52, 0x7F)},
+		{"an audio codec this build does not know", replace(66, 0x7F)},
+		{"track flags nobody defined", replace(71, 0x80)},
+		{"video facts flags nobody defined", replace(73, 0x80)},
+		{"truncated in video facts block", good[:100]},
 		{"truncated before the sections", good[:len(good)-8]},
 		{"truncated mid-section", good[:len(good)-2]},
 		{"trailing bytes after the result", append(append([]byte(nil), good...), 0x00)},
 		{"more events than the frame can hold", replace(10, 0xFF, 0xFF, 0xFF, 0xFF)},
-		{"more audio PIDs than the frame can hold", replace(33, 0xFF, 0xFF, 0xFF, 0xFF)},
-		{"more audio tracks than the frame can hold", replace(39, 0xFF, 0xFF, 0xFF, 0xFF)},
+		{"more audio PIDs than the frame can hold", replace(53, 0xFF, 0xFF, 0xFF, 0xFF)},
+		{"more audio tracks than the frame can hold", replace(59, 0xFF, 0xFF, 0xFF, 0xFF)},
 		{"more sections than a table may have", sections(mediafacts.MaxSectionsPerTable+1, 3)},
 		{"a section longer than a section may be", sections(1, mediafacts.MaxSectionBytes+1)},
 		{"a section shorter than a section may be", sections(1, 2)},
