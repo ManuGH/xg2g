@@ -2,11 +2,11 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-use super::VideoIngress;
 use super::video::{
     BitReader, SCRAMBLED_CONFIRMED_THRESHOLD, h264_slice_is_intra, mpeg2_picture_is_intra,
     remove_emulation_prevention, sei_has_recovery_point,
 };
+use super::{VideoEvent, VideoIngress};
 use crate::psi::VideoCodec;
 use crate::transport::TS_PACKET_LEN;
 
@@ -866,4 +866,140 @@ fn regression_pending_capture_aborted_on_transport_break_without_consume() {
     // Invariant: On transport breaks (loss in transit), the pending capture is aborted
     // (discarded) rather than consumed. unreadable_slices stays 0!
     assert_eq!(facts.unreadable_slices, 0);
+}
+
+#[test]
+fn test_sei_cross_packet_emulation_prevention_and_recovery_point() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // Packet 1: PUSI with PES header + SEI NAL header (0x06) + message 1 (type=1, size=4).
+    // Message 1 payload has 0xAA, followed by [0x00, 0x00] right at the end of packet 1.
+    let p1_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x06, // SEI startcode + NAL header (H.264 SEI = 6)
+        0x01, // payload_type = 1
+        0x04, // payload_size = 4
+        0xAA, // 1st payload byte
+        0x00, 0x00, // zero bytes at end of packet 1
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &p1_payload);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += PACKET_LEN_I64;
+
+    // In packet 1, recovery point has NOT been seen yet.
+    assert!(!ingress.facts().pes_has_recovery_point);
+
+    // Packet 2: Continuation with emulation prevention byte 0x03 followed by remaining payload byte 0xBB
+    // of message 1, and then message 2 which is the recovery point (type=6, size=2, 0x80, 0x80).
+    // 00 00 03 BB -> emulation prevention 03 is stripped, leaving 00 00 BB as RBSP bytes.
+    let p2_payload = vec![
+        0x03, 0xBB, // completes message 1 (4 bytes: AA, 00, 00, BB)
+        0x06, // message 2: payload_type = 6 (recovery_point)
+        0x02, // payload_size = 2
+        0x80, 0x80, // payload
+    ];
+    let p2 = make_ts_packet(VIDEO_PID, false, 1, 0, false, &p2_payload);
+    ingress.ingest(offset, &p2).expect("p2");
+
+    // After parsing recovery_point SEI following the cross-packet emulation prevention:
+    assert!(ingress.facts().pes_has_recovery_point);
+}
+
+#[test]
+fn test_sei_startcode_boundary_non_consumption() {
+    let (mut ingress, offset) = standard_setup();
+
+    // Ingest an SEI message with declared size 10, but terminated early by an Annex-B startcode
+    // for SPS (0x67).
+    let payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x06, // SEI NAL
+        0x01, // payload_type = 1
+        0x0A, // payload_size = 10 (expects 10 bytes)
+        0xAA, 0xBB, // 2 payload bytes
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // Annex-B startcode for SPS!
+    ];
+    let p = make_ts_packet(VIDEO_PID, true, 0, 0, false, &payload);
+    ingress.ingest(offset, &p).expect("ingest");
+
+    // The SEI parser must NOT consume the startcode bytes (00 00 01) or SPS header (67).
+    // SPS must be recognized cleanly!
+    assert!(ingress.facts().pes_has_sps);
+}
+
+#[test]
+fn test_unreadable_slice_does_not_increment_predicted_rejected() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // PES 1: SPS + PPS and an unreadable slice header (NAL type 1 with invalid data).
+    let p1_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS
+        0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS
+        0x00, 0x00, 0x01, 0x01, 0x00, // malformed slice header
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &p1_payload);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += PACKET_LEN_I64;
+
+    // PES 2: Next PUSI triggers finalization of PES 1's AU.
+    let p2_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS
+    ];
+    let p2 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &p2_payload);
+    ingress.ingest(offset, &p2).expect("p2");
+
+    let facts = ingress.facts();
+    assert_eq!(facts.unreadable_slices, 1);
+    // Unreadable slice must NOT be counted as predicted_rejected!
+    assert_eq!(facts.predicted_rejected, 0);
+}
+
+#[test]
+fn test_provisional_rap_invalidation_on_scrambled_continuation_and_gap() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Clear IDR AU -> RAP is emitted.
+    let p1_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS
+        0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS
+        0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21, 0xA0, 0x33, 0xFF, // IDR slice
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &p1_payload);
+    let out1 = ingress.ingest(offset, &p1).expect("p1");
+    assert!(out1.events.contains(&VideoEvent::RandomAccessPoint {
+        offset: 376,
+        joinable: true,
+    }));
+    assert_eq!(ingress.facts().clean_rap_count, 1);
+    offset += PACKET_LEN_I64;
+
+    // 2. Continuation packet is scrambled -> provisional RAP is invalidated.
+    let p2_payload = vec![0x11, 0x22, 0x33];
+    let p2 = make_ts_packet(VIDEO_PID, false, 1, 2, false, &p2_payload); // scrambling = 2
+    let out2 = ingress.ingest(offset, &p2).expect("p2 scrambled");
+    assert!(
+        out2.events
+            .contains(&VideoEvent::RandomAccessPointInvalidated { offset: 376 })
+    );
+    assert_eq!(ingress.facts().clean_rap_count, 0);
+}
+
+#[test]
+fn test_set_target_program_emits_identity_events() {
+    let (mut ingress, _offset) = standard_setup();
+
+    // In standard_setup, target is 1. Changing to program 2 emits ProgramIdentityChanged
+    // and resets the follower.
+    let events = ingress.set_target_program(2);
+    assert_eq!(events, vec![VideoEvent::ProgramIdentityChanged]);
+    let facts = ingress.facts();
+    assert_eq!(facts.pid, 0);
+    assert_eq!(facts.codec, VideoCodec::Unknown);
+
+    // Calling again with the same target program 2 is a no-op (no events emitted).
+    let events_noop = ingress.set_target_program(2);
+    assert!(events_noop.is_empty());
 }

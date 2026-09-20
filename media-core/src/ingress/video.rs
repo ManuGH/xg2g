@@ -50,9 +50,6 @@ pub(crate) const SCRAMBLED_CONFIRMED_THRESHOLD: u64 = 100;
 /// Number of bytes captured after an H.264 slice header NAL byte for slice type classification.
 const SLICE_HEADER_CAPTURE_BYTES: usize = 12;
 
-/// Number of bytes captured after an SEI NAL byte for recovery point detection.
-const SEI_CAPTURE_BYTES: usize = 48;
-
 /// Number of bytes captured after an MPEG-2 picture start code for picture coding type.
 const MPEG2_PICTURE_HEADER_CAPTURE_BYTES: usize = 3;
 
@@ -124,16 +121,16 @@ impl<'a> BitReader<'a> {
 
     /// Reads a single bit from the stream.
     pub(crate) fn read_bit(&mut self) -> Option<u32> {
-        if self.pos >= self.data.len().saturating_mul(8) {
+        if self.bits_left() == 0 {
             return None;
         }
-        let byte_idx = self.pos >> 3;
-        let bit_idx = 7 - (self.pos & 7);
+        let byte_idx = self.pos / 8;
+        let bit_idx = 7 - (self.pos % 8);
         self.pos += 1;
         Some(u32::from((self.data[byte_idx] >> bit_idx) & 1))
     }
 
-    /// Reads an unsigned Exp-Golomb coded integer.
+    /// Reads an unsigned Exp-Golomb coded integer (`ue(v)`).
     ///
     /// Rejects runs of leading zeros exceeding 32 bits to protect against unbounded loops
     /// on corrupted or non-slice bitstreams.
@@ -152,22 +149,20 @@ impl<'a> BitReader<'a> {
         if leading_zeros == 0 {
             return Some(0);
         }
-        if self.bits_left() < leading_zeros {
+        if leading_zeros > 31 {
             return None;
         }
-        let mut suffix = 0u32;
+        let mut val: u32 = 0;
         for _ in 0..leading_zeros {
             let bit = self.read_bit()?;
-            suffix = (suffix << 1) | bit;
+            val = (val << 1) | bit;
         }
-        let val = (1u64 << leading_zeros)
-            .saturating_sub(1)
-            .saturating_add(u64::from(suffix));
-        u32::try_from(val).ok()
+        let prefix = (1u32).checked_shl(leading_zeros)?.checked_sub(1)?;
+        prefix.checked_add(val)
     }
 }
 
-/// Reports whether an H.264 slice header names an intra-coded slice type.
+/// Reports whether an H.264 slice header specifies an intra-coded slice (`I` or `SI`).
 ///
 /// Returns `(is_intra, ok)`. If the slice header cannot be completely parsed,
 /// `ok` is `false`.
@@ -181,50 +176,150 @@ pub(crate) fn h264_slice_is_intra(captured: &[u8]) -> (bool, bool) {
     let Some(slice_type) = r.read_ue() else {
         return (false, false);
     };
-    match slice_type % 5 {
-        2 | 4 => (true, true),
-        _ => (false, true),
+    let family = slice_type % 5;
+    (family == 2 || family == 4, true)
+}
+
+/// State of the streaming SEI message reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SeiParserState {
+    ReadingType {
+        accumulated: usize,
+    },
+    ReadingSize {
+        payload_type: usize,
+        accumulated: usize,
+    },
+    SkippingPayload {
+        payload_type: usize,
+        remaining: usize,
+    },
+    Done,
+}
+
+/// Streaming bounded SEI parser capable of traversing arbitrary-length SEI messages
+/// and removing emulation prevention bytes across packet boundaries without allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SeiParser {
+    pub(super) state: SeiParserState,
+    pub(super) zero_count: usize,
+    pub(super) skip_header: usize,
+}
+
+impl SeiParser {
+    #[must_use]
+    pub(super) fn new(skip_header: usize) -> Self {
+        Self {
+            state: SeiParserState::ReadingType { accumulated: 0 },
+            zero_count: 0,
+            skip_header,
+        }
+    }
+
+    /// Feeds an elementary stream byte into the SEI parser.
+    ///
+    /// Returns `true` if a `recovery_point` (payload type 6) message was detected.
+    pub(super) fn feed_byte(&mut self, b: u8) -> bool {
+        if self.state == SeiParserState::Done {
+            return false;
+        }
+
+        if self.skip_header > 0 {
+            self.skip_header -= 1;
+            return false;
+        }
+
+        if b == 0x00 {
+            self.zero_count += 1;
+            return false;
+        }
+
+        if b == 0x03 && self.zero_count == 2 {
+            // Emulation prevention byte (00 00 03): drop 03, the preceding 00 00 are data.
+            self.zero_count = 0;
+            let r1 = self.feed_rbsp_byte(0x00);
+            let r2 = self.feed_rbsp_byte(0x00);
+            return r1 || r2;
+        }
+
+        let mut found = false;
+        while self.zero_count > 0 {
+            self.zero_count -= 1;
+            if self.feed_rbsp_byte(0x00) {
+                found = true;
+            }
+        }
+        if self.feed_rbsp_byte(b) {
+            found = true;
+        }
+        found
+    }
+
+    fn feed_rbsp_byte(&mut self, b: u8) -> bool {
+        match self.state {
+            SeiParserState::ReadingType {
+                ref mut accumulated,
+            } => {
+                if *accumulated == 0 && b == 0x80 {
+                    // rbsp_trailing_bits: clean end of SEI NAL
+                    self.state = SeiParserState::Done;
+                    return false;
+                }
+                if b == 0xFF {
+                    *accumulated = accumulated.saturating_add(255);
+                } else {
+                    let payload_type = accumulated.saturating_add(usize::from(b));
+                    self.state = SeiParserState::ReadingSize {
+                        payload_type,
+                        accumulated: 0,
+                    };
+                }
+            }
+            SeiParserState::ReadingSize {
+                payload_type,
+                ref mut accumulated,
+            } => {
+                if b == 0xFF {
+                    *accumulated = accumulated.saturating_add(255);
+                } else {
+                    let payload_size = accumulated.saturating_add(usize::from(b));
+                    if payload_type == SEI_PAYLOAD_RECOVERY_POINT {
+                        self.state = SeiParserState::Done;
+                        return true;
+                    }
+                    if payload_size == 0 {
+                        self.state = SeiParserState::ReadingType { accumulated: 0 };
+                    } else {
+                        self.state = SeiParserState::SkippingPayload {
+                            payload_type,
+                            remaining: payload_size,
+                        };
+                    }
+                }
+            }
+            SeiParserState::SkippingPayload {
+                ref mut remaining, ..
+            } => {
+                *remaining = remaining.saturating_sub(1);
+                if *remaining == 0 {
+                    self.state = SeiParserState::ReadingType { accumulated: 0 };
+                }
+            }
+            SeiParserState::Done => {}
+        }
+        false
     }
 }
 
 /// Reports whether an SEI NAL payload contains a `recovery_point` message.
+#[cfg(test)]
 #[must_use]
 pub(crate) fn sei_has_recovery_point(captured: &[u8]) -> bool {
-    let rbsp = remove_emulation_prevention(captured);
-    let mut pos = 0;
-    while pos < rbsp.len() {
-        if rbsp[pos] == 0x80 {
-            return false;
-        }
-        let mut payload_type: usize = 0;
-        while pos < rbsp.len() && rbsp[pos] == 0xFF {
-            payload_type = payload_type.saturating_add(255);
-            pos += 1;
-        }
-        if pos >= rbsp.len() {
-            return false;
-        }
-        payload_type = payload_type.saturating_add(usize::from(rbsp[pos]));
-        pos += 1;
-
-        let mut payload_size: usize = 0;
-        while pos < rbsp.len() && rbsp[pos] == 0xFF {
-            payload_size = payload_size.saturating_add(255);
-            pos += 1;
-        }
-        if pos >= rbsp.len() {
-            return false;
-        }
-        payload_size = payload_size.saturating_add(usize::from(rbsp[pos]));
-        pos += 1;
-
-        if payload_type == SEI_PAYLOAD_RECOVERY_POINT {
+    let mut parser = SeiParser::new(0);
+    for &b in captured {
+        if parser.feed_byte(b) {
             return true;
         }
-        if payload_size > rbsp.len().saturating_sub(pos) {
-            return false;
-        }
-        pos += payload_size;
     }
     false
 }
@@ -247,7 +342,6 @@ pub(crate) fn mpeg2_picture_is_intra(data: &[u8]) -> (bool, bool) {
 pub(super) enum NalCaptureKind {
     None,
     H264SliceHeader,
-    Sei,
     Mpeg2PictureHeader,
 }
 
@@ -264,6 +358,28 @@ pub(super) enum VideoPosition {
     AwaitingStart,
 }
 
+/// An event emitted during video stream ingestion or configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoEvent {
+    /// The programme carrying this video stream changed identity (PMT update, target change, etc.).
+    ProgramIdentityChanged,
+
+    /// A valid random access point (attach point) was established.
+    RandomAccessPoint {
+        /// Byte offset in the caller's coordinate system where the access unit's PES began.
+        offset: i64,
+        /// Whether the access unit contained no scrambled transport packets.
+        joinable: bool,
+    },
+
+    /// A previously published random access point was corrupted later in its access unit
+    /// (e.g. by transport break, TEI, or scrambled packet) and is no longer an attach point.
+    RandomAccessPointInvalidated {
+        /// Byte offset of the invalidated PES start.
+        offset: i64,
+    },
+}
+
 /// One observable video elementary stream, followed across the packets that carry it.
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)]
@@ -277,6 +393,7 @@ pub(super) struct VideoFollower {
     pub(super) clear_run: u64,
     pub(super) current_pes_offset: Option<i64>,
     pub(super) pes_starts: u64,
+    pub(super) pes_has_keyframe: bool,
 
     // NAL & Annex-B scanner state
     pub(super) annex_b_state: u32,
@@ -285,13 +402,34 @@ pub(super) struct VideoFollower {
     pub(super) nal_left: usize,
     pub(super) nal_skip: usize,
     pub(super) nal_buf: Vec<u8>,
+    pub(super) sei_parser: Option<SeiParser>,
 
-    // Parameter sets & observations
+    // Parameter sets & observations (PES-local)
     pub(super) pes_has_sps: bool,
     pub(super) pes_has_pps: bool,
     pub(super) pes_has_vps: bool,
     pub(super) pes_has_recovery_point: bool,
+
+    // Access Unit state (AU-local)
+    pub(super) au_has_irap: bool,
+    pub(super) au_has_recovery_point: bool,
+    pub(super) au_vcl_count: u64,
+    pub(super) au_intra_vcl_count: u64,
+    pub(super) au_predicted_vcl_count: u64,
+    pub(super) au_scrambled_packets: u64,
+    pub(super) au_continuity_broken: bool,
+    pub(super) au_clean_rap_incremented: bool,
+    pub(super) au_published_rap_offset: Option<i64>,
+    pub(super) au_rap_invalidated: bool,
+
+    // Cumulative facts counters
+    pub(super) irap_points: u64,
+    pub(super) intra_points: u64,
+    pub(super) recovery_point_seis: u64,
+    pub(super) predicted_rejected: u64,
     pub(super) unreadable_slices: u64,
+    pub(super) clean_rap_count: u64,
+    pub(super) clean_access_units: u64,
 }
 
 impl VideoFollower {
@@ -306,35 +444,62 @@ impl VideoFollower {
             clear_run: 0,
             current_pes_offset: None,
             pes_starts: 0,
+            pes_has_keyframe: false,
             annex_b_state: 0xFFFF_FFFF,
             expecting_nal_byte: false,
             nal_kind: NalCaptureKind::None,
             nal_left: 0,
             nal_skip: 0,
             nal_buf: Vec::new(),
+            sei_parser: None,
             pes_has_sps: false,
             pes_has_pps: false,
             pes_has_vps: false,
             pes_has_recovery_point: false,
+            au_has_irap: false,
+            au_has_recovery_point: false,
+            au_vcl_count: 0,
+            au_intra_vcl_count: 0,
+            au_predicted_vcl_count: 0,
+            au_scrambled_packets: 0,
+            au_continuity_broken: false,
+            au_clean_rap_incremented: false,
+            au_published_rap_offset: None,
+            au_rap_invalidated: false,
+            irap_points: 0,
+            intra_points: 0,
+            recovery_point_seis: 0,
+            predicted_rejected: 0,
             unreadable_slices: 0,
+            clean_rap_count: 0,
+            clean_access_units: 0,
         }
     }
 
-    /// Begins a new PUSI boundary on every non-duplicate PUSI packet.
-    ///
-    /// Clears any in-flight PES offset, resets parameter sets and PES observations,
-    /// and resets the Annex-B shift register. Must be called before TEI, scrambling,
-    /// same-CC conflict, or PES header validation.
-    fn begin_pusi_boundary(&mut self) {
-        // Finish parser observation belonging to the PES that just ended.
-        self.consume_capture();
-
+    /// Resets the PES boundary state and Annex-B scanner for a new payload unit.
+    fn reset_pes_boundary(&mut self) {
         self.current_pes_offset = None;
+        self.pes_has_keyframe = false;
         self.pes_has_sps = false;
         self.pes_has_pps = false;
         self.pes_has_vps = false;
         self.pes_has_recovery_point = false;
         self.reset_annex_b();
+    }
+
+    /// Resets only the per-AU tracking state for a new access unit.
+    /// Never resets cumulative facts counters.
+    fn reset_access_unit_state(&mut self) {
+        self.au_has_irap = false;
+        self.au_has_recovery_point = false;
+        self.au_vcl_count = 0;
+        self.au_intra_vcl_count = 0;
+        self.au_predicted_vcl_count = 0;
+        self.au_scrambled_packets = 0;
+        self.au_continuity_broken = false;
+        self.au_clean_rap_incremented = false;
+        self.au_published_rap_offset = None;
+        self.au_rap_invalidated = false;
     }
 
     /// Resets the Annex-B shift register and clears any in-progress NAL capture.
@@ -345,6 +510,7 @@ impl VideoFollower {
         self.nal_left = 0;
         self.nal_skip = 0;
         self.nal_buf.clear();
+        self.sei_parser = None;
     }
 
     fn begin_capture(&mut self, kind: NalCaptureKind, budget: usize, skip: usize) {
@@ -354,7 +520,7 @@ impl VideoFollower {
         self.nal_buf.clear();
     }
 
-    fn consume_capture(&mut self) {
+    fn consume_capture(&mut self, events: &mut Vec<VideoEvent>) {
         if self.nal_kind == NalCaptureKind::None || self.nal_buf.is_empty() {
             self.nal_kind = NalCaptureKind::None;
             self.nal_left = 0;
@@ -365,20 +531,25 @@ impl VideoFollower {
 
         match self.nal_kind {
             NalCaptureKind::H264SliceHeader => {
-                let (_is_intra, ok) = h264_slice_is_intra(&self.nal_buf);
+                let (is_intra, ok) = h264_slice_is_intra(&self.nal_buf);
                 if !ok {
                     self.unreadable_slices = self.unreadable_slices.saturating_add(1);
-                }
-            }
-            NalCaptureKind::Sei => {
-                if sei_has_recovery_point(&self.nal_buf) {
-                    self.pes_has_recovery_point = true;
+                } else if is_intra {
+                    self.au_intra_vcl_count = self.au_intra_vcl_count.saturating_add(1);
+                } else {
+                    self.au_predicted_vcl_count = self.au_predicted_vcl_count.saturating_add(1);
                 }
             }
             NalCaptureKind::Mpeg2PictureHeader => {
-                let (_is_intra, ok) = mpeg2_picture_is_intra(&self.nal_buf);
+                let (is_intra, ok) = mpeg2_picture_is_intra(&self.nal_buf);
                 if !ok {
                     self.unreadable_slices = self.unreadable_slices.saturating_add(1);
+                } else if is_intra {
+                    self.au_has_irap = true;
+                    self.au_intra_vcl_count = self.au_intra_vcl_count.saturating_add(1);
+                    self.index_random_access_point(true, events);
+                } else {
+                    self.au_predicted_vcl_count = self.au_predicted_vcl_count.saturating_add(1);
                 }
             }
             NalCaptureKind::None => {}
@@ -390,44 +561,162 @@ impl VideoFollower {
         self.nal_buf.clear();
     }
 
+    /// Records the current access unit as a random access point (attach point).
+    fn index_random_access_point(&mut self, irap: bool, events: &mut Vec<VideoEvent>) {
+        if self.pes_has_keyframe || self.current_pes_offset.is_none() {
+            return;
+        }
+        self.pes_has_keyframe = true;
+
+        if irap {
+            self.irap_points = self.irap_points.saturating_add(1);
+        } else {
+            self.intra_points = self.intra_points.saturating_add(1);
+        }
+
+        if self.au_has_recovery_point {
+            self.recovery_point_seis = self.recovery_point_seis.saturating_add(1);
+        }
+
+        if self.au_scrambled_packets == 0 {
+            self.clean_rap_count = self.clean_rap_count.saturating_add(1);
+            self.au_clean_rap_incremented = true;
+        }
+
+        let offset = self.current_pes_offset.unwrap();
+        self.au_published_rap_offset = Some(offset);
+        events.push(VideoEvent::RandomAccessPoint {
+            offset,
+            joinable: self.au_scrambled_packets == 0,
+        });
+    }
+
+    /// Invalidates a previously emitted random access point if it was corrupted later in its AU.
+    fn invalidate_published_rap(&mut self, events: &mut Vec<VideoEvent>) {
+        if self.au_clean_rap_incremented {
+            self.clean_rap_count = self.clean_rap_count.saturating_sub(1);
+            self.au_clean_rap_incremented = false;
+        }
+        if self.au_rap_invalidated {
+            return;
+        }
+        if let Some(offset) = self.au_published_rap_offset {
+            self.au_rap_invalidated = true;
+            events.push(VideoEvent::RandomAccessPointInvalidated { offset });
+        }
+    }
+
+    /// Finalizes the access unit that just ended at a PES boundary.
+    fn finalize_access_unit(&mut self, events: &mut Vec<VideoEvent>) {
+        self.consume_capture(events);
+
+        if self.current_pes_offset.is_none() || self.au_vcl_count == 0 {
+            return;
+        }
+
+        if self.au_scrambled_packets == 0 {
+            self.clean_access_units = self.clean_access_units.saturating_add(1);
+        }
+
+        if self.au_continuity_broken || self.pes_has_keyframe {
+            return;
+        }
+
+        // Decoder configuration gate:
+        // H.264: SPS + PPS
+        // H.265: VPS + SPS + PPS
+        // MPEG-2: Sequence Header (0xB3, stored in pes_has_sps)
+        let has_parameter_sets = match self.codec {
+            VideoCodec::H264 => self.pes_has_sps && self.pes_has_pps,
+            VideoCodec::H265 => self.pes_has_sps && self.pes_has_pps && self.pes_has_vps,
+            VideoCodec::Mpeg2 => self.pes_has_sps,
+            VideoCodec::Unknown => false,
+        };
+
+        if !has_parameter_sets {
+            return;
+        }
+
+        let joinable = match self.codec {
+            VideoCodec::H264 => {
+                self.au_vcl_count > 0 && self.au_intra_vcl_count == self.au_vcl_count
+            }
+            VideoCodec::H265 => self.au_has_recovery_point,
+            VideoCodec::Mpeg2 | VideoCodec::Unknown => false,
+        };
+
+        if !joinable {
+            if self.au_has_recovery_point || self.au_predicted_vcl_count > 0 {
+                self.predicted_rejected = self.predicted_rejected.saturating_add(1);
+            }
+            return;
+        }
+
+        self.index_random_access_point(false, events);
+    }
+
     /// Feeds elementary stream bytes into the stateful Annex-B scanner.
-    fn feed_es(&mut self, es: &[u8]) {
+    fn feed_es(&mut self, es: &[u8], events: &mut Vec<VideoEvent>) {
         for &b in es {
             self.annex_b_state = (self.annex_b_state << 8) | u32::from(b);
+            let is_start_code = (self.annex_b_state & 0x00FF_FFFF) == 0x0000_0001;
 
-            if self.nal_left > 0 {
+            if is_start_code {
+                self.sei_parser = None;
+
+                if self.nal_left > 0 {
+                    if self.nal_buf.ends_with(&[0x00, 0x00]) {
+                        self.nal_buf.truncate(self.nal_buf.len() - 2);
+                    }
+                    self.consume_capture(events);
+                }
+
+                self.expecting_nal_byte = true;
+                continue;
+            }
+
+            if self.expecting_nal_byte {
+                self.expecting_nal_byte = false;
+                self.consume_capture(events);
+
+                match self.codec {
+                    VideoCodec::H264 => self.classify_h264(b, events),
+                    VideoCodec::H265 => self.classify_hevc(b, events),
+                    VideoCodec::Mpeg2 => self.classify_mpeg2(b),
+                    VideoCodec::Unknown => {}
+                }
+                continue;
+            }
+
+            if let Some(ref mut sei) = self.sei_parser {
+                if sei.feed_byte(b) {
+                    self.pes_has_recovery_point = true;
+                    self.au_has_recovery_point = true;
+                }
+            } else if self.nal_left > 0 {
                 if self.nal_skip > 0 {
                     self.nal_skip -= 1;
                 } else {
                     self.nal_buf.push(b);
                     self.nal_left -= 1;
                     if self.nal_left == 0 {
-                        self.consume_capture();
+                        self.consume_capture(events);
                     }
                 }
-            }
-
-            if self.expecting_nal_byte {
-                self.expecting_nal_byte = false;
-                self.consume_capture();
-
-                match self.codec {
-                    VideoCodec::H264 => self.classify_h264(b),
-                    VideoCodec::H265 => self.classify_hevc(b),
-                    VideoCodec::Mpeg2 => self.classify_mpeg2(b),
-                    VideoCodec::Unknown => {}
-                }
-            }
-
-            if (self.annex_b_state & 0x00FF_FFFF) == 0x0000_0001 {
-                self.expecting_nal_byte = true;
             }
         }
     }
 
-    fn classify_h264(&mut self, b: u8) {
+    fn classify_h264(&mut self, b: u8, events: &mut Vec<VideoEvent>) {
         match b & 0x1F {
+            H264_NAL_SLICE_IDR => {
+                self.au_has_irap = true;
+                self.au_vcl_count = self.au_vcl_count.saturating_add(1);
+                self.au_intra_vcl_count = self.au_intra_vcl_count.saturating_add(1);
+                self.index_random_access_point(true, events);
+            }
             H264_NAL_SLICE_NON_IDR | H264_NAL_SLICE_PART_A => {
+                self.au_vcl_count = self.au_vcl_count.saturating_add(1);
                 self.begin_capture(
                     NalCaptureKind::H264SliceHeader,
                     SLICE_HEADER_CAPTURE_BYTES,
@@ -441,14 +730,13 @@ impl VideoFollower {
                 self.pes_has_pps = true;
             }
             H264_NAL_SEI => {
-                self.begin_capture(NalCaptureKind::Sei, SEI_CAPTURE_BYTES, 0);
+                self.sei_parser = Some(SeiParser::new(0));
             }
-            // IDR slice and other NAL types do not initiate parameter captures.
             _ => {}
         }
     }
 
-    fn classify_hevc(&mut self, b: u8) {
+    fn classify_hevc(&mut self, b: u8, events: &mut Vec<VideoEvent>) {
         let nal_type = (b >> 1) & 0x3F;
         match nal_type {
             HEVC_NAL_VPS => {
@@ -461,9 +749,18 @@ impl VideoFollower {
                 self.pes_has_pps = true;
             }
             HEVC_NAL_PREFIX_SEI => {
-                self.begin_capture(NalCaptureKind::Sei, SEI_CAPTURE_BYTES, 1);
+                self.sei_parser = Some(SeiParser::new(1));
             }
-            // IRAP and non-IRAP VCL slices do not initiate parameter captures.
+            t if (HEVC_NAL_IRAP_FIRST..=HEVC_NAL_IRAP_LAST).contains(&t) => {
+                self.au_has_irap = true;
+                self.au_vcl_count = self.au_vcl_count.saturating_add(1);
+                self.au_intra_vcl_count = self.au_intra_vcl_count.saturating_add(1);
+                self.index_random_access_point(true, events);
+            }
+            t if t <= 9 => {
+                self.au_vcl_count = self.au_vcl_count.saturating_add(1);
+                self.au_predicted_vcl_count = self.au_predicted_vcl_count.saturating_add(1);
+            }
             _ => {}
         }
     }
@@ -477,6 +774,7 @@ impl VideoFollower {
                 self.pes_has_vps = true;
             }
             MPEG2_START_PICTURE => {
+                self.au_vcl_count = self.au_vcl_count.saturating_add(1);
                 self.begin_capture(
                     NalCaptureKind::Mpeg2PictureHeader,
                     MPEG2_PICTURE_HEADER_CAPTURE_BYTES,
@@ -518,6 +816,8 @@ pub struct VideoOutcome<'a> {
     pub processed_through: i64,
     /// The feeds the chunk produced, in the order they occurred.
     pub feeds: Vec<VideoFeed<'a>>,
+    /// Events emitted during processing of this chunk, in exact order of occurrence.
+    pub events: Vec<VideoEvent>,
 }
 
 /// Facts established about the video elementary stream.
@@ -554,6 +854,18 @@ pub struct VideoFacts {
     pub pes_has_recovery_point: bool,
     /// Number of slices whose headers could not be read.
     pub unreadable_slices: u64,
+    /// Number of IRAP access units observed.
+    pub irap_points: u64,
+    /// Number of non-IRAP all-intra access units observed.
+    pub intra_points: u64,
+    /// Number of admitted access units that carried an SEI recovery point.
+    pub recovery_point_seis: u64,
+    /// Number of access units carrying parameter sets that were rejected as predicted.
+    pub predicted_rejected: u64,
+    /// Number of entry points whose own access unit contained no scrambled packet.
+    pub clean_rap_count: u64,
+    /// Number of complete access units that arrived without an encrypted packet.
+    pub clean_access_units: u64,
 }
 
 /// Follows the observable video stream of one transport programme.
@@ -575,12 +887,17 @@ impl VideoIngress {
         }
     }
 
-    /// Selects the programme to follow.
-    pub fn set_target_program(&mut self, program_number: u16) {
+    /// Selects the programme to follow, returning any identity events emitted.
+    pub fn set_target_program(&mut self, program_number: u16) -> Vec<VideoEvent> {
         let outcome = self.psi.set_target_program(program_number);
-        if outcome.events.contains(&PsiEvent::ProgramIdentityChanged) {
-            self.reprogram();
+        let mut events = Vec::new();
+        for event in outcome.events {
+            if event == PsiEvent::ProgramIdentityChanged {
+                self.reprogram();
+                events.push(VideoEvent::ProgramIdentityChanged);
+            }
         }
+        events
     }
 
     /// Which incarnation the stream being followed belongs to.
@@ -610,6 +927,12 @@ impl VideoIngress {
                 pes_has_vps: f.pes_has_vps,
                 pes_has_recovery_point: f.pes_has_recovery_point,
                 unreadable_slices: f.unreadable_slices,
+                irap_points: f.irap_points,
+                intra_points: f.intra_points,
+                recovery_point_seis: f.recovery_point_seis,
+                predicted_rejected: f.predicted_rejected,
+                clean_rap_count: f.clean_rap_count,
+                clean_access_units: f.clean_access_units,
             }
         } else {
             VideoFacts {
@@ -628,6 +951,12 @@ impl VideoIngress {
                 pes_has_vps: false,
                 pes_has_recovery_point: false,
                 unreadable_slices: 0,
+                irap_points: 0,
+                intra_points: 0,
+                recovery_point_seis: 0,
+                predicted_rejected: 0,
+                clean_rap_count: 0,
+                clean_access_units: 0,
             }
         }
     }
@@ -647,27 +976,32 @@ impl VideoIngress {
             return Err(IngestError::UnalignedChunk { len: data.len() });
         }
         let mut feeds = Vec::new();
+        let mut events = Vec::new();
         self.psi.begin_chunk();
         for (packet_idx, packet) in data.chunks_exact(TS_PACKET_LEN).enumerate() {
             let rel_offset =
                 i64::try_from(packet_idx.saturating_mul(TS_PACKET_LEN)).unwrap_or(i64::MAX);
             let packet_offset = start_offset.saturating_add(rel_offset);
-            let changed = self
+            let identity_changed_count = self
                 .psi
                 .index_packet(packet)
-                .contains(&PsiEvent::ProgramIdentityChanged);
-            if changed {
+                .iter()
+                .filter(|&&e| e == PsiEvent::ProgramIdentityChanged)
+                .count();
+            for _ in 0..identity_changed_count {
                 self.reprogram();
+                events.push(VideoEvent::ProgramIdentityChanged);
             }
             let Ok(view) = PacketView::parse(packet) else {
                 continue;
             };
-            self.route(packet_offset, &view, &mut feeds);
+            self.route(packet_offset, &view, &mut feeds, &mut events);
         }
         let consumed = i64::try_from(data.len()).unwrap_or(i64::MAX);
         Ok(VideoOutcome {
             processed_through: start_offset.saturating_add(consumed),
             feeds,
+            events,
         })
     }
 
@@ -683,11 +1017,13 @@ impl VideoIngress {
     }
 
     /// Routes one packet to the video follower.
+    #[allow(clippy::too_many_lines)]
     fn route<'a>(
         &mut self,
         packet_offset: i64,
         view: &PacketView<'a>,
-        out: &mut Vec<VideoFeed<'a>>,
+        out_feeds: &mut Vec<VideoFeed<'a>>,
+        out_events: &mut Vec<VideoEvent>,
     ) {
         let pid = view.pid();
         if pid == 0 || pid == self.psi.pmt_pid() {
@@ -718,50 +1054,117 @@ impl VideoIngress {
             return;
         }
 
-        let same_cc_conflict =
-            continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
-
         let is_pusi = view.payload_unit_start();
 
-        // Boundary invariant: every non-duplicate PUSI packet unconditionally marks
-        // a new PES/NAL boundary before TEI, scrambling, or validation.
         if is_pusi {
-            follower.begin_pusi_boundary();
+            let broken_boundary =
+                continuity == Continuity::Broken || continuity == Continuity::Discontinuous;
+
+            if broken_boundary {
+                follower.au_continuity_broken = true;
+            }
+
+            // 1. Finalize the preceding AU before evaluating the new payload unit
+            follower.finalize_access_unit(out_events);
+
+            // 2. Invalidate any provisional RAP published by the old AU if boundary was broken
+            if broken_boundary {
+                follower.invalidate_published_rap(out_events);
+            }
+
+            // 3. Reset PES boundary and per-AU state
+            follower.reset_pes_boundary();
+            follower.reset_access_unit_state();
+
+            // 4. Handle TEI, scrambling, same-CC conflict, and PES header validation for new PUSI
+            if view.transport_error_indicator() {
+                follower.position = VideoPosition::AwaitingStart;
+                return;
+            }
+
+            if view.scrambling_control() != 0 {
+                follower.scrambled_packets = follower.scrambled_packets.saturating_add(1);
+                follower.au_scrambled_packets = follower.au_scrambled_packets.saturating_add(1);
+                follower.clear_run = 0;
+                follower.position = VideoPosition::AwaitingStart;
+                return;
+            }
+
+            follower.clear_packets = follower.clear_packets.saturating_add(1);
+            follower.clear_run = follower.clear_run.saturating_add(1);
+
+            let same_cc_conflict =
+                continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
+            if same_cc_conflict {
+                follower.position = VideoPosition::AwaitingStart;
+                return;
+            }
+
+            let es = follower.handle_pusi(packet_offset, payload, same_cc_conflict);
+            if let Some(es) = es {
+                follower.feed_es(es, out_events);
+                out_feeds.push(VideoFeed {
+                    incarnation: self.incarnation,
+                    pid: follower.pid,
+                    offset: packet_offset,
+                    pusi: true,
+                    es,
+                });
+            }
+            return;
         }
 
+        // Continuation packet (is_pusi == false)
         if view.transport_error_indicator() {
-            follower.position = VideoPosition::AwaitingStart;
-            if !is_pusi {
+            if !matches!(follower.position, VideoPosition::AwaitingStart) {
                 follower.reset_annex_b();
+                follower.au_continuity_broken = true;
+                follower.position = VideoPosition::AwaitingStart;
+                follower.invalidate_published_rap(out_events);
             }
             return;
         }
 
         if view.scrambling_control() != 0 {
-            follower.scrambled_packets += 1;
+            follower.scrambled_packets = follower.scrambled_packets.saturating_add(1);
+            follower.au_scrambled_packets = follower.au_scrambled_packets.saturating_add(1);
             follower.clear_run = 0;
-            if is_pusi || matches!(follower.position, VideoPosition::InHeader { .. }) {
+            follower.invalidate_published_rap(out_events);
+            if matches!(follower.position, VideoPosition::InHeader { .. }) {
                 follower.position = VideoPosition::AwaitingStart;
             }
             return;
         }
 
-        follower.clear_packets += 1;
-        follower.clear_run += 1;
+        follower.clear_packets = follower.clear_packets.saturating_add(1);
+        follower.clear_run = follower.clear_run.saturating_add(1);
 
-        let es = if is_pusi {
-            follower.handle_pusi(packet_offset, payload, same_cc_conflict)
-        } else {
-            follower.handle_cont(payload, continuity, same_cc_conflict)
-        };
+        if matches!(follower.position, VideoPosition::AwaitingStart) {
+            return;
+        }
 
+        let same_cc_conflict =
+            continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
+
+        if continuity == Continuity::Broken
+            || continuity == Continuity::Discontinuous
+            || same_cc_conflict
+        {
+            follower.reset_annex_b();
+            follower.au_continuity_broken = true;
+            follower.position = VideoPosition::AwaitingStart;
+            follower.invalidate_published_rap(out_events);
+            return;
+        }
+
+        let es = follower.handle_cont(payload, continuity, same_cc_conflict);
         if let Some(es) = es {
-            follower.feed_es(es);
-            out.push(VideoFeed {
+            follower.feed_es(es, out_events);
+            out_feeds.push(VideoFeed {
                 incarnation: self.incarnation,
                 pid: follower.pid,
                 offset: packet_offset,
-                pusi: is_pusi,
+                pusi: false,
                 es,
             });
         }
