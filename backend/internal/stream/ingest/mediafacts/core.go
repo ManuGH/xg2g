@@ -685,6 +685,42 @@ func (c *GoCore) ScrambledVideoConfirmed() bool { return c.scrambledVideoConfirm
 
 var _ Core = (*GoCore)(nil)
 
+func (c *GoCore) observeAdaptationOnlyLocked(pid uint16, pkt []byte) {
+	if !hasDiscontinuityIndicator(pkt) {
+		return
+	}
+	if pid == 0 {
+		c.patAssembler.pendingDiscontinuity = true
+		return
+	}
+	if c.pmtPID > 0 && pid == c.pmtPID {
+		c.pmtAssembler.pendingDiscontinuity = true
+		return
+	}
+	if c.videoPID > 0 && pid == c.videoPID {
+		c.armESPendingDiscontinuityLocked(pid)
+		return
+	}
+	for _, apid := range c.audioPIDs {
+		if pid == apid {
+			c.armESPendingDiscontinuityLocked(pid)
+			return
+		}
+	}
+}
+
+func (c *GoCore) armESPendingDiscontinuityLocked(pid uint16) {
+	if c.esTrackers == nil {
+		c.esTrackers = make(map[uint16]*esPacketTracker, 4)
+	}
+	tracker := c.esTrackers[pid]
+	if tracker == nil {
+		tracker = &esPacketTracker{}
+		c.esTrackers[pid] = tracker
+	}
+	tracker.pendingDiscontinuity = true
+}
+
 func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 	if len(pkt) < TSPacketSize || pkt[0] != SyncByte {
 		return
@@ -695,6 +731,7 @@ func (c *GoCore) indexPacketLocked(pkt []byte, offset int64) {
 	afc := (pkt[3] >> 4) & 0x03
 	hasPayload := (afc == 0x01 || afc == 0x03)
 	if !hasPayload {
+		c.observeAdaptationOnlyLocked(pid, pkt)
 		return
 	}
 
@@ -849,10 +886,11 @@ func (c *GoCore) observeAudioPayloadLocked(pid uint16, pusi bool, payload []byte
 		// The body of a payload unit whose audio boundary nothing established.
 		return
 	} else if stream.headerRemaining > 0 {
-		if seq == esGap || sameCCConflict {
-			// An unannounced continuity counter gap or conflicting same-CC packet
-			// while the optional PES header is incomplete means header bytes were lost.
-			// Discard the partial PES and await the next valid PUSI start.
+		if seq == esGap || sameCCConflict || seq == esDiscontinuity {
+			// An unannounced continuity counter gap, conflicting same-CC packet,
+			// or announced discontinuity while the optional PES header is incomplete
+			// means header bytes were lost. Discard the partial PES and await the
+			// next valid PUSI start.
 			c.beginAudioWaitLocked(stream)
 			return
 		}
@@ -961,32 +999,47 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 	if assembler.hasCC {
 		if cc == assembler.lastCC {
 			if bytes.Equal(pkt, assembler.lastPacket) {
-				// Exact byte-for-byte duplicate TS packet: silently ignore
+				// Exact byte-for-byte duplicate TS packet: silently ignore.
+				// pendingDiscontinuity is NOT consumed on an exact duplicate.
 				return
 			}
-			// Same CC but different content: glitch / discontinuity!
-			assembler.reset()
+			// Same CC but different content: glitch / discontinuity.
+			// Discard in-flight section, establish current packet as reference.
+			assembler.pendingDiscontinuity = false
+			assembler.discardSection()
+			assembler.lastCC = cc
+			assembler.lastPacket = cloneSlice(pkt)
 			if !pusi {
 				return
 			}
 		} else if cc != (assembler.lastCC+1)&0x0F {
-			// Continuity gap detected: abort corrupted in-flight assembly
-			assembler.reset()
+			// CC gap or announced discontinuity: discard in-flight section,
+			// establish current packet as new CC baseline!
+			assembler.pendingDiscontinuity = false
+			assembler.discardSection()
+			assembler.lastCC = cc
+			assembler.lastPacket = cloneSlice(pkt)
 			if !pusi {
 				return
 			}
+		} else {
+			// Sequential CC: clear pending discontinuity, update reference.
+			assembler.pendingDiscontinuity = false
+			assembler.lastCC = cc
+			assembler.lastPacket = cloneSlice(pkt)
 		}
+	} else {
+		assembler.pendingDiscontinuity = false
+		assembler.hasCC = true
+		assembler.lastCC = cc
+		assembler.lastPacket = cloneSlice(pkt)
 	}
-	assembler.lastCC = cc
-	assembler.hasCC = true
-	assembler.lastPacket = cloneSlice(pkt)
 
 	if pkt[1]&0x80 != 0 {
 		// Damaged in transit (TEI). The continuity counter has been recorded
 		// so subsequent packets do not see an artificial gap, but any in-flight
 		// section is discarded and the payload is never interpreted.
-		assembler.buf = assembler.buf[:0]
-		assembler.sectionLen = 0
+		assembler.discardSection()
 		return
 	}
 
@@ -1003,21 +1056,19 @@ func (c *GoCore) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload 
 			if len(assembler.buf) > 0 {
 				toTake := pointerField
 				if 1+toTake > len(payload) {
-					assembler.reset()
+					assembler.discardSection()
 					return
 				}
 				c.feedBytesToAssemblerLocked(isPAT, assembler, payload[1:1+toTake])
 				if len(assembler.buf) > 0 {
 					// Still incomplete after pointer field: missing data, discard
-					assembler.buf = assembler.buf[:0]
-					assembler.sectionLen = 0
+					assembler.discardSection()
 				}
 			}
 			offset = 1 + pointerField
 		} else {
 			// Case B: pointerField == 0. Discard any unfinished prior section
-			assembler.buf = assembler.buf[:0]
-			assembler.sectionLen = 0
+			assembler.discardSection()
 			offset = 1
 		}
 	} else {
@@ -1386,6 +1437,9 @@ func (c *GoCore) resetProgramStateLocked() {
 	// can carry a different elementary stream after a PMT change, and carrying the
 	// old layout across would describe audio that is no longer there.
 	c.audioStreams = nil
+	for _, t := range c.esTrackers {
+		t.reset()
+	}
 	c.esTrackers = nil
 	// And the shadow's epoch turns here rather than on the event below, because
 	// this line is where the state it mirrors actually dies. Deriving it from
@@ -1412,7 +1466,7 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 	var esData []byte
 
 	if pusi {
-		brokenBoundary := seq == esGap || seq == esSameCCDifferent
+		brokenBoundary := seq == esGap || seq == esSameCCDifferent || seq == esDiscontinuity
 		if brokenBoundary {
 			c.auContinuityBroken = true
 		}
@@ -1514,11 +1568,12 @@ func (c *GoCore) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, pay
 			// Continuation packet of a refused payload unit: quarantined until the
 			// next valid payload unit start.
 			return
-		} else if seq == esGap || seq == esSameCCDifferent {
-			// An unannounced continuity counter gap or conflicting same-CC packet inside
-			// an in-flight payload unit. Abort any in-progress NAL capture, reset
-			// Annex-B shift register, mark the open access unit broken, and quarantine
-			// continuation packets until the next valid payload unit start.
+		} else if seq == esGap || seq == esSameCCDifferent || seq == esDiscontinuity {
+			// An unannounced continuity counter gap, conflicting same-CC packet,
+			// or announced transport discontinuity inside an in-flight payload unit.
+			// Abort any in-progress NAL capture, reset Annex-B shift register,
+			// mark the open access unit broken, and quarantine continuation packets
+			// until the next valid payload unit start.
 			c.nalKind = captureNone
 			c.nalLeft = 0
 			c.nalSkip = 0
@@ -1855,6 +1910,7 @@ const (
 	esFirst esPacketSequence = iota
 	esSequential
 	esExactDuplicate
+	esDiscontinuity
 	esSameCCDifferent
 	esGap
 )
@@ -1862,9 +1918,17 @@ const (
 // esPacketTracker tracks the latest TS packet on a selected elementary stream PID
 // to classify transport sequence continuity and suppress exact duplicate packets.
 type esPacketTracker struct {
-	hasLast bool
-	lastCC  byte
-	last    [TSPacketSize]byte
+	hasLast              bool
+	lastCC               byte
+	pendingDiscontinuity bool
+	last                 [TSPacketSize]byte
+}
+
+func (t *esPacketTracker) reset() {
+	t.hasLast = false
+	t.lastCC = 0
+	t.pendingDiscontinuity = false
+	t.last = [TSPacketSize]byte{}
 }
 
 // hasDiscontinuityIndicator reports whether an MPEG-TS packet carries an
@@ -1889,19 +1953,29 @@ func (t *esPacketTracker) classify(pkt []byte) esPacketSequence {
 	if !t.hasLast {
 		t.hasLast = true
 		t.lastCC = cc
+		t.pendingDiscontinuity = false
 		copy(t.last[:], pkt[:TSPacketSize])
 		return esFirst
 	}
 
+	di := hasDiscontinuityIndicator(pkt) || t.pendingDiscontinuity
+
 	if cc == t.lastCC {
 		if bytes.Equal(t.last[:], pkt[:TSPacketSize]) {
 			// Exact duplicate: drop, retain previous reference.
+			// pendingDiscontinuity is NOT consumed on an exact duplicate!
 			return esExactDuplicate
 		}
-		// Different bytes with same CC: update reference, do not advance sequence.
+		// Different bytes with same CC: update reference.
+		t.pendingDiscontinuity = false
 		copy(t.last[:], pkt[:TSPacketSize])
+		if di {
+			return esDiscontinuity
+		}
 		return esSameCCDifferent
 	}
+
+	t.pendingDiscontinuity = false
 
 	expectedCC := (t.lastCC + 1) & 0x0F
 	if cc == expectedCC {
@@ -1910,18 +1984,12 @@ func (t *esPacketTracker) classify(pkt []byte) esPacketSequence {
 		return esSequential
 	}
 
-	// CC jump: check if Discontinuity Indicator is set in the adaptation field.
-	if hasDiscontinuityIndicator(pkt) {
-		// Announced discontinuity: DI hardening remains a separate defect.
-		// Treat as sequential transition so existing DI tests are unaffected.
-		t.lastCC = cc
-		copy(t.last[:], pkt[:TSPacketSize])
-		return esSequential
-	}
-
-	// Unannounced CC jump:
+	// Unexpected CC jump:
 	t.lastCC = cc
 	copy(t.last[:], pkt[:TSPacketSize])
+	if di {
+		return esDiscontinuity
+	}
 	return esGap
 }
 

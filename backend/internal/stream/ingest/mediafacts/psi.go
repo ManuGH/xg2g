@@ -200,18 +200,25 @@ func CalculateMPEG2CRC32(data []byte) uint32 {
 // byte-for-byte repeat of the packet just seen is a carousel duplicate rather
 // than a continuity error, and telling those apart needs the previous packet.
 type psiStreamAssembler struct {
-	buf        []byte
-	sectionLen int
-	lastCC     uint8
-	hasCC      bool
-	lastPacket []byte
+	buf                  []byte
+	sectionLen           int
+	lastCC               uint8
+	hasCC                bool
+	pendingDiscontinuity bool
+	lastPacket           []byte
+}
+
+func (s *psiStreamAssembler) discardSection() {
+	s.buf = s.buf[:0]
+	s.sectionLen = 0
 }
 
 func (s *psiStreamAssembler) reset() {
-	s.buf = s.buf[:0]
-	s.sectionLen = 0
+	s.discardSection()
 	s.hasCC = false
+	s.lastCC = 0
 	s.lastPacket = nil
+	s.pendingDiscontinuity = false
 }
 
 // tableSectionTracker collects the sections of one generation of one table.

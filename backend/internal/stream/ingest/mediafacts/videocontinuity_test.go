@@ -70,9 +70,12 @@ func TestVideoContinuity_ExactDuplicate_DroppedWithoutCorruptingSequence(t *test
 	}
 }
 
-// 3. Discontinuity Indicator (DI) bypasses gap: announced CC jump with DI flag
-// set does not trigger gap recovery (DI hardening remains a separate defect).
-func TestVideoContinuity_DiscontinuityIndicator_BypassesGap(t *testing.T) {
+// 3. Discontinuity Indicator (DI) hardening:
+// - An announced CC jump on a continuation packet (pusi=false) breaks the in-flight AU,
+//   forces videoAwaitingStart, but counts physical clear packets.
+// - An announced CC jump on a PUSI packet (pusi=true) breaks prior AU boundary,
+//   but cleanly starts a new PES without forcing videoAwaitingStart.
+func TestVideoContinuity_DiscontinuityIndicator_MidAU_BreaksAU(t *testing.T) {
 	b := vNew("test", "test", videoTSProgram)
 	core := NewGoCore(videoTSProgram)
 	ctx := context.Background()
@@ -83,22 +86,55 @@ func TestVideoContinuity_DiscontinuityIndicator_BypassesGap(t *testing.T) {
 	b.cc[v] = 0
 	startPkt := b.start(v, h264SPS, h264PPS) // CC = 0
 
-	// CC jump from 0 to 5, but with DI set
+	// CC jump from 0 to 5, but with DI set on continuation packet
 	b.cc[v] = 5
 	diPkt := audioTSShortPacketWithDI(v, false, b.next(v), h264IDR) // CC = 5 with DI
 
 	chunk := cat(psi, startPkt, diPkt)
-	_, err := core.Ingest(ctx, 0, chunk)
+	res, err := core.Ingest(ctx, 0, chunk)
 	if err != nil {
 		t.Fatalf("ingest DI jump: %v", err)
 	}
 
-	// DI jump must NOT trigger unannounced gap recovery
-	if core.auContinuityBroken {
-		t.Fatalf("announced DI jump must not set auContinuityBroken")
+	// Announced DI jump inside in-flight AU breaks AU and quarantines until next PUSI
+	if !core.auContinuityBroken {
+		t.Fatalf("announced DI jump mid-AU must set auContinuityBroken")
 	}
+	if !core.videoAwaitingStart {
+		t.Fatalf("announced DI jump mid-AU must force videoAwaitingStart")
+	}
+	if res.Facts.Scrambling.VideoClear != 2 {
+		t.Fatalf("expected 2 clear video packets, got %d", res.Facts.Scrambling.VideoClear)
+	}
+}
+
+func TestVideoContinuity_DiscontinuityIndicator_PUSI_StartsCleanly(t *testing.T) {
+	b := vNew("test", "test", videoTSProgram)
+	core := NewGoCore(videoTSProgram)
+	ctx := context.Background()
+	v := uint16(videoTSPID)
+
+	psi := b.psi(0, h264Stream(v))
+
+	b.cc[v] = 0
+	startPkt1 := b.start(v, h264SPS, h264PPS) // CC = 0
+
+	// CC jump from 0 to 5, but with DI set on a NEW PUSI packet with valid PES header
+	b.cc[v] = 5
+	pusiDIPkt := audioTSShortPacketWithDI(v, true, b.next(v), cat(audioTSPESHeader(0xE0, 0), h264SPS, h264PPS, h264IDR)) // CC = 5 with DI, PUSI=true
+
+	chunk := cat(psi, startPkt1, pusiDIPkt)
+	res, err := core.Ingest(ctx, 0, chunk)
+	if err != nil {
+		t.Fatalf("ingest DI PUSI jump: %v", err)
+	}
+
+	// New PUSI starts cleanly
 	if core.videoAwaitingStart {
-		t.Fatalf("announced DI jump must not force videoAwaitingStart")
+		t.Fatalf("announced DI jump on PUSI must not force videoAwaitingStart")
+	}
+	if res.Facts.Scrambling.VideoClear != 2 {
+		t.Fatalf("expected 2 clear video packets, got %d", res.Facts.Scrambling.VideoClear)
 	}
 }
 

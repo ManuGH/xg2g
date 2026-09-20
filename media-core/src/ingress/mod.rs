@@ -251,7 +251,7 @@ impl Follower {
                 // header is not knowable, so the offset the rest of this packet
                 // would be read from is not either. Skipping `remaining` anyway
                 // would be treating a loss as though it had arrived.
-                Continuity::Broken => {
+                Continuity::Broken | Continuity::Discontinuous => {
                     self.position = Position::AwaitingStart;
                     None
                 }
@@ -438,8 +438,14 @@ impl AudioIngress {
             return;
         };
         // A packet with no payload carries nothing to feed and does not advance
-        // the continuity counter either, so it is not offered to the tracker.
+        // the continuity counter either. If it asserts a discontinuity indicator,
+        // it arms pending discontinuity for the stream's next payload packet.
         let Some(payload) = view.payload() else {
+            if view.discontinuity_indicator() {
+                self.followers[index]
+                    .continuity
+                    .observe_adaptation_only(true);
+            }
             return;
         };
         let incarnation = self.incarnation;
@@ -447,9 +453,11 @@ impl AudioIngress {
 
         let is_same_cc = follower.continuity.is_same_cc(view.continuity_counter());
 
-        let continuity = follower
-            .continuity
-            .observe(view.bytes(), view.continuity_counter());
+        let continuity = follower.continuity.observe(
+            view.bytes(),
+            view.continuity_counter(),
+            view.discontinuity_indicator(),
+        );
 
         if continuity == Continuity::Duplicate {
             return;

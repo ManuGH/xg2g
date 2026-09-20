@@ -1397,8 +1397,7 @@ func audioTSCorpusCases() []audioTSCase {
 	}
 	{
 		b := audioTSNew("discontinuity_indicator_while_in_header_discards_incomplete_pes",
-			"discontinuity indicator while PES header is incomplete discards PES and awaits next start (defect)", audioTSProgram)
-		b.diverges("defect", "an announced discontinuity while a PES header is incomplete means header bytes were lost; the partial PES must be discarded")
+			"discontinuity indicator while PES header is incomplete discards PES and awaits next start", audioTSProgram)
 		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
@@ -1409,10 +1408,6 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(p0, p1)
 		// Authored: header lost in jump -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
-
-		// Reference: feeds p1 -> 1 feed
-		b.refFeed(0, audioTSAudioA, c1, obsFrames(1))
-		b.refStream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1840,9 +1835,8 @@ func TestAudioTSCorpus_TheCheckedInFileMatchesTheCases(t *testing.T) {
 // what it claims.
 func TestAudioTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
-		"a_pes_header_reaching_past_its_packet":                           "divergence",
-		"scrambled_packet_while_in_header":                                "defect",
-		"discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
+		"a_pes_header_reaching_past_its_packet": "divergence",
+		"scrambled_packet_while_in_header":      "defect",
 	}
 	got := map[string]string{}
 	for _, c := range audioTSCorpusCases() {

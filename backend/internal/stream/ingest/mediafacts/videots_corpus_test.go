@@ -1217,16 +1217,13 @@ func videoTSCorpusCases() []videoTSCase {
 	}
 	{
 		b := vNew("video_discontinuity_indicator_while_in_header_discards_incomplete_pes",
-			"discontinuity indicator while video PES header is incomplete discards PES and awaits next start (defect)", videoTSProgram)
-		b.diverges("defect", "an announced discontinuity while a PES header is incomplete means header bytes were lost; the partial PES must be discarded")
+			"discontinuity indicator while video PES header is incomplete discards PES and awaits next start", videoTSProgram)
 		start := audioTSShortPacket(v, true, b.next(v), []byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05})
 		b.next(v) // jump CC
 		c1 := audioTSShortPacketWithDI(v, false, b.next(v), cat(h264SPS, h264PPS, h264IDR))
 		b.chunk(b.psi(0, h264Stream(v)), start, c1).
 			ev(identityEv, identityEv).
-			facts(h264().clear(1)).
-			refEv(identityEv, identityEv, rapAt(pkt2, true)).
-			refFacts(h264().ps(true).irap(1).clear(2).cleanrap(1))
+			facts(h264().clear(2))
 		cases = append(cases, b.done())
 	}
 	{
@@ -1929,12 +1926,11 @@ func TestVideoTSCorpus_TheCheckedInFileMatchesTheCases(t *testing.T) {
 // what it claims.
 func TestVideoTSCorpus_OnlyTheClassifiedDivergencesExist(t *testing.T) {
 	want := map[string]string{
-		"h264_unreadable_slice_header":                                          "quirk",
-		"h264_sei_longer_than_the_capture_budget_hides_the_recovery_point":      "limitation",
-		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":               "limitation",
-		"mpeg2_predicted_pictures_are_not_entry_points":                         "quirk",
-		"video_pes_header_reaching_past_its_packet":                             "divergence",
-		"video_discontinuity_indicator_while_in_header_discards_incomplete_pes": "defect",
+		"h264_unreadable_slice_header":                                     "quirk",
+		"h264_sei_longer_than_the_capture_budget_hides_the_recovery_point": "limitation",
+		"hevc_long_sei_hides_the_recovery_point_and_blocks_entry":          "limitation",
+		"mpeg2_predicted_pictures_are_not_entry_points":                    "quirk",
+		"video_pes_header_reaching_past_its_packet":                        "divergence",
 	}
 	got := map[string]string{}
 	for _, c := range videoTSCorpusCases() {

@@ -242,8 +242,11 @@ pub enum Continuity {
     Continuous,
     /// The same counter and the same bytes: the transport said it twice.
     Duplicate,
+    /// An announced discontinuity: the counter jumped or repeated with different
+    /// bytes under `discontinuity_indicator` == true, establishing a new baseline.
+    Discontinuous,
     /// The counter did not advance the way it should have, so bytes are missing
-    /// or the sender contradicted itself.
+    /// or the sender contradicted itself without an announced discontinuity.
     Broken,
 }
 
@@ -261,6 +264,7 @@ pub enum Continuity {
 pub struct ContinuityTracker {
     last_cc: u8,
     has_cc: bool,
+    pending_discontinuity: bool,
     /// The previous packet, kept whole. Telling a duplicate from a loss needs
     /// the bytes: the counter alone cannot say which of the two happened.
     last_packet: Vec<u8>,
@@ -273,9 +277,11 @@ impl ContinuityTracker {
         Self::default()
     }
 
-    /// Forgets the counter, so the next packet is treated as the first.
+    /// Forgets the counter and pending discontinuity, so the next packet is
+    /// treated as the first.
     pub fn reset(&mut self) {
         self.has_cc = false;
+        self.pending_discontinuity = false;
         self.last_packet.clear();
     }
 
@@ -283,6 +289,15 @@ impl ContinuityTracker {
     #[must_use]
     pub fn retained_bytes(&self) -> usize {
         self.last_packet.len()
+    }
+
+    /// Records an adaptation-only packet (which carries no payload and does
+    /// not advance the continuity counter). If the discontinuity indicator is
+    /// set, marks a discontinuity as pending for the next payload-carrying packet.
+    pub fn observe_adaptation_only(&mut self, discontinuity: bool) {
+        if discontinuity {
+            self.pending_discontinuity = true;
+        }
     }
 
     /// Returns true if the tracker has observed a counter and the given counter
@@ -294,25 +309,42 @@ impl ContinuityTracker {
 
     /// Compares one payload-carrying packet against the one before it.
     ///
-    /// A duplicate leaves the tracker untouched, because the packet it repeats
-    /// is still the last one that meant anything. Every other outcome records
-    /// this packet as the new reference - including a break, so that one lost
-    /// packet does not make every packet after it look lost too.
-    pub fn observe(&mut self, packet: &[u8], continuity_counter: u8) -> Continuity {
+    /// A duplicate leaves the tracker untouched (including any pending
+    /// discontinuity), because the packet it repeats is still the last one
+    /// that meant anything. Every other outcome records this packet as the new
+    /// reference - including a break or announced discontinuity, so that one
+    /// transition establishes the new continuity baseline.
+    pub fn observe(
+        &mut self,
+        packet: &[u8],
+        continuity_counter: u8,
+        discontinuity: bool,
+    ) -> Continuity {
         let cc = continuity_counter & 0x0F;
+        let di = discontinuity || self.pending_discontinuity;
+
+        if self.has_cc && cc == self.last_cc && packet == self.last_packet.as_slice() {
+            // Exact duplicate: leaves tracker and pending_discontinuity untouched.
+            return Continuity::Duplicate;
+        }
+
+        self.pending_discontinuity = false;
 
         let verdict = if !self.has_cc {
             Continuity::First
         } else if cc == self.last_cc {
-            if packet == self.last_packet.as_slice() {
-                return Continuity::Duplicate;
-            }
             // One counter value cannot describe two different packets.
-            Continuity::Broken
-        } else if cc != (self.last_cc.wrapping_add(1)) & 0x0F {
-            Continuity::Broken
-        } else {
+            if di {
+                Continuity::Discontinuous
+            } else {
+                Continuity::Broken
+            }
+        } else if cc == (self.last_cc.wrapping_add(1)) & 0x0F {
             Continuity::Continuous
+        } else if di {
+            Continuity::Discontinuous
+        } else {
+            Continuity::Broken
         };
 
         self.last_cc = cc;
