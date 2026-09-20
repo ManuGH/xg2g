@@ -212,12 +212,14 @@ func e2ePMT() []byte {
 func e2eAudioPackets(es []byte) []byte {
 	var out []byte
 	first := true
+	cc := byte(0)
 	for len(es) > 0 {
 		pkt := make([]byte, mediafacts.TSPacketSize)
 		pkt[0] = mediafacts.SyncByte
 		pkt[1] = byte((e2eAudioPID >> 8) & 0x1F)
 		pkt[2] = byte(e2eAudioPID & 0xFF)
-		pkt[3] = 0x10
+		pkt[3] = 0x10 | (cc & 0x0F)
+		cc = (cc + 1) & 0x0F
 
 		body := 4
 		if first {
