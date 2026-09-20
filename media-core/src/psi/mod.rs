@@ -351,11 +351,19 @@ impl PsiCore {
         // past the end - is skipped rather than guessed at, which is what this
         // code did when it read the header itself.
         if let Ok(view) = PacketView::parse(packet) {
+            let pid = view.pid();
             // No payload means nothing for a table to be assembled from, whether
             // the packet carries an adaptation field only or one that swallowed
             // the payload it promised.
-            if let Some(payload) = view.payload() {
-                let pid = view.pid();
+            if view.payload().is_none() {
+                if view.discontinuity_indicator() {
+                    if pid == PAT_PID {
+                        self.pat_assembler.observe_adaptation_only(true);
+                    } else if self.pmt_pid() > 0 && pid == self.pmt_pid() {
+                        self.pmt_assembler.observe_adaptation_only(true);
+                    }
+                }
+            } else if let Some(payload) = view.payload() {
                 if pid == PAT_PID {
                     self.feed_table(true, &view, payload);
                 } else if self.pmt_pid() > 0 && pid == self.pmt_pid() {
@@ -399,13 +407,14 @@ impl PsiCore {
         let expected = if is_pat { TABLE_ID_PAT } else { TABLE_ID_PMT };
         let packet = view.bytes();
         let cc = view.continuity_counter();
+        let di = view.discontinuity_indicator();
         let pusi = view.payload_unit_start();
         let completed = if is_pat {
             self.pat_assembler
-                .accept(packet, cc, pusi, payload, expected)
+                .accept(packet, cc, di, pusi, payload, expected)
         } else {
             self.pmt_assembler
-                .accept(packet, cc, pusi, payload, expected)
+                .accept(packet, cc, di, pusi, payload, expected)
         };
         for section in completed {
             self.accept_section(is_pat, &section.bytes);

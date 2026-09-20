@@ -281,78 +281,102 @@ fn cc_packet(counter: u8, fill: u8) -> Vec<u8> {
 fn the_first_packet_on_a_pid_has_nothing_to_compare_against() {
     let mut t = ContinuityTracker::new();
     let p = cc_packet(9, 0x01);
-    assert_eq!(t.observe(&p, 9), Continuity::First);
+    assert_eq!(t.observe(&p, 9, false), Continuity::First);
 }
 
 #[test]
 fn the_counter_advancing_by_one_is_continuous() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(0, 0x01), 0), Continuity::First);
-    assert_eq!(t.observe(&cc_packet(1, 0x02), 1), Continuity::Continuous);
-    assert_eq!(t.observe(&cc_packet(2, 0x03), 2), Continuity::Continuous);
+    assert_eq!(t.observe(&cc_packet(0, 0x01), 0, false), Continuity::First);
+    assert_eq!(
+        t.observe(&cc_packet(1, 0x02), 1, false),
+        Continuity::Continuous
+    );
+    assert_eq!(
+        t.observe(&cc_packet(2, 0x03), 2, false),
+        Continuity::Continuous
+    );
 }
 
 #[test]
 fn the_counter_wraps_from_fifteen_to_zero_without_breaking() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(14, 0x01), 14), Continuity::First);
-    assert_eq!(t.observe(&cc_packet(15, 0x02), 15), Continuity::Continuous);
+    assert_eq!(
+        t.observe(&cc_packet(14, 0x01), 14, false),
+        Continuity::First
+    );
+    assert_eq!(
+        t.observe(&cc_packet(15, 0x02), 15, false),
+        Continuity::Continuous
+    );
     // The wrap is the normal case, not a gap.
-    assert_eq!(t.observe(&cc_packet(0, 0x03), 0), Continuity::Continuous);
-    assert_eq!(t.observe(&cc_packet(1, 0x04), 1), Continuity::Continuous);
+    assert_eq!(
+        t.observe(&cc_packet(0, 0x03), 0, false),
+        Continuity::Continuous
+    );
+    assert_eq!(
+        t.observe(&cc_packet(1, 0x04), 1, false),
+        Continuity::Continuous
+    );
 }
 
 #[test]
 fn the_same_counter_with_the_same_bytes_is_the_transport_repeating_itself() {
     let mut t = ContinuityTracker::new();
     let p = cc_packet(7, 0x55);
-    assert_eq!(t.observe(&p, 7), Continuity::First);
-    assert_eq!(t.observe(&p, 7), Continuity::Duplicate);
+    assert_eq!(t.observe(&p, 7, false), Continuity::First);
+    assert_eq!(t.observe(&p, 7, false), Continuity::Duplicate);
     // A duplicate changes nothing, so the next packet is still judged against
     // the packet that was repeated.
-    assert_eq!(t.observe(&cc_packet(8, 0x56), 8), Continuity::Continuous);
+    assert_eq!(
+        t.observe(&cc_packet(8, 0x56), 8, false),
+        Continuity::Continuous
+    );
 }
 
 #[test]
 fn the_same_counter_with_different_bytes_is_broken() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(7, 0x55), 7), Continuity::First);
+    assert_eq!(t.observe(&cc_packet(7, 0x55), 7, false), Continuity::First);
     // One counter value cannot describe two different packets.
-    assert_eq!(t.observe(&cc_packet(7, 0x66), 7), Continuity::Broken);
+    assert_eq!(t.observe(&cc_packet(7, 0x66), 7, false), Continuity::Broken);
 }
 
 #[test]
 fn a_skipped_counter_is_broken_and_then_recovers() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(3, 0x01), 3), Continuity::First);
-    assert_eq!(t.observe(&cc_packet(5, 0x02), 5), Continuity::Broken);
+    assert_eq!(t.observe(&cc_packet(3, 0x01), 3, false), Continuity::First);
+    assert_eq!(t.observe(&cc_packet(5, 0x02), 5, false), Continuity::Broken);
     // The break records the packet that arrived, so one loss does not make
     // every packet after it look lost.
-    assert_eq!(t.observe(&cc_packet(6, 0x03), 6), Continuity::Continuous);
+    assert_eq!(
+        t.observe(&cc_packet(6, 0x03), 6, false),
+        Continuity::Continuous
+    );
 }
 
 #[test]
 fn a_counter_going_backwards_is_broken() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(8, 0x01), 8), Continuity::First);
-    assert_eq!(t.observe(&cc_packet(7, 0x02), 7), Continuity::Broken);
+    assert_eq!(t.observe(&cc_packet(8, 0x01), 8, false), Continuity::First);
+    assert_eq!(t.observe(&cc_packet(7, 0x02), 7, false), Continuity::Broken);
 }
 
 #[test]
 fn a_reset_makes_the_next_packet_the_first_again() {
     let mut t = ContinuityTracker::new();
-    assert_eq!(t.observe(&cc_packet(3, 0x01), 3), Continuity::First);
+    assert_eq!(t.observe(&cc_packet(3, 0x01), 3, false), Continuity::First);
     t.reset();
     // Without the reset this would be a gap; after it there is nothing to
     // compare against.
-    assert_eq!(t.observe(&cc_packet(9, 0x02), 9), Continuity::First);
+    assert_eq!(t.observe(&cc_packet(9, 0x02), 9, false), Continuity::First);
 }
 
 #[test]
 fn the_tracker_reports_what_it_is_holding() {
     let mut t = ContinuityTracker::new();
     assert_eq!(t.retained_bytes(), 0);
-    t.observe(&cc_packet(1, 0x01), 1);
+    t.observe(&cc_packet(1, 0x01), 1, false);
     assert_eq!(t.retained_bytes(), TS_PACKET_LEN);
     t.reset();
     assert_eq!(t.retained_bytes(), 0);
@@ -373,8 +397,8 @@ fn only_the_low_four_bits_of_the_counter_are_the_counter() {
     // would look continuous either way, because the comparison masks its own
     // side.
     let p = cc_packet(1, 0x77);
-    assert_eq!(t.observe(&p, 0xF1), Continuity::First);
-    assert_eq!(t.observe(&p, 0x01), Continuity::Duplicate);
+    assert_eq!(t.observe(&p, 0xF1, false), Continuity::First);
+    assert_eq!(t.observe(&p, 0x01, false), Continuity::Duplicate);
 }
 
 // --- Area D: Discontinuity Indicator transport audit -----------------------
@@ -416,21 +440,80 @@ fn discontinuity_indicator_with_expected_next_cc() {
     let p1 = cc_packet_with_di(2, 0xBB);
     let v1 = PacketView::parse(&p1).expect("well formed");
     assert!(v1.discontinuity_indicator());
-    assert_eq!(t.observe(&p0, 1), Continuity::First);
-    assert_eq!(t.observe(&p1, 2), Continuity::Continuous);
+    assert_eq!(t.observe(&p0, 1, false), Continuity::First);
+    assert_eq!(t.observe(&p1, 2, true), Continuity::Continuous);
 }
 
 #[test]
-fn discontinuity_indicator_with_cc_jump_currently_verdicts_broken_in_tracker() {
-    // Pinned current behavior: ContinuityTracker does not yet receive the DI flag,
-    // so an announced discontinuity with a CC jump is classified as Broken.
+fn discontinuity_indicator_with_cc_jump_verdicts_discontinuous() {
     let mut t = ContinuityTracker::new();
     let p0 = cc_packet(1, 0xAA);
     let p1 = cc_packet_with_di(5, 0xBB);
     let v1 = PacketView::parse(&p1).expect("well formed");
     assert!(v1.discontinuity_indicator());
-    assert_eq!(t.observe(&p0, 1), Continuity::First);
-    assert_eq!(t.observe(&p1, 5), Continuity::Broken);
+    assert_eq!(t.observe(&p0, 1, false), Continuity::First);
+    assert_eq!(t.observe(&p1, 5, true), Continuity::Discontinuous);
+    // And subsequent expected CC is Continuous again
+    let p2 = cc_packet(6, 0xCC);
+    assert_eq!(t.observe(&p2, 6, false), Continuity::Continuous);
+}
+
+#[test]
+fn adaptation_only_di_survives_exact_duplicate() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(4, 0xAA);
+    assert_eq!(t.observe(&p0, 4, false), Continuity::First);
+
+    // Adaptation-only DI arms pending_discontinuity
+    t.observe_adaptation_only(true);
+
+    // Exact duplicate of CC 4 arrives
+    assert_eq!(t.observe(&p0, 4, false), Continuity::Duplicate);
+
+    // CC jump arrives with no DI flag on packet itself
+    let p1 = cc_packet(8, 0xBB);
+    assert_eq!(t.observe(&p1, 8, false), Continuity::Discontinuous);
+
+    // After Discontinuous, next sequential CC is Continuous
+    let p2 = cc_packet(9, 0xCC);
+    assert_eq!(t.observe(&p2, 9, false), Continuity::Continuous);
+}
+
+#[test]
+fn adaptation_only_di_survives_exact_duplicate_and_sequential_is_continuous() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(4, 0xAA);
+    assert_eq!(t.observe(&p0, 4, false), Continuity::First);
+
+    // Adaptation-only DI arms pending_discontinuity
+    t.observe_adaptation_only(true);
+
+    // Exact duplicate of CC 4 arrives
+    assert_eq!(t.observe(&p0, 4, false), Continuity::Duplicate);
+
+    // Sequential CC arrives
+    let p1 = cc_packet(5, 0xBB);
+    assert_eq!(t.observe(&p1, 5, false), Continuity::Continuous);
+}
+
+#[test]
+fn same_cc_different_with_di_verdicts_discontinuous() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(7, 0x55);
+    assert_eq!(t.observe(&p0, 7, false), Continuity::First);
+    let p1 = cc_packet_with_di(7, 0x66);
+    assert_eq!(t.observe(&p1, 7, true), Continuity::Discontinuous);
+}
+
+#[test]
+fn reset_clears_pending_discontinuity() {
+    let mut t = ContinuityTracker::new();
+    let p0 = cc_packet(4, 0xAA);
+    assert_eq!(t.observe(&p0, 4, false), Continuity::First);
+    t.observe_adaptation_only(true);
+    t.reset();
+    let p1 = cc_packet(8, 0xBB);
+    assert_eq!(t.observe(&p1, 8, false), Continuity::First);
 }
 
 #[test]
@@ -472,8 +555,8 @@ fn discontinuity_indicator_immediately_before_pusi() {
 fn discontinuity_indicator_repeated_identical_packet_is_duplicate() {
     let mut t = ContinuityTracker::new();
     let p = cc_packet_with_di(7, 0xEE);
-    assert_eq!(t.observe(&p, 7), Continuity::First);
-    assert_eq!(t.observe(&p, 7), Continuity::Duplicate);
+    assert_eq!(t.observe(&p, 7, true), Continuity::First);
+    assert_eq!(t.observe(&p, 7, true), Continuity::Duplicate);
 }
 
 #[test]
@@ -483,8 +566,8 @@ fn unannounced_cc_jump_is_broken_without_discontinuity_indicator() {
     let p1 = cc_packet(6, 0x22);
     let v1 = PacketView::parse(&p1).expect("well formed");
     assert!(!v1.discontinuity_indicator());
-    assert_eq!(t.observe(&p0, 1), Continuity::First);
-    assert_eq!(t.observe(&p1, 6), Continuity::Broken);
+    assert_eq!(t.observe(&p0, 1, false), Continuity::First);
+    assert_eq!(t.observe(&p1, 6, false), Continuity::Broken);
 }
 
 #[test]

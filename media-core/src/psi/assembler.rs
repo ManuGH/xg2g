@@ -94,8 +94,13 @@ impl SectionAssembler {
     /// artificial gap, but discards any section in flight and interprets
     /// nothing from the payload.
     pub(super) fn refuse_damaged(&mut self, packet: &[u8], continuity_counter: u8) {
-        let _ = self.continuity.observe(packet, continuity_counter);
+        let _ = self.continuity.observe(packet, continuity_counter, false);
         self.discard_section();
+    }
+
+    /// Records an adaptation-only packet with the continuity tracker.
+    pub(super) fn observe_adaptation_only(&mut self, discontinuity: bool) {
+        self.continuity.observe_adaptation_only(discontinuity);
     }
 
     /// Takes one packet's payload and returns the sections it completed, in the
@@ -111,6 +116,7 @@ impl SectionAssembler {
         &mut self,
         packet: &[u8],
         continuity_counter: u8,
+        discontinuity: bool,
         pusi: bool,
         payload: &[u8],
         expected_table_id: u8,
@@ -123,12 +129,16 @@ impl SectionAssembler {
         // would make the very next packet look like the start of a new stream,
         // and the old code immediately undid exactly that by re-recording the
         // counter it had just cleared.
-        match self.continuity.observe(packet, continuity_counter) {
+        match self
+            .continuity
+            .observe(packet, continuity_counter, discontinuity)
+        {
             // The transport saying the same thing twice.
             Continuity::Duplicate => return completed,
             // Either a packet went missing, or one counter value described two
-            // different packets. Whatever was in flight cannot be trusted.
-            Continuity::Broken => {
+            // different packets, or an announced discontinuity occurred.
+            // Whatever was in flight cannot be trusted.
+            Continuity::Broken | Continuity::Discontinuous => {
                 self.discard_section();
                 if !pusi {
                     return completed;
