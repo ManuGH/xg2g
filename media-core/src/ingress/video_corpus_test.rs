@@ -4,15 +4,16 @@
 
 //! The shared raw-transport-to-video-facts corpus, read and enforced.
 //!
-//! Step 7a focuses strictly on Transport + PES facts:
+//! Step 7b enforces Transport, PES, and Parameter Set facts:
 //! - vpid
 //! - codec
+//! - ps (parameter sets seen)
 //! - vclr (clear packets)
 //! - vscr (scrambled packets)
 //! - vrun (clear run)
 //! - scrconf (scrambled confirmed)
 //!
-//! NAL, AU, and RAP fields are deferred to Steps 7b and 7c.
+//! AU lifecycle and RAP evaluation fields are deferred to Step 7c.
 
 use super::VideoIngress;
 use std::path::{Path, PathBuf};
