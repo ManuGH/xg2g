@@ -45,7 +45,7 @@ use crate::psi::{IngestError, PsiCore, PsiEvent, VideoCodec};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
 /// Minimum consecutive scrambled packets required to conclusively confirm a stream as scrambled.
-pub const SCRAMBLED_CONFIRMED_THRESHOLD: u64 = 100;
+pub(crate) const SCRAMBLED_CONFIRMED_THRESHOLD: u64 = 100;
 
 /// Number of bytes captured after an H.264 slice header NAL byte for slice type classification.
 const SLICE_HEADER_CAPTURE_BYTES: usize = 12;
@@ -85,7 +85,7 @@ const MPEG2_START_GOP: u8 = 0xB8;
 
 /// Strips `0x03` emulation prevention bytes inserted by encoders behind `0x00 0x00`.
 #[must_use]
-pub fn remove_emulation_prevention(src: &[u8]) -> Vec<u8> {
+pub(crate) fn remove_emulation_prevention(src: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(src.len());
     let mut zeros = 0;
     for &b in src {
@@ -104,7 +104,7 @@ pub fn remove_emulation_prevention(src: &[u8]) -> Vec<u8> {
 }
 
 /// Bitwise reader over an RBSP byte slice.
-pub struct BitReader<'a> {
+pub(crate) struct BitReader<'a> {
     data: &'a [u8],
     pos: usize,
 }
@@ -112,18 +112,18 @@ pub struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     /// Constructs a bit reader for the given RBSP slice.
     #[must_use]
-    pub fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self { data, pos: 0 }
     }
 
     /// Number of bits remaining unread.
     #[must_use]
-    pub fn bits_left(&self) -> usize {
+    pub(crate) fn bits_left(&self) -> usize {
         (self.data.len().saturating_mul(8)).saturating_sub(self.pos)
     }
 
     /// Reads a single bit from the stream.
-    pub fn read_bit(&mut self) -> Option<u32> {
+    pub(crate) fn read_bit(&mut self) -> Option<u32> {
         if self.pos >= self.data.len().saturating_mul(8) {
             return None;
         }
@@ -137,7 +137,7 @@ impl<'a> BitReader<'a> {
     ///
     /// Rejects runs of leading zeros exceeding 32 bits to protect against unbounded loops
     /// on corrupted or non-slice bitstreams.
-    pub fn read_ue(&mut self) -> Option<u32> {
+    pub(crate) fn read_ue(&mut self) -> Option<u32> {
         let mut leading_zeros = 0;
         loop {
             let bit = self.read_bit()?;
@@ -172,7 +172,7 @@ impl<'a> BitReader<'a> {
 /// Returns `(is_intra, ok)`. If the slice header cannot be completely parsed,
 /// `ok` is `false`.
 #[must_use]
-pub fn h264_slice_is_intra(captured: &[u8]) -> (bool, bool) {
+pub(crate) fn h264_slice_is_intra(captured: &[u8]) -> (bool, bool) {
     let rbsp = remove_emulation_prevention(captured);
     let mut r = BitReader::new(&rbsp);
     if r.read_ue().is_none() {
@@ -189,7 +189,7 @@ pub fn h264_slice_is_intra(captured: &[u8]) -> (bool, bool) {
 
 /// Reports whether an SEI NAL payload contains a `recovery_point` message.
 #[must_use]
-pub fn sei_has_recovery_point(captured: &[u8]) -> bool {
+pub(crate) fn sei_has_recovery_point(captured: &[u8]) -> bool {
     let rbsp = remove_emulation_prevention(captured);
     let mut pos = 0;
     while pos < rbsp.len() {
@@ -231,7 +231,7 @@ pub fn sei_has_recovery_point(captured: &[u8]) -> bool {
 
 /// Reports whether an MPEG-2 picture header specifies an I-frame (`picture_coding_type == 1`).
 #[must_use]
-pub fn mpeg2_picture_is_intra(data: &[u8]) -> (bool, bool) {
+pub(crate) fn mpeg2_picture_is_intra(data: &[u8]) -> (bool, bool) {
     if data.len() < 2 {
         return (false, false);
     }
@@ -326,6 +326,9 @@ impl VideoFollower {
     /// and resets the Annex-B shift register. Must be called before TEI, scrambling,
     /// same-CC conflict, or PES header validation.
     fn begin_pusi_boundary(&mut self) {
+        // Finish parser observation belonging to the PES that just ended.
+        self.consume_capture();
+
         self.current_pes_offset = None;
         self.pes_has_sps = false;
         self.pes_has_pps = false;

@@ -808,3 +808,62 @@ fn transport_break_on_continuation_resets_annex_b_scanner() {
     let facts = ingress.facts();
     assert!(facts.awaiting_start);
 }
+
+#[test]
+fn regression_short_malformed_slice_before_pusi_increments_unreadable_slices() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // PES A: starts an H.264 non-IDR slice (type 1), but provides only 1 malformed byte (0x00).
+    // The capture budget is 12 bytes, so the capture remains pending at the end of PES A.
+    let first_pusi_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x01, // H.264 non-IDR slice startcode + header byte
+        0x00, // 1 byte captured (budget is 12 -> capture pending)
+    ];
+    let p_a = make_ts_packet(VIDEO_PID, true, 0, 0, false, &first_pusi_payload);
+    ingress.ingest(offset, &p_a).expect("pes a");
+    offset += PACKET_LEN_I64;
+
+    let facts_mid = ingress.facts();
+    // Budget was not reached yet, so unreadable_slices is still 0 before PES boundary.
+    assert_eq!(facts_mid.unreadable_slices, 0);
+
+    // PES B: arrives as a new PUSI packet.
+    let next_pusi_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, // PES start
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS
+    ];
+    let p_b = make_ts_packet(VIDEO_PID, true, 1, 0, false, &next_pusi_payload);
+    ingress.ingest(offset, &p_b).expect("pes b");
+
+    let facts_after = ingress.facts();
+    // Invariant: at the PUSI boundary of PES B, consume_capture() was called on PES A's
+    // pending capture. The malformed slice header fails parsing and increments unreadable_slices!
+    assert_eq!(facts_after.unreadable_slices, 1);
+}
+
+#[test]
+fn regression_pending_capture_aborted_on_transport_break_without_consume() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // PES A: starts an H.264 non-IDR slice with 1 byte (pending capture).
+    let pusi_payload = vec![
+        0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00,
+    ];
+    let p1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &pusi_payload);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += PACKET_LEN_I64;
+
+    assert_eq!(ingress.facts().unreadable_slices, 0);
+
+    // Continuation packet arrives with an unannounced CC gap (cc 0 -> cc 5, without DI): Broken.
+    let cont_payload = vec![0x11, 0x22];
+    let p2 = make_ts_packet(VIDEO_PID, false, 5, 0, false, &cont_payload);
+    ingress.ingest(offset, &p2).expect("p2 broken");
+
+    let facts = ingress.facts();
+    assert!(facts.awaiting_start);
+    // Invariant: On transport breaks (loss in transit), the pending capture is aborted
+    // (discarded) rather than consumed. unreadable_slices stays 0!
+    assert_eq!(facts.unreadable_slices, 0);
+}
