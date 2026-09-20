@@ -27,6 +27,8 @@ struct AdaptiveAppNavigation: View {
                     RecordingsView(model: model)
                 case .timers:
                     TimersView(model: model)
+                case .search:
+                    SearchView(model: model)
                 case .settings:
                     SettingsView(model: model)
                 }

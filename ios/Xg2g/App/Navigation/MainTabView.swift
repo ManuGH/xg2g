@@ -10,36 +10,43 @@ struct MainTabView: View {
 
     @Bindable var model: AppModel
 
+    /// tvOS tab bars are text: with icons, six German labels no longer fit
+    /// the bar and the last one is clipped. iPhone keeps the icon-and-text item.
+    @ViewBuilder
+    private func tabLabel(_ tab: Tab) -> some View {
+#if os(tvOS)
+        Text(tab.rawValue)
+#else
+        Label(tab.rawValue, systemImage: tab.systemImage)
+#endif
+    }
+
     var body: some View {
         TabView(selection: $model.selectedTab) {
             HomeHubView(model: model)
-                .tabItem {
-                    Label(Tab.home.rawValue, systemImage: Tab.home.systemImage)
-                }
+                .tabItem { tabLabel(.home) }
                 .tag(Tab.home)
 
             ChannelListView(model: model)
-                .tabItem {
-                    Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
-                }
+                .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
 
             GuideView(model: model)
-                .tabItem {
-                    Label(Tab.guide.rawValue, systemImage: Tab.guide.systemImage)
-                }
+                .tabItem { tabLabel(.guide) }
                 .tag(Tab.guide)
 
             RecordingsView(model: model)
-                .tabItem {
-                    Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
-                }
+                .tabItem { tabLabel(.recordings) }
                 .tag(Tab.recordings)
 
+#if os(tvOS)
+            SearchView(model: model)
+                .tabItem { tabLabel(.search) }
+                .tag(Tab.search)
+#endif
+
             SettingsView(model: model)
-                .tabItem {
-                    Label(Tab.settings.rawValue, systemImage: Tab.settings.systemImage)
-                }
+                .tabItem { tabLabel(.settings) }
                 .tag(Tab.settings)
         }
     }

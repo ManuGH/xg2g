@@ -57,6 +57,7 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
     case guide = "Programm"
     case recordings = "Aufnahmen"
     case timers = "Timer"
+    case search = "Suche"
     case settings = "Einstellungen"
 
     var id: String { rawValue }
@@ -68,8 +69,23 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
         case .guide: return "calendar.badge.clock"
         case .recordings: return "play.rectangle.on.rectangle"
         case .timers: return "clock"
+        case .search: return "magnifyingglass"
         case .settings: return "gearshape"
         }
+    }
+
+    /// The tabs a platform lists in its top-level navigation.
+    ///
+    /// On iPhone and iPad the search field lives in the Home hub's navigation
+    /// bar, so `search` is not a destination there. tvOS has no navigation-bar
+    /// search: a focused text field expands the inline keyboard and pushes the
+    /// content off screen, so search gets its own tab like every Apple TV app.
+    static var navigationCases: [Tab] {
+#if os(tvOS)
+        allCases
+#else
+        allCases.filter { $0 != .search }
+#endif
     }
 }
 

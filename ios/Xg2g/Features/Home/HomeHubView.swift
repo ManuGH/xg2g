@@ -103,7 +103,11 @@ struct HomeHubView: View {
                     }
                 }
             }
+#if !os(tvOS)
+            // tvOS routes search through its own tab (`SearchView`): a focused
+            // field here would unfold the inline keyboard over the hub.
             .searchable(text: $searchText, prompt: "Sendung, Film oder Sender suchen…")
+#endif
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,

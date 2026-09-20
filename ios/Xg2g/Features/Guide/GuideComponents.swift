@@ -147,7 +147,7 @@ struct GuideShowRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .rowButtonStyle()
 
             Button(action: onRecord) {
                 Image(systemName: "record.circle")

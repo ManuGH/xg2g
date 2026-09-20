@@ -18,9 +18,28 @@ struct ChannelRow: View {
     var onRecord: (NowNext.Entry) -> Void = { _ in }
 
     var body: some View {
+#if os(tvOS)
+        // A tap gesture is not a focus target: the Siri Remote cannot select
+        // the row at all. The card becomes the button; the info button inside
+        // stays its own focus target.
+        Button(action: onPlay) {
+            card
+        }
+        .buttonStyle(TVFocusRowButtonStyle())
+#else
+        card
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onTapGesture {
+                Haptics.shared.impact(.light)
+                onPlay()
+            }
+#endif
+    }
+
+    private var card: some View {
         let displayedShow = targetShow ?? nowNext?.now
 
-        VStack(alignment: .leading, spacing: 9) {
+        return VStack(alignment: .leading, spacing: 9) {
             // MARK: - Header: Logo + Channel Name & Number + Genre/Live Badge
             HStack(spacing: 10) {
                 ChannelLogo(url: channel.logoURL, name: channel.name, size: 38)
@@ -185,11 +204,6 @@ struct ChannelRow: View {
             radius: 6,
             y: 2
         )
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onTapGesture {
-            Haptics.shared.impact(.light)
-            onPlay()
-        }
     }
 }
 

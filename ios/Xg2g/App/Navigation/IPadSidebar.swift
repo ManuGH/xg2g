@@ -13,7 +13,7 @@ struct IPadSidebar: View {
     var body: some View {
         List {
             Section("Mediathek") {
-                ForEach(Tab.allCases) { tab in
+                ForEach(Tab.navigationCases) { tab in
                     let isSelected = model.selectedTab == tab
                     Button {
                         triggerHaptic(.light)
