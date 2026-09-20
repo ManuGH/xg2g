@@ -382,6 +382,12 @@ impl PsiCore {
         self.streams.video_pid
     }
 
+    /// The video codec the table in force names, or `VideoCodec::Unknown`.
+    #[must_use]
+    pub fn video_codec(&self) -> VideoCodec {
+        self.streams.video_codec
+    }
+
     /// The audio tracks the table in force declares, in the order it lists them.
     ///
     /// Borrowed rather than cloned: a caller asking this per packet would

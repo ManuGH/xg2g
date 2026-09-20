@@ -533,3 +533,13 @@ mod ingress_test;
 
 #[cfg(test)]
 mod corpus_test;
+
+pub mod video;
+
+pub use video::{VideoFacts, VideoFeed, VideoIngress, VideoOutcome};
+
+#[cfg(test)]
+mod video_test;
+
+#[cfg(test)]
+mod video_corpus_test;
