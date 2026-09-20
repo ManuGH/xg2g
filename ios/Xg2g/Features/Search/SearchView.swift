@@ -86,6 +86,11 @@ struct SearchView: View {
                     onRecord: { entry in scheduleTimer(channel: payload.channel, entry: entry) }
                 )
             }
+#if os(tvOS)
+            .onExitCommand {
+                model.selectedTab = .home
+            }
+#endif
         }
     }
 

@@ -110,7 +110,11 @@ struct LandscapeQuickZapBar: View {
                                 )
                                 .shadow(color: isCurrent ? Theme.Colors.accentLive.opacity(0.3) : Color.clear, radius: 8)
                             }
+#if os(tvOS)
+                            .buttonStyle(TVQuickZapCardButtonStyle(isCurrent: isCurrent))
+#else
                             .buttonStyle(.plain)
+#endif
                             .id(ch.id)
                         }
                     }
@@ -128,5 +132,26 @@ struct LandscapeQuickZapBar: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.5), radius: 16, y: 6)
+#if os(tvOS)
+        .onExitCommand(perform: onClose)
+#endif
     }
 }
+
+#if os(tvOS)
+struct TVQuickZapCardButtonStyle: ButtonStyle {
+    let isCurrent: Bool
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isFocused ? Color.white : (isCurrent ? Theme.Colors.accentLive : Color.clear), lineWidth: isFocused ? 2.5 : 1)
+            )
+            .scaleEffect(isFocused ? 1.08 : 1.0)
+            .shadow(color: isFocused ? Theme.Colors.accentAction.opacity(0.6) : (isCurrent ? Theme.Colors.accentLive.opacity(0.3) : Color.clear), radius: isFocused ? 12 : 6)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+#endif

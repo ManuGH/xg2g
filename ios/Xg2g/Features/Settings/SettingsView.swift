@@ -382,6 +382,11 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Einstellungen")
+#if os(tvOS)
+            .onExitCommand {
+                model.selectedTab = .home
+            }
+#endif
         }
     }
 }

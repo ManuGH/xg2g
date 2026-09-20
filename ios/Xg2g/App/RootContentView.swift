@@ -8,6 +8,62 @@ struct RootContentView: View {
     @Bindable var model: AppModel
     var playbackManager: PlaybackManager
 
+#if os(tvOS)
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                // 1. App Navigation
+                Group {
+                    switch model.state {
+                    case .needsServer:
+                        ServerSetupView(model: model)
+                    case .needsPairing, .needsRePairing:
+                        PairingView(model: model)
+                    case .ready:
+                        AdaptiveAppNavigation(model: model)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // 2. Mini-Player Docked Bar
+                if playbackManager.presentationMode == .miniplayer {
+                    MiniPlayerBar(playbackManager: playbackManager, model: model)
+                        .padding(.horizontal, 64)
+                        .padding(.bottom, 24)
+                        .focusSection()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+
+            // 3. Native Fullscreen Video Player Overlay
+            if playbackManager.presentationMode == .fullscreen, let channel = playbackManager.currentChannel {
+                LivePlayerScreen(model: model, playbackManager: playbackManager, channel: channel)
+                    .ignoresSafeArea()
+                    .zIndex(20)
+                    .transition(.opacity)
+            } else if playbackManager.presentationMode == .fullscreen, let item = playbackManager.activeRecordingItem, let serverAddress = model.serverAddress {
+                RecordingPlayerScreen(
+                    recording: item.recording,
+                    serverAddress: serverAddress,
+                    initialPosition: item.initialPosition,
+                    model: model,
+                    onProgressUpdate: { current, total in
+                        model.updateRecordingProgress(
+                            id: item.recording.id,
+                            currentTime: current,
+                            totalDuration: total,
+                            title: item.recording.title
+                        )
+                    }
+                )
+                .ignoresSafeArea()
+                .zIndex(20)
+                .transition(.opacity)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.presentationMode)
+    }
+#else
     var body: some View {
         ZStack(alignment: .bottom) {
             // 1. App Navigation
@@ -34,25 +90,12 @@ struct RootContentView: View {
             get: { playbackManager.presentationMode == .fullscreen && playbackManager.currentChannel != nil },
             set: { isPresented in
                 if !isPresented && playbackManager.presentationMode == .fullscreen {
-#if os(tvOS)
-                    // Menu leaves the player. A mini-player bar over the
-                    // list is a phone idiom; on a television leaving means
-                    // stopping, and "Zuletzt gespielt" on the hub resumes.
-                    playbackManager.stop()
-#else
                     playbackManager.minimize()
-#endif
                 }
             }
         )) {
             if let channel = playbackManager.currentChannel {
                 LivePlayerScreen(model: model, playbackManager: playbackManager, channel: channel)
-#if os(tvOS)
-                    // tvOS lays the cover out inside the 80/60 pt overscan
-                    // insets, which leaves the hub visible around the video.
-                    // A television player owns the whole panel.
-                    .ignoresSafeArea()
-#endif
             }
         }
         .fullScreenCover(item: Binding(
@@ -65,25 +108,22 @@ struct RootContentView: View {
                 }
             }
         )) { item in
-            // No configured deployment means nothing to play. The screen used to
-            // take a string and repair it; now the address either exists or the
-            // cover does not open.
             if let serverAddress = model.serverAddress {
-            RecordingPlayerScreen(
-                recording: item.recording,
-                serverAddress: serverAddress,
-                initialPosition: item.initialPosition,
-                model: model,
-                onProgressUpdate: { current, total in
-                    model.updateRecordingProgress(
-                        id: item.recording.id,
-                        currentTime: current,
-                        totalDuration: total,
-                        title: item.recording.title
-                    )
-                }
-            )
-            .ignoresSafeArea(.all)
+                RecordingPlayerScreen(
+                    recording: item.recording,
+                    serverAddress: serverAddress,
+                    initialPosition: item.initialPosition,
+                    model: model,
+                    onProgressUpdate: { current, total in
+                        model.updateRecordingProgress(
+                            id: item.recording.id,
+                            currentTime: current,
+                            totalDuration: total,
+                            title: item.recording.title
+                        )
+                    }
+                )
+                .ignoresSafeArea(.all)
             }
         }
         .fullScreenCover(item: Binding(
@@ -94,4 +134,5 @@ struct RootContentView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.presentationMode)
     }
+#endif
 }

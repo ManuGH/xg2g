@@ -59,6 +59,9 @@ public struct LivePlayerScreen: View {
     @State private var currentSubtitleImage: CGImage?
     @State private var verticalDragOffset: CGFloat = 0
     @State private var isDraggingDown: Bool = false
+#if os(tvOS)
+    @FocusState private var isPlayPauseFocused: Bool
+#endif
 
     private struct ChannelPreset: Identifiable, Hashable {
         var id: String { serviceRef }
@@ -445,6 +448,41 @@ public struct LivePlayerScreen: View {
                         .transition(.opacity)
                 }
 
+#if os(tvOS)
+                // Siri Remote background receiver when controls are hidden
+                if !showControls && !showHUD && !showLandscapeZapBar {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showControls = true
+                        }
+                        scheduleControlsAutoHide()
+                    } label: {
+                        Color.clear
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .onMoveCommand { direction in
+                        switch direction {
+                        case .left:
+                            zapRelative(delta: -1)
+                        case .right:
+                            zapRelative(delta: 1)
+                        case .up, .down:
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showControls = true
+                            }
+                            scheduleControlsAutoHide()
+                        @unknown default:
+                            break
+                        }
+                    }
+                    .onPlayPauseCommand {
+                        togglePlayPause()
+                    }
+                }
+#endif
+
                 // 3. Floating Telemetry Inspector Modal
                 if showHUD {
                     telemetryHUDView
@@ -490,8 +528,35 @@ public struct LivePlayerScreen: View {
             .clipShape(RoundedRectangle(cornerRadius: isDraggingDown ? min(32, verticalDragOffset / 4) : 0, style: .continuous))
             .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.85), value: verticalDragOffset)
         }
+#if os(tvOS)
+        .onExitCommand {
+            if showLandscapeZapBar {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showLandscapeZapBar = false
+                }
+            } else if showHUD {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showHUD = false
+                }
+            } else if showControls {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showControls = false
+                }
+            } else {
+                closePlayer()
+            }
+        }
+        .onChange(of: showControls) { _, isShowing in
+            if isShowing {
+                isPlayPauseFocused = true
+            }
+        }
+#endif
         .onAppear {
             setupPlayback()
+#if os(tvOS)
+            isPlayPauseFocused = true
+#endif
         }
         .onDisappear {
             if playbackManager.presentationMode == .hidden {
@@ -584,7 +649,8 @@ public struct LivePlayerScreen: View {
             VStack(spacing: 0) {
                 // Top Action Bar
                 HStack(spacing: 8) {
-                    // 1. Dismiss Button (44x44 pt hit target)
+#if !os(tvOS)
+                    // 1. Dismiss Button
                     Button {
                         closePlayer()
                     } label: {
@@ -598,6 +664,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+#endif
 
                     // 2. Channel Info (Compact & Non-overflowing)
                     ChannelLogo(url: currentLogoURL, name: displayedChannelName, size: isLandscape ? 32 : 28)
@@ -679,6 +746,95 @@ public struct LivePlayerScreen: View {
                         .contentShape(Rectangle())
                     }
 
+#if os(tvOS)
+                    // Dedicated TV Action Buttons
+                    if let playing = coordinator.playing, !playing.availableAudioTracks.isEmpty {
+                        Menu {
+                            ForEach(playing.availableAudioTracks) { track in
+                                Button {
+                                    Haptics.shared.impact(.light)
+                                    playing.selectAudioTrack(pid: track.pid)
+                                } label: {
+                                    HStack {
+                                        Text(track.displayName)
+                                        if playing.selectedAudioPID == track.pid {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: playing.hasDecodableAudio ? "waveform" : "speaker.slash")
+                                Text("Ton")
+                            }
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(TVPlayerPillButtonStyle())
+                    }
+
+                    if let playing = coordinator.playing, !playing.availableSubtitleTracks.isEmpty {
+                        Menu {
+                            Button {
+                                playing.selectSubtitleTrack(nil)
+                            } label: {
+                                HStack {
+                                    Text("Aus")
+                                    if playing.selectedSubtitleTrack == nil {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            ForEach(playing.availableSubtitleTracks) { track in
+                                Button {
+                                    playing.selectSubtitleTrack(track)
+                                } label: {
+                                    HStack {
+                                        Text(track.displayName)
+                                        if playing.selectedSubtitleTrack?.id == track.id {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "captions.bubble")
+                                Text("Untertitel")
+                            }
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(TVPlayerPillButtonStyle())
+                    }
+
+                    Button {
+                        cycleViewPreset()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
+                            Text(viewPreset.shortLabel)
+                        }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(TVPlayerPillButtonStyle())
+
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showHUD.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: showHUD ? "chart.bar.fill" : "chart.bar")
+                            Text("Info")
+                        }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(TVPlayerPillButtonStyle(isActive: showHUD))
+#else
                     // 3. Aspect Ratio Preset Button (Primary Control, 44pt hit target)
                     Button {
                         cycleViewPreset()
@@ -857,6 +1013,7 @@ public struct LivePlayerScreen: View {
                     }
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+#endif
                 }
                 .padding(.horizontal, sideInset)
                 .padding(.top, isLandscape ? 12 : max(safeInsets.top, 8))
@@ -872,10 +1029,16 @@ public struct LivePlayerScreen: View {
                         Image(systemName: "backward.end.fill")
                             .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+#endif
 
                     // Timeshift Rewind 30s
                     Button {
@@ -888,23 +1051,36 @@ public struct LivePlayerScreen: View {
                         Image(systemName: "gobackward.30")
                             .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+#endif
 
                     // Play / Pause Toggle
                     Button {
                         togglePlayPause()
                     } label: {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.app(size: 30, weight: .bold))
+                            .font(.app(size: 28, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(18)
                             .background(Theme.Colors.accentAction.opacity(0.9), in: Circle())
                             .shadow(color: Theme.Colors.accentAction.opacity(0.5), radius: 10)
+#endif
                     }
+#if os(tvOS)
+                    .focused($isPlayPauseFocused)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 72, isPrimary: true))
+#else
                     .buttonStyle(.plain)
+#endif
 
                     // Timeshift Forward 30s (active in Timeshift)
                     Button {
@@ -917,10 +1093,16 @@ public struct LivePlayerScreen: View {
                         Image(systemName: "goforward.30")
                             .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(engineMode == .timeshiftHLS ? .white : .white.opacity(0.35))
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+#endif
                     .disabled(engineMode != .timeshiftHLS)
 
                     // Next Channel
@@ -930,10 +1112,16 @@ public struct LivePlayerScreen: View {
                         Image(systemName: "forward.end.fill")
                             .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+#endif
                 }
 
                 // Timeshift Timeline Bar (Visible when in Timeshift mode)
@@ -1009,12 +1197,18 @@ public struct LivePlayerScreen: View {
                                     .font(.app(size: 12, weight: .bold))
                             }
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(Theme.Colors.accentAction.opacity(0.85), in: Capsule())
                             .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+#endif
                         }
+#if os(tvOS)
+                        .buttonStyle(TVPlayerPillButtonStyle())
+#else
                         .buttonStyle(.plain)
+#endif
                     }
                     .padding(.horizontal, sideInset)
                     .padding(.bottom, max(safeInsets.bottom, 12))
@@ -2028,10 +2222,77 @@ struct TimeshiftTimelineBar: View {
             }
             .frame(height: 14)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         .shadow(color: Color.black.opacity(0.3), radius: 8)
     }
 }
+
+#if os(tvOS)
+struct TVPlayerControlButtonStyle: ButtonStyle {
+    var size: CGFloat = 48
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(isFocused ? Theme.Colors.accentAction : Color.black.opacity(0.6))
+            )
+            .overlay(
+                Circle()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 3 : 1)
+            )
+            .scaleEffect(isFocused ? 1.18 : 1.0)
+            .shadow(color: isFocused ? Theme.Colors.accentAction.opacity(0.6) : Color.black.opacity(0.4), radius: isFocused ? 14 : 6)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+struct TVPlayerPillButtonStyle: ButtonStyle {
+    var isActive: Bool = false
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isFocused ? Theme.Colors.accentAction : (isActive ? Theme.Colors.surfaceElevated : Color.black.opacity(0.6)))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 2.5 : 1)
+            )
+            .scaleEffect(isFocused ? 1.10 : 1.0)
+            .shadow(color: isFocused ? Theme.Colors.accentAction.opacity(0.6) : Color.black.opacity(0.4), radius: isFocused ? 12 : 4)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+struct TVPlayerTransportButtonStyle: ButtonStyle {
+    var size: CGFloat = 56
+    var isPrimary: Bool = false
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(isFocused ? Color.white : (isPrimary ? Theme.Colors.accentAction.opacity(0.9) : Color.black.opacity(0.55)))
+            )
+            .overlay(
+                Circle()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 3 : 1)
+            )
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .scaleEffect(isFocused ? 1.2 : 1.0)
+            .shadow(color: isFocused ? Color.white.opacity(0.4) : Color.black.opacity(0.4), radius: isFocused ? 16 : 6)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+#endif

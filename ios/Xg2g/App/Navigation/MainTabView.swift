@@ -24,8 +24,8 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $model.selectedTab) {
 #if os(tvOS)
-            // The television has its own home and channel screens on the
-            // shared model: one card size, three text sizes, focus-driven.
+            // The television has its own dedicated screens on the
+            // shared model: uniform card sizes, readable typography, Siri Remote focus.
             TVHomeView(model: model)
                 .tabItem { tabLabel(.home) }
                 .tag(Tab.home)
@@ -33,6 +33,22 @@ struct MainTabView: View {
             TVChannelGridView(model: model)
                 .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
+
+            TVGuideView(model: model)
+                .tabItem { tabLabel(.guide) }
+                .tag(Tab.guide)
+
+            TVRecordingsView(model: model)
+                .tabItem { tabLabel(.recordings) }
+                .tag(Tab.recordings)
+
+            SearchView(model: model)
+                .tabItem { tabLabel(.search) }
+                .tag(Tab.search)
+
+            SettingsView(model: model)
+                .tabItem { tabLabel(.settings) }
+                .tag(Tab.settings)
 #else
             HomeHubView(model: model)
                 .tabItem { tabLabel(.home) }
@@ -41,7 +57,6 @@ struct MainTabView: View {
             ChannelListView(model: model)
                 .tabItem { tabLabel(.liveTV) }
                 .tag(Tab.liveTV)
-#endif
 
             GuideView(model: model)
                 .tabItem { tabLabel(.guide) }
@@ -51,15 +66,17 @@ struct MainTabView: View {
                 .tabItem { tabLabel(.recordings) }
                 .tag(Tab.recordings)
 
-#if os(tvOS)
-            SearchView(model: model)
-                .tabItem { tabLabel(.search) }
-                .tag(Tab.search)
-#endif
-
             SettingsView(model: model)
                 .tabItem { tabLabel(.settings) }
                 .tag(Tab.settings)
+#endif
         }
+#if os(tvOS)
+        .onExitCommand {
+            if model.selectedTab != .home {
+                model.selectedTab = .home
+            }
+        }
+#endif
     }
 }

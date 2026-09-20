@@ -57,6 +57,9 @@ struct TVChannelGridView: View {
                 }
             }
         }
+        .onExitCommand {
+            model.selectedTab = .home
+        }
     }
 }
 

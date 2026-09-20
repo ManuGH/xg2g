@@ -135,7 +135,9 @@ struct RecordingsView: View {
             .sheet(isPresented: $showTimersSheet) {
                 TimersView(model: model)
             }
+#if !os(tvOS)
             .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
+#endif
             .sheet(item: $selectedDetailRecording) { rec in
                 RecordingDetailSheet(
                     recording: rec,

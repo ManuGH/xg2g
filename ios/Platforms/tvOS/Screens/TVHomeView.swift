@@ -277,9 +277,15 @@ struct TVProgramCard: View {
 
 struct TVRecordingCard: View {
     let recording: Recording
+    var resumePos: Double? = nil
     var onPlay: () -> Void
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
+        let resumeSecs = resumePos ?? 0
+        let duration = Double(recording.durationSeconds)
+        let progress = duration > 0 ? min(1.0, resumeSecs / duration) : 0
+
         Button(action: onPlay) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -298,6 +304,11 @@ struct TVRecordingCard: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                if resumeSecs > 10 {
+                    TVProgressLine(progress: progress)
+                }
+
                 Text(recording.formattedDate)
                     .font(TVDesign.Font.meta)
                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -306,5 +317,11 @@ struct TVRecordingCard: View {
             .frame(width: TVDesign.Layout.cardWidth, height: TVDesign.Layout.cardHeight)
         }
         .buttonStyle(TVCardButtonStyle())
+        .contextMenu {
+            Button("Abspielen", systemImage: "play.fill", action: onPlay)
+            if let onDelete {
+                Button("Aufnahme löschen", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
     }
 }
