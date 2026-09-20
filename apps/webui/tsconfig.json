@@ -29,7 +29,8 @@
     "allowJs": true,
     "checkJs": false,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": ["@testing-library/jest-dom/vitest"]
   },
   "include": [
     "src/**/*",
