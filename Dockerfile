@@ -144,8 +144,8 @@ ARG BUILD_VERSION
 # Copy xg2g binary
 COPY --from=app-builder --chown=10001:10001 /xg2g /usr/local/bin/xg2g
 
-# Copy the media facts core. Present in the image, started by nobody: the daemon
-# does not launch it yet, and its runtime semantics are unchanged by its presence.
+# Copy the media facts core. Launched per session pipeline by xg2g daemon
+# for authoritative stream parsing and random access indexing.
 COPY --from=media-core-builder --chown=10001:10001 /xg2g-media-core /usr/local/bin/xg2g-media-core
 
 # Switch to non-root user

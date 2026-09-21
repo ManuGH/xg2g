@@ -42,7 +42,7 @@ func TestPipeline_UnresponsiveUpstream_HonoursConnectTimeout(t *testing.T) {
 
 	const connectTimeout = 400 * time.Millisecond
 
-	connectorCfg := DefaultConnectorConfig("http://"+listener.Addr().String(), 0)
+	connectorCfg := DefaultTestConnectorConfig("http://"+listener.Addr().String(), 0)
 	connectorCfg.StreamPort = listener.Addr().(*net.TCPAddr).Port
 	connectorCfg.ConnectTimeout = connectTimeout
 

@@ -157,6 +157,12 @@ func requireRealCore(t *testing.T) string {
 	if _, err := os.Stat(bin); err != nil {
 		t.Skipf("media core binary not usable: %v", err)
 	}
+	if os.Getenv("XG2G_TEST_ALLOW_DARWIN_CORE") == "1" {
+		useIdentity(t, func(pid int) (processIdentity, error) {
+			return &darwinTestIdentity{pid: pid}, nil
+		})
+		return bin
+	}
 	requireOwnableCore(t)
 	return bin
 }

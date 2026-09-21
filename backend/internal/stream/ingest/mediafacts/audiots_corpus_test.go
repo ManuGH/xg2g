@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,10 +44,30 @@ const (
 	audioTSStepTarget
 )
 
+type audioTSFacts struct {
+	audioScrambled uint64
+	audioClear     uint64
+	audioClearRun  uint64
+	audioPIDs      []uint16
+	tracks         []audioTSTrackFacts
+}
+
+type audioTSTrackFacts struct {
+	pid       uint16
+	channels  int
+	lfe       bool
+	hasAcmod  bool
+	acmod     uint8
+	dependent bool
+	frames    uint64
+}
+
 type audioTSStep struct {
-	kind   audioTSStepKind
-	chunk  []byte
-	target uint16
+	kind     audioTSStepKind
+	chunk    []byte
+	target   uint16
+	facts    *audioTSFacts
+	refFacts *audioTSFacts
 }
 
 // audioTSFeed is one run of elementary stream bytes an observer must be given.
@@ -378,7 +399,68 @@ func (b *audioTSBuild) stream(pid uint16, codec string, feeds int, o esaudio.Obs
 	return b
 }
 
-func (b *audioTSBuild) done() audioTSCase { return b.c }
+func psiFacts(pids ...uint16) audioTSFacts {
+	f := audioTSFacts{audioPIDs: append([]uint16(nil), pids...)}
+	for _, pid := range pids {
+		f.tracks = append(f.tracks, audioTSTrackFacts{pid: pid})
+	}
+	return f
+}
+
+func aFacts(pids ...uint16) audioTSFacts {
+	return audioTSFacts{audioPIDs: append([]uint16(nil), pids...)}
+}
+
+func (f audioTSFacts) scr(n uint64) audioTSFacts   { f.audioScrambled = n; return f }
+func (f audioTSFacts) clr(n uint64) audioTSFacts   { f.audioClear = n; return f }
+func (f audioTSFacts) run(n uint64) audioTSFacts   { f.audioClearRun = n; return f }
+func (f audioTSFacts) clear(n uint64) audioTSFacts { f.audioClear = n; f.audioClearRun = n; return f }
+func (f audioTSFacts) track(pid uint16, channels int, lfe bool, acmod uint8, hasAcmod bool, dep bool, frames uint64) audioTSFacts {
+	f.tracks = append(f.tracks, audioTSTrackFacts{
+		pid: pid, channels: channels, lfe: lfe, acmod: acmod, hasAcmod: hasAcmod, dependent: dep, frames: frames,
+	})
+	return f
+}
+func (f audioTSFacts) trackObs(pid uint16, o esaudio.Observation) audioTSFacts {
+	return f.track(pid, o.Channels, o.LFE, o.Acmod, o.HasAcmod, o.DependentSubstream, o.Frames)
+}
+
+func (b *audioTSBuild) last() *audioTSStep {
+	if len(b.c.steps) == 0 {
+		panic("case " + b.c.name + ": an expectation before any step")
+	}
+	return &b.c.steps[len(b.c.steps)-1]
+}
+
+func (b *audioTSBuild) facts(f audioTSFacts) *audioTSBuild {
+	s := b.last()
+	if s.facts != nil {
+		panic("case " + b.c.name + ": facts stated twice for one step")
+	}
+	s.facts = &f
+	return b
+}
+
+func (b *audioTSBuild) refFacts(f audioTSFacts) *audioTSBuild {
+	s := b.last()
+	if s.refFacts != nil {
+		panic("case " + b.c.name + ": refFacts stated twice for one step")
+	}
+	s.refFacts = &f
+	return b
+}
+
+func (b *audioTSBuild) done() audioTSCase {
+	for i, s := range b.c.steps {
+		if s.facts == nil {
+			panic(fmt.Sprintf("case %s step %d: facts not stated", b.c.name, i))
+		}
+		if s.refFacts != nil && b.c.divergence == "" {
+			panic(fmt.Sprintf("case %s step %d: refFacts without divergence", b.c.name, i))
+		}
+	}
+	return b.c
+}
 
 // psi is a PAT and a PMT, each in its own packet.
 func (b *audioTSBuild) psi(version byte, streams ...audioTSEs) [][]byte {
@@ -436,7 +518,7 @@ func audioTSCorpusCases() []audioTSCase {
 		b := audioTSNew("ac3_start_then_continuations",
 			"one AC-3 PES packet across four transport packets", audioTSProgram)
 		psi := b.psi(0, ac3Stream(audioTSAudioA))
-		b.chunk(psi...)
+		b.chunk(psi...).facts(psiFacts(audioTSAudioA))
 
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -447,7 +529,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c3),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obs(2, false, 2, 4)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.feed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
@@ -462,7 +544,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("eac3_start_then_continuations",
 			"one E-AC-3 PES packet across four transport packets", audioTSProgram)
-		b.chunk(b.psi(0, eac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, eac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		frame := func() []byte { return audioTSEAC3Frame(2, false) }
 		start := pesStart(0xBD, 0, frame())
@@ -472,7 +554,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c3),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obs(2, false, 2, 4)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.feed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
@@ -487,9 +569,10 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("ac3_extended_stream_id",
 			"AC-3 announced with stream id 0xFD", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xFD, 0, audioTSAC3Frame(audioTSByte6Surround))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
@@ -500,9 +583,10 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("optional_header_of_ten_bytes",
 			"header_data_length moves where the elementary stream begins", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 10, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, esOf(start, 10), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
@@ -514,13 +598,13 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("header_ends_at_the_payload_end",
 			"a PES header filling its packet exactly feeds nothing", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 175, nil)
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
-		)
+		).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, c1, obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
@@ -532,13 +616,13 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("two_consecutive_pes_starts",
 			"a second PES packet begins in the very next transport packet", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		first := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		second := pesStart(0xBD, 6, audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), first),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), second),
-		)
+		).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(first, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, esOf(second, 6), obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -552,7 +636,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_syncframe_header_split_across_two_packets",
 			"a frame header cut by a transport boundary is read from the second", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		f1 := audioTSAC3Frame(audioTSByte6Stereo)
 		f2 := audioTSAC3Frame(audioTSByte6Stereo)
@@ -568,7 +652,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c3),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obs(2, false, 2, 4)))
 		b.feed(0, audioTSAudioA, start[9:], obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.feed(0, audioTSAudioA, c2, obs(2, false, 2, 3))
@@ -583,7 +667,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_scrambled_packet_is_not_elementary_stream",
 			"encrypted payload reaches no observer", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		// Built in the order it is sent, so the continuity counter runs the way
@@ -593,7 +677,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), audioTSPad(audioTSAC3Frame(audioTSByte6Surround)))
 		p1[3] |= 0x80
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1, p2)
+		b.chunk(p0, p1, p2).facts(aFacts(audioTSAudioA).scr(1).clr(2).run(1).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -614,7 +698,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_scrambled_payload_unit_start",
 			"an encrypted start is quarantined, and clear continuations after it are not fed (#968 resolved)", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		encrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -624,7 +708,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), encrypted)
 		p1[3] |= 0x80
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1, p2)
+		b.chunk(p0, p1, p2).facts(aFacts(audioTSAudioA).scr(1).clr(2).run(1).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: p0 is fed, p1 is scrambled, p2 is quarantined -> 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -637,9 +721,9 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("packets_on_a_pid_no_table_named",
 			"an undeclared PID is followed by nothing", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioB, true, b.next(audioTSAudioB), start))
+		b.chunk(audioTSPacket(audioTSAudioB, true, b.next(audioTSAudioB), start)).facts(psiFacts(audioTSAudioA))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
@@ -650,9 +734,10 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_codec_whose_frames_are_not_read",
 			"mp2 is declared audio and gets no observer", audioTSProgram)
-		b.chunk(b.psi(0, audioTSEs{streamType: 0x03, pid: audioTSAudioA})...)
+		b.chunk(b.psi(0, audioTSEs{streamType: 0x03, pid: audioTSAudioA})...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xC0, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, esaudio.Observation{}))
 		cases = append(cases, b.done())
 	}
 
@@ -662,7 +747,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_payload_unit_with_a_stream_id_that_is_not_audio",
 			"a video stream id on an audio PID starts nothing", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xE0, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		// The quarantine ends where a payload unit says where the elementary
@@ -674,7 +759,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -688,7 +773,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_payload_unit_with_a_stream_id_that_has_no_header",
 			"0xFF carries no optional header and is not audio", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := audioTSPad(append([]byte{0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF}, audioTSAC3Frame(audioTSByte6Stereo)...))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		// The quarantine ends where a payload unit says where the elementary
@@ -700,7 +785,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -712,7 +797,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_payload_unit_that_is_not_a_pes_packet",
 			"a prefix that is not 00 00 01 starts nothing", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := audioTSPad(append([]byte{0x00, 0x00, 0x02, 0xBD, 0x00, 0x00, 0x80, 0x00, 0x00}, audioTSAC3Frame(audioTSByte6Stereo)...))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		// The quarantine ends where a payload unit says where the elementary
@@ -724,7 +809,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -737,7 +822,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_payload_unit_shorter_than_the_fixed_header",
 			"five bytes cannot say where the elementary stream begins", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		// The quarantine ends where a payload unit says where the elementary
 		// stream begins, and not before.
@@ -748,7 +833,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -760,14 +845,14 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_packet_with_no_payload",
 			"an adaptation-only packet carries nothing to feed", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start),
 			audioTSAdaptationOnly(audioTSAudioA),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
-		)
+		).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -781,7 +866,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("the_same_pid_under_a_new_pmt_version",
 			"a new table version ends the stream on the PID it reuses", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		s0 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		a1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -792,13 +877,13 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), a1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), a2),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), a3),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obs(2, false, 2, 4)))
 		b.feed(0, audioTSAudioA, esOf(s0, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, a1, obsFrames(2))
 		b.feed(0, audioTSAudioA, a2, obs(2, false, 2, 3))
 		b.feed(0, audioTSAudioA, a3, obs(2, false, 2, 4))
 
-		b.chunk(b.pmtOnly(1, ac3Stream(audioTSAudioA)))
+		b.chunk(b.pmtOnly(1, ac3Stream(audioTSAudioA))).facts(psiFacts(audioTSAudioA))
 
 		s1 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
@@ -807,7 +892,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(3).trackObs(audioTSAudioA, obs(6, true, 7, 3)))
 		// A new incarnation: the frame count starts at one again, and three
 		// agreeing frames are needed before the new layout is established.
 		b.feed(1, audioTSAudioA, esOf(s1, 0), obsFrames(1))
@@ -823,19 +908,20 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("the_table_moves_the_audio_to_another_pid",
 			"a PID that is no longer declared is no longer followed", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		s0 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, esOf(s0, 0), obsFrames(1))
 
-		b.chunk(b.pmtOnly(1, ac3Stream(audioTSAudioB)))
+		b.chunk(b.pmtOnly(1, ac3Stream(audioTSAudioB))).facts(psiFacts(audioTSAudioB))
 
 		s1 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		old := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		b.chunk(
 			audioTSPacket(audioTSAudioB, true, b.next(audioTSAudioB), s1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), old),
-		)
+		).facts(aFacts(audioTSAudioB).clear(1).trackObs(audioTSAudioB, obsFrames(1)))
 		b.feed(1, audioTSAudioB, esOf(s1, 0), obsFrames(1))
 		b.stream(audioTSAudioB, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
@@ -847,19 +933,21 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("audio_removed_and_declared_again",
 			"a programme without audio, and then with it again", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		s0 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, esOf(s0, 0), obsFrames(1))
 
 		// A table with video and no audio at all.
-		b.chunk(b.pmtOnly(1, audioTSEs{streamType: 0x1B, pid: 0x0200}))
+		b.chunk(b.pmtOnly(1, audioTSEs{streamType: 0x1B, pid: 0x0200})).facts(aFacts())
 		orphan := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), orphan))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), orphan)).facts(aFacts())
 
-		b.chunk(b.pmtOnly(2, ac3Stream(audioTSAudioA)))
+		b.chunk(b.pmtOnly(2, ac3Stream(audioTSAudioA))).facts(psiFacts(audioTSAudioA))
 		s2 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s2))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s2)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(1, audioTSAudioA, esOf(s2, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
 		cases = append(cases, b.done())
@@ -872,7 +960,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("an_identity_change_inside_one_chunk",
 			"a PMT completing mid-chunk splits the chunk's own audio", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		s0 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		a1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -883,7 +971,7 @@ func audioTSCorpusCases() []audioTSCase {
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		p2 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s1)
 		p3 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1, table, p2, p3)
+		b.chunk(p0, p1, table, p2, p3).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 
 		b.feed(0, audioTSAudioA, esOf(s0, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, a1, obsFrames(2))
@@ -899,7 +987,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("two_observable_streams_at_once",
 			"two AC-3 tracks, interleaved packet by packet", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA), ac3Stream(audioTSAudioB))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA), ac3Stream(audioTSAudioB))...).facts(psiFacts(audioTSAudioA, audioTSAudioB))
 
 		sa := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		sb := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
@@ -910,7 +998,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioB, true, b.next(audioTSAudioB), sb),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), ca),
 			audioTSPacket(audioTSAudioB, false, b.next(audioTSAudioB), cb),
-		)
+		).facts(aFacts(audioTSAudioA, audioTSAudioB).clear(4).trackObs(audioTSAudioA, obsFrames(2)).trackObs(audioTSAudioB, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(sa, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, ca, obsFrames(2))
 		b.feed(0, audioTSAudioB, esOf(sb, 0), obsFrames(1))
@@ -926,14 +1014,15 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("selecting_another_programme",
 			"a target change ends every stream being followed", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		s0 := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), s0)).
+			facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		b.feed(0, audioTSAudioA, esOf(s0, 0), obsFrames(1))
 
-		b.target(audioTSOther)
+		b.target(audioTSOther).facts(aFacts())
 		orphan := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
-		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), orphan))
+		b.chunk(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), orphan)).facts(aFacts())
 		cases = append(cases, b.done())
 	}
 
@@ -949,7 +1038,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("a_header_remainder_abandoned_by_a_new_payload_unit",
 			"a payload unit start ends a header that was still being read", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
@@ -966,7 +1055,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1),
 			audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), recovery),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2),
-		)
+		).facts(aFacts(audioTSAudioA).clear(5).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(recovery, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -985,7 +1074,7 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(b.psi(0,
 			audioTSEs{streamType: 0x1B, pid: shared},
 			ac3Stream(shared),
-		)...)
+		)...).facts(psiFacts(shared))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -993,7 +1082,7 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(shared, true, b.next(shared), start),
 			audioTSPacket(shared, false, b.next(shared), c1),
 			audioTSPacket(shared, false, b.next(shared), c2),
-		)
+		).facts(psiFacts(shared))
 		b.stream(shared, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
@@ -1010,14 +1099,14 @@ func audioTSCorpusCases() []audioTSCase {
 		b.chunk(
 			audioTSPSIPacket(0, b.next(0), audioTSPAT(audioTSProgram)),
 			audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), pmt),
-		)
+		).facts(psiFacts(audioTSPMTPID))
 		// The same table again, its first ten bytes in one packet and the rest
 		// in the next.
 		head := append([]byte{0x00}, pmt[:10]...)
 		b.chunk(
 			audioTSShortPacket(audioTSPMTPID, true, b.next(audioTSPMTPID), head),
 			audioTSPacket(audioTSPMTPID, false, b.next(audioTSPMTPID), audioTSPad(pmt[10:])),
-		)
+		).facts(psiFacts(audioTSPMTPID))
 		// And then a payload unit that does begin an audio PES packet, on the
 		// same PID. It is still not this track's audio, because the table has
 		// already said what this PID carries.
@@ -1029,7 +1118,7 @@ func audioTSCorpusCases() []audioTSCase {
 		// accept can tell "this PID was never routed to audio" apart from "it
 		// was routed, and nothing it received happened to be feedable".
 		b.chunk(audioTSPacket(audioTSPMTPID, true, b.next(audioTSPMTPID),
-			pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))))
+			pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo)))).facts(psiFacts(audioTSPMTPID))
 		b.stream(audioTSPMTPID, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
@@ -1053,7 +1142,7 @@ func audioTSCorpusCases() []audioTSCase {
 		b := audioTSNew("a_pes_header_reaching_past_its_packet",
 			"the header remainder is not elementary stream", audioTSProgram)
 		b.diverges("divergence", "the reference feeds the remainder of a PES header as elementary stream")
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 
 		// 9 + 200 = 209 bytes of header for a payload that carries 184: 25 of it
 		// belong to the packets that follow.
@@ -1070,7 +1159,8 @@ func audioTSCorpusCases() []audioTSCase {
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), p1),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), p2),
 			audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), p3),
-		)
+		).facts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obs(2, false, 2, 3))).
+			refFacts(aFacts(audioTSAudioA).clear(4).trackObs(audioTSAudioA, obsFrames(3)))
 
 		// Authored: the elementary stream begins where the header ends.
 		b.feed(0, audioTSAudioA, p1[25:], obsFrames(1))
@@ -1092,21 +1182,21 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("scrambled_audio_pusi_followed_by_clear_continuation",
 			"a scrambled PUSI establishes a PES boundary that cannot be interpreted; clear continuation must not be fed (#968 resolved)", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), startEncrypted)
 		p0[3] |= 0x80 // scrambled
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1)
+		b.chunk(p0, p1).facts(aFacts(audioTSAudioA).scr(1).clr(1).run(1).trackObs(audioTSAudioA, esaudio.Observation{}))
 		// Authored: 0 feeds (p0 scrambled, p1 uninterpretable continuation)
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
 	}
 	{
-		b := audioTSNew("scrambled_audio_pusi_followed_by_several_clear_continuations",
+		b := audioTSNew("scrambled_audio_pusi_followed_by_several_clear_continuation",
 			"multiple clear continuations after an unreadable scrambled PUSI must all be dropped (#968 resolved)", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1114,7 +1204,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p0[3] |= 0x80
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2)
-		b.chunk(p0, p1, p2)
+		b.chunk(p0, p1, p2).facts(aFacts(audioTSAudioA).scr(1).clr(2).run(2).trackObs(audioTSAudioA, esaudio.Observation{}))
 		// Authored: 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
@@ -1122,7 +1212,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("scrambled_audio_pusi_recovers_at_next_clear_pusi",
 			"recovery from a scrambled PUSI occurs strictly at the next valid clear PUSI (#968 resolved)", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		startEncrypted := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Surround))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		startClear := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
@@ -1130,7 +1220,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p0[3] |= 0x80
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
 		p2 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), startClear)
-		b.chunk(p0, p1, p2)
+		b.chunk(p0, p1, p2).facts(aFacts(audioTSAudioA).scr(1).clr(2).run(2).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: p0 and p1 dropped; p2 recovers cleanly
 		b.feed(0, audioTSAudioA, esOf(startClear, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -1140,7 +1230,7 @@ func audioTSCorpusCases() []audioTSCase {
 		b := audioTSNew("scrambled_packet_while_in_header",
 			"a scrambled packet while optional header is incomplete prevents header resolution and drops subsequent continuations (defect)", audioTSProgram)
 		b.diverges("defect", "a scrambled packet arriving while the optional PES header is incomplete prevents header resolution and requires awaiting the next PUSI")
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184] // 25 bytes left in next packet
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
@@ -1148,7 +1238,9 @@ func audioTSCorpusCases() []audioTSCase {
 		p1Scrambled[3] |= 0x80 // scrambled
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2)
-		b.chunk(p0, p1Scrambled, p2)
+		b.chunk(p0, p1Scrambled, p2).
+			facts(aFacts(audioTSAudioA).scr(1).clr(2).run(1).trackObs(audioTSAudioA, esaudio.Observation{})).
+			refFacts(aFacts(audioTSAudioA).scr(1).clr(2).run(1).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: 0 feeds (header never completed)
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 
@@ -1162,11 +1254,11 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("duplicate_packet_with_complete_ac3_frame",
 			"exact duplicate TS packet with complete AC3 frame must be dropped", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		p0Dup := append([]byte(nil), p0...)
-		b.chunk(p0, p0Dup)
+		b.chunk(p0, p0Dup).facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: duplicate dropped -> 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -1175,7 +1267,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("duplicate_packet_with_partial_ac3_frame",
 			"exact duplicate TS packet with partial AC3 frame must be dropped without corrupting frame assembly", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		frame := audioTSAC3Frame(audioTSByte6Stereo)
 		part1 := frame[:60]
 		part2 := frame[60:]
@@ -1183,7 +1275,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p0 := audioTSShortPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		p0Dup := append([]byte(nil), p0...)
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), audioTSPad(part2))
-		b.chunk(p0, p0Dup, p1)
+		b.chunk(p0, p0Dup, p1).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: duplicate dropped, p0 and p1 assemble 1 complete AC-3 frame
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, p1[4:], obsFrames(1))
@@ -1193,7 +1285,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("duplicate_immediately_before_frame_completion_prevents_phantom_layout",
 			"duplicate packet before 3rd frame completion must not manufacture phantom layout", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1201,7 +1293,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
 		p1Dup := append([]byte(nil), p1...)
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2)
-		b.chunk(p0, p1, p1Dup, p2)
+		b.chunk(p0, p1, p1Dup, p2).facts(aFacts(audioTSAudioA).clear(3).trackObs(audioTSAudioA, obs(2, false, 2, 3)))
 		// Authored: p1Dup dropped; 3 real frames -> channels=2 at p2
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
@@ -1212,7 +1304,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("duplicate_after_stable_layout_already_exists",
 			"duplicate packets must be rejected even after layout is established", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
@@ -1220,7 +1312,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2)
 		p2Dup := append([]byte(nil), p2...)
-		b.chunk(p0, p1, p2, p2Dup)
+		b.chunk(p0, p1, p2, p2Dup).facts(aFacts(audioTSAudioA).clear(3).trackObs(audioTSAudioA, obs(2, false, 2, 3)))
 		// Authored: 3 feeds, duplicate dropped
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
@@ -1231,11 +1323,11 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("same_cc_identical_packet_is_duplicate",
 			"same CC with identical bytes constitutes an exact duplicate", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, 5, start)
 		p0Dup := audioTSPacket(audioTSAudioA, true, 5, start)
-		b.chunk(p0, p0Dup)
+		b.chunk(p0, p0Dup).facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: 1 feed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -1244,12 +1336,12 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("same_cc_different_packet_is_broken",
 			"same CC with different bytes is broken transport, not a duplicate", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		diffPayload := audioTSPad(audioTSAC3Frame(audioTSByte6Surround))
 		p0 := audioTSPacket(audioTSAudioA, true, 5, start)
 		p1Broken := audioTSPacket(audioTSAudioA, false, 5, diffPayload)
-		b.chunk(p0, p1Broken)
+		b.chunk(p0, p1Broken).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(1)))
 		// 1 feed (broken continuation discarded/continuity broken)
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -1264,7 +1356,7 @@ func audioTSCorpusCases() []audioTSCase {
 		pmtPkt := audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), audioTSPMT(audioTSProgram, 0, ac3Stream(audioTSAudioA)))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(patPkt, pmtPkt, audioPkt)
+		b.chunk(patPkt, pmtPkt, audioPkt).facts(aFacts())
 		// Authored: PAT refused -> 0 feeds, 0 streams
 		cases = append(cases, b.done())
 	}
@@ -1275,22 +1367,22 @@ func audioTSCorpusCases() []audioTSCase {
 		pmtPkt := withTEI(audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), audioTSPMT(audioTSProgram, 0, ac3Stream(audioTSAudioA))))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(patPkt, pmtPkt, audioPkt)
+		b.chunk(patPkt, pmtPkt, audioPkt).facts(aFacts())
 		// Authored: PMT refused -> 0 feeds, 0 streams
 		cases = append(cases, b.done())
 	}
 	{
 		b := audioTSNew("tei_on_pmt_preserves_existing_active_psi",
 			"subsequent PMT with TEI set must be refused and preserve existing valid ActivePSI", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(audioPkt1)
+		b.chunk(audioPkt1).facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 
 		// Subsequent PMT v1 with TEI arrives attempting to switch PID from AudioA to AudioB
 		badPMT := withTEI(audioTSPSIPacket(audioTSPMTPID, b.next(audioTSPMTPID), audioTSPMT(audioTSProgram, 1, ac3Stream(audioTSAudioB))))
 		audioPkt2 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(badPMT, audioPkt2)
+		b.chunk(badPMT, audioPkt2).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 		// Authored: badPMT refused -> AudioA remains active -> audioPkt1 and audioPkt2 fed
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(2))
@@ -1300,10 +1392,10 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("tei_mid_section_assembly_discards_partial_and_preserves_table",
 			"a TEI packet in the middle of section assembly discards the partial section and preserves the accepted table", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		audioPkt1 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(audioPkt1)
+		b.chunk(audioPkt1).facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 
 		// A new PMT version 1 is split across two packets:
 		pmtV1 := audioTSPMT(audioTSProgram, 1, ac3Stream(audioTSAudioB))
@@ -1311,7 +1403,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p0 := audioTSShortPacket(audioTSPMTPID, true, b.next(audioTSPMTPID), head)
 		p1TEI := withTEI(audioTSPacket(audioTSPMTPID, false, b.next(audioTSPMTPID), audioTSPad(pmtV1[10:])))
 		audioPkt2 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
-		b.chunk(p0, p1TEI, audioPkt2)
+		b.chunk(p0, p1TEI, audioPkt2).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 
 		// Authored: p1TEI damaged -> PMT v1 assembly discarded -> PMT v0 remains active -> audioPkt2 fed to AudioA
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
@@ -1322,10 +1414,10 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("tei_on_audio_pusi_is_refused",
 			"audio PUSI with TEI set must be dropped and transition to AwaitingStart", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := withTEI(audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start))
-		b.chunk(p0)
+		b.chunk(p0).facts(psiFacts(audioTSAudioA))
 		// Authored: dropped -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
@@ -1333,12 +1425,12 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("tei_on_audio_continuation_is_refused",
 			"audio continuation with TEI set must be dropped", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		p1 := withTEI(audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1))
-		b.chunk(p0, p1)
+		b.chunk(p0, p1).facts(aFacts(audioTSAudioA).clear(1).trackObs(audioTSAudioA, obsFrames(1)))
 		// Authored: p0 fed (1 feed), p1 dropped
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 1, obsFrames(1))
@@ -1347,14 +1439,14 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("tei_on_audio_continuation_suppresses_corrupt_bytes_and_recovers_on_next_clear",
 			"TEI on audio continuation drops corrupt bytes without forcing AwaitingStart; subsequent clear continuation is fed", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1Corrupt := audioTSPad([]byte{0xFF, 0xFF, 0x00, 0x00})
 		c2Clear := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		p1TEI := withTEI(audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1Corrupt))
 		p2Clear := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2Clear)
-		b.chunk(p0, p1TEI, p2Clear)
+		b.chunk(p0, p1TEI, p2Clear).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 		// Authored: p0 fed (1 feed), p1TEI suppressed (0 feeds), p2Clear fed (1 feed) -> total 2 feeds
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c2Clear, obsFrames(2))
@@ -1364,7 +1456,7 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("tei_on_audio_header_incomplete_continuation_refuses_packet",
 			"TEI on packet completing optional header corrupts header resolution and forces AwaitingStart", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
 		tail := make([]byte, 25)
@@ -1374,7 +1466,7 @@ func audioTSCorpusCases() []audioTSCase {
 		p1TEI := withTEI(audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), p1))
 		c2 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		p2 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c2)
-		b.chunk(p0, p1TEI, p2)
+		b.chunk(p0, p1TEI, p2).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, esaudio.Observation{}))
 		// Authored: p1TEI corrupted header -> AwaitingStart -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
@@ -1384,12 +1476,12 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("discontinuity_indicator_with_expected_next_cc",
 			"discontinuity indicator with sequential CC is continuous", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		start := pesStart(0xBD, 0, audioTSAC3Frame(audioTSByte6Stereo))
 		c1 := audioTSAC3Frame(audioTSByte6Stereo)
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		p1 := audioTSShortPacketWithDI(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1)
+		b.chunk(p0, p1).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, obsFrames(2)))
 		b.feed(0, audioTSAudioA, esOf(start, 0), obsFrames(1))
 		b.feed(0, audioTSAudioA, c1, obsFrames(2))
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 2, obsFrames(2))
@@ -1398,14 +1490,14 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("discontinuity_indicator_while_in_header_discards_incomplete_pes",
 			"discontinuity indicator while PES header is incomplete discards PES and awaits next start", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		c1 := audioTSAC3Frame(audioTSByte6Stereo)
 		b.next(audioTSAudioA) // jump
 		p1 := audioTSShortPacketWithDI(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1)
+		b.chunk(p0, p1).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, esaudio.Observation{}))
 		// Authored: header lost in jump -> 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
@@ -1413,14 +1505,14 @@ func audioTSCorpusCases() []audioTSCase {
 	{
 		b := audioTSNew("unannounced_cc_jump_while_in_header_discards_incomplete_pes",
 			"unannounced CC gap while PES header is incomplete discards partial PES", audioTSProgram)
-		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...)
+		b.chunk(b.psi(0, ac3Stream(audioTSAudioA))...).facts(psiFacts(audioTSAudioA))
 		full := audioTSPESHeader(0xBD, 200)
 		start := full[:184]
 		p0 := audioTSPacket(audioTSAudioA, true, b.next(audioTSAudioA), start)
 		c1 := audioTSPad(audioTSAC3Frame(audioTSByte6Stereo))
 		b.next(audioTSAudioA) // skip a counter value
 		p1 := audioTSPacket(audioTSAudioA, false, b.next(audioTSAudioA), c1)
-		b.chunk(p0, p1)
+		b.chunk(p0, p1).facts(aFacts(audioTSAudioA).clear(2).trackObs(audioTSAudioA, esaudio.Observation{}))
 		// 0 feeds
 		b.stream(audioTSAudioA, esaudio.CodecAC3, 0, esaudio.Observation{})
 		cases = append(cases, b.done())
@@ -1434,8 +1526,30 @@ func audioTSCorpusCases() []audioTSCase {
 // audioTSRun is what one case did: the feeds in the order they happened, with
 // the epochs normalised away, and the streams still being followed at the end.
 type audioTSRun struct {
-	feeds   []audioTSFeed
-	streams []audioTSStream
+	stepFacts []audioTSFacts
+	feeds     []audioTSFeed
+	streams   []audioTSStream
+}
+
+func audioTSFactsFromFacts(f Facts) audioTSFacts {
+	out := audioTSFacts{
+		audioScrambled: f.Scrambling.AudioScrambled,
+		audioClear:     f.Scrambling.AudioClear,
+		audioClearRun:  f.Scrambling.AudioClearRun,
+		audioPIDs:      append([]uint16(nil), f.AudioPIDs...),
+	}
+	for _, tr := range f.AudioTracks {
+		out.tracks = append(out.tracks, audioTSTrackFacts{
+			pid:       tr.PID,
+			channels:  tr.Observed.Channels,
+			lfe:       tr.Observed.LFE,
+			acmod:     tr.Observed.Acmod,
+			hasAcmod:  tr.Observed.HasAcmod,
+			dependent: tr.Observed.DependentSubstream,
+			frames:    tr.Observed.Frames,
+		})
+	}
+	return out
 }
 
 // runAudioTSCase drives the reference core through a case and reads back what
@@ -1459,6 +1573,7 @@ func runAudioTSCase(t *testing.T, c audioTSCase, rechunk func([]byte) [][]byte) 
 	defer core.CloseAudioShadow()
 
 	var facts Facts
+	var stepFacts []audioTSFacts
 	offset := int64(0)
 	for i, step := range c.steps {
 		switch step.kind {
@@ -1482,12 +1597,18 @@ func runAudioTSCase(t *testing.T, c audioTSCase, rechunk func([]byte) [][]byte) 
 				// than changing what the core does with the bytes.
 				audioTSDrain(t, core, c.name)
 			}
+			if rechunk == nil {
+				stepFacts = append(stepFacts, audioTSFactsFromFacts(facts))
+			}
 		case audioTSStepTarget:
 			res, err := core.SetTargetProgram(ctx, step.target)
 			if err != nil {
 				t.Fatalf("case %s step %d: set target: %v", c.name, i, err)
 			}
 			facts = res.Facts
+			if rechunk == nil {
+				stepFacts = append(stepFacts, audioTSFactsFromFacts(facts))
+			}
 		}
 	}
 
@@ -1513,8 +1634,9 @@ func runAudioTSCase(t *testing.T, c audioTSCase, rechunk func([]byte) [][]byte) 
 
 	epoch := core.shadowEpoch
 	return audioTSRun{
-		feeds:   audioTSCanonical(audioTSFeedsOf(shadow)),
-		streams: audioTSStreamsOf(shadow, facts, epoch),
+		stepFacts: stepFacts,
+		feeds:     audioTSCanonical(audioTSFeedsOf(shadow)),
+		streams:   audioTSStreamsOf(shadow, facts, epoch),
 	}
 }
 
@@ -1648,6 +1770,109 @@ func audioTSStreamLine(kind string, s audioTSStream) string {
 		kind, s.pid, s.codec, s.feeds, audioTSObsLine(s.obs))
 }
 
+func audioTSFactsLine(kind string, f audioTSFacts) string {
+	apids := "none"
+	if len(f.audioPIDs) > 0 {
+		strs := make([]string, len(f.audioPIDs))
+		for i, p := range f.audioPIDs {
+			strs[i] = fmt.Sprintf("%04x", p)
+		}
+		apids = strings.Join(strs, ",")
+	}
+	tracks := "none"
+	if len(f.tracks) > 0 {
+		strs := make([]string, len(f.tracks))
+		for i, tr := range f.tracks {
+			strs[i] = fmt.Sprintf("%04x:ch=%d,lfe=%d,acmod=%d,hasAcmod=%d,dep=%d,frames=%d",
+				tr.pid, tr.channels, b2i(tr.lfe), tr.acmod, b2i(tr.hasAcmod), b2i(tr.dependent), tr.frames)
+		}
+		tracks = strings.Join(strs, ";")
+	}
+	return fmt.Sprintf("  %s ascr=%d aclr=%d arun=%d apids=%s tracks=%s",
+		kind, f.audioScrambled, f.audioClear, f.audioClearRun, apids, tracks)
+}
+
+func parseAudioFacts(line string) (audioTSFacts, error) {
+	var f audioTSFacts
+	parts := strings.Fields(line)
+	for _, p := range parts {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "ascr":
+			n, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("ascr: %w", err)
+			}
+			f.audioScrambled = n
+		case "aclr":
+			n, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("aclr: %w", err)
+			}
+			f.audioClear = n
+		case "arun":
+			n, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("arun: %w", err)
+			}
+			f.audioClearRun = n
+		case "apids":
+			if v != "none" {
+				for _, pStr := range strings.Split(v, ",") {
+					n, err := strconv.ParseUint(pStr, 16, 16)
+					if err != nil {
+						return f, fmt.Errorf("apids %s: %w", pStr, err)
+					}
+					f.audioPIDs = append(f.audioPIDs, uint16(n))
+				}
+			}
+		case "tracks":
+			if v != "none" {
+				for _, trStr := range strings.Split(v, ";") {
+					pidStr, obsStr, ok := strings.Cut(trStr, ":")
+					if !ok {
+						return f, fmt.Errorf("invalid track %s", trStr)
+					}
+					pid, err := strconv.ParseUint(pidStr, 16, 16)
+					if err != nil {
+						return f, fmt.Errorf("track pid %s: %w", pidStr, err)
+					}
+					tr := audioTSTrackFacts{pid: uint16(pid)}
+					for _, kv := range strings.Split(obsStr, ",") {
+						okey, oval, ok := strings.Cut(kv, "=")
+						if !ok {
+							continue
+						}
+						onum, err := strconv.ParseUint(oval, 10, 64)
+						if err != nil {
+							return f, fmt.Errorf("track field %s: %w", kv, err)
+						}
+						switch okey {
+						case "ch":
+							tr.channels = int(onum)
+						case "lfe":
+							tr.lfe = (onum == 1)
+						case "acmod":
+							tr.acmod = uint8(onum)
+						case "hasAcmod":
+							tr.hasAcmod = (onum == 1)
+						case "dep":
+							tr.dependent = (onum == 1)
+						case "frames":
+							tr.frames = onum
+						}
+					}
+					f.tracks = append(f.tracks, tr)
+				}
+			}
+		}
+	}
+	return f, nil
+}
+
 func renderAudioTSCorpus(cases []audioTSCase) string {
 	var b strings.Builder
 	b.WriteString("# xg2g raw transport to audio elementary stream corpus, format version 1\n")
@@ -1662,6 +1887,8 @@ func renderAudioTSCorpus(cases []audioTSCase) string {
 	b.WriteString("#   program <n>     the programme the core is constructed to follow\n")
 	b.WriteString("#   chunk <hex>     one ingest of these bytes, at the offset the previous ones reached\n")
 	b.WriteString("#   target <n>      one change of the programme being followed\n")
+	b.WriteString("#   facts ...       the audio facts after the preceding call, where stated:\n")
+	b.WriteString("#                   ascr= aclr= arun= apids= tracks=\n")
 	b.WriteString("#   feed inc= pid= es= <observation>\n")
 	b.WriteString("#                   one feed, in the order it happened, with the observation\n")
 	b.WriteString("#                   that followed it. inc counts stream incarnations in the\n")
@@ -1698,6 +1925,12 @@ func renderAudioTSCorpus(cases []audioTSCase) string {
 			case audioTSStepTarget:
 				b.WriteString(fmt.Sprintf("  target %d\n", s.target))
 			}
+			if s.facts != nil {
+				b.WriteString(audioTSFactsLine("facts", *s.facts) + "\n")
+			}
+			if s.refFacts != nil {
+				b.WriteString(audioTSFactsLine("ref-facts", *s.refFacts) + "\n")
+			}
 		}
 		for _, f := range audioTSCanonical(c.want) {
 			b.WriteString(audioTSFeedLine("feed", f) + "\n")
@@ -1718,7 +1951,7 @@ func renderAudioTSCorpus(cases []audioTSCase) string {
 
 // --- the tests -------------------------------------------------------------
 
-func audioTSCompare(t *testing.T, name string, got, want []audioTSFeed, gotStreams, wantStreams []audioTSStream) {
+func audioTSCompare(t *testing.T, name string, got, want []audioTSFeed, gotStreams, wantStreams []audioTSStream, gotFacts []audioTSFacts, wantSteps []audioTSStep, divergent bool) {
 	t.Helper()
 	got, want = audioTSCanonical(got), audioTSCanonical(want)
 	var bad []string
@@ -1746,6 +1979,20 @@ func audioTSCompare(t *testing.T, name string, got, want []audioTSFeed, gotStrea
 			bad = append(bad, fmt.Sprintf("  stream %d\n    got  %s\n    want %s", i, g, w))
 		}
 	}
+	if len(gotFacts) > 0 && len(gotFacts) == len(wantSteps) {
+		for i, s := range wantSteps {
+			wantF := s.facts
+			if divergent && s.refFacts != nil {
+				wantF = s.refFacts
+			}
+			if wantF != nil {
+				gl, wl := audioTSFactsLine("facts", gotFacts[i]), audioTSFactsLine("facts", *wantF)
+				if gl != wl {
+					bad = append(bad, fmt.Sprintf("  step %d facts\n    got  %s\n    want %s", i, gl, wl))
+				}
+			}
+		}
+	}
 	if len(bad) > 0 {
 		t.Errorf("case %s:\n%s", name, strings.Join(bad, "\n"))
 	}
@@ -1765,7 +2012,7 @@ func TestAudioTSCorpus_TheGoCoreMeetsTheAuthoredExpectations(t *testing.T) {
 			if c.divergence != "" {
 				want, wantStreams = c.reference, c.referenceStream
 			}
-			audioTSCompare(t, c.name, run.feeds, want, run.streams, wantStreams)
+			audioTSCompare(t, c.name, run.feeds, want, run.streams, wantStreams, run.stepFacts, c.steps, c.divergence != "")
 		})
 	}
 }
@@ -1789,7 +2036,7 @@ func TestAudioTSCorpus_WhereAChunkWasCutChangesNothing(t *testing.T) {
 		for _, ch := range chunkings {
 			t.Run(c.name+"/"+ch.name, func(t *testing.T) {
 				got := runAudioTSCase(t, c, ch.cut)
-				audioTSCompare(t, c.name, got.feeds, base.feeds, got.streams, base.streams)
+				audioTSCompare(t, c.name, got.feeds, base.feeds, got.streams, base.streams, nil, nil, false)
 			})
 		}
 	}

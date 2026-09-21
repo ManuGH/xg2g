@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
@@ -24,7 +25,7 @@ func startPipeline(t *testing.T) (*SessionPipeline, *io.PipeWriter) {
 	normCfg := normalizer.DefaultConfig()
 	normCfg.StartupReservoirMs = 0.0
 
-	pipe, err := NewSessionPipeline(normCfg, 20000*ring.TSPacketSize, 0)
+	pipe, err := NewSessionPipelineWithCore(normCfg, 20000*ring.TSPacketSize, mediafacts.NewGoCore(0), nil)
 	if err != nil {
 		t.Fatalf("create pipeline: %v", err)
 	}

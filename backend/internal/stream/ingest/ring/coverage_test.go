@@ -162,6 +162,27 @@ func TestCoverage_TheInProcessCoreCoversEverything(t *testing.T) {
 	}
 }
 
+// TestCoverage_CompleteCoreIsAdmitted asserts that a core with ParseCoverageComplete
+// successfully commits packets into MasterRing and updates generation.
+func TestCoverage_CompleteCoreIsAdmitted(t *testing.T) {
+	r := NewMasterRingWithProgram(400*TSPacketSize, 1)
+	defer r.Close()
+
+	n, err := r.Push(context.Background(), onePacket())
+	if err != nil {
+		t.Fatalf("Push with complete core failed: %v", err)
+	}
+	if n != TSPacketSize {
+		t.Fatalf("Push reported %d bytes, want %d", n, TSPacketSize)
+	}
+	if r.Head() != int64(TSPacketSize) {
+		t.Fatalf("Head is %d, want %d", r.Head(), TSPacketSize)
+	}
+	if err := r.SetTargetProgram(context.Background(), 2); err != nil {
+		t.Fatalf("SetTargetProgram with complete core failed: %v", err)
+	}
+}
+
 // throughCore answers correctly about everything except how much it read.
 type throughCore struct {
 	mediafacts.Core

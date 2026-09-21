@@ -88,7 +88,8 @@ type Server struct {
 	liveSessionMgr *ingestsession.Manager
 
 	// Dependency Injection (Internal)
-	v3Factory func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
+	v3Factory             func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
+	liveConnectorModifier func(*pipeline.ConnectorConfig)
 }
 
 // AuditLogger interface for audit logging (optional).
@@ -110,6 +111,14 @@ type ServerOption func(*Server)
 func WithV3ServerFactory(f func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server) ServerOption {
 	return func(s *Server) {
 		s.v3Factory = f
+	}
+}
+
+// WithLiveConnectorConfigModifier allows test suites or callers to adapt the pipeline.ConnectorConfig
+// used by the live stream routes (e.g. injecting mock or test pipelines when media-core binary is absent).
+func WithLiveConnectorConfigModifier(mod func(*pipeline.ConnectorConfig)) ServerOption {
+	return func(s *Server) {
+		s.liveConnectorModifier = mod
 	}
 }
 

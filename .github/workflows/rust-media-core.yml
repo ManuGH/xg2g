@@ -151,6 +151,17 @@ jobs:
             ./internal/stream/ingest/remotecore | tee /tmp/psi-differential.log
           grep -q 'real-process differential: .* calls, all exact' /tmp/psi-differential.log
 
+          # Production cutover verification: prove that NewSessionPipeline launches
+          # the real Rust core, attaches to MasterRing with ParseCoverageComplete,
+          # and enforces both startup and runtime fail-closed invariants.
+          go test -count=1 -v \
+            ./internal/stream/ingest/pipeline \
+            -run 'TestSessionPipeline_(ProductionCutover_WithRealCore|FailClosed_NoSilentFallback|StartupFailsClosed_WhenBinaryNotFound)'
+
+          go test -race -count=1 -v \
+            ./internal/stream/ingest/pipeline \
+            -run 'TestSessionPipeline_(ProductionCutover_WithRealCore|FailClosed_NoSilentFallback|StartupFailsClosed_WhenBinaryNotFound)'
+
   build:
     name: Release build (${{ matrix.target }})
     runs-on: ubuntu-latest

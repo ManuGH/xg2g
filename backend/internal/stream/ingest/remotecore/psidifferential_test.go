@@ -164,13 +164,11 @@ func TestPSIDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 					t.Fatalf("call %d (%s): the real core failed: %v", i+1, call, rustErr)
 				}
 
-				// The one place the two are allowed to differ, and it is said
-				// out loud rather than inferred: the reference covers the whole
-				// stream, the Rust core covers PSI and video.
+				// Both the reference and the real core report complete coverage.
 				if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d: the reference reported coverage %s", i+1, goRes.Coverage)
 				}
-				if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
+				if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d: the real core reported coverage %s", i+1, rustRes.Coverage)
 				}
 

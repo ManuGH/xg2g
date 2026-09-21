@@ -24,7 +24,7 @@ import (
 // goldenEmptyResult is a core that has read nothing: no tables, no events.
 var goldenEmptyResult = []byte{
 	0x00,                                           // status ok
-	0x03,                                           // coverage: PSI + Video (wireCoveragePSIVideo)
+	0x02,                                           // coverage: Complete (wireCoverageComplete)
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
 	0x00, 0x00, 0x00, 0x00, // no events
 	0x00,       // no PAT, no PMT
@@ -47,6 +47,10 @@ var goldenEmptyResult = []byte{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_scrambled = 0
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear = 0
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // video_clear_run = 0
+	// Audio scrambling facts (24 bytes)
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_scrambled = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear = 0
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear_run = 0
 	0x00, 0x00, // no PAT sections
 	0x00, 0x00, // no PMT sections
 }
@@ -55,7 +59,7 @@ var goldenEmptyResult = []byte{
 // stream with facts, and an audio track with a complete declaration.
 var goldenFullResult = []byte{
 	0x00,                                           // status ok
-	0x03,                                           // coverage: PSI + Video
+	0x02,                                           // coverage: Complete
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
 	0x00, 0x00, 0x00, 0x03, // 3 events
 	0x01,                                           // event 1: programme identity changed
@@ -83,6 +87,11 @@ var goldenFullResult = []byte{
 	0x02, // two channels
 	0x02, // has a component type, not multichannel
 	0x04, // component type 4
+	// Audio observation for track 258 (11 bytes)
+	0x06,                                           // channels: 6
+	0x03,                                           // flags: OBS_FLAG_LFE | OBS_FLAG_HAS_ACMOD
+	0x07,                                           // acmod: 7
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xB4, // frames: 1460
 	// Video facts (81 bytes)
 	0x03,                                           // video facts flags: parameter_sets_seen | scrambled_confirmed
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // clean_rap_count = 1
@@ -95,6 +104,10 @@ var goldenFullResult = []byte{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, // video_scrambled = 8
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // video_clear = 9
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, // video_clear_run = 10
+	// Audio scrambling facts (24 bytes)
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, // audio_scrambled = 11
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, // audio_clear = 12
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0D, // audio_clear_run = 13
 	0x00, 0x01, // one PAT section
 	0x00, 0x04, // four bytes
 	0x00, 0xB0, 0x0D, 0x99,
@@ -108,8 +121,8 @@ func TestPSIResult_TheEmptyEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.Covers(mediafacts.ParseCoveragePSIVideo) {
-		t.Errorf("coverage %s, want psi+video", got.Coverage)
+	if !got.Covers(mediafacts.ParseCoverageComplete) {
+		t.Errorf("coverage %s, want complete", got.Coverage)
 	}
 	if got.ProcessedThroughOffset != 1066 {
 		t.Errorf("through %d, want 1066", got.ProcessedThroughOffset)
@@ -123,6 +136,9 @@ func TestPSIResult_TheEmptyEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	if got.Facts.ParameterSetsSeen || got.Facts.ScrambledVideoConfirmed {
 		t.Errorf("video facts non-zero in empty result: %+v", got.Facts)
 	}
+	if got.Facts.Scrambling.AudioScrambled != 0 || got.Facts.Scrambling.AudioClear != 0 || got.Facts.Scrambling.AudioClearRun != 0 {
+		t.Errorf("audio scrambling non-zero in empty result: %+v", got.Facts.Scrambling)
+	}
 	if len(got.PSI.PATSections) != 0 || len(got.PSI.PMTSections) != 0 {
 		t.Errorf("sections present in an empty result")
 	}
@@ -134,8 +150,8 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if !got.Covers(mediafacts.ParseCoveragePSIVideo) {
-		t.Errorf("coverage %s, want psi+video", got.Coverage)
+	if !got.Covers(mediafacts.ParseCoverageComplete) {
+		t.Errorf("coverage %s, want complete", got.Coverage)
 	}
 	if got.ProcessedThroughOffset != 188 {
 		t.Errorf("through %d, want 188", got.ProcessedThroughOffset)
@@ -182,6 +198,9 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 	if !tr.Declared.HasComponentType || tr.Declared.ComponentType != 4 {
 		t.Errorf("component type %+v", tr.Declared)
 	}
+	if tr.Observed.Channels != 6 || !tr.Observed.LFE || !tr.Observed.HasAcmod || tr.Observed.Acmod != 7 || tr.Observed.Frames != 1460 {
+		t.Errorf("observed %+v", tr.Observed)
+	}
 
 	// Video Facts verification
 	if !f.ParameterSetsSeen {
@@ -221,6 +240,17 @@ func TestPSIResult_TheFullEnvelopeIsReadExactlyAsAgreed(t *testing.T) {
 		t.Errorf("VideoClearRun = %d, want 10", f.Scrambling.VideoClearRun)
 	}
 
+	// Audio Scrambling verification
+	if f.Scrambling.AudioScrambled != 11 {
+		t.Errorf("AudioScrambled = %d, want 11", f.Scrambling.AudioScrambled)
+	}
+	if f.Scrambling.AudioClear != 12 {
+		t.Errorf("AudioClear = %d, want 12", f.Scrambling.AudioClear)
+	}
+	if f.Scrambling.AudioClearRun != 13 {
+		t.Errorf("AudioClearRun = %d, want 13", f.Scrambling.AudioClearRun)
+	}
+
 	// The section bytes come back exactly, which is the whole point of carrying
 	// them rather than re-deriving them on this side.
 	if len(got.PSI.PATSections) != 1 || !bytes.Equal(got.PSI.PATSections[0], []byte{0x00, 0xB0, 0x0D, 0x99}) {
@@ -246,9 +276,11 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 	// event 3 (34..43: 34 kind, 35..42 offset, 43 flags),
 	// facts flags 44, version 45, programme 46..47, PMT PID 48..49, video PID 50..51,
 	// video codec 52, audio PID count 53..56, audio PID 57..58,
-	// track count 59..62, track 63..72 (63..64 PID, 65 stream type, 66 codec, 67..69 lang, 70 channels, 71 flags, 72 comp),
-	// video facts 73..153 (73 flags, 74..81 clean_rap, 82..89 clean_au, 90..97 irap, 98..105 intra, 106..113 rpsei, 114..121 predrej, 122..129 unread, 130..137 vscr, 138..145 vclr, 146..153 vrun),
-	// PAT sections 154..
+	// track count 59..62,
+	// track 63..83 (63..64 PID, 65 stream type, 66 codec, 67..69 lang, 70 channels, 71 flags, 72 comp, 73 obs_channels, 74 obs_flags, 75 obs_acmod, 76..83 obs_frames),
+	// video facts 84..164 (84 flags, 85..92 clean_rap, 93..100 clean_au, 101..108 irap, 109..116 intra, 117..124 rpsei, 125..132 predrej, 133..140 unread, 141..148 vscr, 149..156 vclr, 157..164 vrun),
+	// audio scrambling 165..188 (165..172 ascr, 173..180 aclr, 181..188 arun),
+	// PAT sections 189..
 	replace := func(at int, with ...byte) []byte {
 		out := append([]byte(nil), good...)
 		copy(out[at:], with)
@@ -274,7 +306,7 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 		{"status only", good[:1]},
 		{"coverage unknown", replace(1, 0x00)},
 		{"coverage psi-only", replace(1, 0x01)},
-		{"coverage complete", replace(1, 0x02)},
+		{"coverage psi-video", replace(1, 0x03)},
 		{"coverage nobody defined", replace(1, 0x7F)},
 		{"an offset past what an offset can be", replace(2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)},
 		{"an event kind this build does not know", replace(14, 0x04)},
@@ -286,8 +318,10 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 		{"a video codec this build does not know", replace(52, 0x7F)},
 		{"an audio codec this build does not know", replace(66, 0x7F)},
 		{"track flags nobody defined", replace(71, 0x80)},
-		{"video facts flags nobody defined", replace(73, 0x80)},
+		{"track observed flags nobody defined", replace(74, 0x80)},
+		{"video facts flags nobody defined", replace(84, 0x80)},
 		{"truncated in video facts block", good[:100]},
+		{"truncated in audio scrambling block", good[:170]},
 		{"truncated before the sections", good[:len(good)-8]},
 		{"truncated mid-section", good[:len(good)-2]},
 		{"trailing bytes after the result", append(append([]byte(nil), good...), 0x00)},

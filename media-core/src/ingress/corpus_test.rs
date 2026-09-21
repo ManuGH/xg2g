@@ -139,7 +139,7 @@ fn parse_corpus(text: &str) -> Vec<Case> {
         let trimmed = line.trim_start();
         let parts: Vec<&str> = trimmed.split(' ').collect();
         match parts[0] {
-            "desc" => {}
+            "desc" | "facts" | "ref-facts" => {}
             "program" => c.program = parts[1].parse().expect("program"),
             "target" => c
                 .steps

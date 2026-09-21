@@ -201,7 +201,11 @@ fn following_ac3() -> AudioIngress {
 }
 
 fn position(ing: &AudioIngress) -> Position {
-    ing.followers[0].position
+    ing.tracker().tracks[0]
+        .elementary
+        .as_ref()
+        .expect("elementary state")
+        .position
 }
 
 /// A transport payload of exactly 184 bytes: `body`, then the 0xFF stuffing a

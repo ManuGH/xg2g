@@ -110,7 +110,7 @@ func TestHandler_UpstreamGenerationCut_EndsClientStreamCleanly(t *testing.T) {
 	// at a known point rather than whenever a capture happens to run out.
 	switchGeneration := make(chan struct{})
 
-	cfg := DefaultConnectorConfig("", 8001)
+	cfg := DefaultTestConnectorConfig("", 8001)
 	cfg.NormConfig.StartupReservoirMs = 50.0
 	cfg.NormConfig.PacerIntervalMs = 5.0
 	cfg.NormConfig.InitialBitrateKbps = 20000.0

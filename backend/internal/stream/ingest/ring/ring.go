@@ -150,8 +150,8 @@ func NewMasterRing(capacityBytes int) *MasterRing {
 	return NewMasterRingWithProgram(capacityBytes, 0)
 }
 
-// NewMasterRingWithProgram creates a new MasterRing targeting a specific program number in multi-program PATs.
-func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRing {
+// NewMasterRingWithCore creates a new MasterRing using an explicitly supplied media facts core.
+func NewMasterRingWithCore(capacityBytes int, core mediafacts.Core) *MasterRing {
 	capacityBytes = (capacityBytes / TSPacketSize) * TSPacketSize
 	if capacityBytes < TSPacketSize*5 {
 		capacityBytes = TSPacketSize * 5 // min 5 packets (~940 bytes)
@@ -162,10 +162,15 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 		capacity:       capacityBytes,
 		maxKeyframes:   64,
 		ingestDeadline: mediafacts.DefaultIngestDeadline,
-		core:           mediafacts.NewGoCore(targetProgram),
+		core:           core,
 	}
 	r.notEmpty = sync.NewCond(&r.mu)
 	return r
+}
+
+// NewMasterRingWithProgram creates a new MasterRing targeting a specific program number in multi-program PATs.
+func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRing {
+	return NewMasterRingWithCore(capacityBytes, mediafacts.NewGoCore(targetProgram))
 }
 
 // SetTargetProgram configures the desired program number for PMT resolution,

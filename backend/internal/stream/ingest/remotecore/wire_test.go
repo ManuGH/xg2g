@@ -21,7 +21,7 @@ import (
 // two red.
 var goldenHandshakeRequest = []byte{
 	0x00, 0x00, 0x00, 0x08, // length: header 6 + body 2
-	0x04,                   // version
+	0x05,                   // version
 	0x01,                   // handshake
 	0x00, 0x00, 0x00, 0x01, // request id 1
 	0x00, 0x01, // target programme 1

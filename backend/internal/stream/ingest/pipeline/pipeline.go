@@ -7,12 +7,16 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/remotecore"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
 )
@@ -20,6 +24,7 @@ import (
 var (
 	ErrPipelineClosed    = errors.New("session pipeline closed")
 	ErrNoAttachAvailable = errors.New("no primed attach point available")
+	ErrMediaCoreNotFound = errors.New("media core binary not found")
 )
 
 // SessionPipeline represents the unified live ingest engine for an active channel stream.
@@ -28,6 +33,8 @@ type SessionPipeline struct {
 	norm          *normalizer.StreamNormalizer
 	ring          *ring.MasterRing
 	variantMgr    *variant.AudioVariantManager
+	coreCloser    io.Closer
+	coreCloseOnce sync.Once
 	cancelFunc    context.CancelFunc
 	runErr        error
 	runErrMu      sync.Mutex
@@ -49,8 +56,26 @@ func (p *SessionPipeline) ObserveOnce(fn func()) {
 }
 
 // NewSessionPipeline creates a new live ingest pipeline.
-func NewSessionPipeline(normCfg normalizer.Config, ringCapacity int, targetProgram uint16) (*SessionPipeline, error) {
-	master := ring.NewMasterRingWithProgram(ringCapacity, targetProgram)
+// In production and staging, it resolves the authoritative xg2g-media-core binary via
+// config.ResolveMediaCoreBin() and delegates full stream authority to it.
+// If the binary cannot be resolved, it fails closed with ErrMediaCoreNotFound (no silent GoCore fallback).
+// Non-Rust unit tests inject GoCore via NewSessionPipelineWithCore.
+func NewSessionPipeline(ctx context.Context, normCfg normalizer.Config, ringCapacity int, targetProgram uint16) (*SessionPipeline, error) {
+	bin := config.ResolveMediaCoreBin()
+	if bin == "" {
+		return nil, ErrMediaCoreNotFound
+	}
+
+	remoteCore, err := remotecore.Start(ctx, bin, targetProgram)
+	if err != nil {
+		return nil, fmt.Errorf("start media core: %w", err)
+	}
+	return NewSessionPipelineWithCore(normCfg, ringCapacity, remoteCore, remoteCore)
+}
+
+// NewSessionPipelineWithCore creates a new live ingest pipeline using an explicitly provided media facts core and optional closer.
+func NewSessionPipelineWithCore(normCfg normalizer.Config, ringCapacity int, core mediafacts.Core, closer io.Closer) (*SessionPipeline, error) {
+	master := ring.NewMasterRingWithCore(ringCapacity, core)
 
 	norm, err := normalizer.NewStreamNormalizer(normCfg, func(ctx context.Context, chunk []byte) error {
 		// The pipeline's own context now reaches the core, so a chunk is bounded
@@ -60,6 +85,9 @@ func NewSessionPipeline(normCfg normalizer.Config, ringCapacity int, targetProgr
 	})
 	if err != nil {
 		master.Close()
+		if closer != nil {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
@@ -67,6 +95,7 @@ func NewSessionPipeline(normCfg normalizer.Config, ringCapacity int, targetProgr
 		norm:       norm,
 		ring:       master,
 		variantMgr: variant.NewAudioVariantManager(master),
+		coreCloser: closer,
 		doneCh:     make(chan struct{}),
 	}
 	return p, nil
@@ -83,6 +112,11 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 		defer func() { _ = upstream.Close() }()
 		defer p.ring.Close()
 		defer p.norm.Close()
+		defer p.coreCloseOnce.Do(func() {
+			if p.coreCloser != nil {
+				_ = p.coreCloser.Close()
+			}
+		})
 
 		err := p.norm.Run(ctx, upstream)
 		p.runErrMu.Lock()
@@ -122,18 +156,23 @@ func (p *SessionPipeline) OnDone(callback func(err error)) {
 // attaching a subscriber reader positioned at that exact keyframe boundary.
 // It returns ErrNoAttachAvailable if no valid keyframe is present in the buffer.
 func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
-	if p.closed.Load() {
-		return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
-	}
-
 	attach, reader, err := p.ring.NewPrimedSubscriber()
 	if err != nil {
+		if errors.Is(err, ring.ErrScrambledStream) {
+			return ring.PrimedAttachPoint{}, nil, err
+		}
+		if p.closed.Load() {
+			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
+		}
 		if errors.Is(err, ring.ErrNoKeyframeAvailable) {
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
 		// ring.ErrScrambledStream is deliberately NOT folded into ErrNoAttachAvailable:
 		// it is terminal, and PrimedAttachWithTimeout must surface it without retrying.
 		return ring.PrimedAttachPoint{}, nil, err
+	}
+	if p.closed.Load() {
+		return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 	}
 	return attach, reader, nil
 }
@@ -177,6 +216,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 			if errors.Is(lastErr, ring.ErrScrambledStream) {
 				return ring.PrimedAttachPoint{}, nil, lastErr
 			}
+			if _, _, finalErr := p.ring.NewPrimedSubscriber(); errors.Is(finalErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, finalErr
+			}
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
 
@@ -186,6 +228,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		case <-p.doneCh:
 			if errors.Is(lastErr, ring.ErrScrambledStream) {
 				return ring.PrimedAttachPoint{}, nil, lastErr
+			}
+			if _, _, finalErr := p.ring.NewPrimedSubscriber(); errors.Is(finalErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, finalErr
 			}
 			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 		case <-ticker.C:
@@ -254,6 +299,11 @@ func (p *SessionPipeline) Close() {
 		p.variantMgr.Close()
 		p.norm.Close()
 		p.ring.Close()
+		p.coreCloseOnce.Do(func() {
+			if p.coreCloser != nil {
+				_ = p.coreCloser.Close()
+			}
+		})
 	}
 }
 

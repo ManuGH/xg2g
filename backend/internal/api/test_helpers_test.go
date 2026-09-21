@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
 )
 
 func mustNewServer(t testing.TB, cfg config.AppConfig, cfgMgr *config.Manager, opts ...ServerOption) *Server {
@@ -19,6 +20,12 @@ func mustNewServer(t testing.TB, cfg config.AppConfig, cfgMgr *config.Manager, o
 	}
 	if cfg.ConfigVersion == "" && !cfg.APILegacyEnabled {
 		cfg.APILegacyEnabled = true
+	}
+	if config.ResolveMediaCoreBin() == "" {
+		opts = append([]ServerOption{WithLiveConnectorConfigModifier(func(cfg *pipeline.ConnectorConfig) {
+			testCfg := pipeline.DefaultTestConnectorConfig(cfg.ReceiverBaseURL, cfg.StreamPort)
+			cfg.PipelineFn = testCfg.PipelineFn
+		})}, opts...)
 	}
 	s, err := New(cfg, cfgMgr, opts...)
 	if err != nil {

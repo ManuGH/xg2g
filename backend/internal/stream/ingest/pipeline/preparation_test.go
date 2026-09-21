@@ -106,7 +106,7 @@ const teardownBudget = 15 * time.Second
 
 func newPrepManager(t *testing.T, recv *fakeReceiver, cfg PreparationConfig) (*PreparationManager, *session.Manager) {
 	t.Helper()
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 	connectorCfg.DialFn = recv.dial
@@ -491,7 +491,7 @@ func TestPrepare_WarmServiceCoalescesWithoutASecondDial(t *testing.T) {
 // Proof 5: preparations are not exempt from admission. A preparation takes its lease
 // through the same path a viewer does, so whatever refuses a viewer refuses it.
 func TestPrepare_AdmissionRefusalIsTerminalAndNamed(t *testing.T) {
-	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg := DefaultTestConnectorConfig("", 8001)
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.DialFn = func(context.Context, session.SessionKey) (io.ReadCloser, error) {
 		return nil, errors.New("tuner topology admission denied")

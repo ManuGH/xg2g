@@ -41,18 +41,19 @@
 //! are not elementary stream, and the corpus records the difference as a
 //! difference rather than adopting it.
 
-use crate::audio::observer::{Observation, Observer};
-use crate::pes::{self, PesStart};
+pub mod audio;
+pub use audio::{
+    AudioElementaryState, AudioFeedOutput, AudioTrackState, AudioTracker, Position, observable,
+};
+
+pub mod video;
+pub use video::{VideoEvent, VideoFacts, VideoFeed, VideoIngress, VideoOutcome, VideoSnapshot};
+
+use crate::audio::observer::Observation;
 use crate::psi::{AudioTrack, IngestError, PsiCore, PsiEvent};
-use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
+use crate::transport::{PacketView, TS_PACKET_LEN};
 
 /// One run of elementary stream bytes, exactly as an observer was given them.
-///
-/// Where the bytes were cut is part of what happened and not an artefact of it.
-/// An observer carries a partial frame header across a call and skips payload
-/// that ran past the end of one, so the same bytes joined differently are a
-/// different input - which is why this records a feed per packet rather than a
-/// total per chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioFeed<'a> {
     /// Which incarnation of the stream this belonged to. The same PID before
@@ -97,203 +98,14 @@ pub struct FollowedStream {
     pub pes_starts: u64,
     /// How many of those declared an optional header reaching past the packet
     /// that carried it.
-    ///
-    /// The one place this and the reference answer differently, counted, so
-    /// that "the difference never arises on real transport" can be a
-    /// measurement rather than an expectation.
     pub header_incomplete: u64,
 }
 
-/// Where in a PES packet the next continuation payload begins.
-///
-/// Three states rather than two, because "we do not know" and "we know these
-/// bytes are not elementary stream" are different answers and only one of them
-/// is a reason to feed nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Position {
-    /// A continuation payload is elementary stream as far as anything here can
-    /// tell.
-    ///
-    /// This is the ordinary state, and it is also where a stream begins. A
-    /// capture that starts in the middle of a PES packet carries audio from its
-    /// first packet, and nothing about it contradicts the table that named the
-    /// stream. Having seen no payload unit start is not the same as having read
-    /// one and refused it.
-    InElementaryStream,
-
-    /// An optional PES header has not finished, and this many of its bytes are
-    /// still to come.
-    InHeader {
-        /// How many header bytes the following payloads still carry.
-        remaining: usize,
-    },
-
-    /// Nothing may be fed until a PES packet starts.
-    ///
-    /// Entered two ways, and for one reason. From [`Position::InHeader`], when
-    /// the bytes that would have completed that header cannot be accounted for:
-    /// the transport lost a packet, or the ones carrying it were scrambled.
-    /// And from a payload unit start that is not an audio PES packet at all.
-    ///
-    /// In both cases feeding what arrives next would mean feeding from an
-    /// offset nothing established.
-    AwaitingStart,
-}
-
-/// One observable audio elementary stream, followed across the packets that
-/// carry it.
-#[derive(Debug)]
-struct Follower {
-    pid: u16,
-    codec: String,
-    observer: Observer,
-    position: Position,
-    /// The PID's own continuity, used for two decisions: suppressing exact
-    /// transport duplicates before processing, and determining whether the
-    /// bytes that were to complete a PES header actually arrived. Audio
-    /// observation itself does not react to the counter - a stream that lost a
-    /// packet is a stream with a gap in it, not a stream whose channel layout
-    /// has been withdrawn.
-    continuity: ContinuityTracker,
-    feeds: u64,
-    clear_packets: u64,
-    scrambled_packets: u64,
-    pes_starts: u64,
-    header_incomplete: u64,
-}
-
-impl Follower {
-    fn new(track: &AudioTrack) -> Self {
-        Self {
-            pid: track.pid,
-            codec: track.codec.clone(),
-            observer: Observer::new(),
-            // Nothing has said where this stream is yet, and a continuation
-            // arriving before any start is still elementary stream: a capture
-            // that begins in the middle of a PES packet carries audio from its
-            // first packet, and the observer resynchronises on its own.
-            position: Position::InElementaryStream,
-            continuity: ContinuityTracker::new(),
-            feeds: 0,
-            clear_packets: 0,
-            scrambled_packets: 0,
-            pes_starts: 0,
-            header_incomplete: 0,
-        }
-    }
-
-    /// Reads a payload that begins a payload unit.
-    fn start<'a>(&mut self, payload: &'a [u8]) -> Option<&'a [u8]> {
-        match pes::read_start(payload) {
-            PesStart::Complete {
-                stream_id,
-                es,
-                header_data_length: _,
-                packet_length: _,
-            } if pes::is_audio_stream_id(stream_id) => {
-                self.pes_starts += 1;
-                self.position = Position::InElementaryStream;
-                Some(es)
-            }
-            PesStart::HeaderIncomplete {
-                stream_id,
-                remaining_header,
-                header_data_length: _,
-                packet_length: _,
-            } if pes::is_audio_stream_id(stream_id) => {
-                self.pes_starts += 1;
-                self.header_incomplete += 1;
-                // The elementary stream has not begun. What the next payloads
-                // start with is the rest of this header, and a consumer told
-                // nothing would read it as audio.
-                self.position = Position::InHeader {
-                    remaining: remaining_header,
-                };
-                None
-            }
-            // A payload unit that is not an audio PES packet: no start code, a
-            // stream id that is not audio, too few bytes to say, or a stream id
-            // that carries no optional header at all - none of which is an
-            // audio stream id.
-            //
-            // Nothing is fed from this payload, because where the elementary
-            // stream would begin in it is exactly what could not be read. And
-            // nothing is fed from what follows either: a payload unit start is
-            // the start of a PES packet (13818-1 2.4.3.6), so the payloads until
-            // the next one are the body of the packet just refused. Reading them
-            // as audio would be reading from an offset nothing established - and
-            // a frame parser can find a layout in bytes that never carried one.
-            _ => {
-                self.position = Position::AwaitingStart;
-                None
-            }
-        }
-    }
-
-    /// Reads a payload that continues a payload unit already under way.
-    fn cont<'a>(
-        &mut self,
-        payload: &'a [u8],
-        continuity: Continuity,
-        same_cc_conflict: bool,
-    ) -> Option<&'a [u8]> {
-        match self.position {
-            Position::InElementaryStream => {
-                if same_cc_conflict {
-                    None
-                } else {
-                    Some(payload)
-                }
-            }
-            Position::AwaitingStart => None,
-            Position::InHeader { remaining } => match continuity {
-                // The transport says bytes are missing. How many of them were
-                // header is not knowable, so the offset the rest of this packet
-                // would be read from is not either. Skipping `remaining` anyway
-                // would be treating a loss as though it had arrived.
-                Continuity::Broken | Continuity::Discontinuous => {
-                    self.position = Position::AwaitingStart;
-                    None
-                }
-                // The same packet said twice carries the same header bytes
-                // twice. Consuming them again would step over payload that
-                // never arrived.
-                Continuity::Duplicate => None,
-                Continuity::First | Continuity::Continuous => {
-                    if payload.len() < remaining {
-                        self.position = Position::InHeader {
-                            remaining: remaining - payload.len(),
-                        };
-                        None
-                    } else {
-                        self.position = Position::InElementaryStream;
-                        Some(&payload[remaining..])
-                    }
-                }
-            },
-        }
-    }
-}
-
 /// Follows the observable audio of one transport.
-///
-/// It owns the table reading it needs, because which PIDs are audio and what
-/// they declare is not something a caller can be asked to keep in step: the
-/// answer changes inside a chunk, at the packet that changed it, and a stage
-/// told about it afterwards would route that chunk's audio to the observers of
-/// a programme that had already ended.
-///
-/// What it does not own is anything above the bytes. There is no generation
-/// here, no session, no lease, no receiver and no viewer policy. The
-/// incarnation counter below is not a product generation: it exists so that
-/// state cannot survive the table that named the stream it belongs to, and it
-/// is deliberately not offered as anything else.
-///
-/// Not safe for concurrent use, like the cores beneath it.
 #[derive(Debug)]
 pub struct AudioIngress {
     psi: PsiCore,
-    followers: Vec<Follower>,
+    audio: AudioTracker,
     /// Turns whenever the programme's identity does. The same PID on either
     /// side of that is two elementary streams that share a number.
     incarnation: u64,
@@ -305,7 +117,7 @@ impl AudioIngress {
     pub fn new(target_program_number: u16) -> Self {
         Self {
             psi: PsiCore::new(target_program_number),
-            followers: Vec::new(),
+            audio: AudioTracker::new(),
             incarnation: 0,
         }
     }
@@ -315,9 +127,7 @@ impl AudioIngress {
     /// # Errors
     ///
     /// Returns [`IngestError::UnalignedChunk`] when the chunk is not a whole
-    /// number of packets. Nothing is interpreted in that case - the same rule
-    /// the PSI core states, for the same reason: a chunk boundary can only fall
-    /// between packets.
+    /// number of packets.
     pub fn ingest<'a>(
         &mut self,
         start_offset: i64,
@@ -329,10 +139,6 @@ impl AudioIngress {
         let mut feeds = Vec::new();
         self.psi.begin_chunk();
         for packet in data.chunks_exact(TS_PACKET_LEN) {
-            // The table is read first, and the audio of this same packet is
-            // routed afterwards. A PMT completing here ends the streams it used
-            // to describe, and a packet that carried audio of the old programme
-            // would otherwise reach an observer the table has just retired.
             let changed = self
                 .psi
                 .index_packet(packet)
@@ -353,10 +159,6 @@ impl AudioIngress {
     }
 
     /// Selects the programme to follow.
-    ///
-    /// Changing it ends every stream being followed, for the same reason a PMT
-    /// change does: what the PIDs carried belonged to the programme that was
-    /// selected, and it is no longer selected.
     pub fn set_target_program(&mut self, program_number: u16) {
         let outcome = self.psi.set_target_program(program_number);
         if outcome.events.contains(&PsiEvent::ProgramIdentityChanged) {
@@ -371,10 +173,6 @@ impl AudioIngress {
     }
 
     /// The audio tracks the table in force declares, observable or not.
-    ///
-    /// A track this cannot read is still a track. Saying so is what keeps "no
-    /// observation" apart from "no audio", which are different answers and only
-    /// one of them is about the stream.
     #[must_use]
     pub fn declared(&self) -> &[AudioTrack] {
         self.psi.audio_tracks()
@@ -383,149 +181,53 @@ impl AudioIngress {
     /// The streams being followed, in the order the table lists them.
     #[must_use]
     pub fn followed(&self) -> Vec<FollowedStream> {
-        self.followers
+        self.audio
+            .tracks
             .iter()
-            .map(|f| FollowedStream {
-                incarnation: self.incarnation,
-                pid: f.pid,
-                codec: f.codec.clone(),
-                observation: f.observer.current(),
-                feeds: f.feeds,
-                clear_packets: f.clear_packets,
-                scrambled_packets: f.scrambled_packets,
-                pes_starts: f.pes_starts,
-                header_incomplete: f.header_incomplete,
+            .filter_map(|t| {
+                t.elementary.as_ref().map(|elem| FollowedStream {
+                    incarnation: self.incarnation,
+                    pid: t.pid,
+                    codec: t.codec.clone(),
+                    observation: elem.observer.current(),
+                    feeds: elem.feeds,
+                    clear_packets: t.clear_packets,
+                    scrambled_packets: t.scrambled_packets,
+                    pes_starts: elem.pes_starts,
+                    header_incomplete: elem.header_incomplete,
+                })
             })
             .collect()
     }
 
-    /// Ends every stream being followed and begins the ones the table in force
-    /// now declares.
-    ///
-    /// Nothing is carried over, including for a PID that is in both tables with
-    /// the same codec. A programme whose identity changed may put a different
-    /// elementary stream on the same number, and an observation carried across
-    /// would describe audio that is not there any more - which is the one
-    /// mistake a reused PID makes impossible to notice afterwards.
-    fn reprogram(&mut self) {
-        self.incarnation += 1;
-        self.followers.clear();
-        for track in self.psi.audio_tracks() {
-            if observable(&track.codec) {
-                self.followers.push(Follower::new(track));
-            }
-        }
+    /// Access to the underlying audio tracker.
+    #[must_use]
+    pub fn tracker(&self) -> &AudioTracker {
+        &self.audio
     }
 
-    /// Routes one packet to the stream it belongs to, if that stream is one
-    /// being followed.
+    /// Ends every stream being followed and begins the ones the table in force
+    /// now declares.
+    fn reprogram(&mut self) {
+        self.incarnation += 1;
+        self.audio.reset_with_tracks(self.psi.audio_tracks());
+    }
+
+    /// Routes one packet to the stream it belongs to.
     fn route<'a>(&mut self, view: &PacketView<'a>, out: &mut Vec<AudioFeed<'a>>) {
         let pid = view.pid();
-        // A PID that carries the programme's table or its video is not audio,
-        // whatever else the table says about it. The reference decides this by
-        // the order it asks - the PMT PID, then the video PID, then the audio
-        // ones - so a track declared on either of the first two is a track whose
-        // observer is never fed. Asking here keeps that: the table's own bytes,
-        // or a video stream's, handed to a frame parser could establish a
-        // layout no audio carries.
-        //
-        // PID 0 needs no such question. The table reader refuses it for an
-        // elementary stream when the track is declared, so no follower has it.
         if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {
             return;
         }
-        let Some(index) = self.followers.iter().position(|f| f.pid == pid) else {
-            return;
-        };
-        // A packet with no payload carries nothing to feed and does not advance
-        // the continuity counter either. If it asserts a discontinuity indicator,
-        // it arms pending discontinuity for the stream's next payload packet.
-        let Some(payload) = view.payload() else {
-            if view.discontinuity_indicator() {
-                self.followers[index]
-                    .continuity
-                    .observe_adaptation_only(true);
-            }
-            return;
-        };
-        let incarnation = self.incarnation;
-        let follower = &mut self.followers[index];
-
-        let is_same_cc = follower.continuity.is_same_cc(view.continuity_counter());
-
-        let continuity = follower.continuity.observe(
-            view.bytes(),
-            view.continuity_counter(),
-            view.discontinuity_indicator(),
-        );
-
-        if continuity == Continuity::Duplicate {
-            return;
+        if let Some(feed) = self.audio.route(view) {
+            out.push(AudioFeed {
+                incarnation: self.incarnation,
+                pid: feed.pid,
+                es: feed.es,
+                observation: feed.observation,
+            });
         }
-
-        let same_cc_conflict =
-            continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
-
-        if view.transport_error_indicator() {
-            if view.payload_unit_start() || matches!(follower.position, Position::InHeader { .. }) {
-                follower.position = Position::AwaitingStart;
-            }
-            return;
-        }
-
-        if view.scrambling_control() != 0 {
-            follower.scrambled_packets += 1;
-            // Encrypted bytes are not fed, and they are not counted towards a
-            // header either: a header whose remainder arrived scrambled has not
-            // been read, and the next clear payload begins somewhere nothing
-            // here knows.
-            //
-            // If the scrambled packet asserts a payload unit start, the PES
-            // packet begins under encryption and cannot be parsed. The stream
-            // is quarantined until the next clear unit start.
-            if view.payload_unit_start() || matches!(follower.position, Position::InHeader { .. }) {
-                follower.position = Position::AwaitingStart;
-            }
-            return;
-        }
-        follower.clear_packets += 1;
-
-        let es = if view.payload_unit_start() {
-            if same_cc_conflict {
-                follower.position = Position::AwaitingStart;
-                None
-            } else {
-                follower.start(payload)
-            }
-        } else {
-            follower.cont(payload, continuity, same_cc_conflict)
-        };
-
-        // An empty run is not a feed. It is what a PES header ending exactly at
-        // the end of its packet leaves behind, and an observer given nothing has
-        // been told nothing.
-        let Some(es) = es.filter(|es| !es.is_empty()) else {
-            return;
-        };
-        follower.observer.feed(es);
-        follower.feeds += 1;
-        out.push(AudioFeed {
-            incarnation,
-            pid,
-            es,
-            observation: follower.observer.current(),
-        });
     }
-}
-
-/// Whether the frame headers of a codec are read for their channel layout.
-///
-/// The same two the reference reads. A codec whose frames this cannot parse
-/// gets no observer rather than a guessed observation, and a track declared in
-/// the table is still a track - it is the observation that is absent, not the
-/// stream.
-fn observable(codec: &str) -> bool {
-    codec == "ac3" || codec == "eac3"
 }
 
 #[cfg(test)]
@@ -533,10 +235,6 @@ mod ingress_test;
 
 #[cfg(test)]
 mod corpus_test;
-
-pub mod video;
-
-pub use video::{VideoEvent, VideoFacts, VideoFeed, VideoIngress, VideoOutcome, VideoSnapshot};
 
 #[cfg(test)]
 mod video_test;

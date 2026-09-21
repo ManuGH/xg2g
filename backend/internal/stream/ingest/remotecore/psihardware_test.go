@@ -338,11 +338,11 @@ func TestPSIHardware_TheRealRustCoreAgreesOnRealTransport(t *testing.T) {
 				if !goRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d (%s): the reference reported coverage %s", call, what, goRes.Coverage)
 				}
-				if !rustRes.Covers(mediafacts.ParseCoveragePSIVideo) {
+				if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d (%s): the real core reported coverage %s", call, what, rustRes.Coverage)
 				}
 				if n := rustIllegalEvents(rustRes); n > 0 {
-					t.Fatalf("call %d (%s): the psi+video core reported %d event(s) outside PSI+Video coverage",
+					t.Fatalf("call %d (%s): the complete core reported %d event(s) outside complete coverage",
 						call, what, n)
 				}
 				raps += goRandomAccessPoints(goRes)

@@ -32,7 +32,7 @@ import (
 func TestHandler_FallbackToMaster_DoesNotAnnounceATranscode(t *testing.T) {
 	capture := tsfixture.Load(t, "verify_final_v3.ts")
 
-	cfg := DefaultConnectorConfig("", 8001)
+	cfg := DefaultTestConnectorConfig("", 8001)
 	cfg.NormConfig.StartupReservoirMs = 50.0
 	cfg.NormConfig.PacerIntervalMs = 5.0
 	cfg.NormConfig.InitialBitrateKbps = 20000.0
