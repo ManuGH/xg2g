@@ -191,6 +191,14 @@ func (r *RemoteCore) accept(ctx context.Context) (net.Conn, error) {
 		got <- result{c, err}
 	}()
 
+	drainAndClose := func() {
+		_ = r.ln.Close()
+		res := <-got
+		if res.c != nil {
+			_ = res.c.Close()
+		}
+	}
+
 	select {
 	case res := <-got:
 		if res.err != nil {
@@ -198,10 +206,10 @@ func (r *RemoteCore) accept(ctx context.Context) (net.Conn, error) {
 		}
 		return res.c, nil
 	case <-r.waitDone:
-		_ = r.ln.Close()
+		drainAndClose()
 		return nil, fmt.Errorf("%w: exited before connecting: %v", mediafacts.ErrCoreCrashed, r.waitErr)
 	case <-ctx.Done():
-		_ = r.ln.Close()
+		drainAndClose()
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%w: did not connect within %v", mediafacts.ErrCoreTimeout, startupTimeout)
 		}
