@@ -1322,3 +1322,54 @@ fn video_pusi_split_at_6_bytes_assembles_header_and_timing() {
     assert_eq!(facts2.pes_starts, 1);
     assert_eq!(facts2.current_pes_offset, Some(p1_offset));
 }
+
+#[test]
+fn video_rejects_pes_with_invalid_byte_6_marker_bits() {
+    let (mut ingress, offset) = standard_setup();
+
+    // 1. Single-packet PUSI with byte 6 = 0x00 (bits 7..6 != '10')
+    let pts = 90_000 * 35;
+    let enc_pts = encode_ts(0b0010, pts);
+    let mut bad_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x00, 0x80, 0x05];
+    bad_payload.extend_from_slice(&enc_pts);
+    bad_payload.extend_from_slice(&[0x00, 0x00, 0x01, 0x65, 0x88]);
+
+    let p1 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &bad_payload);
+    let outcome1 = ingress.ingest(offset, &p1).expect("ingest p1");
+
+    assert_eq!(outcome1.timing_events.len(), 0);
+    assert_eq!(outcome1.feeds.len(), 0);
+    let facts1 = ingress.facts();
+    assert_eq!(facts1.pes_starts, 0);
+    assert_eq!(facts1.current_pes_offset, None);
+    assert!(facts1.awaiting_start);
+
+    // 2. Cross-packet: PUSI ends before byte 6 (6 bytes: 00 00 01 E0 00 00),
+    // and continuation packet delivers corrupt byte 6 = 0x40.
+    let (mut ingress2, mut offset2) = standard_setup();
+    let p_pusi = make_ts_packet(
+        VIDEO_PID,
+        true,
+        1,
+        0,
+        false,
+        &[0x00, 0x00, 0x01, 0xE0, 0x00, 0x00],
+    );
+    let out_pusi = ingress2.ingest(offset2, &p_pusi).expect("ingest p_pusi");
+    offset2 += PACKET_LEN_I64;
+    assert_eq!(out_pusi.timing_events.len(), 0);
+    assert_eq!(out_pusi.feeds.len(), 0);
+
+    let mut cont_payload = vec![0x40, 0x80, 0x05];
+    cont_payload.extend_from_slice(&enc_pts);
+    cont_payload.extend_from_slice(&[0x00, 0x00, 0x01, 0x65, 0x88]);
+    let p_cont = make_ts_packet(VIDEO_PID, false, 2, 0, false, &cont_payload);
+    let out_cont = ingress2.ingest(offset2, &p_cont).expect("ingest p_cont");
+
+    assert_eq!(out_cont.timing_events.len(), 0);
+    assert_eq!(out_cont.feeds.len(), 0);
+    let facts2 = ingress2.facts();
+    assert_eq!(facts2.pes_starts, 0);
+    assert_eq!(facts2.current_pes_offset, None);
+    assert!(facts2.awaiting_start);
+}

@@ -1288,6 +1288,9 @@ impl VideoIngress {
             follower.current_pes_offset = Some(follower.pes_assembler.subject_at().get());
             follower.position = VideoPosition::InElementaryStream;
             follower.pes_starts += 1;
+        } else if follower.pes_assembler.is_awaiting_start() {
+            follower.position = VideoPosition::AwaitingStart;
+            return;
         }
 
         if let Some(evt) = output.timing_event {

@@ -74,6 +74,14 @@ pub fn parse_pes_timing(header: &[u8]) -> PesTiming {
         };
     }
 
+    // Byte 6 bits 7..6 must be '10' (0x80) for MPEG-2 PES optional headers
+    if (header[6] & 0xC0) != 0x80 {
+        return PesTiming {
+            pts: TimingField::Invalid,
+            dts: TimingField::Invalid,
+        };
+    }
+
     let flags2 = header[7];
     let pts_dts_flags = (flags2 >> 6) & 0x03;
     let header_data_len = usize::from(header[8]);
@@ -370,6 +378,12 @@ impl PesHeaderAssembler {
             };
         }
 
+        // If byte 6 is present, validate MPEG-2 PES header marker bits ('10' in bits 7..6)
+        if payload.len() >= 7 && (payload[6] & 0xC0) != 0x80 {
+            self.reject();
+            return PesAssembleOutput::default();
+        }
+
         if payload.len() < PES_FIXED_HEADER_LEN {
             self.buf[..payload.len()].copy_from_slice(payload);
             self.buf_len = payload.len();
@@ -540,6 +554,12 @@ impl PesHeaderAssembler {
                     self.buf_len += take;
                     pos += take;
 
+                    // If byte 6 is present, validate MPEG-2 PES header marker bits ('10' in bits 7..6)
+                    if self.buf_len >= 7 && (self.buf[6] & 0xC0) != 0x80 {
+                        self.reject();
+                        return PesAssembleOutput::default();
+                    }
+
                     if self.buf_len < PES_FIXED_HEADER_LEN {
                         self.state = State::CollectingPrefix {
                             required_len: PES_FIXED_HEADER_LEN,
@@ -643,6 +663,7 @@ mod tests {
         let mut hdr = [0u8; 9];
         hdr[0..3].copy_from_slice(&[0x00, 0x00, 0x01]);
         hdr[3] = 0xE0; // video
+        hdr[6] = 0x80; // '10xxxxxx' marker bits
         hdr[7] = 0x00; // pts_dts_flags == 00
         hdr[8] = 0x00; // header_data_length == 0
 
@@ -656,6 +677,7 @@ mod tests {
         let mut hdr = [0u8; 9];
         hdr[0..3].copy_from_slice(&[0x00, 0x00, 0x01]);
         hdr[3] = 0xE0;
+        hdr[6] = 0x80; // '10xxxxxx' marker bits
         hdr[7] = 0x40; // pts_dts_flags == 01 (forbidden)
         hdr[8] = 0x05;
 
@@ -669,6 +691,7 @@ mod tests {
         let mut hdr = [0u8; 14];
         hdr[0..3].copy_from_slice(&[0x00, 0x00, 0x01]);
         hdr[3] = 0xE0;
+        hdr[6] = 0x80; // '10xxxxxx' marker bits
         hdr[7] = 0x80; // pts_dts_flags == 10
         hdr[8] = 0x05; // header_data_length == 5
 
@@ -707,6 +730,7 @@ mod tests {
         let mut hdr = [0u8; 19];
         hdr[0..3].copy_from_slice(&[0x00, 0x00, 0x01]);
         hdr[3] = 0xBD; // audio
+        hdr[6] = 0x80; // '10xxxxxx' marker bits
         hdr[7] = 0xC0; // pts_dts_flags == 11
         hdr[8] = 0x0A; // header_data_length == 10
 
@@ -886,5 +910,78 @@ mod tests {
         assembler.reset();
         assert!(assembler.last_timing().is_none());
         assert!(!assembler.is_in_elementary_stream());
+    }
+
+    #[test]
+    fn assembler_byte_6_marker_bits_validation() {
+        let pid = Pid::new(256).unwrap();
+
+        let make_payload = |b6: u8| -> Vec<u8> {
+            let mut p = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, b6, 0x80, 0x05];
+            p.extend_from_slice(&encode_ts(0b0010, 90_000));
+            p.extend_from_slice(&[0x00, 0x00, 0x01, 0x65]);
+            p
+        };
+
+        // 1. Single-packet: 0x80 (bits 7..6 = '10') is accepted
+        let mut a_valid = PesHeaderAssembler::new(pid);
+        let valid_payload = make_payload(0x80);
+        let out_valid = a_valid.feed_pusi(1000, &valid_payload);
+        assert!(out_valid.header.is_some());
+        assert!(out_valid.timing_event.is_some());
+        assert!(out_valid.es.is_some());
+        assert!(a_valid.is_in_elementary_stream());
+
+        // 2. Single-packet: 0x00, 0x40, 0xC0 must be rejected
+        for bad_b6 in [0x00, 0x40, 0xC0] {
+            let mut a_bad = PesHeaderAssembler::new(pid);
+            let bad_payload = make_payload(bad_b6);
+            let out_bad = a_bad.feed_pusi(1000, &bad_payload);
+            assert!(
+                out_bad.header.is_none(),
+                "b6=0x{bad_b6:02x} must not emit header"
+            );
+            assert!(
+                out_bad.timing_event.is_none(),
+                "b6=0x{bad_b6:02x} must not emit timing"
+            );
+            assert!(out_bad.es.is_none(), "b6=0x{bad_b6:02x} must not emit ES");
+            assert!(
+                a_bad.is_awaiting_start(),
+                "b6=0x{bad_b6:02x} must enter awaiting/rejected state"
+            );
+
+            // Subsequent continuation is also rejected
+            let out_cont = a_bad.feed_cont(1188, &[0xAA, 0xBB, 0xCC]);
+            assert!(out_cont.header.is_none());
+            assert!(out_cont.timing_event.is_none());
+            assert!(out_cont.es.is_none());
+        }
+
+        // 3. Cross-packet: PUSI ends before byte 6 (6 bytes: 00 00 01 E0 00 00)
+        // Byte 6 (0x00) arrives in continuation packet
+        let mut a_split = PesHeaderAssembler::new(pid);
+        let out1 = a_split.feed_pusi(1000, &[0x00, 0x00, 0x01, 0xE0, 0x00, 0x00]);
+        assert!(out1.header.is_none());
+        assert!(out1.timing_event.is_none());
+        assert!(out1.es.is_none());
+
+        // Continuation delivers corrupt byte 6 (0x00)
+        let mut cont_corrupt = vec![0x00, 0x80, 0x05];
+        cont_corrupt.extend_from_slice(&encode_ts(0b0010, 90_000));
+        cont_corrupt.extend_from_slice(&[0x00, 0x00, 0x01, 0x65]);
+        let out2 = a_split.feed_cont(1188, &cont_corrupt);
+        assert!(
+            out2.header.is_none(),
+            "corrupt byte 6 in continuation must reject"
+        );
+        assert!(out2.timing_event.is_none());
+        assert!(out2.es.is_none());
+        assert!(a_split.is_awaiting_start());
+
+        // Further continuation packets remain ignored
+        let out3 = a_split.feed_cont(1376, &[0x11, 0x22, 0x33]);
+        assert!(out3.header.is_none());
+        assert!(out3.es.is_none());
     }
 }
