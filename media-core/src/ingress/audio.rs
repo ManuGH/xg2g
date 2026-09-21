@@ -19,8 +19,9 @@
 //! Elementary stream parsing and `Observer` attachment are instantiated exclusively for observable codecs (`ac3`, `eac3`).
 
 use crate::audio::observer::{Observation, Observer};
-use crate::pes::{self, PesStart};
+use crate::pes::{self, PesHeaderAssembler, PesStart};
 use crate::psi::AudioTrack;
+use crate::timing::{Pid, TimingEvent};
 use crate::transport::{Continuity, ContinuityTracker, PacketView};
 
 /// Whether a codec is parsed for its channel layout.
@@ -169,6 +170,8 @@ pub struct AudioTrackState {
     pub scrambled_packets: u64,
     /// Elementary state parser and observer if this codec is observable.
     pub elementary: Option<AudioElementaryState>,
+    /// Bounded common PES header assembler for timing extraction.
+    pub pes_assembler: PesHeaderAssembler,
 }
 
 impl AudioTrackState {
@@ -180,6 +183,7 @@ impl AudioTrackState {
         } else {
             None
         };
+        let pid_typed = Pid::new(track.pid).unwrap_or(Pid::NULL);
         Self {
             pid: track.pid,
             codec: track.codec.clone(),
@@ -187,6 +191,7 @@ impl AudioTrackState {
             clear_packets: 0,
             scrambled_packets: 0,
             elementary,
+            pes_assembler: PesHeaderAssembler::new(pid_typed),
         }
     }
 
@@ -249,17 +254,24 @@ impl AudioTracker {
 
     /// Routes one packet to its corresponding audio track.
     ///
-    /// Returns any elementary stream feed that was produced and fed to an observer.
-    pub fn route<'a>(&mut self, view: &PacketView<'a>) -> Option<AudioFeedOutput<'a>> {
+    /// Returns any elementary stream feed that was produced and fed to an observer,
+    /// along with any canonical timing event extracted by the PES assembler.
+    pub fn route<'a>(
+        &mut self,
+        packet_offset: i64,
+        view: &PacketView<'a>,
+    ) -> (Option<AudioFeedOutput<'a>>, Option<TimingEvent>) {
         let pid = view.pid();
-        let track = self.tracks.iter_mut().find(|t| t.pid == pid)?;
+        let Some(track) = self.tracks.iter_mut().find(|t| t.pid == pid) else {
+            return (None, None);
+        };
 
         // 1. Adaptation field only: does not carry payload or advance CC.
         let Some(payload) = view.payload() else {
             if view.discontinuity_indicator() {
                 track.continuity.observe_adaptation_only(true);
             }
-            return None;
+            return (None, None);
         };
 
         // 2. Evaluate transport continuity.
@@ -271,7 +283,7 @@ impl AudioTracker {
         );
 
         if continuity == Continuity::Duplicate {
-            return None;
+            return (None, None);
         }
 
         let same_cc_conflict =
@@ -283,7 +295,8 @@ impl AudioTracker {
             if let Some(elem) = track.elementary.as_mut() {
                 elem.reset_on_pusi_or_header(view.payload_unit_start());
             }
-            return None;
+            track.pes_assembler.reset();
+            return (None, None);
         }
 
         // 4. Scrambled packet: count against audio scrambling facts.
@@ -294,7 +307,8 @@ impl AudioTracker {
             if let Some(elem) = track.elementary.as_mut() {
                 elem.reset_on_pusi_or_header(view.payload_unit_start());
             }
-            return None;
+            track.pes_assembler.reset();
+            return (None, None);
         }
 
         // 5. Clear packet: increments clear counters BEFORE observer decision.
@@ -302,8 +316,30 @@ impl AudioTracker {
         self.clear_run += 1;
         track.clear_packets += 1;
 
-        // 6. Observer feeding (only for observable streams).
-        let elem = track.elementary.as_mut()?;
+        // 6. Timing extraction across ALL PMT-declared audio PIDs (bounded common PES assembler).
+        let timing_event = if view.payload_unit_start() {
+            if same_cc_conflict {
+                track.pes_assembler.reset();
+                None
+            } else {
+                let (event, _) = track.pes_assembler.feed_pusi(packet_offset, payload);
+                event
+            }
+        } else if continuity == Continuity::Broken
+            || continuity == Continuity::Discontinuous
+            || same_cc_conflict
+        {
+            track.pes_assembler.reset();
+            None
+        } else {
+            let (event, _) = track.pes_assembler.feed_cont(packet_offset, payload);
+            event
+        };
+
+        // 7. Observer feeding (only for observable streams).
+        let Some(elem) = track.elementary.as_mut() else {
+            return (None, timing_event);
+        };
 
         let es = if view.payload_unit_start() {
             if same_cc_conflict {
@@ -316,14 +352,18 @@ impl AudioTracker {
             elem.cont(payload, continuity, same_cc_conflict)
         };
 
-        let es = es.filter(|bytes| !bytes.is_empty())?;
+        let Some(es) = es.filter(|bytes| !bytes.is_empty()) else {
+            return (None, timing_event);
+        };
         elem.observer.feed(es);
         elem.feeds += 1;
 
-        Some(AudioFeedOutput {
+        let feed = AudioFeedOutput {
             pid,
             es,
             observation: elem.observer.current(),
-        })
+        };
+
+        (Some(feed), timing_event)
     }
 }

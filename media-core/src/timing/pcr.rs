@@ -4,6 +4,7 @@
 
 //! Canonical PCR extraction, deterministic 27 MHz integer timing, and bitrate estimation.
 
+use super::types::{BitrateBps, ByteOffset, Pid, RawPcr27m};
 use crate::transport::{PacketView, Pcr};
 
 /// The modulus of the 27 MHz PCR counter: 2^33 * 300 = 2,576,980,377,600 ticks.
@@ -17,22 +18,26 @@ pub const MAX_PLAUSIBLE_DELTA_TICKS: u64 = 2 * 27_000_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcrSample {
     /// The transport byte offset where this PCR was observed.
-    pub packet_offset: i64,
+    pub packet_offset: ByteOffset,
     /// The canonical PCR value.
     pub pcr: Pcr,
+    /// The raw 27 MHz PCR timestamp.
+    pub raw: RawPcr27m,
 }
 
 /// A point-in-time snapshot of the timing tracker's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TimingSnapshot {
     /// The PID designated for PCR, if any.
-    pub pcr_pid: Option<u16>,
+    pub pcr_pid: Option<Pid>,
     /// The last observed PCR value.
     pub last_pcr: Option<Pcr>,
+    /// The last observed raw PCR timestamp.
+    pub last_raw_pcr: Option<RawPcr27m>,
     /// The transport byte offset where the last PCR was observed.
-    pub last_pcr_offset: i64,
+    pub last_pcr_offset: ByteOffset,
     /// Estimated bitrate in bits per second (via integer EMA).
-    pub bitrate_bps: u64,
+    pub bitrate_bps: BitrateBps,
     /// Total number of valid PCRs observed.
     pub pcr_count: u64,
     /// Total number of discontinuity events observed on the PCR PID.
@@ -47,11 +52,11 @@ pub struct TimingSnapshot {
 /// dependencies.
 #[derive(Debug, Default)]
 pub struct PcrTracker {
-    pcr_pid: Option<u16>,
+    pcr_pid: Option<Pid>,
     last_pcr: Option<Pcr>,
-    last_offset: i64,
+    last_offset: ByteOffset,
     pending_discontinuity: bool,
-    bitrate_bps: u64,
+    bitrate_bps: BitrateBps,
     pcr_count: u64,
     discontinuity_count: u64,
 }
@@ -64,7 +69,7 @@ impl PcrTracker {
     }
 
     /// Rebinds the tracker to a new PCR PID, resetting baseline and rate estimates.
-    pub fn rebind(&mut self, pcr_pid: Option<u16>) {
+    pub fn rebind(&mut self, pcr_pid: Option<Pid>) {
         self.pcr_pid = pcr_pid;
         self.reset();
     }
@@ -72,22 +77,22 @@ impl PcrTracker {
     /// Clears baseline, rate estimates, and pending discontinuity flags.
     pub fn reset(&mut self) {
         self.last_pcr = None;
-        self.last_offset = 0;
+        self.last_offset = ByteOffset::default();
         self.pending_discontinuity = false;
-        self.bitrate_bps = 0;
+        self.bitrate_bps = BitrateBps::default();
         self.pcr_count = 0;
         self.discontinuity_count = 0;
     }
 
     /// The PID currently being followed for PCR timing, if any.
     #[must_use]
-    pub fn pcr_pid(&self) -> Option<u16> {
+    pub fn pcr_pid(&self) -> Option<Pid> {
         self.pcr_pid
     }
 
     /// The current estimated transport stream bitrate in bits per second.
     #[must_use]
-    pub fn bitrate_bps(&self) -> u64 {
+    pub fn bitrate_bps(&self) -> BitrateBps {
         self.bitrate_bps
     }
 
@@ -97,6 +102,7 @@ impl PcrTracker {
         TimingSnapshot {
             pcr_pid: self.pcr_pid,
             last_pcr: self.last_pcr,
+            last_raw_pcr: self.last_pcr.and_then(|p| RawPcr27m::new(p.ticks_27mhz)),
             last_pcr_offset: self.last_offset,
             bitrate_bps: self.bitrate_bps,
             pcr_count: self.pcr_count,
@@ -109,7 +115,7 @@ impl PcrTracker {
         let Some(target_pid) = self.pcr_pid else {
             return;
         };
-        if view.pid() != target_pid {
+        if view.pid() != target_pid.get() {
             return;
         }
 
@@ -131,10 +137,12 @@ impl PcrTracker {
 
         self.pcr_count = self.pcr_count.saturating_add(1);
 
+        let offset = ByteOffset::new(packet_offset);
+
         // Discontinuity was latched: re-anchor baseline without updating rate estimation.
         if self.pending_discontinuity {
             self.last_pcr = Some(current_pcr);
-            self.last_offset = packet_offset;
+            self.last_offset = offset;
             self.pending_discontinuity = false;
             return;
         }
@@ -142,18 +150,15 @@ impl PcrTracker {
         let Some(last_pcr) = self.last_pcr else {
             // First clean PCR: anchor initial baseline.
             self.last_pcr = Some(current_pcr);
-            self.last_offset = packet_offset;
+            self.last_offset = offset;
             return;
         };
 
         // Checked byte advancement in stream coordinate system.
-        let Some(delta_bytes) = packet_offset
-            .checked_sub(self.last_offset)
-            .and_then(|v| u64::try_from(v).ok())
-        else {
+        let Some(delta_bytes) = offset.checked_sub(self.last_offset) else {
             // Negative offset or invalid subtraction: re-anchor baseline.
             self.last_pcr = Some(current_pcr);
-            self.last_offset = packet_offset;
+            self.last_offset = offset;
             return;
         };
 
@@ -172,7 +177,7 @@ impl PcrTracker {
         // Divide-by-zero guard or implausible jump (> 2.0s without discontinuity indicator).
         if delta_ticks == 0 || delta_ticks >= MAX_PLAUSIBLE_DELTA_TICKS {
             self.last_pcr = Some(current_pcr);
-            self.last_offset = packet_offset;
+            self.last_offset = offset;
             return;
         }
 
@@ -180,16 +185,16 @@ impl PcrTracker {
         let instant_bps = (u128::from(delta_bytes) * 8 * 27_000_000) / u128::from(delta_ticks);
         let instant_bps_u64 = u64::try_from(instant_bps).unwrap_or(u64::MAX);
 
-        if self.bitrate_bps == 0 {
-            self.bitrate_bps = instant_bps_u64;
+        if self.bitrate_bps.get() == 0 {
+            self.bitrate_bps = BitrateBps::new(instant_bps_u64);
         } else {
             // Integer EMA: 80% previous estimate + 20% instant sample.
-            let filtered = (u128::from(self.bitrate_bps) * 4 + instant_bps) / 5;
-            self.bitrate_bps = u64::try_from(filtered).unwrap_or(u64::MAX);
+            let filtered = (u128::from(self.bitrate_bps.get()) * 4 + instant_bps) / 5;
+            self.bitrate_bps = BitrateBps::new(u64::try_from(filtered).unwrap_or(u64::MAX));
         }
 
         self.last_pcr = Some(current_pcr);
-        self.last_offset = packet_offset;
+        self.last_offset = offset;
     }
 }
 
@@ -261,7 +266,7 @@ mod tests {
     #[test]
     fn deterministic_rate_estimation_and_ema() {
         let mut tracker = PcrTracker::new();
-        tracker.rebind(Some(100));
+        tracker.rebind(Pid::new(100));
 
         // 40ms interval at 4 Mbps:
         // 40ms = 0.04s * 27_000_000 = 1,080_000 ticks.
@@ -273,7 +278,7 @@ mod tests {
         let view1 = PacketView::parse(&pkt1).unwrap();
         tracker.observe(0, &view1);
 
-        assert_eq!(tracker.bitrate_bps(), 0);
+        assert_eq!(tracker.bitrate_bps().get(), 0);
         assert_eq!(tracker.snapshot().pcr_count, 1);
 
         // Second packet establishes initial instant bitrate (4,000,000 bps)
@@ -286,7 +291,7 @@ mod tests {
         let view2 = PacketView::parse(&pkt2).unwrap();
         tracker.observe(delta_bytes, &view2);
 
-        assert_eq!(tracker.bitrate_bps(), 4_000_000);
+        assert_eq!(tracker.bitrate_bps().get(), 4_000_000);
         assert_eq!(tracker.snapshot().pcr_count, 2);
 
         // Third packet: higher instant rate (5 Mbps: 25,000 bytes over same 40ms)
@@ -303,13 +308,13 @@ mod tests {
 
         // Instant rate was 5,000,000.
         // EMA: (4_000_000 * 4 + 5_000_000) / 5 = 21_000_000 / 5 = 4_200_000 bps.
-        assert_eq!(tracker.bitrate_bps(), 4_200_000);
+        assert_eq!(tracker.bitrate_bps().get(), 4_200_000);
     }
 
     #[test]
     fn pcr_rollover_handling() {
         let mut tracker = PcrTracker::new();
-        tracker.rebind(Some(100));
+        tracker.rebind(Pid::new(100));
 
         // PCR near modulus: (PCR_MODULUS - 540_000) (20ms before wrap)
         let ticks1 = PCR_MODULUS - 540_000;
@@ -335,13 +340,13 @@ mod tests {
         let view2 = PacketView::parse(&pkt2).unwrap();
         tracker.observe(20_000, &view2);
 
-        assert_eq!(tracker.bitrate_bps(), 4_000_000);
+        assert_eq!(tracker.bitrate_bps().get(), 4_000_000);
     }
 
     #[test]
     fn pending_discontinuity_latched_and_cleared() {
         let mut tracker = PcrTracker::new();
-        tracker.rebind(Some(100));
+        tracker.rebind(Pid::new(100));
 
         // Initial sample
         let pkt1 = make_pcr_packet(100, false, false, Some((10_000, 0)));
@@ -361,9 +366,9 @@ mod tests {
         tracker.observe(376, &view2);
 
         // Because discontinuity was latched, baseline re-anchored without updating rate
-        assert_eq!(tracker.bitrate_bps(), 0);
+        assert_eq!(tracker.bitrate_bps().get(), 0);
         assert_eq!(tracker.snapshot().pcr_count, 2);
-        assert_eq!(tracker.snapshot().last_pcr_offset, 376);
+        assert_eq!(tracker.snapshot().last_pcr_offset, ByteOffset::new(376));
 
         // Subsequent normal packet updates rate normally
         let delta_ticks: u64 = 1_080_000;
@@ -377,13 +382,13 @@ mod tests {
         let view3 = PacketView::parse(&pkt3).unwrap();
         tracker.observe(20_376, &view3);
 
-        assert_eq!(tracker.bitrate_bps(), 4_000_000);
+        assert_eq!(tracker.bitrate_bps().get(), 4_000_000);
     }
 
     #[test]
     fn tei_invalidates_baseline() {
         let mut tracker = PcrTracker::new();
-        tracker.rebind(Some(100));
+        tracker.rebind(Pid::new(100));
 
         // Initial sample
         let pkt1 = make_pcr_packet(100, false, false, Some((10_000, 0)));
@@ -403,14 +408,14 @@ mod tests {
         let view3 = PacketView::parse(&pkt3).unwrap();
         tracker.observe(40_000, &view3);
 
-        assert_eq!(tracker.bitrate_bps(), 0);
-        assert_eq!(tracker.snapshot().last_pcr_offset, 40_000);
+        assert_eq!(tracker.bitrate_bps().get(), 0);
+        assert_eq!(tracker.snapshot().last_pcr_offset, ByteOffset::new(40_000));
     }
 
     #[test]
     fn unannounced_jump_exceeding_threshold_reanchors() {
         let mut tracker = PcrTracker::new();
-        tracker.rebind(Some(100));
+        tracker.rebind(Pid::new(100));
 
         let pkt1 = make_pcr_packet(100, false, false, Some((10_000, 0)));
         let view1 = PacketView::parse(&pkt1).unwrap();
@@ -429,7 +434,7 @@ mod tests {
         tracker.observe(20_000, &view2);
 
         // Re-anchored without updating rate
-        assert_eq!(tracker.bitrate_bps(), 0);
-        assert_eq!(tracker.snapshot().last_pcr_offset, 20_000);
+        assert_eq!(tracker.bitrate_bps().get(), 0);
+        assert_eq!(tracker.snapshot().last_pcr_offset, ByteOffset::new(20_000));
     }
 }

@@ -8,6 +8,7 @@ use super::video::{
 };
 use super::{VideoEvent, VideoIngress};
 use crate::psi::VideoCodec;
+use crate::timing::{ByteOffset, Pid, RawDts33, RawPts33, TimingField};
 use crate::transport::TS_PACKET_LEN;
 
 const PROGRAM: u16 = 1;
@@ -1008,7 +1009,7 @@ fn test_set_target_program_emits_identity_events() {
 fn test_ingress_timing_tracking() {
     let (mut ingress, mut offset) = standard_setup();
 
-    assert_eq!(ingress.timing_snapshot().pcr_pid, Some(VIDEO_PID));
+    assert_eq!(ingress.timing_snapshot().pcr_pid, Pid::new(VIDEO_PID));
     assert_eq!(ingress.timing_snapshot().pcr_count, 0);
 
     let make_pcr = |pid: u16, base: u64, ext: u16| -> Vec<u8> {
@@ -1042,6 +1043,188 @@ fn test_ingress_timing_tracking() {
 
     let snap = ingress.timing_snapshot();
     assert_eq!(snap.pcr_count, 2);
-    assert_eq!(snap.bitrate_bps, 4_000_000);
-    assert_eq!(snap.last_pcr_offset, offset);
+    assert_eq!(snap.bitrate_bps.get(), 4_000_000);
+    assert_eq!(snap.last_pcr_offset, ByteOffset::new(offset));
+}
+
+fn encode_ts(prefix: u8, val: u64) -> [u8; 5] {
+    let mut b = [0u8; 5];
+    b[0] = (prefix << 4) | (u8::try_from((val >> 29) & 0x0E).unwrap()) | 1;
+    b[1] = u8::try_from((val >> 22) & 0xFF).unwrap();
+    b[2] = (u8::try_from((val >> 14) & 0xFE).unwrap()) | 1;
+    b[3] = u8::try_from((val >> 7) & 0xFF).unwrap();
+    b[4] = (u8::try_from((val << 1) & 0xFE).unwrap()) | 1;
+    b
+}
+
+#[test]
+fn test_video_timing_event_single_and_split() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Single packet PUSI with complete PES header and PTS (flags == 10)
+    let target_pts = 90_000 * 5; // 5.0 seconds
+    let mut pes_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pes_payload.extend_from_slice(&encode_ts(0b0010, target_pts));
+    pes_payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]); // AUD NAL
+    let pkt1 = make_ts_packet(VIDEO_PID, true, 0, 0, false, &pes_payload);
+
+    let outcome1 = ingress.ingest(offset, &pkt1).expect("ingest pkt1");
+    assert_eq!(outcome1.timing_events.len(), 1);
+    let evt1 = outcome1.timing_events[0];
+    assert_eq!(evt1.pid, Pid::new(VIDEO_PID).unwrap());
+    assert_eq!(evt1.observed_at, ByteOffset::new(offset));
+    assert_eq!(evt1.subject_at, ByteOffset::new(offset));
+    assert_eq!(
+        evt1.timing.pts,
+        TimingField::Valid(RawPts33::new(target_pts).unwrap())
+    );
+    assert!(evt1.timing.dts.is_absent());
+
+    offset += PACKET_LEN_I64;
+
+    // 2. Split PES header: PUSI packet contains only 10 bytes of PES (9 fixed + 1 PTS byte)
+    let split_pts = 90_000 * 6;
+    let enc_pts = encode_ts(0b0010, split_pts);
+    let mut pusi_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pusi_payload.push(enc_pts[0]);
+    let pkt2 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &pusi_payload);
+
+    let pusi_offset = offset;
+    let outcome2 = ingress.ingest(offset, &pkt2).expect("ingest pkt2");
+    // Prefix not yet complete -> 0 timing events emitted
+    assert_eq!(outcome2.timing_events.len(), 0);
+
+    offset += PACKET_LEN_I64;
+
+    // Continuation packet contains remaining 4 bytes of PTS + ES bytes
+    let mut cont_payload = enc_pts[1..].to_vec();
+    cont_payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]);
+    let pkt3 = make_ts_packet(VIDEO_PID, false, 2, 0, false, &cont_payload);
+
+    let outcome3 = ingress.ingest(offset, &pkt3).expect("ingest pkt3");
+    // Prefix complete -> timing event emitted with dual coordinates!
+    assert_eq!(outcome3.timing_events.len(), 1);
+    let evt3 = outcome3.timing_events[0];
+    assert_eq!(evt3.pid, Pid::new(VIDEO_PID).unwrap());
+    assert_eq!(evt3.observed_at, ByteOffset::new(offset)); // observed on continuation packet
+    assert_eq!(evt3.subject_at, ByteOffset::new(pusi_offset)); // subject at PUSI packet
+    assert_eq!(
+        evt3.timing.pts,
+        TimingField::Valid(RawPts33::new(split_pts).unwrap())
+    );
+}
+
+#[test]
+fn test_audio_timing_events_on_all_pmt_declared_tracks() {
+    let mut ingress = VideoIngress::new(PROGRAM);
+    let mut data = pat_packet(0);
+
+    // PMT declares:
+    // Video: PID 0x100
+    // Audio 1 (AC-3, stream_type 0x06 with DVB AC-3): PID 0x101
+    // Audio 2 (MP2, stream_type 0x03, non-observable): PID 0x102
+    let audio1_pid = 0x0101;
+    let audio2_pid = 0x0102;
+    let mut pmt_payload = vec![
+        0xE0 | u8::try_from(VIDEO_PID >> 8).unwrap(),
+        u8::try_from(VIDEO_PID & 0xFF).unwrap(),
+        0xF0,
+        0x00, // program_info_length
+        // Stream 1: Video (0x1B = H.264)
+        0x1B,
+        0xE0 | u8::try_from(VIDEO_PID >> 8).unwrap(),
+        u8::try_from(VIDEO_PID & 0xFF).unwrap(),
+        0xF0,
+        0x00,
+        // Stream 2: Audio 1 (0x06 with AC-3 descriptor tag 0x6A)
+        0x06,
+        0xE0 | u8::try_from(audio1_pid >> 8).unwrap(),
+        u8::try_from(audio1_pid & 0xFF).unwrap(),
+        0xF0,
+        0x03, // descriptor length 3
+        0x6A, // DVB AC-3 descriptor
+        0x01, // descriptor length 1
+        0x00, // component type
+        // Stream 3: Audio 2 (0x03 = ISO/IEC 11172-3 Audio / MP2, non-observable)
+        0x03,
+        0xE0 | u8::try_from(audio2_pid >> 8).unwrap(),
+        u8::try_from(audio2_pid & 0xFF).unwrap(),
+        0xF0,
+        0x00,
+    ];
+    let sect = section(0x02, PROGRAM, 0, &pmt_payload);
+    let mut pkt_payload = vec![0x00];
+    pkt_payload.extend_from_slice(&sect);
+    data.extend_from_slice(&make_ts_packet(PMT_PID, true, 0, 0, false, &pkt_payload));
+
+    let outcome = ingress.ingest(0, &data).expect("setup");
+    let mut offset = outcome.processed_through;
+
+    // 1. Packet on Audio 1 (AC-3, PID 0x101) with PTS + DTS
+    let ac3_pts = 90_000 * 10;
+    let ac3_dts = 90_000 * 9;
+    let mut ac3_payload = vec![0x00, 0x00, 0x01, 0xBD, 0x00, 0x00, 0x80, 0xC0, 0x0A];
+    ac3_payload.extend_from_slice(&encode_ts(0b0011, ac3_pts));
+    ac3_payload.extend_from_slice(&encode_ts(0b0001, ac3_dts));
+    ac3_payload.extend_from_slice(&[0x0B, 0x77]); // AC-3 sync
+    let pkt_ac3 = make_ts_packet(audio1_pid, true, 0, 0, false, &ac3_payload);
+
+    let outcome_ac3 = ingress.ingest(offset, &pkt_ac3).expect("ingest ac3");
+    assert_eq!(outcome_ac3.timing_events.len(), 1);
+    let evt_ac3 = outcome_ac3.timing_events[0];
+    assert_eq!(evt_ac3.pid, Pid::new(audio1_pid).unwrap());
+    assert_eq!(
+        evt_ac3.timing.pts,
+        TimingField::Valid(RawPts33::new(ac3_pts).unwrap())
+    );
+    assert_eq!(
+        evt_ac3.timing.dts,
+        TimingField::Valid(RawDts33::new(ac3_dts).unwrap())
+    );
+
+    offset += PACKET_LEN_I64;
+
+    // 2. Packet on Audio 2 (MP2, PID 0x102, non-observable) with PTS
+    let mp2_pts = 90_000 * 15;
+    let mut mp2_payload = vec![0x00, 0x00, 0x01, 0xC0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    mp2_payload.extend_from_slice(&encode_ts(0b0010, mp2_pts));
+    mp2_payload.extend_from_slice(&[0xFF, 0xFD]); // MP2 sync
+    let pkt_mp2 = make_ts_packet(audio2_pid, true, 0, 0, false, &mp2_payload);
+
+    let outcome_mp2 = ingress.ingest(offset, &pkt_mp2).expect("ingest mp2");
+    assert_eq!(outcome_mp2.timing_events.len(), 1);
+    let evt_mp2 = outcome_mp2.timing_events[0];
+    assert_eq!(evt_mp2.pid, Pid::new(audio2_pid).unwrap());
+    assert_eq!(
+        evt_mp2.timing.pts,
+        TimingField::Valid(RawPts33::new(mp2_pts).unwrap())
+    );
+    assert!(evt_mp2.timing.dts.is_absent());
+}
+
+#[test]
+fn test_timing_assembler_resets_on_tei_and_cc_break() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // Start a split PES on VIDEO_PID (9 fixed bytes + 1 PTS byte)
+    let pts = 90_000 * 20;
+    let enc_pts = encode_ts(0b0010, pts);
+    let mut pusi_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pusi_payload.push(enc_pts[0]);
+    let pkt1 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &pusi_payload);
+    ingress.ingest(offset, &pkt1).expect("ingest pkt1");
+    offset += PACKET_LEN_I64;
+
+    // Send a TEI packet on VIDEO_PID
+    let pkt_tei = make_ts_packet(VIDEO_PID, false, 2, 0, true, &[0xFF; 20]);
+    ingress.ingest(offset, &pkt_tei).expect("ingest tei");
+    offset += PACKET_LEN_I64;
+
+    // Continuation packet arrives (CC = 3): because TEI reset the assembler,
+    // this continuation packet must not complete the corrupted prior PES header!
+    let mut cont_payload = enc_pts[1..].to_vec();
+    cont_payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]);
+    let pkt3 = make_ts_packet(VIDEO_PID, false, 3, 0, false, &cont_payload);
+    let outcome = ingress.ingest(offset, &pkt3).expect("ingest pkt3");
+    assert_eq!(outcome.timing_events.len(), 0);
 }
