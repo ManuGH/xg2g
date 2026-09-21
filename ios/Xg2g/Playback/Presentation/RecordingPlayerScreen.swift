@@ -73,7 +73,7 @@ struct RecordingPlayerScreen: View {
                     minimizePlayer()
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.app(size: 14, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial, in: Circle())
@@ -157,7 +157,7 @@ struct RecordingPlayerScreen: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.app(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
@@ -185,13 +185,13 @@ struct RecordingPlayerScreen: View {
                             .shadow(color: palette.accent.opacity(0.35), radius: 16, y: 6)
 
                         Image(systemName: palette.icon)
-                            .font(.system(size: 36, weight: .semibold))
+                            .font(.app(size: 36, weight: .semibold))
                             .foregroundStyle(.white)
                     }
 
                     VStack(spacing: 6) {
                         Text(recording.title)
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -199,14 +199,14 @@ struct RecordingPlayerScreen: View {
 
                         HStack(spacing: 8) {
                             Text(recording.formattedDate)
-                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .font(.app(size: 13, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             Text("•")
                                 .foregroundStyle(Theme.Colors.textDisabled)
 
                             Text(recording.formattedDuration)
-                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 13, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(palette.accent)
                         }
                     }
@@ -218,7 +218,7 @@ struct RecordingPlayerScreen: View {
                             .scaleEffect(0.9)
 
                         Text(initialPosition != nil && initialPosition! > 5 ? "Fortsetzen wird geladen…" : "Wiedergabe wird gestartet…")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.app(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
                     .padding(.horizontal, 16)
@@ -238,11 +238,11 @@ struct RecordingPlayerScreen: View {
     private var errorStateView: some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 40))
+                .font(.app(size: 40))
                 .foregroundStyle(Color.red)
 
             Text(errorMessage ?? "Aufnahme konnte nicht geladen werden")
-                .font(.system(size: 15, weight: .medium))
+                .font(.app(size: 15, weight: .medium))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

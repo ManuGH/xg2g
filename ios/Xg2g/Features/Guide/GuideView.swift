@@ -18,6 +18,7 @@ import SwiftUI
 struct GuideView: View {
 
     @Bindable var model: AppModel
+    var hubMode: Binding<TVGuideHubView.TVGuideHubMode>? = nil
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     @State private var mode: GuideMode = .onAir
@@ -57,10 +58,41 @@ struct GuideView: View {
 #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { bouquetMenu }
-                ToolbarItem(placement: .principal) { modePicker }
-                ToolbarItem(placement: .topBarTrailing) { genreMenu }
+                ToolbarItem(placement: .principal) {
+                    if let hubMode {
+                        Picker("Ansicht", selection: hubMode) {
+                            Text("Sender").tag(TVGuideHubView.TVGuideHubMode.channels)
+                            Text("Programm").tag(TVGuideHubView.TVGuideHubMode.guide)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    } else {
+                        modePicker
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 8) {
+                        if hubMode != nil {
+                            Menu {
+                                Picker("Darstellung", selection: $mode.animation(.easeInOut(duration: 0.2))) {
+                                    ForEach(GuideMode.allCases) { m in
+                                        Label(m.rawValue, systemImage: m.symbol).tag(m)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: mode.symbol)
+                                    .font(.app(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                            }
+                        }
+                        genreMenu
+                    }
+                }
             }
+#if !os(tvOS)
+            // tvOS routes search through its own tab (`SearchView`).
             .searchable(text: $guideSearchText, prompt: "Sendung oder Sender suchen…")
+#endif
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
@@ -129,9 +161,9 @@ struct GuideView: View {
             } label: {
                 HStack(spacing: 5) {
                     Text(dayTitle(for: selectedDayOffset))
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.app(size: 13, weight: .bold))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.app(size: 10, weight: .bold))
                 }
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .padding(.horizontal, 11)
@@ -151,7 +183,7 @@ struct GuideView: View {
                             }
                         } label: {
                             Text(option.rawValue)
-                                .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
+                                .font(.app(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 6)
                                 .background(
@@ -221,7 +253,7 @@ struct GuideView: View {
             }
         } label: {
             Image(systemName: "tv.badge.wifi")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Colors.accentAction)
         }
         .accessibilityLabel("Senderliste: \(model.selectedBouquet?.name ?? "Alle Sender")")
@@ -245,7 +277,7 @@ struct GuideView: View {
             }
         } label: {
             Image(systemName: selectedGenre == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
         }
         .accessibilityLabel("Genre: \(selectedGenre.rawValue)")
@@ -424,9 +456,11 @@ struct GuideView: View {
             let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
             if ok {
                 triggerHaptic(.medium)
-                withAnimation {
-                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                }
+            } else {
+                Haptics.shared.notification(.error)
+            }
+            withAnimation {
+                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
             }
         }
     }

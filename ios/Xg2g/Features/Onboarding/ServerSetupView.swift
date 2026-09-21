@@ -19,7 +19,7 @@ struct ServerSetupView: View {
                 Spacer()
 
                 Image(systemName: "tv")
-                    .font(.system(size: 64))
+                    .font(.app(size: 64))
                     .foregroundStyle(Theme.Colors.accentAction)
                     .padding()
                     .background(Theme.Colors.surfaceGlass, in: Circle())
@@ -37,7 +37,7 @@ struct ServerSetupView: View {
                 }
 
                 VStack(spacing: 16) {
-                    TextField("tv.example oder xg2g.home.matrixcentral.de", text: $typed)
+                    TextField("https://tv.example.com oder 192.168.1.50:8089", text: $typed)
                         .padding()
                         .background(Theme.Colors.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -52,17 +52,10 @@ struct ServerSetupView: View {
                         .submitLabel(.go)
                         .onSubmit { connect() }
 
-                    HStack(spacing: 8) {
-                        Button {
-                            typed = "xg2g.home.matrixcentral.de"
-                            connect()
-                        } label: {
-                            Label("xg2g.home.matrixcentral.de", systemImage: "bolt.horizontal.circle")
-                                .font(.caption.weight(.medium))
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Theme.Colors.accentAction)
-                    }
+                    Text("Hostname, Domain oder IP-Adresse deines xg2g-Servers.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .multilineTextAlignment(.center)
 
                     if let error = model.lastError {
                         Text(error)

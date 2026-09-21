@@ -287,7 +287,7 @@ struct GuideGrid: View {
                 ChannelLogo(url: schedule.channel.logoURL, name: schedule.channel.name, size: 28)
 
                 Text(schedule.channel.name)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.app(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -295,6 +295,7 @@ struct GuideGrid: View {
             }
             .frame(width: Metrics.channelColumnWidth, height: Metrics.rowHeight)
             .contentShape(Rectangle())
+            .appHoverEffect(.highlight)
         }
         .buttonStyle(.plain)
     }
@@ -327,7 +328,7 @@ struct GuideGrid: View {
                 ForEach(0..<max(halfHourCount, 1), id: \.self) { index in
                     let isHour = isHourTick(index)
                     Text(Self.rulerFormatter.string(from: tickDate(index)))
-                        .font(.system(size: 11, weight: isHour ? .bold : .medium, design: .monospaced))
+                        .font(.app(size: 11, weight: isHour ? .bold : .medium, design: .monospaced))
                         .foregroundStyle(isHour ? Theme.Colors.textSecondary : Theme.Colors.textTertiary)
                         .monospacedDigit()
                         .offset(x: tickX(index) + 6, y: 9)
@@ -386,7 +387,7 @@ private struct GuideGridBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(show.title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.app(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
                 // Shrink before breaking: in a narrow block SwiftUI splits the
@@ -408,7 +409,7 @@ private struct GuideGridBlock: View {
             // pinned title must not push the clock reading out of view.
             if contentWidth > 46 {
                 Text(show.formattedStartTime)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.app(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(isLive ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -432,6 +433,7 @@ private struct GuideGridBlock: View {
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .appHoverEffect(.highlight)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)")
     }

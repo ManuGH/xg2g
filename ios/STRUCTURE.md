@@ -30,7 +30,7 @@ ios/
     Generated/           # Generated API contract; do not edit by hand
   Platforms/
     iOS/                 # Xg2gApp and iOS assets
-    tvOS/                # Xg2gTVApp, TVRootView and tvOS assets
+    tvOS/                # Xg2gTVApp (boots the shared RootView) and tvOS assets
   Xg2gTests/              # App, Features, Identity, Playback, Transport, Fixtures
   Support/               # Build configuration plists
 ```

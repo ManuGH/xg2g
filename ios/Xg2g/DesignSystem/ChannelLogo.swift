@@ -71,7 +71,7 @@ struct ChannelLogo: View {
                 )
 
             Text(String(name.prefix(2)).uppercased())
-                .font(.system(size: size * 0.35, weight: .bold, design: .rounded))
+                .font(.app(size: size * 0.35, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.Colors.textSecondary)
         }
         .frame(width: size, height: size)

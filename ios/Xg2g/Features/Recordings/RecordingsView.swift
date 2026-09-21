@@ -14,12 +14,23 @@ struct RecordingsView: View {
     enum CategoryFilter: String, CaseIterable, Identifiable {
         case all = "Alle"
         case offline = "Downloads"
-        case movies = "🎬 Spielfilme"
-        case series = "📺 Serien"
-        case sport = "⚽️ Sport"
-        case docus = "🌍 Dokus"
+        case movies = "Spielfilme"
+        case series = "Serien"
+        case sport = "Sport"
+        case docus = "Dokus"
 
         var id: String { rawValue }
+
+        var icon: String? {
+            switch self {
+            case .all: return nil
+            case .offline: return "arrow.down.circle.fill"
+            case .movies: return "film"
+            case .series: return "tv"
+            case .sport: return "figure.run"
+            case .docus: return "globe.europe.africa.fill"
+            }
+        }
     }
 
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -66,23 +77,23 @@ struct RecordingsView: View {
                                     }
                                 } label: {
                                     HStack(spacing: 6) {
-                                        if filter == .offline {
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.caption2)
+                                        if let icon = filter.icon {
+                                            Image(systemName: icon)
+                                                .font(.app(size: 11, weight: .semibold))
                                         }
                                         Text(filter.rawValue)
-                                            .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isSelected ? .bold : .medium))
 
                                         // Badge count for all or downloads
                                         if filter == .all && !model.recordings.isEmpty {
                                             Text("\(model.recordings.count)")
-                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                                 .padding(.horizontal, 5)
                                                 .padding(.vertical, 1)
                                                 .background(isSelected ? Theme.Colors.bgBase.opacity(0.3) : Theme.Colors.surfaceElevated, in: Capsule())
                                         } else if filter == .offline && !downloadManager.offlineRecordings.isEmpty {
                                             Text("\(downloadManager.offlineRecordings.count)")
-                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                                                 .padding(.horizontal, 5)
                                                 .padding(.vertical, 1)
                                                 .background(isSelected ? Theme.Colors.bgBase.opacity(0.3) : Theme.Colors.statusSuccess.opacity(0.25), in: Capsule())
@@ -104,6 +115,8 @@ struct RecordingsView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .appHoverEffect(.highlight)
                             }
                         }
                         .padding(.horizontal, 16)
@@ -135,7 +148,9 @@ struct RecordingsView: View {
             .sheet(isPresented: $showTimersSheet) {
                 TimersView(model: model)
             }
+#if !os(tvOS)
             .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
+#endif
             .sheet(item: $selectedDetailRecording) { rec in
                 RecordingDetailSheet(
                     recording: rec,
@@ -265,7 +280,7 @@ struct RecordingsView: View {
                         Spacer()
 
                         Text("\(filtered.count) Videos")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .font(.app(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .padding(.horizontal, 2)

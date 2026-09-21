@@ -19,14 +19,14 @@ struct AdaptiveAppNavigation: View {
                 switch model.selectedTab {
                 case .home:
                     HomeHubView(model: model)
-                case .liveTV:
-                    ChannelListView(model: model)
-                case .guide:
-                    GuideView(model: model)
+                case .liveTV, .guide:
+                    TVGuideHubView(model: model)
                 case .recordings:
                     RecordingsView(model: model)
                 case .timers:
                     TimersView(model: model)
+                case .search:
+                    SearchView(model: model)
                 case .settings:
                     SettingsView(model: model)
                 }

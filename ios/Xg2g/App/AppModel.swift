@@ -52,11 +52,12 @@ enum AppState: Equatable, Sendable {
 
 /// Top-level sections in the Broadcast Console.
 enum Tab: String, CaseIterable, Identifiable, Sendable {
-    case home = "Für dich"
-    case liveTV = "Live TV"
+    case home = "Home"
+    case liveTV = "TV & Guide"
     case guide = "Programm"
     case recordings = "Aufnahmen"
     case timers = "Timer"
+    case search = "Suche"
     case settings = "Einstellungen"
 
     var id: String { rawValue }
@@ -68,8 +69,32 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
         case .guide: return "calendar.badge.clock"
         case .recordings: return "play.rectangle.on.rectangle"
         case .timers: return "clock"
+        case .search: return "magnifyingglass"
         case .settings: return "gearshape"
         }
+    }
+
+    var shortcutCharacter: Character? {
+        switch self {
+        case .home: return "1"
+        case .liveTV: return "2"
+        case .guide: return "2"
+        case .recordings: return "3"
+        case .timers: return "4"
+        case .search: return "5"
+        case .settings: return ","
+        }
+    }
+
+    /// The tabs a platform lists in its top-level navigation.
+    ///
+    /// Consolidates Live TV and EPG into a unified "TV & Guide" screen.
+    static var navigationCases: [Tab] {
+#if os(tvOS)
+        [.home, .liveTV, .recordings, .search, .settings]
+#else
+        [.home, .liveTV, .recordings, .settings]
+#endif
     }
 }
 
@@ -247,18 +272,18 @@ final class AppModel {
 
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch"
-            case .native: return "Native Live-TV"
-            case .hls: return "Server-Streaming (HLS)"
+            case .auto: return "Hybrid (Automatisch)"
+            case .native: return "Reines Native TS"
+            case .hls: return "Immer HLS (Volles DVR)"
             }
         }
 
         /// One line for the settings row.
         var summary: String {
             switch self {
-            case .auto: return "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
-            case .native: return "xg2g liefert den Sender möglichst unverändert an den nativen Player"
-            case .hls: return "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
+            case .auto: return "Native Live-TV mit nahtlosem Timeshift bei Pause (Empfohlen)"
+            case .native: return "Minimale Latenz, keine Serverlast, kein Timeshift"
+            case .hls: return "Dauerhafter Timeshift-Puffer ab Sekunde 1 und freies Spulen"
             }
         }
 
@@ -268,39 +293,35 @@ final class AppModel {
             case .auto:
                 return (
                     gains: [
-                        "Der xg2g Planner wählt automatisch die optimale Pipeline",
-                        "Verlustfreies Streaming und niedrigste Latenz im Heimnetz",
-                        "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
+                        "Startet sofort mit minimaler Latenz im verlustfreien Native-Stream",
+                        "Automatischer Timeshift-Puffer ohne Zeitverlust bei Pause",
+                        "Optimale Balance aus Zapping-Tempo und vollem Funktionsumfang"
                     ],
                     costs: [
-                        "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
+                        "Vor dem ersten Pausieren ist kein Zurückspulen in die Vergangenheit möglich"
                     ]
                 )
             case .native:
                 return (
                     gains: [
-                        "Bild und Ton möglichst unverändert mit minimaler Latenz",
-                        "Deutlich schnelleres Umschalten (Hardware-Decoding)",
-                        "Minimale Serverlast (keine Video-Transkodierung)",
-                        "Näher am Live-Signal"
+                        "Bild und Ton absolut unverändert mit minimaler Latenz",
+                        "Deutlich schnellere Umschaltzeiten (Direct Hardware-Decoding)",
+                        "Minimale Serverlast (0% Transcode-CPU, schont Receiver-Tuner)"
                     ],
                     costs: [
-                        "Kein Pausieren oder Zurückspulen (Timeshift)",
-                        "Nur im selben Netzwerk wie der Ingest verfügbar",
-                        "Benötigt durchgehend die volle Bitrate des Senders"
+                        "Kein Timeshift: Pause stoppt den Stream, Fortsetzen springt ins Live-Signal"
                     ]
                 )
             case .hls:
                 return (
                     gains: [
-                        "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)",
-                        "Funktioniert auch zuverlässig außerhalb des Heimnetzes",
-                        "Adaptive Qualität bei schwankender Bandbreite",
-                        "AirPlay und System-Bildschirmübertragung"
+                        "Dauerhafter Puffer ab Sekunde 1 (sofortiges Zurückspulen jederzeit)",
+                        "Vollständige DVR-Funktionen (Pause, Scrubbing, Kapitel)",
+                        "Adaptive Bitrate bei schwankender Bandbreite und unterwegs"
                     ],
                     costs: [
-                        "Höhere Latenz als bei Native Live-TV",
-                        "Umschaltzeiten hängen von GOP-Segmenten ab"
+                        "Leicht erhöhte Start- und Umschaltzeit (~1-2 Sekunden Latenz)",
+                        "Kontinuierliche Remux-/Transcode-Sitzung auf dem Server"
                     ]
                 )
             }
@@ -715,6 +736,11 @@ final class AppModel {
         self.addressStore = addressStore
         self.credentials = credentials
         self.keyStore = keyStore
+        if CommandLine.arguments.contains("--tab-recordings") {
+            self.selectedTab = .recordings
+        } else if CommandLine.arguments.contains("--tab-search") {
+            self.selectedTab = .search
+        }
     }
 
     // MARK: - Launch
@@ -1103,12 +1129,20 @@ final class AppModel {
     // MARK: - Device description
 
     private static var deviceType: DeviceType {
-        UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+#if os(tvOS)
+        return .appleTV
+#else
+        return UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+#endif
     }
 
     private static var deviceName: String {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
+#if os(tvOS)
+        return name.isEmpty ? "Apple TV" : name
+#else
         return name.isEmpty ? "iPhone" : name
+#endif
     }
 
     // MARK: - Download Auth Access

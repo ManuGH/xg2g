@@ -437,6 +437,57 @@ Run the same tvOS gate locally with `make verify-tvos-build`, or select one
 configuration with `ios/scripts/verify-tvos-build.sh Debug`. A missing or older
 tvOS SDK fails the gate rather than silently skipping it.
 
+### tvOS: its own home and channel screens on the shared model
+
+Verified on the tvOS 27.0 simulator (Apple TV 4K, 3rd generation) against the
+staging backend on 2026-09-20: pairing, the home screen, the channel grid, the
+guide, recordings and native TS live playback (ORF1 HD 1080i50, hardware
+decode, 50 fps, no drops) all work, driven by the Siri Remote through Xcode
+27's device-interaction MCP.
+
+The phone hub and channel list were tried on the television first and did not
+survive it: a screen mixed 9-point captions with 67-point system chrome, and
+after scaling the type the phone-sized cards truncated every title. The
+television therefore has its own screens in `Platforms/tvOS/Screens/`, built
+on the same `AppModel`:
+
+- `TVHomeView`: one hero (what is on now on the first favourite), then shelves
+  of equal cards for recently watched, on now, tonight at 20:15, and
+  recordings.
+- `TVChannelGridView`: the channel list as a five-column grid of logo tiles
+  with the current title and a progress line.
+- `TVDesign`: three text sizes (44 hero, 24 body, 20 meta), one card size,
+  one gutter, `TVCardButtonStyle` for focus (border, lift, shadow; no white
+  platter). No monospaced type and no upper-case labels on the television.
+
+The remaining tabs still render the shared views, with these tvOS adjustments
+behind `#if os(tvOS)`:
+
+- **Search is a tab** (`SearchView`, `Tab.search`); the navigation-bar search
+  fields of the hub and the guide are not built for tvOS, because a focused
+  field there unfolds the inline keyboard over the content.
+- **Tab items are text**: with icons, six labels overflow the bar.
+- **`Font.app(size:)`** replaces the literal `.system(size:)` sizes and maps
+  them onto a television scale (18–20 meta, 24 titles, 28–34 headings) on
+  tvOS, unchanged on iOS.
+- **Rows keep their surface under focus** (`TVFocusRowButtonStyle`), and
+  `ChannelRow` is a button rather than a tap gesture, which the remote cannot
+  select.
+- **Menu leaves the player and stops it**; the mini-player bar is a phone
+  idiom. The live player cover ignores the safe area on tvOS.
+
+Still open: the guide, recordings and settings are phone layouts with scaled
+type; the hub's `RecentChannelCard` and the prime-time cards are not focus
+targets (tap gestures) and are superseded on tvOS by `TVHomeView`; the tvOS
+app icon layers and Top Shelf image are empty placeholders.
+
+Driving the simulator: `xcrun simctl` and `devicectl` offer no remote input.
+Xcode 27's MCP server does, through `DeviceInteractionStartSession` and
+`DeviceInteractionSynthesize` with commands such as `r down`, `r select`,
+`r menu` (space-separated to chain, `w 2` to wait); each call returns a
+screenshot and an accessibility hierarchy that marks the focused element.
+`ios/scripts/xcode-mcp.py` (PR #1006) wraps the transport.
+
 ### Host encoding: punycode only
 
 **Punycode is the only accepted non-ASCII domain representation.** A Unicode

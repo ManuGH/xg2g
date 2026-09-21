@@ -16,16 +16,16 @@ struct FavoritesQuickRail: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.app(size: 13, weight: .bold))
                     .foregroundStyle(.yellow)
-                Text("MEINE FAVORITEN")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                Text("Meine Favoriten")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
 
                 Spacer()
 
                 Text("\(channels.count) Sender")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.subheadline)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .padding(.horizontal, 2)
@@ -45,7 +45,7 @@ struct FavoritesQuickRail: View {
                                     HStack(spacing: 4) {
                                         if let number = channel.number {
                                             Text(number)
-                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                .font(.app(size: 9, weight: .bold, design: .monospaced))
                                                 .foregroundStyle(Theme.Colors.accentAction)
                                                 .padding(.horizontal, 4)
                                                 .padding(.vertical, 1)
@@ -53,25 +53,25 @@ struct FavoritesQuickRail: View {
                                         }
 
                                         Text(channel.name)
-                                            .font(.system(size: 13, weight: .bold))
+                                            .font(.app(size: 14, weight: .bold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
                                             .lineLimit(1)
                                     }
 
                                     if let now = nowNext?.now {
                                         Text(now.title)
-                                            .font(.system(size: 11, weight: .medium))
+                                            .font(.app(size: 12, weight: .medium))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                             .lineLimit(1)
                                     } else {
                                         Text("Live TV")
-                                            .font(.system(size: 11))
+                                            .font(.app(size: 12))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                     }
                                 }
 
                                 Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 18))
+                                    .font(.app(size: 18))
                                     .foregroundStyle(Theme.Colors.accentAction)
                                     .padding(.leading, 2)
                             }
@@ -84,6 +84,8 @@ struct FavoritesQuickRail: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .appHoverEffect(.highlight)
                     }
                 }
             }

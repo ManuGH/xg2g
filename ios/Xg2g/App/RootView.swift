@@ -18,7 +18,14 @@ struct RootView: View {
         RootContentView(model: model, playbackManager: model.playbackManager)
             .preferredColorScheme(.dark)
             .tint(Theme.Colors.accentAction)
-            .task { await model.start() }
+            .task {
+                await model.start()
+                if let autoplay = ProcessInfo.processInfo.environment["XG2G_AUTOPLAY_CHANNEL"], !autoplay.isEmpty {
+                    if let target = model.channels.first(where: { $0.id == autoplay || $0.serviceRef == autoplay || $0.name.localizedCaseInsensitiveContains(autoplay) }) {
+                        model.playingChannel = target
+                    }
+                }
+            }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     Task { await model.handleAppBecameActive() }
@@ -37,6 +44,11 @@ struct RootView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 Task { await model.handleAppBecameActive() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .selectAppTab)) { notification in
+                if let tab = notification.userInfo?["tab"] as? Tab {
+                    model.selectedTab = tab
+                }
+            }
             .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
                 guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
                 Task { @MainActor in
@@ -45,6 +57,23 @@ struct RootView: View {
                     }
                     if let target = model.channels.first(where: { $0.id == serviceRef || $0.serviceRef == serviceRef }) {
                         model.playingChannel = target
+                    }
+                }
+            }
+            .onOpenURL { url in
+                guard url.scheme == "xg2g" else { return }
+                if url.host == "play" || url.path.contains("play") {
+                    let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+                    let serviceRef = comps?.queryItems?.first(where: { $0.name == "channel" || $0.name == "serviceRef" })?.value
+                    if let serviceRef {
+                        Task { @MainActor in
+                            if model.channels.isEmpty {
+                                await model.loadChannels()
+                            }
+                            if let target = model.channels.first(where: { $0.id == serviceRef || $0.serviceRef == serviceRef || $0.name.lowercased() == serviceRef.lowercased() }) {
+                                model.playingChannel = target
+                            }
+                        }
                     }
                 }
             }

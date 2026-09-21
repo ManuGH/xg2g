@@ -40,21 +40,21 @@ struct PlaybackProgressView: View {
 
             HStack {
                 Text(startTime)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.app(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
 
                 Spacer()
 
                 if let remainingText {
                     Text(remainingText)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.app(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentLive)
                 }
 
                 Spacer()
 
                 Text(endTime)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.app(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }

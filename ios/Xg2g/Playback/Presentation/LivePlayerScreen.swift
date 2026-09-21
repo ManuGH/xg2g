@@ -56,9 +56,14 @@ public struct LivePlayerScreen: View {
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
+    @State private var zappingOSDChannel: ChannelPreset?
+    @State private var hideZapOSDTask: Task<Void, Never>?
     @State private var currentSubtitleImage: CGImage?
     @State private var verticalDragOffset: CGFloat = 0
     @State private var isDraggingDown: Bool = false
+#if os(tvOS)
+    @FocusState private var isPlayPauseFocused: Bool
+#endif
 
     private struct ChannelPreset: Identifiable, Hashable {
         var id: String { serviceRef }
@@ -277,7 +282,7 @@ public struct LivePlayerScreen: View {
                             aspectRatioOverride: viewPreset.aspectRatio
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
-                        .opacity(engineMode == .nativeDirectLive ? 1.0 : 0.0)
+                        .opacity((engineMode == .nativeDirectLive || isTimeshiftLoading) ? 1.0 : 0.0)
 
                         // 1b. HLS Timeshift Player Stage (AVPlayer)
                         if let tsPlayer = timeshiftPlayer {
@@ -287,26 +292,27 @@ public struct LivePlayerScreen: View {
                                 onDismiss: { closePlayer() }
                             )
                             .ignoresSafeArea(edges: isLandscape ? .all : [])
-                            .opacity(engineMode == .timeshiftHLS ? 1.0 : 0.0)
+                            .opacity((engineMode == .timeshiftHLS && !isTimeshiftLoading) ? 1.0 : 0.0)
                         }
 
                         // 1c. Timeshift Loading Indicator Overlay
                         if isTimeshiftLoading {
-                            ZStack {
-                                Color.black.opacity(0.4)
+                            VStack {
+                                Spacer()
                                 HStack(spacing: 8) {
                                     ProgressView()
                                         .tint(Theme.Colors.accentLive)
-                                        .scaleEffect(0.9)
-                                    Text("Timeshift wird vorbereitet…")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .scaleEffect(0.8)
+                                    Text(isPlaying ? "Timeshift wird vorbereitet…" : "Pausiert · Timeshift-Puffer wird aufgebaut…")
+                                        .font(.app(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                 .shadow(color: Color.black.opacity(0.4), radius: 8)
+                                .padding(.bottom, isLandscape ? 40 : 100)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)
@@ -356,6 +362,21 @@ public struct LivePlayerScreen: View {
                         }
                     }
 #if os(iOS)
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active:
+                            if !showControls {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showControls = true
+                                }
+                            }
+                            scheduleControlsAutoHide()
+                        case .ended:
+                            scheduleControlsAutoHide()
+                        }
+                    }
+#endif
+#if os(iOS)
                     .gesture(
                         DragGesture(minimumDistance: 15)
                             .onChanged { value in
@@ -396,10 +417,10 @@ public struct LivePlayerScreen: View {
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(requested.name)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.app(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
                                     Text("Wird vorbereitet…")
-                                        .font(.system(size: 10, weight: .regular))
+                                        .font(.app(size: 10, weight: .regular))
                                         .foregroundStyle(.white.opacity(0.8))
                                 }
                             }
@@ -413,8 +434,13 @@ public struct LivePlayerScreen: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
                     }
-                    .overlay(alignment: .center) {
-                        if let zapToast {
+                    .overlay(alignment: .bottom) {
+                        if let osd = zappingOSDChannel {
+                            zappingOSDBanner(for: osd)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, isLandscape ? 28 : (showPortraitDrawer ? 20 : 80))
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else if let zapToast {
                             Text(zapToast)
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(.white)
@@ -423,6 +449,7 @@ public struct LivePlayerScreen: View {
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                 .shadow(color: Color.black.opacity(0.4), radius: 8)
+                                .padding(.bottom, isLandscape ? 36 : 90)
                                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                         }
                     }
@@ -444,6 +471,42 @@ public struct LivePlayerScreen: View {
                     videoOverlayControls(isLandscape: isLandscape, safeInsets: geometry.safeAreaInsets)
                         .transition(.opacity)
                 }
+
+#if os(tvOS)
+                // Siri Remote background receiver when controls are hidden
+                if !showControls && !showHUD && !showLandscapeZapBar {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showControls = true
+                        }
+                        scheduleControlsAutoHide()
+                    } label: {
+                        Color.clear
+                    }
+                    .buttonStyle(TVPlayerInvisibleButtonStyle())
+                    .focusEffectDisabled()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .onMoveCommand { direction in
+                        switch direction {
+                        case .left:
+                            zapRelative(delta: -1)
+                        case .right:
+                            zapRelative(delta: 1)
+                        case .up, .down:
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showControls = true
+                            }
+                            scheduleControlsAutoHide()
+                        @unknown default:
+                            break
+                        }
+                    }
+                    .onPlayPauseCommand {
+                        togglePlayPause()
+                    }
+                }
+#endif
 
                 // 3. Floating Telemetry Inspector Modal
                 if showHUD {
@@ -480,6 +543,51 @@ public struct LivePlayerScreen: View {
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+
+#if os(iOS)
+                LivePlayerKeyboardShortcuts(
+                    isLandscape: isLandscape,
+                    engineMode: engineMode,
+                    presentationPath: presentationPath,
+                    togglePlayPause: {
+                        togglePlayPause()
+                        scheduleControlsAutoHide()
+                    },
+                    zapRelative: { delta in
+                        zapRelative(delta: delta)
+                        scheduleControlsAutoHide()
+                    },
+                    seekTimeshiftRelative: { delta in
+                        seekTimeshiftRelative(delta)
+                        scheduleControlsAutoHide()
+                    },
+                    enterTimeshift: { secs in
+                        enterTimeshift(seekBackSeconds: secs)
+                        scheduleControlsAutoHide()
+                    },
+                    displayZapToast: { msg in
+                        displayZapToast(msg)
+                    },
+                    toggleZapDrawer: { isLand in
+                        handleKeyboardToggleZapDrawer(isLandscape: isLand)
+                    },
+                    cycleViewPreset: {
+                        cycleViewPreset()
+                    },
+                    toggleHUD: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showHUD.toggle()
+                        }
+                    },
+                    startPiP: {
+                        Haptics.shared.impact(.light)
+                        coordinator.surface.startPictureInPicture()
+                    },
+                    handleEscape: {
+                        handleKeyboardEscape()
+                    }
+                )
+#endif
             }
 #if !os(tvOS)
             .statusBarHidden(isLandscape)
@@ -490,8 +598,52 @@ public struct LivePlayerScreen: View {
             .clipShape(RoundedRectangle(cornerRadius: isDraggingDown ? min(32, verticalDragOffset / 4) : 0, style: .continuous))
             .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.85), value: verticalDragOffset)
         }
+#if os(tvOS)
+        .onExitCommand {
+            if showLandscapeZapBar {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showLandscapeZapBar = false
+                }
+            } else if showHUD {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showHUD = false
+                }
+            } else if showControls {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showControls = false
+                }
+            } else {
+                closePlayer()
+            }
+        }
+        .onPlayPauseCommand {
+            togglePlayPause()
+        }
+        .onChange(of: showControls) { _, isShowing in
+            if isShowing {
+                isPlayPauseFocused = true
+            }
+        }
+#endif
         .onAppear {
             setupPlayback()
+#if os(tvOS)
+            isPlayPauseFocused = true
+#endif
+        }
+        .task {
+            #if DEBUG
+            if let pauseDelayStr = ProcessInfo.processInfo.environment["XG2G_TEST_PAUSE_AFTER_SECONDS"],
+               let pauseDelay = Double(pauseDelayStr) {
+                try? await Task.sleep(for: .seconds(pauseDelay))
+                togglePlayPause()
+                if let resumeDelayStr = ProcessInfo.processInfo.environment["XG2G_TEST_RESUME_AFTER_SECONDS"],
+                   let resumeDelay = Double(resumeDelayStr) {
+                    try? await Task.sleep(for: .seconds(resumeDelay))
+                    togglePlayPause()
+                }
+            }
+            #endif
         }
         .onDisappear {
             if playbackManager.presentationMode == .hidden {
@@ -544,8 +696,13 @@ public struct LivePlayerScreen: View {
                 let userFriendly: String
                 if reason.contains("scrambled") || reason.contains("descrambled") {
                     userFriendly = "Verschlüsselt (Smartcard erforderlich)"
-                } else if reason.contains("admission") || reason.contains("tuner") {
-                    userFriendly = "Alle Tuner belegt"
+                } else if reason.contains("admission") || reason.contains("tuner") || reason.contains("busy") || reason.contains("R_LEASE_BUSY") || reason.contains("1452") {
+                    let now = Date()
+                    if let activeTimer = model?.timers.first(where: { $0.isRunning || ($0.beginDate <= now && $0.endDate >= now) }) {
+                        userFriendly = "Tuner belegt durch Aufnahme: „\(activeTimer.name)“"
+                    } else {
+                        userFriendly = "Alle Tuner belegt (Aufnahme oder Receiver ausgelastet)"
+                    }
                 } else if reason.contains("unpresentable") || reason.contains("attach") {
                     userFriendly = "Kein Signal / Stream nicht empfangbar"
                 } else if isNetworkFailure {
@@ -584,12 +741,13 @@ public struct LivePlayerScreen: View {
             VStack(spacing: 0) {
                 // Top Action Bar
                 HStack(spacing: 8) {
-                    // 1. Dismiss Button (44x44 pt hit target)
+#if !os(tvOS)
+                    // 1. Dismiss Button
                     Button {
                         closePlayer()
                     } label: {
                         Image(systemName: isLandscape ? "xmark.circle.fill" : "chevron.down")
-                            .font(.system(size: isLandscape ? 20 : 14, weight: .bold))
+                            .font(.app(size: isLandscape ? 20 : 14, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
@@ -598,6 +756,8 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
+#endif
 
                     // 2. Channel Info (Compact & Non-overflowing)
                     ChannelLogo(url: currentLogoURL, name: displayedChannelName, size: isLandscape ? 32 : 28)
@@ -606,7 +766,7 @@ public struct LivePlayerScreen: View {
                         HStack(spacing: 5) {
                             if let num = currentChannel.number {
                                 Text(num)
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .font(.app(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
@@ -614,44 +774,44 @@ public struct LivePlayerScreen: View {
                             }
 
                             Text(displayedChannelName)
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.app(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
                             if engineMode == .nativeDirectLive {
-                                let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE • DIRECT"
-                                Text(liveTag)
-                                    .font(.system(size: 9, weight: .black, design: .monospaced))
-                                    .foregroundStyle(Theme.Colors.accentLive)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1.5)
-                                    .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                Text(isPlaying ? "LIVE" : "PAUSE")
+                                    .font(.app(size: 10, weight: .black, design: .rounded))
+                                    .foregroundStyle(isPlaying ? Theme.Colors.accentLive : Theme.Colors.statusWarning)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background((isPlaying ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             } else {
                                 HStack(spacing: 3) {
                                     let isLiveHLS = abs(timeshiftOffsetSeconds) <= 5
-                                    Text(isLiveHLS ? "LIVE • HLS" : "TIMESHIFT")
-                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                    Text(isLiveHLS ? "LIVE" : "TIMESHIFT")
+                                        .font(.app(size: 10, weight: .black, design: .rounded))
                                         .foregroundStyle(isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning)
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1.5)
-                                        .background((isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.25), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background((isLiveHLS ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.25), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
 
                                     if !isLiveHLS {
                                         Text(formattedTimeshiftOffset)
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .font(.app(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(.white)
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1.5)
-                                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 2)
+                                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                     }
                                 }
                             }
                         }
 
-                        if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
-                            Text(preset.epgNow)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.8))
+                        let epgTitle = presentedPreset?.epgNow ?? presets.first(where: { $0.url == streamURLString })?.epgNow ?? ""
+                        if !epgTitle.isEmpty {
+                            Text(epgTitle)
+                                .font(.app(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
                         }
                     }
@@ -666,7 +826,7 @@ public struct LivePlayerScreen: View {
                             HStack(spacing: 4) {
                                 PulsingLiveDot(size: 5)
                                 Text("Zur Live-Kante")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.app(size: 11, weight: .bold))
                             }
                             .padding(.horizontal, 9)
                             .padding(.vertical, 6)
@@ -679,15 +839,104 @@ public struct LivePlayerScreen: View {
                         .contentShape(Rectangle())
                     }
 
+#if os(tvOS)
+                    // Dedicated TV Action Buttons
+                    if let playing = coordinator.playing, !playing.availableAudioTracks.isEmpty {
+                        Menu {
+                            ForEach(playing.availableAudioTracks) { track in
+                                Button {
+                                    Haptics.shared.impact(.light)
+                                    playing.selectAudioTrack(pid: track.pid)
+                                } label: {
+                                    HStack {
+                                        Text(track.displayName)
+                                        if playing.selectedAudioPID == track.pid {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: playing.hasDecodableAudio ? "waveform" : "speaker.slash")
+                                Text("Ton")
+                            }
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(TVPlayerPillButtonStyle())
+                    }
+
+                    if let playing = coordinator.playing, !playing.availableSubtitleTracks.isEmpty {
+                        Menu {
+                            Button {
+                                playing.selectSubtitleTrack(nil)
+                            } label: {
+                                HStack {
+                                    Text("Aus")
+                                    if playing.selectedSubtitleTrack == nil {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            ForEach(playing.availableSubtitleTracks) { track in
+                                Button {
+                                    playing.selectSubtitleTrack(track)
+                                } label: {
+                                    HStack {
+                                        Text(track.displayName)
+                                        if playing.selectedSubtitleTrack?.id == track.id {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "captions.bubble")
+                                Text("Untertitel")
+                            }
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(TVPlayerPillButtonStyle())
+                    }
+
+                    Button {
+                        cycleViewPreset()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
+                            Text(viewPreset.shortLabel)
+                        }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(TVPlayerPillButtonStyle())
+
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showHUD.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: showHUD ? "chart.bar.fill" : "chart.bar")
+                            Text("Info")
+                        }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(TVPlayerPillButtonStyle(isActive: showHUD))
+#else
                     // 3. Aspect Ratio Preset Button (Primary Control, 44pt hit target)
                     Button {
                         cycleViewPreset()
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                             Text(viewPreset.shortLabel)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.app(size: 11, weight: .bold, design: .monospaced))
                         }
                         .fixedSize()
                         .foregroundStyle(.white)
@@ -699,6 +948,7 @@ public struct LivePlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
 
                     if isLandscape {
                         // 4. Picture in Picture Button (Landscape direct access, 44x44 hitbox)
@@ -707,7 +957,7 @@ public struct LivePlayerScreen: View {
                             coordinator.surface.startPictureInPicture()
                         } label: {
                             Image(systemName: "pip.enter")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.app(size: 14, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 36, height: 36)
                                 .background(.ultraThinMaterial, in: Circle())
@@ -716,6 +966,7 @@ public struct LivePlayerScreen: View {
                         .buttonStyle(.plain)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
+                        .appHoverEffect(.highlight)
                         .disabled(presentationPath != .systemLayer)
                         .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
 
@@ -815,41 +1066,46 @@ public struct LivePlayerScreen: View {
                             }
                         } label: {
                             Label(
-                                showHUD ? "Stream-Info ausblenden" : "Stream-Info (Inspector)",
+                                showHUD ? "Entwickler-Statistiken verbergen" : "Entwickler-Statistiken einblenden",
                                 systemImage: showHUD ? "chart.bar.fill" : "chart.bar"
                             )
                         }
 
-                        // Presentation Path Toggle (Layer vs Metal)
-                        Button {
-                            Haptics.shared.impact(.light)
-                            presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
-                        } label: {
-                            Label(
-                                presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
-                                systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
-                            )
-                        }
+                        // Erweiterte Optionen (Labor / Diagnostik)
+                        Menu {
+                            // Presentation Path Toggle (Layer vs Metal)
+                            Button {
+                                Haptics.shared.impact(.light)
+                                presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
+                            } label: {
+                                Label(
+                                    presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
+                                    systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
+                                )
+                            }
 
-                        // Stream-Routing (Labor / Bench A/B Test)
-                        Menu("Stream-Routing (Labor)") {
-                            ForEach(StreamRouteMode.allCases, id: \.self) { mode in
-                                Button {
-                                    streamRouteMode = mode
-                                    if isStreaming { startCurrentPreset() }
-                                } label: {
-                                    HStack {
-                                        Text(mode.rawValue)
-                                        if streamRouteMode == mode {
-                                            Image(systemName: "checkmark")
+                            // Stream-Routing (Labor / Bench A/B Test)
+                            Menu("Stream-Routing") {
+                                ForEach(StreamRouteMode.allCases, id: \.self) { mode in
+                                    Button {
+                                        streamRouteMode = mode
+                                        if isStreaming { startCurrentPreset() }
+                                    } label: {
+                                        HStack {
+                                            Text(mode.rawValue)
+                                            if streamRouteMode == mode {
+                                                Image(systemName: "checkmark")
+                                            }
                                         }
                                     }
                                 }
                             }
+                        } label: {
+                            Label("Erweiterte Optionen", systemImage: "wrench.and.screwdriver")
                         }
                     } label: {
                         Image(systemName: showHUD ? "ellipsis.circle.fill" : "ellipsis.circle")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.app(size: 16, weight: .semibold))
                             .foregroundStyle(showHUD ? Theme.Colors.accentLive : Color.white)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
@@ -857,6 +1113,8 @@ public struct LivePlayerScreen: View {
                     }
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .appHoverEffect(.highlight)
+#endif
                 }
                 .padding(.horizontal, sideInset)
                 .padding(.top, isLandscape ? 12 : max(safeInsets.top, 8))
@@ -870,41 +1128,65 @@ public struct LivePlayerScreen: View {
                         zapRelative(delta: -1)
                     } label: {
                         Image(systemName: "backward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
+#endif
 
                     // Timeshift Rewind 30s
                     Button {
                         if engineMode == .timeshiftHLS {
                             seekTimeshiftRelative(-30)
+                        } else if model?.playbackEngine == .native {
+                            displayZapToast("Timeshift im Native-Modus deaktiviert")
                         } else {
                             enterTimeshift(seekBackSeconds: 30)
                         }
                     } label: {
                         Image(systemName: "gobackward.30")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
+#endif
 
                     // Play / Pause Toggle
                     Button {
                         togglePlayPause()
                     } label: {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 30, weight: .bold))
+                            .font(.app(size: 28, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(18)
                             .background(Theme.Colors.accentAction.opacity(0.9), in: Circle())
                             .shadow(color: Theme.Colors.accentAction.opacity(0.5), radius: 10)
+#endif
                     }
+#if os(tvOS)
+                    .focused($isPlayPauseFocused)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 72, isPrimary: true))
+#else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
+#endif
 
                     // Timeshift Forward 30s (active in Timeshift)
                     Button {
@@ -915,12 +1197,19 @@ public struct LivePlayerScreen: View {
                         }
                     } label: {
                         Image(systemName: "goforward.30")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(engineMode == .timeshiftHLS ? .white : .white.opacity(0.35))
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
+#endif
                     .disabled(engineMode != .timeshiftHLS)
 
                     // Next Channel
@@ -928,12 +1217,19 @@ public struct LivePlayerScreen: View {
                         zapRelative(delta: 1)
                     } label: {
                         Image(systemName: "forward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.app(size: 20, weight: .bold))
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
+#endif
                     }
+#if os(tvOS)
+                    .buttonStyle(TVPlayerTransportButtonStyle(size: 56, isPrimary: false))
+#else
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
+#endif
                 }
 
                 // Timeshift Timeline Bar (Visible when in Timeshift mode)
@@ -966,10 +1262,10 @@ public struct LivePlayerScreen: View {
                     HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Image(systemName: "waveform")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentAction)
                             Text("\(tele.audioCodec) (\(tele.audioChannels == 6 ? "5.1 Surround" : "\(tele.audioChannels) ch"))")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         .padding(.horizontal, 8)
@@ -978,12 +1274,12 @@ public struct LivePlayerScreen: View {
 
                         HStack(spacing: 6) {
                             Image(systemName: "tv")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.app(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
                             let renderMode = tele.isInterlaced ? "HW Bob" : "HW Direct"
                             let scanText = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(renderMode)" : "Video \(renderMode)"
                             Text(scanText)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         .padding(.horizontal, 8)
@@ -991,7 +1287,7 @@ public struct LivePlayerScreen: View {
                         .background(.ultraThinMaterial, in: Capsule())
 
                         Text(String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.app(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.7))
 
                         Spacer()
@@ -1004,17 +1300,24 @@ public struct LivePlayerScreen: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "list.bullet")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                                 Text("Sender")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.app(size: 12, weight: .bold))
                             }
                             .foregroundStyle(.white)
+#if !os(tvOS)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(Theme.Colors.accentAction.opacity(0.85), in: Capsule())
                             .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+#endif
                         }
+#if os(tvOS)
+                        .buttonStyle(TVPlayerPillButtonStyle())
+#else
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
+#endif
                     }
                     .padding(.horizontal, sideInset)
                     .padding(.bottom, max(safeInsets.bottom, 12))
@@ -1025,10 +1328,10 @@ public struct LivePlayerScreen: View {
                             if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
                                 HStack(spacing: 6) {
                                     Image(systemName: "tv")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.app(size: 11, weight: .bold))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                     Text(preset.epgNow)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.app(size: 12, weight: .semibold))
                                         .foregroundStyle(.white.opacity(0.9))
                                         .lineLimit(1)
                                 }
@@ -1046,9 +1349,9 @@ public struct LivePlayerScreen: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "list.bullet")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.app(size: 14, weight: .bold))
                                     Text("Senderliste")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.app(size: 14, weight: .bold))
                                 }
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 20)
@@ -1078,7 +1381,7 @@ public struct LivePlayerScreen: View {
                         .fill(Theme.Colors.accentLive)
                         .frame(width: 6, height: 6)
                     Text("SENDERLISTE")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
 
@@ -1091,7 +1394,7 @@ public struct LivePlayerScreen: View {
                     }
                 } label: {
                     Image(systemName: "chevron.down.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.app(size: 20))
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -1167,7 +1470,7 @@ public struct LivePlayerScreen: View {
                 // Quick Zap Channel Presets
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SENDER")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     ForEach(presets) { preset in
@@ -1199,7 +1502,7 @@ public struct LivePlayerScreen: View {
                                             .controlSize(.mini)
                                             .tint(Theme.Colors.accentLive)
                                         Text("WÄRMT…")
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .font(.app(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.accentLive)
                                     }
                                     .padding(.horizontal, 6)
@@ -1207,7 +1510,7 @@ public struct LivePlayerScreen: View {
                                     .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                                 } else if isPresented {
                                     Text("AKTIV")
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .font(.app(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -1228,7 +1531,7 @@ public struct LivePlayerScreen: View {
                 // Custom Stream URL Bar
                 VStack(alignment: .leading, spacing: 8) {
                     Text("BENUTZERDEFINIERTE STREAM-URL")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     HStack(spacing: 8) {
@@ -1262,10 +1565,10 @@ public struct LivePlayerScreen: View {
     private func badgeItem(icon: String, label: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .bold))
+                .font(.app(size: 10, weight: .bold))
                 .foregroundStyle(color)
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.9))
         }
         .padding(.horizontal, 8)
@@ -1386,7 +1689,11 @@ public struct LivePlayerScreen: View {
                 if engineMode == .timeshiftHLS {
                     seekTimeshiftRelative(delta)
                 } else if delta < 0 {
-                    enterTimeshift(seekBackSeconds: abs(delta))
+                    if model?.playbackEngine == .native {
+                        displayZapToast("Timeshift im Native-Modus deaktiviert")
+                    } else {
+                        enterTimeshift(seekBackSeconds: abs(delta))
+                    }
                 }
             }
         ))
@@ -1478,6 +1785,7 @@ public struct LivePlayerScreen: View {
     }
 
     private func switchTo(preset: ChannelPreset) {
+        displayZappingOSD(preset)
         if model?.playbackEngine == .hls {
             teardownTimeshift()
             currentChannelName = preset.name
@@ -1545,41 +1853,105 @@ public struct LivePlayerScreen: View {
     }
 
     private func performInitialTimeshiftSeek(player: AVPlayer, seekBackSeconds: Double) async {
-        let maxAttempts = 30
+        let maxAttempts = 50 // 5.0 seconds budget to tolerate Wi-Fi jitter and backend HLS playlist generation
         for _ in 0..<maxAttempts {
-            if let item = player.currentItem,
-               item.status == .readyToPlay,
-               let range = item.seekableTimeRanges.last?.timeRangeValue,
-               range.duration.seconds > 0 {
-                let liveEnd = range.end.seconds
-                let target = max(range.start.seconds, liveEnd - seekBackSeconds)
-                await withCheckedContinuation { continuation in
-                    player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                        continuation.resume()
-                    }
+            if let item = player.currentItem {
+                if item.status == .failed {
+                    let errStr = item.error?.localizedDescription ?? "Initialisierungsfehler"
+                    displayZapToast("Timeshift fehlgeschlagen: \(errStr)")
+                    jumpToLiveEdge()
+                    return
                 }
-                player.play()
-                self.isPlaying = true
-                self.isTimeshiftLoading = false
-                NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
-                displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
-                return
+                if item.status == .readyToPlay,
+                   let range = item.seekableTimeRanges.last?.timeRangeValue,
+                   range.duration.seconds > 0 {
+                    let liveEnd = range.end.seconds
+                    let target = max(range.start.seconds, liveEnd - seekBackSeconds)
+                    await withCheckedContinuation { continuation in
+                        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                            continuation.resume()
+                        }
+                    }
+                    player.play()
+                    self.isPlaying = true
+                    self.isTimeshiftLoading = false
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+                    displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
+                    return
+                }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
             if self.engineMode != .timeshiftHLS || self.timeshiftPlayer !== player {
                 return
             }
         }
-        player.play()
-        self.isPlaying = true
+
+        // If timed out waiting for seekable range, don't falsely claim a rewind
+        if let item = player.currentItem, item.status == .readyToPlay {
+            player.play()
+            self.isPlaying = true
+            self.isTimeshiftLoading = false
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+            displayZapToast("▶ Live (Puffer wird im Hintergrund aufgebaut)")
+        } else {
+            self.isTimeshiftLoading = false
+            displayZapToast("Timeshift-Verbindung verzögert – Live-TV aktiv")
+            jumpToLiveEdge()
+        }
+    }
+
+    private func performInitialTimeshiftPause(player: AVPlayer) async {
+        let maxAttempts = 60 // 6.0 seconds budget to tolerate network setup and initial segmenting
+        for _ in 0..<maxAttempts {
+            if let item = player.currentItem {
+                if item.status == .failed {
+                    let errStr = item.error?.localizedDescription ?? "Initialisierungsfehler"
+                    displayZapToast("Timeshift fehlgeschlagen: \(errStr)")
+                    jumpToLiveEdge()
+                    return
+                }
+                if item.status == .readyToPlay,
+                   let range = item.seekableTimeRanges.last?.timeRangeValue,
+                   range.duration.seconds > 0 {
+                    // Park playhead at the START of the timeshift recording window (where the pause occurred!)
+                    let target = range.start.seconds
+                    await withCheckedContinuation { continuation in
+                        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                            continuation.resume()
+                        }
+                    }
+                    if self.isPlaying {
+                        // User unpaused while timeshift was preparing
+                        player.play()
+                        displayZapToast("▶ Fortsetzen")
+                    } else {
+                        player.pause()
+                        displayZapToast("❚❚ Timeshift Pausiert")
+                    }
+                    self.isTimeshiftLoading = false
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: self.isPlaying)
+                    return
+                }
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if self.engineMode != .timeshiftHLS || self.timeshiftPlayer !== player {
+                return
+            }
+        }
+
         self.isTimeshiftLoading = false
-        NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
-        displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
+        if self.isPlaying {
+            jumpToLiveEdge()
+        }
     }
 
     private func enterTimeshift(seekBackSeconds: Double = 0, autoPlay: Bool = false) {
         guard let model else {
             displayZapToast("Timeshift nicht verfügbar")
+            return
+        }
+        if model.playbackEngine == .native {
+            displayZapToast("Timeshift im Native-Modus deaktiviert")
             return
         }
         let ch = currentChannel
@@ -1614,21 +1986,40 @@ public struct LivePlayerScreen: View {
                         NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
                         displayZapToast("▶ Live (HLS)")
                     } else {
-                        player.pause()
-                        self.isPlaying = false
-                        self.isTimeshiftLoading = false
-                        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
-                        displayZapToast("❚❚ Timeshift Pausiert")
+                        await self.performInitialTimeshiftPause(player: player)
                     }
                 } else {
                     isTimeshiftLoading = false
                     displayZapToast("HLS-Wiedergabe konnte nicht gestartet werden")
-                    jumpToLiveEdge()
+                    if seekBackSeconds > 0 || autoPlay {
+                        jumpToLiveEdge()
+                    } else {
+                        self.isPlaying = false
+                        self.engineMode = .nativeDirectLive
+                        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+                    }
                 }
             } catch {
                 isTimeshiftLoading = false
-                displayZapToast("Fehler bei HLS-Stream: \(error.localizedDescription)")
-                jumpToLiveEdge()
+                let err = error.localizedDescription
+                let isTunerBusy = err.contains("admission") || err.contains("tuner") || err.contains("busy") || err.contains("R_LEASE_BUSY") || err.contains("1452")
+                if isTunerBusy {
+                    let now = Date()
+                    if let activeTimer = model.timers.first(where: { $0.isRunning || ($0.beginDate <= now && $0.endDate >= now) }) {
+                        displayZapToast("Tuner belegt durch Aufnahme: „\(activeTimer.name)“")
+                    } else {
+                        displayZapToast("Alle Tuner belegt – Timeshift nicht möglich")
+                    }
+                } else {
+                    displayZapToast("Fehler bei HLS-Stream: \(err)")
+                }
+                if seekBackSeconds > 0 || autoPlay {
+                    jumpToLiveEdge()
+                } else {
+                    self.isPlaying = false
+                    self.engineMode = .nativeDirectLive
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+                }
             }
         }
     }
@@ -1752,15 +2143,44 @@ public struct LivePlayerScreen: View {
     }
 
     private func togglePlayPause() {
+        if isTimeshiftLoading {
+            isPlaying.toggle()
+            if isPlaying {
+                displayZapToast("▶ Fortsetzen…")
+            } else {
+                displayZapToast("❚❚ Pausiert")
+            }
+            return
+        }
         if engineMode == .timeshiftHLS {
             toggleTimeshiftPlayPause()
+        } else if model?.playbackEngine == .native {
+            if isPlaying {
+                pauseNativeLive()
+            } else {
+                resumeNativeLive()
+            }
         } else {
             if isPlaying {
                 enterTimeshift(seekBackSeconds: 0)
             } else {
-                startCurrentPreset()
+                resumeNativeLive()
             }
         }
+    }
+
+    private func pauseNativeLive() {
+        isPlaying = false
+        Task { await coordinator.stop() }
+        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+        displayZapToast("❚❚ Pausiert (Live gestoppt)")
+    }
+
+    private func resumeNativeLive() {
+        isPlaying = true
+        startCurrentPreset()
+        NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+        displayZapToast("▶ Live-TV (Native TS)")
     }
 
     private func cycleViewPreset() {
@@ -1768,6 +2188,43 @@ public struct LivePlayerScreen: View {
         viewPreset = viewPreset.next(includeAdvanced: model?.enableAdvancedAspectRatios ?? false)
         displayZapToast("Bildformat: \(viewPreset.rawValue)")
     }
+
+#if os(iOS)
+    private func handleKeyboardToggleZapDrawer(isLandscape: Bool) {
+        if isLandscape {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showLandscapeZapBar.toggle()
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showPortraitDrawer.toggle()
+            }
+        }
+        scheduleControlsAutoHide()
+    }
+
+    private func handleKeyboardEscape() {
+        if showLandscapeZapBar {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showLandscapeZapBar = false
+            }
+        } else if showPortraitDrawer {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showPortraitDrawer = false
+            }
+        } else if showHUD {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showHUD = false
+            }
+        } else if showControls {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showControls = false
+            }
+        } else {
+            closePlayer()
+        }
+    }
+#endif
 
     private func displayZapToast(_ message: String) {
         hideZapToastTask?.cancel()
@@ -1779,6 +2236,117 @@ public struct LivePlayerScreen: View {
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.25)) {
                 zapToast = nil
+            }
+        }
+    }
+
+    private func displayZappingOSD(_ preset: ChannelPreset) {
+        hideZapOSDTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            zappingOSDChannel = preset
+        }
+        hideZapOSDTask = Task {
+            try? await Task.sleep(for: .milliseconds(2800))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                zappingOSDChannel = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func zappingOSDBanner(for preset: ChannelPreset) -> some View {
+        let channel = model?.channels.first(where: { $0.serviceRef == preset.serviceRef || $0.name == preset.name })
+        let nowNext = model?.schedule[preset.serviceRef]
+        let showTitle = (nowNext?.now?.title.isEmpty == false) ? nowNext!.now!.title : (!preset.epgNow.isEmpty ? preset.epgNow : "Live-Kanal wiedergeben")
+
+        HStack(spacing: 12) {
+            ChannelLogo(url: channel?.logoURL ?? logoURL(forPreset: preset), name: preset.name, size: 42)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    if let number = channel?.number {
+                        Text(number)
+                            .font(.app(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text(preset.name)
+                        .font(.app(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Text("LIVE")
+                        .font(.app(size: 9, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.Colors.accentLive)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+
+                    Spacer()
+
+                    if let now = nowNext?.now, let rem = now.remainingMinutes(at: .now) {
+                        Text("noch \(rem) Min")
+                            .font(.app(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                    }
+                }
+
+                HStack {
+                    Text(showTitle)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    if let next = nowNext?.next {
+                        Text("Danach: \(next.title)")
+                            .font(.app(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                }
+
+                if let fraction = nowNext?.now?.progress(at: .now) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.15)).frame(height: 2.5)
+                            Capsule()
+                                .fill(LinearGradient(colors: [Theme.Colors.accentAction, Theme.Colors.accentLive], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(fraction))), height: 2.5)
+                        }
+                    }
+                    .frame(height: 2.5)
+                    .padding(.top, 1)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 540)
+        .background(
+            LinearGradient(
+                colors: [
+                    Theme.Colors.surfaceElevated.opacity(0.96),
+                    Color(red: 0.07, green: 0.09, blue: 0.14).opacity(0.96)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.Gradients.liveAuraBorder, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.5), radius: 16, y: 6)
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.2)) {
+                zappingOSDChannel = nil
             }
         }
     }
@@ -1820,7 +2388,7 @@ public struct LivePlayerScreen: View {
     private func hudSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.yellow)
             content()
         }
@@ -1831,11 +2399,11 @@ public struct LivePlayerScreen: View {
     private func hudRow(_ label: String, _ value: String, highlight: Bool = false, alert: Bool = false) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.app(size: 10, design: .monospaced))
                 .foregroundStyle(Color.gray)
             Spacer()
             Text(value)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.app(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(alert ? Color.red : (highlight ? Color.green : Color.white))
         }
     }
@@ -1913,7 +2481,7 @@ struct UnplayableFormatNotice: View {
 
             VStack(spacing: 14) {
                 Image(systemName: "tv.slash")
-                    .font(.system(size: 40, weight: .light))
+                    .font(.app(size: 40, weight: .light))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Text("\(channelName) sendet in einem Format, das die Direktwiedergabe nicht darstellen kann")
@@ -1961,10 +2529,10 @@ struct TimeshiftTimelineBar: View {
                         .fill(Theme.Colors.statusWarning)
                         .frame(width: 6, height: 6)
                     Text("TIMESHIFT")
-                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .font(.app(size: 10, weight: .black, design: .monospaced))
                         .foregroundStyle(Theme.Colors.statusWarning)
                     Text(currentOffset)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.app(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white)
                 }
                 .padding(.horizontal, 8)
@@ -1977,7 +2545,7 @@ struct TimeshiftTimelineBar: View {
                     HStack(spacing: 4) {
                         PulsingLiveDot(size: 5)
                         Text("Zur Live-Kante")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.app(size: 10, weight: .bold))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -2028,10 +2596,198 @@ struct TimeshiftTimelineBar: View {
             }
             .frame(height: 14)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         .shadow(color: Color.black.opacity(0.3), radius: 8)
     }
 }
+
+#if os(tvOS)
+struct TVPlayerControlButtonStyle: ButtonStyle {
+    var size: CGFloat = 48
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(isFocused ? Theme.Colors.accentAction : Color.black.opacity(0.6))
+            )
+            .overlay(
+                Circle()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 3 : 1)
+            )
+            .scaleEffect(isFocused ? 1.18 : 1.0)
+            .shadow(color: isFocused ? Theme.Colors.accentAction.opacity(0.6) : Color.black.opacity(0.4), radius: isFocused ? 14 : 6)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+struct TVPlayerPillButtonStyle: ButtonStyle {
+    var isActive: Bool = false
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isFocused ? Theme.Colors.accentAction : (isActive ? Theme.Colors.surfaceElevated : Color.black.opacity(0.6)))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 2.5 : 1)
+            )
+            .scaleEffect(isFocused ? 1.10 : 1.0)
+            .shadow(color: isFocused ? Theme.Colors.accentAction.opacity(0.6) : Color.black.opacity(0.4), radius: isFocused ? 12 : 4)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+struct TVPlayerTransportButtonStyle: ButtonStyle {
+    var size: CGFloat = 56
+    var isPrimary: Bool = false
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(isFocused ? Color.white : (isPrimary ? Theme.Colors.accentAction.opacity(0.9) : Color.black.opacity(0.55)))
+            )
+            .overlay(
+                Circle()
+                    .strokeBorder(isFocused ? Color.white : Theme.Colors.borderSubtle, lineWidth: isFocused ? 3 : 1)
+            )
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .scaleEffect(isFocused ? 1.2 : 1.0)
+            .shadow(color: isFocused ? Color.white.opacity(0.4) : Color.black.opacity(0.4), radius: isFocused ? 16 : 6)
+            .animation(.easeOut(duration: 0.16), value: isFocused)
+    }
+}
+
+/// A completely transparent button style for full-screen tvOS gesture receivers.
+/// Suppresses tvOS's default focused white platter/highlight across the screen.
+struct TVPlayerInvisibleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+#endif
+
+#if os(iOS)
+private struct LivePlayerKeyboardShortcuts: View {
+    let isLandscape: Bool
+    let engineMode: LivePlayerScreen.PlaybackEngineMode
+    let presentationPath: MetalVideoView.PresentationPath
+    let togglePlayPause: () -> Void
+    let zapRelative: (Int) -> Void
+    let seekTimeshiftRelative: (Double) -> Void
+    let enterTimeshift: (Double) -> Void
+    let displayZapToast: (String) -> Void
+    let toggleZapDrawer: (Bool) -> Void
+    let cycleViewPreset: () -> Void
+    let toggleHUD: () -> Void
+    let startPiP: () -> Void
+    let handleEscape: () -> Void
+
+    var body: some View {
+        Group {
+            Button("") { togglePlayPause() }
+                .keyboardShortcut(.space, modifiers: [])
+
+            Button("") { zapRelative(1) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+
+            Button("") { zapRelative(-1) }
+                .keyboardShortcut(.downArrow, modifiers: [])
+
+            Button("") {
+                if engineMode == .timeshiftHLS {
+                    seekTimeshiftRelative(-30)
+                } else {
+                    enterTimeshift(30)
+                }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [])
+
+            Button("") {
+                if engineMode == .timeshiftHLS {
+                    seekTimeshiftRelative(30)
+                } else {
+                    displayZapToast("Bereits an der Live-Kante")
+                }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [])
+
+            Button("") { toggleZapDrawer(isLandscape) }
+                .keyboardShortcut("z", modifiers: [])
+
+            Button("") { cycleViewPreset() }
+                .keyboardShortcut("f", modifiers: [])
+
+            Button("") { toggleHUD() }
+                .keyboardShortcut("i", modifiers: [])
+
+            Button("") {
+                if presentationPath == .systemLayer {
+                    startPiP()
+                }
+            }
+            .keyboardShortcut("p", modifiers: [])
+
+            Button("") { handleEscape() }
+                .keyboardShortcut(.escape, modifiers: [])
+
+            Button("") { handleEscape() }
+                .keyboardShortcut(".", modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .onReceive(NotificationCenter.default.publisher(for: .playerTogglePlayPause)) { _ in
+            togglePlayPause()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerZapNext)) { _ in
+            zapRelative(1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerZapPrevious)) { _ in
+            zapRelative(-1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerSeekBackward)) { _ in
+            if engineMode == .timeshiftHLS {
+                seekTimeshiftRelative(-30)
+            } else {
+                enterTimeshift(30)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerSeekForward)) { _ in
+            if engineMode == .timeshiftHLS {
+                seekTimeshiftRelative(30)
+            } else {
+                displayZapToast("Bereits an der Live-Kante")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerToggleZapDrawer)) { _ in
+            toggleZapDrawer(isLandscape)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerCycleAspect)) { _ in
+            cycleViewPreset()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerToggleHUD)) { _ in
+            toggleHUD()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerStartPiP)) { _ in
+            if presentationPath == .systemLayer {
+                startPiP()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .playerClose)) { _ in
+            handleEscape()
+        }
+    }
+}
+#endif

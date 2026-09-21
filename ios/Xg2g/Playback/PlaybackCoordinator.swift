@@ -205,7 +205,7 @@ actor PlaybackCoordinator {
         guard api is HTTPAPIClient else { return }
         let cookie = ticket.httpCookie(for: url)
 
-        for _ in 0..<30 {
+        for _ in 0..<120 {
             if let text = await MediaFetcher.playlistText(url: url, cookie: cookie) {
                 // If the playlist has at least 1 segment or is a valid master playlist, hand off to AVPlayer immediately
                 let hasSegment = text.contains("#EXTINF:")

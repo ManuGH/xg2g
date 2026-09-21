@@ -13,7 +13,7 @@ struct IPadSidebar: View {
     var body: some View {
         List {
             Section("Mediathek") {
-                ForEach(Tab.allCases) { tab in
+                ForEach(Tab.navigationCases) { tab in
                     let isSelected = model.selectedTab == tab
                     Button {
                         triggerHaptic(.light)
@@ -26,14 +26,14 @@ struct IPadSidebar: View {
                             )
 
                             Text(tab.rawValue)
-                                .font(.system(size: 15, weight: isSelected ? .bold : .medium))
+                                .font(.app(size: 15, weight: isSelected ? .bold : .medium))
                                 .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                             Spacer()
 
                             if isSelected {
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.app(size: 11, weight: .bold))
                                     .foregroundStyle(Theme.Colors.accentAction)
                             }
                         }
@@ -42,6 +42,8 @@ struct IPadSidebar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .modifier(TabShortcutModifier(character: tab.shortcutCharacter))
+                    .appHoverEffect(.highlight)
                     .listRowBackground(
                         isSelected
                             ? RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -62,17 +64,17 @@ struct IPadSidebar: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "tv.circle.fill")
-                                .font(.system(size: 18))
+                                .font(.app(size: 18))
                                 .foregroundStyle(isAllSelected ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
 
                             Text("Alle Sender")
-                                .font(.system(size: 14, weight: isAllSelected ? .bold : .medium))
+                                .font(.app(size: 14, weight: isAllSelected ? .bold : .medium))
                                 .foregroundStyle(isAllSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                             Spacer()
 
                             Text("\(model.channels.count)")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
@@ -81,6 +83,7 @@ struct IPadSidebar: View {
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    .appHoverEffect(.highlight)
 
                     // Favoriten
                     if !model.favoriteChannelIDs.isEmpty {
@@ -91,17 +94,17 @@ struct IPadSidebar: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "star.circle.fill")
-                                    .font(.system(size: 18))
+                                    .font(.app(size: 18))
                                     .foregroundStyle(Theme.Colors.accentLive)
 
                                 Text("Favoriten")
-                                    .font(.system(size: 14, weight: isFavSelected ? .bold : .medium))
+                                    .font(.app(size: 14, weight: isFavSelected ? .bold : .medium))
                                     .foregroundStyle(isFavSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                                 Spacer()
 
                                 Text("\(model.favoriteChannelIDs.count)")
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentLive)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)
@@ -110,6 +113,7 @@ struct IPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
                     }
 
                     // Bouquets
@@ -121,11 +125,11 @@ struct IPadSidebar: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "folder.fill")
-                                    .font(.system(size: 16))
+                                    .font(.app(size: 16))
                                     .foregroundStyle(isSelected ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
 
                                 Text(bouquet.name)
-                                    .font(.system(size: 14, weight: isSelected ? .bold : .medium))
+                                    .font(.app(size: 14, weight: isSelected ? .bold : .medium))
                                     .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                                     .lineLimit(1)
 
@@ -133,7 +137,7 @@ struct IPadSidebar: View {
 
                                 if bouquet.servicesCount > 0 {
                                     Text("\(bouquet.servicesCount)")
-                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.textTertiary)
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 2)
@@ -143,6 +147,7 @@ struct IPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        .appHoverEffect(.highlight)
                     }
                 }
             }
@@ -152,12 +157,12 @@ struct IPadSidebar: View {
                     HStack(spacing: 6) {
                         PulsingLiveDot(size: 6)
                         Text(model.serverURLString)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.app(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)
                     }
                     Text("xg2g Broadcast System • 2026")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.app(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textDisabled)
                 }
                 .padding(10)
@@ -178,5 +183,21 @@ struct IPadSidebar: View {
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
         Haptics.shared.impact(style)
+    }
+}
+
+private struct TabShortcutModifier: ViewModifier {
+    let character: Character?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if let character {
+            content.keyboardShortcut(KeyEquivalent(character), modifiers: .command)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

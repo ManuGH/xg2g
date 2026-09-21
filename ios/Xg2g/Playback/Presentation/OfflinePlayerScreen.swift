@@ -69,7 +69,7 @@ struct OfflinePlayerScreen: View {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.caption)
                             Text("OFFLINE")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.app(size: 10, weight: .bold, design: .monospaced))
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)

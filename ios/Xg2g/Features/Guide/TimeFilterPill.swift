@@ -18,12 +18,12 @@ struct TimeFilterPill: View {
                     PulsingLiveDot(size: 6)
                 } else {
                     Image(systemName: filter.icon)
-                        .font(.system(size: 11))
+                        .font(.app(size: 11))
                         .foregroundStyle(isSelected ? Theme.Colors.bgBase : Theme.Colors.accentAction)
                 }
 
                 Text(filter.label)
-                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                    .font(.app(size: 13, weight: isSelected ? .bold : .medium))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)

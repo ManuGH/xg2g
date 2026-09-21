@@ -12,6 +12,7 @@ private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
 struct ChannelListView: View {
 
     @Bindable var model: AppModel
+    var hubMode: Binding<TVGuideHubView.TVGuideHubMode>? = nil
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
@@ -43,9 +44,11 @@ struct ChannelListView: View {
                                     let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
                                     if ok {
                                         triggerHaptic(.medium)
-                                        withAnimation {
-                                            recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                        }
+                                    } else {
+                                        Haptics.shared.notification(.error)
+                                    }
+                                    withAnimation {
+                                        recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                     }
                                 }
                             }
@@ -66,7 +69,7 @@ struct ChannelListView: View {
                                 HStack(spacing: 5) {
                                     PulsingLiveDot(size: 6)
                                     Text("Jetzt Live")
-                                        .font(.system(size: 13, weight: isNow ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isNow ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -75,6 +78,8 @@ struct ChannelListView: View {
                                 .overlay { if !isNow { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             // ⭐️ Favoriten
                             if !model.favoriteChannelIDs.isEmpty {
@@ -91,9 +96,9 @@ struct ChannelListView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: isFav ? "star.fill" : "star")
-                                            .font(.system(size: 11))
+                                            .font(.app(size: 11))
                                         Text("Favoriten")
-                                            .font(.system(size: 13, weight: isFav ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isFav ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 7)
@@ -102,6 +107,8 @@ struct ChannelListView: View {
                                     .overlay { if !isFav { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .appHoverEffect(.highlight)
                             }
 
                             // 🍿 20:15
@@ -114,9 +121,9 @@ struct ChannelListView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "popcorn.fill")
-                                        .font(.system(size: 11))
+                                        .font(.app(size: 11))
                                     Text("20:15")
-                                        .font(.system(size: 13, weight: isPrime ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isPrime ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -125,6 +132,8 @@ struct ChannelListView: View {
                                 .overlay { if !isPrime { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             // 🌙 22:00
                             let isLate = model.selectedTimeFilter == .lateNightTonight
@@ -136,9 +145,9 @@ struct ChannelListView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "moon.fill")
-                                        .font(.system(size: 11))
+                                        .font(.app(size: 11))
                                     Text("22:00")
-                                        .font(.system(size: 13, weight: isLate ? .bold : .medium))
+                                        .font(.app(size: 13, weight: isLate ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
@@ -147,6 +156,8 @@ struct ChannelListView: View {
                                 .overlay { if !isLate { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                             }
                             .buttonStyle(.plain)
+                            .contentShape(Capsule())
+                            .appHoverEffect(.highlight)
 
                             Divider()
                                 .frame(height: 18)
@@ -163,9 +174,9 @@ struct ChannelListView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: genre.icon)
-                                            .font(.system(size: 11))
+                                            .font(.app(size: 11))
                                         Text(genre.rawValue)
-                                            .font(.system(size: 13, weight: isGenreSelected ? .bold : .medium))
+                                            .font(.app(size: 13, weight: isGenreSelected ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 7)
@@ -174,6 +185,8 @@ struct ChannelListView: View {
                                     .overlay { if !isGenreSelected { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .appHoverEffect(.highlight)
                             }
                         }
                         .padding(.horizontal, 16)
@@ -221,9 +234,11 @@ struct ChannelListView: View {
                                                     let ok = await model.scheduleProgramTimer(channel: spotlight.channel, entry: spotlight.entry)
                                                     if ok {
                                                         triggerHaptic(.medium)
-                                                        withAnimation {
-                                                            recordConfirmationMessage = "„\(spotlight.entry.title)“ programmiert"
-                                                        }
+                                                    } else {
+                                                        Haptics.shared.notification(.error)
+                                                    }
+                                                    withAnimation {
+                                                        recordConfirmationMessage = ok ? "„\(spotlight.entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                                     }
                                                 }
                                             }
@@ -267,7 +282,7 @@ struct ChannelListView: View {
                                         Spacer()
 
                                         Text("\(currentChannels.count) Sender")
-                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .font(.app(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                     }
                                     .padding(.horizontal, 2)
@@ -299,9 +314,11 @@ struct ChannelListView: View {
                                                         let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
                                                         if success {
                                                             triggerHaptic(.medium)
-                                                            withAnimation {
-                                                                recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                                            }
+                                                        } else {
+                                                            Haptics.shared.notification(.error)
+                                                        }
+                                                        withAnimation {
+                                                            recordConfirmationMessage = success ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                                                         }
                                                     }
                                                 }
@@ -321,7 +338,17 @@ struct ChannelListView: View {
                                                     }
 
                                                     Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: now) }
+                                                        Task {
+                                                            let ok = await model.scheduleProgramTimer(channel: channel, entry: now)
+                                                            if ok {
+                                                                triggerHaptic(.medium)
+                                                            } else {
+                                                                Haptics.shared.notification(.error)
+                                                            }
+                                                            withAnimation {
+                                                                recordConfirmationMessage = ok ? "„\(now.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+                                                            }
+                                                        }
                                                     } label: {
                                                         Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
                                                     }
@@ -329,7 +356,17 @@ struct ChannelListView: View {
 
                                                 if let next = model.schedule[channel.serviceRef]?.next {
                                                     Button {
-                                                        Task { _ = await model.scheduleProgramTimer(channel: channel, entry: next) }
+                                                        Task {
+                                                            let ok = await model.scheduleProgramTimer(channel: channel, entry: next)
+                                                            if ok {
+                                                                triggerHaptic(.medium)
+                                                            } else {
+                                                                Haptics.shared.notification(.error)
+                                                            }
+                                                            withAnimation {
+                                                                recordConfirmationMessage = ok ? "„\(next.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
+                                                            }
+                                                        }
                                                     } label: {
                                                         Label("„\(next.title)“ aufnehmen", systemImage: "record.circle")
                                                     }
@@ -391,63 +428,21 @@ struct ChannelListView: View {
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        Button {
-                            triggerHaptic(.light)
-                            Task { await model.selectBouquet(nil) }
-                        } label: {
-                            HStack {
-                                Text("Alle Sender (\(model.channels.count))")
-                                if model.selectedBouquet == nil {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
+                if let hubMode {
+                    ToolbarItem(placement: .topBarLeading) {
+                        bouquetMenu
+                    }
+                    ToolbarItem(placement: .principal) {
+                        Picker("Ansicht", selection: hubMode) {
+                            Text("Sender").tag(TVGuideHubView.TVGuideHubMode.channels)
+                            Text("Programm").tag(TVGuideHubView.TVGuideHubMode.guide)
                         }
-
-                        if !model.favoriteChannelIDs.isEmpty {
-                            Button {
-                                triggerHaptic(.light)
-                                Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
-                            } label: {
-                                HStack {
-                                    Text("Favoriten (\(model.favoriteChannelIDs.count))")
-                                    if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-
-                        if !model.bouquets.isEmpty {
-                            Divider()
-                            ForEach(model.bouquets) { bouquet in
-                                Button {
-                                    triggerHaptic(.light)
-                                    Task { await model.selectBouquet(bouquet) }
-                                } label: {
-                                    HStack {
-                                        Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
-                                        if model.selectedBouquet?.id == bouquet.id {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(model.selectedBouquet?.name ?? "Alle Sender")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Image(systemName: "chevron.down.circle.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accentAction)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Theme.Colors.surfaceElevated.opacity(0.8), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    }
+                } else {
+                    ToolbarItem(placement: .principal) {
+                        bouquetMenu
                     }
                 }
 
@@ -461,7 +456,7 @@ struct ChannelListView: View {
                         }
                     } label: {
                         Image(systemName: model.selectedGenre == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .font(.system(size: 19))
+                            .font(.app(size: 19))
                             .foregroundStyle(model.selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
                     }
                 }
@@ -478,14 +473,76 @@ struct ChannelListView: View {
                             let ok = await model.scheduleProgramTimer(channel: payload.channel, entry: entry)
                             if ok {
                                 triggerHaptic(.medium)
-                                withAnimation {
-                                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                }
+                            } else {
+                                Haptics.shared.notification(.error)
+                            }
+                            withAnimation {
+                                recordConfirmationMessage = ok ? "„\(entry.title)“ programmiert" : "Aufnahme fehlgeschlagen: \(model.lastError ?? "Receiver beschäftigt")"
                             }
                         }
                     }
                 )
             }
+        }
+    }
+
+    private var bouquetMenu: some View {
+        Menu {
+            Button {
+                triggerHaptic(.light)
+                Task { await model.selectBouquet(nil) }
+            } label: {
+                HStack {
+                    Text("Alle Sender (\(model.channels.count))")
+                    if model.selectedBouquet == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            if !model.favoriteChannelIDs.isEmpty {
+                Button {
+                    triggerHaptic(.light)
+                    Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                } label: {
+                    HStack {
+                        Text("Favoriten (\(model.favoriteChannelIDs.count))")
+                        if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+
+            if !model.bouquets.isEmpty {
+                Divider()
+                ForEach(model.bouquets) { bouquet in
+                    Button {
+                        triggerHaptic(.light)
+                        Task { await model.selectBouquet(bouquet) }
+                    } label: {
+                        HStack {
+                            Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
+                            if model.selectedBouquet?.id == bouquet.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(model.selectedBouquet?.name ?? "Alle Sender")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Image(systemName: "chevron.down.circle.fill")
+                    .font(.app(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.accentAction)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.Colors.surfaceElevated.opacity(0.8), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         }
     }
 

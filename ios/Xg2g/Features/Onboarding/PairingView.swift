@@ -22,7 +22,7 @@ struct PairingView: View {
                 Spacer()
 
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 64))
+                    .font(.app(size: 64))
                     .foregroundStyle(Theme.Colors.accentLive)
                     .padding()
                     .background(Theme.Colors.surfaceGlass, in: Circle())
@@ -48,7 +48,7 @@ struct PairingView: View {
                             .padding(.top, 8)
 
                         Text(invitation.userCode)
-                            .font(.system(size: 42, weight: .bold, design: .monospaced))
+                            .font(.app(size: 42, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentLive)
 #if !os(tvOS)
                             .textSelection(.enabled)
@@ -68,12 +68,15 @@ struct PairingView: View {
                             .padding(.top, 8)
                         }
                     } else if isStarting {
-                        VStack(spacing: 12) {
+                        VStack(spacing: 8) {
                             ProgressView()
                                 .tint(Theme.Colors.accentAction)
-                            Text("Generiere P-256 Hardwareschlüssel & starte Kopplung…")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                            Text("Sichere Verbindung wird eingerichtet…")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text("Schlüsselspeicher wird vorbereitet")
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
                         .padding(.vertical, 24)
                     } else {

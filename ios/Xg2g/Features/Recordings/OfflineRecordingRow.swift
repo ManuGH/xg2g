@@ -26,14 +26,14 @@ struct OfflineRecordingRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(offline.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.app(size: 15, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
                     if let q = offline.quality {
                         Label(q.title, systemImage: q.icon)
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.app(size: 10, weight: .bold))
                             .foregroundStyle(Theme.Colors.accentLive)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
