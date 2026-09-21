@@ -167,6 +167,9 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	liveConnectorCfg.Password = s.cfg.Enigma2.Password
 	liveConnectorCfg.TopologyService = s.topologyService
 	liveConnectorCfg.RequireTopology = true // Production live route is strictly FAIL-CLOSED
+	if s.liveConnectorModifier != nil {
+		s.liveConnectorModifier(&liveConnectorCfg)
+	}
 	liveConnector := pipeline.NewLivePipelineConnector(liveConnectorCfg)
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
 	s.liveSessionMgr = liveSessionMgr

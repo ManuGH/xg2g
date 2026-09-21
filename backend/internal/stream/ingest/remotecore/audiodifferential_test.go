@@ -498,11 +498,12 @@ func TestAudioDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 				}
 
 				// 1. Rust must match authored expectations 100% (normative truth)
-				if step.authoredFacts != nil {
-					rustFacts := audioTSDifferentialFactsOf(rustRes.Facts)
-					if bad := diffAudioFacts(rustFacts, *step.authoredFacts, i+1, "rust"); len(bad) > 0 {
-						t.Fatalf("step %d of %d in %s:\n%s", i+1, len(c.steps), c.name, strings.Join(bad, "\n"))
-					}
+				if step.authoredFacts == nil {
+					t.Fatalf("step %d of %d in %s has no authored facts", i+1, len(c.steps), c.name)
+				}
+				rustFacts := audioTSDifferentialFactsOf(rustRes.Facts)
+				if bad := diffAudioFacts(rustFacts, *step.authoredFacts, i+1, "rust"); len(bad) > 0 {
+					t.Fatalf("step %d of %d in %s:\n%s", i+1, len(c.steps), c.name, strings.Join(bad, "\n"))
 				}
 
 				// 2. Go reference matches authored (non-divergent) or ref-facts (divergent)

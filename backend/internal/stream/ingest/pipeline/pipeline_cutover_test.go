@@ -130,21 +130,38 @@ func TestSessionPipeline_FailClosed_NoSilentFallback(t *testing.T) {
 	}
 	defer pipe.Close()
 
-	// Deliberately close the underlying remote core prematurely to simulate crash/disconnect
+	mRing := pipe.MasterRing()
+	headBefore := mRing.Head()
+
+	// 1. Deliberately close the underlying remote core prematurely to simulate crash/disconnect
 	if pipe.coreCloser != nil {
 		_ = pipe.coreCloser.Close()
 	}
 
-	// Pushing bytes into the ring now must fail-closed rather than silently switching to Go
 	packet := make([]byte, ring.TSPacketSize)
 	packet[0] = ring.SyncByte
-	_, pushErr := pipe.MasterRing().Push(ctx, packet)
-	if pushErr == nil {
-		t.Fatalf("Push after remote core close must return error, got nil")
+
+	// 2. First push must fail and retire the core
+	n1, err1 := mRing.Push(ctx, packet)
+	if err1 == nil {
+		t.Fatalf("first Push after remote core close must return error, got nil (wrote %d bytes)", n1)
 	}
-	if !errors.Is(pushErr, ring.ErrCoreUnusable) && !errors.Is(pushErr, ring.ErrCoreIncompleteResult) {
-		// As long as it fails closed and does NOT succeed or fall back, contract is met
-		t.Logf("Push correctly failed with: %v", pushErr)
+	if n1 != 0 {
+		t.Fatalf("first Push committed %d bytes on failure, want 0", n1)
+	}
+
+	// 3. Second push MUST return ring.ErrCoreUnusable (permanent retired state)
+	n2, err2 := mRing.Push(ctx, packet)
+	if !errors.Is(err2, ring.ErrCoreUnusable) {
+		t.Fatalf("second Push must return ring.ErrCoreUnusable, got: %v", err2)
+	}
+	if n2 != 0 {
+		t.Fatalf("second Push committed %d bytes on retired core, want 0", n2)
+	}
+
+	// 4. No bytes committed to the ring
+	if mRing.Head() != headBefore {
+		t.Fatalf("ring head advanced from %d to %d despite core failure", headBefore, mRing.Head())
 	}
 }
 
