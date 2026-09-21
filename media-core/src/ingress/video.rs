@@ -44,6 +44,7 @@ use crate::audio::observer::Observation;
 use crate::ingress::audio::{AudioTrackState, AudioTracker};
 use crate::pes::{self, PesStart};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
+use crate::timing::{PcrTracker, TimingSnapshot};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
 /// Minimum consecutive scrambled packets required to conclusively confirm a stream as scrambled.
@@ -891,6 +892,7 @@ pub struct VideoIngress {
     psi: PsiCore,
     follower: Option<VideoFollower>,
     audio: AudioTracker,
+    timing: PcrTracker,
     incarnation: u64,
 }
 
@@ -902,6 +904,7 @@ impl VideoIngress {
             psi: PsiCore::new(target_program_number),
             follower: None,
             audio: AudioTracker::new(),
+            timing: PcrTracker::new(),
             incarnation: 0,
         }
     }
@@ -941,6 +944,12 @@ impl VideoIngress {
     #[must_use]
     pub fn audio_tracker(&self) -> &AudioTracker {
         &self.audio
+    }
+
+    /// A point-in-time snapshot of the timing tracker's state.
+    #[must_use]
+    pub fn timing_snapshot(&self) -> TimingSnapshot {
+        self.timing.snapshot()
     }
 
     /// Selects the programme to follow, returning any identity events emitted.
@@ -1051,6 +1060,7 @@ impl VideoIngress {
             let Ok(view) = PacketView::parse(packet) else {
                 continue;
             };
+            self.timing.observe(packet_offset, &view);
             self.route(packet_offset, &view, &mut feeds, &mut events);
         }
         let consumed = i64::try_from(data.len()).unwrap_or(i64::MAX);
@@ -1071,6 +1081,7 @@ impl VideoIngress {
             self.follower = None;
         }
         self.audio.reset_with_tracks(self.psi.audio_tracks());
+        self.timing.rebind(self.psi.pcr_pid());
     }
 
     /// Routes one packet to the video follower.

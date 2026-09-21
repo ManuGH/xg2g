@@ -905,6 +905,7 @@ mod tests {
         ];
         let snapshot = VideoSnapshot {
             psi: PsiFacts {
+                pcr_pid: None,
                 has_pat: true,
                 has_pmt: true,
                 pmt_version: 5,

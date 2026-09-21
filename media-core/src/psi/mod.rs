@@ -92,6 +92,8 @@ pub enum PsiEvent {
 /// What the core knows about the stream right now.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PsiFacts {
+    /// The PID declared for PCR in the PMT in force, or None if no PMT or no PCR PID.
+    pub pcr_pid: Option<u16>,
     /// A PAT naming the programme being followed has been accepted.
     pub has_pat: bool,
     /// A PMT for that programme has been accepted.
@@ -317,6 +319,7 @@ impl PsiCore {
         );
         PsiSnapshot {
             facts: PsiFacts {
+                pcr_pid: self.pcr_pid(),
                 has_pat: self.has_pat_version,
                 has_pmt: self.has_pmt_version,
                 pmt_version: self.pmt_version,
@@ -393,6 +396,12 @@ impl PsiCore {
             }
         }
         &self.events[before..]
+    }
+
+    /// The PID declared for PCR in the PMT in force, or None if no PMT or no PCR PID.
+    #[must_use]
+    pub fn pcr_pid(&self) -> Option<u16> {
+        self.streams.pcr_pid
     }
 
     /// The PID the table in force names for video, or 0 while none has.
