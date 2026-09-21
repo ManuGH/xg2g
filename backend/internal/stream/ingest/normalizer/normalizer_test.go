@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -645,4 +646,71 @@ func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
 
 	t.Logf("✅ End-to-End Normalizer -> MasterRing -> FFmpeg Decoded SUCCESS: vPID=%d kfOffset=%d decodedFrames=%d",
 		vPID, kfOffset, decodedFrames)
+}
+
+type blockingCloserSource struct {
+	closed  atomic.Bool
+	unblock chan struct{}
+	sentOne atomic.Bool
+}
+
+func (b *blockingCloserSource) Read(p []byte) (int, error) {
+	if b.sentOne.CompareAndSwap(false, true) {
+		pkt := make([]byte, TSPacketSize)
+		pkt[0] = SyncByte
+		copy(p, pkt)
+		return TSPacketSize, nil
+	}
+	<-b.unblock
+	return 0, net.ErrClosed
+}
+
+func (b *blockingCloserSource) Close() error {
+	if b.closed.CompareAndSwap(false, true) {
+		close(b.unblock)
+	}
+	return nil
+}
+
+// 12. Sink failure immediately aborts a blocked upstream source.Read() and preserves original sink error
+func TestNormalizer_Run_SinkFailureAbortsBlockedUpstreamRead(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.StartupReservoirMs = 0.0 // Instant release
+	cfg.PacerIntervalMs = 5.0    // Fast pacer loop
+
+	errSinkFail := errors.New("simulated fatal sink failure")
+	sink := func(ctx context.Context, chunk []byte) error {
+		return errSinkFail
+	}
+
+	norm, err := NewStreamNormalizer(cfg, sink)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	defer norm.Close()
+
+	src := &blockingCloserSource{
+		unblock: make(chan struct{}),
+	}
+
+	ctx := context.Background()
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- norm.Run(ctx, src)
+	}()
+
+	select {
+	case err := <-runErrCh:
+		if !errors.Is(err, errSinkFail) {
+			t.Fatalf("expected error %v, got %v", errSinkFail, err)
+		}
+		if !src.closed.Load() {
+			t.Fatalf("expected source to have been closed by context cancellation watcher")
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("expected root context to remain uncancelled, got %v", ctx.Err())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Run() did not abort blocked upstream source.Read within timeout after sink failure")
+	}
 }

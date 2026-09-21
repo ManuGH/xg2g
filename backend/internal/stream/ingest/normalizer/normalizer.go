@@ -6,6 +6,7 @@ package normalizer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math"
 	"sync"
@@ -162,8 +163,8 @@ func (sn *StreamNormalizer) Feed(data []byte) error {
 // - A background egress pacer loop runs at the configured tick slice (20ms)
 // - The main goroutine continuously pumps from source into Feed()
 func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	// Ensure blocking socket reads unblock immediately upon context cancellation
 	if closer, ok := source.(io.Closer); ok {
@@ -180,10 +181,23 @@ func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := sn.startPacerLoop(ctx); err != nil && err != context.Canceled {
+		if err := sn.startPacerLoop(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			// Fatal pacer/sink error: cancel the Run context immediately with cause
+			// so blocked source.Read unblocks via closer.Close().
+			cancel(err)
 			errCh <- err
 		}
 	}()
+
+	runErr := func(fallback error) error {
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+			return cause
+		}
+		if fallback != nil {
+			return fallback
+		}
+		return ctx.Err()
+	}
 
 	// Ingress pump loop (reads up to 64 KiB from source)
 	buf := make([]byte, 64*1024)
@@ -192,7 +206,7 @@ func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 		case <-ctx.Done():
 			sn.Close()
 			wg.Wait()
-			return ctx.Err()
+			return runErr(ctx.Err())
 		case <-sn.stopCh:
 			wg.Wait()
 			return nil
@@ -206,13 +220,21 @@ func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 		n, err := source.Read(buf)
 		if n > 0 {
 			if feedErr := sn.Feed(buf[:n]); feedErr != nil {
-				cancel()
+				cancel(feedErr)
 				sn.Close()
 				wg.Wait()
 				return feedErr
 			}
 		}
 		if err != nil {
+			// If context was cancelled due to pacer/sink failure, unblocking source.Read
+			// may yield an arbitrary read error (or EOF). Prioritize the cause over that read error.
+			if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+				sn.Close()
+				wg.Wait()
+				return cause
+			}
+
 			if err == io.EOF {
 				// Wait for staging buffer to drain to sink
 				for sn.staging.BufferedBytes() > 0 {
@@ -220,7 +242,7 @@ func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 					case <-ctx.Done():
 						sn.Close()
 						wg.Wait()
-						return ctx.Err()
+						return runErr(ctx.Err())
 					case <-sn.stopCh:
 						wg.Wait()
 						return nil
@@ -231,15 +253,15 @@ func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 					case <-time.After(10 * time.Millisecond):
 					}
 				}
-				cancel()
+				cancel(nil)
 				sn.Close()
 				wg.Wait()
 				return nil
 			}
-			cancel()
+			cancel(err)
 			sn.Close()
 			wg.Wait()
-			return err
+			return runErr(err)
 		}
 	}
 }
