@@ -38,6 +38,7 @@ xg2g is a **DVB-T2/Satellite streaming gateway** that:
 4. **Deterministic Boot:** `WireServices()` constructs graph (pure), `Start()` launches side effects. Tests prove this.
 5. **Observability Contract:** Structured logs (zerolog), OpenTelemetry traces, Prometheus metrics are **required**, not optional.
 6. **OpenAPI Drift Prevention:** DTOs are canonical. Codegen ensures client/server stay in sync.
+7. **Media Syntax & Authority Contract:** Authoritative source/master media syntax and media truth are owned exclusively by Rust `media-core`. Non-authoritative operational sensors and explicitly documented derived-output analyzers may exist outside Rust but must never feed source/master media truth back into the system.
 
 ### Layer Model (Outside-In)
 

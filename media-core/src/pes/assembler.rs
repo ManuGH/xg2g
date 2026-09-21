@@ -22,6 +22,32 @@ pub const PES_PTS_DTS_BYTES: usize = 10;
 /// fixed header (9) + PTS (5) + DTS (5) = 19 bytes.
 pub const PES_TIMING_PREFIX_LEN: usize = PES_FIXED_HEADER_LEN + PES_PTS_DTS_BYTES;
 
+/// Structural PES header metadata emitted once per valid PES packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PesHeader {
+    /// Stream identifier byte (e.g. `0xE0..=0xEF` for video, `0xBD`/`0xC0..=0xDF` for audio).
+    pub stream_id: u8,
+    /// Declared `PES_packet_length` (0 is legal for video and indicates unbounded length).
+    pub packet_length: u16,
+    /// Length of the optional header if present. `None` for stream types without optional header.
+    pub header_data_length: Option<u8>,
+    /// Timing parsed from the optional header.
+    pub timing: PesTiming,
+}
+
+/// Output produced when feeding a transport packet payload to [`PesHeaderAssembler`].
+#[derive(Debug, Default)]
+pub struct PesAssembleOutput<'a> {
+    /// Structural header emitted exactly once per PES packet upon header validation.
+    pub header: Option<PesHeader>,
+    /// Canonical timing event emitted once per PES packet carrying timing.
+    pub timing_event: Option<TimingEvent>,
+    /// Elementary stream payload bytes released from this packet, if any.
+    pub es: Option<&'a [u8]>,
+    /// Whether the optional header spanned past the PUSI transport packet.
+    pub header_spanned_start_packet: bool,
+}
+
 /// Parses PES timing from a slice starting at the beginning of a PES packet (`0x00 0x00 0x01`).
 ///
 /// # Invariants
@@ -159,12 +185,14 @@ const fn compute_required_prefix_len(pts_dts_flags: u8, header_data_len: usize) 
 enum State {
     /// Awaiting next PUSI packet.
     AwaitingStart,
-    /// Accumulating prefix bytes up to `required_len` (<= 19 bytes).
+    /// Accumulating prefix bytes across packet boundaries.
     CollectingPrefix { required_len: usize },
     /// Timing has been extracted; skipping remaining optional header bytes.
     SkippingHeader { remaining: usize },
     /// Header complete; continuation payload is elementary stream.
     InElementaryStream,
+    /// Stream ID was rejected by caller or header corrupted; ignore until next PUSI.
+    Rejected,
 }
 
 /// Bounded common PES header assembler for one transport stream PID.
@@ -180,6 +208,7 @@ pub struct PesHeaderAssembler {
     pes_start_offset: ByteOffset,
     state: State,
     last_timing: Option<PesTiming>,
+    spanned_start_packet: bool,
 }
 
 impl PesHeaderAssembler {
@@ -191,15 +220,35 @@ impl PesHeaderAssembler {
             buf: [0u8; PES_TIMING_PREFIX_LEN],
             buf_len: 0,
             pes_start_offset: ByteOffset::new(0),
-            state: State::AwaitingStart,
+            state: State::InElementaryStream,
             last_timing: None,
+            spanned_start_packet: false,
         }
+    }
+
+    /// Whether the assembler is currently accumulating or skipping header bytes.
+    #[must_use]
+    pub fn is_in_header(&self) -> bool {
+        matches!(
+            self.state,
+            State::CollectingPrefix { .. } | State::SkippingHeader { .. }
+        )
     }
 
     /// Resets the assembler to awaiting start (e.g. on continuity break, TEI, or scrambling).
     pub fn reset(&mut self) {
         self.buf_len = 0;
         self.state = State::AwaitingStart;
+        self.last_timing = None;
+        self.spanned_start_packet = false;
+    }
+
+    /// Rejects the current PES packet (e.g. stream ID rejected by caller).
+    pub fn reject(&mut self) {
+        self.buf_len = 0;
+        self.state = State::Rejected;
+        self.last_timing = None;
+        self.spanned_start_packet = false;
     }
 
     /// The PID this assembler follows.
@@ -208,7 +257,13 @@ impl PesHeaderAssembler {
         self.pid
     }
 
-    /// The last parsed PES timing, if any.
+    /// The subject byte offset of the PES packet currently in flight or most recently started.
+    #[must_use]
+    pub fn subject_at(&self) -> ByteOffset {
+        self.pes_start_offset
+    }
+
+    /// The last parsed PES timing, if any. Cleared upon [`reset`](Self::reset).
     #[must_use]
     pub fn last_timing(&self) -> Option<PesTiming> {
         self.last_timing
@@ -220,37 +275,86 @@ impl PesHeaderAssembler {
         matches!(self.state, State::InElementaryStream)
     }
 
+    /// Whether the assembler is awaiting a new PES start (PUSI) or in rejected state.
+    #[must_use]
+    pub fn is_awaiting_start(&self) -> bool {
+        matches!(self.state, State::AwaitingStart | State::Rejected)
+    }
+
+    /// Returns the number of optional header bytes still to be skipped, if in skipping header state.
+    #[must_use]
+    pub fn remaining_header_bytes(&self) -> Option<usize> {
+        match self.state {
+            State::SkippingHeader { remaining } => Some(remaining),
+            _ => None,
+        }
+    }
+
     /// Feeds a packet payload that starts a PES packet (PUSI = true).
-    ///
-    /// Returns `(Option<TimingEvent>, Option<&[u8]>)`.
+    #[allow(clippy::too_many_lines)]
     pub fn feed_pusi<'a>(
         &mut self,
         packet_offset: i64,
         payload: &'a [u8],
-    ) -> (Option<TimingEvent>, Option<&'a [u8]>) {
+    ) -> PesAssembleOutput<'a> {
         self.buf_len = 0;
         self.pes_start_offset = ByteOffset::new(packet_offset);
+        self.last_timing = None;
+        self.spanned_start_packet = false;
 
-        // Verify PES start code: 0x00 0x00 0x01
-        if payload.len() < 3 || payload[..3] != [0x00, 0x00, 0x01] {
+        // Verify start code bytes available in this payload
+        if payload.is_empty() || payload[0] != 0x00 {
             self.state = State::AwaitingStart;
-            return (None, None);
+            return PesAssembleOutput::default();
+        }
+        if payload.len() == 1 {
+            self.buf[0] = 0x00;
+            self.buf_len = 1;
+            self.state = State::CollectingPrefix { required_len: 3 };
+            self.spanned_start_packet = true;
+            return PesAssembleOutput::default();
+        }
+        if payload[1] != 0x00 {
+            self.state = State::AwaitingStart;
+            return PesAssembleOutput::default();
+        }
+        if payload.len() == 2 {
+            self.buf[0] = 0x00;
+            self.buf[1] = 0x00;
+            self.buf_len = 2;
+            self.state = State::CollectingPrefix { required_len: 3 };
+            self.spanned_start_packet = true;
+            return PesAssembleOutput::default();
+        }
+        if payload[2] != 0x01 {
+            self.state = State::AwaitingStart;
+            return PesAssembleOutput::default();
         }
 
+        // Start code (00 00 01) is complete. Need minimum header (6 bytes)
         if payload.len() < super::MINIMUM_HEADER_LEN {
             self.buf[..payload.len()].copy_from_slice(payload);
             self.buf_len = payload.len();
             self.state = State::CollectingPrefix {
                 required_len: super::MINIMUM_HEADER_LEN,
             };
-            return (None, None);
+            self.spanned_start_packet = true;
+            return PesAssembleOutput::default();
         }
 
         let stream_id = payload[3];
+        let packet_length = u16::from_be_bytes([payload[4], payload[5]]);
+
         if !super::has_optional_header(stream_id) {
             let timing = PesTiming::default();
             self.last_timing = Some(timing);
             self.state = State::InElementaryStream;
+            let header = PesHeader {
+                stream_id,
+                packet_length,
+                header_data_length: None,
+                timing,
+            };
             let event = TimingEvent {
                 observed_at: ByteOffset::new(packet_offset),
                 subject_at: self.pes_start_offset,
@@ -258,7 +362,12 @@ impl PesHeaderAssembler {
                 timing,
             };
             let es = &payload[super::MINIMUM_HEADER_LEN..];
-            return (Some(event), Some(es));
+            return PesAssembleOutput {
+                header: Some(header),
+                timing_event: Some(event),
+                es: Some(es),
+                header_spanned_start_packet: false,
+            };
         }
 
         if payload.len() < PES_FIXED_HEADER_LEN {
@@ -267,7 +376,8 @@ impl PesHeaderAssembler {
             self.state = State::CollectingPrefix {
                 required_len: PES_FIXED_HEADER_LEN,
             };
-            return (None, None);
+            self.spanned_start_packet = true;
+            return PesAssembleOutput::default();
         }
 
         let flags2 = payload[7];
@@ -279,12 +389,19 @@ impl PesHeaderAssembler {
             self.buf[..payload.len()].copy_from_slice(payload);
             self.buf_len = payload.len();
             self.state = State::CollectingPrefix { required_len };
-            return (None, None);
+            self.spanned_start_packet = true;
+            return PesAssembleOutput::default();
         }
 
         // We have at least required_len bytes: timing can be extracted immediately!
         let timing = parse_pes_timing(&payload[..required_len]);
         self.last_timing = Some(timing);
+        let header = PesHeader {
+            stream_id,
+            packet_length,
+            header_data_length: Some(payload[8]),
+            timing,
+        };
         let event = TimingEvent {
             observed_at: ByteOffset::new(packet_offset),
             subject_at: self.pes_start_offset,
@@ -297,29 +414,82 @@ impl PesHeaderAssembler {
         if payload.len() >= total_header_len {
             self.state = State::InElementaryStream;
             let es = &payload[total_header_len..];
-            (Some(event), Some(es))
+            PesAssembleOutput {
+                header: Some(header),
+                timing_event: Some(event),
+                es: Some(es),
+                header_spanned_start_packet: false,
+            }
         } else {
             let remaining = total_header_len - payload.len();
             self.state = State::SkippingHeader { remaining };
-            (Some(event), None)
+            self.spanned_start_packet = true;
+            PesAssembleOutput {
+                header: Some(header),
+                timing_event: Some(event),
+                es: None,
+                header_spanned_start_packet: true,
+            }
         }
     }
 
     /// Feeds a continuation payload (PUSI = false).
-    ///
-    /// Returns `(Option<TimingEvent>, Option<&[u8]>)`.
+    #[allow(clippy::too_many_lines)]
     pub fn feed_cont<'a>(
         &mut self,
         packet_offset: i64,
         payload: &'a [u8],
-    ) -> (Option<TimingEvent>, Option<&'a [u8]>) {
+    ) -> PesAssembleOutput<'a> {
         match self.state {
-            State::AwaitingStart => (None, None),
+            State::AwaitingStart | State::Rejected => PesAssembleOutput::default(),
+
+            State::InElementaryStream => PesAssembleOutput {
+                header: None,
+                timing_event: None,
+                es: Some(payload),
+                header_spanned_start_packet: false,
+            },
+
+            State::SkippingHeader { ref mut remaining } => {
+                if payload.len() < *remaining {
+                    *remaining -= payload.len();
+                    PesAssembleOutput::default()
+                } else {
+                    let rem = *remaining;
+                    self.state = State::InElementaryStream;
+                    PesAssembleOutput {
+                        header: None,
+                        timing_event: None,
+                        es: Some(&payload[rem..]),
+                        header_spanned_start_packet: false,
+                    }
+                }
+            }
 
             State::CollectingPrefix { mut required_len } => {
                 let mut pos = 0;
 
-                // Step 1: Accumulate up to MINIMUM_HEADER_LEN (6)
+                // Step 1: Complete 3-byte start code (0x00 0x00 0x01)
+                while self.buf_len < 3 && pos < payload.len() {
+                    let b = payload[pos];
+                    pos += 1;
+                    if self.buf_len == 1 && b != 0x00 {
+                        self.state = State::AwaitingStart;
+                        return PesAssembleOutput::default();
+                    }
+                    if self.buf_len == 2 && b != 0x01 {
+                        self.state = State::AwaitingStart;
+                        return PesAssembleOutput::default();
+                    }
+                    self.buf[self.buf_len] = b;
+                    self.buf_len += 1;
+                }
+
+                if self.buf_len < 3 {
+                    return PesAssembleOutput::default();
+                }
+
+                // Step 2: Accumulate up to MINIMUM_HEADER_LEN (6)
                 if self.buf_len < super::MINIMUM_HEADER_LEN {
                     let needed = super::MINIMUM_HEADER_LEN - self.buf_len;
                     let take = (payload.len() - pos).min(needed);
@@ -329,25 +499,39 @@ impl PesHeaderAssembler {
                     pos += take;
 
                     if self.buf_len < super::MINIMUM_HEADER_LEN {
-                        return (None, None);
+                        return PesAssembleOutput::default();
                     }
                 }
 
+                let stream_id = self.buf[3];
+                let packet_length = u16::from_be_bytes([self.buf[4], self.buf[5]]);
+
                 // If stream carries no optional header, data starts at offset 6
-                if !super::has_optional_header(self.buf[3]) {
+                if !super::has_optional_header(stream_id) {
                     let timing = PesTiming::default();
                     self.last_timing = Some(timing);
                     self.state = State::InElementaryStream;
+                    let header = PesHeader {
+                        stream_id,
+                        packet_length,
+                        header_data_length: None,
+                        timing,
+                    };
                     let event = TimingEvent {
                         observed_at: ByteOffset::new(packet_offset),
                         subject_at: self.pes_start_offset,
                         pid: self.pid,
                         timing,
                     };
-                    return (Some(event), Some(&payload[pos..]));
+                    return PesAssembleOutput {
+                        header: Some(header),
+                        timing_event: Some(event),
+                        es: Some(&payload[pos..]),
+                        header_spanned_start_packet: self.spanned_start_packet,
+                    };
                 }
 
-                // Step 2: Accumulate up to PES_FIXED_HEADER_LEN (9)
+                // Step 3: Accumulate up to PES_FIXED_HEADER_LEN (9)
                 if self.buf_len < PES_FIXED_HEADER_LEN {
                     let needed = PES_FIXED_HEADER_LEN - self.buf_len;
                     let take = (payload.len() - pos).min(needed);
@@ -360,11 +544,11 @@ impl PesHeaderAssembler {
                         self.state = State::CollectingPrefix {
                             required_len: PES_FIXED_HEADER_LEN,
                         };
-                        return (None, None);
+                        return PesAssembleOutput::default();
                     }
                 }
 
-                // Step 3: Now we have 9 bytes; compute target timing prefix length
+                // Step 4: Now we have 9 bytes; compute target timing prefix length
                 let flags2 = self.buf[7];
                 let pts_dts_flags = (flags2 >> 6) & 0x03;
                 let header_data_len = usize::from(self.buf[8]);
@@ -380,13 +564,19 @@ impl PesHeaderAssembler {
 
                     if self.buf_len < required_len {
                         self.state = State::CollectingPrefix { required_len };
-                        return (None, None);
+                        return PesAssembleOutput::default();
                     }
                 }
 
-                // Step 4: Timing prefix is complete; parse timing immediately!
+                // Step 5: Timing prefix is complete; parse timing immediately!
                 let timing = parse_pes_timing(&self.buf[..self.buf_len]);
                 self.last_timing = Some(timing);
+                let header = PesHeader {
+                    stream_id,
+                    packet_length,
+                    header_data_length: Some(self.buf[8]),
+                    timing,
+                };
                 let event = TimingEvent {
                     observed_at: ByteOffset::new(packet_offset),
                     subject_at: self.pes_start_offset,
@@ -394,7 +584,7 @@ impl PesHeaderAssembler {
                     timing,
                 };
 
-                // Step 5: Skip remaining optional header bytes
+                // Step 6: Skip remaining optional header bytes
                 let total_header_len = PES_FIXED_HEADER_LEN + header_data_len;
                 if total_header_len > self.buf_len {
                     let remaining_in_header = total_header_len - self.buf_len;
@@ -403,30 +593,32 @@ impl PesHeaderAssembler {
                     if remaining_in_packet >= remaining_in_header {
                         self.state = State::InElementaryStream;
                         pos += remaining_in_header;
-                        (Some(event), Some(&payload[pos..]))
+                        PesAssembleOutput {
+                            header: Some(header),
+                            timing_event: Some(event),
+                            es: Some(&payload[pos..]),
+                            header_spanned_start_packet: self.spanned_start_packet,
+                        }
                     } else {
                         let rem = remaining_in_header - remaining_in_packet;
                         self.state = State::SkippingHeader { remaining: rem };
-                        (Some(event), None)
+                        PesAssembleOutput {
+                            header: Some(header),
+                            timing_event: Some(event),
+                            es: None,
+                            header_spanned_start_packet: self.spanned_start_packet,
+                        }
                     }
                 } else {
                     self.state = State::InElementaryStream;
-                    (Some(event), Some(&payload[pos..]))
+                    PesAssembleOutput {
+                        header: Some(header),
+                        timing_event: Some(event),
+                        es: Some(&payload[pos..]),
+                        header_spanned_start_packet: self.spanned_start_packet,
+                    }
                 }
             }
-
-            State::SkippingHeader { ref mut remaining } => {
-                if payload.len() < *remaining {
-                    *remaining -= payload.len();
-                    (None, None)
-                } else {
-                    let rem = *remaining;
-                    self.state = State::InElementaryStream;
-                    (None, Some(&payload[rem..]))
-                }
-            }
-
-            State::InElementaryStream => (None, Some(payload)),
         }
     }
 }
@@ -480,13 +672,13 @@ mod tests {
         hdr[7] = 0x80; // pts_dts_flags == 10
         hdr[8] = 0x05; // header_data_length == 5
 
-        let target_pts = 0x1_2345_6789;
-        hdr[9..14].copy_from_slice(&encode_ts(0b0010, target_pts));
+        let target_pts_val = 0x1_2345_6789;
+        hdr[9..14].copy_from_slice(&encode_ts(0b0010, target_pts_val));
 
         let timing = parse_pes_timing(&hdr);
         assert_eq!(
             timing.pts,
-            TimingField::Valid(RawPts33::new(target_pts).unwrap())
+            TimingField::Valid(RawPts33::new(target_pts_val).unwrap())
         );
         assert!(timing.dts.is_absent());
 
@@ -518,19 +710,19 @@ mod tests {
         hdr[7] = 0xC0; // pts_dts_flags == 11
         hdr[8] = 0x0A; // header_data_length == 10
 
-        let target_pts = 90_000 * 2; // 2 seconds
-        let target_dts = 90_000 * 1; // 1 second
-        hdr[9..14].copy_from_slice(&encode_ts(0b0011, target_pts));
-        hdr[14..19].copy_from_slice(&encode_ts(0b0001, target_dts));
+        let pts_val = 90_000 * 2; // 2 seconds
+        let dts_val = 90_000; // 1 second
+        hdr[9..14].copy_from_slice(&encode_ts(0b0011, pts_val));
+        hdr[14..19].copy_from_slice(&encode_ts(0b0001, dts_val));
 
         let timing = parse_pes_timing(&hdr);
         assert_eq!(
             timing.pts,
-            TimingField::Valid(RawPts33::new(target_pts).unwrap())
+            TimingField::Valid(RawPts33::new(pts_val).unwrap())
         );
         assert_eq!(
             timing.dts,
-            TimingField::Valid(RawDts33::new(target_dts).unwrap())
+            TimingField::Valid(RawDts33::new(dts_val).unwrap())
         );
 
         // Corrupt DTS marker bit
@@ -539,7 +731,7 @@ mod tests {
         let timing_bad_dts = parse_pes_timing(&hdr_bad_dts);
         assert_eq!(
             timing_bad_dts.pts,
-            TimingField::Valid(RawPts33::new(target_pts).unwrap())
+            TimingField::Valid(RawPts33::new(pts_val).unwrap())
         );
         assert!(timing_bad_dts.dts.is_invalid());
 
@@ -560,8 +752,13 @@ mod tests {
         payload.extend_from_slice(&encode_ts(0b0010, 810_000));
         payload.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // 4 bytes ES
 
-        let (event, es) = assembler.feed_pusi(1000, &payload);
-        let event = event.expect("timing event emitted");
+        let out = assembler.feed_pusi(1000, &payload);
+        let header = out.header.expect("header emitted");
+        assert_eq!(header.stream_id, 0xE0);
+        assert_eq!(header.packet_length, 0);
+        assert_eq!(header.header_data_length, Some(5));
+
+        let event = out.timing_event.expect("timing event emitted");
         assert_eq!(event.observed_at, ByteOffset::new(1000));
         assert_eq!(event.subject_at, ByteOffset::new(1000));
         assert_eq!(event.pid, pid);
@@ -569,88 +766,125 @@ mod tests {
             event.timing.pts,
             TimingField::Valid(RawPts33::new(810_000).unwrap())
         );
-        assert_eq!(es, Some(&[0x11, 0x22, 0x33, 0x44][..]));
+        assert_eq!(out.es, Some(&[0x11, 0x22, 0x33, 0x44][..]));
+        assert!(!out.header_spanned_start_packet);
         assert!(assembler.is_in_elementary_stream());
     }
 
     #[test]
-    fn assembler_split_header_across_packets_dual_coordinates() {
+    fn assembler_exhaustive_splits_1_to_19() {
         let pid = Pid::new(256).unwrap();
+        let pts_val = 90_000 * 5;
+        let dts_val = 90_000 * 4;
+
+        // Construct a complete 19-byte PES header with PTS + DTS followed by 16 bytes ES
+        let mut full_header = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0xC0, 0x0A];
+        full_header.extend_from_slice(&encode_ts(0b0011, pts_val));
+        full_header.extend_from_slice(&encode_ts(0b0001, dts_val));
+        assert_eq!(full_header.len(), PES_TIMING_PREFIX_LEN);
+
+        let es_data = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
+
+        // Test every split point from 1 up to PES_TIMING_PREFIX_LEN - 1
+        for split in 1..PES_TIMING_PREFIX_LEN {
+            let mut assembler = PesHeaderAssembler::new(pid);
+
+            let pusi_bytes = &full_header[..split];
+            let mut cont_bytes = full_header[split..].to_vec();
+            cont_bytes.extend_from_slice(&es_data);
+
+            let out1 = assembler.feed_pusi(1000, pusi_bytes);
+            // In all splits 1..19, prefix is incomplete in PUSI
+            assert!(
+                out1.header.is_none(),
+                "split {split}: header should be None in PUSI"
+            );
+            assert!(
+                out1.timing_event.is_none(),
+                "split {split}: timing should be None in PUSI"
+            );
+            assert!(
+                out1.es.is_none(),
+                "split {split}: es should be None in PUSI"
+            );
+            assert!(!assembler.is_in_elementary_stream());
+
+            let out2 = assembler.feed_cont(1188, &cont_bytes);
+            let header = out2
+                .header
+                .unwrap_or_else(|| panic!("split {split}: header should be Some in cont"));
+            assert_eq!(header.stream_id, 0xE0);
+            assert_eq!(header.header_data_length, Some(10));
+
+            let event = out2
+                .timing_event
+                .unwrap_or_else(|| panic!("split {split}: timing event should be Some in cont"));
+            assert_eq!(
+                event.observed_at,
+                ByteOffset::new(1188),
+                "split {split}: observed_at must be cont offset"
+            );
+            assert_eq!(
+                event.subject_at,
+                ByteOffset::new(1000),
+                "split {split}: subject_at must be PUSI offset"
+            );
+            assert_eq!(
+                event.timing.pts,
+                TimingField::Valid(RawPts33::new(pts_val).unwrap())
+            );
+            assert_eq!(
+                event.timing.dts,
+                TimingField::Valid(RawDts33::new(dts_val).unwrap())
+            );
+
+            assert_eq!(
+                out2.es,
+                Some(&es_data[..]),
+                "split {split}: ES released must match exactly"
+            );
+            assert!(
+                out2.header_spanned_start_packet,
+                "split {split}: header must be marked as spanned"
+            );
+            assert!(assembler.is_in_elementary_stream());
+        }
+    }
+
+    #[test]
+    fn assembler_adversarial_split_start_code_rejection() {
+        let pid = Pid::new(256).unwrap();
+
+        // 1. Split after 1 byte [0x00], followed by corrupt byte [0xFF]
         let mut assembler = PesHeaderAssembler::new(pid);
-
-        // Packet 1 (PUSI): only 10 bytes of PES packet arrived (9 fixed header + 1 byte of PTS)
-        let mut p1 = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
-        let encoded_pts = encode_ts(0b0010, 999_000);
-        p1.push(encoded_pts[0]);
-
-        let (event1, es1) = assembler.feed_pusi(0, &p1);
-        assert!(event1.is_none());
-        assert!(es1.is_none());
+        let out1 = assembler.feed_pusi(1000, &[0x00]);
+        assert!(out1.header.is_none());
+        let out2 = assembler.feed_cont(1188, &[0xFF, 0x01, 0xE0, 0x00, 0x00]);
+        assert!(out2.header.is_none());
         assert!(!assembler.is_in_elementary_stream());
 
-        // Packet 2 (Continuation at offset 188): remaining 4 bytes of PTS + 10 bytes of ES
-        let mut p2 = encoded_pts[1..].to_vec();
-        p2.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
-
-        let (event2, es2) = assembler.feed_cont(188, &p2);
-        let event = event2.expect("timing event emitted on packet 2");
-        assert_eq!(event.observed_at, ByteOffset::new(188)); // observed in packet 2
-        assert_eq!(event.subject_at, ByteOffset::new(0)); // subject at packet 1
-        assert_eq!(
-            event.timing.pts,
-            TimingField::Valid(RawPts33::new(999_000).unwrap())
-        );
-        assert_eq!(es2, Some(&[0xAA, 0xBB, 0xCC][..]));
-        assert!(assembler.is_in_elementary_stream());
+        // 2. Split after 2 bytes [0x00, 0x00], followed by corrupt byte [0x02] (not 0x01)
+        let mut assembler2 = PesHeaderAssembler::new(pid);
+        let out1 = assembler2.feed_pusi(1000, &[0x00, 0x00]);
+        assert!(out1.header.is_none());
+        let out2 = assembler2.feed_cont(1188, &[0x02, 0xE0, 0x00, 0x00]);
+        assert!(out2.header.is_none());
+        assert!(!assembler2.is_in_elementary_stream());
     }
 
     #[test]
-    fn assembler_large_optional_header_timing_immediate_skips_remainder() {
+    fn assembler_reset_clears_last_timing() {
         let pid = Pid::new(256).unwrap();
         let mut assembler = PesHeaderAssembler::new(pid);
 
-        // header_data_length = 30 bytes (5 bytes PTS + 25 bytes other optional fields)
-        let mut p1 = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 30];
-        let encoded_pts = encode_ts(0b0010, 450_000);
-        p1.extend_from_slice(&encoded_pts);
-        p1.extend_from_slice(&[0xFF; 10]); // 10 bytes of additional header in p1
+        let mut payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+        payload.extend_from_slice(&encode_ts(0b0010, 810_000));
+        let out = assembler.feed_pusi(1000, &payload);
+        assert!(out.header.is_some());
+        assert!(assembler.last_timing().is_some());
 
-        // In p1: 9 + 5 + 10 = 24 bytes total. Total header is 9 + 30 = 39 bytes.
-        // 15 bytes of header remain to be skipped.
-        let (event1, es1) = assembler.feed_pusi(0, &p1);
-        let event = event1.expect("timing emitted immediately after 14 bytes");
-        assert_eq!(event.observed_at, ByteOffset::new(0));
-        assert_eq!(event.subject_at, ByteOffset::new(0));
-        assert_eq!(
-            event.timing.pts,
-            TimingField::Valid(RawPts33::new(450_000).unwrap())
-        );
-        assert!(es1.is_none()); // ES not started yet because 15 header bytes remain
+        assembler.reset();
+        assert!(assembler.last_timing().is_none());
         assert!(!assembler.is_in_elementary_stream());
-
-        // Packet 2: provides 15 remaining header bytes + 5 bytes ES
-        let mut p2 = vec![0xFF; 15];
-        p2.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
-
-        let (event2, es2) = assembler.feed_cont(188, &p2);
-        assert!(event2.is_none()); // no duplicate timing event!
-        assert_eq!(es2, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
-        assert!(assembler.is_in_elementary_stream());
-    }
-
-    #[test]
-    fn assembler_short_header_data_len_emits_invalid_immediately() {
-        let pid = Pid::new(256).unwrap();
-        let mut assembler = PesHeaderAssembler::new(pid);
-
-        // Declares PTS (flags == 10), but header_data_length == 2
-        let p1 = vec![
-            0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x02, 0xAA, 0xBB, 0xCC,
-        ];
-        let (event, es) = assembler.feed_pusi(500, &p1);
-        let event = event.expect("timing emitted immediately as invalid");
-        assert!(event.timing.pts.is_invalid());
-        assert_eq!(es, Some(&[0xCC][..])); // 9 + 2 = 11 bytes header, index 11 is 0xCC
-        assert!(assembler.is_in_elementary_stream());
     }
 }

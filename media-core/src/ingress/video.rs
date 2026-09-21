@@ -42,7 +42,7 @@
 
 use crate::audio::observer::Observation;
 use crate::ingress::audio::{AudioTrackState, AudioTracker};
-use crate::pes::{self, PesHeaderAssembler, PesStart};
+use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
 use crate::timing::{PcrTracker, Pid, TimingEvent, TimingSnapshot};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
@@ -354,9 +354,6 @@ pub(super) enum VideoPosition {
     /// A continuation payload is elementary stream.
     InElementaryStream,
 
-    /// An optional PES header has not finished, and this many of its bytes are still to come.
-    InHeader { remaining: usize },
-
     /// Nothing may be fed until a valid PES packet starts.
     AwaitingStart,
 }
@@ -438,7 +435,7 @@ pub(super) struct VideoFollower {
 
 impl VideoFollower {
     fn new(pid: u16, codec: VideoCodec) -> Self {
-        let pid_typed = Pid::new(pid).unwrap_or(Pid::NULL);
+        let pid_typed = Pid::new(pid).expect("PMT parser only produces 13-bit PIDs");
         Self {
             pid,
             codec,
@@ -1171,7 +1168,9 @@ impl VideoIngress {
 
             // 4. Handle TEI, scrambling, same-CC conflict, and PES header validation for new PUSI
             if view.transport_error_indicator() {
+                follower.au_continuity_broken = true;
                 follower.position = VideoPosition::AwaitingStart;
+                follower.invalidate_published_rap(out_events);
                 follower.pes_assembler.reset();
                 return;
             }
@@ -1181,6 +1180,7 @@ impl VideoIngress {
                 follower.au_scrambled_packets = follower.au_scrambled_packets.saturating_add(1);
                 follower.clear_run = 0;
                 follower.position = VideoPosition::AwaitingStart;
+                follower.invalidate_published_rap(out_events);
                 follower.pes_assembler.reset();
                 return;
             }
@@ -1196,14 +1196,28 @@ impl VideoIngress {
                 return;
             }
 
-            // Extract timing via bounded common PES assembler
-            let (timing_event, _) = follower.pes_assembler.feed_pusi(packet_offset, payload);
-            if let Some(evt) = timing_event {
+            // Extract timing & elementary stream via bounded common PES assembler
+            let output = follower.pes_assembler.feed_pusi(packet_offset, payload);
+            if let Some(header) = output.header {
+                if !pes::is_video_stream_id(header.stream_id) {
+                    follower.pes_assembler.reject();
+                    follower.position = VideoPosition::AwaitingStart;
+                    return;
+                }
+                follower.current_pes_offset = Some(follower.pes_assembler.subject_at().get());
+                follower.position = VideoPosition::InElementaryStream;
+                follower.pes_starts += 1;
+            } else if follower.pes_assembler.is_awaiting_start() {
+                // Invalid start code or rejected stream on PUSI
+                follower.position = VideoPosition::AwaitingStart;
+                return;
+            }
+
+            if let Some(evt) = output.timing_event {
                 out_timing_events.push(evt);
             }
 
-            let es = follower.handle_pusi(packet_offset, payload, same_cc_conflict);
-            if let Some(es) = es {
+            if let Some(es) = output.es {
                 follower.feed_es(es, out_events);
                 out_feeds.push(VideoFeed {
                     incarnation: self.incarnation,
@@ -1233,8 +1247,8 @@ impl VideoIngress {
             follower.au_scrambled_packets = follower.au_scrambled_packets.saturating_add(1);
             follower.clear_run = 0;
             follower.invalidate_published_rap(out_events);
-            follower.pes_assembler.reset();
-            if matches!(follower.position, VideoPosition::InHeader { .. }) {
+            if follower.pes_assembler.is_in_header() {
+                follower.pes_assembler.reset();
                 follower.position = VideoPosition::AwaitingStart;
             }
             return;
@@ -1242,11 +1256,6 @@ impl VideoIngress {
 
         follower.clear_packets = follower.clear_packets.saturating_add(1);
         follower.clear_run = follower.clear_run.saturating_add(1);
-
-        if matches!(follower.position, VideoPosition::AwaitingStart) {
-            follower.pes_assembler.reset();
-            return;
-        }
 
         let same_cc_conflict =
             continuity == Continuity::Broken && is_same_cc && !view.discontinuity_indicator();
@@ -1263,14 +1272,29 @@ impl VideoIngress {
             return;
         }
 
-        // Extract timing via bounded common PES assembler
-        let (timing_event, _) = follower.pes_assembler.feed_cont(packet_offset, payload);
-        if let Some(evt) = timing_event {
+        if follower.pes_assembler.is_awaiting_start() {
+            follower.position = VideoPosition::AwaitingStart;
+            return;
+        }
+
+        // Extract timing & elementary stream via bounded common PES assembler
+        let output = follower.pes_assembler.feed_cont(packet_offset, payload);
+        if let Some(header) = output.header {
+            if !pes::is_video_stream_id(header.stream_id) {
+                follower.pes_assembler.reject();
+                follower.position = VideoPosition::AwaitingStart;
+                return;
+            }
+            follower.current_pes_offset = Some(follower.pes_assembler.subject_at().get());
+            follower.position = VideoPosition::InElementaryStream;
+            follower.pes_starts += 1;
+        }
+
+        if let Some(evt) = output.timing_event {
             out_timing_events.push(evt);
         }
 
-        let es = follower.handle_cont(payload, continuity, same_cc_conflict);
-        if let Some(es) = es {
+        if let Some(es) = output.es {
             follower.feed_es(es, out_events);
             out_feeds.push(VideoFeed {
                 incarnation: self.incarnation,
@@ -1279,89 +1303,6 @@ impl VideoIngress {
                 pusi: false,
                 es,
             });
-        }
-    }
-}
-
-impl VideoFollower {
-    fn handle_pusi<'a>(
-        &mut self,
-        packet_offset: i64,
-        payload: &'a [u8],
-        same_cc_conflict: bool,
-    ) -> Option<&'a [u8]> {
-        if same_cc_conflict {
-            self.position = VideoPosition::AwaitingStart;
-            return None;
-        }
-
-        match pes::read_start(payload) {
-            PesStart::Complete { stream_id, es, .. } if pes::is_video_stream_id(stream_id) => {
-                self.current_pes_offset = Some(packet_offset);
-                self.position = VideoPosition::InElementaryStream;
-                self.pes_starts += 1;
-                if es.is_empty() { None } else { Some(es) }
-            }
-            PesStart::HeaderIncomplete {
-                stream_id,
-                remaining_header,
-                ..
-            } if pes::is_video_stream_id(stream_id) => {
-                self.current_pes_offset = Some(packet_offset);
-                self.position = VideoPosition::InHeader {
-                    remaining: remaining_header,
-                };
-                self.pes_starts += 1;
-                None
-            }
-            _ => {
-                self.position = VideoPosition::AwaitingStart;
-                None
-            }
-        }
-    }
-
-    fn handle_cont<'a>(
-        &mut self,
-        payload: &'a [u8],
-        continuity: Continuity,
-        same_cc_conflict: bool,
-    ) -> Option<&'a [u8]> {
-        match self.position {
-            VideoPosition::AwaitingStart => None,
-            VideoPosition::InHeader { ref mut remaining } => {
-                if continuity == Continuity::Broken
-                    || continuity == Continuity::Discontinuous
-                    || same_cc_conflict
-                {
-                    self.position = VideoPosition::AwaitingStart;
-                    self.reset_annex_b();
-                    return None;
-                }
-                if payload.len() < *remaining {
-                    *remaining -= payload.len();
-                    None
-                } else {
-                    let rem = *remaining;
-                    self.position = VideoPosition::InElementaryStream;
-                    let es = &payload[rem..];
-                    if es.is_empty() { None } else { Some(es) }
-                }
-            }
-            VideoPosition::InElementaryStream => {
-                if continuity == Continuity::Broken
-                    || continuity == Continuity::Discontinuous
-                    || same_cc_conflict
-                {
-                    self.position = VideoPosition::AwaitingStart;
-                    self.reset_annex_b();
-                    None
-                } else if payload.is_empty() {
-                    None
-                } else {
-                    Some(payload)
-                }
-            }
         }
     }
 }

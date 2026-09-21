@@ -19,7 +19,7 @@
 //! Elementary stream parsing and `Observer` attachment are instantiated exclusively for observable codecs (`ac3`, `eac3`).
 
 use crate::audio::observer::{Observation, Observer};
-use crate::pes::{self, PesHeaderAssembler, PesStart};
+use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::AudioTrack;
 use crate::timing::{Pid, TimingEvent};
 use crate::transport::{Continuity, ContinuityTracker, PacketView};
@@ -77,82 +77,6 @@ impl AudioElementaryState {
             feeds: 0,
         }
     }
-
-    /// Reads a payload that begins a payload unit.
-    pub fn start<'a>(&mut self, payload: &'a [u8]) -> Option<&'a [u8]> {
-        match pes::read_start(payload) {
-            PesStart::Complete {
-                stream_id,
-                es,
-                header_data_length: _,
-                packet_length: _,
-            } if pes::is_audio_stream_id(stream_id) => {
-                self.pes_starts += 1;
-                self.position = Position::InElementaryStream;
-                Some(es)
-            }
-            PesStart::HeaderIncomplete {
-                stream_id,
-                remaining_header,
-                header_data_length: _,
-                packet_length: _,
-            } if pes::is_audio_stream_id(stream_id) => {
-                self.pes_starts += 1;
-                self.header_incomplete += 1;
-                self.position = Position::InHeader {
-                    remaining: remaining_header,
-                };
-                None
-            }
-            _ => {
-                self.position = Position::AwaitingStart;
-                None
-            }
-        }
-    }
-
-    /// Reads a payload that continues a payload unit already under way.
-    pub fn cont<'a>(
-        &mut self,
-        payload: &'a [u8],
-        continuity: Continuity,
-        same_cc_conflict: bool,
-    ) -> Option<&'a [u8]> {
-        match self.position {
-            Position::InElementaryStream => {
-                if same_cc_conflict {
-                    None
-                } else {
-                    Some(payload)
-                }
-            }
-            Position::AwaitingStart => None,
-            Position::InHeader { remaining } => match continuity {
-                Continuity::Broken | Continuity::Discontinuous => {
-                    self.position = Position::AwaitingStart;
-                    None
-                }
-                Continuity::Duplicate => None,
-                Continuity::First | Continuity::Continuous => {
-                    if payload.len() < remaining {
-                        self.position = Position::InHeader {
-                            remaining: remaining - payload.len(),
-                        };
-                        None
-                    } else {
-                        self.position = Position::InElementaryStream;
-                        Some(&payload[remaining..])
-                    }
-                }
-            },
-        }
-    }
-
-    fn reset_on_pusi_or_header(&mut self, is_pusi: bool) {
-        if is_pusi || matches!(self.position, Position::InHeader { .. }) {
-            self.position = Position::AwaitingStart;
-        }
-    }
 }
 
 /// State of one PMT-declared audio stream.
@@ -176,6 +100,10 @@ pub struct AudioTrackState {
 
 impl AudioTrackState {
     /// Constructs a new track state from a PMT audio declaration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `track.pid` is not a valid 13-bit PID (`> 0x1FFF`).
     #[must_use]
     pub fn new(track: &AudioTrack) -> Self {
         let elementary = if observable(&track.codec) {
@@ -183,7 +111,7 @@ impl AudioTrackState {
         } else {
             None
         };
-        let pid_typed = Pid::new(track.pid).unwrap_or(Pid::NULL);
+        let pid_typed = Pid::new(track.pid).expect("PMT parser only produces 13-bit PIDs");
         Self {
             pid: track.pid,
             codec: track.codec.clone(),
@@ -256,6 +184,7 @@ impl AudioTracker {
     ///
     /// Returns any elementary stream feed that was produced and fed to an observer,
     /// along with any canonical timing event extracted by the PES assembler.
+    #[allow(clippy::too_many_lines)]
     pub fn route<'a>(
         &mut self,
         packet_offset: i64,
@@ -292,10 +221,12 @@ impl AudioTracker {
         // 3. Transport Error Indicator (TEI): damaged in transit.
         // Does NOT increment clear or scrambled counters, and does NOT alter clear_run.
         if view.transport_error_indicator() {
-            if let Some(elem) = track.elementary.as_mut() {
-                elem.reset_on_pusi_or_header(view.payload_unit_start());
+            if view.payload_unit_start() || track.pes_assembler.is_in_header() {
+                if let Some(elem) = track.elementary.as_mut() {
+                    elem.position = Position::AwaitingStart;
+                }
+                track.pes_assembler.reset();
             }
-            track.pes_assembler.reset();
             return (None, None);
         }
 
@@ -304,10 +235,12 @@ impl AudioTracker {
             self.scrambled_packets += 1;
             self.clear_run = 0;
             track.scrambled_packets += 1;
-            if let Some(elem) = track.elementary.as_mut() {
-                elem.reset_on_pusi_or_header(view.payload_unit_start());
+            if view.payload_unit_start() || track.pes_assembler.is_in_header() {
+                if let Some(elem) = track.elementary.as_mut() {
+                    elem.position = Position::AwaitingStart;
+                }
+                track.pes_assembler.reset();
             }
-            track.pes_assembler.reset();
             return (None, None);
         }
 
@@ -316,43 +249,70 @@ impl AudioTracker {
         self.clear_run += 1;
         track.clear_packets += 1;
 
-        // 6. Timing extraction across ALL PMT-declared audio PIDs (bounded common PES assembler).
-        let timing_event = if view.payload_unit_start() {
-            if same_cc_conflict {
-                track.pes_assembler.reset();
-                None
-            } else {
-                let (event, _) = track.pes_assembler.feed_pusi(packet_offset, payload);
-                event
-            }
-        } else if continuity == Continuity::Broken
-            || continuity == Continuity::Discontinuous
-            || same_cc_conflict
+        if same_cc_conflict
+            || (!view.payload_unit_start()
+                && (continuity == Continuity::Broken || continuity == Continuity::Discontinuous))
         {
+            if let Some(elem) = track.elementary.as_mut() {
+                elem.position = Position::AwaitingStart;
+            }
             track.pes_assembler.reset();
-            None
+            return (None, None);
+        }
+
+        // In audio, a PUSI packet whose fixed header is cut short by an adaptation field (< 9 bytes)
+        // is an unreadable start and quarantines the stream until the next PUSI.
+        if view.payload_unit_start() && payload.len() < pes::FIXED_HEADER_LEN {
+            track.pes_assembler.reject();
+            if let Some(elem) = track.elementary.as_mut() {
+                elem.position = Position::AwaitingStart;
+            }
+            return (None, None);
+        }
+
+        // 6. Timing & ES extraction via bounded common PES assembler
+        let output = if view.payload_unit_start() {
+            track.pes_assembler.feed_pusi(packet_offset, payload)
         } else {
-            let (event, _) = track.pes_assembler.feed_cont(packet_offset, payload);
-            event
+            track.pes_assembler.feed_cont(packet_offset, payload)
         };
+
+        // Update elementary position from assembler state
+        if let Some(elem) = track.elementary.as_mut() {
+            if let Some(rem) = track.pes_assembler.remaining_header_bytes() {
+                elem.position = Position::InHeader { remaining: rem };
+            } else if track.pes_assembler.is_in_elementary_stream() {
+                elem.position = Position::InElementaryStream;
+            } else {
+                elem.position = Position::AwaitingStart;
+            }
+        }
+
+        // Validate audio stream_id if header was emitted
+        if let Some(header) = output.header {
+            if !pes::is_audio_stream_id(header.stream_id) {
+                track.pes_assembler.reject();
+                if let Some(elem) = track.elementary.as_mut() {
+                    elem.position = Position::AwaitingStart;
+                }
+                return (None, None);
+            }
+            if let Some(elem) = track.elementary.as_mut() {
+                elem.pes_starts += 1;
+                if output.header_spanned_start_packet {
+                    elem.header_incomplete += 1;
+                }
+            }
+        }
+
+        let timing_event = output.timing_event;
 
         // 7. Observer feeding (only for observable streams).
         let Some(elem) = track.elementary.as_mut() else {
             return (None, timing_event);
         };
 
-        let es = if view.payload_unit_start() {
-            if same_cc_conflict {
-                elem.position = Position::AwaitingStart;
-                None
-            } else {
-                elem.start(payload)
-            }
-        } else {
-            elem.cont(payload, continuity, same_cc_conflict)
-        };
-
-        let Some(es) = es.filter(|bytes| !bytes.is_empty()) else {
+        let Some(es) = output.es.filter(|bytes| !bytes.is_empty()) else {
             return (None, timing_event);
         };
         elem.observer.feed(es);

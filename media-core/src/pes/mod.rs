@@ -30,8 +30,8 @@ use crate::transport::PacketView;
 
 pub mod assembler;
 pub use assembler::{
-    PES_FIXED_HEADER_LEN, PES_PTS_DTS_BYTES, PES_TIMING_PREFIX_LEN, PesHeaderAssembler,
-    parse_pes_timing,
+    PES_FIXED_HEADER_LEN, PES_PTS_DTS_BYTES, PES_TIMING_PREFIX_LEN, PesAssembleOutput, PesHeader,
+    PesHeaderAssembler, parse_pes_timing,
 };
 
 /// The three bytes every PES packet starts with.
