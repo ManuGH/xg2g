@@ -68,6 +68,8 @@ pub struct AudioTrack {
 /// What one complete PMT says a programme is made of.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Streams {
+    /// The PID designated for PCR, or None if none/invalid/contradictory.
+    pub pcr_pid: Option<u16>,
     /// The PID of the video stream, or 0 when the table names none.
     pub video_pid: u16,
     /// Its codec.
@@ -90,12 +92,38 @@ const fn can_carry_elementary_stream(pid: u16) -> bool {
 /// Reads the elementary streams out of every section of a complete PMT.
 pub(crate) fn interpret(sections: &[&[u8]]) -> Streams {
     let mut streams = Streams::default();
+    let mut pcr_pid_state: Option<Option<u16>> = None;
+    let mut pcr_contradictory = false;
+
     for section in sections {
         if section.len() < super::table::MIN_SECTION_LEN {
             continue;
         }
+        if !pcr_contradictory {
+            let raw_pcr = (u16::from(section[8] & 0x1F) << 8) | u16::from(section[9]);
+            let section_pcr = if raw_pcr == NULL_PID {
+                None
+            } else {
+                Some(raw_pcr)
+            };
+            match pcr_pid_state {
+                None => pcr_pid_state = Some(section_pcr),
+                Some(prev) => {
+                    if prev != section_pcr {
+                        pcr_contradictory = true;
+                    }
+                }
+            }
+        }
         interpret_section(section, &mut streams);
     }
+
+    streams.pcr_pid = if pcr_contradictory {
+        None
+    } else {
+        pcr_pid_state.flatten()
+    };
+
     streams
 }
 

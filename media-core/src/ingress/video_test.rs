@@ -1003,3 +1003,45 @@ fn test_set_target_program_emits_identity_events() {
     let events_noop = ingress.set_target_program(2);
     assert!(events_noop.is_empty());
 }
+
+#[test]
+fn test_ingress_timing_tracking() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    assert_eq!(ingress.timing_snapshot().pcr_pid, Some(VIDEO_PID));
+    assert_eq!(ingress.timing_snapshot().pcr_count, 0);
+
+    let make_pcr = |pid: u16, base: u64, ext: u16| -> Vec<u8> {
+        let mut pkt = vec![0xFF; TS_PACKET_LEN];
+        pkt[0] = 0x47;
+        pkt[1] = u8::try_from((pid >> 8) & 0x1F).unwrap();
+        pkt[2] = u8::try_from(pid & 0xFF).unwrap();
+        pkt[3] = 0x20;
+        pkt[4] = 7;
+        pkt[5] = 0x10;
+        pkt[6] = u8::try_from((base >> 25) & 0xFF).unwrap();
+        pkt[7] = u8::try_from((base >> 17) & 0xFF).unwrap();
+        pkt[8] = u8::try_from((base >> 9) & 0xFF).unwrap();
+        pkt[9] = u8::try_from((base >> 1) & 0xFF).unwrap();
+        pkt[10] = (u8::try_from((base & 0x01) << 7).unwrap())
+            | 0x7E
+            | (u8::try_from((ext >> 8) & 0x01).unwrap());
+        pkt[11] = u8::try_from(ext & 0xFF).unwrap();
+        pkt
+    };
+
+    // First PCR packet on VIDEO_PID
+    let p1 = make_pcr(VIDEO_PID, 0, 0);
+    ingress.ingest(offset, &p1).expect("p1");
+    offset += 20_000;
+
+    // Second PCR packet (40ms later = 1,080,000 ticks, 20,000 bytes delta = 4 Mbps)
+    let delta_ticks: u64 = 1_080_000;
+    let p2 = make_pcr(VIDEO_PID, delta_ticks / 300, (delta_ticks % 300) as u16);
+    ingress.ingest(offset, &p2).expect("p2");
+
+    let snap = ingress.timing_snapshot();
+    assert_eq!(snap.pcr_count, 2);
+    assert_eq!(snap.bitrate_bps, 4_000_000);
+    assert_eq!(snap.last_pcr_offset, offset);
+}

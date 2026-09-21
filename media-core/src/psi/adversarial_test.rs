@@ -68,12 +68,21 @@ struct Es {
     descriptors: Vec<u8>,
 }
 
-/// A PMT for `program`, listing `streams`.
-fn pmt_section(program: u16, version: u8, section_number: u8, last: u8, streams: &[Es]) -> Vec<u8> {
+/// A PMT for `program`, listing `streams` with an explicit `pcr_pid`.
+fn pmt_section_with_pcr(
+    program: u16,
+    version: u8,
+    section_number: u8,
+    last: u8,
+    pcr_pid: u16,
+    streams: &[Es],
+) -> Vec<u8> {
     let es_bytes: usize = streams.iter().map(|s| 5 + s.descriptors.len()).sum();
     let section_len = 9 + es_bytes + 4;
     let mut out = section_header(0x02, program, section_len, version, section_number, last, 1);
-    out.extend_from_slice(&[0xE1, 0x01, 0xF0, 0x00]); // PCR PID, program_info_length 0
+    let pcr_hi = 0xE0 | u8::try_from((pcr_pid >> 8) & 0x1F).expect("masked");
+    let pcr_lo = u8::try_from(pcr_pid & 0xFF).expect("masked");
+    out.extend_from_slice(&[pcr_hi, pcr_lo, 0xF0, 0x00]); // PCR PID, program_info_length 0
     for stream in streams {
         out.push(stream.stream_type);
         out.push(0xE0 | u8::try_from((stream.pid >> 8) & 0x1F).expect("masked"));
@@ -83,6 +92,11 @@ fn pmt_section(program: u16, version: u8, section_number: u8, last: u8, streams:
         out.extend_from_slice(&stream.descriptors);
     }
     seal(out)
+}
+
+/// A PMT for `program`, listing `streams`.
+fn pmt_section(program: u16, version: u8, section_number: u8, last: u8, streams: &[Es]) -> Vec<u8> {
+    pmt_section_with_pcr(program, version, section_number, last, 257, streams)
 }
 
 /// One 188-byte packet carrying `payload`, padded with `pad`.
@@ -1091,4 +1105,151 @@ fn a_table_using_every_number_it_may_completes_and_stays_bounded() {
         before,
         "a repeat of the same 256-section table grew the retained state"
     );
+}
+
+#[test]
+fn multi_section_pmt_consistent_pcr_pid_accepted() {
+    let mut core = PsiCore::new(1);
+    let pat = pat_section(0, 0, 0, &[(1, 256)]);
+    let pmt0 = pmt_section_with_pcr(
+        1,
+        0,
+        0,
+        1,
+        300,
+        &[Es {
+            stream_type: 0x1B,
+            pid: 301,
+            descriptors: vec![],
+        }],
+    );
+    let pmt1 = pmt_section_with_pcr(
+        1,
+        0,
+        1,
+        1,
+        300,
+        &[Es {
+            stream_type: 0x03,
+            pid: 302,
+            descriptors: vec![],
+        }],
+    );
+
+    let mut packets = psi_packets(0, 0, &pat);
+    packets.extend(psi_packets(256, 0, &pmt0));
+    packets.extend(psi_packets(256, 1, &pmt1));
+
+    let outcome = core.ingest(0, &chunk_of(&packets)).expect("packet aligned");
+    assert_eq!(outcome.facts.pcr_pid, Some(300));
+    assert_eq!(outcome.facts.video_pid, 301);
+    assert_eq!(outcome.facts.audio_pids, vec![302]);
+}
+
+#[test]
+fn multi_section_pmt_contradictory_pcr_pid_fails_closed() {
+    let mut core = PsiCore::new(1);
+    let pat = pat_section(0, 0, 0, &[(1, 256)]);
+    // Section 0 declares PCR PID 300; Section 1 declares contradictory PCR PID 400
+    let pmt0 = pmt_section_with_pcr(
+        1,
+        0,
+        0,
+        1,
+        300,
+        &[Es {
+            stream_type: 0x1B,
+            pid: 301,
+            descriptors: vec![],
+        }],
+    );
+    let pmt1 = pmt_section_with_pcr(
+        1,
+        0,
+        1,
+        1,
+        400,
+        &[Es {
+            stream_type: 0x03,
+            pid: 302,
+            descriptors: vec![],
+        }],
+    );
+
+    let mut packets = psi_packets(0, 0, &pat);
+    packets.extend(psi_packets(256, 0, &pmt0));
+    packets.extend(psi_packets(256, 1, &pmt1));
+
+    let outcome = core.ingest(0, &chunk_of(&packets)).expect("packet aligned");
+    // Fails closed for timing authority: pcr_pid must be None
+    assert_eq!(outcome.facts.pcr_pid, None);
+    // Video and audio truth must still be intact
+    assert_eq!(outcome.facts.video_pid, 301);
+    assert_eq!(outcome.facts.audio_pids, vec![302]);
+}
+
+#[test]
+fn pmt_null_pcr_pid_0x1fff_yields_none() {
+    let mut core = PsiCore::new(1);
+    let pat = pat_section(0, 0, 0, &[(1, 256)]);
+    // 0x1FFF explicitly means no PCR
+    let pmt = pmt_section_with_pcr(
+        1,
+        0,
+        0,
+        0,
+        0x1FFF,
+        &[Es {
+            stream_type: 0x1B,
+            pid: 301,
+            descriptors: vec![],
+        }],
+    );
+
+    let mut packets = psi_packets(0, 0, &pat);
+    packets.extend(psi_packets(256, 0, &pmt));
+
+    let outcome = core.ingest(0, &chunk_of(&packets)).expect("packet aligned");
+    assert_eq!(outcome.facts.pcr_pid, None);
+    assert_eq!(outcome.facts.video_pid, 301);
+}
+
+#[test]
+fn multi_section_pmt_one_valid_one_null_fails_closed() {
+    let mut core = PsiCore::new(1);
+    let pat = pat_section(0, 0, 0, &[(1, 256)]);
+    // Section 0 declares PCR PID 300; Section 1 declares 0x1FFF (None) -> contradiction
+    let pmt0 = pmt_section_with_pcr(
+        1,
+        0,
+        0,
+        1,
+        300,
+        &[Es {
+            stream_type: 0x1B,
+            pid: 301,
+            descriptors: vec![],
+        }],
+    );
+    let pmt1 = pmt_section_with_pcr(
+        1,
+        0,
+        1,
+        1,
+        0x1FFF,
+        &[Es {
+            stream_type: 0x03,
+            pid: 302,
+            descriptors: vec![],
+        }],
+    );
+
+    let mut packets = psi_packets(0, 0, &pat);
+    packets.extend(psi_packets(256, 0, &pmt0));
+    packets.extend(psi_packets(256, 1, &pmt1));
+
+    let outcome = core.ingest(0, &chunk_of(&packets)).expect("packet aligned");
+    assert_eq!(outcome.facts.pcr_pid, None);
+    assert_eq!(outcome.facts.video_pid, 301);
+    assert_eq!(outcome.facts.audio_pids, vec![302]);
 }

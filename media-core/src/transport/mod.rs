@@ -231,6 +231,53 @@ impl<'a> PacketView<'a> {
             None => false,
         }
     }
+
+    /// The Program Clock Reference (PCR) carried in this packet's adaptation field, if any.
+    ///
+    /// Returns `None` if the packet carries no adaptation field, the PCR flag is not set,
+    /// the adaptation field is shorter than 7 bytes, or the PCR extension field is >= 300
+    /// (syntactically invalid per ISO/IEC 13818-1).
+    #[must_use]
+    pub fn pcr(&self) -> Option<Pcr> {
+        let field = self.adaptation_field()?;
+        if field.len() < 7 {
+            return None;
+        }
+        if field[0] & 0x10 == 0 {
+            return None;
+        }
+        let b0 = u64::from(field[1]);
+        let b1 = u64::from(field[2]);
+        let b2 = u64::from(field[3]);
+        let b3 = u64::from(field[4]);
+        let b4 = field[5];
+        let b5 = field[6];
+
+        let base = (b0 << 25) | (b1 << 17) | (b2 << 9) | (b3 << 1) | u64::from(b4 >> 7);
+        let ext = (u16::from(b4 & 0x01) << 8) | u16::from(b5);
+
+        if ext >= 300 {
+            return None;
+        }
+
+        let ticks_27mhz = base * 300 + u64::from(ext);
+        Some(Pcr {
+            base,
+            ext,
+            ticks_27mhz,
+        })
+    }
+}
+
+/// A Program Clock Reference (PCR) value parsed from a transport packet adaptation field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pcr {
+    /// 33-bit PCR base at 90 kHz.
+    pub base: u64,
+    /// 9-bit PCR extension (strictly in range 0..=299).
+    pub ext: u16,
+    /// Total 27 MHz ticks: `base * 300 + ext`.
+    pub ticks_27mhz: u64,
 }
 
 /// What the continuity counter said about one packet.
