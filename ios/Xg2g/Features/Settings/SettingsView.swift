@@ -76,15 +76,15 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
                         if model.playbackEngine == .auto {
-                            Text("Im Modus 'Automatisch' entscheidet der xg2g Planner dynamisch über die optimale Pipeline basierend auf Netzwerk, Gerätefähigkeiten und Serverressourcen.")
+                            Text("Im Hybrid-Modus läuft Live-TV direkt über die native Hardware-Pipeline mit minimaler Latenz. Bei Pause wird nahtlos eine Timeshift-Sitzung auf dem Server gestartet.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         } else if model.playbackEngine == .native {
-                            Text("Native Live-TV liefert das Signal unverändert an die VideoToolbox-Hardware-Pipeline mit minimaler Latenz.")
+                            Text("Reines Native Live-TV liefert das Signal direkt an die Hardware-Pipeline mit minimaler Latenz und ohne jegliche Server-Transkodierung. Timeshift ist deaktiviert.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         } else {
-                            Text("Server-Streaming (HLS) ermöglicht Pause/Timeshift, externe Nutzung und adaptive Bitrate; xg2g entscheidet, ob Copy, Remux oder Transcode nötig ist.")
+                            Text("Server-Streaming (HLS) puffert die Sendung von Beginn an. Ermöglicht dauerhaften Timeshift-Puffer, sofortiges Vor-/Zurückspulen und adaptive Bitrate.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }

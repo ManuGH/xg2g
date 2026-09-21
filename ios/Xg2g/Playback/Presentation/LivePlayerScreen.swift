@@ -282,7 +282,7 @@ public struct LivePlayerScreen: View {
                             aspectRatioOverride: viewPreset.aspectRatio
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
-                        .opacity(engineMode == .nativeDirectLive ? 1.0 : 0.0)
+                        .opacity((engineMode == .nativeDirectLive || isTimeshiftLoading) ? 1.0 : 0.0)
 
                         // 1b. HLS Timeshift Player Stage (AVPlayer)
                         if let tsPlayer = timeshiftPlayer {
@@ -292,26 +292,27 @@ public struct LivePlayerScreen: View {
                                 onDismiss: { closePlayer() }
                             )
                             .ignoresSafeArea(edges: isLandscape ? .all : [])
-                            .opacity(engineMode == .timeshiftHLS ? 1.0 : 0.0)
+                            .opacity((engineMode == .timeshiftHLS && !isTimeshiftLoading) ? 1.0 : 0.0)
                         }
 
                         // 1c. Timeshift Loading Indicator Overlay
                         if isTimeshiftLoading {
-                            ZStack {
-                                Color.black.opacity(0.4)
+                            VStack {
+                                Spacer()
                                 HStack(spacing: 8) {
                                     ProgressView()
                                         .tint(Theme.Colors.accentLive)
-                                        .scaleEffect(0.9)
-                                    Text("Timeshift wird vorbereitet…")
-                                        .font(.app(size: 12, weight: .semibold))
+                                        .scaleEffect(0.8)
+                                    Text(isPlaying ? "Timeshift wird vorbereitet…" : "Pausiert · Timeshift-Puffer wird aufgebaut…")
+                                        .font(.app(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                 .shadow(color: Color.black.opacity(0.4), radius: 8)
+                                .padding(.bottom, isLandscape ? 40 : 100)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)
@@ -630,6 +631,20 @@ public struct LivePlayerScreen: View {
             isPlayPauseFocused = true
 #endif
         }
+        .task {
+            #if DEBUG
+            if let pauseDelayStr = ProcessInfo.processInfo.environment["XG2G_TEST_PAUSE_AFTER_SECONDS"],
+               let pauseDelay = Double(pauseDelayStr) {
+                try? await Task.sleep(for: .seconds(pauseDelay))
+                togglePlayPause()
+                if let resumeDelayStr = ProcessInfo.processInfo.environment["XG2G_TEST_RESUME_AFTER_SECONDS"],
+                   let resumeDelay = Double(resumeDelayStr) {
+                    try? await Task.sleep(for: .seconds(resumeDelay))
+                    togglePlayPause()
+                }
+            }
+            #endif
+        }
         .onDisappear {
             if playbackManager.presentationMode == .hidden {
                 teardownPlayback()
@@ -764,12 +779,12 @@ public struct LivePlayerScreen: View {
                                 .lineLimit(1)
 
                             if engineMode == .nativeDirectLive {
-                                Text("LIVE")
+                                Text(isPlaying ? "LIVE" : "PAUSE")
                                     .font(.app(size: 10, weight: .black, design: .rounded))
-                                    .foregroundStyle(Theme.Colors.accentLive)
+                                    .foregroundStyle(isPlaying ? Theme.Colors.accentLive : Theme.Colors.statusWarning)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                    .background((isPlaying ? Theme.Colors.accentLive : Theme.Colors.statusWarning).opacity(0.2), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             } else {
                                 HStack(spacing: 3) {
                                     let isLiveHLS = abs(timeshiftOffsetSeconds) <= 5
@@ -1131,6 +1146,8 @@ public struct LivePlayerScreen: View {
                     Button {
                         if engineMode == .timeshiftHLS {
                             seekTimeshiftRelative(-30)
+                        } else if model?.playbackEngine == .native {
+                            displayZapToast("Timeshift im Native-Modus deaktiviert")
                         } else {
                             enterTimeshift(seekBackSeconds: 30)
                         }
@@ -1672,7 +1689,11 @@ public struct LivePlayerScreen: View {
                 if engineMode == .timeshiftHLS {
                     seekTimeshiftRelative(delta)
                 } else if delta < 0 {
-                    enterTimeshift(seekBackSeconds: abs(delta))
+                    if model?.playbackEngine == .native {
+                        displayZapToast("Timeshift im Native-Modus deaktiviert")
+                    } else {
+                        enterTimeshift(seekBackSeconds: abs(delta))
+                    }
                 }
             }
         ))
@@ -1879,9 +1900,58 @@ public struct LivePlayerScreen: View {
         }
     }
 
+    private func performInitialTimeshiftPause(player: AVPlayer) async {
+        let maxAttempts = 60 // 6.0 seconds budget to tolerate network setup and initial segmenting
+        for _ in 0..<maxAttempts {
+            if let item = player.currentItem {
+                if item.status == .failed {
+                    let errStr = item.error?.localizedDescription ?? "Initialisierungsfehler"
+                    displayZapToast("Timeshift fehlgeschlagen: \(errStr)")
+                    jumpToLiveEdge()
+                    return
+                }
+                if item.status == .readyToPlay,
+                   let range = item.seekableTimeRanges.last?.timeRangeValue,
+                   range.duration.seconds > 0 {
+                    // Park playhead at the START of the timeshift recording window (where the pause occurred!)
+                    let target = range.start.seconds
+                    await withCheckedContinuation { continuation in
+                        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                            continuation.resume()
+                        }
+                    }
+                    if self.isPlaying {
+                        // User unpaused while timeshift was preparing
+                        player.play()
+                        displayZapToast("▶ Fortsetzen")
+                    } else {
+                        player.pause()
+                        displayZapToast("❚❚ Timeshift Pausiert")
+                    }
+                    self.isTimeshiftLoading = false
+                    NowPlayingManager.shared.updatePlaybackState(isPlaying: self.isPlaying)
+                    return
+                }
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if self.engineMode != .timeshiftHLS || self.timeshiftPlayer !== player {
+                return
+            }
+        }
+
+        self.isTimeshiftLoading = false
+        if self.isPlaying {
+            jumpToLiveEdge()
+        }
+    }
+
     private func enterTimeshift(seekBackSeconds: Double = 0, autoPlay: Bool = false) {
         guard let model else {
             displayZapToast("Timeshift nicht verfügbar")
+            return
+        }
+        if model.playbackEngine == .native {
+            displayZapToast("Timeshift im Native-Modus deaktiviert")
             return
         }
         let ch = currentChannel
@@ -1916,11 +1986,7 @@ public struct LivePlayerScreen: View {
                         NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
                         displayZapToast("▶ Live (HLS)")
                     } else {
-                        player.pause()
-                        self.isPlaying = false
-                        self.isTimeshiftLoading = false
-                        NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
-                        displayZapToast("❚❚ Timeshift Pausiert")
+                        await self.performInitialTimeshiftPause(player: player)
                     }
                 } else {
                     isTimeshiftLoading = false
@@ -2077,6 +2143,15 @@ public struct LivePlayerScreen: View {
     }
 
     private func togglePlayPause() {
+        if isTimeshiftLoading {
+            isPlaying.toggle()
+            if isPlaying {
+                displayZapToast("▶ Fortsetzen…")
+            } else {
+                displayZapToast("❚❚ Pausiert")
+            }
+            return
+        }
         if engineMode == .timeshiftHLS {
             toggleTimeshiftPlayPause()
         } else if model?.playbackEngine == .native {
@@ -2098,14 +2173,14 @@ public struct LivePlayerScreen: View {
         isPlaying = false
         Task { await coordinator.stop() }
         NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
-        displayZapToast("❚❚ Pausiert")
+        displayZapToast("❚❚ Pausiert (Live gestoppt)")
     }
 
     private func resumeNativeLive() {
         isPlaying = true
         startCurrentPreset()
         NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
-        displayZapToast("▶ Live-TV")
+        displayZapToast("▶ Live-TV (Native TS)")
     }
 
     private func cycleViewPreset() {
