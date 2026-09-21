@@ -28,19 +28,25 @@
 
 use crate::transport::PacketView;
 
+pub mod assembler;
+pub use assembler::{
+    PES_FIXED_HEADER_LEN, PES_PTS_DTS_BYTES, PES_TIMING_PREFIX_LEN, PesAssembleOutput, PesHeader,
+    PesHeaderAssembler, parse_pes_timing,
+};
+
 /// The three bytes every PES packet starts with.
 const START_CODE: [u8; 3] = [0x00, 0x00, 0x01];
 
 /// The fixed part of a PES header for the stream ids that carry an optional
 /// header: start code, stream id, packet length, two flag bytes and the length
 /// of the optional header itself.
-const FIXED_HEADER_LEN: usize = 9;
+pub const FIXED_HEADER_LEN: usize = 9;
 
 /// Where the optional header's own length is written.
-const HEADER_DATA_LENGTH_AT: usize = 8;
+pub const HEADER_DATA_LENGTH_AT: usize = 8;
 
 /// The bytes before the optional header: start code, stream id, packet length.
-const MINIMUM_HEADER_LEN: usize = 6;
+pub const MINIMUM_HEADER_LEN: usize = 6;
 
 /// What one transport payload said about a PES packet starting in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

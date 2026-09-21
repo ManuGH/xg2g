@@ -5,5 +5,10 @@
 //! Deterministic transport stream timing and clock estimation.
 
 pub mod pcr;
+pub mod types;
 
 pub use pcr::{MAX_PLAUSIBLE_DELTA_TICKS, PCR_MODULUS, PcrSample, PcrTracker, TimingSnapshot};
+pub use types::{
+    BitrateBps, ByteOffset, ExtendedDts90k, ExtendedPcr27m, ExtendedPts90k, PesTiming, Pid,
+    RawDts33, RawPcr27m, RawPts33, TimelineEpoch, TimingEvent, TimingField,
+};

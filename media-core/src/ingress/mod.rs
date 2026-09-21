@@ -138,7 +138,7 @@ impl AudioIngress {
         }
         let mut feeds = Vec::new();
         self.psi.begin_chunk();
-        for packet in data.chunks_exact(TS_PACKET_LEN) {
+        for (idx, packet) in data.chunks_exact(TS_PACKET_LEN).enumerate() {
             let changed = self
                 .psi
                 .index_packet(packet)
@@ -149,7 +149,10 @@ impl AudioIngress {
             let Ok(view) = PacketView::parse(packet) else {
                 continue;
             };
-            self.route(&view, &mut feeds);
+            let packet_offset = start_offset.saturating_add(
+                i64::try_from(idx.saturating_mul(TS_PACKET_LEN)).unwrap_or(i64::MAX),
+            );
+            self.route(packet_offset, &view, &mut feeds);
         }
         let consumed = i64::try_from(data.len()).unwrap_or(i64::MAX);
         Ok(AudioOutcome {
@@ -214,12 +217,17 @@ impl AudioIngress {
     }
 
     /// Routes one packet to the stream it belongs to.
-    fn route<'a>(&mut self, view: &PacketView<'a>, out: &mut Vec<AudioFeed<'a>>) {
+    fn route<'a>(
+        &mut self,
+        packet_offset: i64,
+        view: &PacketView<'a>,
+        out: &mut Vec<AudioFeed<'a>>,
+    ) {
         let pid = view.pid();
         if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {
             return;
         }
-        if let Some(feed) = self.audio.route(view) {
+        if let (Some(feed), _) = self.audio.route(packet_offset, view) {
             out.push(AudioFeed {
                 incarnation: self.incarnation,
                 pid: feed.pid,
