@@ -156,18 +156,23 @@ func (p *SessionPipeline) OnDone(callback func(err error)) {
 // attaching a subscriber reader positioned at that exact keyframe boundary.
 // It returns ErrNoAttachAvailable if no valid keyframe is present in the buffer.
 func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
-	if p.closed.Load() {
-		return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
-	}
-
 	attach, reader, err := p.ring.NewPrimedSubscriber()
 	if err != nil {
+		if errors.Is(err, ring.ErrScrambledStream) {
+			return ring.PrimedAttachPoint{}, nil, err
+		}
+		if p.closed.Load() {
+			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
+		}
 		if errors.Is(err, ring.ErrNoKeyframeAvailable) {
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
 		// ring.ErrScrambledStream is deliberately NOT folded into ErrNoAttachAvailable:
 		// it is terminal, and PrimedAttachWithTimeout must surface it without retrying.
 		return ring.PrimedAttachPoint{}, nil, err
+	}
+	if p.closed.Load() {
+		return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 	}
 	return attach, reader, nil
 }
@@ -211,6 +216,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 			if errors.Is(lastErr, ring.ErrScrambledStream) {
 				return ring.PrimedAttachPoint{}, nil, lastErr
 			}
+			if _, _, finalErr := p.ring.NewPrimedSubscriber(); errors.Is(finalErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, finalErr
+			}
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
 
@@ -220,6 +228,9 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		case <-p.doneCh:
 			if errors.Is(lastErr, ring.ErrScrambledStream) {
 				return ring.PrimedAttachPoint{}, nil, lastErr
+			}
+			if _, _, finalErr := p.ring.NewPrimedSubscriber(); errors.Is(finalErr, ring.ErrScrambledStream) {
+				return ring.PrimedAttachPoint{}, nil, finalErr
 			}
 			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 		case <-ticker.C:
