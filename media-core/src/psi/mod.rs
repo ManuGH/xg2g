@@ -303,6 +303,12 @@ impl PsiCore {
         self.selection.map_or(0, |s| s.program_number)
     }
 
+    /// Whether a valid PMT for the followed programme is currently in force.
+    #[must_use]
+    pub const fn has_pmt(&self) -> bool {
+        self.has_pmt_version
+    }
+
     /// A point-in-time projection of PSI facts and active tables without events.
     #[must_use]
     pub fn snapshot(&self) -> PsiSnapshot {

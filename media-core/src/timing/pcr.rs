@@ -61,6 +61,27 @@ pub struct PcrTracker {
     discontinuity_count: u64,
 }
 
+/// An authoritative observation of PCR state emitted by [`PcrTracker`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PcrObservation {
+    /// No PCR or discontinuity event on this packet.
+    None,
+    /// Discontinuity indicator was observed on the PCR PID without a PCR timestamp.
+    Discontinuity {
+        /// Byte offset of the packet where the discontinuity indicator was seen.
+        offset: ByteOffset,
+    },
+    /// A syntactically valid PCR timestamp was observed on the PCR PID.
+    Sample {
+        /// Byte offset of the packet carrying this PCR.
+        offset: ByteOffset,
+        /// The raw 27 MHz PCR timestamp.
+        raw: RawPcr27m,
+        /// Whether a discontinuity was latched or announced on this sample.
+        discontinuity: bool,
+    },
+}
+
 impl PcrTracker {
     /// Constructs a new PCR tracker with no assigned PID or baseline.
     #[must_use]
@@ -111,47 +132,64 @@ impl PcrTracker {
     }
 
     /// Observes a single transport stream packet at `packet_offset`.
-    pub fn observe(&mut self, packet_offset: i64, view: &PacketView<'_>) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if a valid PCR timestamp from `view.pcr()` exceeds `RawPcr27m::MODULUS`.
+    pub fn observe(&mut self, packet_offset: i64, view: &PacketView<'_>) -> PcrObservation {
         let Some(target_pid) = self.pcr_pid else {
-            return;
+            return PcrObservation::None;
         };
         if view.pid() != target_pid.get() {
-            return;
+            return PcrObservation::None;
         }
 
         // TEI packet on PCR PID: invalidate rate baseline; do not parse PCR.
         if view.transport_error_indicator() {
             self.last_pcr = None;
-            return;
+            return PcrObservation::None;
         }
 
+        let offset = ByteOffset::new(packet_offset);
+
         // Latch discontinuity indicator even if this packet carries no PCR.
-        if view.discontinuity_indicator() {
+        let has_di = view.discontinuity_indicator();
+        if has_di {
             self.pending_discontinuity = true;
             self.discontinuity_count = self.discontinuity_count.saturating_add(1);
         }
 
         let Some(current_pcr) = view.pcr() else {
-            return;
+            if has_di {
+                return PcrObservation::Discontinuity { offset };
+            }
+            return PcrObservation::None;
         };
 
         self.pcr_count = self.pcr_count.saturating_add(1);
-
-        let offset = ByteOffset::new(packet_offset);
+        let raw = RawPcr27m::new(current_pcr.ticks_27mhz).expect("valid PCR ticks < MODULUS");
 
         // Discontinuity was latched: re-anchor baseline without updating rate estimation.
         if self.pending_discontinuity {
             self.last_pcr = Some(current_pcr);
             self.last_offset = offset;
             self.pending_discontinuity = false;
-            return;
+            return PcrObservation::Sample {
+                offset,
+                raw,
+                discontinuity: true,
+            };
         }
 
         let Some(last_pcr) = self.last_pcr else {
             // First clean PCR: anchor initial baseline.
             self.last_pcr = Some(current_pcr);
             self.last_offset = offset;
-            return;
+            return PcrObservation::Sample {
+                offset,
+                raw,
+                discontinuity: false,
+            };
         };
 
         // Checked byte advancement in stream coordinate system.
@@ -159,12 +197,20 @@ impl PcrTracker {
             // Negative offset or invalid subtraction: re-anchor baseline.
             self.last_pcr = Some(current_pcr);
             self.last_offset = offset;
-            return;
+            return PcrObservation::Sample {
+                offset,
+                raw,
+                discontinuity: false,
+            };
         };
 
         if delta_bytes == 0 {
             // Byte offset did not advance; skip update.
-            return;
+            return PcrObservation::Sample {
+                offset,
+                raw,
+                discontinuity: false,
+            };
         }
 
         // Delta ticks with 2^33 * 300 rollover handling.
@@ -178,7 +224,11 @@ impl PcrTracker {
         if delta_ticks == 0 || delta_ticks >= MAX_PLAUSIBLE_DELTA_TICKS {
             self.last_pcr = Some(current_pcr);
             self.last_offset = offset;
-            return;
+            return PcrObservation::Sample {
+                offset,
+                raw,
+                discontinuity: false,
+            };
         }
 
         // Pure integer instant bitrate: (delta_bytes * 8 * 27_000_000) / delta_ticks
@@ -195,6 +245,11 @@ impl PcrTracker {
 
         self.last_pcr = Some(current_pcr);
         self.last_offset = offset;
+        PcrObservation::Sample {
+            offset,
+            raw,
+            discontinuity: false,
+        }
     }
 }
 

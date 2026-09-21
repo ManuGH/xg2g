@@ -227,7 +227,7 @@ impl AudioIngress {
         if pid == self.psi.pmt_pid() || pid == self.psi.video_pid() {
             return;
         }
-        if let (Some(feed), _) = self.audio.route(packet_offset, view) {
+        if let Some(feed) = self.audio.route(packet_offset, view).feed {
             out.push(AudioFeed {
                 incarnation: self.incarnation,
                 pid: feed.pid,

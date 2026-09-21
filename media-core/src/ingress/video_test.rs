@@ -1373,3 +1373,122 @@ fn video_rejects_pes_with_invalid_byte_6_marker_bits() {
     assert_eq!(facts2.current_pes_offset, None);
     assert!(facts2.awaiting_start);
 }
+
+#[test]
+fn timeline_epoch_decoupled_from_pat_and_pmt_lifecycle() {
+    let mut ingress = VideoIngress::new(PROGRAM);
+    assert!(ingress.timeline().active_epoch().is_none());
+
+    // 1. PAT arrives alone: selection changes, but no PMT yet.
+    let pat = pat_packet(0);
+    let outcome_pat = ingress.ingest(0, &pat).expect("ingest pat");
+    assert_eq!(outcome_pat.events, vec![VideoEvent::ProgramIdentityChanged]);
+    // Active epoch must remain None because no valid PMT exists yet!
+    assert!(ingress.timeline().active_epoch().is_none());
+
+    // 2. PMT arrives: program definition complete.
+    let pmt = pmt_packet(0, VIDEO_PID, 0x1B);
+    let pmt_res = ingress.ingest(PACKET_LEN_I64, &pmt).expect("ingest pmt");
+    assert_eq!(pmt_res.events, vec![VideoEvent::ProgramIdentityChanged]);
+    // Active epoch must now be TimelineEpoch(0)!
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(crate::timing::TimelineEpoch::new(0))
+    );
+
+    // 3. PMT update (version increments): epoch advances to 1!
+    let pmt_v1 = pmt_packet(1, VIDEO_PID, 0x1B);
+    let v1_pmt_res = ingress
+        .ingest(PACKET_LEN_I64 * 2, &pmt_v1)
+        .expect("ingest pmt v1");
+    assert_eq!(v1_pmt_res.events, vec![VideoEvent::ProgramIdentityChanged]);
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(crate::timing::TimelineEpoch::new(1))
+    );
+}
+
+#[test]
+fn timeline_rap_pts_binding_and_invalidation() {
+    let (mut ingress, mut offset) = standard_setup();
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(crate::timing::TimelineEpoch::new(0))
+    );
+
+    // Send PUSI with IDR slice and PTS
+    let pts = 90_000 * 10;
+    let enc_pts = encode_ts(0b0010, pts);
+    let mut pusi_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pusi_payload.extend_from_slice(&enc_pts);
+    let idr_slice = [0x00, 0x00, 0x01, 0x65, 0x88];
+    pusi_payload.extend_from_slice(&idr_slice);
+
+    let p1_offset = offset;
+    let p1 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &pusi_payload);
+    let outcome1 = ingress.ingest(offset, &p1).expect("ingest p1");
+    offset += PACKET_LEN_I64;
+
+    assert!(
+        outcome1
+            .events
+            .iter()
+            .any(|e| matches!(e, VideoEvent::RandomAccessPoint { offset, joinable: true } if *offset == p1_offset))
+    );
+
+    // RAP at p1_offset must be bound to pts!
+    let rap_pts = ingress
+        .timeline()
+        .get_rap_pts(crate::timing::ByteOffset::new(p1_offset));
+    assert_eq!(
+        rap_pts,
+        Some(crate::timing::ExtendedPts90k::new(
+            i64::try_from(pts).unwrap()
+        ))
+    );
+
+    // Now send continuation packet with TEI, which invalidates the published RAP
+    let p2 = make_ts_packet(VIDEO_PID, false, 2, 0, true, &[0x00, 0x11, 0x22]);
+    let outcome2 = ingress.ingest(offset, &p2).expect("ingest p2 with TEI");
+
+    assert!(outcome2.events.iter().any(
+        |e| matches!(e, VideoEvent::RandomAccessPointInvalidated { offset } if *offset == p1_offset)
+    ));
+
+    // Bound RAP must now be invalidated (removed)
+    assert!(
+        ingress
+            .timeline()
+            .get_rap_pts(crate::timing::ByteOffset::new(p1_offset))
+            .is_none()
+    );
+}
+
+#[test]
+fn timeline_track_reset_on_cc_break_does_not_bump_epoch() {
+    let (mut ingress, mut offset) = standard_setup();
+    let initial_epoch = ingress.timeline().active_epoch();
+    assert_eq!(initial_epoch, Some(crate::timing::TimelineEpoch::new(0)));
+
+    // Send valid PUSI
+    let pts = 90_000 * 5;
+    let enc_pts = encode_ts(0b0010, pts);
+    let mut pusi_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pusi_payload.extend_from_slice(&enc_pts);
+    pusi_payload.extend_from_slice(&[0x00, 0x00, 0x01, 0x41, 0x9A]); // non-IDR slice
+
+    let p1 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &pusi_payload);
+    ingress.ingest(offset, &p1).expect("ingest p1");
+    offset += PACKET_LEN_I64;
+
+    assert!(ingress.timeline().last_video_point().is_some());
+
+    // Send unannounced CC jump (CC jumps from 1 to 5) on video PID
+    let p2 = make_ts_packet(VIDEO_PID, false, 5, 0, false, &[0xAA, 0xBB]);
+    ingress.ingest(offset, &p2).expect("ingest p2 with cc jump");
+
+    // TimelineEpoch must NOT advance!
+    assert_eq!(ingress.timeline().active_epoch(), initial_epoch);
+    // Track-local timing point was reset:
+    assert!(ingress.timeline().last_video_point().is_none());
+}

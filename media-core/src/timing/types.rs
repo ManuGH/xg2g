@@ -142,17 +142,171 @@ impl RawPcr27m {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ExtendedPts90k(pub i64);
 
+impl ExtendedPts90k {
+    /// Constructs an extended PTS.
+    #[must_use]
+    pub const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the extended PTS value in 90 kHz ticks.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    /// Checked addition of 90 kHz ticks.
+    #[must_use]
+    pub fn checked_add_ticks(self, ticks: i64) -> Option<Self> {
+        self.0.checked_add(ticks).map(Self)
+    }
+
+    /// Checked difference between two extended PTS values in 90 kHz ticks.
+    #[must_use]
+    pub fn checked_diff(self, other: Self) -> Option<i64> {
+        self.0.checked_sub(other.0)
+    }
+}
+
 /// Extended 64-bit Decode Time Stamp in 90 kHz ticks (unwrapped, Step 8c).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ExtendedDts90k(pub i64);
+
+impl ExtendedDts90k {
+    /// Constructs an extended DTS.
+    #[must_use]
+    pub const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the extended DTS value in 90 kHz ticks.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    /// Checked addition of 90 kHz ticks.
+    #[must_use]
+    pub fn checked_add_ticks(self, ticks: i64) -> Option<Self> {
+        self.0.checked_add(ticks).map(Self)
+    }
+
+    /// Checked difference between two extended DTS values in 90 kHz ticks.
+    #[must_use]
+    pub fn checked_diff(self, other: Self) -> Option<i64> {
+        self.0.checked_sub(other.0)
+    }
+}
 
 /// Extended 64-bit Program Clock Reference in 27 MHz ticks (unwrapped, Step 8c).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ExtendedPcr27m(pub i64);
 
+impl ExtendedPcr27m {
+    /// Constructs an extended PCR.
+    #[must_use]
+    pub const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the extended PCR value in 27 MHz ticks.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    /// Checked addition of 27 MHz ticks.
+    #[must_use]
+    pub fn checked_add_ticks(self, ticks: i64) -> Option<Self> {
+        self.0.checked_add(ticks).map(Self)
+    }
+
+    /// Checked difference between two extended PCR values in 27 MHz ticks.
+    #[must_use]
+    pub fn checked_diff(self, other: Self) -> Option<i64> {
+        self.0.checked_sub(other.0)
+    }
+
+    /// Converts 27 MHz PCR ticks to 90 kHz ticks (`ticks / 300`).
+    #[must_use]
+    pub fn to_90k(self) -> ExtendedPts90k {
+        ExtendedPts90k(self.0 / 300)
+    }
+}
+
 /// A monotonic epoch counter for stream timeline segments (Step 8c).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct TimelineEpoch(pub u64);
+
+impl TimelineEpoch {
+    /// Constructs a timeline epoch.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the raw epoch number.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    /// Increments the epoch.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+/// Scope of a timing reset event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimingResetScope {
+    /// Program-level discontinuity: affects entire program timeline (epoch transition).
+    Program,
+    /// Track-local timing loss: affects only the specified PID without advancing epoch.
+    Track(Pid),
+}
+
+/// Explicit causal reason for a timeline discontinuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscontinuityReason {
+    /// Program identity changed (PMT update or new program selection).
+    ProgramIdentityChanged,
+    /// PCR PID changed without full program replacement.
+    PcrPidChanged,
+    /// Transport packet discontinuity indicator asserted on the active PCR PID.
+    PcrDiscontinuityIndicator,
+    /// Unrecoverable loss of transport timing continuity.
+    TransportTimingLoss,
+}
+
+/// A correlated timing point binding stream coordinates, epoch, and timestamps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimingPoint {
+    /// The timeline epoch this point belongs to.
+    pub epoch: TimelineEpoch,
+    /// The transport PID.
+    pub pid: Pid,
+    /// Transport byte offset where the timing was recognized.
+    pub observed_at: ByteOffset,
+    /// Transport byte offset of the PES start packet (PUSI).
+    pub subject_at: ByteOffset,
+    /// Presentation Time Stamp, unwrapped and phase-aligned.
+    pub pts: Option<ExtendedPts90k>,
+    /// Decode Time Stamp, unwrapped and phase-aligned.
+    pub dts: Option<ExtendedDts90k>,
+}
+
+impl TimingPoint {
+    /// Composition buffer delay (`PTS - DTS`) in 90 kHz ticks, if both are present.
+    #[must_use]
+    pub fn composition_delay_90k(&self) -> Option<i64> {
+        match (self.pts, self.dts) {
+            (Some(p), Some(d)) => p.checked_diff(ExtendedPts90k(d.0)),
+            _ => None,
+        }
+    }
+}
 
 /// Estimated transport stream bitrate in bits per second.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

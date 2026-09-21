@@ -143,38 +143,68 @@ pub struct AudioFeedOutput<'a> {
     pub observation: Observation,
 }
 
-/// Tracks all PMT-declared audio streams and global audio scrambling counters.
+/// Result of routing a transport packet through an audio track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AudioRouteOutput<'a> {
+    /// Sliced elementary stream feed, if produced.
+    pub feed: Option<AudioFeedOutput<'a>>,
+    /// Timing event emitted from a valid PES header, if any.
+    pub timing: Option<TimingEvent>,
+    /// Whether transport continuity was broken or damaged (CC break, TEI).
+    pub continuity_broken: bool,
+}
+
+impl AudioRouteOutput<'_> {
+    /// Constructs an empty output indicating no feed, timing, or continuity loss.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            feed: None,
+            timing: None,
+            continuity_broken: false,
+        }
+    }
+
+    /// Constructs an output indicating transport continuity loss without feed or timing.
+    #[must_use]
+    pub const fn broken() -> Self {
+        Self {
+            feed: None,
+            timing: None,
+            continuity_broken: true,
+        }
+    }
+}
+
+/// A router directing packets to the audio track they belong to.
 #[derive(Debug, Default)]
 pub struct AudioTracker {
-    /// Track states for all PMT-declared audio PIDs.
+    /// Declared audio tracks and their state.
     pub tracks: Vec<AudioTrackState>,
-    /// Global scrambled packets across all declared audio streams.
-    pub scrambled_packets: u64,
-    /// Global clear packets across all declared audio streams.
+    /// Total clear packets observed across all audio tracks.
     pub clear_packets: u64,
-    /// Consecutive clear audio packets since last scrambled packet.
+    /// Total scrambled packets observed across all audio tracks.
+    pub scrambled_packets: u64,
+    /// Consecutive clear packets across all audio tracks.
     pub clear_run: u64,
 }
 
 impl AudioTracker {
-    /// Creates an empty audio tracker.
+    /// Constructs a new tracker with no audio tracks.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Resets all audio streams and counters (e.g. on PMT change or target program change).
+    /// Resets all state and adopts the given audio track declarations.
     pub fn reset_with_tracks(&mut self, tracks: &[AudioTrack]) {
-        self.scrambled_packets = 0;
         self.clear_packets = 0;
+        self.scrambled_packets = 0;
         self.clear_run = 0;
-        self.tracks.clear();
-        for track in tracks {
-            self.tracks.push(AudioTrackState::new(track));
-        }
+        self.tracks = tracks.iter().map(AudioTrackState::new).collect();
     }
 
-    /// Returns whether any track matches the given PID.
+    /// Reports whether `pid` belongs to any tracked audio stream.
     #[must_use]
     pub fn handles_pid(&self, pid: u16) -> bool {
         self.tracks.iter().any(|t| t.pid == pid)
@@ -185,14 +215,10 @@ impl AudioTracker {
     /// Returns any elementary stream feed that was produced and fed to an observer,
     /// along with any canonical timing event extracted by the PES assembler.
     #[allow(clippy::too_many_lines)]
-    pub fn route<'a>(
-        &mut self,
-        packet_offset: i64,
-        view: &PacketView<'a>,
-    ) -> (Option<AudioFeedOutput<'a>>, Option<TimingEvent>) {
+    pub fn route<'a>(&mut self, packet_offset: i64, view: &PacketView<'a>) -> AudioRouteOutput<'a> {
         let pid = view.pid();
         let Some(track) = self.tracks.iter_mut().find(|t| t.pid == pid) else {
-            return (None, None);
+            return AudioRouteOutput::empty();
         };
 
         // 1. Adaptation field only: does not carry payload or advance CC.
@@ -200,7 +226,7 @@ impl AudioTracker {
             if view.discontinuity_indicator() {
                 track.continuity.observe_adaptation_only(true);
             }
-            return (None, None);
+            return AudioRouteOutput::empty();
         };
 
         // 2. Evaluate transport continuity.
@@ -212,7 +238,7 @@ impl AudioTracker {
         );
 
         if continuity == Continuity::Duplicate {
-            return (None, None);
+            return AudioRouteOutput::empty();
         }
 
         let same_cc_conflict =
@@ -227,7 +253,7 @@ impl AudioTracker {
                 }
                 track.pes_assembler.reset();
             }
-            return (None, None);
+            return AudioRouteOutput::broken();
         }
 
         // 4. Scrambled packet: count against audio scrambling facts.
@@ -241,7 +267,7 @@ impl AudioTracker {
                 }
                 track.pes_assembler.reset();
             }
-            return (None, None);
+            return AudioRouteOutput::empty();
         }
 
         // 5. Clear packet: increments clear counters BEFORE observer decision.
@@ -257,7 +283,7 @@ impl AudioTracker {
                 elem.position = Position::AwaitingStart;
             }
             track.pes_assembler.reset();
-            return (None, None);
+            return AudioRouteOutput::broken();
         }
 
         // In audio, a PUSI packet whose fixed header is cut short by an adaptation field (< 9 bytes)
@@ -267,7 +293,7 @@ impl AudioTracker {
             if let Some(elem) = track.elementary.as_mut() {
                 elem.position = Position::AwaitingStart;
             }
-            return (None, None);
+            return AudioRouteOutput::empty();
         }
 
         // 6. Timing & ES extraction via bounded common PES assembler
@@ -295,7 +321,7 @@ impl AudioTracker {
                 if let Some(elem) = track.elementary.as_mut() {
                     elem.position = Position::AwaitingStart;
                 }
-                return (None, None);
+                return AudioRouteOutput::empty();
             }
             if let Some(elem) = track.elementary.as_mut() {
                 elem.pes_starts += 1;
@@ -309,11 +335,19 @@ impl AudioTracker {
 
         // 7. Observer feeding (only for observable streams).
         let Some(elem) = track.elementary.as_mut() else {
-            return (None, timing_event);
+            return AudioRouteOutput {
+                feed: None,
+                timing: timing_event,
+                continuity_broken: false,
+            };
         };
 
         let Some(es) = output.es.filter(|bytes| !bytes.is_empty()) else {
-            return (None, timing_event);
+            return AudioRouteOutput {
+                feed: None,
+                timing: timing_event,
+                continuity_broken: false,
+            };
         };
         elem.observer.feed(es);
         elem.feeds += 1;
@@ -324,6 +358,10 @@ impl AudioTracker {
             observation: elem.observer.current(),
         };
 
-        (Some(feed), timing_event)
+        AudioRouteOutput {
+            feed: Some(feed),
+            timing: timing_event,
+            continuity_broken: false,
+        }
     }
 }

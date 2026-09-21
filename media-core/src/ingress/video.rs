@@ -44,7 +44,7 @@ use crate::audio::observer::Observation;
 use crate::ingress::audio::{AudioTrackState, AudioTracker};
 use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
-use crate::timing::{PcrTracker, Pid, TimingEvent, TimingSnapshot};
+use crate::timing::{ByteOffset, PcrTracker, Pid, TimelineTracker, TimingEvent, TimingSnapshot};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
 /// Minimum consecutive scrambled packets required to conclusively confirm a stream as scrambled.
@@ -895,6 +895,7 @@ pub struct VideoIngress {
     follower: Option<VideoFollower>,
     audio: AudioTracker,
     timing: PcrTracker,
+    timeline: TimelineTracker,
     incarnation: u64,
 }
 
@@ -907,6 +908,7 @@ impl VideoIngress {
             follower: None,
             audio: AudioTracker::new(),
             timing: PcrTracker::new(),
+            timeline: TimelineTracker::new(),
             incarnation: 0,
         }
     }
@@ -954,6 +956,17 @@ impl VideoIngress {
         self.timing.snapshot()
     }
 
+    /// Reference to the canonical stream timeline tracker and epoch coordinator.
+    #[must_use]
+    pub const fn timeline(&self) -> &TimelineTracker {
+        &self.timeline
+    }
+
+    /// Mutable reference to the canonical stream timeline tracker.
+    pub fn timeline_mut(&mut self) -> &mut TimelineTracker {
+        &mut self.timeline
+    }
+
     /// Selects the programme to follow, returning any identity events emitted.
     pub fn set_target_program(&mut self, program_number: u16) -> Vec<VideoEvent> {
         let outcome = self.psi.set_target_program(program_number);
@@ -963,6 +976,11 @@ impl VideoIngress {
                 self.reprogram();
                 events.push(VideoEvent::ProgramIdentityChanged);
             }
+        }
+        if self.psi.has_pmt() {
+            self.timeline.activate_next_epoch();
+        } else {
+            self.timeline.deactivate_program();
         }
         events
     }
@@ -1060,10 +1078,19 @@ impl VideoIngress {
                 self.reprogram();
                 events.push(VideoEvent::ProgramIdentityChanged);
             }
+            if identity_changed_count > 0 {
+                if self.psi.has_pmt() {
+                    self.timeline.activate_next_epoch();
+                } else {
+                    self.timeline.deactivate_program();
+                }
+            }
             let Ok(view) = PacketView::parse(packet) else {
                 continue;
             };
-            self.timing.observe(packet_offset, &view);
+            let pcr_obs = self.timing.observe(packet_offset, &view);
+            self.timeline.observe_pcr(pcr_obs);
+            let events_before = events.len();
             self.route(
                 packet_offset,
                 &view,
@@ -1071,6 +1098,17 @@ impl VideoIngress {
                 &mut events,
                 &mut timing_events,
             );
+            for event in &events[events_before..] {
+                match *event {
+                    VideoEvent::RandomAccessPoint { offset, .. } => {
+                        self.timeline.bind_rap_if_available(ByteOffset::new(offset));
+                    }
+                    VideoEvent::RandomAccessPointInvalidated { offset } => {
+                        self.timeline.invalidate_rap(ByteOffset::new(offset));
+                    }
+                    VideoEvent::ProgramIdentityChanged => {}
+                }
+            }
         }
         let consumed = i64::try_from(data.len()).unwrap_or(i64::MAX);
         Ok(VideoOutcome {
@@ -1111,8 +1149,12 @@ impl VideoIngress {
         let is_video = self.follower.as_ref().is_some_and(|f| f.pid == pid);
         if !is_video {
             if self.audio.handles_pid(pid) {
-                let (_feed, audio_timing) = self.audio.route(packet_offset, view);
-                if let Some(evt) = audio_timing {
+                let audio_out = self.audio.route(packet_offset, view);
+                if let Some(p) = Pid::new(pid).filter(|_| audio_out.continuity_broken) {
+                    self.timeline.reset_track(p);
+                }
+                if let Some(evt) = audio_out.timing {
+                    self.timeline.observe_audio_timing(&evt);
                     out_timing_events.push(evt);
                 }
             }
@@ -1152,6 +1194,9 @@ impl VideoIngress {
             if broken_boundary {
                 follower.au_continuity_broken = true;
                 follower.pes_assembler.reset();
+                if let Some(p) = Pid::new(follower.pid) {
+                    self.timeline.reset_track(p);
+                }
             }
 
             // 1. Finalize the preceding AU before evaluating the new payload unit
@@ -1172,6 +1217,9 @@ impl VideoIngress {
                 follower.position = VideoPosition::AwaitingStart;
                 follower.invalidate_published_rap(out_events);
                 follower.pes_assembler.reset();
+                if let Some(p) = Pid::new(follower.pid) {
+                    self.timeline.reset_track(p);
+                }
                 return;
             }
 
@@ -1193,6 +1241,9 @@ impl VideoIngress {
             if same_cc_conflict {
                 follower.position = VideoPosition::AwaitingStart;
                 follower.pes_assembler.reset();
+                if let Some(p) = Pid::new(follower.pid) {
+                    self.timeline.reset_track(p);
+                }
                 return;
             }
 
@@ -1214,6 +1265,7 @@ impl VideoIngress {
             }
 
             if let Some(evt) = output.timing_event {
+                self.timeline.observe_video_timing(&evt);
                 out_timing_events.push(evt);
             }
 
@@ -1233,6 +1285,9 @@ impl VideoIngress {
         // Continuation packet (is_pusi == false)
         if view.transport_error_indicator() {
             follower.pes_assembler.reset();
+            if let Some(p) = Pid::new(follower.pid) {
+                self.timeline.reset_track(p);
+            }
             if !matches!(follower.position, VideoPosition::AwaitingStart) {
                 follower.reset_annex_b();
                 follower.au_continuity_broken = true;
@@ -1269,6 +1324,9 @@ impl VideoIngress {
             follower.position = VideoPosition::AwaitingStart;
             follower.invalidate_published_rap(out_events);
             follower.pes_assembler.reset();
+            if let Some(p) = Pid::new(follower.pid) {
+                self.timeline.reset_track(p);
+            }
             return;
         }
 
@@ -1294,6 +1352,7 @@ impl VideoIngress {
         }
 
         if let Some(evt) = output.timing_event {
+            self.timeline.observe_video_timing(&evt);
             out_timing_events.push(evt);
         }
 
