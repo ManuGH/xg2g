@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 @MainActor
-private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
     Haptics.shared.impact(style)
 }
 
@@ -387,7 +387,9 @@ struct ChannelListView: View {
                 }
             }
             .navigationTitle(model.selectedBouquet?.name ?? "Alle Sender")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Menu {

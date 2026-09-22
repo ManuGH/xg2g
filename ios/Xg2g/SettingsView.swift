@@ -353,7 +353,9 @@ struct SettingsView: View {
                     .listRowBackground(Theme.Colors.surfaceElevated)
                 }
                 .safeAreaPadding(.bottom, 80)
+                #if !os(tvOS)
                 .scrollContentBackground(.hidden)
+                #endif
                 .confirmationDialog(
                     "Möchtest du dieses Gerät wirklich trennen?",
                     isPresented: $showingRevokeConfirmation,
@@ -451,10 +453,14 @@ struct DiagnosticPipelineOverrideView: View {
             }
             .listRowBackground(Theme.Colors.surfaceElevated)
         }
+        #if !os(tvOS)
         .scrollContentBackground(.hidden)
+        #endif
         .background(Theme.Colors.bgBase.ignoresSafeArea())
         .navigationTitle("Streaming-Technik")
+        #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 

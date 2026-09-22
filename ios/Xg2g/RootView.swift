@@ -12,10 +12,18 @@ import SwiftUI
 struct RootView: View {
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    @State private var composition: AppComposition
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _composition = State(initialValue: AppComposition.makeBridged(appModel: model))
+    }
 
     var body: some View {
         RootContentView(model: model, playbackManager: model.playbackManager)
+            .withAppComposition(composition)
             .preferredColorScheme(.dark)
             .tint(Theme.Colors.accentAction)
             .task { await model.start() }
@@ -56,25 +64,14 @@ struct RootContentView: View {
     @ObservedObject var playbackManager: PlaybackManager
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // 1. App Navigation
-            Group {
-                switch model.state {
-                case .needsServer:
-                    ServerSetupView(model: model)
-                case .needsPairing, .needsRePairing:
-                    PairingView(model: model)
-                case .ready:
-                    AdaptiveAppNavigation(model: model)
-                }
-            }
-
-            // 2. Mini-Player Floating Bar (above TabBar)
-            if playbackManager.presentationMode == .miniplayer {
-                MiniPlayerBar(playbackManager: playbackManager, model: model)
-                    .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(10)
+        Group {
+            switch model.state {
+            case .needsServer:
+                ServerSetupView(model: model)
+            case .needsPairing, .needsRePairing:
+                PairingView(model: model)
+            case .ready:
+                RootScene(model: model, playbackManager: playbackManager)
             }
         }
         .fullScreenCover(isPresented: Binding(
@@ -203,6 +200,9 @@ struct iPadSidebar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    #if !os(tvOS)
+                    .hoverEffect(.highlight)
+                    #endif
                     .listRowBackground(
                         isSelected
                             ? RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -242,6 +242,9 @@ struct iPadSidebar: View {
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    #if !os(tvOS)
+                    .hoverEffect(.highlight)
+                    #endif
 
                     // Favoriten
                     if !model.favoriteChannelIDs.isEmpty {
@@ -271,6 +274,9 @@ struct iPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        #if !os(tvOS)
+                        .hoverEffect(.highlight)
+                        #endif
                     }
 
                     // Bouquets
@@ -304,6 +310,9 @@ struct iPadSidebar: View {
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.plain)
+                        #if !os(tvOS)
+                        .hoverEffect(.highlight)
+                        #endif
                     }
                 }
             }
@@ -328,14 +337,16 @@ struct iPadSidebar: View {
             }
             .listRowBackground(Color.clear)
         }
+        #if !os(tvOS)
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        #endif
         .background(Theme.Colors.bgBase.ignoresSafeArea())
         .navigationSplitViewColumnWidth(min: 270, ideal: 300, max: 360)
         .navigationTitle("xg2g TV")
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }
@@ -520,7 +531,9 @@ struct PairingView: View {
                         Text(invitation.userCode)
                             .font(.system(size: 42, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentLive)
+                            #if !os(tvOS)
                             .textSelection(.enabled)
+                            #endif
                             .padding(.vertical, 16)
                             .padding(.horizontal, 28)
                             .glassCard(cornerRadius: 16)

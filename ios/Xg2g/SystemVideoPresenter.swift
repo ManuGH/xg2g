@@ -245,7 +245,9 @@ public final class SystemVideoPresenter: NSObject {
         // Leaving the app hands the picture to PiP rather than freezing it, which
         // is the behaviour the system player has and the one people expect from a
         // video app.
+        #if !os(tvOS)
         controller.canStartPictureInPictureAutomaticallyFromInline = true
+        #endif
         pictureInPictureController = controller
         logger.notice("[SystemVideo] Picture in Picture controller ready")
     }

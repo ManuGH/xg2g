@@ -194,9 +194,12 @@ struct GuideGrid: View {
                     }
             }
         }
+        #if !os(tvOS)
         .simultaneousGesture(panGesture)
+        #endif
     }
 
+    #if !os(tvOS)
     /// Horizontal panning. `simultaneousGesture` so the vertical scroll view
     /// keeps its own drag; the dominance check stops a vertical flick from
     /// dragging the timeline sideways.
@@ -218,6 +221,7 @@ struct GuideGrid: View {
                 dragAnchor = projected
             }
     }
+    #endif
 
     private func centreOnNowIfNeeded() {
         guard !hasCentredOnNow, isNowInWindow, viewportWidth > 0 else { return }
@@ -293,6 +297,9 @@ struct GuideGrid: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
     }
 
     /// Faint rules every half hour. The only decoration here, and load-bearing:
@@ -428,6 +435,9 @@ private struct GuideGridBlock: View {
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)")
     }

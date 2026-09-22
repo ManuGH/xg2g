@@ -323,7 +323,9 @@ struct PlayerScreen: View {
             // Same fullscreen contract as the native player: in landscape the
             // status bar and home indicator go away instead of sitting on top
             // of a picture that has already been stretched underneath them.
+            #if !os(tvOS)
             .statusBarHidden(isLandscape)
+            #endif
             .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
         }
         .task(id: currentChannel.id) {
@@ -612,7 +614,7 @@ struct PlayerScreen: View {
         }
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 
@@ -1101,12 +1103,16 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.showsPlaybackControls = showsPlaybackControls
         controller.videoGravity = videoGravity
         controller.allowsPictureInPicturePlayback = true
+        #if !os(tvOS)
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = false
+        #if !targetEnvironment(macCatalyst)
         controller.allowsVideoFrameAnalysis = false
+        #endif
         controller.exitsFullScreenWhenPlaybackEnds = false
         controller.view.insetsLayoutMarginsFromSafeArea = false
         controller.additionalSafeAreaInsets = .zero
+        #endif
         controller.view.backgroundColor = .black
         controller.delegate = context.coordinator
         return controller
@@ -1140,6 +1146,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
             self.parent = parent
         }
 
+        #if !os(tvOS)
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
             willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
@@ -1163,6 +1170,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
                 }
             }
         }
+        #endif
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,

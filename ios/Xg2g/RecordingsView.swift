@@ -219,7 +219,9 @@ struct RecordingsView: View {
                 }
             }
             .navigationTitle("Aufnahmen")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -540,7 +542,7 @@ struct RecordingsView: View {
         return filtered.first
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }
@@ -933,6 +935,9 @@ struct RecordingMediaCard: View {
             }
         }
         .buttonStyle(.plain)
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1158,7 +1163,9 @@ struct RecordingDetailSheet: View {
                 }
             }
             .navigationTitle("Aufnahmedetails")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Schließen") { dismiss() }
@@ -1338,7 +1345,7 @@ struct DownloadButton: View {
         }
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }

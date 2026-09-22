@@ -281,6 +281,7 @@ struct ProgramDetailSheet: View {
                         }
                         .padding(20)
                     }
+                    #if !os(tvOS)
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 25)
                             .onEnded { value in
@@ -296,10 +297,13 @@ struct ProgramDetailSheet: View {
                                 }
                             }
                     )
+                    #endif
                 }
             }
             .navigationTitle("Sendungsdetails")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Schließen") { dismiss() }
@@ -327,7 +331,7 @@ struct ProgramDetailSheet: View {
         }
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }
@@ -480,7 +484,7 @@ struct ExpandableRerunCard: View {
         )
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }

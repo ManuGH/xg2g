@@ -192,5 +192,8 @@ struct ChannelRow: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
     }
 }

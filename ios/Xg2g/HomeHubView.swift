@@ -67,7 +67,9 @@ struct HomeHubView: View {
                 }
             }
             .navigationTitle("Für dich")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
@@ -367,6 +369,9 @@ private struct HomePrimeTimeCard: View {
                 .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
         )
         .contentShape(Rectangle())
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
         .onTapGesture {
             onSelect()
         }
@@ -412,5 +417,8 @@ private struct HomeRecordingCard: View {
             )
         }
         .buttonStyle(.plain)
+        #if !os(tvOS)
+        .hoverEffect(.highlight)
+        #endif
     }
 }

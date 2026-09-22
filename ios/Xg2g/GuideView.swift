@@ -52,7 +52,9 @@ struct GuideView: View {
             .task(id: inputs) {
                 await rebuildProjection()
             }
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { bouquetMenu }
                 ToolbarItem(placement: .principal) { modePicker }
@@ -548,6 +550,6 @@ struct GuideView: View {
 }
 
 @MainActor
-private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
     Haptics.shared.impact(style)
 }

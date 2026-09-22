@@ -69,16 +69,47 @@ enum DeviceCapabilities {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
+    /// Pure platform classification helper for deterministic unit testing across device variants.
+    static func classifyPlatform(
+        machineIdentifier: String,
+        isiOSAppOnMac: Bool
+    ) -> Xg2gContract.PlaybackClientPlatform {
+        if isiOSAppOnMac {
+            return .macos
+        }
+        if machineIdentifier.hasPrefix("iPad") {
+            return .ipados
+        } else if machineIdentifier.hasPrefix("AppleTV") {
+            return .tvos
+        }
+        return .ios
+    }
+
+    static var clientPlatform: Xg2gContract.PlaybackClientPlatform {
+        #if os(tvOS)
+        return .tvos
+        #elseif targetEnvironment(macCatalyst)
+        return .macos
+        #else
+        let identifier = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? machineIdentifier
+        return classifyPlatform(
+            machineIdentifier: identifier,
+            isiOSAppOnMac: ProcessInfo.processInfo.isiOSAppOnMac
+        )
+        #endif
+    }
+
     static var deviceContext: Xg2gContract.PlaybackDeviceContext {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         let osVersion = version.patchVersion > 0
             ? "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
             : "\(version.majorVersion).\(version.minorVersion)"
+        let platform = clientPlatform
         return Xg2gContract.PlaybackDeviceContext(
             brand: "Apple",
             manufacturer: "Apple",
             model: machineIdentifier,
-            osName: "ios",
+            osName: platform.rawValue,
             osVersion: osVersion,
             platform: "darwin"
         )
@@ -93,7 +124,19 @@ enum DeviceCapabilities {
             guard let value = element.value as? Int8, value != 0 else { return identifier }
             return identifier + String(UnicodeScalar(UInt8(value)))
         }
-        return identifier.isEmpty ? "iPhone" : identifier
+        if !identifier.isEmpty {
+            return identifier
+        }
+        #if os(tvOS)
+        return "AppleTV"
+        #elseif targetEnvironment(macCatalyst)
+        return "Mac"
+        #else
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            return "Mac"
+        }
+        return "iPhone"
+        #endif
     }
 
     /// Returns a comma-separated list of codecs for API negotiation (e.g. "av1,hevc,h264" or "hevc,h264").

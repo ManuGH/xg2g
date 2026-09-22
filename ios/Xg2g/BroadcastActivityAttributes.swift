@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import Foundation
-#if canImport(ActivityKit)
+#if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
 import ActivityKit
 
 public struct BroadcastLiveActivityAttributes: ActivityAttributes {

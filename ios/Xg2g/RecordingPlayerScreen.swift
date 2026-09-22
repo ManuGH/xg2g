@@ -94,6 +94,7 @@ struct RecordingPlayerScreen: View {
         .scaleEffect(isDraggingDown ? max(0.85, 1.0 - (verticalDragOffset / 1200)) : 1.0)
         .clipShape(RoundedRectangle(cornerRadius: isDraggingDown ? min(32, verticalDragOffset / 4) : 0, style: .continuous))
         .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.85), value: verticalDragOffset)
+        #if !os(tvOS)
         .gesture(
             DragGesture(minimumDistance: 20)
                 .onChanged { value in
@@ -115,6 +116,7 @@ struct RecordingPlayerScreen: View {
                     }
                 }
         )
+        #endif
         .onAppear {
             model?.playbackManager.registerRecordingCleanup {
                 self.cleanup()

@@ -65,12 +65,14 @@ struct TimersView: View {
                     }
                 }
 
+                #if !os(tvOS)
                 if model.isLoadingTimers && !model.timers.isEmpty {
                     ToolbarItem(placement: .status) {
                         ProgressView()
                             .tint(Theme.Colors.accentAction)
                     }
                 }
+                #endif
             }
             .sheet(isPresented: $showingAddTimer) {
                 AddTimerSheet(model: model)
@@ -190,15 +192,24 @@ struct AddTimerSheet: View {
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
                     Section("Sendezeit") {
+                        #if !os(tvOS)
                         DatePicker("Startzeit", selection: $begin)
                         DatePicker("Endzeit", selection: $end)
+                        #else
+                        Text("Start: \(begin.formatted())")
+                        Text("Ende: \(end.formatted())")
+                        #endif
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
                 }
+                #if !os(tvOS)
                 .scrollContentBackground(.hidden)
+                #endif
             }
             .navigationTitle("Neuer Timer")
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Abbrechen") {
