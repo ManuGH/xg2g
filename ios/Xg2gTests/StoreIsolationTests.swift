@@ -76,6 +76,27 @@ private final class MockPlaybackController: PlaybackControlling {
     }
 }
 
+private final class LifetimePlaybackController: PlaybackControlling {
+    var currentChannel: Channel?
+    var isPlaying: Bool = false
+    var onPlay: ((Channel) -> Void)?
+
+    func play(channel: Channel) {
+        currentChannel = channel
+        isPlaying = true
+        onPlay?(channel)
+    }
+
+    func stop() {
+        currentChannel = nil
+        isPlaying = false
+    }
+
+    func togglePlayPause() {
+        isPlaying.toggle()
+    }
+}
+
 @MainActor
 private final class MockDeviceSession: DeviceSession {
     var isConnected: Bool = false
@@ -174,6 +195,21 @@ struct StoreIsolationTests {
         #expect(store.isPlaying == false)
         #expect(store.currentChannel == nil)
         #expect(controller.isPlaying == false)
+    }
+
+    @Test("PlaybackStore strongly owns its controller across creation scope exit")
+    @MainActor
+    func testPlaybackStoreStronglyOwnsController() {
+        var forwardedChannel: Channel?
+        let store: PlaybackStore = {
+            let controller = LifetimePlaybackController()
+            controller.onPlay = { forwardedChannel = $0 }
+            return PlaybackStore(controller: controller)
+        }()
+
+        let channel = Channel(id: "1", name: "Das Erste HD", number: "1", serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", logoURL: nil)
+        store.play(channel: channel)
+        #expect(forwardedChannel == channel)
     }
 
     @Test("DeviceStore coordinates backend session and address state")

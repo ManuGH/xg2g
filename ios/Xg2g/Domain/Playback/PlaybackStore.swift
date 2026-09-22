@@ -16,7 +16,7 @@ final class PlaybackStore {
     private(set) var isPlaying: Bool = false
     private(set) var errorMessage: String?
 
-    private weak var controller: (any PlaybackControlling)?
+    private var controller: (any PlaybackControlling)?
 
     init(controller: (any PlaybackControlling)? = nil) {
         self.controller = controller

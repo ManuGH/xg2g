@@ -90,4 +90,23 @@ struct AppCompositionTests {
         #expect(composition.playbackStore === initialPlayback)
         #expect(composition.deviceStore === initialDevice)
     }
+
+    @Test("AppComposition.makeBridged forwards playback actions to AppModel after factory returns")
+    @MainActor
+    func testAppCompositionBridgedPlaybackForwarding() async {
+        let appModel = AppModel()
+        let composition = AppComposition.makeBridged(appModel: appModel)
+
+        let channel = Channel(id: "1", name: "ZDF HD", number: "2", serviceRef: "1:0:19:2B66:3F3:1:C00000:0:0:0:", logoURL: nil)
+        composition.playbackStore.play(channel: channel)
+
+        #expect(appModel.recentChannelIDs.first == channel.id)
+
+        for _ in 0..<20 {
+            if appModel.playingChannel == channel { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        #expect(appModel.playingChannel == channel)
+    }
 }
