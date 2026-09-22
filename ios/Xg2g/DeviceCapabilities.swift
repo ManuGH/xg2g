@@ -69,16 +69,35 @@ enum DeviceCapabilities {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
+    static var clientPlatform: Xg2gContract.PlaybackClientPlatform {
+        #if os(tvOS)
+        return .tvos
+        #elseif targetEnvironment(macCatalyst)
+        return .macos
+        #else
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            return .macos
+        } else if UIDevice.current.userInterfaceIdiom == .pad {
+            return .ipados
+        } else if UIDevice.current.userInterfaceIdiom == .tv {
+            return .tvos
+        } else {
+            return .ios
+        }
+        #endif
+    }
+
     static var deviceContext: Xg2gContract.PlaybackDeviceContext {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         let osVersion = version.patchVersion > 0
             ? "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
             : "\(version.majorVersion).\(version.minorVersion)"
+        let platform = clientPlatform
         return Xg2gContract.PlaybackDeviceContext(
             brand: "Apple",
             manufacturer: "Apple",
             model: machineIdentifier,
-            osName: "ios",
+            osName: platform.rawValue,
             osVersion: osVersion,
             platform: "darwin"
         )
@@ -93,7 +112,24 @@ enum DeviceCapabilities {
             guard let value = element.value as? Int8, value != 0 else { return identifier }
             return identifier + String(UnicodeScalar(UInt8(value)))
         }
-        return identifier.isEmpty ? "iPhone" : identifier
+        if !identifier.isEmpty {
+            return identifier
+        }
+        #if os(tvOS)
+        return "AppleTV"
+        #elseif targetEnvironment(macCatalyst)
+        return "Mac"
+        #else
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            return "Mac"
+        } else if UIDevice.current.userInterfaceIdiom == .pad {
+            return "iPad"
+        } else if UIDevice.current.userInterfaceIdiom == .tv {
+            return "AppleTV"
+        } else {
+            return "iPhone"
+        }
+        #endif
     }
 
     /// Returns a comma-separated list of codecs for API negotiation (e.g. "av1,hevc,h264" or "hevc,h264").

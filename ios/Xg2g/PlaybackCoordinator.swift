@@ -111,7 +111,7 @@ actor PlaybackCoordinator {
                 audioCodecs: ["aac", "ac3", "mp3"],
                 capabilitiesVersion: 3,
                 clientIdentity: Xg2gContract.PlaybackClientIdentity(
-                    platform: .ios,
+                    platform: DeviceCapabilities.clientPlatform,
                     surface: .nativeApp,
                     appVersion: DeviceCapabilities.appVersion
                 ),
