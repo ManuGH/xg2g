@@ -973,21 +973,26 @@ impl VideoIngress {
     }
 
     /// Selects the programme to follow, returning any identity events emitted.
+    ///
+    /// If `program_number` matches the current target programme, this call is an
+    /// idempotent no-op: no events are emitted, and active timeline tracking,
+    /// unwrappers, and follower state are preserved intact.
+    ///
+    /// If `program_number` selects a different programme, the follower and audio
+    /// tracks are reset, the canonical timeline is deactivated (`active_epoch = None`),
+    /// and `VideoEvent::ProgramIdentityChanged` is emitted. The next timeline epoch
+    /// will be activated once transport bytes carrying the new programme's PMT arrive.
     pub fn set_target_program(&mut self, program_number: u16) -> Vec<VideoEvent> {
         let outcome = self.psi.set_target_program(program_number);
-        let mut events = Vec::new();
-        for event in outcome.events {
-            if event == PsiEvent::ProgramIdentityChanged {
-                self.reprogram();
-                events.push(VideoEvent::ProgramIdentityChanged);
-            }
+        let identity_changed = outcome.events.contains(&PsiEvent::ProgramIdentityChanged);
+
+        if !identity_changed {
+            return Vec::new();
         }
-        if self.psi.has_pmt() {
-            self.timeline.activate_next_epoch();
-        } else {
-            self.timeline.deactivate_program();
-        }
-        events
+
+        self.reprogram();
+        self.timeline.deactivate_program();
+        vec![VideoEvent::ProgramIdentityChanged]
     }
 
     /// Which incarnation the stream being followed belongs to.
