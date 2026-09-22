@@ -77,13 +77,25 @@ enum DeviceCapabilities {
         #else
         if ProcessInfo.processInfo.isiOSAppOnMac {
             return .macos
-        } else if UIDevice.current.userInterfaceIdiom == .pad {
-            return .ipados
-        } else if UIDevice.current.userInterfaceIdiom == .tv {
-            return .tvos
-        } else {
+        }
+        if let simModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            if simModel.hasPrefix("iPad") { return .ipados }
+            if simModel.hasPrefix("AppleTV") { return .tvos }
             return .ios
         }
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        if identifier.hasPrefix("iPad") {
+            return .ipados
+        } else if identifier.hasPrefix("AppleTV") {
+            return .tvos
+        }
+        return .ios
         #endif
     }
 
@@ -122,13 +134,8 @@ enum DeviceCapabilities {
         #else
         if ProcessInfo.processInfo.isiOSAppOnMac {
             return "Mac"
-        } else if UIDevice.current.userInterfaceIdiom == .pad {
-            return "iPad"
-        } else if UIDevice.current.userInterfaceIdiom == .tv {
-            return "AppleTV"
-        } else {
-            return "iPhone"
         }
+        return "iPhone"
         #endif
     }
 
