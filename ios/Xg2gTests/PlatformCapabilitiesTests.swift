@@ -80,4 +80,18 @@ struct PlatformCapabilitiesTests {
         #expect(macCaps.supportsHover == true)
         #expect(macCaps.supportsHardwareKeyboard == true)
     }
+
+    @Test("DeviceCapabilities.classifyPlatform maps machine identifiers to contract platforms deterministically")
+    func testClassifyPlatformMappings() {
+        #expect(DeviceCapabilities.classifyPlatform(machineIdentifier: "iPhone17,1", isiOSAppOnMac: false) == .ios)
+        #expect(DeviceCapabilities.classifyPlatform(machineIdentifier: "iPad16,6", isiOSAppOnMac: false) == .ipados)
+        #expect(DeviceCapabilities.classifyPlatform(machineIdentifier: "AppleTV14,1", isiOSAppOnMac: false) == .tvos)
+        #expect(DeviceCapabilities.classifyPlatform(machineIdentifier: "iPad16,6", isiOSAppOnMac: true) == .macos)
+        #expect(DeviceCapabilities.classifyPlatform(machineIdentifier: "arm64", isiOSAppOnMac: false) == .ios)
+    }
+
+    @Test("DeviceCapabilities.deviceContext osName matches clientPlatform rawValue")
+    func testDeviceContextOsNameMatchesClientPlatform() {
+        #expect(DeviceCapabilities.deviceContext.osName == DeviceCapabilities.clientPlatform.rawValue)
+    }
 }

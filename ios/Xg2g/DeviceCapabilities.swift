@@ -69,33 +69,33 @@ enum DeviceCapabilities {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
+    /// Pure platform classification helper for deterministic unit testing across device variants.
+    static func classifyPlatform(
+        machineIdentifier: String,
+        isiOSAppOnMac: Bool
+    ) -> Xg2gContract.PlaybackClientPlatform {
+        if isiOSAppOnMac {
+            return .macos
+        }
+        if machineIdentifier.hasPrefix("iPad") {
+            return .ipados
+        } else if machineIdentifier.hasPrefix("AppleTV") {
+            return .tvos
+        }
+        return .ios
+    }
+
     static var clientPlatform: Xg2gContract.PlaybackClientPlatform {
         #if os(tvOS)
         return .tvos
         #elseif targetEnvironment(macCatalyst)
         return .macos
         #else
-        if ProcessInfo.processInfo.isiOSAppOnMac {
-            return .macos
-        }
-        if let simModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
-            if simModel.hasPrefix("iPad") { return .ipados }
-            if simModel.hasPrefix("AppleTV") { return .tvos }
-            return .ios
-        }
-        var systemInfo = utsname()
-        uname(&systemInfo)
-        let machineMirror = Mirror(reflecting: systemInfo.machine)
-        let identifier = machineMirror.children.reduce("") { identifier, element in
-            guard let value = element.value as? Int8, value != 0 else { return identifier }
-            return identifier + String(UnicodeScalar(UInt8(value)))
-        }
-        if identifier.hasPrefix("iPad") {
-            return .ipados
-        } else if identifier.hasPrefix("AppleTV") {
-            return .tvos
-        }
-        return .ios
+        let identifier = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? machineIdentifier
+        return classifyPlatform(
+            machineIdentifier: identifier,
+            isiOSAppOnMac: ProcessInfo.processInfo.isiOSAppOnMac
+        )
         #endif
     }
 
