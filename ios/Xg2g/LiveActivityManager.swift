@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import Foundation
-#if canImport(ActivityKit)
+#if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
 import ActivityKit
 #endif
 
@@ -11,7 +11,7 @@ final class LiveActivityManager: @unchecked Sendable {
 
     static let shared = LiveActivityManager()
 
-    #if canImport(ActivityKit)
+    #if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
     private var currentActivity: Activity<BroadcastLiveActivityAttributes>?
     #endif
 
@@ -22,7 +22,7 @@ final class LiveActivityManager: @unchecked Sendable {
         nowNext: NowNext?,
         isDirectStream: Bool = true
     ) {
-        #if canImport(ActivityKit)
+        #if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
         // LiveActivities require an attached WidgetExtension bundle.
         // Guard against runtime assertion traps on devices without widgets.
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -43,7 +43,7 @@ final class LiveActivityManager: @unchecked Sendable {
         isDirectStream: Bool = true,
         channelNumber: String? = nil
     ) {
-        #if canImport(ActivityKit)
+        #if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
         guard let activity = currentActivity else { return }
 
         let now = nowNext?.now
@@ -68,7 +68,7 @@ final class LiveActivityManager: @unchecked Sendable {
     }
 
     func endActivity() {
-        #if canImport(ActivityKit)
+        #if canImport(ActivityKit) && !targetEnvironment(macCatalyst) && !os(tvOS)
         guard let activity = currentActivity else { return }
         self.currentActivity = nil
         Task {
