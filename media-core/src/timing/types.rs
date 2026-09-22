@@ -252,9 +252,17 @@ impl TimelineEpoch {
     }
 
     /// Increments the epoch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the 64-bit epoch counter overflows.
     #[must_use]
-    pub const fn next(self) -> Self {
-        Self(self.0.saturating_add(1))
+    pub fn next(self) -> Self {
+        Self(
+            self.0
+                .checked_add(1)
+                .expect("timeline epoch counter exhausted"),
+        )
     }
 }
 
