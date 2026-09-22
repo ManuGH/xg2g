@@ -120,7 +120,7 @@ func makePCRPacket(pid uint16, cc byte, di bool, pcr27m *uint64) []byte {
 	p[1] = byte((pid >> 8) & 0x1F)
 	p[2] = byte(pid & 0xFF)
 	p[3] = 0x20 | (cc & 0x0F) // adaptation only
-	p[4] = 183               // adaptation field length
+	p[4] = 183                // adaptation field length
 
 	var flags byte
 	if di {
@@ -149,9 +149,9 @@ func encodeTimestamp(ts uint64, prefix byte) [5]byte {
 	return [5]byte{
 		(prefix << 4) | byte(((ts>>29)&0x0E)|1),
 		byte(ts >> 22),
-		byte(((ts>>14)&0xFE)|1),
+		byte(((ts >> 14) & 0xFE) | 1),
 		byte(ts >> 7),
-		byte(((ts<<1)&0xFE)|1),
+		byte(((ts << 1) & 0xFE) | 1),
 	}
 }
 
@@ -268,12 +268,12 @@ type expectedEvent struct {
 }
 
 type timingStep struct {
-	desc        string
-	chunk       []byte
-	hasEpoch    bool
-	epoch       uint64
-	records     []expectedTimingRecord
-	events      []expectedEvent
+	desc     string
+	chunk    []byte
+	hasEpoch bool
+	epoch    uint64
+	records  []expectedTimingRecord
+	events   []expectedEvent
 }
 
 type timingCorpusCase struct {
@@ -317,13 +317,13 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		epoch:    0,
 		events:   []expectedEvent{{kind: "identity"}},
 		records: []expectedTimingRecord{{
-			kind:        "disc",
-			scope:       "program",
-			reason:      "program_identity_changed",
-			obs:         188,
-			hasBefore:   false,
-			hasAfter:    true,
-			epochAfter:  0,
+			kind:       "disc",
+			scope:      "program",
+			reason:     "program_identity_changed",
+			obs:        188,
+			hasBefore:  false,
+			hasAfter:   true,
+			epochAfter: 0,
 		}},
 	})
 
@@ -632,13 +632,13 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		epoch:    0,
 		events:   []expectedEvent{{kind: "identity"}},
 		records: []expectedTimingRecord{{
-			kind:        "disc",
-			scope:       "program",
-			reason:      "program_identity_changed",
-			obs:         188,
-			hasBefore:   false,
-			hasAfter:    true,
-			epochAfter:  0,
+			kind:       "disc",
+			scope:      "program",
+			reason:     "program_identity_changed",
+			obs:        188,
+			hasBefore:  false,
+			hasAfter:   true,
+			epochAfter: 0,
 		}},
 	})
 	ptsBeforeWrap := uint64((1 << 33) - 500)
@@ -707,13 +707,13 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		epoch:    0,
 		events:   []expectedEvent{{kind: "identity"}},
 		records: []expectedTimingRecord{{
-			kind:        "disc",
-			scope:       "program",
-			reason:      "program_identity_changed",
-			obs:         188,
-			hasBefore:   false,
-			hasAfter:    true,
-			epochAfter:  0,
+			kind:       "disc",
+			scope:      "program",
+			reason:     "program_identity_changed",
+			obs:        188,
+			hasBefore:  false,
+			hasAfter:   true,
+			epochAfter: 0,
 		}},
 	})
 	pcrModulus := uint64((1 << 33) * 300)
@@ -777,13 +777,13 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		epoch:    0,
 		events:   []expectedEvent{{kind: "identity"}},
 		records: []expectedTimingRecord{{
-			kind:        "disc",
-			scope:       "program",
-			reason:      "program_identity_changed",
-			obs:         188,
-			hasBefore:   false,
-			hasAfter:    true,
-			epochAfter:  0,
+			kind:       "disc",
+			scope:      "program",
+			reason:     "program_identity_changed",
+			obs:        188,
+			hasBefore:  false,
+			hasAfter:   true,
+			epochAfter: 0,
 		}},
 	})
 	pts0 := uint64(0)
