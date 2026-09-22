@@ -355,9 +355,18 @@ func (r *reader) uint64() (uint64, bool) {
 }
 
 func (r *reader) int64() (int64, bool) {
-	u, ok := r.uint64()
+	b, ok := r.bytes(8)
 	if !ok {
 		return 0, false
 	}
-	return int64(u), true
+	_ = b[7]
+	v := int64(b[7]) |
+		int64(b[6])<<8 |
+		int64(b[5])<<16 |
+		int64(b[4])<<24 |
+		int64(b[3])<<32 |
+		int64(b[2])<<40 |
+		int64(b[1])<<48 |
+		int64(int8(b[0]))<<56
+	return v, true
 }

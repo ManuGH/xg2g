@@ -446,6 +446,18 @@ func TestPSIResult_APeerThatIsFailingIsRefused(t *testing.T) {
 		{"more timing records than the frame can hold", replace(247, 0xFF, 0xFF, 0xFF, 0xFF)},
 		{"unknown critical section", replace(12, 0x7F)},
 		{"duplicate section events", replace(54, 0x01)},
+		{"known section events missing critical flag", replace(14, 0x00, 0x00)},
+		{"known section events with reserved flag bit", replace(14, 0x00, 0x02)},
+		{"known section events critical plus reserved bit", replace(14, 0x00, 0x03)},
+		{"known section events critical plus high reserved bit", replace(14, 0x80, 0x01)},
+		{"known section timing missing critical flag", replace(232, 0x00, 0x00)},
+		{"known section timing with reserved bit", replace(232, 0x00, 0x02)},
+		{"known section timing critical plus reserved bit", replace(232, 0x80, 0x01)},
+		{"timing PES PID exceeds 13-bit limit", replace(260, 0x20, 0x00)},
+		{"timing PCR PID exceeds 13-bit limit", replace(304, 0x20, 0x00)},
+		{"timing discontinuity track scope PID exceeds 13-bit limit", replace(323, 0x02, 0x20, 0x00)},
+		{"timing discontinuity track scope null PID 0x1FFF", replace(323, 0x02, 0x1F, 0xFF)},
+		{"timing discontinuity track scope zero PID", replace(323, 0x02, 0x00, 0x00)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := decodePSIResult(tc.body)

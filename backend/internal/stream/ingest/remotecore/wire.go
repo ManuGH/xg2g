@@ -60,10 +60,10 @@ const (
 	SectionTiming    uint8 = 4
 )
 
-// Section version.
+// SectionVersionV1 is the initial section version for all defined sections.
 const SectionVersionV1 uint8 = 1
 
-// Section flags.
+// SectionFlagCritical indicates a section that must be understood by the decoder.
 const SectionFlagCritical uint16 = 1 << 0
 
 // Timing record types in SectionTiming (v1).

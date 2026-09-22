@@ -4,6 +4,8 @@
 
 //! Deterministic transport stream timing and clock estimation.
 
+#[cfg(test)]
+mod corpus_test;
 pub mod pcr;
 pub mod phase;
 pub mod timeline;

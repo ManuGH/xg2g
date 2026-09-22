@@ -254,6 +254,14 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 		isCritical := (secFlags & SectionFlagCritical) != 0
 
 		switch secType {
+		case SectionEvents, SectionFacts, SectionActivePSI, SectionTiming:
+			if secFlags != SectionFlagCritical {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: section %d flags must be 0x0001 (got 0x%04x)",
+					mediafacts.ErrCoreInvalidResponse, secType, secFlags)
+			}
+		}
+
+		switch secType {
 		case SectionEvents:
 			if seenEvents {
 				return mediafacts.ParseResult{}, fmt.Errorf("%w: duplicate SectionEvents", mediafacts.ErrCoreInvalidResponse)
@@ -381,6 +389,9 @@ func decodeTiming(r *reader) (mediafacts.TimingResult, error) {
 			if !ok {
 				return mediafacts.TimingResult{}, short("timing PES PID")
 			}
+			if pid > 0x1FFF {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES PID %d exceeds 13-bit limit (0x1FFF)", mediafacts.ErrCoreInvalidResponse, pid)
+			}
 			flags, ok := r.uint8()
 			if !ok {
 				return mediafacts.TimingResult{}, short("timing PES flags")
@@ -442,6 +453,9 @@ func decodeTiming(r *reader) (mediafacts.TimingResult, error) {
 			if !ok {
 				return mediafacts.TimingResult{}, short("timing PCR PID")
 			}
+			if pcrPID > 0x1FFF {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PCR PID %d exceeds 13-bit limit (0x1FFF)", mediafacts.ErrCoreInvalidResponse, pcrPID)
+			}
 			observedAt, ok := r.int64()
 			if !ok {
 				return mediafacts.TimingResult{}, short("timing PCR observed_at")
@@ -485,6 +499,9 @@ func decodeTiming(r *reader) (mediafacts.TimingResult, error) {
 			}
 			if scope == TimingDiscontinuityScopeProgram && trackPID != 0 {
 				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity track PID must be 0 for Program scope, got %d", mediafacts.ErrCoreInvalidResponse, trackPID)
+			}
+			if scope == TimingDiscontinuityScopeTrack && (trackPID == 0 || trackPID >= 0x1FFF) {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity track PID must be a valid non-null TS PID (1..8191), got %d", mediafacts.ErrCoreInvalidResponse, trackPID)
 			}
 
 			reason, ok := r.uint8()
