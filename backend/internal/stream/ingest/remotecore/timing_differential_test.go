@@ -63,6 +63,55 @@ func buildPMTPacket(cc uint8) []byte {
 	return pkt
 }
 
+// buildPATPacketForProgram constructs a 188-byte TS packet carrying a PAT for program -> PMT PID.
+func buildPATPacketForProgram(cc uint8, program uint16, pmtPID uint16) []byte {
+	section := []byte{
+		0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, // header
+		byte(program >> 8), byte(program & 0xFF),
+		0xE0 | byte(pmtPID>>8), byte(pmtPID & 0xFF),
+		0x00, 0x00, 0x00, 0x00, // CRC placeholder
+	}
+	crc := ring.CalculateMPEG2CRC32(section[:len(section)-4])
+	binary.BigEndian.PutUint32(section[len(section)-4:], crc)
+
+	pkt := make([]byte, mediafacts.TSPacketSize)
+	pkt[0] = 0x47
+	pkt[1] = 0x40 // PUSI = 1, PID = 0
+	pkt[2] = 0x00
+	pkt[3] = 0x10 | (cc & 0x0F) // payload only
+	pkt[4] = 0x00               // pointer field
+	copy(pkt[5:], section)
+	for i := 5 + len(section); i < len(pkt); i++ {
+		pkt[i] = 0xFF
+	}
+	return pkt
+}
+
+// buildPMTPacketForProgram constructs a 188-byte TS packet carrying a PMT on pmtPID for program.
+func buildPMTPacketForProgram(cc uint8, program uint16, pmtPID uint16, pcrPID uint16, videoPID uint16) []byte {
+	section := []byte{
+		0x02, 0xB0, 0x12, byte(program >> 8), byte(program & 0xFF), 0xC1, 0x00, 0x00, // header
+		0xE0 | byte(pcrPID>>8), byte(pcrPID & 0xFF),
+		0xF0, 0x00, // program info length 0
+		0x1B, 0xE0 | byte(videoPID>>8), byte(videoPID & 0xFF), 0xF0, 0x00, // stream_type 0x1B H.264
+		0x00, 0x00, 0x00, 0x00, // CRC placeholder
+	}
+	crc := ring.CalculateMPEG2CRC32(section[:len(section)-4])
+	binary.BigEndian.PutUint32(section[len(section)-4:], crc)
+
+	pkt := make([]byte, mediafacts.TSPacketSize)
+	pkt[0] = 0x47
+	pkt[1] = 0x40 | byte((pmtPID>>8)&0x1F) // PUSI = 1
+	pkt[2] = byte(pmtPID & 0xFF)
+	pkt[3] = 0x10 | (cc & 0x0F) // payload only
+	pkt[4] = 0x00               // pointer field
+	copy(pkt[5:], section)
+	for i := 5 + len(section); i < len(pkt); i++ {
+		pkt[i] = 0xFF
+	}
+	return pkt
+}
+
 // buildPCRPacket constructs a 188-byte TS packet on PID 0x0100 with an adaptation field.
 // If di is true, discontinuity_indicator is set.
 // If hasPCR is true, PCR is encoded.
@@ -304,5 +353,118 @@ func TestTimingDifferential_CanonicalTimingPublishedOverIPC(t *testing.T) {
 		t.Errorf("step 4 PCR epoch %d, want 1", rustRes.Timing.Records[0].PCR.Epoch)
 	}
 
-	t.Logf("timing differential over IPC passed: active epoch lifecycle, unwrapped timing, and discontinuity publication verified")
+	// Step 5: Control-plane call SetTargetProgram(1) with the SAME target (redundant call).
+	// Invariant: Must be strictly idempotent. Preserves ActiveEpoch (1), emits NO events,
+	// and fabricates NO artificial timing records.
+	goRes, goErr = local.SetTargetProgram(ctx, 1)
+	if goErr != nil {
+		t.Fatalf("step 5 local failed: %v", goErr)
+	}
+	rustRes, rustErr = remote.SetTargetProgram(ctx, 1)
+	if rustErr != nil {
+		t.Fatalf("step 5 remote failed: %v", rustErr)
+	}
+	if len(rustRes.Events) != 0 {
+		t.Errorf("step 5: expected 0 events on redundant SetTargetProgram, got %d", len(rustRes.Events))
+	}
+	if !rustRes.Timing.HasActiveEpoch || rustRes.Timing.ActiveEpoch != 1 {
+		t.Errorf("step 5: active epoch must be preserved across redundant call, got has=%v epoch=%d",
+			rustRes.Timing.HasActiveEpoch, rustRes.Timing.ActiveEpoch)
+	}
+	if len(rustRes.Timing.Records) != 0 {
+		t.Errorf("step 5: control plane must not fabricate timing records, got %d", len(rustRes.Timing.Records))
+	}
+	_ = goRes
+
+	// Step 6: Control-plane call SetTargetProgram(2) with a NEW target.
+	// Invariant: Resets follower, deactivates timeline (HasActiveEpoch = false),
+	// emits ProgramIdentityChanged, and fabricates NO artificial timing records.
+	goRes, goErr = local.SetTargetProgram(ctx, 2)
+	if goErr != nil {
+		t.Fatalf("step 6 local failed: %v", goErr)
+	}
+	rustRes, rustErr = remote.SetTargetProgram(ctx, 2)
+	if rustErr != nil {
+		t.Fatalf("step 6 remote failed: %v", rustErr)
+	}
+	if len(rustRes.Events) != 1 || rustRes.Events[0].Kind != mediafacts.EventProgramIdentityChanged {
+		t.Errorf("step 6: expected ProgramIdentityChanged event, got %+v", rustRes.Events)
+	}
+	if rustRes.Timing.HasActiveEpoch {
+		t.Errorf("step 6: active epoch must be deactivated (false) on program change, got true (epoch=%d)",
+			rustRes.Timing.ActiveEpoch)
+	}
+	if len(rustRes.Timing.Records) != 0 {
+		t.Errorf("step 6: control plane must not fabricate timing records on target change, got %d", len(rustRes.Timing.Records))
+	}
+
+	// Step 7: Control-plane call SetTargetProgram(2) AGAIN with target 2 (redundant call while deactivated).
+	// Invariant: Strictly idempotent. Emits NO events, timeline remains deactivated, NO records.
+	goRes, goErr = local.SetTargetProgram(ctx, 2)
+	if goErr != nil {
+		t.Fatalf("step 7 local failed: %v", goErr)
+	}
+	rustRes, rustErr = remote.SetTargetProgram(ctx, 2)
+	if rustErr != nil {
+		t.Fatalf("step 7 remote failed: %v", rustErr)
+	}
+	if len(rustRes.Events) != 0 {
+		t.Errorf("step 7: expected 0 events on repeated SetTargetProgram(2), got %d", len(rustRes.Events))
+	}
+	if rustRes.Timing.HasActiveEpoch {
+		t.Errorf("step 7: active epoch must remain false on repeated call, got true")
+	}
+	if len(rustRes.Timing.Records) != 0 {
+		t.Errorf("step 7: control plane must not fabricate timing records, got %d", len(rustRes.Timing.Records))
+	}
+
+	// Step 8: Transport plane: Ingest PAT and PMT for Program 2.
+	// Invariant: PAT accepts program 2 -> emits transport discontinuity at real byte offset.
+	// PMT accepts program 2 -> mints Epoch 2 and emits transport discontinuity at real byte offset.
+	chunk5StartOffset := offset
+	var chunk5 []byte
+	chunk5 = append(chunk5, buildPATPacketForProgram(4, 2, 0x0200)...)
+	chunk5 = append(chunk5, buildPMTPacketForProgram(4, 2, 0x0200, 0x0200, 0x0201)...)
+
+	goRes, goErr = local.Ingest(ctx, offset, chunk5)
+	if goErr != nil {
+		t.Fatalf("step 8 local failed: %v", goErr)
+	}
+	rustRes, rustErr = remote.Ingest(ctx, offset, chunk5)
+	if rustErr != nil {
+		t.Fatalf("step 8 remote failed: %v", rustErr)
+	}
+	offset += int64(len(chunk5))
+
+	if !rustRes.Timing.HasActiveEpoch || rustRes.Timing.ActiveEpoch != 2 {
+		t.Fatalf("step 8: rust active epoch has=%v epoch=%d, want true/2",
+			rustRes.Timing.HasActiveEpoch, rustRes.Timing.ActiveEpoch)
+	}
+	if len(rustRes.Timing.Records) != 2 {
+		t.Fatalf("step 8 record count = %d, want 2: %+v", len(rustRes.Timing.Records), rustRes.Timing.Records)
+	}
+	rPatDisc := rustRes.Timing.Records[0]
+	if rPatDisc.Type != mediafacts.TimingRecordTypeDiscontinuity {
+		t.Fatalf("step 8 record 0 type %s, want discontinuity", rPatDisc.Type)
+	}
+	if rPatDisc.Discontinuity.ObservedAt != chunk5StartOffset {
+		t.Errorf("step 8 record 0 byte offset = %d, want %d",
+			rPatDisc.Discontinuity.ObservedAt, chunk5StartOffset)
+	}
+	rPmtDisc := rustRes.Timing.Records[1]
+	if rPmtDisc.Type != mediafacts.TimingRecordTypeDiscontinuity {
+		t.Fatalf("step 8 record 1 type %s, want discontinuity", rPmtDisc.Type)
+	}
+	if rPmtDisc.Discontinuity.ObservedAt != chunk5StartOffset+mediafacts.TSPacketSize {
+		t.Errorf("step 8 record 1 byte offset = %d, want %d",
+			rPmtDisc.Discontinuity.ObservedAt, chunk5StartOffset+mediafacts.TSPacketSize)
+	}
+	if rPmtDisc.Discontinuity.Scope != mediafacts.DiscontinuityScopeProgram ||
+		rPmtDisc.Discontinuity.Reason != mediafacts.DiscontinuityReasonProgramIdentityChanged ||
+		rPmtDisc.Discontinuity.HasEpochBefore ||
+		!rPmtDisc.Discontinuity.HasEpochAfter || rPmtDisc.Discontinuity.EpochAfter != 2 {
+		t.Errorf("step 8 PMT discontinuity record mismatch: %+v", rPmtDisc.Discontinuity)
+	}
+
+	t.Logf("timing differential over IPC passed: active epoch lifecycle, unwrapped timing, SetTargetProgram idempotency, and discontinuity publication verified")
 }

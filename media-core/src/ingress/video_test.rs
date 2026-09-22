@@ -8,7 +8,10 @@ use super::video::{
 };
 use super::{VideoEvent, VideoIngress};
 use crate::psi::VideoCodec;
-use crate::timing::{ByteOffset, Pid, RawDts33, RawPts33, TimingField};
+use crate::timing::{
+    ByteOffset, DiscontinuityReason, ExtendedPts90k, Pid, RawDts33, RawPts33, TimelineEpoch,
+    TimingField, TimingRecord, TimingResetScope,
+};
 use crate::transport::TS_PACKET_LEN;
 
 const PROGRAM: u16 = 1;
@@ -992,17 +995,205 @@ fn test_provisional_rap_invalidation_on_scrambled_continuation_and_gap() {
 fn test_set_target_program_emits_identity_events() {
     let (mut ingress, _offset) = standard_setup();
 
-    // In standard_setup, target is 1. Changing to program 2 emits ProgramIdentityChanged
-    // and resets the follower.
+    // In standard_setup, target is 1. Program 1 has an active epoch from PMT.
+    assert_eq!(ingress.timeline().active_epoch(), Some(TimelineEpoch(0)));
+
+    // Calling with the same target program 1 is a strict no-op:
+    // no events emitted, active epoch preserved, follower preserved.
+    let events_same = ingress.set_target_program(1);
+    assert!(events_same.is_empty());
+    assert_eq!(ingress.timeline().active_epoch(), Some(TimelineEpoch(0)));
+    assert_eq!(ingress.facts().pid, VIDEO_PID);
+
+    // Changing to program 2 emits ProgramIdentityChanged, resets the follower,
+    // and cleanly deactivates the timeline (active_epoch = None).
     let events = ingress.set_target_program(2);
     assert_eq!(events, vec![VideoEvent::ProgramIdentityChanged]);
+    assert_eq!(ingress.timeline().active_epoch(), None);
     let facts = ingress.facts();
     assert_eq!(facts.pid, 0);
     assert_eq!(facts.codec, VideoCodec::Unknown);
 
-    // Calling again with the same target program 2 is a no-op (no events emitted).
+    // Calling again with the same target program 2 is a no-op:
+    // no events emitted, active_epoch remains None.
     let events_noop = ingress.set_target_program(2);
     assert!(events_noop.is_empty());
+    assert_eq!(ingress.timeline().active_epoch(), None);
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn test_set_target_program_idempotency_and_reactivation_lifecycle() {
+    let (mut ingress, mut offset) = standard_setup();
+
+    // 1. Establish PCR and PES timing in Epoch 0
+    let make_pcr = |pid: u16, base: u64, ext: u16| -> Vec<u8> {
+        let mut pkt = vec![0xFF; TS_PACKET_LEN];
+        pkt[0] = 0x47;
+        pkt[1] = u8::try_from((pid >> 8) & 0x1F).unwrap();
+        pkt[2] = u8::try_from(pid & 0xFF).unwrap();
+        pkt[3] = 0x20;
+        pkt[4] = 7;
+        pkt[5] = 0x10;
+        pkt[6] = u8::try_from((base >> 25) & 0xFF).unwrap();
+        pkt[7] = u8::try_from((base >> 17) & 0xFF).unwrap();
+        pkt[8] = u8::try_from((base >> 9) & 0xFF).unwrap();
+        pkt[9] = u8::try_from((base >> 1) & 0xFF).unwrap();
+        pkt[10] = u8::try_from(((base & 1) << 7) | 0x7E | ((u64::from(ext) >> 8) & 1)).unwrap();
+        pkt[11] = u8::try_from(ext & 0xFF).unwrap();
+        pkt
+    };
+
+    let pcr1 = make_pcr(VIDEO_PID, 90_000, 0); // 90,000 * 300 = 27,000,000
+    ingress.ingest(offset, &pcr1).expect("ingest pcr1");
+    offset += PACKET_LEN_I64;
+
+    let target_pts = 90_000;
+    let mut pes_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pes_payload.extend_from_slice(&encode_ts(0b0010, target_pts));
+    pes_payload.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]); // AUD NAL
+    let pkt_pes = make_ts_packet(VIDEO_PID, true, 0, 0, false, &pes_payload);
+    let out_pes = ingress.ingest(offset, &pkt_pes).expect("ingest pes");
+    offset += PACKET_LEN_I64;
+
+    assert_eq!(ingress.timeline().active_epoch(), Some(TimelineEpoch(0)));
+    assert_eq!(out_pes.timing_records.len(), 1);
+
+    // 2. Control plane: call set_target_program(1) with the SAME target
+    let events_same = ingress.set_target_program(1);
+    assert!(events_same.is_empty(), "same target must emit no events");
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(TimelineEpoch(0)),
+        "active epoch must be preserved"
+    );
+
+    // Ingest next video PES packet: unwrapper continues seamlessly in Epoch 0
+    let next_pts = 93_000;
+    let mut pes_payload2 = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    pes_payload2.extend_from_slice(&encode_ts(0b0010, next_pts));
+    pes_payload2.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]);
+    let pkt_pes2 = make_ts_packet(VIDEO_PID, true, 1, 0, false, &pes_payload2);
+    let out_pes2 = ingress.ingest(offset, &pkt_pes2).expect("ingest pes2");
+    offset += PACKET_LEN_I64;
+
+    assert_eq!(out_pes2.timing_records.len(), 1);
+    if let TimingRecord::Pes(ref pes) = out_pes2.timing_records[0] {
+        assert_eq!(pes.epoch, TimelineEpoch(0));
+        assert_eq!(
+            pes.pts,
+            Some(ExtendedPts90k::new(i64::try_from(next_pts).unwrap()))
+        );
+    } else {
+        panic!("expected PES timing record");
+    }
+
+    // 3. Control plane: switch to program 2
+    let events_switch = ingress.set_target_program(2);
+    assert_eq!(events_switch, vec![VideoEvent::ProgramIdentityChanged]);
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        None,
+        "timeline must be deactivated"
+    );
+
+    // Repeated switch to program 2 is idempotent
+    let events_switch_repeat = ingress.set_target_program(2);
+    assert!(events_switch_repeat.is_empty());
+    assert_eq!(ingress.timeline().active_epoch(), None);
+
+    // 4. Transport plane: ingest PAT and PMT for program 2
+    let prog2: u16 = 2;
+    let pmt2_pid: u16 = 0x0200;
+    let vpid2: u16 = 0x0201;
+
+    let pat_sect = section(
+        0x00,
+        1,
+        0,
+        &[
+            u8::try_from(prog2 >> 8).unwrap(),
+            u8::try_from(prog2 & 0xFF).unwrap(),
+            0xE0 | u8::try_from(pmt2_pid >> 8).unwrap(),
+            u8::try_from(pmt2_pid & 0xFF).unwrap(),
+        ],
+    );
+    let mut pat2_payload = vec![0x00];
+    pat2_payload.extend_from_slice(&pat_sect);
+    let pat2_pkt = make_ts_packet(0x0000, true, 0, 0, false, &pat2_payload);
+
+    let pmt2_body = vec![
+        0xE0 | u8::try_from(vpid2 >> 8).unwrap(),
+        u8::try_from(vpid2 & 0xFF).unwrap(),
+        0xF0,
+        0x00, // program_info_length
+        0x1B, // H.264
+        0xE0 | u8::try_from(vpid2 >> 8).unwrap(),
+        u8::try_from(vpid2 & 0xFF).unwrap(),
+        0xF0,
+        0x00, // ES info length: 0
+    ];
+    let pmt2_sect = section(0x02, prog2, 0, &pmt2_body);
+    let mut pmt2_payload = vec![0x00];
+    pmt2_payload.extend_from_slice(&pmt2_sect);
+    let pmt2_pkt = make_ts_packet(pmt2_pid, true, 0, 0, false, &pmt2_payload);
+
+    let mut prog2_ts = pat2_pkt;
+    prog2_ts.extend_from_slice(&pmt2_pkt);
+
+    let pmt_offset = offset + PACKET_LEN_I64;
+    let out_reactivate = ingress.ingest(offset, &prog2_ts).expect("ingest pat/pmt");
+    let _ = out_reactivate;
+
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(TimelineEpoch(1)),
+        "epoch 1 must be minted upon PMT acceptance"
+    );
+
+    // Transport plane records:
+    // 1. PAT acceptance reports program identity changed at offset (before: None, after: None)
+    // 2. PMT acceptance reports program identity changed at pmt_offset and mints epoch 1 (before: None, after: 1)
+    let disc_records: Vec<_> = out_reactivate
+        .timing_records
+        .iter()
+        .filter_map(|r| match r {
+            TimingRecord::Discontinuity {
+                scope,
+                reason,
+                observed_at,
+                epoch_before,
+                epoch_after,
+            } => Some((*scope, *reason, *observed_at, *epoch_before, *epoch_after)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        disc_records.len(),
+        2,
+        "must emit 2 transport discontinuity records (PAT and PMT)"
+    );
+    assert_eq!(
+        disc_records[0],
+        (
+            TimingResetScope::Program,
+            DiscontinuityReason::ProgramIdentityChanged,
+            ByteOffset::new(offset),
+            None,
+            None
+        )
+    );
+    assert_eq!(
+        disc_records[1],
+        (
+            TimingResetScope::Program,
+            DiscontinuityReason::ProgramIdentityChanged,
+            ByteOffset::new(pmt_offset),
+            None,
+            Some(TimelineEpoch(1))
+        )
+    );
 }
 
 #[test]

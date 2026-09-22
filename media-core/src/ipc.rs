@@ -307,6 +307,16 @@ impl Session {
                 Outcome::Answer(vec![STATUS_OK])
             }
             MSG_SET_TARGET_PROGRAM => {
+                // MSG_SET_TARGET_PROGRAM is a control-plane operation and does not process transport
+                // stream bytes. It does not fabricate synthetic TimingRecords with artificial byte
+                // offsets (e.g. 0).
+                // - When called with the current target programme, it is strictly idempotent: events
+                //   are empty, and the active timeline epoch and unwrapper state are preserved.
+                // - When called with a new target programme, it resets programme state and deactivates
+                //   the timeline (active_epoch = None).
+                // The next timeline epoch is minted only when transport packets carrying the new
+                // programme's PMT arrive via MSG_INGEST, which records the discontinuity at the exact
+                // packet byte offset.
                 let Some(target) = two_byte_program(&frame.body) else {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
@@ -1763,5 +1773,110 @@ mod tests {
         // Announces a full header, delivers two bytes of it.
         let input = vec![0x00, 0x00, 0x00, 0x06, 0x01, 0x02];
         assert!(read_frame(&mut input.as_slice()).is_err());
+    }
+
+    #[test]
+    fn msg_set_target_program_control_plane_semantics() {
+        let mut session = Session::new();
+
+        // 1. Handshake with program 1
+        let hs = Frame {
+            version: VERSION,
+            kind: MSG_HANDSHAKE,
+            request_id: 1,
+            body: 1u16.to_be_bytes().to_vec(),
+        };
+        let Outcome::Answer(resp_hs) = session.handle(&hs) else {
+            panic!("expected answer");
+        };
+        assert_eq!(resp_hs, vec![STATUS_OK]);
+
+        // Helper to parse timing section from video result
+        let parse_timing_section = |body: &[u8]| -> (u8, u64, u32) {
+            assert_eq!(body[0], STATUS_OK);
+            assert_eq!(body[1], COVERAGE_COMPLETE);
+            assert_eq!(&body[10..12], &4u16.to_be_bytes());
+            let mut cur = 12;
+            let mut timing_info = None;
+            for _ in 0..4 {
+                let sec_type = body[cur];
+                let sec_len =
+                    u32::from_be_bytes(body[cur + 4..cur + 8].try_into().unwrap()) as usize;
+                cur += 8;
+                let payload = &body[cur..cur + sec_len];
+                if sec_type == SECTION_TIMING {
+                    let has_epoch = payload[0];
+                    let epoch = u64::from_be_bytes(payload[1..9].try_into().unwrap());
+                    let rec_count = u32::from_be_bytes(payload[9..13].try_into().unwrap());
+                    timing_info = Some((has_epoch, epoch, rec_count));
+                }
+                cur += sec_len;
+            }
+            timing_info.expect("SECTION_TIMING must be present")
+        };
+
+        let parse_event_count = |body: &[u8]| -> u32 {
+            let mut cur = 12;
+            for _ in 0..4 {
+                let sec_type = body[cur];
+                let sec_len =
+                    u32::from_be_bytes(body[cur + 4..cur + 8].try_into().unwrap()) as usize;
+                cur += 8;
+                let payload = &body[cur..cur + sec_len];
+                if sec_type == SECTION_EVENTS {
+                    return u32::from_be_bytes(payload[0..4].try_into().unwrap());
+                }
+                cur += sec_len;
+            }
+            panic!("SECTION_EVENTS not found");
+        };
+
+        // 2. Set same target 1 before PMT: idempotent no-op
+        let set_same = Frame {
+            version: VERSION,
+            kind: MSG_SET_TARGET_PROGRAM,
+            request_id: 2,
+            body: 1u16.to_be_bytes().to_vec(),
+        };
+        let Outcome::Answer(resp_same) = session.handle(&set_same) else {
+            panic!("expected answer");
+        };
+        assert_eq!(parse_event_count(&resp_same), 0);
+        let (has_ep, ep, recs) = parse_timing_section(&resp_same);
+        assert_eq!(has_ep, 0);
+        assert_eq!(ep, 0);
+        assert_eq!(recs, 0);
+
+        // 3. Switch to program 2 via control plane: emits ProgramIdentityChanged, deactivates timeline
+        let set_p2 = Frame {
+            version: VERSION,
+            kind: MSG_SET_TARGET_PROGRAM,
+            request_id: 3,
+            body: 2u16.to_be_bytes().to_vec(),
+        };
+        let Outcome::Answer(resp_p2) = session.handle(&set_p2) else {
+            panic!("expected answer");
+        };
+        assert_eq!(parse_event_count(&resp_p2), 1);
+        let (has_ep, ep, recs) = parse_timing_section(&resp_p2);
+        assert_eq!(has_ep, 0, "active_epoch must be None after program change");
+        assert_eq!(ep, 0);
+        assert_eq!(recs, 0, "control plane must not fabricate timing records");
+
+        // 4. Repeated call to program 2 is idempotent: emits 0 events, timeline remains deactivated
+        let set_p2_again = Frame {
+            version: VERSION,
+            kind: MSG_SET_TARGET_PROGRAM,
+            request_id: 4,
+            body: 2u16.to_be_bytes().to_vec(),
+        };
+        let Outcome::Answer(resp_p2_again) = session.handle(&set_p2_again) else {
+            panic!("expected answer");
+        };
+        assert_eq!(parse_event_count(&resp_p2_again), 0);
+        let (has_ep, ep, recs) = parse_timing_section(&resp_p2_again);
+        assert_eq!(has_ep, 0);
+        assert_eq!(ep, 0);
+        assert_eq!(recs, 0);
     }
 }
