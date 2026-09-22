@@ -135,6 +135,10 @@ const (
 	wireAudioScramblingSize  = 3 * 8
 	wireFactsBlockSize       = wireVideoFactsSize + wireAudioScramblingSize
 	wireSectionMinSize       = 2
+
+	wireEnvelopeHeaderSize  = 1 + 1 + 8 + 2
+	wireSectionHeaderSize   = 1 + 1 + 2 + 4
+	wireTimingRecordMinSize = 27
 )
 
 // maxActiveTableBytes is what one table in force may cost, from the bounds
@@ -165,7 +169,7 @@ func boundedCount(r *reader, width int, what string) (int, error) {
 	return int(n), nil
 }
 
-// decodePSIResult reads one v3 result envelope.
+// decodePSIResult reads one v6 result envelope.
 //
 // The status byte is consumed here so the offsets in the layout above are the
 // offsets in the frame. A body that does not end exactly where the last field
@@ -174,8 +178,12 @@ func boundedCount(r *reader, width int, what string) (int, error) {
 func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 	r := &reader{b: body}
 
-	if _, ok := r.uint8(); !ok {
+	status, ok := r.uint8()
+	if !ok {
 		return mediafacts.ParseResult{}, short("status")
+	}
+	if status != StatusOK {
+		return mediafacts.ParseResult{}, fmt.Errorf("%w: status %d", mediafacts.ErrCoreInvalidResponse, status)
 	}
 
 	rawCoverage, ok := r.uint8()
@@ -188,36 +196,139 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 		parsed.Coverage = mediafacts.ParseCoverageComplete
 	case wireCoveragePSIOnly:
 		return mediafacts.ParseResult{}, fmt.Errorf(
-			"%w: peer claims psi-only coverage, which is not valid in protocol v5",
+			"%w: peer claims psi-only coverage, which is not valid in protocol v6",
 			mediafacts.ErrCoreInvalidResponse)
 	case wireCoveragePSIVideo:
 		return mediafacts.ParseResult{}, fmt.Errorf(
-			"%w: peer claims psi-video coverage, which is not valid in protocol v5",
+			"%w: peer claims psi-video coverage, which is not valid in protocol v6",
 			mediafacts.ErrCoreInvalidResponse)
 	default:
 		return mediafacts.ParseResult{}, fmt.Errorf("%w: coverage %d",
 			mediafacts.ErrCoreInvalidResponse, rawCoverage)
 	}
 
-	through, ok := r.uint64()
+	through, ok := r.int64()
 	if !ok {
 		return mediafacts.ParseResult{}, short("processed-through offset")
 	}
-	if through > math.MaxInt64 {
-		return mediafacts.ParseResult{}, fmt.Errorf("%w: answered with offset %d",
+	if through < 0 {
+		return mediafacts.ParseResult{}, fmt.Errorf("%w: negative processed-through offset %d",
 			mediafacts.ErrCoreInvalidResponse, through)
 	}
-	parsed.ProcessedThroughOffset = int64(through)
+	parsed.ProcessedThroughOffset = through
 
-	var err error
-	if parsed.Events, err = decodeEvents(r); err != nil {
-		return mediafacts.ParseResult{}, err
+	sectionCount, ok := r.uint16()
+	if !ok {
+		return mediafacts.ParseResult{}, short("section count")
 	}
-	if parsed.Facts, err = decodeFacts(r); err != nil {
-		return mediafacts.ParseResult{}, err
+
+	var seenEvents, seenFacts, seenPSI, seenTiming bool
+
+	for i := 0; i < int(sectionCount); i++ {
+		secType, ok := r.uint8()
+		if !ok {
+			return mediafacts.ParseResult{}, short("section type")
+		}
+		secVersion, ok := r.uint8()
+		if !ok {
+			return mediafacts.ParseResult{}, short("section version")
+		}
+		secFlags, ok := r.uint16()
+		if !ok {
+			return mediafacts.ParseResult{}, short("section flags")
+		}
+		secLen, ok := r.uint32()
+		if !ok {
+			return mediafacts.ParseResult{}, short("section length")
+		}
+		if int64(secLen) > int64(r.left()) {
+			return mediafacts.ParseResult{}, fmt.Errorf("%w: section %d length %d exceeds remaining bytes %d",
+				mediafacts.ErrCoreInvalidResponse, secType, secLen, r.left())
+		}
+		secBytes, ok := r.bytes(int(secLen))
+		if !ok {
+			return mediafacts.ParseResult{}, short("section payload")
+		}
+		secReader := &reader{b: secBytes}
+
+		isCritical := (secFlags & SectionFlagCritical) != 0
+
+		switch secType {
+		case SectionEvents:
+			if seenEvents {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: duplicate SectionEvents", mediafacts.ErrCoreInvalidResponse)
+			}
+			if secVersion != SectionVersionV1 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: SectionEvents version %d", mediafacts.ErrCoreInvalidResponse, secVersion)
+			}
+			var err error
+			if parsed.Events, err = decodeEvents(secReader); err != nil {
+				return mediafacts.ParseResult{}, err
+			}
+			if secReader.left() != 0 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: %d trailing bytes in SectionEvents", mediafacts.ErrCoreInvalidResponse, secReader.left())
+			}
+			seenEvents = true
+
+		case SectionFacts:
+			if seenFacts {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: duplicate SectionFacts", mediafacts.ErrCoreInvalidResponse)
+			}
+			if secVersion != SectionVersionV1 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: SectionFacts version %d", mediafacts.ErrCoreInvalidResponse, secVersion)
+			}
+			var err error
+			if parsed.Facts, err = decodeFacts(secReader); err != nil {
+				return mediafacts.ParseResult{}, err
+			}
+			if secReader.left() != 0 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: %d trailing bytes in SectionFacts", mediafacts.ErrCoreInvalidResponse, secReader.left())
+			}
+			seenFacts = true
+
+		case SectionActivePSI:
+			if seenPSI {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: duplicate SectionActivePSI", mediafacts.ErrCoreInvalidResponse)
+			}
+			if secVersion != SectionVersionV1 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: SectionActivePSI version %d", mediafacts.ErrCoreInvalidResponse, secVersion)
+			}
+			var err error
+			if parsed.PSI, err = decodeActivePSI(secReader); err != nil {
+				return mediafacts.ParseResult{}, err
+			}
+			if secReader.left() != 0 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: %d trailing bytes in SectionActivePSI", mediafacts.ErrCoreInvalidResponse, secReader.left())
+			}
+			seenPSI = true
+
+		case SectionTiming:
+			if seenTiming {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: duplicate SectionTiming", mediafacts.ErrCoreInvalidResponse)
+			}
+			if secVersion != SectionVersionV1 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: SectionTiming version %d", mediafacts.ErrCoreInvalidResponse, secVersion)
+			}
+			var err error
+			if parsed.Timing, err = decodeTiming(secReader); err != nil {
+				return mediafacts.ParseResult{}, err
+			}
+			if secReader.left() != 0 {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: %d trailing bytes in SectionTiming", mediafacts.ErrCoreInvalidResponse, secReader.left())
+			}
+			seenTiming = true
+
+		default:
+			if isCritical {
+				return mediafacts.ParseResult{}, fmt.Errorf("%w: unknown critical section type %d", mediafacts.ErrCoreInvalidResponse, secType)
+			}
+			// Non-critical unknown sections are safely skipped.
+		}
 	}
-	if parsed.PSI, err = decodeActivePSI(r); err != nil {
-		return mediafacts.ParseResult{}, err
+
+	if !seenEvents || !seenFacts || !seenPSI || !seenTiming {
+		return mediafacts.ParseResult{}, fmt.Errorf("%w: missing required critical sections (events=%v, facts=%v, psi=%v, timing=%v)",
+			mediafacts.ErrCoreInvalidResponse, seenEvents, seenFacts, seenPSI, seenTiming)
 	}
 
 	if r.left() != 0 {
@@ -225,6 +336,233 @@ func decodePSIResult(body []byte) (mediafacts.ParseResult, error) {
 			mediafacts.ErrCoreInvalidResponse, r.left())
 	}
 	return parsed, nil
+}
+
+func decodeTiming(r *reader) (mediafacts.TimingResult, error) {
+	hasActiveEpoch, ok := r.uint8()
+	if !ok {
+		return mediafacts.TimingResult{}, short("has active epoch flag")
+	}
+	if hasActiveEpoch > 1 {
+		return mediafacts.TimingResult{}, fmt.Errorf("%w: invalid has_active_epoch flag %d", mediafacts.ErrCoreInvalidResponse, hasActiveEpoch)
+	}
+
+	activeEpoch, ok := r.uint64()
+	if !ok {
+		return mediafacts.TimingResult{}, short("active epoch")
+	}
+	if hasActiveEpoch == 0 && activeEpoch != 0 {
+		return mediafacts.TimingResult{}, fmt.Errorf("%w: active epoch must be 0 when has_active_epoch is false, got %d", mediafacts.ErrCoreInvalidResponse, activeEpoch)
+	}
+
+	recordCount, err := boundedCount(r, wireTimingRecordMinSize, "timing records")
+	if err != nil {
+		return mediafacts.TimingResult{}, err
+	}
+
+	var records []mediafacts.TimingRecord
+	if recordCount > 0 {
+		records = make([]mediafacts.TimingRecord, 0, recordCount)
+	}
+
+	for i := 0; i < recordCount; i++ {
+		recType, ok := r.uint8()
+		if !ok {
+			return mediafacts.TimingResult{}, short("timing record type")
+		}
+
+		switch recType {
+		case TimingRecordPES:
+			epoch, ok := r.uint64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES epoch")
+			}
+			pid, ok := r.uint16()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES PID")
+			}
+			flags, ok := r.uint8()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES flags")
+			}
+			if flags&^(TimingPesFlagHasPTS|TimingPesFlagHasDTS) != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES flags %#02x", mediafacts.ErrCoreInvalidResponse, flags)
+			}
+			observedAt, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES observed_at")
+			}
+			if observedAt < 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES negative observed_at %d", mediafacts.ErrCoreInvalidResponse, observedAt)
+			}
+			subjectAt, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES subject_at")
+			}
+			if subjectAt < 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES negative subject_at %d", mediafacts.ErrCoreInvalidResponse, subjectAt)
+			}
+			pts90k, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES pts_90k")
+			}
+			dts90k, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PES dts_90k")
+			}
+
+			// Canonical zero rules
+			if flags&TimingPesFlagHasPTS == 0 && pts90k != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES pts_90k must be 0 when has_pts is false, got %d", mediafacts.ErrCoreInvalidResponse, pts90k)
+			}
+			if flags&TimingPesFlagHasDTS == 0 && dts90k != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES dts_90k must be 0 when has_dts is false, got %d", mediafacts.ErrCoreInvalidResponse, dts90k)
+			}
+
+			records = append(records, mediafacts.TimingRecord{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:      mediafacts.TimelineEpoch(epoch),
+					PID:        pid,
+					HasPTS:     flags&TimingPesFlagHasPTS != 0,
+					PTS90k:     pts90k,
+					HasDTS:     flags&TimingPesFlagHasDTS != 0,
+					DTS90k:     dts90k,
+					ObservedAt: observedAt,
+					SubjectAt:  subjectAt,
+				},
+			})
+
+		case TimingRecordPCR:
+			epoch, ok := r.uint64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PCR epoch")
+			}
+			pcrPID, ok := r.uint16()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PCR PID")
+			}
+			observedAt, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PCR observed_at")
+			}
+			if observedAt < 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PCR negative observed_at %d", mediafacts.ErrCoreInvalidResponse, observedAt)
+			}
+			extendedPCR27m, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing PCR extended_pcr_27m")
+			}
+
+			records = append(records, mediafacts.TimingRecord{
+				Type: mediafacts.TimingRecordTypePCR,
+				PCR: mediafacts.PCRPoint{
+					Epoch:          mediafacts.TimelineEpoch(epoch),
+					PCRPID:         pcrPID,
+					ObservedAt:     observedAt,
+					ExtendedPCR27m: extendedPCR27m,
+				},
+			})
+
+		case TimingRecordDiscontinuity:
+			scope, ok := r.uint8()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity scope")
+			}
+			var discScope mediafacts.DiscontinuityScope
+			switch scope {
+			case TimingDiscontinuityScopeProgram:
+				discScope = mediafacts.DiscontinuityScopeProgram
+			case TimingDiscontinuityScopeTrack:
+				discScope = mediafacts.DiscontinuityScopeTrack
+			default:
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: unknown timing discontinuity scope %d", mediafacts.ErrCoreInvalidResponse, scope)
+			}
+
+			trackPID, ok := r.uint16()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity track PID")
+			}
+			if scope == TimingDiscontinuityScopeProgram && trackPID != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity track PID must be 0 for Program scope, got %d", mediafacts.ErrCoreInvalidResponse, trackPID)
+			}
+
+			reason, ok := r.uint8()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity reason")
+			}
+			var discReason mediafacts.DiscontinuityReason
+			switch reason {
+			case TimingDiscontinuityReasonProgramIdentityChanged:
+				discReason = mediafacts.DiscontinuityReasonProgramIdentityChanged
+			case TimingDiscontinuityReasonPCRPIDChanged:
+				discReason = mediafacts.DiscontinuityReasonPCRPIDChanged
+			case TimingDiscontinuityReasonPCRDiscontinuity:
+				discReason = mediafacts.DiscontinuityReasonPCRDiscontinuityIndicator
+			case TimingDiscontinuityReasonTransportTimingLoss:
+				discReason = mediafacts.DiscontinuityReasonTransportTimingLoss
+			default:
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: unknown timing discontinuity reason %d", mediafacts.ErrCoreInvalidResponse, reason)
+			}
+
+			observedAt, ok := r.int64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity observed_at")
+			}
+			if observedAt < 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity negative observed_at %d", mediafacts.ErrCoreInvalidResponse, observedAt)
+			}
+
+			flags, ok := r.uint8()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity flags")
+			}
+			if flags&^(TimingDiscontinuityFlagHasEpochBefore|TimingDiscontinuityFlagHasEpochAfter) != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity flags %#02x", mediafacts.ErrCoreInvalidResponse, flags)
+			}
+
+			epochBefore, ok := r.uint64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity epoch_before")
+			}
+			epochAfter, ok := r.uint64()
+			if !ok {
+				return mediafacts.TimingResult{}, short("timing discontinuity epoch_after")
+			}
+
+			// Canonical zero rules
+			if flags&TimingDiscontinuityFlagHasEpochBefore == 0 && epochBefore != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity epoch_before must be 0 when has_epoch_before is false, got %d", mediafacts.ErrCoreInvalidResponse, epochBefore)
+			}
+			if flags&TimingDiscontinuityFlagHasEpochAfter == 0 && epochAfter != 0 {
+				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing discontinuity epoch_after must be 0 when has_epoch_after is false, got %d", mediafacts.ErrCoreInvalidResponse, epochAfter)
+			}
+
+			records = append(records, mediafacts.TimingRecord{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:          discScope,
+					TrackPID:       trackPID,
+					Reason:         discReason,
+					ObservedAt:     observedAt,
+					HasEpochBefore: flags&TimingDiscontinuityFlagHasEpochBefore != 0,
+					EpochBefore:    mediafacts.TimelineEpoch(epochBefore),
+					HasEpochAfter:  flags&TimingDiscontinuityFlagHasEpochAfter != 0,
+					EpochAfter:     mediafacts.TimelineEpoch(epochAfter),
+				},
+			})
+
+		default:
+			return mediafacts.TimingResult{}, fmt.Errorf("%w: unknown timing record type %d", mediafacts.ErrCoreInvalidResponse, recType)
+		}
+	}
+
+	return mediafacts.TimingResult{
+		Authority:      mediafacts.TimingAuthorityCanonical,
+		HasActiveEpoch: hasActiveEpoch != 0,
+		ActiveEpoch:    mediafacts.TimelineEpoch(activeEpoch),
+		Records:        records,
+	}, nil
 }
 
 func decodeEvents(r *reader) ([]mediafacts.Event, error) {

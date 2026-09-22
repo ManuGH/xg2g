@@ -604,6 +604,12 @@ func TestVideoDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 				if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("step %d: the real core reported coverage %s, want complete", i+1, rustRes.Coverage)
 				}
+				if goRes.Timing.Authority != mediafacts.TimingAuthorityNone {
+					t.Fatalf("step %d: the reference reported timing authority %s, want none", i+1, goRes.Timing.Authority)
+				}
+				if rustRes.Timing.Authority != mediafacts.TimingAuthorityCanonical {
+					t.Fatalf("step %d: the real core reported timing authority %s, want canonical", i+1, rustRes.Timing.Authority)
+				}
 
 				// Offset assertion
 				wantOffset := offset

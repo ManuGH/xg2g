@@ -171,6 +171,12 @@ func TestPSIDifferential_TheRealRustCoreAgreesCallByCall(t *testing.T) {
 				if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
 					t.Fatalf("call %d: the real core reported coverage %s", i+1, rustRes.Coverage)
 				}
+				if goRes.Timing.Authority != mediafacts.TimingAuthorityNone {
+					t.Fatalf("call %d: the reference reported timing authority %s, want none", i+1, goRes.Timing.Authority)
+				}
+				if rustRes.Timing.Authority != mediafacts.TimingAuthorityCanonical {
+					t.Fatalf("call %d: the real core reported timing authority %s, want canonical", i+1, rustRes.Timing.Authority)
+				}
 
 				goScope, rustScope := scopeOf(goRes), scopeOf(rustRes)
 				want := psiScope{

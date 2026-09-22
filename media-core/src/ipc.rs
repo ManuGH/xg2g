@@ -29,28 +29,19 @@ use xg2g_media_core::audio::observer::Observation;
 use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
 use xg2g_media_core::ingress::video::{VideoEvent, VideoFacts, VideoIngress, VideoSnapshot};
 use xg2g_media_core::psi::{ActivePsi, PsiFacts, VideoCodec};
+use xg2g_media_core::timing::{
+    DiscontinuityReason, ExtendedDts90k, ExtendedPts90k, TimelineEpoch, TimingRecord,
+    TimingResetScope,
+};
 
 /// The protocol version this build speaks. Checked once, fatal when it differs.
 ///
-/// 2 adds [`MSG_OBSERVE_AUDIO_BATCH`]. There is no negotiation and the message
-/// set is closed, so the version is the only thing that says "this peer can be
-/// asked what this build wants to ask". A core still answering 1 would refuse an
-/// observe request as an unknown message - a round trip later, and looking like a
-/// rejected batch rather than a peer that cannot do this at all.
-///
-/// 3 makes ingest and set-target answer with what was read rather than with an
-/// offset alone, and makes the handshake's programme number the core's initial
-/// target. A v2 peer answers the old short body, which a v3 caller would read as
-/// a coverage and an offset that are not there - so this is exactly what the
-/// version is for. There is no shim.
-///
-/// 4 brings video facts (81 bytes) and video events across the wire with coverage
-/// `COVERAGE_PSI_VIDEO` (3).
-///
-/// 5 brings audio facts (21-byte tracks with 11-byte observation) and audio
-/// scrambling counters (24-byte block, fixed facts block total = 105 bytes) with
-/// coverage `COVERAGE_COMPLETE` (2).
-pub const VERSION: u8 = 5;
+/// 2 adds [`MSG_OBSERVE_AUDIO_BATCH`].
+/// 3 makes ingest and set-target answer with what was read.
+/// 4 brings video facts and video events.
+/// 5 brings audio facts and audio scrambling counters.
+/// 6 introduces sectioned result envelopes and canonical timing publication.
+pub const VERSION: u8 = 6;
 
 pub const MSG_HANDSHAKE: u8 = 1;
 pub const MSG_INGEST: u8 = 2;
@@ -67,6 +58,40 @@ pub const STATUS_UNKNOWN_MESSAGE: u8 = 3;
 /// version + type + request id.
 pub const HEADER_SIZE: usize = 1 + 1 + 4;
 
+/// Section types for v6 result envelopes.
+pub const SECTION_EVENTS: u8 = 1;
+pub const SECTION_FACTS: u8 = 2;
+pub const SECTION_ACTIVE_PSI: u8 = 3;
+pub const SECTION_TIMING: u8 = 4;
+
+pub const SECTION_VERSION_V1: u8 = 1;
+pub const SECTION_FLAG_CRITICAL: u16 = 1 << 0;
+
+pub const ENVELOPE_HEADER_SIZE: usize = 1 + 1 + 8 + 2; // status + coverage + processed_through + section_count = 12
+pub const SECTION_HEADER_SIZE: usize = 1 + 1 + 2 + 4; // type + version + flags + length = 8
+
+pub const RECORD_PES_TIMING: u8 = 1;
+pub const RECORD_PCR: u8 = 2;
+pub const RECORD_DISCONTINUITY: u8 = 3;
+
+pub const PES_FLAG_HAS_PTS: u8 = 1 << 0;
+pub const PES_FLAG_HAS_DTS: u8 = 1 << 1;
+
+pub const DISC_SCOPE_PROGRAM: u8 = 1;
+pub const DISC_SCOPE_TRACK: u8 = 2;
+
+pub const DISC_REASON_PROGRAM_IDENTITY_CHANGED: u8 = 1;
+pub const DISC_REASON_PCR_PID_CHANGED: u8 = 2;
+pub const DISC_REASON_PCR_DISCONTINUITY_INDICATOR: u8 = 3;
+pub const DISC_REASON_TRANSPORT_TIMING_LOSS: u8 = 4;
+
+pub const DISC_FLAG_HAS_EPOCH_BEFORE: u8 = 1 << 0;
+pub const DISC_FLAG_HAS_EPOCH_AFTER: u8 = 1 << 1;
+
+pub const RECORD_PES_TIMING_SIZE: usize = 1 + 8 + 2 + 1 + 8 + 8 + 8 + 8; // 44
+pub const RECORD_PCR_SIZE: usize = 1 + 8 + 2 + 8 + 8; // 27
+pub const RECORD_DISCONTINUITY_SIZE: usize = 1 + 1 + 2 + 1 + 8 + 1 + 8 + 8; // 30
+
 /// The u32 in front of a list in an observe body.
 const OBSERVE_COUNT_PREFIX: usize = 4;
 /// pid, epoch and the feed count.
@@ -78,7 +103,7 @@ const OBSERVE_OBSERVATION_SIZE: usize = 2 + 8 + 1 + 1 + 1 + 8;
 
 /// What a result covers. Mirrors `mediafacts.ParseCoverage`.
 ///
-/// This core reads PSI, video, and audio, so every result it produces in Protocol v5
+/// This core reads PSI, video, and audio, so every result it produces in Protocol v6
 /// delivers complete stream authority (`COVERAGE_COMPLETE = 2`).
 const COVERAGE_COMPLETE: u8 = 2;
 
@@ -128,11 +153,9 @@ const AUDIO_OBSERVATION_SIZE: usize = 1 + 1 + 1 + 8;
 /// Fixed size per audio track: 10 bytes declared + 11 bytes observed = 21 bytes.
 const AUDIO_TRACK_SIZE: usize = 2 + 1 + 1 + LANGUAGE_LEN + 1 + 1 + 1 + AUDIO_OBSERVATION_SIZE;
 
-/// The fixed part of a result: status, coverage, offset, event count, facts
-/// flags, PMT version, programme number, PMT PID, video PID, video codec, the
-/// two audio counts, the 105-byte facts block, and the two section counts.
-const RESULT_FIXED_SIZE: usize =
-    1 + 1 + 8 + 4 + 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + FACTS_BLOCK_SIZE + 2 + 2;
+const FACTS_PAYLOAD_FIXED_SIZE: usize = 1 + 1 + 2 + 2 + 2 + 1 + 4 + 4 + FACTS_BLOCK_SIZE; // 122
+const TIMING_PAYLOAD_FIXED_SIZE: usize = 1 + 8 + 4; // has_active_epoch + active_epoch + record_count = 13
+
 const EVENT_SIZE: usize = 1 + 8 + 1;
 const AUDIO_PID_SIZE: usize = 2;
 const SECTION_PREFIX: usize = 2;
@@ -292,7 +315,14 @@ impl Session {
                 };
                 let events = video.set_target_program(target);
                 let snapshot = video.snapshot();
-                Outcome::Answer(encode_video_result(0, &events, &snapshot))
+                let active_epoch = video.timeline().active_epoch();
+                Outcome::Answer(encode_video_result(
+                    0,
+                    &events,
+                    &snapshot,
+                    &[],
+                    active_epoch,
+                ))
             }
             MSG_INGEST => {
                 if frame.body.len() < 8 {
@@ -319,10 +349,13 @@ impl Session {
                     return Outcome::Answer(vec![STATUS_MALFORMED]);
                 };
                 let snapshot = video.snapshot();
+                let active_epoch = video.timeline().active_epoch();
                 Outcome::Answer(encode_video_result(
                     outcome.processed_through,
                     &outcome.events,
                     &snapshot,
+                    &outcome.timing_records,
+                    active_epoch,
                 ))
             }
             MSG_OBSERVE_AUDIO_BATCH => Outcome::Answer(self.observe_audio(&frame.body)),
@@ -488,64 +521,109 @@ fn two_byte_program(body: &[u8]) -> Option<u16> {
 /// The size the answer for this outcome will encode to.
 ///
 /// Computed before anything is built, in checked arithmetic. A response that
-/// cannot fit the frame must fail rather than be discovered half-written: the
-/// alternative is allocating megabytes to find out they were not wanted, which
-/// is the same mistake as trusting a length prefix, made from the other side.
-fn video_result_size(events: &[VideoEvent], snapshot: &VideoSnapshot) -> Option<usize> {
-    let mut size = RESULT_FIXED_SIZE;
-    size = size.checked_add(events.len().checked_mul(EVENT_SIZE)?)?;
-    size = size.checked_add(snapshot.psi.audio_pids.len().checked_mul(AUDIO_PID_SIZE)?)?;
-    size = size.checked_add(
+/// cannot fit the frame must fail rather than be discovered half-written.
+fn video_result_size(
+    events: &[VideoEvent],
+    snapshot: &VideoSnapshot,
+    timing_records: &[TimingRecord],
+) -> Option<usize> {
+    let mut events_len = 4usize;
+    events_len = events_len.checked_add(events.len().checked_mul(EVENT_SIZE)?)?;
+
+    let mut facts_len = FACTS_PAYLOAD_FIXED_SIZE;
+    facts_len =
+        facts_len.checked_add(snapshot.psi.audio_pids.len().checked_mul(AUDIO_PID_SIZE)?)?;
+    facts_len = facts_len.checked_add(
         snapshot
             .psi
             .audio_tracks
             .len()
             .checked_mul(AUDIO_TRACK_SIZE)?,
     )?;
+
+    let mut active_psi_len = 4usize;
     for table in [
         &snapshot.active_psi.pat_sections,
         &snapshot.active_psi.pmt_sections,
     ] {
         for section in table {
-            size = size
+            active_psi_len = active_psi_len
                 .checked_add(SECTION_PREFIX)?
                 .checked_add(section.len())?;
         }
     }
-    Some(size)
+
+    let mut timing_len = TIMING_PAYLOAD_FIXED_SIZE;
+    for record in timing_records {
+        let r_size = match record {
+            TimingRecord::Pes(_) => RECORD_PES_TIMING_SIZE,
+            TimingRecord::Pcr { .. } => RECORD_PCR_SIZE,
+            TimingRecord::Discontinuity { .. } => RECORD_DISCONTINUITY_SIZE,
+        };
+        timing_len = timing_len.checked_add(r_size)?;
+    }
+
+    let mut total = ENVELOPE_HEADER_SIZE;
+    total = total
+        .checked_add(SECTION_HEADER_SIZE)?
+        .checked_add(events_len)?;
+    total = total
+        .checked_add(SECTION_HEADER_SIZE)?
+        .checked_add(facts_len)?;
+    total = total
+        .checked_add(SECTION_HEADER_SIZE)?
+        .checked_add(active_psi_len)?;
+    total = total
+        .checked_add(SECTION_HEADER_SIZE)?
+        .checked_add(timing_len)?;
+    Some(total)
 }
 
-/// Lays out one result. See the layout comment in the Go `psiresult.go`.
-///
-/// The two answers that carry a result use this one function, because they carry
-/// the same thing: what the core knows now. A second layout would be a second
-/// place for the two implementations to drift.
+/// Lays out one result in the Protocol v6 sectioned envelope.
 fn encode_video_result(
     processed_through: i64,
     events: &[VideoEvent],
     snapshot: &VideoSnapshot,
+    timing_records: &[TimingRecord],
+    active_epoch: Option<TimelineEpoch>,
 ) -> Vec<u8> {
     debug_assert_eq!(snapshot.video.pid, snapshot.psi.video_pid);
     debug_assert_eq!(snapshot.video.codec, snapshot.psi.video_codec);
 
-    let Some(size) = video_result_size(events, snapshot) else {
+    if processed_through < 0 {
+        return vec![STATUS_MALFORMED];
+    }
+
+    let Some(size) = video_result_size(events, snapshot, timing_records) else {
         return vec![STATUS_MALFORMED];
     };
     if size > MAX_FRAME_SIZE - HEADER_SIZE {
-        // Fail closed rather than raise the ceiling. With PSI held to the bounds
-        // the syntax gives - 256 sections of at most 1024 bytes per table - a
-        // real answer is a few hundred kilobytes at its worst, so reaching this
-        // means something upstream is not what it claims to be.
         return vec![STATUS_MALFORMED];
     }
 
     let mut body = Vec::with_capacity(size);
     body.push(STATUS_OK);
     body.push(COVERAGE_COMPLETE);
-    #[allow(clippy::cast_sign_loss)] // an offset is never negative; the caller checks it too
+    #[allow(clippy::cast_sign_loss)]
     body.extend_from_slice(&(processed_through as u64).to_be_bytes());
+    body.extend_from_slice(&4u16.to_be_bytes()); // 4 sections
 
+    // 1. SECTION_EVENTS
+    let events_len = 4 + events.len() * EVENT_SIZE;
+    body.push(SECTION_EVENTS);
+    body.push(SECTION_VERSION_V1);
+    body.extend_from_slice(&SECTION_FLAG_CRITICAL.to_be_bytes());
+    body.extend_from_slice(&count32(events_len).to_be_bytes());
     encode_events(&mut body, events);
+
+    // 2. SECTION_FACTS
+    let facts_len = FACTS_PAYLOAD_FIXED_SIZE
+        + snapshot.psi.audio_pids.len() * AUDIO_PID_SIZE
+        + snapshot.psi.audio_tracks.len() * AUDIO_TRACK_SIZE;
+    body.push(SECTION_FACTS);
+    body.push(SECTION_VERSION_V1);
+    body.extend_from_slice(&SECTION_FLAG_CRITICAL.to_be_bytes());
+    body.extend_from_slice(&count32(facts_len).to_be_bytes());
     if encode_facts(
         &mut body,
         &snapshot.psi,
@@ -555,11 +633,39 @@ fn encode_video_result(
     )
     .is_none()
     {
-        // A declaration this protocol has no way to say. Refused rather than
-        // sent as the nearest thing that fits: see wire_audio_codec.
         return vec![STATUS_MALFORMED];
     }
+
+    // 3. SECTION_ACTIVE_PSI
+    let mut active_psi_len = 4usize;
+    for table in [
+        &snapshot.active_psi.pat_sections,
+        &snapshot.active_psi.pmt_sections,
+    ] {
+        for section in table {
+            active_psi_len += SECTION_PREFIX + section.len();
+        }
+    }
+    body.push(SECTION_ACTIVE_PSI);
+    body.push(SECTION_VERSION_V1);
+    body.extend_from_slice(&SECTION_FLAG_CRITICAL.to_be_bytes());
+    body.extend_from_slice(&count32(active_psi_len).to_be_bytes());
     encode_active_psi(&mut body, &snapshot.active_psi);
+
+    // 4. SECTION_TIMING
+    let mut timing_len = TIMING_PAYLOAD_FIXED_SIZE;
+    for r in timing_records {
+        timing_len += match r {
+            TimingRecord::Pes(_) => RECORD_PES_TIMING_SIZE,
+            TimingRecord::Pcr { .. } => RECORD_PCR_SIZE,
+            TimingRecord::Discontinuity { .. } => RECORD_DISCONTINUITY_SIZE,
+        };
+    }
+    body.push(SECTION_TIMING);
+    body.push(SECTION_VERSION_V1);
+    body.extend_from_slice(&SECTION_FLAG_CRITICAL.to_be_bytes());
+    body.extend_from_slice(&count32(timing_len).to_be_bytes());
+    encode_timing(&mut body, timing_records, active_epoch);
 
     debug_assert_eq!(
         body.len(),
@@ -567,6 +673,96 @@ fn encode_video_result(
         "the preflight size and the encoding disagree"
     );
     body
+}
+
+fn encode_timing(
+    body: &mut Vec<u8>,
+    records: &[TimingRecord],
+    active_epoch: Option<TimelineEpoch>,
+) {
+    if let Some(epoch) = active_epoch {
+        body.push(1);
+        body.extend_from_slice(&epoch.get().to_be_bytes());
+    } else {
+        body.push(0);
+        body.extend_from_slice(&0u64.to_be_bytes());
+    }
+    body.extend_from_slice(&count32(records.len()).to_be_bytes());
+    for record in records {
+        match record {
+            TimingRecord::Pes(pt) => {
+                body.push(RECORD_PES_TIMING);
+                body.extend_from_slice(&pt.epoch.get().to_be_bytes());
+                body.extend_from_slice(&pt.pid.get().to_be_bytes());
+                let mut flags = 0u8;
+                if pt.pts.is_some() {
+                    flags |= PES_FLAG_HAS_PTS;
+                }
+                if pt.dts.is_some() {
+                    flags |= PES_FLAG_HAS_DTS;
+                }
+                body.push(flags);
+                body.extend_from_slice(&pt.observed_at.get().to_be_bytes());
+                body.extend_from_slice(&pt.subject_at.get().to_be_bytes());
+                body.extend_from_slice(&pt.pts.map_or(0i64, ExtendedPts90k::get).to_be_bytes());
+                body.extend_from_slice(&pt.dts.map_or(0i64, ExtendedDts90k::get).to_be_bytes());
+            }
+            TimingRecord::Pcr {
+                epoch,
+                pid,
+                observed_at,
+                pcr_27m,
+            } => {
+                body.push(RECORD_PCR);
+                body.extend_from_slice(&epoch.get().to_be_bytes());
+                body.extend_from_slice(&pid.get().to_be_bytes());
+                body.extend_from_slice(&observed_at.get().to_be_bytes());
+                body.extend_from_slice(&pcr_27m.get().to_be_bytes());
+            }
+            TimingRecord::Discontinuity {
+                scope,
+                reason,
+                observed_at,
+                epoch_before,
+                epoch_after,
+            } => {
+                body.push(RECORD_DISCONTINUITY);
+                match scope {
+                    TimingResetScope::Program => {
+                        body.push(DISC_SCOPE_PROGRAM);
+                        body.extend_from_slice(&0u16.to_be_bytes());
+                    }
+                    TimingResetScope::Track(pid) => {
+                        body.push(DISC_SCOPE_TRACK);
+                        body.extend_from_slice(&pid.get().to_be_bytes());
+                    }
+                }
+                body.push(match reason {
+                    DiscontinuityReason::ProgramIdentityChanged => {
+                        DISC_REASON_PROGRAM_IDENTITY_CHANGED
+                    }
+                    DiscontinuityReason::PcrPidChanged => DISC_REASON_PCR_PID_CHANGED,
+                    DiscontinuityReason::PcrDiscontinuityIndicator => {
+                        DISC_REASON_PCR_DISCONTINUITY_INDICATOR
+                    }
+                    DiscontinuityReason::TransportTimingLoss => DISC_REASON_TRANSPORT_TIMING_LOSS,
+                });
+                body.extend_from_slice(&observed_at.get().to_be_bytes());
+                let mut flags = 0u8;
+                if epoch_before.is_some() {
+                    flags |= DISC_FLAG_HAS_EPOCH_BEFORE;
+                }
+                if epoch_after.is_some() {
+                    flags |= DISC_FLAG_HAS_EPOCH_AFTER;
+                }
+                body.push(flags);
+                body.extend_from_slice(
+                    &epoch_before.map_or(0u64, TimelineEpoch::get).to_be_bytes(),
+                );
+                body.extend_from_slice(&epoch_after.map_or(0u64, TimelineEpoch::get).to_be_bytes());
+            }
+        }
+    }
 }
 
 fn encode_events(body: &mut Vec<u8>, events: &[VideoEvent]) {
@@ -755,6 +951,9 @@ fn count16(n: usize) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xg2g_media_core::timing::{
+        ByteOffset, ExtendedDts90k, ExtendedPcr27m, ExtendedPts90k, Pid, TimingPoint,
+    };
 
     /// An empty result: nothing read, nothing in force.
     ///
@@ -766,7 +965,18 @@ mod tests {
         0x00, // status ok
         0x02, // coverage: Complete (COVERAGE_COMPLETE)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x2A, // through = 1066
+        0x00, 0x04, // 4 sections
+        // Section 1: EVENTS (12 bytes)
+        0x01, // SECTION_EVENTS
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x04, // length: 4
         0x00, 0x00, 0x00, 0x00, // no events
+        // Section 2: FACTS (130 bytes)
+        0x02, // SECTION_FACTS
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x7A, // length: 122 (0x7A)
         0x00, // no PAT, no PMT
         0x00, // PMT version 0
         0x00, 0x00, // programme 0
@@ -791,8 +1001,21 @@ mod tests {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_scrambled = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // audio_clear_run = 0
+        // Section 3: ACTIVE_PSI (12 bytes)
+        0x03, // SECTION_ACTIVE_PSI
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x04, // length: 4
         0x00, 0x00, // no PAT sections
         0x00, 0x00, // no PMT sections
+        // Section 4: TIMING (21 bytes)
+        0x04, // SECTION_TIMING
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x0D, // length: 13 (0x0D)
+        0x00, // has_active_epoch: false
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // active_epoch: 0
+        0x00, 0x00, 0x00, 0x00, // record_count: 0
     ];
 
     #[test]
@@ -827,17 +1050,60 @@ mod tests {
             audio_observations: Vec::new(),
         };
         assert_eq!(
-            encode_video_result(1066, &[], &snapshot),
+            encode_video_result(1066, &[], &snapshot, &[], None),
             GOLDEN_EMPTY_RESULT
         );
     }
 
+    #[test]
+    fn negative_processed_through_is_refused() {
+        let snapshot = VideoSnapshot {
+            psi: PsiFacts::default(),
+            active_psi: ActivePsi::default(),
+            video: VideoFacts {
+                pid: 0,
+                codec: VideoCodec::Unknown,
+                clear_packets: 0,
+                scrambled_packets: 0,
+                clear_run: 0,
+                scrambled_confirmed: false,
+                awaiting_start: false,
+                current_pes_offset: None,
+                pes_starts: 0,
+                parameter_sets_seen: false,
+                pes_has_sps: false,
+                pes_has_pps: false,
+                pes_has_vps: false,
+                pes_has_recovery_point: false,
+                unreadable_slices: 0,
+                irap_points: 0,
+                intra_points: 0,
+                recovery_point_seis: 0,
+                predicted_rejected: 0,
+                clean_rap_count: 0,
+                clean_access_units: 0,
+            },
+            audio_scrambling: (0, 0, 0),
+            audio_observations: Vec::new(),
+        };
+        assert_eq!(
+            encode_video_result(-1, &[], &snapshot, &[], None),
+            vec![STATUS_MALFORMED]
+        );
+    }
+
     /// A result with everything in it: events of each kind, both tables in force, a video
-    /// stream with facts and one audio track with a full declaration.
+    /// stream with facts, one audio track with a full declaration, and timing records.
     const GOLDEN_FULL_RESULT: &[u8] = &[
         0x00, // status ok
         0x02, // coverage: Complete
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // through = 188
+        0x00, 0x04, // 4 sections
+        // Section 1: EVENTS (42 bytes)
+        0x01, // SECTION_EVENTS
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x22, // length = 34 (4 + 3 * 10)
         0x00, 0x00, 0x00, 0x03, // 3 events
         0x01, // event 1: program identity changed
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // offset 0
@@ -848,6 +1114,11 @@ mod tests {
         0x03, // event 3: random access point invalidated
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // offset 188
         0x00, // flags 0
+        // Section 2: FACTS (153 bytes)
+        0x02, // SECTION_FACTS
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x91, // length = 145 (0x91)
         0x03, // has PAT and PMT
         0x05, // PMT version 5
         0x00, 0x01, // programme 1
@@ -885,15 +1156,53 @@ mod tests {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, // audio_scrambled = 11
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, // audio_clear = 12
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0D, // audio_clear_run = 13
+        // Section 3: ACTIVE_PSI (23 bytes)
+        0x03, // SECTION_ACTIVE_PSI
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x0F, // length = 15 (0x0F)
         0x00, 0x01, // one PAT section
         0x00, 0x04, // four bytes
         0x00, 0xB0, 0x0D, 0x99, //
         0x00, 0x01, // one PMT section
         0x00, 0x03, // three bytes
         0x02, 0xB0, 0x21, //
+        // Section 4: TIMING (122 bytes)
+        0x04, // SECTION_TIMING
+        0x01, // SECTION_VERSION_V1
+        0x00, 0x01, // flags: CRITICAL
+        0x00, 0x00, 0x00, 0x72, // length = 114 (0x72)
+        0x01, // has_active_epoch = true
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // active_epoch = 1
+        0x00, 0x00, 0x00, 0x03, // 3 records
+        // Record 1: PES_TIMING (44B)
+        0x01, // RECORD_PES_TIMING
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // epoch = 1
+        0x01, 0x01, // pid = 257
+        0x03, // flags: HAS_PTS | HAS_DTS
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // observed_at = 188
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // subject_at = 188
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x5F, 0x90, // pts_90k = 90000
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x51, 0x80, // dts_90k = 86400
+        // Record 2: PCR (27B)
+        0x02, // RECORD_PCR
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // epoch = 1
+        0x01, 0x00, // pcr_pid = 256
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // observed_at = 188
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x9B, 0xFC, 0xC0, // extended_pcr_27m = 27000000
+        // Record 3: DISCONTINUITY (30B)
+        0x03, // RECORD_DISCONTINUITY
+        0x01, // scope = Program (1)
+        0x00, 0x00, // track_pid = 0
+        0x03, // reason = PcrDiscontinuityIndicator (3)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC, // observed_at = 188
+        0x03, // flags: HAS_EPOCH_BEFORE | HAS_EPOCH_AFTER
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // epoch_before = 1
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // epoch_after = 2
     ];
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn a_full_result_is_on_the_wire_exactly_as_agreed() {
         let events = vec![
             VideoEvent::ProgramIdentityChanged,
@@ -967,8 +1276,37 @@ mod tests {
                 },
             )],
         };
+        let timing_records = vec![
+            TimingRecord::Pes(TimingPoint {
+                epoch: TimelineEpoch::new(1),
+                pid: Pid::new(257).unwrap(),
+                pts: Some(ExtendedPts90k::new(90000)),
+                dts: Some(ExtendedDts90k::new(86400)),
+                observed_at: ByteOffset::new(188),
+                subject_at: ByteOffset::new(188),
+            }),
+            TimingRecord::Pcr {
+                epoch: TimelineEpoch::new(1),
+                pid: Pid::new(256).unwrap(),
+                observed_at: ByteOffset::new(188),
+                pcr_27m: ExtendedPcr27m::new(27_000_000),
+            },
+            TimingRecord::Discontinuity {
+                scope: TimingResetScope::Program,
+                reason: DiscontinuityReason::PcrDiscontinuityIndicator,
+                observed_at: ByteOffset::new(188),
+                epoch_before: Some(TimelineEpoch::new(1)),
+                epoch_after: Some(TimelineEpoch::new(2)),
+            },
+        ];
         assert_eq!(
-            encode_video_result(188, &events, &snapshot),
+            encode_video_result(
+                188,
+                &events,
+                &snapshot,
+                &timing_records,
+                Some(TimelineEpoch::new(1))
+            ),
             GOLDEN_FULL_RESULT
         );
     }
@@ -1031,14 +1369,14 @@ mod tests {
         // The values the parser actually produces are all sayable, including
         // the two that mean "nothing was declared".
         for codec in ["unknown", "mp2", "aac", "ac3", "eac3", "dts"] {
-            let answer = encode_video_result(188, &[], &track(codec, "und"));
+            let answer = encode_video_result(188, &[], &track(codec, "und"), &[], None);
             assert_eq!(
                 answer[0], STATUS_OK,
                 "codec {codec} with language und was refused"
             );
         }
         for language in ["und", "deu", "eng"] {
-            let answer = encode_video_result(188, &[], &track("ac3", language));
+            let answer = encode_video_result(188, &[], &track("ac3", language), &[], None);
             assert_eq!(answer[0], STATUS_OK, "language {language} was refused");
         }
 
@@ -1051,7 +1389,7 @@ mod tests {
             ("ac3", "deutsch", "a language of seven bytes"),
             ("ac3", "", "no language at all"),
         ] {
-            let answer = encode_video_result(188, &[], &track(codec, language));
+            let answer = encode_video_result(188, &[], &track(codec, language), &[], None);
             assert_eq!(
                 answer,
                 vec![STATUS_MALFORMED],
@@ -1103,16 +1441,26 @@ mod tests {
 
     /// Reads the PMT PID out of an answer.
     ///
-    /// Counted rather than indexed at a literal: the facts sit after the events,
-    /// so where they begin depends on how many there were. A test that hard-coded
-    /// an offset would pass or fail for reasons that have nothing to do with the
-    /// field it names.
+    /// Counted rather than indexed at a literal: the facts sit inside `SECTION_FACTS`,
+    /// so we look for that section and extract PMT PID.
     fn pmt_pid_of(answer: &[u8]) -> u16 {
-        let event_count =
-            u32::from_be_bytes(answer[10..14].try_into().expect("event count")) as usize;
-        let facts = 14 + event_count * EVENT_SIZE;
-        let pmt_pid = facts + 1 + 1 + 2; // flags, version, programme number
-        u16::from_be_bytes([answer[pmt_pid], answer[pmt_pid + 1]])
+        assert_eq!(answer[0], STATUS_OK);
+        let section_count = u16::from_be_bytes(answer[10..12].try_into().expect("section count"));
+        let mut offset = 12;
+        for _ in 0..section_count {
+            let sec_type = answer[offset];
+            let sec_len = u32::from_be_bytes(
+                answer[offset + 4..offset + 8]
+                    .try_into()
+                    .expect("section length"),
+            ) as usize;
+            let payload = &answer[offset + 8..offset + 8 + sec_len];
+            if sec_type == SECTION_FACTS {
+                return u16::from_be_bytes([payload[4], payload[5]]);
+            }
+            offset += 8 + sec_len;
+        }
+        panic!("SECTION_FACTS not found in answer");
     }
 
     fn handshaken(target: u16) -> Session {
@@ -1180,7 +1528,7 @@ mod tests {
     // produce these exact lengths to pass.
     const GOLDEN_OBSERVE_REQUEST: &[u8] = &[
         0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-        0x05, // version 5
+        0x06, // version 6
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, 0x00, 0x00, 0x01, // one batch
@@ -1193,7 +1541,7 @@ mod tests {
 
     const GOLDEN_OBSERVE_ANSWER: &[u8] = &[
         0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-        0x05, // version 5
+        0x06, // version 6
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, // status ok

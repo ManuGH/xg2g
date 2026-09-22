@@ -178,6 +178,12 @@ func agree(t *testing.T, what string, goRes, rustRes mediafacts.ParseResult) {
 	if !rustRes.Covers(mediafacts.ParseCoverageComplete) {
 		t.Fatalf("%s: the real core reported coverage %s", what, rustRes.Coverage)
 	}
+	if goRes.Timing.Authority != mediafacts.TimingAuthorityNone {
+		t.Fatalf("%s: go timing authority %s, want none", what, goRes.Timing.Authority)
+	}
+	if rustRes.Timing.Authority != mediafacts.TimingAuthorityCanonical {
+		t.Fatalf("%s: rust timing authority %s, want canonical", what, rustRes.Timing.Authority)
+	}
 	if bad := scopeOf(goRes).diff(scopeOf(rustRes), "go  ", "rust"); len(bad) > 0 {
 		t.Fatalf("%s:\n%s", what, joinLines(bad))
 	}

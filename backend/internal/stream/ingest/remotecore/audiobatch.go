@@ -353,3 +353,11 @@ func (r *reader) uint64() (uint64, bool) {
 	}
 	return binary.BigEndian.Uint64(b), true
 }
+
+func (r *reader) int64() (int64, bool) {
+	u, ok := r.uint64()
+	if !ok {
+		return 0, false
+	}
+	return int64(u), true
+}

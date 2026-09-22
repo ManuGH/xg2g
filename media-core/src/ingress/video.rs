@@ -44,7 +44,10 @@ use crate::audio::observer::Observation;
 use crate::ingress::audio::{AudioTrackState, AudioTracker};
 use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
-use crate::timing::{ByteOffset, PcrTracker, Pid, TimelineTracker, TimingEvent, TimingSnapshot};
+use crate::timing::{
+    ByteOffset, DiscontinuityReason, PcrObservation, PcrTracker, Pid, TimelineTracker, TimingEvent,
+    TimingRecord, TimingResetScope, TimingSnapshot,
+};
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
 /// Minimum consecutive scrambled packets required to conclusively confirm a stream as scrambled.
@@ -823,6 +826,8 @@ pub struct VideoOutcome<'a> {
     pub events: Vec<VideoEvent>,
     /// Timing events emitted during processing of this chunk, in exact order of occurrence.
     pub timing_events: Vec<TimingEvent>,
+    /// Canonical timing records emitted during processing of this chunk, in exact order of occurrence.
+    pub timing_records: Vec<TimingRecord>,
 }
 
 /// Facts established about the video elementary stream.
@@ -1052,6 +1057,7 @@ impl VideoIngress {
     ///
     /// Returns [`IngestError::UnalignedChunk`] when the chunk is not an exact multiple
     /// of 188-byte transport stream packets.
+    #[allow(clippy::too_many_lines)]
     pub fn ingest<'a>(
         &mut self,
         start_offset: i64,
@@ -1063,6 +1069,7 @@ impl VideoIngress {
         let mut feeds = Vec::new();
         let mut events = Vec::new();
         let mut timing_events = Vec::new();
+        let mut timing_records = Vec::new();
         self.psi.begin_chunk();
         for (packet_idx, packet) in data.chunks_exact(TS_PACKET_LEN).enumerate() {
             let rel_offset =
@@ -1074,22 +1081,82 @@ impl VideoIngress {
                 .iter()
                 .filter(|&&e| e == PsiEvent::ProgramIdentityChanged)
                 .count();
-            for _ in 0..identity_changed_count {
-                self.reprogram();
-                events.push(VideoEvent::ProgramIdentityChanged);
-            }
             if identity_changed_count > 0 {
+                let epoch_before = self.timeline.active_epoch();
+                for _ in 0..identity_changed_count {
+                    self.reprogram();
+                    events.push(VideoEvent::ProgramIdentityChanged);
+                }
                 if self.psi.has_pmt() {
                     self.timeline.activate_next_epoch();
                 } else {
                     self.timeline.deactivate_program();
                 }
+                let epoch_after = self.timeline.active_epoch();
+                timing_records.push(TimingRecord::Discontinuity {
+                    scope: TimingResetScope::Program,
+                    reason: DiscontinuityReason::ProgramIdentityChanged,
+                    observed_at: ByteOffset::new(packet_offset),
+                    epoch_before,
+                    epoch_after,
+                });
             }
             let Ok(view) = PacketView::parse(packet) else {
                 continue;
             };
             let pcr_obs = self.timing.observe(packet_offset, &view);
-            self.timeline.observe_pcr(pcr_obs);
+            match pcr_obs {
+                PcrObservation::Discontinuity { .. } => {
+                    let epoch_before = self.timeline.active_epoch();
+                    self.timeline.observe_pcr(pcr_obs);
+                    let epoch_after = self.timeline.active_epoch();
+                    timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Program,
+                        reason: DiscontinuityReason::PcrDiscontinuityIndicator,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
+                }
+                PcrObservation::DiscontinuitySample { .. } => {
+                    let epoch_before = self.timeline.active_epoch();
+                    let ext_pcr = self.timeline.observe_pcr(pcr_obs);
+                    let epoch_after = self.timeline.active_epoch();
+                    timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Program,
+                        reason: DiscontinuityReason::PcrDiscontinuityIndicator,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
+                    if let (Some(epoch), Some(pcr_27m), Some(pid)) =
+                        (epoch_after, ext_pcr, self.psi.pcr_pid().and_then(Pid::new))
+                    {
+                        timing_records.push(TimingRecord::Pcr {
+                            epoch,
+                            pid,
+                            observed_at: ByteOffset::new(packet_offset),
+                            pcr_27m,
+                        });
+                    }
+                }
+                PcrObservation::Sample { .. } => {
+                    let ext_pcr = self.timeline.observe_pcr(pcr_obs);
+                    if let (Some(epoch), Some(pcr_27m), Some(pid)) = (
+                        self.timeline.active_epoch(),
+                        ext_pcr,
+                        self.psi.pcr_pid().and_then(Pid::new),
+                    ) {
+                        timing_records.push(TimingRecord::Pcr {
+                            epoch,
+                            pid,
+                            observed_at: ByteOffset::new(packet_offset),
+                            pcr_27m,
+                        });
+                    }
+                }
+                PcrObservation::None => {}
+            }
             let events_before = events.len();
             self.route(
                 packet_offset,
@@ -1097,6 +1164,7 @@ impl VideoIngress {
                 &mut feeds,
                 &mut events,
                 &mut timing_events,
+                &mut timing_records,
             );
             for event in &events[events_before..] {
                 match *event {
@@ -1116,6 +1184,7 @@ impl VideoIngress {
             feeds,
             events,
             timing_events,
+            timing_records,
         })
     }
 
@@ -1141,6 +1210,7 @@ impl VideoIngress {
         out_feeds: &mut Vec<VideoFeed<'a>>,
         out_events: &mut Vec<VideoEvent>,
         out_timing_events: &mut Vec<TimingEvent>,
+        out_timing_records: &mut Vec<TimingRecord>,
     ) {
         let pid = view.pid();
         if pid == 0 || pid == self.psi.pmt_pid() {
@@ -1151,10 +1221,21 @@ impl VideoIngress {
             if self.audio.handles_pid(pid) {
                 let audio_out = self.audio.route(packet_offset, view);
                 if let Some(p) = Pid::new(pid).filter(|_| audio_out.continuity_broken) {
+                    let epoch_before = self.timeline.active_epoch();
                     self.timeline.reset_track(p);
+                    let epoch_after = self.timeline.active_epoch();
+                    out_timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Track(p),
+                        reason: DiscontinuityReason::TransportTimingLoss,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
                 }
                 if let Some(evt) = audio_out.timing {
-                    self.timeline.observe_audio_timing(&evt);
+                    if let Some(pt) = self.timeline.observe_audio_timing(&evt) {
+                        out_timing_records.push(TimingRecord::Pes(pt));
+                    }
                     out_timing_events.push(evt);
                 }
             }
@@ -1195,7 +1276,16 @@ impl VideoIngress {
                 follower.au_continuity_broken = true;
                 follower.pes_assembler.reset();
                 if let Some(p) = Pid::new(follower.pid) {
+                    let epoch_before = self.timeline.active_epoch();
                     self.timeline.reset_track(p);
+                    let epoch_after = self.timeline.active_epoch();
+                    out_timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Track(p),
+                        reason: DiscontinuityReason::TransportTimingLoss,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
                 }
             }
 
@@ -1218,7 +1308,16 @@ impl VideoIngress {
                 follower.invalidate_published_rap(out_events);
                 follower.pes_assembler.reset();
                 if let Some(p) = Pid::new(follower.pid) {
+                    let epoch_before = self.timeline.active_epoch();
                     self.timeline.reset_track(p);
+                    let epoch_after = self.timeline.active_epoch();
+                    out_timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Track(p),
+                        reason: DiscontinuityReason::TransportTimingLoss,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
                 }
                 return;
             }
@@ -1242,7 +1341,16 @@ impl VideoIngress {
                 follower.position = VideoPosition::AwaitingStart;
                 follower.pes_assembler.reset();
                 if let Some(p) = Pid::new(follower.pid) {
+                    let epoch_before = self.timeline.active_epoch();
                     self.timeline.reset_track(p);
+                    let epoch_after = self.timeline.active_epoch();
+                    out_timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Track(p),
+                        reason: DiscontinuityReason::TransportTimingLoss,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before,
+                        epoch_after,
+                    });
                 }
                 return;
             }
@@ -1265,7 +1373,9 @@ impl VideoIngress {
             }
 
             if let Some(evt) = output.timing_event {
-                self.timeline.observe_video_timing(&evt);
+                if let Some(pt) = self.timeline.observe_video_timing(&evt) {
+                    out_timing_records.push(TimingRecord::Pes(pt));
+                }
                 out_timing_events.push(evt);
             }
 
@@ -1286,7 +1396,16 @@ impl VideoIngress {
         if view.transport_error_indicator() {
             follower.pes_assembler.reset();
             if let Some(p) = Pid::new(follower.pid) {
+                let epoch_before = self.timeline.active_epoch();
                 self.timeline.reset_track(p);
+                let epoch_after = self.timeline.active_epoch();
+                out_timing_records.push(TimingRecord::Discontinuity {
+                    scope: TimingResetScope::Track(p),
+                    reason: DiscontinuityReason::TransportTimingLoss,
+                    observed_at: ByteOffset::new(packet_offset),
+                    epoch_before,
+                    epoch_after,
+                });
             }
             if !matches!(follower.position, VideoPosition::AwaitingStart) {
                 follower.reset_annex_b();
@@ -1325,7 +1444,16 @@ impl VideoIngress {
             follower.invalidate_published_rap(out_events);
             follower.pes_assembler.reset();
             if let Some(p) = Pid::new(follower.pid) {
+                let epoch_before = self.timeline.active_epoch();
                 self.timeline.reset_track(p);
+                let epoch_after = self.timeline.active_epoch();
+                out_timing_records.push(TimingRecord::Discontinuity {
+                    scope: TimingResetScope::Track(p),
+                    reason: DiscontinuityReason::TransportTimingLoss,
+                    observed_at: ByteOffset::new(packet_offset),
+                    epoch_before,
+                    epoch_after,
+                });
             }
             return;
         }
@@ -1352,7 +1480,9 @@ impl VideoIngress {
         }
 
         if let Some(evt) = output.timing_event {
-            self.timeline.observe_video_timing(&evt);
+            if let Some(pt) = self.timeline.observe_video_timing(&evt) {
+                out_timing_records.push(TimingRecord::Pes(pt));
+            }
             out_timing_events.push(evt);
         }
 

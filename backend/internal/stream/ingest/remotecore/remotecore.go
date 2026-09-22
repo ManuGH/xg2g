@@ -407,6 +407,9 @@ func statusError(resp Frame) error {
 	if len(resp.Body) == 0 {
 		return fmt.Errorf("%w: answer carried no status", mediafacts.ErrCoreInvalidResponse)
 	}
+	if resp.Body[0] != StatusOK && len(resp.Body) != 1 {
+		return fmt.Errorf("%w: non-ok status %d carried %d bytes", mediafacts.ErrCoreInvalidResponse, resp.Body[0], len(resp.Body))
+	}
 	switch resp.Body[0] {
 	case StatusOK:
 		return nil
