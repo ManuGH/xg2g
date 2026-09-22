@@ -5,10 +5,22 @@
 //! Deterministic transport stream timing and clock estimation.
 
 pub mod pcr;
+pub mod phase;
+pub mod timeline;
 pub mod types;
+pub mod unwrap;
 
-pub use pcr::{MAX_PLAUSIBLE_DELTA_TICKS, PCR_MODULUS, PcrSample, PcrTracker, TimingSnapshot};
-pub use types::{
-    BitrateBps, ByteOffset, ExtendedDts90k, ExtendedPcr27m, ExtendedPts90k, PesTiming, Pid,
-    RawDts33, RawPcr27m, RawPts33, TimelineEpoch, TimingEvent, TimingField,
+pub use pcr::{
+    MAX_PLAUSIBLE_DELTA_TICKS, PCR_MODULUS, PcrObservation, PcrSample, PcrTracker, TimingSnapshot,
 };
+pub use phase::{
+    align_27m_to_reference, align_90k_to_reference, align_dts_to_reference,
+    align_pcr_to_90k_reference,
+};
+pub use timeline::TimelineTracker;
+pub use types::{
+    BitrateBps, ByteOffset, DiscontinuityReason, ExtendedDts90k, ExtendedPcr27m, ExtendedPts90k,
+    PesTiming, Pid, RawDts33, RawPcr27m, RawPts33, TimelineEpoch, TimingEvent, TimingField,
+    TimingPoint, TimingResetScope,
+};
+pub use unwrap::{DtsUnwrapper33, PcrUnwrapper27m, PtsUnwrapper33, modular_delta};
