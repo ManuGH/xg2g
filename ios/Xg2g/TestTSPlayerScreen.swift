@@ -315,6 +315,7 @@ public struct TestTSPlayerScreen: View {
                             }
                         }
                     }
+                    #if !os(tvOS)
                     .gesture(
                         DragGesture(minimumDistance: 15)
                             .onChanged { value in
@@ -344,6 +345,7 @@ public struct TestTSPlayerScreen: View {
                                 }
                             }
                     )
+                    #endif
                     .overlay(alignment: .topTrailing) {
                         if let requested = requestedPreset {
                             HStack(spacing: 8) {
@@ -440,7 +442,9 @@ public struct TestTSPlayerScreen: View {
                 }
             }
             // Real fullscreen, not merely an edge-to-edge video frame.
+            #if !os(tvOS)
             .statusBarHidden(isLandscape)
+            #endif
             .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
             .offset(y: max(0, verticalDragOffset))
             .scaleEffect(isDraggingDown ? max(0.85, 1.0 - (verticalDragOffset / 1200)) : 1.0)
@@ -1127,7 +1131,9 @@ public struct TestTSPlayerScreen: View {
 
                     HStack(spacing: 8) {
                         TextField(ServerAddress.streamURLPlaceholder, text: $streamURLString)
+                            #if !os(tvOS)
                             .textFieldStyle(.roundedBorder)
+                            #endif
                             .font(.caption.monospaced())
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
@@ -1796,6 +1802,7 @@ struct TimeshiftTimelineBar: View {
                         .offset(x: max(0, min(geo.size.width - 14, geo.size.width * CGFloat(displayProgress) - 7)))
                 }
                 .contentShape(Rectangle())
+                #if !os(tvOS)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
@@ -1809,6 +1816,7 @@ struct TimeshiftTimelineBar: View {
                             onCommitSeek(fraction)
                         }
                 )
+                #endif
             }
             .frame(height: 14)
         }

@@ -170,7 +170,7 @@ struct SmartSearchResultsView: View {
         .padding(.horizontal, 16)
     }
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    private func triggerHaptic(_ style: Haptics.FeedbackStyle) {
         Haptics.shared.impact(style)
     }
 }
