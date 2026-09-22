@@ -103,7 +103,7 @@ Total: 232 passed; 0 failed
 ```
 
 ### 2.2 Go Automated Tests & Real-Core Differential Tests
-Ran `XG2G_TEST_ALLOW_DARWIN_CORE=1 XG2G_MEDIA_CORE_BIN=... go test -v -count=1 ./backend/internal/stream/ingest/...`:
+Ran tests with live core flags enabled (`go test -v -count=1 ./backend/internal/stream/ingest/...`):
 - `remotecore`: Golden envelope tests (`goldenEmptyResult` [187B], `goldenFullResult` [352B]) match byte-for-byte between Rust and Go.
 - `remotecore`: Adversarial wire tests (missing sections, duplicate sections, unknown critical/non-critical flags, known section flag validation `0x0000`/`0x0002`/`0x0003`/`0x8001`, invalid/null/zero PIDs, non-canonical zero violations, negative offsets) all pass.
 - `remotecore/timing_corpus_test.go`: All 18 scenarios across 4 test cases pass identically against the real `xg2g-media-core` binary over UDS.
