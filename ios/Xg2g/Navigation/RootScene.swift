@@ -11,25 +11,16 @@ import SwiftUI
 struct RootScene: View {
     @Bindable var model: AppModel
     @ObservedObject var playbackManager: PlaybackManager
-    private let composition: AppComposition
-
-    init(model: AppModel, playbackManager: PlaybackManager) {
-        self.model = model
-        self.playbackManager = playbackManager
-        self.composition = AppComposition.makeBridged(appModel: model)
-    }
+    @Environment(AppComposition.self) private var composition
 
     var body: some View {
-        Group {
-            switch composition.capabilities.interactionModel {
-            case .focusRemote:
-                TVRootView(model: model)
-            case .touchRegular, .pointerKeyboard:
-                PadRootView(model: model, playbackManager: playbackManager)
-            case .touchCompact:
-                PhoneRootView(model: model, playbackManager: playbackManager)
-            }
+        switch composition.capabilities.interactionModel {
+        case .focusRemote:
+            TVRootView(model: model)
+        case .touchRegular, .pointerKeyboard:
+            PadRootView(model: model, playbackManager: playbackManager)
+        case .touchCompact:
+            PhoneRootView(model: model, playbackManager: playbackManager)
         }
-        .withAppComposition(composition)
     }
 }

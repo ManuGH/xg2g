@@ -30,7 +30,7 @@ private final class StubPlaybackCtrl: PlaybackControlling {
 @MainActor
 private final class StubDeviceSess: DeviceSession {
     var isConnected: Bool = true
-    var activeServerAddress: ServerAddress? = try? ServerAddressParser.parseTrusted("http://10.10.55.14:8089/")
+    var activeServerAddress: ServerAddress? = try? ServerAddressParser.parseTrusted("http://192.0.2.1:8089/")
     func connect(address: ServerAddress) async throws {}
     func disconnect() async {}
 }
@@ -72,5 +72,22 @@ struct AppCompositionTests {
         #expect(composition.dvrStore.recordings.isEmpty)
         #expect(composition.playbackStore.isPlaying == false)
         #expect(composition.deviceStore.isConnected == false)
+    }
+
+    @Test("AppComposition maintains stable reference identities for all domain stores")
+    @MainActor
+    func testAppCompositionMaintainsStableStoreIdentities() {
+        let appModel = AppModel()
+        let composition = AppComposition.makeBridged(appModel: appModel)
+
+        let initialGuide = composition.guideStore
+        let initialDVR = composition.dvrStore
+        let initialPlayback = composition.playbackStore
+        let initialDevice = composition.deviceStore
+
+        #expect(composition.guideStore === initialGuide)
+        #expect(composition.dvrStore === initialDVR)
+        #expect(composition.playbackStore === initialPlayback)
+        #expect(composition.deviceStore === initialDevice)
     }
 }

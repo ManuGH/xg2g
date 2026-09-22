@@ -12,11 +12,18 @@ import SwiftUI
 struct RootView: View {
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    @State private var composition: AppComposition
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _composition = State(initialValue: AppComposition.makeBridged(appModel: model))
+    }
 
     var body: some View {
         RootContentView(model: model, playbackManager: model.playbackManager)
-            .withAppComposition(AppComposition.makeBridged(appModel: model))
+            .withAppComposition(composition)
             .preferredColorScheme(.dark)
             .tint(Theme.Colors.accentAction)
             .task { await model.start() }

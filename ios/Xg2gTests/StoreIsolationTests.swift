@@ -184,10 +184,10 @@ struct StoreIsolationTests {
 
         #expect(store.isConnected == false)
 
-        let address = try! ServerAddressParser.parseTrusted("http://10.10.55.14:8089/")
+        let address = try! ServerAddressParser.parseTrusted("http://192.0.2.1:8089/")
         await store.connect(to: address)
         #expect(store.isConnected == true)
-        #expect(store.serverAddress?.origin.host == "10.10.55.14")
+        #expect(store.serverAddress?.origin.host == "192.0.2.1")
         #expect(store.serverAddress?.origin.port == 8089)
 
         await store.disconnect()

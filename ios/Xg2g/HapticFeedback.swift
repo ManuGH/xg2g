@@ -2,10 +2,10 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-#if os(tvOS)
+#if os(tvOS) || targetEnvironment(macCatalyst)
 import Foundation
 
-/// High-performance centralized Haptic Feedback engine (tvOS stub).
+/// High-performance centralized Haptic Feedback engine (tvOS & Mac Catalyst stub).
 @MainActor
 public final class Haptics {
     public static let shared = Haptics()

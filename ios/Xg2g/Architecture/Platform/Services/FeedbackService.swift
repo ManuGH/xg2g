@@ -32,14 +32,14 @@ final class DefaultFeedbackService: FeedbackServicing {
     init() {}
 
     func triggerSelection() {
-        #if !os(tvOS)
+        #if !os(tvOS) && !targetEnvironment(macCatalyst)
         guard !ProcessInfo.processInfo.isiOSAppOnMac else { return }
         Haptics.shared.selection()
         #endif
     }
 
     func triggerImpact(_ style: FeedbackStyle) {
-        #if !os(tvOS)
+        #if !os(tvOS) && !targetEnvironment(macCatalyst)
         guard !ProcessInfo.processInfo.isiOSAppOnMac else { return }
         switch style {
         case .light:
@@ -53,7 +53,7 @@ final class DefaultFeedbackService: FeedbackServicing {
     }
 
     func triggerNotification(_ type: FeedbackNotificationType) {
-        #if !os(tvOS)
+        #if !os(tvOS) && !targetEnvironment(macCatalyst)
         guard !ProcessInfo.processInfo.isiOSAppOnMac else { return }
         switch type {
         case .success:
