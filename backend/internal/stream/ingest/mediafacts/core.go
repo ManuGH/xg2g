@@ -309,6 +309,10 @@ type ParseResult struct {
 	// PSI carries the tables in force for a caller that has to deliver them,
 	// uninterpreted, ahead of an entry point.
 	PSI ActivePSI
+
+	// Timing carries the canonical stream timeline published by media-core (Protocol v6+).
+	// For cores that do not compute canonical timing (e.g. GoCore), Authority is TimingAuthorityNone.
+	Timing TimingResult
 }
 
 // Covers reports whether every field of a ParseResult is an answer.
@@ -626,6 +630,9 @@ func (c *GoCore) result(through int64) ParseResult {
 		Events:                 events,
 		Facts:                  c.Snapshot(),
 		PSI:                    c.activePSI(),
+		Timing: TimingResult{
+			Authority: TimingAuthorityNone,
+		},
 	}
 }
 

@@ -4,6 +4,8 @@
 
 //! Deterministic transport stream timing and clock estimation.
 
+#[cfg(test)]
+mod corpus_test;
 pub mod pcr;
 pub mod phase;
 pub mod timeline;
@@ -21,6 +23,6 @@ pub use timeline::TimelineTracker;
 pub use types::{
     BitrateBps, ByteOffset, DiscontinuityReason, ExtendedDts90k, ExtendedPcr27m, ExtendedPts90k,
     PesTiming, Pid, RawDts33, RawPcr27m, RawPts33, TimelineEpoch, TimingEvent, TimingField,
-    TimingPoint, TimingResetScope,
+    TimingPoint, TimingRecord, TimingResetScope,
 };
 pub use unwrap::{DtsUnwrapper33, PcrUnwrapper27m, PtsUnwrapper33, modular_delta};

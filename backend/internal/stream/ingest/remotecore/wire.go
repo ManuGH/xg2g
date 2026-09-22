@@ -48,7 +48,56 @@ import (
 // 5 brings audio facts (21-byte tracks with 11-byte observation) and audio
 // scrambling counters (24-byte block, fixed facts block total = 105 bytes) with
 // coverage wireCoverageComplete (2).
-const Version uint8 = 5
+//
+// 6 introduces sectioned result envelopes and canonical timing publication.
+const Version uint8 = 6
+
+// Section IDs for Protocol v6 result envelopes.
+const (
+	SectionEvents    uint8 = 1
+	SectionFacts     uint8 = 2
+	SectionActivePSI uint8 = 3
+	SectionTiming    uint8 = 4
+)
+
+// SectionVersionV1 is the initial section version for all defined sections.
+const SectionVersionV1 uint8 = 1
+
+// SectionFlagCritical indicates a section that must be understood by the decoder.
+const SectionFlagCritical uint16 = 1 << 0
+
+// Timing record types in SectionTiming (v1).
+const (
+	TimingRecordPES           uint8 = 1
+	TimingRecordPCR           uint8 = 2
+	TimingRecordDiscontinuity uint8 = 3
+)
+
+// Timing PES record flags.
+const (
+	TimingPesFlagHasPTS uint8 = 1 << 0
+	TimingPesFlagHasDTS uint8 = 1 << 1
+)
+
+// Timing discontinuity scope.
+const (
+	TimingDiscontinuityScopeProgram uint8 = 1
+	TimingDiscontinuityScopeTrack   uint8 = 2
+)
+
+// Timing discontinuity reasons.
+const (
+	TimingDiscontinuityReasonProgramIdentityChanged uint8 = 1
+	TimingDiscontinuityReasonPCRPIDChanged          uint8 = 2
+	TimingDiscontinuityReasonPCRDiscontinuity       uint8 = 3
+	TimingDiscontinuityReasonTransportTimingLoss    uint8 = 4
+)
+
+// Timing discontinuity flags.
+const (
+	TimingDiscontinuityFlagHasEpochBefore uint8 = 1 << 0
+	TimingDiscontinuityFlagHasEpochAfter  uint8 = 1 << 1
+)
 
 // Message types. The set is closed on purpose - it is exactly the calls
 // mediafacts.Core makes, plus the two the connection itself needs.

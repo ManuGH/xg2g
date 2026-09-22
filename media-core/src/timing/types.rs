@@ -316,6 +316,37 @@ impl TimingPoint {
     }
 }
 
+/// A canonical timing record emitted during chunk processing in transport order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimingRecord {
+    /// A correlated PES presentation/decode timing point.
+    Pes(TimingPoint),
+    /// A canonical PCR observation accepted by the timeline tracker.
+    Pcr {
+        /// Timeline epoch this PCR belongs to.
+        epoch: TimelineEpoch,
+        /// PCR PID.
+        pid: Pid,
+        /// Byte offset where the PCR packet was observed.
+        observed_at: ByteOffset,
+        /// 27 MHz PCR timestamp, unwrapped and signed.
+        pcr_27m: ExtendedPcr27m,
+    },
+    /// A timeline discontinuity or track-local reset event.
+    Discontinuity {
+        /// Program or Track scope.
+        scope: TimingResetScope,
+        /// Causal reason for the discontinuity.
+        reason: DiscontinuityReason,
+        /// Byte offset where the discontinuity was observed.
+        observed_at: ByteOffset,
+        /// Timeline epoch before the discontinuity, if an epoch was active.
+        epoch_before: Option<TimelineEpoch>,
+        /// Timeline epoch after the discontinuity, if an epoch is active.
+        epoch_after: Option<TimelineEpoch>,
+    },
+}
+
 /// Estimated transport stream bitrate in bits per second.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct BitrateBps(pub u64);

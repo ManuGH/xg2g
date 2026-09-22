@@ -201,6 +201,22 @@ func (r *RemoteCore) accept(ctx context.Context) (net.Conn, error) {
 
 	select {
 	case res := <-got:
+		select {
+		case <-r.waitDone:
+			if res.c != nil {
+				_ = res.c.Close()
+			}
+			return nil, fmt.Errorf("%w: exited before connecting: %v", mediafacts.ErrCoreCrashed, r.waitErr)
+		case <-ctx.Done():
+			if res.c != nil {
+				_ = res.c.Close()
+			}
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("%w: did not connect within %v", mediafacts.ErrCoreTimeout, startupTimeout)
+			}
+			return nil, ctx.Err()
+		default:
+		}
 		if res.err != nil {
 			return nil, fmt.Errorf("%w: accept: %v", mediafacts.ErrCoreGone, res.err)
 		}
@@ -406,6 +422,9 @@ func exactBody(resp Frame, want int) error {
 func statusError(resp Frame) error {
 	if len(resp.Body) == 0 {
 		return fmt.Errorf("%w: answer carried no status", mediafacts.ErrCoreInvalidResponse)
+	}
+	if resp.Body[0] != StatusOK && len(resp.Body) != 1 {
+		return fmt.Errorf("%w: non-ok status %d carried %d bytes", mediafacts.ErrCoreInvalidResponse, resp.Body[0], len(resp.Body))
 	}
 	switch resp.Body[0] {
 	case StatusOK:
