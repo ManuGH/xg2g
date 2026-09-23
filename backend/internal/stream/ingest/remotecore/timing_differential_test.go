@@ -270,8 +270,8 @@ func TestTimingDifferential_CanonicalTimingPublishedOverIPC(t *testing.T) {
 	if rustRes.Timing.Authority != mediafacts.TimingAuthorityCanonical {
 		t.Fatalf("step 2: rust timing authority %s, want canonical", rustRes.Timing.Authority)
 	}
-	if len(rustRes.Timing.Records) != 2 {
-		t.Fatalf("step 2: rust timing records count = %d, want 2: %+v",
+	if len(rustRes.Timing.Records) != 3 {
+		t.Fatalf("step 2: rust timing records count = %d, want 3: %+v",
 			len(rustRes.Timing.Records), rustRes.Timing.Records)
 	}
 
@@ -291,6 +291,15 @@ func TestTimingDifferential_CanonicalTimingPublishedOverIPC(t *testing.T) {
 	}
 	if r1.PES.Epoch != 0 || r1.PES.PID != 0x0101 || !r1.PES.HasPTS || r1.PES.PTS90k != 90000 {
 		t.Errorf("step 2 record 1 PES mismatch: %+v", r1.PES)
+	}
+
+	// Record 2: the IDR in that PES is a RAP, published bound to the PES's timing.
+	r2 := rustRes.Timing.Records[2]
+	if r2.Type != mediafacts.TimingRecordTypeRandomAccessPoint {
+		t.Errorf("step 2 record 2 type %s, want rap", r2.Type)
+	}
+	if r2.RAP != r1.PES {
+		t.Errorf("step 2 record 2 RAP binding %+v, want the PES timing point %+v", r2.RAP, r1.PES)
 	}
 
 	// Step 3: Ingest PCR Discontinuity Indicator without PCR (DI = 1, PCR = None).

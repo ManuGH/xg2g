@@ -381,68 +381,18 @@ func decodeTiming(r *reader) (mediafacts.TimingResult, error) {
 
 		switch recType {
 		case TimingRecordPES:
-			epoch, ok := r.uint64()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES epoch")
+			point, err := decodeTimingPoint(r, "PES")
+			if err != nil {
+				return mediafacts.TimingResult{}, err
 			}
-			pid, ok := r.uint16()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES PID")
-			}
-			if pid > 0x1FFF {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES PID %d exceeds 13-bit limit (0x1FFF)", mediafacts.ErrCoreInvalidResponse, pid)
-			}
-			flags, ok := r.uint8()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES flags")
-			}
-			if flags&^(TimingPesFlagHasPTS|TimingPesFlagHasDTS) != 0 {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES flags %#02x", mediafacts.ErrCoreInvalidResponse, flags)
-			}
-			observedAt, ok := r.int64()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES observed_at")
-			}
-			if observedAt < 0 {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES negative observed_at %d", mediafacts.ErrCoreInvalidResponse, observedAt)
-			}
-			subjectAt, ok := r.int64()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES subject_at")
-			}
-			if subjectAt < 0 {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES negative subject_at %d", mediafacts.ErrCoreInvalidResponse, subjectAt)
-			}
-			pts90k, ok := r.int64()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES pts_90k")
-			}
-			dts90k, ok := r.int64()
-			if !ok {
-				return mediafacts.TimingResult{}, short("timing PES dts_90k")
-			}
+			records = append(records, mediafacts.TimingRecord{Type: mediafacts.TimingRecordTypePES, PES: point})
 
-			// Canonical zero rules
-			if flags&TimingPesFlagHasPTS == 0 && pts90k != 0 {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES pts_90k must be 0 when has_pts is false, got %d", mediafacts.ErrCoreInvalidResponse, pts90k)
+		case TimingRecordRAP:
+			point, err := decodeTimingPoint(r, "RAP")
+			if err != nil {
+				return mediafacts.TimingResult{}, err
 			}
-			if flags&TimingPesFlagHasDTS == 0 && dts90k != 0 {
-				return mediafacts.TimingResult{}, fmt.Errorf("%w: timing PES dts_90k must be 0 when has_dts is false, got %d", mediafacts.ErrCoreInvalidResponse, dts90k)
-			}
-
-			records = append(records, mediafacts.TimingRecord{
-				Type: mediafacts.TimingRecordTypePES,
-				PES: mediafacts.TimingPoint{
-					Epoch:      mediafacts.TimelineEpoch(epoch),
-					PID:        pid,
-					HasPTS:     flags&TimingPesFlagHasPTS != 0,
-					PTS90k:     pts90k,
-					HasDTS:     flags&TimingPesFlagHasDTS != 0,
-					DTS90k:     dts90k,
-					ObservedAt: observedAt,
-					SubjectAt:  subjectAt,
-				},
-			})
+			records = append(records, mediafacts.TimingRecord{Type: mediafacts.TimingRecordTypeRandomAccessPoint, RAP: point})
 
 		case TimingRecordPCR:
 			epoch, ok := r.uint64()
@@ -935,4 +885,68 @@ func decodeSections(r *reader, which string) ([][]byte, error) {
 		out = append(out, append([]byte(nil), section...))
 	}
 	return out, nil
+}
+
+// decodeTimingPoint reads the body shared by PES and RAP timing records: epoch,
+// pid, flags, observed_at, subject_at, pts, dts. kind names the record in errors.
+func decodeTimingPoint(r *reader, kind string) (mediafacts.TimingPoint, error) {
+	epoch, ok := r.uint64()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " epoch")
+	}
+	pid, ok := r.uint16()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " PID")
+	}
+	if pid > 0x1FFF {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s PID %d exceeds 13-bit limit (0x1FFF)", mediafacts.ErrCoreInvalidResponse, kind, pid)
+	}
+	flags, ok := r.uint8()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " flags")
+	}
+	if flags&^(TimingPesFlagHasPTS|TimingPesFlagHasDTS) != 0 {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s flags %#02x", mediafacts.ErrCoreInvalidResponse, kind, flags)
+	}
+	observedAt, ok := r.int64()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " observed_at")
+	}
+	if observedAt < 0 {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s negative observed_at %d", mediafacts.ErrCoreInvalidResponse, kind, observedAt)
+	}
+	subjectAt, ok := r.int64()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " subject_at")
+	}
+	if subjectAt < 0 {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s negative subject_at %d", mediafacts.ErrCoreInvalidResponse, kind, subjectAt)
+	}
+	pts90k, ok := r.int64()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " pts_90k")
+	}
+	dts90k, ok := r.int64()
+	if !ok {
+		return mediafacts.TimingPoint{}, short("timing " + kind + " dts_90k")
+	}
+
+	// Canonical zero rules
+	if flags&TimingPesFlagHasPTS == 0 && pts90k != 0 {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s pts_90k must be 0 when has_pts is false, got %d", mediafacts.ErrCoreInvalidResponse, kind, pts90k)
+	}
+	if flags&TimingPesFlagHasDTS == 0 && dts90k != 0 {
+		return mediafacts.TimingPoint{}, fmt.Errorf("%w: timing %s dts_90k must be 0 when has_dts is false, got %d", mediafacts.ErrCoreInvalidResponse, kind, dts90k)
+	}
+
+	return mediafacts.TimingPoint{
+		Epoch:      mediafacts.TimelineEpoch(epoch),
+		PID:        pid,
+		HasPTS:     flags&TimingPesFlagHasPTS != 0,
+		PTS90k:     pts90k,
+		HasDTS:     flags&TimingPesFlagHasDTS != 0,
+		DTS90k:     dts90k,
+		ObservedAt: observedAt,
+		SubjectAt:  subjectAt,
+	}, nil
 }

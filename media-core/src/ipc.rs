@@ -30,7 +30,7 @@ use xg2g_media_core::audio::shadow::{Registry, StreamEpoch};
 use xg2g_media_core::ingress::video::{VideoEvent, VideoFacts, VideoIngress, VideoSnapshot};
 use xg2g_media_core::psi::{ActivePsi, PsiFacts, VideoCodec};
 use xg2g_media_core::timing::{
-    DiscontinuityReason, ExtendedDts90k, ExtendedPts90k, TimelineEpoch, TimingRecord,
+    DiscontinuityReason, ExtendedDts90k, ExtendedPts90k, TimelineEpoch, TimingPoint, TimingRecord,
     TimingResetScope,
 };
 
@@ -41,7 +41,8 @@ use xg2g_media_core::timing::{
 /// 4 brings video facts and video events.
 /// 5 brings audio facts and audio scrambling counters.
 /// 6 introduces sectioned result envelopes and canonical timing publication.
-pub const VERSION: u8 = 6;
+/// 7 adds the RAP timing record ([`RECORD_RAP_TIMING`]) to the timing section.
+pub const VERSION: u8 = 7;
 
 pub const MSG_HANDSHAKE: u8 = 1;
 pub const MSG_INGEST: u8 = 2;
@@ -73,6 +74,10 @@ pub const SECTION_HEADER_SIZE: usize = 1 + 1 + 2 + 4; // type + version + flags 
 pub const RECORD_PES_TIMING: u8 = 1;
 pub const RECORD_PCR: u8 = 2;
 pub const RECORD_DISCONTINUITY: u8 = 3;
+/// A Random Access Point bound to its PES timing. Same layout as
+/// [`RECORD_PES_TIMING`]: `subject_at` is the RAP offset, `observed_at` the packet
+/// at which the RAP was established.
+pub const RECORD_RAP_TIMING: u8 = 4;
 
 pub const PES_FLAG_HAS_PTS: u8 = 1 << 0;
 pub const PES_FLAG_HAS_DTS: u8 = 1 << 1;
@@ -89,6 +94,7 @@ pub const DISC_FLAG_HAS_EPOCH_BEFORE: u8 = 1 << 0;
 pub const DISC_FLAG_HAS_EPOCH_AFTER: u8 = 1 << 1;
 
 pub const RECORD_PES_TIMING_SIZE: usize = 1 + 8 + 2 + 1 + 8 + 8 + 8 + 8; // 44
+pub const RECORD_RAP_TIMING_SIZE: usize = RECORD_PES_TIMING_SIZE;
 pub const RECORD_PCR_SIZE: usize = 1 + 8 + 2 + 8 + 8; // 27
 pub const RECORD_DISCONTINUITY_SIZE: usize = 1 + 1 + 2 + 1 + 8 + 1 + 8 + 8; // 30
 
@@ -567,6 +573,7 @@ fn video_result_size(
     for record in timing_records {
         let r_size = match record {
             TimingRecord::Pes(_) => RECORD_PES_TIMING_SIZE,
+            TimingRecord::RandomAccessPoint(_) => RECORD_RAP_TIMING_SIZE,
             TimingRecord::Pcr { .. } => RECORD_PCR_SIZE,
             TimingRecord::Discontinuity { .. } => RECORD_DISCONTINUITY_SIZE,
         };
@@ -667,6 +674,7 @@ fn encode_video_result(
     for r in timing_records {
         timing_len += match r {
             TimingRecord::Pes(_) => RECORD_PES_TIMING_SIZE,
+            TimingRecord::RandomAccessPoint(_) => RECORD_RAP_TIMING_SIZE,
             TimingRecord::Pcr { .. } => RECORD_PCR_SIZE,
             TimingRecord::Discontinuity { .. } => RECORD_DISCONTINUITY_SIZE,
         };
@@ -685,6 +693,27 @@ fn encode_video_result(
     body
 }
 
+/// One PES-shaped timing record: type, epoch, pid, flags, `observed_at`,
+/// `subject_at`, pts, dts - absent timestamps are written as zero with the flag
+/// cleared.
+fn encode_timing_point(body: &mut Vec<u8>, record_type: u8, pt: &TimingPoint) {
+    body.push(record_type);
+    body.extend_from_slice(&pt.epoch.get().to_be_bytes());
+    body.extend_from_slice(&pt.pid.get().to_be_bytes());
+    let mut flags = 0u8;
+    if pt.pts.is_some() {
+        flags |= PES_FLAG_HAS_PTS;
+    }
+    if pt.dts.is_some() {
+        flags |= PES_FLAG_HAS_DTS;
+    }
+    body.push(flags);
+    body.extend_from_slice(&pt.observed_at.get().to_be_bytes());
+    body.extend_from_slice(&pt.subject_at.get().to_be_bytes());
+    body.extend_from_slice(&pt.pts.map_or(0i64, ExtendedPts90k::get).to_be_bytes());
+    body.extend_from_slice(&pt.dts.map_or(0i64, ExtendedDts90k::get).to_be_bytes());
+}
+
 fn encode_timing(
     body: &mut Vec<u8>,
     records: &[TimingRecord],
@@ -700,23 +729,8 @@ fn encode_timing(
     body.extend_from_slice(&count32(records.len()).to_be_bytes());
     for record in records {
         match record {
-            TimingRecord::Pes(pt) => {
-                body.push(RECORD_PES_TIMING);
-                body.extend_from_slice(&pt.epoch.get().to_be_bytes());
-                body.extend_from_slice(&pt.pid.get().to_be_bytes());
-                let mut flags = 0u8;
-                if pt.pts.is_some() {
-                    flags |= PES_FLAG_HAS_PTS;
-                }
-                if pt.dts.is_some() {
-                    flags |= PES_FLAG_HAS_DTS;
-                }
-                body.push(flags);
-                body.extend_from_slice(&pt.observed_at.get().to_be_bytes());
-                body.extend_from_slice(&pt.subject_at.get().to_be_bytes());
-                body.extend_from_slice(&pt.pts.map_or(0i64, ExtendedPts90k::get).to_be_bytes());
-                body.extend_from_slice(&pt.dts.map_or(0i64, ExtendedDts90k::get).to_be_bytes());
-            }
+            TimingRecord::Pes(pt) => encode_timing_point(body, RECORD_PES_TIMING, pt),
+            TimingRecord::RandomAccessPoint(pt) => encode_timing_point(body, RECORD_RAP_TIMING, pt),
             TimingRecord::Pcr {
                 epoch,
                 pid,
@@ -1538,7 +1552,7 @@ mod tests {
     // produce these exact lengths to pass.
     const GOLDEN_OBSERVE_REQUEST: &[u8] = &[
         0x00, 0x00, 0x00, 0x23, // length: header 6 + body 29
-        0x06, // version 6
+        0x07, // version 7
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, 0x00, 0x00, 0x01, // one batch
@@ -1551,7 +1565,7 @@ mod tests {
 
     const GOLDEN_OBSERVE_ANSWER: &[u8] = &[
         0x00, 0x00, 0x00, 0x20, // length: header 6 + body 26
-        0x06, // version 6
+        0x07, // version 7
         0x05, // observe audio batch
         0x00, 0x00, 0x00, 0x09, // request id 9
         0x00, // status ok

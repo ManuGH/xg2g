@@ -124,6 +124,7 @@ const (
 	TimingRecordTypePES
 	TimingRecordTypePCR
 	TimingRecordTypeDiscontinuity
+	TimingRecordTypeRandomAccessPoint
 )
 
 func (t TimingRecordType) String() string {
@@ -136,6 +137,8 @@ func (t TimingRecordType) String() string {
 		return "pcr"
 	case TimingRecordTypeDiscontinuity:
 		return "discontinuity"
+	case TimingRecordTypeRandomAccessPoint:
+		return "rap"
 	default:
 		return fmt.Sprintf("TimingRecordType(%d)", uint8(t))
 	}
@@ -143,8 +146,17 @@ func (t TimingRecordType) String() string {
 
 // TimingRecord is a discriminated union of timing events within a chunk.
 type TimingRecord struct {
-	Type          TimingRecordType
-	PES           TimingPoint
+	Type TimingRecordType
+	PES  TimingPoint
+	// RAP binds a random access point to the canonical timing of the PES that
+	// carries it: SubjectAt is the RAP's offset, ObservedAt the packet at which the
+	// RAP was established, and Epoch, PID, PTS and DTS are that PES's timing.
+	//
+	// media-core publishes it in the same result as the RandomAccessPoint event it
+	// binds, even when the PES header arrived chunks earlier - an all-intra H.264
+	// access unit or an HEVC recovery point is only a RAP once it has ended. A RAP
+	// without such a record has no canonical timing; there is nothing to join.
+	RAP           TimingPoint
 	PCR           PCRPoint
 	Discontinuity DiscontinuityRecord
 }

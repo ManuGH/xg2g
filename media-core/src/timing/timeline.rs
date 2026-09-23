@@ -5,8 +5,8 @@
 //! Canonical stream timeline tracker and epoch coordinator.
 //!
 //! Manages `TimelineEpoch` transitions, establishes phase alignment across
-//! PCR and elementary stream timestamps, and associates Random Access Points (RAP)
-//! with continuous `ExtendedPts90k` timestamps via `subject_at`.
+//! PCR and elementary stream timestamps, and resolves the canonical timing of a
+//! Random Access Point (RAP) from the PES that carries it via `subject_at`.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -18,10 +18,16 @@ use super::types::{
 };
 use super::unwrap::{DtsUnwrapper33, PcrUnwrapper27m, PtsUnwrapper33};
 
-const VIDEO_PTS_HISTORY_CAP: usize = 32;
+/// How many recent video PES timing points are kept for RAP resolution.
+///
+/// A RAP is decided no later than the start of the PES after the one that
+/// carries it (access units are finalized at the next PUSI), so the point it
+/// needs is at most one PES old. The margin covers nothing the parser relies on;
+/// it only bounds the lookup.
+const VIDEO_POINT_HISTORY_CAP: usize = 32;
 
 /// Tracks stream timeline epochs, coordinates phase alignment across PCR, video,
-/// and audio clocks, and binds Random Access Points to extended timestamps.
+/// and audio clocks, and resolves the timing of Random Access Points.
 #[derive(Debug, Default)]
 pub struct TimelineTracker {
     active_epoch: Option<TimelineEpoch>,
@@ -37,11 +43,9 @@ pub struct TimelineTracker {
     audio_dts_unwrappers: HashMap<Pid, DtsUnwrapper33>,
 
     last_video_point: Option<TimingPoint>,
-    video_pts_history: VecDeque<(i64, ExtendedPts90k)>,
+    video_point_history: VecDeque<TimingPoint>,
     last_audio_points: HashMap<Pid, TimingPoint>,
     last_pcr: Option<(ExtendedPcr27m, ByteOffset)>,
-
-    rap_points: HashMap<i64, ExtendedPts90k>,
 }
 
 impl TimelineTracker {
@@ -94,10 +98,9 @@ impl TimelineTracker {
         self.audio_dts_unwrappers.clear();
 
         self.last_video_point = None;
-        self.video_pts_history.clear();
+        self.video_point_history.clear();
         self.last_audio_points.clear();
         self.last_pcr = None;
-        self.rap_points.clear();
 
         epoch
     }
@@ -117,10 +120,9 @@ impl TimelineTracker {
         self.audio_dts_unwrappers.clear();
 
         self.last_video_point = None;
-        self.video_pts_history.clear();
+        self.video_point_history.clear();
         self.last_audio_points.clear();
         self.last_pcr = None;
-        self.rap_points.clear();
     }
 
     /// Resets the unwrappers for a specific track (PID) due to track-local timing loss
@@ -136,7 +138,7 @@ impl TimelineTracker {
             self.video_pts_unwrapper.reset();
             self.video_dts_unwrapper.reset();
             self.last_video_point = None;
-            self.video_pts_history.clear();
+            self.video_point_history.clear();
         }
         if let Some(u) = self.audio_pts_unwrappers.get_mut(&pid) {
             u.reset();
@@ -300,13 +302,10 @@ impl TimelineTracker {
             dts,
         };
 
-        if let Some(p) = point.pts {
-            if self.video_pts_history.len() >= VIDEO_PTS_HISTORY_CAP {
-                self.video_pts_history.pop_front();
-            }
-            self.video_pts_history
-                .push_back((point.subject_at.get(), p));
+        if self.video_point_history.len() >= VIDEO_POINT_HISTORY_CAP {
+            self.video_point_history.pop_front();
         }
+        self.video_point_history.push_back(point);
 
         self.last_video_point = Some(point);
         Some(point)
@@ -417,44 +416,21 @@ impl TimelineTracker {
         Some(point)
     }
 
-    /// Binds a Random Access Point (RAP) at `subject_at` to an extended PTS timestamp.
-    pub fn bind_rap(&mut self, subject_at: ByteOffset, pts: ExtendedPts90k) {
-        self.rap_points.insert(subject_at.get(), pts);
-    }
-
-    /// Binds a Random Access Point (RAP) at `subject_at` to an extended PTS timestamp
-    /// if available from recent video timing observations or the last video point.
-    pub fn bind_rap_if_available(&mut self, subject_at: ByteOffset) -> Option<ExtendedPts90k> {
-        if let Some(&(_, pts)) = self
-            .video_pts_history
+    /// The canonical timing of the video PES starting at `subject_at`, if one was
+    /// observed in the active epoch.
+    ///
+    /// This is how a Random Access Point is bound to time: its offset is the start
+    /// of the PES that carries it, and that PES's timing point is its timing. The
+    /// lookup is by exact offset and never interpolates - a RAP whose PES carried
+    /// no usable header, or that started before the current epoch or track reset,
+    /// has no timing, and saying so is the answer.
+    #[must_use]
+    pub fn rap_timing(&self, subject_at: ByteOffset) -> Option<TimingPoint> {
+        self.video_point_history
             .iter()
             .rev()
-            .find(|&&(off, _)| off == subject_at.get())
-        {
-            self.rap_points.insert(subject_at.get(), pts);
-            return Some(pts);
-        }
-        if let Some(pts) = self
-            .last_video_point
-            .as_ref()
-            .filter(|pt| pt.subject_at == subject_at)
-            .and_then(|pt| pt.pts)
-        {
-            self.rap_points.insert(subject_at.get(), pts);
-            return Some(pts);
-        }
-        None
-    }
-
-    /// Invalidates and removes a previously bound Random Access Point (RAP) at `subject_at`.
-    pub fn invalidate_rap(&mut self, subject_at: ByteOffset) {
-        self.rap_points.remove(&subject_at.get());
-    }
-
-    /// Returns the extended PTS bound to the Random Access Point at `subject_at`, if present and valid.
-    #[must_use]
-    pub fn get_rap_pts(&self, subject_at: ByteOffset) -> Option<ExtendedPts90k> {
-        self.rap_points.get(&subject_at.get()).copied()
+            .find(|pt| pt.subject_at == subject_at)
+            .copied()
     }
 
     /// Returns the most recently observed video timing point, if any.
@@ -735,17 +711,36 @@ mod tests {
     }
 
     #[test]
-    fn rap_binding_and_invalidation() {
+    fn rap_timing_is_the_timing_of_the_pes_at_its_offset() {
         let mut tracker = TimelineTracker::new();
+        let epoch = tracker.activate_next_epoch();
+        let pid = Pid::new(0x100).unwrap();
+        let event = |subject: i64, observed: i64, pts: u64| TimingEvent {
+            pid,
+            observed_at: ByteOffset::new(observed),
+            subject_at: ByteOffset::new(subject),
+            timing: PesTiming {
+                pts: TimingField::Valid(RawPts33::new(pts).unwrap()),
+                dts: TimingField::Absent,
+            },
+        };
+
+        let first = tracker
+            .observe_video_timing(&event(1000, 1000, 90_000))
+            .unwrap();
+        let second = tracker
+            .observe_video_timing(&event(5000, 5188, 93_600))
+            .unwrap();
+
+        // Exact offset, whichever point is the most recent.
+        assert_eq!(tracker.rap_timing(ByteOffset::new(1000)), Some(first));
+        assert_eq!(tracker.rap_timing(ByteOffset::new(5000)), Some(second));
+        assert_eq!(first.epoch, epoch);
+        // Never the nearest point: an offset no PES started at has no timing.
+        assert_eq!(tracker.rap_timing(ByteOffset::new(1188)), None);
+
+        // A new epoch forgets the old one's points.
         tracker.activate_next_epoch();
-
-        let offset = ByteOffset::new(1000);
-        let pts = ExtendedPts90k::new(90_000);
-
-        tracker.bind_rap(offset, pts);
-        assert_eq!(tracker.get_rap_pts(offset), Some(pts));
-
-        tracker.invalidate_rap(offset);
-        assert_eq!(tracker.get_rap_pts(offset), None);
+        assert_eq!(tracker.rap_timing(ByteOffset::new(1000)), None);
     }
 }

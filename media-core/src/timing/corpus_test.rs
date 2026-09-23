@@ -31,6 +31,14 @@ enum ExpectedRecord {
         obs: i64,
         sub: i64,
     },
+    Rap {
+        epoch: u64,
+        pid: u16,
+        pts: Option<i64>,
+        dts: Option<i64>,
+        obs: i64,
+        sub: i64,
+    },
     Pcr {
         epoch: u64,
         pid: u16,
@@ -98,7 +106,7 @@ fn parse_event(parts: &[&str]) -> VideoEvent {
 
 fn parse_record(parts: &[&str]) -> ExpectedRecord {
     match parts[0] {
-        "pes" => {
+        "pes" | "rap" => {
             let epoch: u64 = field(&parts[1..], "epoch=").parse().expect("epoch");
             let pid: u16 = field(&parts[1..], "pid=").parse().expect("pid");
             let pts_str = field(&parts[1..], "pts=");
@@ -115,13 +123,24 @@ fn parse_record(parts: &[&str]) -> ExpectedRecord {
             };
             let obs: i64 = field(&parts[1..], "obs=").parse().expect("obs");
             let sub: i64 = field(&parts[1..], "sub=").parse().expect("sub");
-            ExpectedRecord::Pes {
-                epoch,
-                pid,
-                pts,
-                dts,
-                obs,
-                sub,
+            if parts[0] == "rap" {
+                ExpectedRecord::Rap {
+                    epoch,
+                    pid,
+                    pts,
+                    dts,
+                    obs,
+                    sub,
+                }
+            } else {
+                ExpectedRecord::Pes {
+                    epoch,
+                    pid,
+                    pts,
+                    dts,
+                    obs,
+                    sub,
+                }
             }
         }
         "pcr" => {
@@ -299,6 +318,24 @@ fn the_rust_core_answers_the_authored_timing_corpus() {
                             subject_at,
                         }),
                         ExpectedRecord::Pes {
+                            epoch: exp_epoch,
+                            pid: exp_pid,
+                            pts: exp_pts,
+                            dts: exp_dts,
+                            obs: exp_obs,
+                            sub: exp_sub,
+                        },
+                    )
+                    | (
+                        TimingRecord::RandomAccessPoint(TimingPoint {
+                            epoch,
+                            pid,
+                            pts,
+                            dts,
+                            observed_at,
+                            subject_at,
+                        }),
+                        ExpectedRecord::Rap {
                             epoch: exp_epoch,
                             pid: exp_pid,
                             pts: exp_pts,

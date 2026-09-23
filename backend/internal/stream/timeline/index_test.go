@@ -14,7 +14,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 )
 
-func canonicalIngestResult(records []mediafacts.TimingRecord, events []mediafacts.Event) mediafacts.ParseResult {
+// rawIngestResult is a canonical result carrying exactly the records and events given.
+func rawIngestResult(records []mediafacts.TimingRecord, events []mediafacts.Event) mediafacts.ParseResult {
 	return mediafacts.ParseResult{
 		Coverage: mediafacts.ParseCoverageComplete,
 		Events:   events,
@@ -22,6 +23,119 @@ func canonicalIngestResult(records []mediafacts.TimingRecord, events []mediafact
 			Authority: mediafacts.TimingAuthorityCanonical,
 			Records:   records,
 		},
+	}
+}
+
+// canonicalIngestResult is rawIngestResult plus the RAP timing records media-core
+// publishes when a RAP is established in the packet that carries its PES header
+// (an IDR or IRAP slice): one per RandomAccessPoint event whose PES timing point
+// is in the same result. It is fixture shorthand for the common case; the tests
+// that are about binding itself - a RAP established chunks after its header, a
+// record without its event, two records for one RAP - build their results with
+// rawIngestResult and state every record.
+func canonicalIngestResult(records []mediafacts.TimingRecord, events []mediafacts.Event) mediafacts.ParseResult {
+	var bindings []mediafacts.TimingRecord
+	for _, ev := range events {
+		if ev.Kind != mediafacts.EventRandomAccessPoint {
+			continue
+		}
+		for _, rec := range records {
+			if rec.Type == mediafacts.TimingRecordTypePES && rec.PES.SubjectAt == ev.Offset {
+				bindings = append(bindings, mediafacts.TimingRecord{Type: mediafacts.TimingRecordTypeRandomAccessPoint, RAP: rec.PES})
+			}
+		}
+	}
+	return rawIngestResult(append(append([]mediafacts.TimingRecord(nil), records...), bindings...), events)
+}
+
+func rapRecord(pt mediafacts.TimingPoint) mediafacts.TimingRecord {
+	return mediafacts.TimingRecord{Type: mediafacts.TimingRecordTypeRandomAccessPoint, RAP: pt}
+}
+
+func pesRecord(pt mediafacts.TimingPoint) mediafacts.TimingRecord {
+	return mediafacts.TimingRecord{Type: mediafacts.TimingRecordTypePES, PES: pt}
+}
+
+// A RAP that is only established when its access unit ends - an all-intra H.264
+// picture, an HEVC recovery point - arrives chunks after its PES header. It is
+// bound by the RAP timing record published with it, not by a PES record the
+// index saw earlier.
+func TestRAPEstablishedInLaterChunkIsBoundByItsRAPRecord(t *testing.T) {
+	idx := NewMediaIndex()
+	start := mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 3}
+	header := mediafacts.TimingPoint{Epoch: 3, PID: 256, HasPTS: true, PTS90k: 900000, HasDTS: true, DTS90k: 896400, ObservedAt: 1000, SubjectAt: 1000}
+
+	// Chunk 1: the PES header, no RAP yet.
+	if err := idx.ApplyIngestResult(rawIngestResult([]mediafacts.TimingRecord{
+		{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: start},
+		pesRecord(header),
+	}, nil)); err != nil {
+		t.Fatalf("chunk 1: %v", err)
+	}
+	if _, ok := idx.FindPrecedingRAP(1000); ok {
+		t.Fatalf("no RAP may exist before one was established")
+	}
+
+	// Chunk 2: the next PES starts at 90000, which ends the access unit and
+	// establishes the RAP at 1000.
+	established := header
+	established.ObservedAt = 90000
+	next := mediafacts.TimingPoint{Epoch: 3, PID: 256, HasPTS: true, PTS90k: 903600, ObservedAt: 90000, SubjectAt: 90000}
+	if err := idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{pesRecord(next), rapRecord(established)},
+		[]mediafacts.Event{{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true}},
+	)); err != nil {
+		t.Fatalf("chunk 2: %v", err)
+	}
+
+	rap, ok := idx.FindRAPPrecedingPTS(3, 900000)
+	if !ok || rap.Offset != 1000 {
+		t.Fatalf("FindRAPPrecedingPTS(3, 900000) = (%+v, %v), want the RAP at 1000", rap, ok)
+	}
+	if !rap.HasTimingBinding || rap.Epoch != 3 || rap.PID != 256 || !rap.HasPTS || rap.PTS90k != 900000 || !rap.HasDTS || rap.DTS90k != 896400 {
+		t.Errorf("RAP bound to the wrong timing: %+v", rap)
+	}
+}
+
+// The index never binds on its own. A RAP event whose result carries a PES
+// record at the same offset but no RAP record is unbound: joining the two is
+// media-core's decision, and it did not make it.
+func TestRAPWithoutRAPRecordIsUnboundEvenBesideAMatchingPESRecord(t *testing.T) {
+	idx := NewMediaIndex()
+	header := mediafacts.TimingPoint{Epoch: 0, PID: 256, HasPTS: true, PTS90k: 90000, ObservedAt: 1000, SubjectAt: 1000}
+	if err := idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true}},
+			pesRecord(header),
+		},
+		[]mediafacts.Event{{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true}},
+	)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rap, ok := idx.FindPrecedingRAP(1000)
+	if !ok || rap.HasTimingBinding {
+		t.Fatalf("RAP must exist and be unbound, got (%+v, %v)", rap, ok)
+	}
+	if _, ok := idx.FindRAPPrecedingPTS(0, 90000); ok {
+		t.Errorf("an unbound RAP must not be found by PTS")
+	}
+}
+
+func TestUnmatchedRAPTimingRecordFailsClosed(t *testing.T) {
+	idx := NewMediaIndex()
+	stray := mediafacts.TimingPoint{Epoch: 0, PID: 256, HasPTS: true, PTS90k: 90000, ObservedAt: 5000, SubjectAt: 1000}
+	err := idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{pesRecord(mediafacts.TimingPoint{Epoch: 0, PID: 256, ObservedAt: 5000, SubjectAt: 5000}), rapRecord(stray)},
+		[]mediafacts.Event{{Kind: mediafacts.EventRandomAccessPoint, Offset: 5000, Joinable: true}},
+	))
+	if !errors.Is(err, ErrUnmatchedTimingBinding) {
+		t.Fatalf("expected ErrUnmatchedTimingBinding, got: %v", err)
+	}
+	if _, ok := idx.FindFollowingRAP(0); ok {
+		t.Errorf("index state mutated after unmatched binding")
+	}
+	if len(idx.TimingPoints()) != 0 {
+		t.Errorf("timing points added after unmatched binding")
 	}
 }
 
@@ -626,28 +740,11 @@ func TestActiveEpochDoesNotInventBoundary(t *testing.T) {
 func TestAmbiguousRAPTimingBindingFailsClosed(t *testing.T) {
 	idx := NewMediaIndex()
 
-	res := canonicalIngestResult(
+	res := rawIngestResult(
 		[]mediafacts.TimingRecord{
-			{
-				Type: mediafacts.TimingRecordTypePES,
-				PES: mediafacts.TimingPoint{
-					Epoch:     1,
-					PID:       256,
-					HasPTS:    true,
-					PTS90k:    90000,
-					SubjectAt: 1000,
-				},
-			},
-			{
-				Type: mediafacts.TimingRecordTypePES,
-				PES: mediafacts.TimingPoint{
-					Epoch:     1,
-					PID:       257,
-					HasPTS:    true,
-					PTS90k:    90040,
-					SubjectAt: 1000, // Conflict: multiple PES claiming same SubjectAt
-				},
-			},
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 90000, SubjectAt: 1000}),
+			// Conflict: a second binding for the same RAP.
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 257, HasPTS: true, PTS90k: 90040, SubjectAt: 1000}),
 		},
 		[]mediafacts.Event{
 			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},

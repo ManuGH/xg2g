@@ -156,6 +156,23 @@ func encodeTimestamp(ts uint64, prefix byte) [5]byte {
 }
 
 func makeVideoPESPacket(pid uint16, cc byte, pts *uint64, dts *uint64, isIDR bool) []byte {
+	var nalPayload []byte
+	if isIDR {
+		// SPS, PPS, IDR slice
+		nalPayload = []byte{
+			0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E, 0xDA, 0x02, 0x80, 0xF6, 0x80,
+			0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80,
+			0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21, 0xA0, 0x33, 0xFF,
+		}
+	} else {
+		// Non-IDR slice
+		nalPayload = []byte{0x00, 0x00, 0x01, 0x41, 0xC0, 0x21, 0xA0, 0x33, 0xFF}
+	}
+	return makeVideoPESPacketES(pid, cc, pts, dts, nalPayload)
+}
+
+// makeVideoPESPacketES is a PES start on pid carrying pts/dts and then es.
+func makeVideoPESPacketES(pid uint16, cc byte, pts *uint64, dts *uint64, es []byte) []byte {
 	p := make([]byte, 188)
 	for i := range p {
 		p[i] = 0xFF
@@ -190,20 +207,7 @@ func makeVideoPESPacket(pid uint16, cc byte, pts *uint64, dts *uint64, isIDR boo
 	pesHdr = append(pesHdr, flags2)
 	pesHdr = append(pesHdr, optHdr...)
 
-	var nalPayload []byte
-	if isIDR {
-		// SPS, PPS, IDR slice
-		nalPayload = []byte{
-			0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E, 0xDA, 0x02, 0x80, 0xF6, 0x80,
-			0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80,
-			0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21, 0xA0, 0x33, 0xFF,
-		}
-	} else {
-		// Non-IDR slice
-		nalPayload = []byte{0x00, 0x00, 0x01, 0x41, 0xC0, 0x21, 0xA0, 0x33, 0xFF}
-	}
-
-	payload := append(pesHdr, nalPayload...)
+	payload := append(pesHdr, es...)
 	copy(p[4:], payload)
 	return p
 }
@@ -364,6 +368,18 @@ func buildTimingCorpusCases() []timingCorpusCase {
 			dts:      86_400,
 			obs:      564,
 			sub:      564,
+		}, {
+			// The IDR establishes the RAP in its own PES start packet.
+			kind:     "rap",
+			epoch:    0,
+			hasEpoch: true,
+			pid:      257,
+			hasPTS:   true,
+			pts:      90_000,
+			hasDTS:   true,
+			dts:      86_400,
+			obs:      564,
+			sub:      564,
 		}},
 	})
 
@@ -424,6 +440,18 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		records: []expectedTimingRecord{
 			{
 				kind:     "pes",
+				epoch:    0,
+				hasEpoch: true,
+				pid:      257,
+				hasPTS:   true,
+				pts:      90_000,
+				hasDTS:   false,
+				obs:      1128,
+				sub:      1128,
+			},
+			{
+				// Published with the provisional RAP; the invalidation event retracts both.
+				kind:     "rap",
 				epoch:    0,
 				hasEpoch: true,
 				pid:      257,
@@ -878,6 +906,78 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		steps:   reAnchorSteps,
 	})
 
+	// Case: a RAP established only when its access unit ends. An all-intra H.264
+	// picture (non-IDR slices whose headers all say I) is not an entry point until
+	// the next PES shows that no predicted slice belongs to it - so the RAP event
+	// arrives two chunks after the PES record that carries its timing. The binding
+	// must arrive with the event, not stay behind with the header.
+	var delayedSteps []timingStep
+	delayedSteps = append(delayedSteps, timingStep{
+		desc:     "PAT arrives before any PMT",
+		chunk:    makePATPacket(1, 256, 0),
+		hasEpoch: false,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{{
+			kind: "disc", scope: "program", reason: "program_identity_changed", obs: 0,
+		}},
+	})
+	delayedSteps = append(delayedSteps, timingStep{
+		desc:     "PMT establishes Epoch 0",
+		chunk:    makePMTPacket(1, 0, 256, 0, esDesc{streamType: 0x1B, pid: 257}),
+		hasEpoch: true,
+		epoch:    0,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{{
+			kind: "disc", scope: "program", reason: "program_identity_changed", obs: 188,
+			hasAfter: true, epochAfter: 0,
+		}},
+	})
+	allIntraPTS, allIntraDTS := uint64(180_000), uint64(176_400)
+	delayedSteps = append(delayedSteps, timingStep{
+		desc: "All-intra access unit starts: SPS, PPS, non-IDR slice with slice_type I - no RAP yet",
+		chunk: makeVideoPESPacketES(257, 0, &allIntraPTS, &allIntraDTS, []byte{
+			0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E, 0xDA, 0x02, 0x80, 0xF6, 0x80, // SPS
+			0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS
+			0x00, 0x00, 0x01, 0x41, 0xB0, 0x21, 0xA0, 0x33, 0xFF, // non-IDR slice, slice_type I
+		}),
+		hasEpoch: true,
+		epoch:    0,
+		records: []expectedTimingRecord{{
+			kind: "pes", epoch: 0, hasEpoch: true, pid: 257,
+			hasPTS: true, pts: 180_000, hasDTS: true, dts: 176_400, obs: 376, sub: 376,
+		}},
+	})
+	delayedSteps = append(delayedSteps, timingStep{
+		desc:     "The access unit continues in its own chunk",
+		chunk:    makeVideoContPacket(257, 1, false),
+		hasEpoch: true,
+		epoch:    0,
+	})
+	nextPTS := uint64(183_600)
+	delayedSteps = append(delayedSteps, timingStep{
+		desc:     "Next PES ends the all-intra access unit: RAP at 376 is established here and published bound to its own PES timing",
+		chunk:    makeVideoPESPacket(257, 2, &nextPTS, nil, false),
+		hasEpoch: true,
+		epoch:    0,
+		events:   []expectedEvent{{kind: "rap", offset: 376, joinable: true}},
+		records: []expectedTimingRecord{
+			{
+				kind: "pes", epoch: 0, hasEpoch: true, pid: 257,
+				hasPTS: true, pts: 183_600, obs: 752, sub: 752,
+			},
+			{
+				kind: "rap", epoch: 0, hasEpoch: true, pid: 257,
+				hasPTS: true, pts: 180_000, hasDTS: true, dts: 176_400, obs: 752, sub: 376,
+			},
+		},
+	})
+	cases = append(cases, timingCorpusCase{
+		name:    "rap_established_at_access_unit_end",
+		desc:    "an all-intra RAP established chunks after its PES header is published bound in the chunk that establishes it",
+		program: 1,
+		steps:   delayedSteps,
+	})
+
 	return cases
 }
 
@@ -918,7 +1018,7 @@ func renderTimingCorpus(cases []timingCorpusCase) string {
 			}
 			for _, rec := range s.records {
 				switch rec.kind {
-				case "pes":
+				case "pes", "rap":
 					ptsStr := "none"
 					if rec.hasPTS {
 						ptsStr = strconv.FormatInt(rec.pts, 10)
@@ -927,8 +1027,8 @@ func renderTimingCorpus(cases []timingCorpusCase) string {
 					if rec.hasDTS {
 						dtsStr = strconv.FormatInt(rec.dts, 10)
 					}
-					sb.WriteString(fmt.Sprintf("  record pes epoch=%d pid=%d pts=%s dts=%s obs=%d sub=%d\n",
-						rec.epoch, rec.pid, ptsStr, dtsStr, rec.obs, rec.sub))
+					sb.WriteString(fmt.Sprintf("  record %s epoch=%d pid=%d pts=%s dts=%s obs=%d sub=%d\n",
+						rec.kind, rec.epoch, rec.pid, ptsStr, dtsStr, rec.obs, rec.sub))
 				case "pcr":
 					sb.WriteString(fmt.Sprintf("  record pcr epoch=%d pid=%d pcr=%d obs=%d\n",
 						rec.epoch, rec.pid, rec.pcr, rec.obs))
@@ -970,7 +1070,7 @@ func TestGenerateTimingCorpus(t *testing.T) {
 }
 
 // TestTimingCorpus_LiveMediaCorePublication tests that the live Rust media-core
-// publishes the exact authored timeline over protocol v6 and Go RemoteCore decodes it.
+// publishes the exact authored timeline over protocol v7 and Go RemoteCore decodes it.
 func TestTimingCorpus_LiveMediaCorePublication(t *testing.T) {
 	coreBin := requireVideoRealCore(t)
 	cases := buildTimingCorpusCases()
@@ -1039,17 +1139,20 @@ func TestTimingCorpus_LiveMediaCorePublication(t *testing.T) {
 				for i, rec := range s.records {
 					gotRec := res.Timing.Records[i]
 					switch rec.kind {
-					case "pes":
-						if gotRec.Type != mediafacts.TimingRecordTypePES {
-							t.Errorf("step %d rec %d: got type %v, want pes", stepIdx, i, gotRec.Type)
+					case "pes", "rap":
+						wantType, p := mediafacts.TimingRecordTypePES, gotRec.PES
+						if rec.kind == "rap" {
+							wantType, p = mediafacts.TimingRecordTypeRandomAccessPoint, gotRec.RAP
+						}
+						if gotRec.Type != wantType {
+							t.Errorf("step %d rec %d: got type %v, want %s", stepIdx, i, gotRec.Type, rec.kind)
 							continue
 						}
-						p := gotRec.PES
 						if p.Epoch != mediafacts.TimelineEpoch(rec.epoch) || p.PID != rec.pid ||
 							p.HasPTS != rec.hasPTS || (rec.hasPTS && p.PTS90k != rec.pts) ||
 							p.HasDTS != rec.hasDTS || (rec.hasDTS && p.DTS90k != rec.dts) ||
 							p.ObservedAt != rec.obs || p.SubjectAt != rec.sub {
-							t.Errorf("step %d rec %d PES mismatch: got %+v, want %+v", stepIdx, i, p, rec)
+							t.Errorf("step %d rec %d %s mismatch: got %+v, want %+v", stepIdx, i, rec.kind, p, rec)
 						}
 					case "pcr":
 						if gotRec.Type != mediafacts.TimingRecordTypePCR {
