@@ -159,7 +159,7 @@ func (s *Service) ReportPlaybackFeedback(ctx context.Context, sessionID string, 
 		Str("fallback_plan_reason", SessionFallbackPlanReason(sess)).
 		Str("fallback_profile", sess.Profile.Name).
 		Str("fallback_container", sess.Profile.Container).
-		Msg("activating safari fallback due to client error")
+		Msg("activating playback fallback plan due to client error")
 
 	stopEvt := model.StopSessionEvent{
 		Type:          model.EventStopSession,

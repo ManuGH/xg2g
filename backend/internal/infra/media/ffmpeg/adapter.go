@@ -90,6 +90,8 @@ type LocalAdapter struct {
 	// than resolving a receiver URL, so a misconfigured deployment fails loudly
 	// instead of quietly reopening the path this replaced.
 	LiveSources      ports.LiveSourceProvider
+	// FallbackTo8001 is DEPRECATED and unused by the pipeline.
+	// Retained for constructor signature stability until removal after RelayInputRemoveAfter.
 	FallbackTo8001   bool
 	PreflightTimeout time.Duration
 	SegmentSeconds   int
