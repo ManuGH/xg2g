@@ -4,6 +4,7 @@
 
 import SwiftUI
 import Testing
+import Combine
 @testable import Xg2g
 
 private final class StubGuideRepo: GuideRepository, @unchecked Sendable {
@@ -25,6 +26,11 @@ private final class StubPlaybackCtrl: PlaybackControlling {
     func play(channel: Channel) {}
     func stop() {}
     func togglePlayPause() {}
+
+    func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
+        handler(currentChannel, isPlaying)
+        return AnyCancellable {}
+    }
 }
 
 @MainActor

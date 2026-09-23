@@ -540,4 +540,11 @@ final class ZapCoordinator: ObservableObject {
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
     }
+
+    #if DEBUG
+    /// Test hook allowing tests to mutate `playing` in isolation without touching any other coordinator properties.
+    func _simulatePlayingSessionForTesting(_ session: NativeTSVideoPipeline?) {
+        self.playing = session
+    }
+    #endif
 }
