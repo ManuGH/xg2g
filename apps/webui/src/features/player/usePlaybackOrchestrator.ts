@@ -1744,6 +1744,34 @@ export function usePlaybackOrchestrator(
           return;
         }
 
+        if (
+          err instanceof Error &&
+          err.message.includes('already revoked or stopping')
+        ) {
+          reportPlaybackFailure(
+            normalizePlayerError(
+              {
+                title: t('player.sessionFailed'),
+                detail: err.message,
+              },
+              {
+                fallbackTitle: t('player.sessionFailed'),
+                retryable: true,
+              },
+            ),
+            {
+              source: 'backend',
+              failureClass: 'session',
+              code: 'SESSION_REVOKED_OR_STOPPING',
+              retryable: true,
+              recoverable: true,
+              terminal: true,
+            },
+          );
+          setStatus('error');
+          return;
+        }
+
         reportPlaybackFailure(
           normalizeRuntimePlaybackError(err, t('player.streamFailed')),
           {
