@@ -424,7 +424,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// our own drawable, which is what makes Picture in Picture and the system's
     /// video features available. See `SystemVideoPresenter`.
 
-    private var telemetryForegroundObserver: NSObjectProtocol?
     private var appBackgroundObserver: NSObjectProtocol?
     private var audioInterruptionObserver: NSObjectProtocol?
     private var audioRouteChangeObserver: NSObjectProtocol?
@@ -535,17 +534,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         setupAudioNotificationObservers()
         setupLifecycleNotificationObservers()
-
-        TelemetryServer.shared.start()
-        if telemetryForegroundObserver == nil {
-            telemetryForegroundObserver = NotificationCenter.default.addObserver(
-                forName: UIApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { _ in
-                TelemetryServer.shared.restartAfterForeground()
-            }
-        }
         // The telemetry and screenshot endpoints answer for the channel on screen, and
         // a session does not know whether it is that channel. Sessions are built one
         // beside another now, so a session that pointed the endpoints at itself would
@@ -589,7 +577,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if let obs = audioInterruptionObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = audioRouteChangeObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = audioFlushedObserver { NotificationCenter.default.removeObserver(obs) }
-        if let obs = telemetryForegroundObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = appBackgroundObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
