@@ -401,7 +401,7 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 
 	// 3. Commit. Facts, events, PSI and bytes become visible together under r.mu (Publication Lock),
 	//    or none of them do.
-	commit := MediaCommit{
+	commit := mediaCommit{
 		StartOffset: startOffset,
 		Data:        data,
 		Result:      res,

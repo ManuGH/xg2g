@@ -6,14 +6,14 @@ package ring
 
 import "github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 
-// MediaCommit bundles transport stream bytes with their authoritative interpreted facts
+// mediaCommit bundles transport stream bytes with their authoritative interpreted facts
 // for atomic commit into the MasterRing stream coordinator.
 //
 // Invariant: "Kein Byte ohne seine Wahrheit und keine Wahrheit ohne die zugehörigen Bytes."
 // Either the metadata updates (timeline.MediaIndex and attachIndex) and the byte payload
 // (packetStore) are committed simultaneously into the published stream state under MasterRing.mu,
 // or the transaction fails closed with zero byte and zero index mutation.
-type MediaCommit struct {
+type mediaCommit struct {
 	// StartOffset is the expected absolute monotonic byte offset where this chunk begins.
 	StartOffset int64
 
