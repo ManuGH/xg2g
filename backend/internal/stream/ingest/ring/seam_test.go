@@ -373,15 +373,15 @@ func TestSeam_TheZeroEventIsNotALifecycleChange(t *testing.T) {
 	defer r.Close()
 
 	r.mu.Lock()
-	genBefore := r.generation
+	genBefore := r.attachIndex.generationValue()
 	r.applyLocked(mediafacts.ParseResult{Events: []mediafacts.Event{
 		{},                                // zero value
 		{Kind: mediafacts.EventUnknown},   // named, still nothing
 		{Kind: mediafacts.EventKind(200)}, // a kind this build does not know
 		{Kind: mediafacts.EventKind(200), Offset: 4242},
 	}})
-	genAfter := r.generation
-	kf := len(r.keyframeOffsets)
+	genAfter := r.attachIndex.generationValue()
+	kf := len(r.attachIndex.keyframeOffsets)
 	r.mu.Unlock()
 
 	if genAfter != genBefore {

@@ -140,20 +140,21 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 	// Ring tail verification
 	expectedHead := int64(iterations * chunkBytes)
 	expectedTail := expectedHead - int64(capacityBytes)
-	if r.head != expectedHead {
-		t.Errorf("head = %d, want %d", r.head, expectedHead)
+	if r.Head() != expectedHead {
+		t.Errorf("head = %d, want %d", r.Head(), expectedHead)
 	}
-	if r.tail != expectedTail {
-		t.Errorf("tail = %d, want %d", r.tail, expectedTail)
+	if r.Tail() != expectedTail {
+		t.Errorf("tail = %d, want %d", r.Tail(), expectedTail)
 	}
 
 	// Ring keyframes bounded by maxKeyframes and strictly >= tail
-	if len(r.keyframeOffsets) > r.maxKeyframes {
-		t.Errorf("keyframeOffsets len = %d > max %d", len(r.keyframeOffsets), r.maxKeyframes)
+	kfs := r.KeyframeOffsets()
+	if len(kfs) > 64 {
+		t.Errorf("keyframeOffsets len = %d > max 64", len(kfs))
 	}
-	for _, kf := range r.keyframeOffsets {
-		if kf < r.tail {
-			t.Errorf("found stale keyframe %d < tail %d", kf, r.tail)
+	for _, kf := range kfs {
+		if kf < r.Tail() {
+			t.Errorf("found stale keyframe %d < tail %d", kf, r.Tail())
 		}
 	}
 

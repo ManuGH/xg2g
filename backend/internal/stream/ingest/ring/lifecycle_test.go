@@ -74,17 +74,17 @@ func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.
 	}
 
 	// Verify zero ring mutation
-	if r.head != 0 {
-		t.Errorf("head mutated: got %d, want 0", r.head)
+	if r.Head() != 0 {
+		t.Errorf("head mutated: got %d, want 0", r.Head())
 	}
-	if r.tail != 0 {
-		t.Errorf("tail mutated: got %d, want 0", r.tail)
+	if r.Tail() != 0 {
+		t.Errorf("tail mutated: got %d, want 0", r.Tail())
 	}
-	if r.generation != 0 {
-		t.Errorf("generation mutated: got %d, want 0", r.generation)
+	if r.Generation() != 0 {
+		t.Errorf("generation mutated: got %d, want 0", r.Generation())
 	}
-	if len(r.keyframeOffsets) != 0 {
-		t.Errorf("keyframeOffsets mutated: got %v", r.keyframeOffsets)
+	if len(r.KeyframeOffsets()) != 0 {
+		t.Errorf("keyframeOffsets mutated: got %v", r.KeyframeOffsets())
 	}
 
 	// Verify core retired
