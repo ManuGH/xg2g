@@ -100,10 +100,6 @@ func (ps *packetStore) tailOffset() int64 {
 	return ps.tail
 }
 
-func (ps *packetStore) capacityBytes() int {
-	return ps.capacity
-}
-
 func (ps *packetStore) bufferedBytes() int {
 	return int(ps.head - ps.tail)
 }

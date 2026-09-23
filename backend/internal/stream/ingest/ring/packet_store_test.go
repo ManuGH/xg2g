@@ -12,8 +12,8 @@ import (
 
 func TestPacketStore_BasicWriteAndRead(t *testing.T) {
 	ps := newPacketStore(100)
-	if ps.capacityBytes() != 100 {
-		t.Fatalf("expected capacity 100, got %d", ps.capacityBytes())
+	if ps.capacity != 100 {
+		t.Fatalf("expected capacity 100, got %d", ps.capacity)
 	}
 	if ps.headOffset() != 0 || ps.tailOffset() != 0 || ps.bufferedBytes() != 0 {
 		t.Fatalf("expected initial zeroes, got head=%d tail=%d buf=%d", ps.headOffset(), ps.tailOffset(), ps.bufferedBytes())

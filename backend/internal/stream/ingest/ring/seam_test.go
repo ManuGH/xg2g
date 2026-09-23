@@ -22,6 +22,14 @@ import (
 // The third is enforced by the compiler - MasterRing has no parser state left to
 // reach for. The other two are enforced here.
 
+func (r *MasterRing) applyResultForTest(res mediafacts.ParseResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.attachIndex.applyEvents(res.Events)
+	r.facts = res.Facts
+	r.activePSI = res.PSI
+}
+
 // streamWithEntryPoint returns PAT, PMT and one IDR access unit as raw transport,
 // which is the smallest input that makes a core report an entry point.
 func streamWithEntryPoint(videoPID uint16) []byte {
@@ -197,9 +205,7 @@ func TestSeam_EntryPointsBeforeAnIdentityChangeAreDropped(t *testing.T) {
 	r := NewMasterRing(400 * TSPacketSize)
 	defer r.Close()
 
-	r.mu.Lock()
-	r.applyLocked(mediafacts.ParseResult{Events: events})
-	r.mu.Unlock()
+	r.applyResultForTest(mediafacts.ParseResult{Events: events})
 
 	got := r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 300 {
@@ -218,9 +224,7 @@ func TestSeam_RandomAccessPointInvalidatedRemovesKeyframeOffset(t *testing.T) {
 	r := NewMasterRing(400 * TSPacketSize)
 	defer r.Close()
 
-	r.mu.Lock()
-	r.applyLocked(mediafacts.ParseResult{Events: events})
-	r.mu.Unlock()
+	r.applyResultForTest(mediafacts.ParseResult{Events: events})
 
 	got := r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 100 {
@@ -235,13 +239,11 @@ func TestSeam_ScrambledPUSIOfNextPESPreservesPreviousKeyframe(t *testing.T) {
 	defer r.Close()
 
 	// Ingest #1 emits a clean joinable RAP at offset 100.
-	r.mu.Lock()
-	r.applyLocked(mediafacts.ParseResult{
+	r.applyResultForTest(mediafacts.ParseResult{
 		Events: []mediafacts.Event{
 			{Kind: mediafacts.EventRandomAccessPoint, Offset: 100, Joinable: true},
 		},
 	})
-	r.mu.Unlock()
 
 	got := r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 100 {
@@ -249,11 +251,9 @@ func TestSeam_ScrambledPUSIOfNextPESPreservesPreviousKeyframe(t *testing.T) {
 	}
 
 	// Ingest #2 is a scrambled PUSI=1 packet; parser emits no invalidation for offset 100.
-	r.mu.Lock()
-	r.applyLocked(mediafacts.ParseResult{
+	r.applyResultForTest(mediafacts.ParseResult{
 		Events: nil,
 	})
-	r.mu.Unlock()
 
 	got = r.KeyframeOffsets()
 	if len(got) != 1 || got[0] != 100 {
@@ -374,12 +374,12 @@ func TestSeam_TheZeroEventIsNotALifecycleChange(t *testing.T) {
 
 	r.mu.Lock()
 	genBefore := r.attachIndex.generationValue()
-	r.applyLocked(mediafacts.ParseResult{Events: []mediafacts.Event{
+	r.attachIndex.applyEvents([]mediafacts.Event{
 		{},                                // zero value
 		{Kind: mediafacts.EventUnknown},   // named, still nothing
 		{Kind: mediafacts.EventKind(200)}, // a kind this build does not know
 		{Kind: mediafacts.EventKind(200), Offset: 4242},
-	}})
+	})
 	genAfter := r.attachIndex.generationValue()
 	kf := len(r.attachIndex.keyframeOffsets)
 	r.mu.Unlock()
@@ -444,9 +444,7 @@ func TestSeam_MPEG2PendingPictureHeader_BrokenBoundaryLeavesNoKeyframeInRing(t *
 	r := NewMasterRing(400 * TSPacketSize)
 	defer r.Close()
 
-	r.mu.Lock()
-	r.applyLocked(mediafacts.ParseResult{Events: events})
-	r.mu.Unlock()
+	r.applyResultForTest(mediafacts.ParseResult{Events: events})
 
 	if got := r.KeyframeOffsets(); len(got) != 0 {
 		t.Fatalf("KeyframeOffsets = %v, want empty after immediate invalidation", got)

@@ -291,13 +291,6 @@ func (r *MasterRing) retireCore(callerCtx context.Context, err error) error {
 	return err
 }
 
-// applyLocked updates facts, active PSI, and attachIndex events under r.mu.
-func (r *MasterRing) applyLocked(res mediafacts.ParseResult) {
-	r.attachIndex.applyEvents(res.Events)
-	r.facts = res.Facts
-	r.activePSI = res.PSI
-}
-
 // Push writes a chunk of TS packets into the ring buffer and indexes PAT/PMT/IDR boundaries.
 func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	if len(data)%TSPacketSize != 0 {
