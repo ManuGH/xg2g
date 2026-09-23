@@ -52,7 +52,12 @@ enum PlaybackState: Equatable, Sendable {
 @MainActor
 final class PlaybackManager: ObservableObject {
 
-    @Published private(set) var state: PlaybackState = .idle
+    @Published private(set) var state: PlaybackState = .idle {
+        didSet {
+            guard state != oldValue else { return }
+            notifyStateObservers()
+        }
+    }
     @Published private(set) var pipState: PiPState = .inactive
     @Published private(set) var backgroundState: BackgroundPlaybackState = .foreground
     @Published private(set) var recordingPlayer: AVPlayer?
@@ -69,6 +74,7 @@ final class PlaybackManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var recordingCleanupHook: (@MainActor () -> Void)?
     private var activeTransitionID: UUID = UUID()
+    private var stateObservers: [UUID: @MainActor (Channel?, Bool) -> Void] = [:]
 
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
@@ -85,6 +91,52 @@ final class PlaybackManager: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        self.coordinator.$playing
+            .sink { [weak self] newPlaying in
+                guard let self else { return }
+                self.notifyStateObservers(overrideLivePlaying: newPlaying != nil)
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Registers an observer for canonical state projection updates.
+    ///
+    /// The handler is invoked immediately with the initial snapshot, and subsequently
+    /// whenever the canonical `PlaybackManager` state transitions.
+    func observeState(_ handler: @escaping @MainActor (_ channel: Channel?, _ isPlaying: Bool) -> Void) -> AnyCancellable {
+        let id = UUID()
+        stateObservers[id] = handler
+        handler(self.currentChannel, self.isPlaying)
+        return AnyCancellable { [weak self] in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    _ = self?.stateObservers.removeValue(forKey: id)
+                }
+            } else {
+                Task { @MainActor in
+                    _ = self?.stateObservers.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
+    private func notifyStateObservers(overrideLivePlaying: Bool? = nil) {
+        let channel = self.currentChannel
+        let livePlaying = overrideLivePlaying ?? (coordinator.playing != nil)
+        let playing = isCurrentlyPlaying(livePlaying: livePlaying)
+        for observer in stateObservers.values {
+            observer(channel, playing)
+        }
+    }
+
+    private func isCurrentlyPlaying(livePlaying: Bool) -> Bool {
+        switch state {
+        case .idle: return false
+        case .live(_, let mode): return mode != .hidden && livePlaying
+        case .recording(_, let mode): return mode != .hidden
+        case .offline: return true
+        }
     }
 
     // MARK: - Derived Canonical Properties (No Duplicate Published States)
@@ -118,12 +170,7 @@ final class PlaybackManager: ObservableObject {
     }
 
     var isPlaying: Bool {
-        switch state {
-        case .idle: return false
-        case .live(_, let mode): return mode != .hidden && coordinator.playing != nil
-        case .recording(_, let mode): return mode != .hidden
-        case .offline: return true
-        }
+        isCurrentlyPlaying(livePlaying: coordinator.playing != nil)
     }
 
     var displayedPlan: SessionRuntimePlan? {

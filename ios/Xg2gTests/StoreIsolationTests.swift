@@ -4,6 +4,7 @@
 
 import Foundation
 import Testing
+import Combine
 @testable import Xg2g
 
 // MARK: - Mock Repositories & Controllers
@@ -58,8 +59,13 @@ private final class MockDVRRepository: DVRRepository, @unchecked Sendable {
 }
 
 private final class MockPlaybackController: PlaybackControlling {
-    var currentChannel: Channel?
-    var isPlaying: Bool = false
+    var currentChannel: Channel? {
+        didSet { notify() }
+    }
+    var isPlaying: Bool = false {
+        didSet { notify() }
+    }
+    private var observers: [@MainActor (Channel?, Bool) -> Void] = []
 
     func play(channel: Channel) {
         currentChannel = channel
@@ -73,6 +79,18 @@ private final class MockPlaybackController: PlaybackControlling {
 
     func togglePlayPause() {
         isPlaying.toggle()
+    }
+
+    func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
+        observers.append(handler)
+        handler(currentChannel, isPlaying)
+        return AnyCancellable {}
+    }
+
+    private func notify() {
+        for observer in observers {
+            observer(currentChannel, isPlaying)
+        }
     }
 }
 
@@ -94,6 +112,11 @@ private final class LifetimePlaybackController: PlaybackControlling {
 
     func togglePlayPause() {
         isPlaying.toggle()
+    }
+
+    func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
+        handler(currentChannel, isPlaying)
+        return AnyCancellable {}
     }
 }
 

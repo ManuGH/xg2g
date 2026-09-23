@@ -3,10 +3,11 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import Foundation
+import Combine
 
-/// Minimal contract for controlling video playback.
+/// Minimal contract for controlling video playback and projecting canonical state.
 ///
-/// In Apple A, this is deliberately an `AnyObject` protocol rather than an actor to prevent
+/// In Apple A/B, this is deliberately an `AnyObject` protocol rather than an actor to prevent
 /// impedance mismatches with AVFoundation and UIKit/AppKit presentation lifecycles.
 @MainActor
 protocol PlaybackControlling: AnyObject {
@@ -24,4 +25,10 @@ protocol PlaybackControlling: AnyObject {
 
     /// Toggles play / pause transport state.
     func togglePlayPause()
+
+    /// Subscribes to canonical state projection updates.
+    ///
+    /// The handler is invoked immediately with the initial snapshot, and subsequently
+    /// whenever the canonical `PlaybackManager` state transitions.
+    func observeState(_ handler: @escaping @MainActor (_ channel: Channel?, _ isPlaying: Bool) -> Void) -> AnyCancellable
 }
