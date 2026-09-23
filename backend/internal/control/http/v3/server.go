@@ -292,11 +292,25 @@ func (s *Server) SetRecordingsService(svc recservice.Service) {
 	s.recordingsService = svc
 }
 
+// RecordingsService returns the recordings service.
+func (s *Server) RecordingsService() recservice.Service {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.recordingsService
+}
+
 // SetArtifactsResolver overrides the recordings artifact resolver (tests).
 func (s *Server) SetArtifactsResolver(res artifacts.Resolver) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.artifacts = res
+}
+
+// ArtifactsResolver returns the recordings artifact resolver.
+func (s *Server) ArtifactsResolver() artifacts.Resolver {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.artifacts
 }
 
 // SetAdmission sets the resource monitor for admission control.

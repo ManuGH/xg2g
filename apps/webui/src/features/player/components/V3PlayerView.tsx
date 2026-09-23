@@ -85,7 +85,7 @@ export function V3PlayerView({
         </button>
       )}
 
-      {viewState.showCloseButton && !viewState.showSpinnerCard && (viewState.channelName || viewState.programmeTitle) && (
+      {(viewState.showCloseButton || viewState.fullscreenActive) && !viewState.showSpinnerCard && (viewState.channelName || viewState.programmeTitle) && (
         <div className={styles.topHeader}>
           {viewState.channelLogoUrl && (
             <img

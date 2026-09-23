@@ -21,6 +21,7 @@ function ChannelSwitchHarness({ channel }: { channel: Service }) {
       <video ref={videoRef} data-testid="player-video" />
       <span data-testid="channel-name">{viewState.channelName}</span>
       <span data-testid="service-ref">{viewState.serviceRef}</span>
+      <span data-testid="status">{viewState.statusLabel}</span>
       <span data-testid="is-muted">{String(viewState.isMuted)}</span>
       <button data-testid="unmute-btn" onClick={actions.toggleMute} type="button">
         Unmute
@@ -85,5 +86,31 @@ describe('usePlaybackOrchestrator channel switching', () => {
       expect(screen.getByTestId('channel-name')).toHaveTextContent('ORF 2 HD');
     });
     expect(screen.getByTestId('is-muted')).toHaveTextContent('false');
+  });
+
+  it('triggers a fresh stream start attempt when switching channels', async () => {
+    const channel1: Service = {
+      id: 'ch-1',
+      serviceRef: '1:0:19:132F:3EF:1:C00000:0:0:0',
+      name: 'ORF 1 HD',
+    };
+    const channel2: Service = {
+      id: 'ch-2',
+      serviceRef: '1:0:19:1334:3EF:1:C00000:0:0:0',
+      name: 'ORF 2 HD',
+    };
+
+    const { rerender } = render(<ChannelSwitchHarness channel={channel1} />);
+    expect(screen.getByTestId('channel-name')).toHaveTextContent('ORF 1 HD');
+
+    act(() => {
+      rerender(<ChannelSwitchHarness channel={channel2} />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('channel-name')).toHaveTextContent('ORF 2 HD');
+      expect(screen.getByTestId('service-ref')).toHaveTextContent('1:0:19:1334:3EF:1:C00000:0:0:0');
+      expect(screen.getByTestId('status').textContent).not.toBe('error');
+    });
   });
 });

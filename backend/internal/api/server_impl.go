@@ -19,6 +19,14 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 	s.v3Handler.StartRecordingCacheEvicter(ctx)
 }
 
+// StartAutoPrepareWorker delegates to the v3 handler.
+func (s *Server) StartAutoPrepareWorker(ctx context.Context) {
+	s.started.Store(true)
+	if s.v3Handler != nil {
+		s.v3Handler.StartAutoPrepareWorker(ctx)
+	}
+}
+
 func (s *Server) scopeMiddleware(required ...v3.Scope) func(http.Handler) http.Handler {
 	return s.v3Handler.ScopeMiddleware(required...)
 }

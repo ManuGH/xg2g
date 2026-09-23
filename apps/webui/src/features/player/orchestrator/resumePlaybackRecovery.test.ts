@@ -92,4 +92,95 @@ describe('startResumePlaybackRecovery (observe-first)', () => {
     vi.advanceTimersByTime(2000);
     expect(v.play).toHaveBeenCalledTimes(1); // only the synchronous first nudge
   });
+
+  it('notifies onSettled("recovered") when stream recovers in observation window', () => {
+    const v = fakeVideo(10);
+    const settledSpy = vi.fn();
+    startResumePlaybackRecovery(v, { observeMs: 400, onSettled: settledSpy });
+    v.currentTime = 10.5;
+    vi.advanceTimersByTime(400);
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+    expect(settledSpy).toHaveBeenCalledWith('recovered');
+  });
+
+  it('notifies onSettled("recovered") when stream recovers during interval nudges', () => {
+    const v = fakeVideo(10);
+    const settledSpy = vi.fn();
+    startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250, onSettled: settledSpy });
+    vi.advanceTimersByTime(400); // observe timeout -> nudge 1
+    v.currentTime = 11.2; // recovered
+    vi.advanceTimersByTime(250);
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+    expect(settledSpy).toHaveBeenCalledWith('recovered');
+  });
+
+  it('notifies onSettled("exhausted") and onFailed when maxAttempts are reached', () => {
+    const v = fakeVideo(10);
+    const settledSpy = vi.fn();
+    const failedSpy = vi.fn();
+    startResumePlaybackRecovery(v, {
+      observeMs: 400,
+      intervalMs: 250,
+      maxAttempts: 2,
+      onSettled: settledSpy,
+      onFailed: failedSpy,
+    });
+    vi.advanceTimersByTime(400); // nudge 1
+    vi.advanceTimersByTime(250); // nudge 2
+    vi.advanceTimersByTime(250); // attempt 2 settled -> exhausted
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+    expect(settledSpy).toHaveBeenCalledWith('exhausted');
+    expect(failedSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies onSettled("cancelled") when cancelled via returned handle', () => {
+    const v = fakeVideo(10);
+    const settledSpy = vi.fn();
+    const cancel = startResumePlaybackRecovery(v, { observeMs: 400, onSettled: settledSpy });
+    cancel();
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+    expect(settledSpy).toHaveBeenCalledWith('cancelled');
+    // Calling cancel again does not fire onSettled again
+    cancel();
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies onSettled("cancelled") when shouldContinue returns false during recovery', () => {
+    const v = fakeVideo(10);
+    let shouldContinue = true;
+    const settledSpy = vi.fn();
+    startResumePlaybackRecovery(v, {
+      observeMs: 400,
+      shouldContinue: () => shouldContinue,
+      onSettled: settledSpy,
+    });
+    shouldContinue = false;
+    vi.advanceTimersByTime(400);
+    expect(settledSpy).toHaveBeenCalledTimes(1);
+    expect(settledSpy).toHaveBeenCalledWith('cancelled');
+  });
+
+  it('skips synchronous play when element is already unpaused (paused === false) and settles clean on advance', () => {
+    const v = fakeVideo(10) as any;
+    v.paused = false;
+    const settledSpy = vi.fn();
+    startResumePlaybackRecovery(v, { observeMs: 400, onSettled: settledSpy });
+    // Synchronous play() is skipped to prevent stutter on an already playing pipeline
+    expect(v.play).not.toHaveBeenCalled();
+    v.currentTime = 10.5;
+    vi.advanceTimersByTime(400);
+    expect(v.play).not.toHaveBeenCalled();
+    expect(settledSpy).toHaveBeenCalledWith('recovered');
+  });
+
+  it('intervenes with nudge if unpaused element (paused === false) is frozen and fails to advance', () => {
+    const v = fakeVideo(10) as any;
+    v.paused = false;
+    startResumePlaybackRecovery(v, { observeMs: 400, intervalMs: 250 });
+    expect(v.play).not.toHaveBeenCalled();
+    // Time advances but currentTime stayed stuck -> nudge intervenes
+    vi.advanceTimersByTime(400);
+    expect(v.play).toHaveBeenCalledTimes(1);
+  });
 });
+

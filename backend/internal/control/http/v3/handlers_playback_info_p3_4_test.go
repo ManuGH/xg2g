@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,16 @@ func (m *MockArtifactsResolver) ResolvePlaylistState(ctx context.Context, record
 		return artifacts.ArtifactOK{}, args.Get(1).(*artifacts.ArtifactError)
 	}
 	return args.Get(0).(artifacts.ArtifactOK), nil
+}
+
+func (m *MockArtifactsResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
+	args := m.Called(ctx, recordingID)
+	return args.Error(0)
+}
+
+func (m *MockArtifactsResolver) EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error {
+	args := m.Called(ctx, recordingID, target)
+	return args.Error(0)
 }
 
 func createTestServerP34(svc recservice.Service, art artifacts.Resolver) *Server {

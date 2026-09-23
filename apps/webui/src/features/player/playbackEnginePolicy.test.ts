@@ -16,7 +16,7 @@ describe('playbackEnginePolicy', () => {
       lowLatencyMode: true,
       backBufferLength: 300,
       maxBufferLength: 60,
-      capLevelToPlayerSize: true,
+      capLevelToPlayerSize: false,
       liveSyncDuration: 12,
       maxLiveSyncPlaybackRate: 1,
       maxBufferHole: 1,

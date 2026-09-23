@@ -28,6 +28,8 @@ type Resolver interface {
 	ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (ArtifactOK, *ArtifactError)
 	ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError)
 	ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError)
+	EnsurePrepared(ctx context.Context, recordingID string) error
+	EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error
 }
 
 type DefaultResolver struct {
@@ -323,6 +325,58 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, intent)
 	_ = srcType // Unused for now
 	return err
+}
+
+// EnsurePrepared initiates background pre-packaging of a recording using smart stream-copy.
+// If the artifact is already ready or actively building, it returns nil immediately without blocking.
+func (r *DefaultResolver) EnsurePrepared(ctx context.Context, recordingID string) error {
+	return r.EnsurePreparedWithTarget(ctx, recordingID, nil)
+}
+
+// EnsurePreparedWithTarget initiates background pre-packaging of a recording using a specific target profile.
+// If target is nil, it falls back to the canonical smart stream-copy profile.
+func (r *DefaultResolver) EnsurePreparedWithTarget(ctx context.Context, recordingID string, target *playbackprofile.TargetPlaybackProfile) error {
+	ref, ok := decodeRef(recordingID)
+	if !ok {
+		ref = recordingID
+	}
+	var canonical playbackprofile.TargetPlaybackProfile
+	if target != nil {
+		canonical = playbackprofile.CanonicalizeTarget(*target)
+	} else {
+		canonical = playbackprofile.CanonicalizeTarget(playbackprofile.TargetPlaybackProfile{
+			Container: "mpegts",
+			Packaging: playbackprofile.PackagingTS,
+			Video: playbackprofile.VideoTarget{
+				Mode: playbackprofile.MediaModeCopy,
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:        playbackprofile.MediaModeTranscode,
+				Codec:       "aac",
+				BitrateKbps: 256,
+				Channels:    2,
+				SampleRate:  48000,
+			},
+			HLS: playbackprofile.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: "mpegts",
+			},
+			HWAccel: playbackprofile.HWAccelNone,
+		})
+	}
+	variant := canonical.Hash()
+	metaID := recservice.RecordingVariantMetadataKey(ref, variant)
+
+	// Check if already ready or building
+	_, _, meta, exists, err := recservice.LoadRecordingBuildState(ctx, r.cfg.HLS.Root, r.vodManager, ref, variant)
+	if err == nil && exists && (meta.State == vod.ArtifactStateReady || meta.State == vod.ArtifactStatePreparing) {
+		return nil
+	}
+
+	intent := &ports.BuildIntent{
+		Target: canonical,
+	}
+	return r.triggerBuild(ctx, ref, "", variant, metaID, intent)
 }
 
 func (r *DefaultResolver) recordingTarget(profile, variant string, intent *ports.BuildIntent) (*ports.BuildIntent, string, *ArtifactError) {

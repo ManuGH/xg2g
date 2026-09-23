@@ -345,6 +345,15 @@ describe('RecordingsList', () => {
     await waitFor(() => {
       expect(screen.getByTestId('v3-player-props')).toHaveTextContent('rec-token|test-token|Token Recording|0|suppress');
     });
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Token Recording' })).toBeInTheDocument();
+    expect(screen.getByText('Auth-sensitive playback')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('v3-player-props')).not.toBeInTheDocument();
+    });
   });
 
   it('fetches a thumbnail image for recordings with auth', async () => {
