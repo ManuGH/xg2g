@@ -21,9 +21,15 @@ var (
 	// MediaIndex requires complete parse coverage before committing stream truth.
 	ErrIncompleteCoverage = errors.New("timeline index requires complete parse coverage")
 
-	// ErrAmbiguousTimingBinding is returned when multiple PES timing records claim the same SubjectAt
-	// byte offset as a Random Access Point, preventing unambiguous binding.
+	// ErrAmbiguousTimingBinding is returned when more than one RAP timing record in a result
+	// binds the same Random Access Point offset.
 	ErrAmbiguousTimingBinding = errors.New("ambiguous timing binding for random access point")
+
+	// ErrUnmatchedTimingBinding is returned when a RAP timing record binds an offset for which the
+	// same result carries no RandomAccessPoint event. media-core publishes a binding at the packet
+	// that establishes the RAP, so the two always arrive together; one without the other is a
+	// broken publication, not something to hold on to until its partner turns up.
+	ErrUnmatchedTimingBinding = errors.New("timing binding without a random access point")
 
 	// ErrInconsistentEpochTransition is returned when a canonical program discontinuity contradicts
 	// the active epoch state in the index, preventing state repair or corrupted transitions.
@@ -35,7 +41,9 @@ var (
 // canonical PCR samples, PES timing points, discontinuities, and timeline epoch spans.
 //
 // Invariant: MediaIndex only stores, indexes, and queries canonical truth published by
-// media-core via Protocol v6. It never unwraps timestamps, infers epochs, or repairs timing.
+// media-core via Protocol v7. It never unwraps timestamps, infers epochs, repairs timing, or
+// binds a RAP to time itself: a RAP is bound exactly when media-core published a RAP timing
+// record for it.
 type MediaIndex struct {
 	mu sync.RWMutex
 
@@ -79,20 +87,25 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 		return ErrNonCanonicalTiming
 	}
 
-	// 1. Pre-validation: verify unambiguous PES timing binding for RAP events.
-	pesBySubjectAt := make(map[int64][]mediafacts.TimingPoint)
-	for _, rec := range res.Timing.Records {
-		if rec.Type == mediafacts.TimingRecordTypePES {
-			pesBySubjectAt[rec.PES.SubjectAt] = append(pesBySubjectAt[rec.PES.SubjectAt], rec.PES)
-		}
-	}
-
+	// 1. Pre-validation: every RAP timing record binds exactly one RAP event of this result.
+	rapEvents := make(map[int64]bool)
 	for _, ev := range res.Events {
 		if ev.Kind == mediafacts.EventRandomAccessPoint {
-			if len(pesBySubjectAt[ev.Offset]) > 1 {
-				return ErrAmbiguousTimingBinding
-			}
+			rapEvents[ev.Offset] = true
 		}
+	}
+	rapTiming := make(map[int64]mediafacts.TimingPoint)
+	for _, rec := range res.Timing.Records {
+		if rec.Type != mediafacts.TimingRecordTypeRandomAccessPoint {
+			continue
+		}
+		if _, dup := rapTiming[rec.RAP.SubjectAt]; dup {
+			return ErrAmbiguousTimingBinding
+		}
+		if !rapEvents[rec.RAP.SubjectAt] {
+			return ErrUnmatchedTimingBinding
+		}
+		rapTiming[rec.RAP.SubjectAt] = rec.RAP
 	}
 
 	idx.mu.Lock()
@@ -197,15 +210,14 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 				Offset:   ev.Offset,
 				Joinable: ev.Joinable,
 			}
-			if matches := pesBySubjectAt[ev.Offset]; len(matches) == 1 {
-				pes := matches[0]
+			if pt, ok := rapTiming[ev.Offset]; ok {
 				rap.HasTimingBinding = true
-				rap.Epoch = pes.Epoch
-				rap.PID = pes.PID
-				rap.HasPTS = pes.HasPTS
-				rap.PTS90k = pes.PTS90k
-				rap.HasDTS = pes.HasDTS
-				rap.DTS90k = pes.DTS90k
+				rap.Epoch = pt.Epoch
+				rap.PID = pt.PID
+				rap.HasPTS = pt.HasPTS
+				rap.PTS90k = pt.PTS90k
+				rap.HasDTS = pt.HasDTS
+				rap.DTS90k = pt.DTS90k
 			}
 			idx.insertRAPLocked(rap)
 

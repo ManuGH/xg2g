@@ -321,6 +321,16 @@ impl TimingPoint {
 pub enum TimingRecord {
     /// A correlated PES presentation/decode timing point.
     Pes(TimingPoint),
+    /// A Random Access Point bound to the canonical timing of the PES that carries it.
+    ///
+    /// Emitted in the same chunk, at the same packet, as the
+    /// `VideoEvent::RandomAccessPoint` it binds, whichever chunk the PES header
+    /// arrived in. `subject_at` is the access point's offset (the start of its PES),
+    /// `observed_at` is the packet at which the access point was established, and
+    /// `epoch`, `pid`, `pts` and `dts` are that PES's canonical timing. A RAP whose
+    /// PES has no canonical timing point gets no record: unbound is stated by
+    /// absence, never by a zero.
+    RandomAccessPoint(TimingPoint),
     /// A canonical PCR observation accepted by the timeline tracker.
     Pcr {
         /// Timeline epoch this PCR belongs to.

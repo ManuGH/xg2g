@@ -1627,32 +1627,200 @@ fn timeline_rap_pts_binding_and_invalidation() {
             .any(|e| matches!(e, VideoEvent::RandomAccessPoint { offset, joinable: true } if *offset == p1_offset))
     );
 
-    // RAP at p1_offset must be bound to pts!
-    let rap_pts = ingress
-        .timeline()
-        .get_rap_pts(crate::timing::ByteOffset::new(p1_offset));
+    // The RAP at p1_offset is published bound to its PES's PTS, in the same outcome.
+    let bindings = rap_timing_records(&outcome1.timing_records);
+    assert_eq!(bindings.len(), 1, "one RAP, one binding: {bindings:?}");
     assert_eq!(
-        rap_pts,
+        bindings[0].subject_at,
+        crate::timing::ByteOffset::new(p1_offset)
+    );
+    assert_eq!(
+        bindings[0].observed_at,
+        crate::timing::ByteOffset::new(p1_offset)
+    );
+    assert_eq!(
+        bindings[0].pts,
         Some(crate::timing::ExtendedPts90k::new(
             i64::try_from(pts).unwrap()
         ))
     );
 
-    // Now send continuation packet with TEI, which invalidates the published RAP
+    // Now send continuation packet with TEI, which invalidates the published RAP.
+    // The invalidation is the event; nothing re-binds and nothing is re-published.
     let p2 = make_ts_packet(VIDEO_PID, false, 2, 0, true, &[0x00, 0x11, 0x22]);
     let outcome2 = ingress.ingest(offset, &p2).expect("ingest p2 with TEI");
 
     assert!(outcome2.events.iter().any(
         |e| matches!(e, VideoEvent::RandomAccessPointInvalidated { offset } if *offset == p1_offset)
     ));
+    assert!(rap_timing_records(&outcome2.timing_records).is_empty());
+}
 
-    // Bound RAP must now be invalidated (removed)
-    assert!(
-        ingress
-            .timeline()
-            .get_rap_pts(crate::timing::ByteOffset::new(p1_offset))
-            .is_none()
+// --- RAP timing publication across chunk boundaries -------------------------
+
+fn rap_timing_records(records: &[TimingRecord]) -> Vec<crate::timing::TimingPoint> {
+    records
+        .iter()
+        .filter_map(|r| match r {
+            TimingRecord::RandomAccessPoint(pt) => Some(*pt),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A PES start carrying `pts` and, after the header, `es`.
+fn pes_start_payload(pts: u64, es: &[u8]) -> Vec<u8> {
+    let mut payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05];
+    payload.extend_from_slice(&encode_ts(0b0010, pts));
+    payload.extend_from_slice(es);
+    payload
+}
+
+/// PAT + PMT for `stream_type`, then three video PESes: an access unit that is a
+/// random access point only once it has ended (`intra_au`), a predicted one, and
+/// the start of a third that ends the second. The first PES spans four packets,
+/// the way a real intra picture spans many, so the packet that establishes the RAP
+/// is well after the packet that carried its timing.
+fn delayed_rap_stream(
+    stream_type: u8,
+    intra_au: &[u8],
+    predicted_au: &[u8],
+) -> (Vec<u8>, i64, i64, u64) {
+    let mut data = pat_packet(0);
+    data.extend_from_slice(&pmt_packet(0, VIDEO_PID, stream_type));
+    let filler = [0xAA; 184];
+    let pts_a = 90_000 * 20;
+    let rap_offset = i64::try_from(data.len()).unwrap();
+    let mut cc = 0u8;
+    let mut push = |data: &mut Vec<u8>, pusi: bool, payload: &[u8]| {
+        data.extend_from_slice(&make_ts_packet(VIDEO_PID, pusi, cc, 0, false, payload));
+        cc = (cc + 1) & 0x0F;
+    };
+    push(&mut data, true, &pes_start_payload(pts_a, intra_au));
+    for _ in 0..3 {
+        push(&mut data, false, &filler);
+    }
+    let established_at = i64::try_from(data.len()).unwrap();
+    push(
+        &mut data,
+        true,
+        &pes_start_payload(pts_a + 3600, predicted_au),
     );
+    push(&mut data, false, &filler);
+    push(
+        &mut data,
+        true,
+        &pes_start_payload(pts_a + 7200, predicted_au),
+    );
+    (data, rap_offset, established_at, pts_a)
+}
+
+/// Everything a consumer of one chunk sees about RAPs: the events, and the RAP
+/// timing records, each list per outcome.
+type RapView = Vec<(Vec<VideoEvent>, Vec<crate::timing::TimingPoint>)>;
+
+fn ingest_in_chunks(data: &[u8], packets_per_chunk: usize) -> RapView {
+    let mut ingress = VideoIngress::new(PROGRAM);
+    let mut view = Vec::new();
+    for (i, chunk) in data.chunks(packets_per_chunk * TS_PACKET_LEN).enumerate() {
+        let start = i64::try_from(i * packets_per_chunk * TS_PACKET_LEN).unwrap();
+        let outcome = ingress.ingest(start, chunk).expect("aligned chunk");
+        let events: Vec<VideoEvent> = outcome
+            .events
+            .iter()
+            .filter(|e| !matches!(e, VideoEvent::ProgramIdentityChanged))
+            .copied()
+            .collect();
+        view.push((events, rap_timing_records(&outcome.timing_records)));
+    }
+    view
+}
+
+/// The RAP is published bound, in the outcome that carries its event, at every
+/// chunking - and every chunking publishes the same thing.
+fn assert_rap_binding_is_chunk_independent(stream_type: u8, intra_au: &[u8], predicted_au: &[u8]) {
+    let (data, rap_offset, established_at, pts) =
+        delayed_rap_stream(stream_type, intra_au, predicted_au);
+    let packets = data.len() / TS_PACKET_LEN;
+
+    let whole = ingest_in_chunks(&data, packets);
+    let flatten = |view: &RapView| -> (Vec<VideoEvent>, Vec<crate::timing::TimingPoint>) {
+        let mut events = Vec::new();
+        let mut records = Vec::new();
+        for (e, r) in view {
+            events.extend(e.iter().copied());
+            records.extend(r.iter().copied());
+        }
+        (events, records)
+    };
+    let (whole_events, whole_records) = flatten(&whole);
+    assert_eq!(
+        whole_events,
+        vec![VideoEvent::RandomAccessPoint {
+            offset: rap_offset,
+            joinable: true
+        }],
+        "exactly one RAP, at the start of the intra access unit"
+    );
+    assert_eq!(whole_records.len(), 1);
+    let binding = whole_records[0];
+    assert_eq!(binding.subject_at.get(), rap_offset);
+    assert_eq!(binding.observed_at.get(), established_at);
+    assert_eq!(binding.epoch, crate::timing::TimelineEpoch::new(0));
+    assert_eq!(binding.pid.get(), VIDEO_PID);
+    assert_eq!(
+        binding.pts,
+        Some(crate::timing::ExtendedPts90k::new(
+            i64::try_from(pts).unwrap()
+        ))
+    );
+
+    for packets_per_chunk in 1..=packets {
+        let view = ingest_in_chunks(&data, packets_per_chunk);
+        assert_eq!(
+            flatten(&view),
+            (whole_events.clone(), whole_records.clone()),
+            "chunk size {packets_per_chunk} packets publishes something else"
+        );
+        for (events, records) in &view {
+            for event in events {
+                if let VideoEvent::RandomAccessPoint { offset, .. } = *event {
+                    assert!(
+                        records.iter().any(|r| r.subject_at.get() == offset),
+                        "chunk size {packets_per_chunk}: RAP at {offset} without its binding in the same outcome"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn rap_established_at_access_unit_end_is_published_bound_h264_all_intra() {
+    // SPS, PPS, then a non-IDR slice whose header says I: joinable only once the
+    // access unit has ended with no predicted slice in it.
+    let intra = [
+        0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1E, // SPS
+        0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80, // PPS
+        0x00, 0x00, 0x01, 0x41, 0xB0, 0xAA, 0xAA, // non-IDR slice, slice_type I
+    ];
+    let predicted = [0x00, 0x00, 0x01, 0x41, 0xC0, 0xAA, 0xAA]; // slice_type P
+    assert_rap_binding_is_chunk_independent(0x1B, &intra, &predicted);
+}
+
+#[test]
+fn rap_established_at_access_unit_end_is_published_bound_hevc_recovery_point() {
+    // VPS, SPS, PPS, a prefix SEI carrying a recovery point, then a TRAIL_R slice:
+    // joinable only once the access unit has ended.
+    let intra = [
+        0x00, 0x00, 0x01, 0x40, 0x01, 0x0C, // VPS
+        0x00, 0x00, 0x01, 0x42, 0x01, 0x01, // SPS
+        0x00, 0x00, 0x01, 0x44, 0x01, 0xC1, // PPS
+        0x00, 0x00, 0x01, 0x4E, 0x01, 0x06, 0x01, 0x80, 0x80, // prefix SEI: recovery_point
+        0x00, 0x00, 0x01, 0x02, 0x01, 0xAA, 0xAA, // TRAIL_R
+    ];
+    let predicted = [0x00, 0x00, 0x01, 0x02, 0x01, 0xAA, 0xAA];
+    assert_rap_binding_is_chunk_independent(0x24, &intra, &predicted);
 }
 
 #[test]

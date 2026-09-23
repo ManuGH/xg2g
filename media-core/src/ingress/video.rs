@@ -46,7 +46,7 @@ use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
 use crate::timing::{
     ByteOffset, DiscontinuityReason, PcrObservation, PcrTracker, Pid, TimelineTracker, TimingEvent,
-    TimingRecord, TimingResetScope, TimingSnapshot,
+    TimingPoint, TimingRecord, TimingResetScope, TimingSnapshot,
 };
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
@@ -1171,15 +1171,20 @@ impl VideoIngress {
                 &mut timing_events,
                 &mut timing_records,
             );
+            // A RAP is often established one PES after its own header was read -
+            // an all-intra H.264 access unit or an HEVC recovery point is only
+            // known once the access unit ends - and so, routinely, in a later
+            // chunk than its PES timing record. The binding is resolved here and
+            // published at the RAP's own packet, so a consumer never has to join
+            // records across chunks to learn when an entry point is.
             for event in &events[events_before..] {
-                match *event {
-                    VideoEvent::RandomAccessPoint { offset, .. } => {
-                        self.timeline.bind_rap_if_available(ByteOffset::new(offset));
-                    }
-                    VideoEvent::RandomAccessPointInvalidated { offset } => {
-                        self.timeline.invalidate_rap(ByteOffset::new(offset));
-                    }
-                    VideoEvent::ProgramIdentityChanged => {}
+                if let VideoEvent::RandomAccessPoint { offset, .. } = *event
+                    && let Some(point) = self.timeline.rap_timing(ByteOffset::new(offset))
+                {
+                    timing_records.push(TimingRecord::RandomAccessPoint(TimingPoint {
+                        observed_at: ByteOffset::new(packet_offset),
+                        ..point
+                    }));
                 }
             }
         }

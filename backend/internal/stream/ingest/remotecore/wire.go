@@ -50,7 +50,11 @@ import (
 // coverage wireCoverageComplete (2).
 //
 // 6 introduces sectioned result envelopes and canonical timing publication.
-const Version uint8 = 6
+//
+// 7 adds TimingRecordRAP to SectionTiming. A v6 decoder refuses an unknown
+// timing record type, so this is a bump, not an extension: a v7 core talking to
+// a v6 build would be refused at the first RAP instead of at the handshake.
+const Version uint8 = 7
 
 // Section IDs for Protocol v6 result envelopes.
 const (
@@ -71,6 +75,10 @@ const (
 	TimingRecordPES           uint8 = 1
 	TimingRecordPCR           uint8 = 2
 	TimingRecordDiscontinuity uint8 = 3
+	// TimingRecordRAP binds a random access point to the timing of the PES that
+	// carries it. Same layout as TimingRecordPES: subject_at is the RAP offset,
+	// observed_at the packet at which the RAP was established.
+	TimingRecordRAP uint8 = 4
 )
 
 // Timing PES record flags.
