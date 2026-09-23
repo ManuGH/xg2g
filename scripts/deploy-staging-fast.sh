@@ -11,9 +11,17 @@ die() {
 }
 
 if [[ "${1:-}" != "--confirm-staging" ]]; then
-  die "staging deployment requires explicit confirmation: ./scripts/fast_deploy.sh --confirm-staging"
+  die "staging deployment requires explicit confirmation: ./scripts/fast_deploy.sh --confirm-staging [--full-image]"
 fi
 shift
+# binary: the Go binary is bind-mounted over the staging base image, whose
+# xg2g-media-core stays as it is. full-image: the whole runtime image - Go,
+# media-core and WebUI - is built from the same commit and run as the candidate.
+deploy_mode="binary"
+if [[ "${1:-}" == "--full-image" ]]; then
+  deploy_mode="full-image"
+  shift
+fi
 [[ "$#" -eq 0 ]] || die "unknown arguments: $*"
 
 if [[ "${XG2G_PROMOTE_PRODUCTION:-0}" =~ ^(1|true|yes|on)$ ]]; then
@@ -33,13 +41,37 @@ origin_url="$(git remote get-url origin)"
 [[ "${commit}" == "${origin_commit}" ]] || die "HEAD must exactly match pushed origin/${branch} before deployment"
 [[ -n "${origin_url}" ]] || die "origin URL could not be resolved"
 
+# The Go daemon and xg2g-media-core speak one wire protocol, checked at the
+# handshake and fatal when it differs - but the handshake happens when the first
+# live pipeline starts, long after /healthz is green. So the pairing is checked
+# here, before anything is built or changed.
+wire_go="${ROOT}/backend/internal/stream/ingest/remotecore/wire.go"
+go_protocol="$(sed -n 's/^const Version uint8 = \([0-9][0-9]*\)$/\1/p' "${wire_go}")"
+[[ "${go_protocol}" =~ ^[0-9]+$ ]] || die "could not read the media-core wire version from ${wire_go#"${ROOT}"/}"
+
+if [[ "${deploy_mode}" == "binary" ]]; then
+  # A binary deploy keeps the base image's media-core. Refuse unless that core
+  # states the protocol this Go build speaks; a base image whose core is missing
+  # or predates --protocol-version cannot be paired safely.
+  base_protocol="$(
+    ssh "${REMOTE_HOST}" bash -s <<'REMOTE'
+set -euo pipefail
+base_image="$(docker compose --project-directory /srv/xg2g-staging -f /srv/xg2g-staging/docker-compose.yml config --images | head -n 1)"
+docker run --rm --entrypoint /usr/local/bin/xg2g-media-core "${base_image}" --protocol-version 2>/dev/null || true
+REMOTE
+  )"
+  [[ "${base_protocol}" == "${go_protocol}" ]] ||
+    die "this commit's Go daemon speaks media-core protocol v${go_protocol}; the staging base image's media-core states '${base_protocol:-nothing}'. A binary deploy would break live playback - use --full-image"
+fi
+
 echo "Preparing commit ${commit} in ${REMOTE_HOST}:${REMOTE_BUILD_ROOT}..."
-ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_BUILD_ROOT}" "${origin_url}" "${branch}" "${commit}" <<'REMOTE'
+ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_BUILD_ROOT}" "${origin_url}" "${branch}" "${commit}" "${deploy_mode}" <<'REMOTE'
 set -euo pipefail
 build_root="$1"
 origin_url="$2"
 branch="$3"
 commit="$4"
+deploy_mode="$5"
 
 if [[ ! -d "${build_root}/.git" ]]; then
   [[ ! -e "${build_root}" ]] || {
@@ -79,6 +111,24 @@ git fetch origin "${branch}" --quiet
 git switch --detach "${commit}"
 [[ "$(git rev-parse HEAD)" == "${commit}" ]] || exit 1
 
+if [[ "${deploy_mode}" == "full-image" ]]; then
+  # The Dockerfile builds the WebUI, the Go daemon and media-core itself, so the
+  # checkout is only read. The tag names the commit; the image ID is what deploys.
+  base_version="$(tr -d '[:space:]' < backend/VERSION)"
+  [[ "${base_version}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || {
+    echo "ERROR: invalid backend/VERSION: ${base_version}" >&2
+    exit 1
+  }
+  docker build \
+    --tag "xg2g:staging-${commit:0:8}" \
+    --build-arg BUILD_VERSION="${base_version}-staging.${commit:0:8}" \
+    --build-arg BUILD_COMMIT="${commit}" \
+    --build-arg BUILD_DATE="$(git show -s --format=%cI "${commit}")" \
+    --label org.opencontainers.image.revision="${commit}" \
+    .
+  exit 0
+fi
+
 node_version="$(tr -d '[:space:]' < .node-version)"
 [[ "${node_version}" =~ ^[0-9]+([.][0-9]+){0,2}$ ]] || {
   echo "ERROR: invalid .node-version: ${node_version}" >&2
@@ -99,13 +149,36 @@ fi
 REMOTE
 
 remote_binary="${REMOTE_BUILD_ROOT}/bin/xg2g"
-expected_sha="$(
-  ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" <<'REMOTE'
+image_id=""
+expected_media_core_sha=""
+if [[ "${deploy_mode}" == "full-image" ]]; then
+  image_evidence="$(
+    ssh "${REMOTE_HOST}" bash -s -- "xg2g:staging-${commit:0:8}" <<'REMOTE'
+set -euo pipefail
+image="$1"
+printf 'image_id=%s\n' "$(docker image inspect --format '{{.Id}}' "${image}")"
+docker run --rm --entrypoint sha256sum "${image}" /usr/local/bin/xg2g /usr/local/bin/xg2g-media-core |
+  awk '{ sub(".*/", "", $2); printf "sha256.%s=%s\n", $2, $1 }'
+printf 'protocol=%s\n' "$(docker run --rm --entrypoint /usr/local/bin/xg2g-media-core "${image}" --protocol-version)"
+REMOTE
+  )"
+  image_id="$(sed -n 's/^image_id=//p' <<<"${image_evidence}")"
+  expected_sha="$(sed -n 's/^sha256[.]xg2g=//p' <<<"${image_evidence}")"
+  expected_media_core_sha="$(sed -n 's/^sha256[.]xg2g-media-core=//p' <<<"${image_evidence}")"
+  image_protocol="$(sed -n 's/^protocol=//p' <<<"${image_evidence}")"
+  [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "could not identify the built image"
+  [[ "${expected_media_core_sha}" =~ ^[0-9a-f]{64}$ ]] || die "could not hash the image's media-core"
+  [[ "${image_protocol}" == "${go_protocol}" ]] ||
+    die "the built image's media-core speaks protocol '${image_protocol}', its Go daemon v${go_protocol}"
+else
+  expected_sha="$(
+    ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" <<'REMOTE'
 set -euo pipefail
 sha256sum "$1" | awk '{print $1}'
 REMOTE
-)"
-[[ -n "${expected_sha}" ]] || die "could not hash remote build artifact"
+  )"
+fi
+[[ "${expected_sha}" =~ ^[0-9a-f]{64}$ ]] || die "could not hash remote build artifact"
 
 echo "Deploying ${commit} (${expected_sha}) to staging :8089 on ${REMOTE_HOST}..."
 # The storage preflight below is the same file the canonical Compose helper
@@ -120,6 +193,10 @@ set -euo pipefail
 binary="$1"
 expected_sha="$2"
 commit="$3"
+deploy_mode="$4"
+image_id="$5"
+expected_media_core_sha="$6"
+go_protocol="$7"
 next="/srv/xg2g-staging/xg2g-staging-binary.next"
 destination="/srv/xg2g-staging/xg2g-staging-binary"
 compose_file="/srv/xg2g-staging/docker-compose.yml"
@@ -147,12 +224,20 @@ read_env_value() {
   ' "${env_file}"
 }
 
-cp "${binary}" "${next}"
-chmod 0755 "${next}"
-mv "${next}" "${destination}"
-
 compose_args=(--project-directory /srv/xg2g-staging -f "${compose_file}")
-cat >"${candidate_overlay}.next" <<EOF
+if [[ "${deploy_mode}" == "full-image" ]]; then
+  # The candidate is the image itself: no binary is mounted over it, so what runs
+  # is exactly what was built, media-core included.
+  cat >"${candidate_overlay}.next" <<EOF
+services:
+  xg2g:
+    image: ${image_id}
+EOF
+else
+  cp "${binary}" "${next}"
+  chmod 0755 "${next}"
+  mv "${next}" "${destination}"
+  cat >"${candidate_overlay}.next" <<EOF
 services:
   xg2g:
     volumes:
@@ -161,6 +246,7 @@ services:
         target: /usr/local/bin/xg2g
         read_only: true
 EOF
+fi
 mv "${candidate_overlay}.next" "${candidate_overlay}"
 compose_args+=(-f "${candidate_overlay}")
 hls_root="$(read_env_value XG2G_HLS_ROOT 2>/dev/null || true)"
@@ -233,6 +319,22 @@ running_image_id="$(docker inspect --format '{{.Image}}' xg2g-staging)"
   echo "ERROR: running staging hash ${running_sha} != ${expected_sha}" >&2
   exit 1
 }
+running_media_core_sha="$(docker exec xg2g-staging sha256sum /usr/local/bin/xg2g-media-core | awk '{print $1}')"
+running_protocol="$(docker exec xg2g-staging /usr/local/bin/xg2g-media-core --protocol-version)"
+[[ "${running_protocol}" == "${go_protocol}" ]] || {
+  echo "ERROR: running media-core speaks protocol ${running_protocol:-nothing}, the daemon v${go_protocol}" >&2
+  exit 1
+}
+if [[ "${deploy_mode}" == "full-image" ]]; then
+  [[ "${running_image_id}" == "${image_id}" ]] || {
+    echo "ERROR: running staging image ${running_image_id} != ${image_id}" >&2
+    exit 1
+  }
+  [[ "${running_media_core_sha}" == "${expected_media_core_sha}" ]] || {
+    echo "ERROR: running media-core hash ${running_media_core_sha} != ${expected_media_core_sha}" >&2
+    exit 1
+  }
+fi
 version_line="$(docker exec xg2g-staging /usr/local/bin/xg2g --version)"
 running_commit="$(sed -n 's/.*(commit: \([0-9a-fA-F]\{7,40\}\), built:.*/\1/p' <<<"${version_line}")"
 running_version="$(awk '{print $1}' <<<"${version_line}")"
@@ -251,17 +353,22 @@ manifest_next="/srv/xg2g-staging/deploy-manifest.next"
 {
   printf 'schema=2\n'
   printf 'mode=candidate\n'
-  printf 'source=github\n'
+  if [[ "${deploy_mode}" == "full-image" ]]; then
+    printf 'source=github-full-image\n'
+  else
+    printf 'source=github\n'
+  fi
   printf 'version=%s\n' "${running_version}"
   printf 'commit=%s\n' "${commit}"
   printf 'sha256=%s\n' "${expected_sha}"
   printf 'image_id=%s\n' "${running_image_id}"
+  printf 'media_core_sha256=%s\n' "${running_media_core_sha}"
   printf 'deployed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"${manifest_next}"
 mv "${manifest_next}" /srv/xg2g-staging/deploy-manifest
 REMOTE
-} | ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" "${expected_sha}" "${commit}"
+} | ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" "${expected_sha}" "${commit}" "${deploy_mode}" "${image_id}" "${expected_media_core_sha}" "${go_protocol}"
 
-echo "Staging deployment complete: commit=${commit} sha256=${expected_sha} port=8089"
+echo "Staging deployment complete: mode=${deploy_mode} commit=${commit} sha256=${expected_sha} protocol=v${go_protocol} port=8089"
 echo "Production :8088 was not touched."
 "${ROOT}/scripts/check-deployment-state.sh"

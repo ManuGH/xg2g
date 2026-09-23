@@ -11,7 +11,7 @@ Always use the following verified host & network topology (do not use obsolete I
   - **Staging:** Port `:8089` (`xg2g-staging` container in `/srv/xg2g-staging/`).
   - **Production:** Port `:8088` (`xg2g.service` in `/srv/xg2g/`).
   - **Build Dir:** `/srv/xg2g-build`.
-  - **Fast-Deploy:** `./scripts/fast_deploy.sh --confirm-staging`.
+  - **Fast-Deploy:** `./scripts/fast_deploy.sh --confirm-staging` (Go binary only; add `--full-image` when `media-core/` or the wire protocol changed).
 - **LXC 132 (`caddy` / `10.10.55.12`):**
   - Central reverse proxy with TLS wildcard cert `*.home.matrixcentral.de`.
   - Routes `xg2g.home.matrixcentral.de` $\rightarrow$ `10.10.55.14:8089` (Staging).

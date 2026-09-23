@@ -117,6 +117,23 @@ gepushten Remote-Branch entspricht. Es deployt ausschließlich den Teststand
 auf `:8089`; Produktion `:8088` bleibt unberührt. `--confirm-staging` bestätigt
 nur den Start dieses Testdeployments, nicht die Produktionsreife.
 
+Ohne weitere Option wird nur das Go-Binary über das Staging-Basis-Image gelegt;
+dessen `xg2g-media-core` bleibt unverändert. Go-Daemon und Media-Core sprechen
+ein gemeinsames Wire-Protokoll, das erst beim Start der ersten Live-Pipeline
+geprüft wird. Das Skript verweigert deshalb einen Binary-Deploy, wenn der
+Media-Core des Basis-Images (`xg2g-media-core --protocol-version`) nicht die
+Protokollversion des zu deployenden Commits nennt. Für diesen Fall, und immer
+wenn `media-core/` oder das Wire-Protokoll geändert wurde, wird das komplette
+Image aus demselben Commit gebaut und als Kandidat gestartet:
+
+```bash
+scripts/fast_deploy.sh --confirm-staging --full-image
+```
+
+Das Deploy-Manifest nennt dann `source=github-full-image`, die Image-ID und
+`media_core_sha256`; nach dem Start wird geprüft, dass laufendes Image,
+Daemon-Hash, Media-Core-Hash und Protokollversion dem Build entsprechen.
+
 Ein schneller Branch-Binary-Test ist niemals direkt promotbar. Für eine
 Produktionsfreigabe wird nach Veröffentlichung des unveränderlichen
 Release-Images exakt dieses Image separat auf Staging geprüft:

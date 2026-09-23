@@ -43,6 +43,13 @@ fn main() -> ExitCode {
                 println!("{}", identity());
                 return ExitCode::SUCCESS;
             }
+            // The wire version this build speaks, alone on a line, so a deploy can
+            // refuse to pair it with a Go build that speaks another one - the
+            // mismatch otherwise surfaces only when the first live pipeline starts.
+            "--protocol-version" => {
+                println!("{}", ipc::VERSION);
+                return ExitCode::SUCCESS;
+            }
             other => {
                 eprintln!("{}: unknown argument {other}", identity());
                 return ExitCode::from(2);
