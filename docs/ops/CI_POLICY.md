@@ -93,7 +93,7 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
   - GOPROXY=off GOSUMDB=off GOVCS="*:off"
 
 ## WebUI
-- Node 24 LTS is the pinned WebUI runtime via `.node-version`; GitHub Actions must use `node-version-file: .node-version`.
+- Node 26 is the pinned WebUI runtime via `.node-version` (the same major as the Dockerfile WebUI builder, `node:26-slim`); GitHub Actions must use `node-version-file: .node-version`.
 - Node is optional for the primary broad PR gate in `.github/workflows/ci.yml`.
 - Node is required only when the dedicated WebUI integration gate in `.github/workflows/pr-required-gates.yml` is in scope.
 
