@@ -2,11 +2,13 @@
 #
 # Canonical gate script to verify that the iOS app and test targets compile cleanly.
 #
-# Usage: ios/scripts/verify-ios-build.sh [simulator name]
+# Usage: ios/scripts/verify-ios-build.sh [simulator name or UDID]
+#
+# Without an argument, IOS_SIMULATOR or an automatically selected simulator is
+# used; see select-simulator.sh.
 
 set -euo pipefail
 
-SIMULATOR="${1:-iPhone 17 Pro}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -17,6 +19,8 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   echo "❌ xcodebuild not found on macOS" >&2
   exit 1
 fi
+
+SIMULATOR="$("${REPO_ROOT}/ios/scripts/select-simulator.sh" "${1:-}")"
 
 if [[ "${SIMULATOR}" =~ ^[0-9A-Fa-f-]+$ ]]; then
   DESTINATION="platform=iOS Simulator,id=${SIMULATOR}"
