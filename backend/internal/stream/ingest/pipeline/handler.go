@@ -227,7 +227,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), primedAttachTimeout)
 	if err != nil {
 		runErr := pipe.Err()
-		if errors.Is(err, ring.ErrScrambledStream) {
+		if errors.Is(err, ring.ErrScrambledStream) || pipe.MasterRing().ScrambledVideoConfirmed() {
 			scrambled, clear := pipe.MasterRing().ScramblingObservation()
 			logger.Error().
 				Uint64("scrambledPackets", scrambled).

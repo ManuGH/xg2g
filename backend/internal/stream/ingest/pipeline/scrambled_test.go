@@ -7,6 +7,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -109,5 +110,40 @@ func TestPipeline_ScrambledUpstream_FailsFastWithDiagnosis(t *testing.T) {
 	}
 	if elapsed >= primedAttachTimeout {
 		t.Fatalf("scrambled upstream is terminal and must fail fast, but took %v (attach budget %v)", elapsed, primedAttachTimeout)
+	}
+}
+
+// Even if the upstream ingest terminates (e.g. reaches EOF) while waiting for attach,
+// a confirmed scrambled stream must return ErrScrambledStream rather than a generic
+// ErrPipelineClosed.
+func TestPipeline_ScrambledUpstream_DoneChPreservesScrambledDiagnosis(t *testing.T) {
+	root := findProjectRoot(t)
+	clear, err := os.ReadFile(filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts"))
+	if err != nil {
+		t.Fatalf("read capture failed: %v", err)
+	}
+
+	payload := scrambleVideoPID(t, clear, videoPIDOf(t, clear))
+
+	connectorCfg := DefaultConnectorConfig("http://127.0.0.1", 8001)
+	pipe, err := NewSessionPipeline(connectorCfg.NormConfig, 4*1024*1024, 1)
+	if err != nil {
+		t.Fatalf("failed to create pipeline: %v", err)
+	}
+	defer pipe.Close()
+
+	pipe.Start(context.Background(), io.NopCloser(bytes.NewReader(payload)))
+
+	// Wait for ingest pump to hit EOF and close doneCh.
+	select {
+	case <-pipe.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for pipeline ingest to finish")
+	}
+
+	// PrimedAttachWithTimeout must surface ring.ErrScrambledStream, not ErrPipelineClosed.
+	_, _, err = pipe.PrimedAttachWithTimeout(context.Background(), 500*time.Millisecond)
+	if !errors.Is(err, ring.ErrScrambledStream) {
+		t.Fatalf("expected ErrScrambledStream after ingest finished, got %v", err)
 	}
 }
