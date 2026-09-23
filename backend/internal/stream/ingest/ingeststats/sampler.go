@@ -16,6 +16,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // Role names the consumer on the reading end of a ring subscription. The same
@@ -125,4 +126,63 @@ func (s *SubscriberSampler) publish(observeLag bool) {
 	if observeLag {
 		metrics.IngestSubscriberLagBytes.WithLabelValues(label).Observe(float64(cur.LagBytes))
 	}
+}
+
+// TimelineSampler turns a canonical TimelineReader's stats into Prometheus gauges.
+// It is sampled on the same cadence (sampleInterval = 250ms) as SubscriberSampler.
+type TimelineSampler struct {
+	role   Role
+	reader timeline.TimelineReader
+	nextAt time.Time
+}
+
+// NewTimelineSampler binds a timeline sampler to a reader. It creates the role's series
+// immediately. If reader is nil (e.g. ring has no canonical timeline index), it returns nil.
+func NewTimelineSampler(role Role, reader timeline.TimelineReader) *TimelineSampler {
+	if reader == nil {
+		return nil
+	}
+
+	label := string(role)
+	metrics.IngestTimelineBoundRAPRatio.WithLabelValues(label)
+	metrics.IngestTimelineRAPCount.WithLabelValues(label)
+	metrics.IngestTimelineEpochSpans.WithLabelValues(label)
+	metrics.IngestTimelineTimingPoints.WithLabelValues(label)
+	metrics.IngestTimelinePCREntries.WithLabelValues(label)
+	metrics.IngestTimelineEpochKeys.WithLabelValues(label)
+
+	return &TimelineSampler{role: role, reader: reader}
+}
+
+// Sample publishes current timeline stats if sampleInterval has elapsed.
+func (s *TimelineSampler) Sample() {
+	if s == nil || s.reader == nil {
+		return
+	}
+	now := time.Now()
+	if now.Before(s.nextAt) {
+		return
+	}
+	s.nextAt = now.Add(sampleInterval)
+	s.publish()
+}
+
+// Flush publishes the latest timeline stats immediately.
+func (s *TimelineSampler) Flush() {
+	if s == nil || s.reader == nil {
+		return
+	}
+	s.publish()
+}
+
+func (s *TimelineSampler) publish() {
+	stats := s.reader.Stats()
+	label := string(s.role)
+
+	metrics.IngestTimelineBoundRAPRatio.WithLabelValues(label).Set(stats.BoundRAPRatio())
+	metrics.IngestTimelineRAPCount.WithLabelValues(label).Set(float64(stats.TotalRAPs))
+	metrics.IngestTimelineEpochSpans.WithLabelValues(label).Set(float64(stats.EpochSpans))
+	metrics.IngestTimelineTimingPoints.WithLabelValues(label).Set(float64(stats.TimingPoints))
+	metrics.IngestTimelinePCREntries.WithLabelValues(label).Set(float64(stats.PCREntries))
+	metrics.IngestTimelineEpochKeys.WithLabelValues(label).Set(float64(stats.EpochKeys))
 }

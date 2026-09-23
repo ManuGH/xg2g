@@ -34,6 +34,10 @@ var (
 	// ErrInconsistentEpochTransition is returned when a canonical program discontinuity contradicts
 	// the active epoch state in the index, preventing state repair or corrupted transitions.
 	ErrInconsistentEpochTransition = errors.New("inconsistent canonical epoch transition")
+
+	// ErrNonMonotonicObservedAt is returned when incoming timing records break non-decreasing
+	// ObservedAt order, violating the precondition required for binary search and deterministic indexing.
+	ErrNonMonotonicObservedAt = errors.New("non-monotonic observed_at in timing records")
 )
 
 // MediaIndex provides thread-safe, deterministic indexing and querying of canonical media facts.
@@ -111,7 +115,68 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	// 2. Pre-validation: verify program epoch transitions against current index state.
+	// 2. Pre-validation: verify non-decreasing ObservedAt / Offset order.
+	// Binary search in PruneBefore requires that pcrs, timingPoints, and discontinuities
+	// are maintained in non-decreasing ObservedAt order.
+	hasLastPCR := len(idx.pcrs) > 0
+	var lastPCRObs int64
+	if hasLastPCR {
+		lastPCRObs = idx.pcrs[len(idx.pcrs)-1].ObservedAt
+	}
+
+	hasLastPES := len(idx.timingPoints) > 0
+	var lastPESObs int64
+	if hasLastPES {
+		lastPESObs = idx.timingPoints[len(idx.timingPoints)-1].ObservedAt
+	}
+
+	hasLastDisc := len(idx.discontinuities) > 0
+	var lastDiscObs int64
+	if hasLastDisc {
+		lastDiscObs = idx.discontinuities[len(idx.discontinuities)-1].ObservedAt
+	}
+
+	for _, rec := range res.Timing.Records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypePCR:
+			if hasLastPCR && rec.PCR.ObservedAt < lastPCRObs {
+				return ErrNonMonotonicObservedAt
+			}
+			hasLastPCR = true
+			lastPCRObs = rec.PCR.ObservedAt
+
+		case mediafacts.TimingRecordTypePES:
+			if hasLastPES && rec.PES.ObservedAt < lastPESObs {
+				return ErrNonMonotonicObservedAt
+			}
+			hasLastPES = true
+			lastPESObs = rec.PES.ObservedAt
+
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if hasLastDisc && rec.Discontinuity.ObservedAt < lastDiscObs {
+				return ErrNonMonotonicObservedAt
+			}
+			hasLastDisc = true
+			lastDiscObs = rec.Discontinuity.ObservedAt
+		}
+	}
+
+	hasLastRAP := len(idx.rapsByOffset) > 0
+	var lastRAPOffset int64
+	if hasLastRAP {
+		lastRAPOffset = idx.rapsByOffset[len(idx.rapsByOffset)-1].Offset
+	}
+	for _, ev := range res.Events {
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			if hasLastRAP && ev.Offset < lastRAPOffset {
+				return ErrNonMonotonicObservedAt
+			}
+			hasLastRAP = true
+			lastRAPOffset = ev.Offset
+		}
+	}
+
+	// 3. Pre-validation: verify program epoch transitions against current index state.
 	// MediaIndex must never repair or guess epoch history on inconsistent transitions.
 	var simActiveEpoch mediafacts.TimelineEpoch
 	var simHasActive bool
@@ -327,7 +392,12 @@ func (idx *MediaIndex) removeRAPFromPTSLocked(epoch mediafacts.TimelineEpoch, of
 	for j, entry := range list {
 		if entry.Offset == offset {
 			copy(list[j:], list[j+1:])
-			idx.rapsByPTS[epoch] = list[:len(list)-1]
+			list = list[:len(list)-1]
+			if len(list) == 0 {
+				delete(idx.rapsByPTS, epoch)
+			} else {
+				idx.rapsByPTS[epoch] = list
+			}
 			break
 		}
 	}
@@ -569,31 +639,28 @@ func (idx *MediaIndex) PruneBefore(tailOffset int64) {
 		idx.rapsByOffset = idx.rapsByOffset[:n-rapCut]
 	}
 
-	// 2. Prune PCRs
-	pcrCut := 0
-	for pcrCut < len(idx.pcrs) && idx.pcrs[pcrCut].ObservedAt < tailOffset {
-		pcrCut++
-	}
+	// 2. Prune PCRs (binary search is valid due to guarded non-decreasing ObservedAt invariant)
+	pcrCut := sort.Search(len(idx.pcrs), func(i int) bool {
+		return idx.pcrs[i].ObservedAt >= tailOffset
+	})
 	if pcrCut > 0 {
 		copy(idx.pcrs, idx.pcrs[pcrCut:])
 		idx.pcrs = idx.pcrs[:len(idx.pcrs)-pcrCut]
 	}
 
-	// 3. Prune Timing Points
-	tpCut := 0
-	for tpCut < len(idx.timingPoints) && idx.timingPoints[tpCut].ObservedAt < tailOffset {
-		tpCut++
-	}
+	// 3. Prune Timing Points (binary search is valid due to guarded non-decreasing ObservedAt invariant)
+	tpCut := sort.Search(len(idx.timingPoints), func(i int) bool {
+		return idx.timingPoints[i].ObservedAt >= tailOffset
+	})
 	if tpCut > 0 {
 		copy(idx.timingPoints, idx.timingPoints[tpCut:])
 		idx.timingPoints = idx.timingPoints[:len(idx.timingPoints)-tpCut]
 	}
 
-	// 4. Prune Discontinuities
-	discCut := 0
-	for discCut < len(idx.discontinuities) && idx.discontinuities[discCut].ObservedAt < tailOffset {
-		discCut++
-	}
+	// 4. Prune Discontinuities (binary search is valid due to guarded non-decreasing ObservedAt invariant)
+	discCut := sort.Search(len(idx.discontinuities), func(i int) bool {
+		return idx.discontinuities[i].ObservedAt >= tailOffset
+	})
 	if discCut > 0 {
 		copy(idx.discontinuities, idx.discontinuities[discCut:])
 		idx.discontinuities = idx.discontinuities[:len(idx.discontinuities)-discCut]
@@ -611,4 +678,39 @@ func (idx *MediaIndex) PruneBefore(tailOffset int64) {
 		}
 	}
 	idx.epochSpans = idx.epochSpans[:spanKeep]
+}
+
+// ActiveEpoch reports the currently open/active TimelineEpoch if one is tracked.
+func (idx *MediaIndex) ActiveEpoch() (mediafacts.TimelineEpoch, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	for i := len(idx.epochSpans) - 1; i >= 0; i-- {
+		if !idx.epochSpans[i].Closed {
+			return idx.epochSpans[i].Epoch, true
+		}
+	}
+	return 0, false
+}
+
+// Stats returns a point-in-time snapshot of index metrics.
+func (idx *MediaIndex) Stats() TimelineStats {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	bound := 0
+	for _, r := range idx.rapsByOffset {
+		if r.HasTimingBinding {
+			bound++
+		}
+	}
+
+	return TimelineStats{
+		TotalRAPs:    len(idx.rapsByOffset),
+		BoundRAPs:    bound,
+		EpochSpans:   len(idx.epochSpans),
+		TimingPoints: len(idx.timingPoints),
+		PCREntries:   len(idx.pcrs),
+		EpochKeys:    len(idx.rapsByPTS),
+	}
 }
