@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 var updateTimingCorpus = flag.Bool("update-timing-corpus", false, "regenerate testdata/timing-corpus/corpus.txt")
@@ -272,12 +273,14 @@ type expectedEvent struct {
 }
 
 type timingStep struct {
-	desc     string
-	chunk    []byte
-	hasEpoch bool
-	epoch    uint64
-	records  []expectedTimingRecord
-	events   []expectedEvent
+	desc          string
+	isSetTarget   bool
+	targetProgram uint16
+	chunk         []byte
+	hasEpoch      bool
+	epoch         uint64
+	records       []expectedTimingRecord
+	events        []expectedEvent
 }
 
 type timingCorpusCase struct {
@@ -978,6 +981,248 @@ func buildTimingCorpusCases() []timingCorpusCase {
 		steps:   delayedSteps,
 	})
 
+	// Case 6: Canonical Timeline Zap Lifecycle
+	// Exercises control plane SetTargetProgram, empty ingest with edge pending,
+	// closing edge publication at first transport packet, idempotent reselect,
+	// multi-zap before transport, and seamless feeding into MediaIndex with 0 errors.
+	var zapSteps []timingStep
+
+	// Step 0: PAT for Program 1
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "PAT for program 1: program identity changes, epoch deactivated",
+		chunk:    makePATPacket(1, 256, 0),
+		hasEpoch: false,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{{
+			kind:      "disc",
+			scope:     "program",
+			reason:    "program_identity_changed",
+			obs:       0,
+			hasBefore: false,
+			hasAfter:  false,
+		}},
+	})
+
+	// Step 1: PMT for Program 1 -> mints Epoch 0
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "PMT for program 1: mints Epoch 0",
+		chunk:    makePMTPacket(1, 0, 256, 0, pmtStreams...),
+		hasEpoch: true,
+		epoch:    0,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{{
+			kind:       "disc",
+			scope:      "program",
+			reason:     "program_identity_changed",
+			obs:        188,
+			hasBefore:  false,
+			hasAfter:   true,
+			epochAfter: 0,
+		}},
+	})
+
+	// Step 2: PCR for Program 1
+	pcrZ1 := uint64(27_000_000)
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "PCR for program 1",
+		chunk:    makePCRPacket(256, 0, false, &pcrZ1),
+		hasEpoch: true,
+		epoch:    0,
+		records: []expectedTimingRecord{{
+			kind:     "pcr",
+			epoch:    0,
+			hasEpoch: true,
+			pid:      256,
+			pcr:      27_000_000,
+			obs:      376,
+		}},
+	})
+
+	// Step 3: Video PES with IDR for Program 1 -> bound RAP
+	ptsZ1 := uint64(90_000)
+	dtsZ1 := uint64(86_400)
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "Video PES with IDR for program 1: publishes bound RAP",
+		chunk:    makeVideoPESPacket(257, 0, &ptsZ1, &dtsZ1, true),
+		hasEpoch: true,
+		epoch:    0,
+		events:   []expectedEvent{{kind: "rap", offset: 564, joinable: true}},
+		records: []expectedTimingRecord{
+			{
+				kind:     "pes",
+				epoch:    0,
+				hasEpoch: true,
+				pid:      257,
+				hasPTS:   true,
+				pts:      90_000,
+				hasDTS:   true,
+				dts:      86_400,
+				obs:      564,
+				sub:      564,
+			},
+			{
+				kind:     "rap",
+				epoch:    0,
+				hasEpoch: true,
+				pid:      257,
+				hasPTS:   true,
+				pts:      90_000,
+				hasDTS:   true,
+				dts:      86_400,
+				obs:      564,
+				sub:      564,
+			},
+		},
+	})
+
+	// Step 4: Control plane zap 1 -> 2
+	zapSteps = append(zapSteps, timingStep{
+		desc:          "Control plane zap 1 -> 2: latches pending closing edge for epoch 0, emits identity event",
+		isSetTarget:   true,
+		targetProgram: 2,
+		events:        []expectedEvent{{kind: "identity"}},
+	})
+
+	// Step 5: Empty ingest chunk: zero packets
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "Empty ingest chunk: edge stays pending, 0 records emitted, epoch none",
+		chunk:    nil,
+		hasEpoch: false,
+	})
+
+	// Step 6: Idempotent reselect: settarget 2 again
+	zapSteps = append(zapSteps, timingStep{
+		desc:          "Idempotent reselect 2: no events, closing edge remains pending",
+		isSetTarget:   true,
+		targetProgram: 2,
+		events:        nil,
+	})
+
+	// Step 7: PAT for program 2 arrives:
+	// First packet after zap emits the pending closing edge for epoch 0, then PAT discontinuity.
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "First transport packet after zap (PAT for program 2): emits pending closing edge for epoch 0",
+		chunk:    makePATPacket(2, 512, 0),
+		hasEpoch: false,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{
+			{
+				kind:        "disc",
+				scope:       "program",
+				reason:      "program_identity_changed",
+				obs:         752,
+				hasBefore:   true,
+				epochBefore: 0,
+				hasAfter:    false,
+			},
+			{
+				kind:      "disc",
+				scope:     "program",
+				reason:    "program_identity_changed",
+				obs:       752,
+				hasBefore: false,
+				hasAfter:  false,
+			},
+		},
+	})
+
+	// Step 8: PMT for program 2 arrives: mints epoch 1
+	pmtStreams2 := []esDesc{
+		{streamType: 0x1B, pid: 513}, // H.264
+		{streamType: 0x03, pid: 514}, // MP2 Audio
+	}
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "PMT for program 2: mints Epoch 1",
+		chunk:    makePMTPacket(2, 0, 512, 0, pmtStreams2...),
+		hasEpoch: true,
+		epoch:    1,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{
+			{
+				kind:       "disc",
+				scope:      "program",
+				reason:     "program_identity_changed",
+				obs:        940,
+				hasBefore:  false,
+				hasAfter:   true,
+				epochAfter: 1,
+			},
+		},
+	})
+
+	// Step 9: Multi-zap before transport: 2 -> 3 -> 4
+	zapSteps = append(zapSteps, timingStep{
+		desc:          "Multi-zap: settarget 3 latches closing edge for epoch 1",
+		isSetTarget:   true,
+		targetProgram: 3,
+		events:        []expectedEvent{{kind: "identity"}},
+	})
+	zapSteps = append(zapSteps, timingStep{
+		desc:          "Multi-zap: settarget 4 preserves existing pending closing edge for epoch 1",
+		isSetTarget:   true,
+		targetProgram: 4,
+		events:        []expectedEvent{{kind: "identity"}},
+	})
+
+	// Step 10: PAT for program 4 arrives:
+	// First packet after multi-zap emits single closing edge for epoch 1, then PAT discontinuity.
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "First transport packet after multi-zap (PAT for program 4): emits single closing edge for epoch 1",
+		chunk:    makePATPacket(4, 1024, 0),
+		hasEpoch: false,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{
+			{
+				kind:        "disc",
+				scope:       "program",
+				reason:      "program_identity_changed",
+				obs:         1128,
+				hasBefore:   true,
+				epochBefore: 1,
+				hasAfter:    false,
+			},
+			{
+				kind:      "disc",
+				scope:     "program",
+				reason:    "program_identity_changed",
+				obs:       1128,
+				hasBefore: false,
+				hasAfter:  false,
+			},
+		},
+	})
+
+	// Step 11: PMT for program 4 arrives: mints epoch 2
+	pmtStreams4 := []esDesc{
+		{streamType: 0x1B, pid: 1025},
+		{streamType: 0x03, pid: 1026},
+	}
+	zapSteps = append(zapSteps, timingStep{
+		desc:     "PMT for program 4: mints Epoch 2",
+		chunk:    makePMTPacket(4, 0, 1024, 0, pmtStreams4...),
+		hasEpoch: true,
+		epoch:    2,
+		events:   []expectedEvent{{kind: "identity"}},
+		records: []expectedTimingRecord{
+			{
+				kind:       "disc",
+				scope:      "program",
+				reason:     "program_identity_changed",
+				obs:        1316,
+				hasBefore:  false,
+				hasAfter:   true,
+				epochAfter: 2,
+			},
+		},
+	})
+
+	cases = append(cases, timingCorpusCase{
+		name:    "canonical_timeline_zap_lifecycle",
+		desc:    "verifies canonical closing edge publication at first transport packet across zaps and multi-zaps",
+		program: 1,
+		steps:   zapSteps,
+	})
+
 	return cases
 }
 
@@ -995,8 +1240,32 @@ func renderTimingCorpus(cases []timingCorpusCase) string {
 		sb.WriteString(fmt.Sprintf("  program %d\n", c.program))
 
 		for _, s := range c.steps {
-			sb.WriteString(fmt.Sprintf("  # %s\n", s.desc))
-			sb.WriteString(fmt.Sprintf("  chunk %s\n", hex.EncodeToString(s.chunk)))
+			if s.desc != "" {
+				sb.WriteString(fmt.Sprintf("  # %s\n", s.desc))
+			}
+			if s.isSetTarget {
+				sb.WriteString(fmt.Sprintf("  settarget %d\n", s.targetProgram))
+				for _, ev := range s.events {
+					switch ev.kind {
+					case "identity":
+						sb.WriteString("  event identity\n")
+					case "rap":
+						join := 0
+						if ev.joinable {
+							join = 1
+						}
+						sb.WriteString(fmt.Sprintf("  event rap offset=%d joinable=%d\n", ev.offset, join))
+					case "rap_invalidated":
+						sb.WriteString(fmt.Sprintf("  event rap_invalidated offset=%d\n", ev.offset))
+					}
+				}
+				continue
+			}
+			if len(s.chunk) > 0 {
+				sb.WriteString(fmt.Sprintf("  chunk %s\n", hex.EncodeToString(s.chunk)))
+			} else {
+				sb.WriteString("  chunk\n")
+			}
 			if s.hasEpoch {
 				sb.WriteString(fmt.Sprintf("  epoch %d\n", s.epoch))
 			} else {
@@ -1087,9 +1356,28 @@ func TestTimingCorpus_LiveMediaCorePublication(t *testing.T) {
 			defer func() { _ = core.Close() }()
 
 			var currentOffset int64
+			idx := timeline.NewMediaIndex()
 
 			for stepIdx, s := range c.steps {
 				t.Logf("Step %d: %s", stepIdx, s.desc)
+				if s.isSetTarget {
+					res, err := core.SetTargetProgram(ctx, s.targetProgram)
+					if err != nil {
+						t.Fatalf("step %d SetTargetProgram error: %v", stepIdx, err)
+					}
+					if len(res.Events) != len(s.events) {
+						t.Errorf("step %d settarget: got %d events, want %d: %+v", stepIdx, len(res.Events), len(s.events), res.Events)
+					} else {
+						for i, ev := range s.events {
+							gotEv := res.Events[i]
+							if ev.kind == "identity" && gotEv.Kind != mediafacts.EventProgramIdentityChanged {
+								t.Errorf("step %d settarget event %d: got %v, want identity", stepIdx, i, gotEv.Kind)
+							}
+						}
+					}
+					continue
+				}
+
 				res, err := core.Ingest(ctx, currentOffset, s.chunk)
 				if err != nil {
 					t.Fatalf("step %d ingest error: %v", stepIdx, err)
@@ -1187,6 +1475,11 @@ func TestTimingCorpus_LiveMediaCorePublication(t *testing.T) {
 							t.Errorf("step %d rec %d epoch_after: got %v/%d, want %v/%d", stepIdx, i, d.HasEpochAfter, d.EpochAfter, rec.hasAfter, rec.epochAfter)
 						}
 					}
+				}
+
+				// 5. Commit canonical result into MediaIndex (fail-closed, must accept with 0 errors)
+				if err := idx.ApplyIngestResult(res); err != nil {
+					t.Fatalf("step %d ApplyIngestResult into MediaIndex failed: %v", stepIdx, err)
 				}
 			}
 		})
