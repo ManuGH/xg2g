@@ -169,3 +169,8 @@ red/
 
 # Rust build output. Cargo.lock is committed; target/ never is.
 /media-core/target/
+
+# Agent session artifacts (plans and walkthroughs belong in the PR, not the repo root)
+/walkthrough.md
+/implementation_plan.md
+/task.md
