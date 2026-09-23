@@ -496,7 +496,7 @@ public final class MetalVideoView: UIView {
         // and rendered every field while occupying no space: audio played, the
         // picture stayed black, and `isPictureInPicturePossible` reported false
         // because PiP needs a layer with real geometry.
-        if let layer = systemPresenter?.displayLayer, layer.frame != bounds {
+        if let layer = systemPresenter?.displayLayer, layer.superlayer === self.layer, layer.frame != bounds {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.frame = bounds

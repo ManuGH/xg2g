@@ -1633,58 +1633,7 @@ public struct TestTSPlayerScreen: View {
     }
 }
 
-struct MetalVideoStageView: UIViewRepresentable {
-    /// The readouts of whichever session is on screen, or none while nothing is.
-    ///
-    /// Not the session itself: the stage draws what the surface is given, and which
-    /// session that is belongs to the presentation context.
-    let telemetry: StreamTelemetry?
-    let presenter: SystemVideoPresenter
-    let presentationContext: PresentationContext
-    let presentationPath: MetalVideoView.PresentationPath
-    let scalingMode: VideoScalingMode
-    let aspectRatioOverride: VideoAspectRatio
-
-    func makeUIView(context: Context) -> MetalVideoView {
-        let view = MetalVideoView(frame: .zero)
-        view.telemetry = telemetry
-        view.scalingMode = scalingMode
-        view.aspectRatioOverride = aspectRatioOverride
-
-        // The context is given the view, and hands it to whichever session owns the
-        // surface. Sessions are never wired to it here: with a channel prepared beside
-        // one playing, the stage cannot know which of them is the visible one.
-        presentationContext.setRenderView(view)
-
-        // Presenting through AVFoundation instead of our own drawable. The Metal
-        // view keeps doing the decode-side work — reorder, field scheduling and
-        // the deinterlace pass — and its output goes into the display layer,
-        // which is hosted on top of it.
-        view.systemPresenter = presenter
-        view.presentationPath = presentationPath
-        presenter.scalingMode = scalingMode
-        presenter.displayLayer.frame = view.bounds
-        view.layer.addSublayer(presenter.displayLayer)
-        presenter.enablePictureInPicture()
-
-        return view
-    }
-
-    func updateUIView(_ uiView: MetalVideoView, context: Context) {
-        uiView.telemetry = telemetry
-        uiView.presentationPath = presentationPath
-        uiView.scalingMode = scalingMode
-        uiView.aspectRatioOverride = aspectRatioOverride
-        presenter.scalingMode = scalingMode
-        // The layer is not managed by Auto Layout, so it has to follow the view
-        // itself. Without this it keeps its size across a rotation and the
-        // picture stays letterboxed at the old aspect.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        presenter.displayLayer.frame = uiView.bounds
-        CATransaction.commit()
-    }
-}
+public typealias MetalVideoStageView = SystemVideoStageView
 
 /// Shown in place of the picture when the channel's video format cannot be
 /// assembled on this path.
