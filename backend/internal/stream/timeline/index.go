@@ -17,9 +17,17 @@ var (
 	// MediaIndex is strictly a canonical timeline index and fails closed on non-canonical input.
 	ErrNonCanonicalTiming = errors.New("timeline index requires canonical timing")
 
+	// ErrIncompleteCoverage is returned when a ParseResult does not carry ParseCoverageComplete.
+	// MediaIndex requires complete parse coverage before committing stream truth.
+	ErrIncompleteCoverage = errors.New("timeline index requires complete parse coverage")
+
 	// ErrAmbiguousTimingBinding is returned when multiple PES timing records claim the same SubjectAt
 	// byte offset as a Random Access Point, preventing unambiguous binding.
 	ErrAmbiguousTimingBinding = errors.New("ambiguous timing binding for random access point")
+
+	// ErrInconsistentEpochTransition is returned when a canonical program discontinuity contradicts
+	// the active epoch state in the index, preventing state repair or corrupted transitions.
+	ErrInconsistentEpochTransition = errors.New("inconsistent canonical epoch transition")
 )
 
 // MediaIndex provides thread-safe, deterministic indexing and querying of canonical media facts.
@@ -61,9 +69,12 @@ func NewMediaIndex() *MediaIndex {
 // ApplyIngestResult ingests one chunk's parse result into the canonical index.
 // It accepts transport-plane results from Core.Ingest(...).
 //
-// If the result does not carry TimingAuthorityCanonical, it returns ErrNonCanonicalTiming
-// without mutating any index state (fail-closed).
+// If the result does not carry complete coverage or TimingAuthorityCanonical,
+// it returns ErrIncompleteCoverage or ErrNonCanonicalTiming without mutating any index state (fail-closed).
 func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
+	if res.Coverage != mediafacts.ParseCoverageComplete {
+		return ErrIncompleteCoverage
+	}
 	if res.Timing.Authority != mediafacts.TimingAuthorityCanonical {
 		return ErrNonCanonicalTiming
 	}
@@ -87,7 +98,55 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	// 2. Process Timing Records (Discontinuities, PCRs, PES points).
+	// 2. Pre-validation: verify program epoch transitions against current index state.
+	// MediaIndex must never repair or guess epoch history on inconsistent transitions.
+	var simActiveEpoch mediafacts.TimelineEpoch
+	var simHasActive bool
+	for i := len(idx.epochSpans) - 1; i >= 0; i-- {
+		if !idx.epochSpans[i].Closed {
+			simActiveEpoch = idx.epochSpans[i].Epoch
+			simHasActive = true
+			break
+		}
+	}
+
+	for _, rec := range res.Timing.Records {
+		if rec.Type == mediafacts.TimingRecordTypeDiscontinuity && rec.Discontinuity.Scope == mediafacts.DiscontinuityScopeProgram {
+			d := rec.Discontinuity
+			if !d.HasEpochBefore && !d.HasEpochAfter {
+				continue
+			}
+			if !d.HasEpochBefore && d.HasEpochAfter {
+				// Starting epoch without predecessor: valid only if no active epoch is open.
+				if simHasActive {
+					return ErrInconsistentEpochTransition
+				}
+				simHasActive = true
+				simActiveEpoch = d.EpochAfter
+				continue
+			}
+			if d.HasEpochBefore && d.HasEpochAfter {
+				// Transition between epochs: predecessor must match the currently active epoch.
+				if !simHasActive || simActiveEpoch != d.EpochBefore {
+					return ErrInconsistentEpochTransition
+				}
+				if d.EpochBefore != d.EpochAfter {
+					simActiveEpoch = d.EpochAfter
+				}
+				continue
+			}
+			if d.HasEpochBefore && !d.HasEpochAfter {
+				// Closing active epoch: predecessor must match active epoch.
+				if !simHasActive || simActiveEpoch != d.EpochBefore {
+					return ErrInconsistentEpochTransition
+				}
+				simHasActive = false
+				continue
+			}
+		}
+	}
+
+	// 3. Process Timing Records (Discontinuities, PCRs, PES points).
 	for _, rec := range res.Timing.Records {
 		switch rec.Type {
 		case mediafacts.TimingRecordTypeDiscontinuity:
@@ -130,7 +189,7 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 		}
 	}
 
-	// 3. Process Events (RAP additions & invalidations).
+	// 4. Process Events (RAP additions & invalidations).
 	for _, ev := range res.Events {
 		switch ev.Kind {
 		case mediafacts.EventRandomAccessPoint:
@@ -140,6 +199,7 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 			}
 			if matches := pesBySubjectAt[ev.Offset]; len(matches) == 1 {
 				pes := matches[0]
+				rap.HasTimingBinding = true
 				rap.Epoch = pes.Epoch
 				rap.PID = pes.PID
 				rap.HasPTS = pes.HasPTS
@@ -155,11 +215,6 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 	}
 
 	return nil
-}
-
-// Commit is an alias for ApplyIngestResult.
-func (idx *MediaIndex) Commit(res mediafacts.ParseResult) error {
-	return idx.ApplyIngestResult(res)
 }
 
 // applyProgramDiscontinuityLocked updates epoch spans based on program discontinuity rules:
@@ -191,13 +246,6 @@ func (idx *MediaIndex) applyProgramDiscontinuityLocked(d mediafacts.Discontinuit
 
 	// Open span for EpochAfter if present.
 	if d.HasEpochAfter {
-		// If there is any remaining unclosed span, close it at ObservedAt to avoid overlap.
-		for i := len(idx.epochSpans) - 1; i >= 0; i-- {
-			if !idx.epochSpans[i].Closed {
-				idx.epochSpans[i].EndOffset = d.ObservedAt
-				idx.epochSpans[i].Closed = true
-			}
-		}
 		idx.epochSpans = append(idx.epochSpans, EpochSpan{
 			Epoch:       d.EpochAfter,
 			StartOffset: d.ObservedAt,
@@ -304,6 +352,7 @@ func (idx *MediaIndex) FindFollowingRAP(offset int64) (RAPEntry, bool) {
 }
 
 // FindRAPPrecedingPTS finds the RAP in epoch with the greatest PTS90k <= the requested pts.
+// If multiple RAPs have the same greatest PTS90k, the RAP with the greatest transport Offset is returned.
 func (idx *MediaIndex) FindRAPPrecedingPTS(epoch mediafacts.TimelineEpoch, pts int64) (RAPEntry, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -346,7 +395,8 @@ func distancePTS(a, b int64) uint64 {
 }
 
 // FindRAPNearestPTS finds the RAP in epoch whose PTS90k is closest to the requested pts.
-// If two RAPs are equidistant, the preceding one is returned.
+// If two different PTS values are equidistant from pts, the preceding PTS is chosen.
+// If multiple RAPs share the winning PTS90k, the RAP with the greatest transport Offset is returned.
 func (idx *MediaIndex) FindRAPNearestPTS(epoch mediafacts.TimelineEpoch, pts int64) (RAPEntry, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -358,23 +408,33 @@ func (idx *MediaIndex) FindRAPNearestPTS(epoch mediafacts.TimelineEpoch, pts int
 	}
 
 	i := sort.Search(n, func(i int) bool {
-		return list[i].PTS90k >= pts
+		return list[i].PTS90k > pts
 	})
 
 	if i == 0 {
-		return list[0], true
+		targetPTS := list[0].PTS90k
+		last := sort.Search(n, func(j int) bool {
+			return list[j].PTS90k > targetPTS
+		})
+		return list[last-1], true
 	}
 	if i == n {
 		return list[n-1], true
 	}
 
+	targetAfterPTS := list[i].PTS90k
+	lastAfter := sort.Search(n, func(j int) bool {
+		return list[j].PTS90k > targetAfterPTS
+	})
+	afterEntry := list[lastAfter-1]
+
 	distBefore := distancePTS(list[i-1].PTS90k, pts)
-	distAfter := distancePTS(list[i].PTS90k, pts)
+	distAfter := distancePTS(afterEntry.PTS90k, pts)
 
 	if distBefore <= distAfter {
 		return list[i-1], true
 	}
-	return list[i], true
+	return afterEntry, true
 }
 
 // EpochForOffset returns the EpochSpan covering the given byte offset.

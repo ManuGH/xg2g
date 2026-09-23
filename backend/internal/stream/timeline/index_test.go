@@ -1043,6 +1043,375 @@ func TestConcurrentReaders(t *testing.T) {
 	wg.Wait()
 }
 
+func TestUnboundRAPIsNotMistakenForEpochZero(t *testing.T) {
+	idx := NewMediaIndex()
+
+	res := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    500,
+					HasEpochAfter: true,
+					EpochAfter:    0, // Real Epoch 0
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        256,
+					HasPTS:     false,
+					HasDTS:     false,
+					ObservedAt: 2000,
+					SubjectAt:  2000,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			// RAP at 1000: Unbound (no PES record matching SubjectAt 1000)
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+			// RAP at 2000: Bound to Epoch 0, but no PTS/DTS
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: true},
+		},
+	)
+
+	if err := idx.ApplyIngestResult(res); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rapUnbound, ok := idx.FindPrecedingRAP(1000)
+	if !ok || rapUnbound.Offset != 1000 {
+		t.Fatalf("failed to find unbound RAP at 1000: (%v, %v)", rapUnbound, ok)
+	}
+	if rapUnbound.HasTimingBinding {
+		t.Errorf("unbound RAP must have HasTimingBinding == false, got true")
+	}
+
+	rapBound, ok := idx.FindPrecedingRAP(2000)
+	if !ok || rapBound.Offset != 2000 {
+		t.Fatalf("failed to find bound RAP at 2000: (%v, %v)", rapBound, ok)
+	}
+	if !rapBound.HasTimingBinding {
+		t.Errorf("bound RAP at 2000 must have HasTimingBinding == true")
+	}
+	if rapBound.Epoch != 0 || rapBound.PID != 256 {
+		t.Errorf("bound RAP at 2000 unexpected: Epoch=%d PID=%d", rapBound.Epoch, rapBound.PID)
+	}
+	if rapBound.HasPTS || rapBound.HasDTS {
+		t.Errorf("bound RAP at 2000 without timestamps should have HasPTS=false and HasDTS=false")
+	}
+
+	// Prove they are distinct
+	if rapUnbound.HasTimingBinding == rapBound.HasTimingBinding {
+		t.Errorf("unbound and bound RAPs must not have equal HasTimingBinding")
+	}
+}
+
+func TestBoundEpochZeroWithoutPTSIsDistinguishable(t *testing.T) {
+	idx := NewMediaIndex()
+
+	res := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    100,
+					HasEpochAfter: true,
+					EpochAfter:    0,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        300,
+					HasPTS:     false,
+					ObservedAt: 500,
+					SubjectAt:  500,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 500, Joinable: true},
+		},
+	)
+
+	if err := idx.ApplyIngestResult(res); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rapA, _ := idx.FindPrecedingRAP(200)
+	rapB, _ := idx.FindPrecedingRAP(500)
+
+	// RAP A has no binding
+	if rapA.HasTimingBinding {
+		t.Errorf("RAP A unexpectedly has timing binding")
+	}
+
+	// RAP B has explicit binding to Epoch 0
+	if !rapB.HasTimingBinding {
+		t.Errorf("RAP B missing timing binding")
+	}
+	if rapB.Epoch != 0 || rapB.PID != 300 {
+		t.Errorf("RAP B incorrect Epoch/PID: %d / %d", rapB.Epoch, rapB.PID)
+	}
+	if rapB.HasPTS {
+		t.Errorf("RAP B should not have PTS")
+	}
+}
+
+func TestInconsistentEpochTransitionFailsWithoutMutation(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// 1. Initially activate Epoch 1
+	initRes := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    1000,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+		},
+		nil,
+	)
+	if err := idx.ApplyIngestResult(initRes); err != nil {
+		t.Fatalf("failed initial ingest: %v", err)
+	}
+
+	spansBefore := idx.EpochSpans()
+	if len(spansBefore) != 1 || spansBefore[0].Epoch != 1 {
+		t.Fatalf("expected active Epoch 1 span, got: %+v", spansBefore)
+	}
+
+	// 2. Inconsistent transition: active is Epoch 1, but discontinuity says before=2, after=3
+	badRes1 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:          mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:     2000,
+					HasEpochBefore: true,
+					EpochBefore:    2, // Mismatch!
+					HasEpochAfter:  true,
+					EpochAfter:     3,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePCR,
+				PCR: mediafacts.PCRPoint{
+					Epoch:          3,
+					ObservedAt:     2000,
+					ExtendedPCR27m: 12345,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: true},
+		},
+	)
+
+	err1 := idx.ApplyIngestResult(badRes1)
+	if !errors.Is(err1, ErrInconsistentEpochTransition) {
+		t.Fatalf("expected ErrInconsistentEpochTransition, got: %v", err1)
+	}
+
+	// Verify ZERO MUTATION: Epoch 1 is still open, no new span, no PCR, no RAP
+	spansAfter1 := idx.EpochSpans()
+	if len(spansAfter1) != 1 || spansAfter1[0].Epoch != 1 || spansAfter1[0].Closed {
+		t.Errorf("spans mutated after badRes1: %+v", spansAfter1)
+	}
+	if len(idx.PCREntries()) != 0 {
+		t.Errorf("PCR added despite inconsistent epoch error")
+	}
+	if _, ok := idx.FindPrecedingRAP(2000); ok {
+		t.Errorf("RAP added despite inconsistent epoch error")
+	}
+
+	// 3. Inconsistent transition: active is Epoch 1, but discontinuity says before=None, after=2
+	badRes2 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    3000,
+					HasEpochAfter: true,
+					EpochAfter:    2, // Cannot start without closing active Epoch 1
+				},
+			},
+		},
+		nil,
+	)
+
+	err2 := idx.ApplyIngestResult(badRes2)
+	if !errors.Is(err2, ErrInconsistentEpochTransition) {
+		t.Fatalf("expected ErrInconsistentEpochTransition for badRes2, got: %v", err2)
+	}
+
+	// 4. Inconsistent transition: active is Epoch 1, but closing says before=2, after=None
+	badRes3 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:          mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:     4000,
+					HasEpochBefore: true,
+					EpochBefore:    2, // Mismatch with active Epoch 1
+				},
+			},
+		},
+		nil,
+	)
+
+	err3 := idx.ApplyIngestResult(badRes3)
+	if !errors.Is(err3, ErrInconsistentEpochTransition) {
+		t.Fatalf("expected ErrInconsistentEpochTransition for badRes3, got: %v", err3)
+	}
+}
+
+func TestIncompleteCoverageFailsClosed(t *testing.T) {
+	idx := NewMediaIndex()
+
+	coverages := []mediafacts.ParseCoverage{
+		mediafacts.ParseCoverageUnknown,
+		mediafacts.ParseCoveragePSIOnly,
+		mediafacts.ParseCoveragePSIVideo,
+	}
+
+	for _, cov := range coverages {
+		res := mediafacts.ParseResult{
+			Coverage: cov,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+			},
+		}
+
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrIncompleteCoverage) {
+			t.Errorf("coverage %v: expected ErrIncompleteCoverage, got: %v", cov, err)
+		}
+
+		// Ensure zero mutation
+		if _, ok := idx.FindPrecedingRAP(1000); ok {
+			t.Errorf("coverage %v: index mutated despite error", cov)
+		}
+	}
+}
+
+func TestDuplicatePTSDeterministicTieBreak(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest two RAPs in Epoch 1 with identical PTS = 90000 at offsets 100 and 200,
+	// and two RAPs with identical PTS = 93600 at offsets 300 and 400.
+	res := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:     1,
+					PID:       256,
+					HasPTS:    true,
+					PTS90k:    90000,
+					SubjectAt: 100,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:     1,
+					PID:       256,
+					HasPTS:    true,
+					PTS90k:    90000,
+					SubjectAt: 200,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:     1,
+					PID:       256,
+					HasPTS:    true,
+					PTS90k:    93600,
+					SubjectAt: 300,
+				},
+			},
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:     1,
+					PID:       256,
+					HasPTS:    true,
+					PTS90k:    93600,
+					SubjectAt: 400,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 100, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 300, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 400, Joinable: true},
+		},
+	)
+
+	if err := idx.ApplyIngestResult(res); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 1. FindRAPPrecedingPTS for target 90000:
+	// Both offset 100 and 200 have PTS 90000 <= 90000.
+	// Tie break must deterministically select the greatest transport Offset (200).
+	rapPre1, ok := idx.FindRAPPrecedingPTS(1, 90000)
+	if !ok || rapPre1.PTS90k != 90000 || rapPre1.Offset != 200 {
+		t.Errorf("FindRAPPrecedingPTS(1, 90000) = (%+v, %v), want PTS 90000 at Offset 200", rapPre1, ok)
+	}
+
+	// 2. FindRAPNearestPTS for target 90000:
+	// Exact match. Must select greatest transport Offset (200).
+	rapNear1, ok := idx.FindRAPNearestPTS(1, 90000)
+	if !ok || rapNear1.PTS90k != 90000 || rapNear1.Offset != 200 {
+		t.Errorf("FindRAPNearestPTS(1, 90000) = (%+v, %v), want PTS 90000 at Offset 200", rapNear1, ok)
+	}
+
+	// 3. FindRAPNearestPTS for target 91800:
+	// Exactly equidistant between PTS 90000 (diff 1800) and PTS 93600 (diff 1800).
+	// Tie-break rule 1: preceding PTS wins (90000).
+	// Tie-break rule 2: greatest transport Offset for 90000 wins (200).
+	rapNearTie, ok := idx.FindRAPNearestPTS(1, 91800)
+	if !ok || rapNearTie.PTS90k != 90000 || rapNearTie.Offset != 200 {
+		t.Errorf("FindRAPNearestPTS(1, 91800) = (%+v, %v), want PTS 90000 at Offset 200", rapNearTie, ok)
+	}
+
+	// 4. FindRAPNearestPTS for target 93600:
+	// Exact match. Must select greatest transport Offset (400).
+	rapNear2, ok := idx.FindRAPNearestPTS(1, 93600)
+	if !ok || rapNear2.PTS90k != 93600 || rapNear2.Offset != 400 {
+		t.Errorf("FindRAPNearestPTS(1, 93600) = (%+v, %v), want PTS 93600 at Offset 400", rapNear2, ok)
+	}
+}
+
 func BenchmarkFindPrecedingRAP(b *testing.B) {
 	idx := NewMediaIndex()
 	for i := 0; i < 10000; i++ {

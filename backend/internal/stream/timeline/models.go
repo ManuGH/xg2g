@@ -16,6 +16,10 @@ type RAPEntry struct {
 	// Joinable reports whether the access unit was clear (unscrambled) and suitable as a join point.
 	Joinable bool
 
+	// HasTimingBinding reports whether this RAP has an explicit, proven canonical PES timing binding.
+	// When false, Epoch, PID, PTS, and DTS are unassigned and must not be evaluated.
+	HasTimingBinding bool
+
 	// Epoch is the timeline epoch established by canonical media-core timing.
 	Epoch mediafacts.TimelineEpoch
 
