@@ -7,11 +7,13 @@ package remotecore
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // buildPATPacket constructs a 188-byte TS packet carrying a PAT for program 1 -> PMT PID 0x0100.
@@ -449,23 +451,34 @@ func TestTimingDifferential_CanonicalTimingPublishedOverIPC(t *testing.T) {
 		t.Fatalf("step 8: rust active epoch has=%v epoch=%d, want true/2",
 			rustRes.Timing.HasActiveEpoch, rustRes.Timing.ActiveEpoch)
 	}
-	if len(rustRes.Timing.Records) != 2 {
-		t.Fatalf("step 8 record count = %d, want 2: %+v", len(rustRes.Timing.Records), rustRes.Timing.Records)
+	if len(rustRes.Timing.Records) != 3 {
+		t.Fatalf("step 8 record count = %d, want 3: %+v", len(rustRes.Timing.Records), rustRes.Timing.Records)
 	}
-	rPatDisc := rustRes.Timing.Records[0]
+	rCloseDisc := rustRes.Timing.Records[0]
+	if rCloseDisc.Type != mediafacts.TimingRecordTypeDiscontinuity {
+		t.Fatalf("step 8 record 0 type %s, want discontinuity", rCloseDisc.Type)
+	}
+	if !rCloseDisc.Discontinuity.HasEpochBefore || rCloseDisc.Discontinuity.EpochBefore != 1 || rCloseDisc.Discontinuity.HasEpochAfter {
+		t.Errorf("step 8 record 0 closing edge mismatch: %+v", rCloseDisc.Discontinuity)
+	}
+	if rCloseDisc.Discontinuity.ObservedAt != chunk5StartOffset {
+		t.Errorf("step 8 record 0 byte offset = %d, want %d",
+			rCloseDisc.Discontinuity.ObservedAt, chunk5StartOffset)
+	}
+	rPatDisc := rustRes.Timing.Records[1]
 	if rPatDisc.Type != mediafacts.TimingRecordTypeDiscontinuity {
-		t.Fatalf("step 8 record 0 type %s, want discontinuity", rPatDisc.Type)
+		t.Fatalf("step 8 record 1 type %s, want discontinuity", rPatDisc.Type)
 	}
 	if rPatDisc.Discontinuity.ObservedAt != chunk5StartOffset {
-		t.Errorf("step 8 record 0 byte offset = %d, want %d",
+		t.Errorf("step 8 record 1 byte offset = %d, want %d",
 			rPatDisc.Discontinuity.ObservedAt, chunk5StartOffset)
 	}
-	rPmtDisc := rustRes.Timing.Records[1]
+	rPmtDisc := rustRes.Timing.Records[2]
 	if rPmtDisc.Type != mediafacts.TimingRecordTypeDiscontinuity {
-		t.Fatalf("step 8 record 1 type %s, want discontinuity", rPmtDisc.Type)
+		t.Fatalf("step 8 record 2 type %s, want discontinuity", rPmtDisc.Type)
 	}
 	if rPmtDisc.Discontinuity.ObservedAt != chunk5StartOffset+mediafacts.TSPacketSize {
-		t.Errorf("step 8 record 1 byte offset = %d, want %d",
+		t.Errorf("step 8 record 2 byte offset = %d, want %d",
 			rPmtDisc.Discontinuity.ObservedAt, chunk5StartOffset+mediafacts.TSPacketSize)
 	}
 	if rPmtDisc.Discontinuity.Scope != mediafacts.DiscontinuityScopeProgram ||
@@ -476,4 +489,78 @@ func TestTimingDifferential_CanonicalTimingPublishedOverIPC(t *testing.T) {
 	}
 
 	t.Logf("timing differential over IPC passed: active epoch lifecycle, unwrapped timing, SetTargetProgram idempotency, and discontinuity publication verified")
+}
+
+// TestNegativeControl_ZapWithoutClosingEdgeFailsClosed proves that if the Rust core does NOT
+// emit a closing edge on zap before a new program's PMT arrives, MediaIndex fails closed with
+// ErrInconsistentEpochTransition. When the closing edge is present (the 9b-1 fix), MediaIndex
+// accepts the transition cleanly with zero errors.
+func TestNegativeControl_ZapWithoutClosingEdgeFailsClosed(t *testing.T) {
+	coreBin := requireVideoRealCore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	remote, err := Start(ctx, coreBin, 1)
+	if err != nil {
+		t.Fatalf("start remote core: %v", err)
+	}
+	defer func() { _ = remote.Close() }()
+
+	idx := timeline.NewMediaIndex()
+	var offset int64
+
+	// 1. Establish Program 1 -> active Epoch 0 in index.
+	var initChunk []byte
+	initChunk = append(initChunk, buildPATPacket(0)...)
+	initChunk = append(initChunk, buildPMTPacket(0)...)
+	res1, err := remote.Ingest(ctx, offset, initChunk)
+	if err != nil {
+		t.Fatalf("program 1 ingest: %v", err)
+	}
+	offset = res1.ProcessedThroughOffset
+	if err := idx.ApplyIngestResult(res1); err != nil {
+		t.Fatalf("apply program 1: %v", err)
+	}
+
+	// 2. Control plane zap to Program 2.
+	_, err = remote.SetTargetProgram(ctx, 2)
+	if err != nil {
+		t.Fatalf("set target program 2: %v", err)
+	}
+
+	// 3. Ingest Program 2 PAT + PMT.
+	var prog2Chunk []byte
+	prog2Chunk = append(prog2Chunk, buildPATPacketForProgram(1, 2, 0x0200)...)
+	prog2Chunk = append(prog2Chunk, buildPMTPacketForProgram(1, 2, 0x0200, 0x0200, 0x0201)...)
+	res2, err := remote.Ingest(ctx, offset, prog2Chunk)
+	if err != nil {
+		t.Fatalf("program 2 ingest: %v", err)
+	}
+
+	// NEGATIVE CONTROL: Simulate the unpatched core (main) by removing the closing edge.
+	// On main, res2.Timing.Records only had the PAT and PMT discontinuities,
+	// without the preceding closing edge (HasEpochBefore: true, HasEpochAfter: false).
+	simulatedMainRecords := make([]mediafacts.TimingRecord, 0, len(res2.Timing.Records))
+	for _, rec := range res2.Timing.Records {
+		if rec.Type == mediafacts.TimingRecordTypeDiscontinuity &&
+			rec.Discontinuity.HasEpochBefore && !rec.Discontinuity.HasEpochAfter {
+			// Drop the closing edge to simulate unpatched core behavior.
+			continue
+		}
+		simulatedMainRecords = append(simulatedMainRecords, rec)
+	}
+	resSimulatedMain := res2
+	resSimulatedMain.Timing.Records = simulatedMainRecords
+
+	// Assert that MediaIndex fails closed with ErrInconsistentEpochTransition on unpatched output:
+	errUnpatched := idx.ApplyIngestResult(resSimulatedMain)
+	if !errors.Is(errUnpatched, timeline.ErrInconsistentEpochTransition) {
+		t.Fatalf("negative control: got %v, want ErrInconsistentEpochTransition", errUnpatched)
+	}
+
+	// POSITIVE CONTROL: Assert that with the 9b-1 fix (closing edge present),
+	// MediaIndex accepts the transition cleanly with zero errors.
+	if err := idx.ApplyIngestResult(res2); err != nil {
+		t.Fatalf("positive control: ApplyIngestResult failed with fix: %v", err)
+	}
 }

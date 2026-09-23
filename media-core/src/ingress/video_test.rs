@@ -1171,11 +1171,21 @@ fn test_set_target_program_idempotency_and_reactivation_lifecycle() {
 
     assert_eq!(
         disc_records.len(),
-        2,
-        "must emit 2 transport discontinuity records (PAT and PMT)"
+        3,
+        "must emit 3 transport discontinuity records (closing edge for epoch 0, PAT, PMT)"
     );
     assert_eq!(
         disc_records[0],
+        (
+            TimingResetScope::Program,
+            DiscontinuityReason::ProgramIdentityChanged,
+            ByteOffset::new(offset),
+            Some(TimelineEpoch(0)),
+            None
+        )
+    );
+    assert_eq!(
+        disc_records[1],
         (
             TimingResetScope::Program,
             DiscontinuityReason::ProgramIdentityChanged,
@@ -1185,7 +1195,7 @@ fn test_set_target_program_idempotency_and_reactivation_lifecycle() {
         )
     );
     assert_eq!(
-        disc_records[1],
+        disc_records[2],
         (
             TimingResetScope::Program,
             DiscontinuityReason::ProgramIdentityChanged,
@@ -1850,4 +1860,107 @@ fn timeline_track_reset_on_cc_break_does_not_bump_epoch() {
     assert_eq!(ingress.timeline().active_epoch(), initial_epoch);
     // Track-local timing point was reset:
     assert!(ingress.timeline().last_video_point().is_none());
+}
+
+#[test]
+fn zap_empty_ingest_keeps_closing_edge_pending_until_first_packet() {
+    let (mut ingress, mut offset) = standard_setup();
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(TimelineEpoch(0)),
+        "active epoch 0 established"
+    );
+
+    // Zap to program 2
+    let events = ingress.set_target_program(2);
+    assert_eq!(events, vec![VideoEvent::ProgramIdentityChanged]);
+    assert_eq!(ingress.timeline().active_epoch(), None);
+
+    // 1. Ingest an empty chunk: zero packets
+    let out_empty = ingress.ingest(offset, &[]).expect("ingest empty slice");
+    assert!(out_empty.events.is_empty());
+    assert!(
+        out_empty.timing_records.is_empty(),
+        "empty chunk must emit zero records (closing edge stays pending)"
+    );
+
+    // 2. Ingest one transport packet (e.g. null packet on PID 0x1FFF)
+    let null_pkt = make_ts_packet(0x1FFF, false, 0, 0, false, &[0xFF; 184]);
+    let out_pkt = ingress.ingest(offset, &null_pkt).expect("ingest packet");
+    offset += PACKET_LEN_I64;
+
+    // Must emit the closing edge at the real packet offset
+    assert_eq!(out_pkt.timing_records.len(), 1);
+    assert_eq!(
+        out_pkt.timing_records[0],
+        TimingRecord::Discontinuity {
+            scope: TimingResetScope::Program,
+            reason: DiscontinuityReason::ProgramIdentityChanged,
+            observed_at: ByteOffset::new(offset - PACKET_LEN_I64),
+            epoch_before: Some(TimelineEpoch(0)),
+            epoch_after: None,
+        }
+    );
+
+    // 3. Subsequent packet: closing edge already consumed, nothing emitted
+    let null_pkt2 = make_ts_packet(0x1FFF, false, 1, 0, false, &[0xFF; 184]);
+    let out_pkt2 = ingress.ingest(offset, &null_pkt2).expect("ingest packet 2");
+    assert!(out_pkt2.timing_records.is_empty());
+}
+
+#[test]
+fn zap_multiple_times_before_transport_emits_single_closing_edge() {
+    let (mut ingress, mut offset) = standard_setup();
+    assert_eq!(ingress.timeline().active_epoch(), Some(TimelineEpoch(0)));
+
+    // Zap to program 2
+    ingress.set_target_program(2);
+    assert_eq!(ingress.timeline().active_epoch(), None);
+
+    // Zap to program 3 without any transport in between
+    ingress.set_target_program(3);
+    assert_eq!(ingress.timeline().active_epoch(), None);
+
+    // Zap to program 4 without any transport
+    ingress.set_target_program(4);
+    assert_eq!(ingress.timeline().active_epoch(), None);
+
+    // Ingest first packet for program 4
+    let null_pkt = make_ts_packet(0x1FFF, false, 0, 0, false, &[0xFF; 184]);
+    let out = ingress.ingest(offset, &null_pkt).expect("ingest packet");
+    offset += PACKET_LEN_I64;
+    let _ = offset;
+
+    // Must emit exactly ONE closing edge for the original Epoch 0
+    assert_eq!(out.timing_records.len(), 1);
+    assert_eq!(
+        out.timing_records[0],
+        TimingRecord::Discontinuity {
+            scope: TimingResetScope::Program,
+            reason: DiscontinuityReason::ProgramIdentityChanged,
+            observed_at: ByteOffset::new(PACKET_LEN_I64 * 2), // standard_setup used 2 packets
+            epoch_before: Some(TimelineEpoch(0)),
+            epoch_after: None,
+        }
+    );
+}
+
+#[test]
+fn zap_idempotent_reselect_emits_no_closing_edge() {
+    let (mut ingress, offset) = standard_setup();
+    assert_eq!(ingress.timeline().active_epoch(), Some(TimelineEpoch(0)));
+
+    // Reselect the SAME program (PROGRAM = 1)
+    let events = ingress.set_target_program(PROGRAM);
+    assert!(events.is_empty(), "idempotent reselect emits no events");
+    assert_eq!(
+        ingress.timeline().active_epoch(),
+        Some(TimelineEpoch(0)),
+        "active epoch stays open"
+    );
+
+    // Ingest packet: no closing edge emitted
+    let null_pkt = make_ts_packet(0x1FFF, false, 0, 0, false, &[0xFF; 184]);
+    let out = ingress.ingest(offset, &null_pkt).expect("ingest packet");
+    assert!(out.timing_records.is_empty());
 }

@@ -55,11 +55,17 @@ enum ExpectedRecord {
 }
 
 #[derive(Debug)]
-struct Step {
-    chunk: Vec<u8>,
-    expected_epoch: Option<u64>,
-    events: Vec<VideoEvent>,
-    records: Vec<ExpectedRecord>,
+enum Step {
+    Chunk {
+        chunk: Vec<u8>,
+        expected_epoch: Option<u64>,
+        events: Vec<VideoEvent>,
+        records: Vec<ExpectedRecord>,
+    },
+    SetTarget {
+        target: u16,
+        events: Vec<VideoEvent>,
+    },
 }
 
 #[derive(Debug)]
@@ -210,14 +216,30 @@ fn parse_corpus(text: &str) -> Vec<Case> {
                     c.program = parts[1].parse().expect("program");
                 }
             }
+            "settarget" => {
+                if let Some(s) = step.take() {
+                    if let Some(ref mut c) = current {
+                        c.steps.push(s);
+                    }
+                }
+                step = Some(Step::SetTarget {
+                    target: parts[1].parse().expect("target"),
+                    events: Vec::new(),
+                });
+            }
             "chunk" => {
                 if let Some(s) = step.take() {
                     if let Some(ref mut c) = current {
                         c.steps.push(s);
                     }
                 }
-                step = Some(Step {
-                    chunk: parse_hex(parts[1]),
+                let chunk = if parts.len() > 1 {
+                    parse_hex(parts[1])
+                } else {
+                    Vec::new()
+                };
+                step = Some(Step::Chunk {
+                    chunk,
                     expected_epoch: None,
                     events: Vec::new(),
                     records: Vec::new(),
@@ -229,18 +251,29 @@ fn parse_corpus(text: &str) -> Vec<Case> {
                 } else {
                     Some(parts[1].parse().expect("epoch"))
                 };
-                if let Some(ref mut s) = step {
-                    s.expected_epoch = ep;
+                if let Some(Step::Chunk {
+                    ref mut expected_epoch,
+                    ..
+                }) = step
+                {
+                    *expected_epoch = ep;
                 }
             }
             "event" => {
                 if let Some(ref mut s) = step {
-                    s.events.push(parse_event(&parts[1..]));
+                    match s {
+                        Step::Chunk { events, .. } | Step::SetTarget { events, .. } => {
+                            events.push(parse_event(&parts[1..]));
+                        }
+                    }
                 }
             }
             "record" => {
-                if let Some(ref mut s) = step {
-                    s.records.push(parse_record(&parts[1..]));
+                if let Some(Step::Chunk {
+                    ref mut records, ..
+                }) = step
+                {
+                    records.push(parse_record(&parts[1..]));
                 }
             }
             "end" => {
@@ -271,145 +304,161 @@ fn the_rust_core_answers_the_authored_timing_corpus() {
         let mut offset = 0i64;
 
         for (step_idx, step) in c.steps.into_iter().enumerate() {
-            let outcome = ingress.ingest(offset, &step.chunk).unwrap_or_else(|e| {
-                panic!("case {} step {} ingest error: {:?}", c.name, step_idx, e)
-            });
-            offset = outcome.processed_through;
+            match step {
+                Step::SetTarget { target, events } => {
+                    let actual_events = ingress.set_target_program(target);
+                    assert_eq!(
+                        actual_events, events,
+                        "case {} step {}: settarget events mismatch",
+                        c.name, step_idx
+                    );
+                }
+                Step::Chunk {
+                    chunk,
+                    expected_epoch,
+                    events,
+                    records,
+                } => {
+                    let outcome = ingress.ingest(offset, &chunk).unwrap_or_else(|e| {
+                        panic!("case {} step {} ingest error: {:?}", c.name, step_idx, e)
+                    });
+                    offset = outcome.processed_through;
 
-            // 1. Check active epoch
-            let actual_epoch = ingress.timeline().active_epoch().map(TimelineEpoch::get);
-            assert_eq!(
-                actual_epoch, step.expected_epoch,
-                "case {} step {}: epoch mismatch",
-                c.name, step_idx
-            );
+                    // 1. Check active epoch
+                    let actual_epoch = ingress.timeline().active_epoch().map(TimelineEpoch::get);
+                    assert_eq!(
+                        actual_epoch, expected_epoch,
+                        "case {} step {}: epoch mismatch",
+                        c.name, step_idx
+                    );
 
-            // 2. Check events
-            assert_eq!(
-                outcome.events, step.events,
-                "case {} step {}: events mismatch",
-                c.name, step_idx
-            );
+                    // 2. Check events
+                    assert_eq!(
+                        outcome.events, events,
+                        "case {} step {}: events mismatch",
+                        c.name, step_idx
+                    );
 
-            // 3. Check timing records
-            assert_eq!(
-                outcome.timing_records.len(),
-                step.records.len(),
-                "case {} step {}: record count mismatch. Got: {:?}",
-                c.name,
-                step_idx,
-                outcome.timing_records
-            );
+                    // 3. Check timing records
+                    assert_eq!(
+                        outcome.timing_records.len(),
+                        records.len(),
+                        "case {} step {}: record count mismatch. Got: {:?}",
+                        c.name,
+                        step_idx,
+                        outcome.timing_records
+                    );
 
-            for (rec_idx, (actual, expected)) in outcome
-                .timing_records
-                .into_iter()
-                .zip(step.records)
-                .enumerate()
-            {
-                match (actual, expected) {
-                    (
-                        TimingRecord::Pes(TimingPoint {
-                            epoch,
-                            pid,
-                            pts,
-                            dts,
-                            observed_at,
-                            subject_at,
-                        }),
-                        ExpectedRecord::Pes {
-                            epoch: exp_epoch,
-                            pid: exp_pid,
-                            pts: exp_pts,
-                            dts: exp_dts,
-                            obs: exp_obs,
-                            sub: exp_sub,
-                        },
-                    )
-                    | (
-                        TimingRecord::RandomAccessPoint(TimingPoint {
-                            epoch,
-                            pid,
-                            pts,
-                            dts,
-                            observed_at,
-                            subject_at,
-                        }),
-                        ExpectedRecord::Rap {
-                            epoch: exp_epoch,
-                            pid: exp_pid,
-                            pts: exp_pts,
-                            dts: exp_dts,
-                            obs: exp_obs,
-                            sub: exp_sub,
-                        },
-                    ) => {
-                        assert_eq!(epoch.get(), exp_epoch);
-                        assert_eq!(pid.get(), exp_pid);
-                        assert_eq!(pts.map(ExtendedPts90k::get), exp_pts);
-                        assert_eq!(dts.map(ExtendedDts90k::get), exp_dts);
-                        assert_eq!(observed_at.get(), exp_obs);
-                        assert_eq!(subject_at.get(), exp_sub);
-                    }
-                    (
-                        TimingRecord::Pcr {
-                            epoch,
-                            pid,
-                            observed_at,
-                            pcr_27m,
-                        },
-                        ExpectedRecord::Pcr {
-                            epoch: exp_epoch,
-                            pid: exp_pid,
-                            pcr: exp_pcr,
-                            obs: exp_obs,
-                        },
-                    ) => {
-                        assert_eq!(epoch.get(), exp_epoch);
-                        assert_eq!(pid.get(), exp_pid);
-                        assert_eq!(observed_at.get(), exp_obs);
-                        assert_eq!(pcr_27m.get(), exp_pcr);
-                    }
-                    (
-                        TimingRecord::Discontinuity {
-                            scope,
-                            reason,
-                            observed_at,
-                            epoch_before,
-                            epoch_after,
-                        },
-                        ExpectedRecord::Disc {
-                            scope: exp_scope,
-                            reason: exp_reason,
-                            obs: exp_obs,
-                            before: exp_before,
-                            after: exp_after,
-                        },
-                    ) => {
-                        let scope_str = match scope {
-                            TimingResetScope::Program => "program".to_string(),
-                            TimingResetScope::Track(p) => format!("track:{}", p.get()),
-                        };
-                        assert_eq!(scope_str, exp_scope);
-                        let reason_str = match reason {
-                            DiscontinuityReason::ProgramIdentityChanged => {
-                                "program_identity_changed"
+                    for (rec_idx, (actual, expected)) in
+                        outcome.timing_records.into_iter().zip(records).enumerate()
+                    {
+                        match (actual, expected) {
+                            (
+                                TimingRecord::Pes(TimingPoint {
+                                    epoch,
+                                    pid,
+                                    pts,
+                                    dts,
+                                    observed_at,
+                                    subject_at,
+                                }),
+                                ExpectedRecord::Pes {
+                                    epoch: exp_epoch,
+                                    pid: exp_pid,
+                                    pts: exp_pts,
+                                    dts: exp_dts,
+                                    obs: exp_obs,
+                                    sub: exp_sub,
+                                },
+                            )
+                            | (
+                                TimingRecord::RandomAccessPoint(TimingPoint {
+                                    epoch,
+                                    pid,
+                                    pts,
+                                    dts,
+                                    observed_at,
+                                    subject_at,
+                                }),
+                                ExpectedRecord::Rap {
+                                    epoch: exp_epoch,
+                                    pid: exp_pid,
+                                    pts: exp_pts,
+                                    dts: exp_dts,
+                                    obs: exp_obs,
+                                    sub: exp_sub,
+                                },
+                            ) => {
+                                assert_eq!(epoch.get(), exp_epoch);
+                                assert_eq!(pid.get(), exp_pid);
+                                assert_eq!(pts.map(ExtendedPts90k::get), exp_pts);
+                                assert_eq!(dts.map(ExtendedDts90k::get), exp_dts);
+                                assert_eq!(observed_at.get(), exp_obs);
+                                assert_eq!(subject_at.get(), exp_sub);
                             }
-                            DiscontinuityReason::PcrPidChanged => "pcr_pid_changed",
-                            DiscontinuityReason::PcrDiscontinuityIndicator => {
-                                "pcr_discontinuity_indicator"
+                            (
+                                TimingRecord::Pcr {
+                                    epoch,
+                                    pid,
+                                    observed_at,
+                                    pcr_27m,
+                                },
+                                ExpectedRecord::Pcr {
+                                    epoch: exp_epoch,
+                                    pid: exp_pid,
+                                    pcr: exp_pcr,
+                                    obs: exp_obs,
+                                },
+                            ) => {
+                                assert_eq!(epoch.get(), exp_epoch);
+                                assert_eq!(pid.get(), exp_pid);
+                                assert_eq!(observed_at.get(), exp_obs);
+                                assert_eq!(pcr_27m.get(), exp_pcr);
                             }
-                            DiscontinuityReason::TransportTimingLoss => "transport_timing_loss",
-                        };
-                        assert_eq!(reason_str, exp_reason);
-                        assert_eq!(observed_at.get(), exp_obs);
-                        assert_eq!(epoch_before.map(TimelineEpoch::get), exp_before);
-                        assert_eq!(epoch_after.map(TimelineEpoch::get), exp_after);
+                            (
+                                TimingRecord::Discontinuity {
+                                    scope,
+                                    reason,
+                                    observed_at,
+                                    epoch_before,
+                                    epoch_after,
+                                },
+                                ExpectedRecord::Disc {
+                                    scope: exp_scope,
+                                    reason: exp_reason,
+                                    obs: exp_obs,
+                                    before: exp_before,
+                                    after: exp_after,
+                                },
+                            ) => {
+                                let scope_str = match scope {
+                                    TimingResetScope::Program => "program".to_string(),
+                                    TimingResetScope::Track(p) => format!("track:{}", p.get()),
+                                };
+                                assert_eq!(scope_str, exp_scope);
+                                let reason_str = match reason {
+                                    DiscontinuityReason::ProgramIdentityChanged => {
+                                        "program_identity_changed"
+                                    }
+                                    DiscontinuityReason::PcrPidChanged => "pcr_pid_changed",
+                                    DiscontinuityReason::PcrDiscontinuityIndicator => {
+                                        "pcr_discontinuity_indicator"
+                                    }
+                                    DiscontinuityReason::TransportTimingLoss => {
+                                        "transport_timing_loss"
+                                    }
+                                };
+                                assert_eq!(reason_str, exp_reason);
+                                assert_eq!(observed_at.get(), exp_obs);
+                                assert_eq!(epoch_before.map(TimelineEpoch::get), exp_before);
+                                assert_eq!(epoch_after.map(TimelineEpoch::get), exp_after);
+                            }
+                            (act, exp) => panic!(
+                                "case {} step {} rec {}: record variant mismatch: act={:?}, exp={:?}",
+                                c.name, step_idx, rec_idx, act, exp
+                            ),
+                        }
                     }
-                    (act, exp) => panic!(
-                        "case {} step {} rec {}: record variant mismatch: act={:?}, exp={:?}",
-                        c.name, step_idx, rec_idx, act, exp
-                    ),
                 }
             }
         }

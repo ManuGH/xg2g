@@ -45,8 +45,8 @@ use crate::ingress::audio::{AudioTrackState, AudioTracker};
 use crate::pes::{self, PesHeaderAssembler};
 use crate::psi::{ActivePsi, IngestError, PsiCore, PsiEvent, PsiFacts, VideoCodec};
 use crate::timing::{
-    ByteOffset, DiscontinuityReason, PcrObservation, PcrTracker, Pid, TimelineTracker, TimingEvent,
-    TimingPoint, TimingRecord, TimingResetScope, TimingSnapshot,
+    ByteOffset, DiscontinuityReason, PcrObservation, PcrTracker, Pid, TimelineEpoch,
+    TimelineTracker, TimingEvent, TimingPoint, TimingRecord, TimingResetScope, TimingSnapshot,
 };
 use crate::transport::{Continuity, ContinuityTracker, PacketView, TS_PACKET_LEN};
 
@@ -902,6 +902,7 @@ pub struct VideoIngress {
     timing: PcrTracker,
     timeline: TimelineTracker,
     incarnation: u64,
+    pending_program_closing_edge: Option<TimelineEpoch>,
 }
 
 impl VideoIngress {
@@ -915,6 +916,7 @@ impl VideoIngress {
             timing: PcrTracker::new(),
             timeline: TimelineTracker::new(),
             incarnation: 0,
+            pending_program_closing_edge: None,
         }
     }
 
@@ -988,6 +990,10 @@ impl VideoIngress {
 
         if !identity_changed {
             return Vec::new();
+        }
+
+        if self.pending_program_closing_edge.is_none() {
+            self.pending_program_closing_edge = self.timeline.active_epoch();
         }
 
         self.reprogram();
@@ -1080,6 +1086,18 @@ impl VideoIngress {
             let rel_offset =
                 i64::try_from(packet_idx.saturating_mul(TS_PACKET_LEN)).unwrap_or(i64::MAX);
             let packet_offset = start_offset.saturating_add(rel_offset);
+            if packet_idx == 0 {
+                #[allow(clippy::collapsible_if)]
+                if let Some(old_epoch) = self.pending_program_closing_edge.take() {
+                    timing_records.push(TimingRecord::Discontinuity {
+                        scope: TimingResetScope::Program,
+                        reason: DiscontinuityReason::ProgramIdentityChanged,
+                        observed_at: ByteOffset::new(packet_offset),
+                        epoch_before: Some(old_epoch),
+                        epoch_after: None,
+                    });
+                }
+            }
             let identity_changed_count = self
                 .psi
                 .index_packet(packet)
