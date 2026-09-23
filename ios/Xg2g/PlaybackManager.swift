@@ -111,11 +111,11 @@ final class PlaybackManager: ObservableObject {
         return AnyCancellable { [weak self] in
             if Thread.isMainThread {
                 MainActor.assumeIsolated {
-                    self?.stateObservers.removeValue(forKey: id)
+                    _ = self?.stateObservers.removeValue(forKey: id)
                 }
             } else {
                 Task { @MainActor in
-                    self?.stateObservers.removeValue(forKey: id)
+                    _ = self?.stateObservers.removeValue(forKey: id)
                 }
             }
         }
