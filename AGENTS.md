@@ -18,7 +18,8 @@ Always use the following verified host & network topology (do not use obsolete I
 - **VM 100 (`OPNsense` / `10.10.55.254`):**
   - Gateway, router, and WireGuard VPN server.
 - **Enigma2 Receiver (`10.10.55.64`):**
-  - VU+ Uno 4K receiver source (`root:rK8pN4sV6mQ2xT9`).
+  - VU+ Uno 4K receiver source. Its credentials live in the operator's local
+    secret store and are never written to this repository, its history, PRs, or logs.
 
 ## Ops Triage Truth
 
