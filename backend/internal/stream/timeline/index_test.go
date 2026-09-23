@@ -1594,3 +1594,277 @@ func BenchmarkEpochForOffset(b *testing.B) {
 		idx.EpochForOffset(int64((i % 50) * 100000))
 	}
 }
+
+var _ TimelineReader = (*MediaIndex)(nil)
+
+func TestTimelineReader_DirectInterfaceContract(t *testing.T) {
+	idx := NewMediaIndex()
+	var reader TimelineReader = idx
+
+	activeEpoch, hasActive := reader.ActiveEpoch()
+	if hasActive || activeEpoch != 0 {
+		t.Fatalf("expected no active epoch initially, got %v (%d)", hasActive, activeEpoch)
+	}
+
+	stats := reader.Stats()
+	if stats.TotalRAPs != 0 || stats.BoundRAPs != 0 || stats.BoundRAPRatio() != 1.0 {
+		t.Fatalf("unexpected empty stats: %+v", stats)
+	}
+}
+
+func TestMediaIndex_ErrNonMonotonicObservedAt(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Initial valid commit: PCR at offset 1000
+	res1 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypePCR,
+				PCR: mediafacts.PCRPoint{
+					Epoch:          0,
+					PCRPID:         256,
+					ObservedAt:     1000,
+					ExtendedPCR27m: 27_000_000,
+				},
+			},
+		},
+		nil,
+	)
+	if err := idx.ApplyIngestResult(res1); err != nil {
+		t.Fatalf("initial ingest failed: %v", err)
+	}
+
+	// Regressive PCR at offset 500 (< 1000)
+	res2 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypePCR,
+				PCR: mediafacts.PCRPoint{
+					Epoch:          0,
+					PCRPID:         256,
+					ObservedAt:     500,
+					ExtendedPCR27m: 27_000_000,
+				},
+			},
+		},
+		nil,
+	)
+	err := idx.ApplyIngestResult(res2)
+	if !errors.Is(err, ErrNonMonotonicObservedAt) {
+		t.Fatalf("expected ErrNonMonotonicObservedAt, got: %v", err)
+	}
+	if len(idx.PCREntries()) != 1 || idx.PCREntries()[0].ObservedAt != 1000 {
+		t.Fatalf("index mutated on non-monotonic error: %+v", idx.PCREntries())
+	}
+
+	// Regressive PES timing point
+	resPES1 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        257,
+					ObservedAt: 2000,
+					SubjectAt:  2000,
+				},
+			},
+		},
+		nil,
+	)
+	if err := idx.ApplyIngestResult(resPES1); err != nil {
+		t.Fatalf("pes1 ingest failed: %v", err)
+	}
+	resPES2 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypePES,
+				PES: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        257,
+					ObservedAt: 1500,
+					SubjectAt:  1500,
+				},
+			},
+		},
+		nil,
+	)
+	err = idx.ApplyIngestResult(resPES2)
+	if !errors.Is(err, ErrNonMonotonicObservedAt) {
+		t.Fatalf("expected ErrNonMonotonicObservedAt on PES, got: %v", err)
+	}
+
+	// Regressive Discontinuity
+	resDisc1 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:      mediafacts.DiscontinuityScopeProgram,
+					ObservedAt: 3000,
+				},
+			},
+		},
+		nil,
+	)
+	if err := idx.ApplyIngestResult(resDisc1); err != nil {
+		t.Fatalf("disc1 ingest failed: %v", err)
+	}
+	resDisc2 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:      mediafacts.DiscontinuityScopeProgram,
+					ObservedAt: 2500,
+				},
+			},
+		},
+		nil,
+	)
+	err = idx.ApplyIngestResult(resDisc2)
+	if !errors.Is(err, ErrNonMonotonicObservedAt) {
+		t.Fatalf("expected ErrNonMonotonicObservedAt on Discontinuity, got: %v", err)
+	}
+
+	// Regressive RAP event offset
+	resRAP1 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        257,
+					SubjectAt:  4000,
+					ObservedAt: 4000,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 4000, Joinable: true},
+		},
+	)
+	if err := idx.ApplyIngestResult(resRAP1); err != nil {
+		t.Fatalf("rap1 ingest failed: %v", err)
+	}
+	resRAP2 := canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:      0,
+					PID:        257,
+					SubjectAt:  3500,
+					ObservedAt: 3500,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 3500, Joinable: true},
+		},
+	)
+	err = idx.ApplyIngestResult(resRAP2)
+	if !errors.Is(err, ErrNonMonotonicObservedAt) {
+		t.Fatalf("expected ErrNonMonotonicObservedAt on RAP, got: %v", err)
+	}
+}
+
+func TestMediaIndex_EmptyEpochKeyPruning(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest RAP in epoch 0 at offset 1000
+	_ = idx.ApplyIngestResult(canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:     0,
+					PID:       257,
+					HasPTS:    true,
+					PTS90k:    90000,
+					SubjectAt: 1000,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+		},
+	))
+
+	// Ingest RAP in epoch 1 at offset 2000
+	_ = idx.ApplyIngestResult(canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:     1,
+					PID:       257,
+					HasPTS:    true,
+					PTS90k:    180000,
+					SubjectAt: 2000,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: true},
+		},
+	))
+
+	stats := idx.Stats()
+	if stats.EpochKeys != 2 {
+		t.Fatalf("expected 2 epoch keys, got %d", stats.EpochKeys)
+	}
+
+	// Prune before 1500: should remove epoch 0 RAP and delete map key for epoch 0
+	idx.PruneBefore(1500)
+
+	statsAfter := idx.Stats()
+	if statsAfter.EpochKeys != 1 {
+		t.Fatalf("expected 1 epoch key after pruning, got %d", statsAfter.EpochKeys)
+	}
+	if statsAfter.TotalRAPs != 1 || statsAfter.BoundRAPs != 1 {
+		t.Fatalf("unexpected stats after prune: %+v", statsAfter)
+	}
+}
+
+func TestMediaIndex_StatsAndBoundRAPRatio(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Bound RAP
+	_ = idx.ApplyIngestResult(canonicalIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:     0,
+					PID:       257,
+					HasPTS:    true,
+					PTS90k:    90000,
+					SubjectAt: 1000,
+				},
+			},
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+		},
+	))
+
+	// Unbound RAP (no RAP timing record)
+	_ = idx.ApplyIngestResult(canonicalIngestResult(
+		nil,
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: true},
+		},
+	))
+
+	stats := idx.Stats()
+	if stats.TotalRAPs != 2 {
+		t.Errorf("TotalRAPs = %d, want 2", stats.TotalRAPs)
+	}
+	if stats.BoundRAPs != 1 {
+		t.Errorf("BoundRAPs = %d, want 1", stats.BoundRAPs)
+	}
+	if ratio := stats.BoundRAPRatio(); ratio < 0.49 || ratio > 0.51 {
+		t.Errorf("BoundRAPRatio = %f, want 0.5", ratio)
+	}
+}

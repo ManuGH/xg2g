@@ -13,8 +13,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/tsfixture"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // published is what the registry currently holds for one role. The metrics are
@@ -205,5 +207,152 @@ func TestRecordVariantWorkerStopped_SeparatesReasons(t *testing.T) {
 	}
 	if got := readReason(WorkerStopError) - beforeErr; got != 0 {
 		t.Fatalf("a generation cut moved the error counter by %v", got)
+	}
+}
+
+func gaugeValue(t *testing.T, g prometheus.Gauge) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := g.Write(&m); err != nil {
+		t.Fatalf("read gauge: %v", err)
+	}
+	return m.GetGauge().GetValue()
+}
+
+func TestTimelineSampler_NilSafety(t *testing.T) {
+	// Nil reader returns nil sampler
+	s := NewTimelineSampler(RoleNativeClient, nil)
+	if s != nil {
+		t.Fatalf("expected nil sampler from nil reader, got %v", s)
+	}
+
+	// Safe to call methods on nil receiver
+	s.Sample()
+	s.Flush()
+}
+
+func TestTimelineSampler_PublishesGaugesAndPaces(t *testing.T) {
+	idx := timeline.NewMediaIndex()
+
+	res := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 2000,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:         mediafacts.DiscontinuityScopeProgram,
+						Reason:        mediafacts.DiscontinuityReasonProgramIdentityChanged,
+						ObservedAt:    0,
+						HasEpochAfter: true,
+						EpochAfter:    1,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypePCR,
+					PCR: mediafacts.PCRPoint{
+						Epoch:          1,
+						PCRPID:         256,
+						ObservedAt:     500,
+						ExtendedPCR27m: 27_000_000,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypePES,
+					PES: mediafacts.TimingPoint{
+						Epoch:      1,
+						PID:        257,
+						ObservedAt: 1000,
+						SubjectAt:  1000,
+						HasPTS:     true,
+						PTS90k:     90000,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+					RAP: mediafacts.TimingPoint{
+						Epoch:      1,
+						PID:        257,
+						ObservedAt: 1000,
+						SubjectAt:  1000,
+						HasPTS:     true,
+						PTS90k:     90000,
+					},
+				},
+			},
+		},
+		Events: []mediafacts.Event{
+			{
+				Kind:     mediafacts.EventRandomAccessPoint,
+				Offset:   1000,
+				Joinable: true,
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(res); err != nil {
+		t.Fatalf("apply ingest failed: %v", err)
+	}
+
+	sampler := NewTimelineSampler(RoleNativeClient, idx)
+	if sampler == nil {
+		t.Fatal("expected non-nil sampler")
+	}
+
+	// Flush immediately publishes gauges
+	sampler.Flush()
+
+	lbl := string(RoleNativeClient)
+	if got := gaugeValue(t, metrics.IngestTimelineBoundRAPRatio.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("BoundRAPRatio = %v, want 1.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("RAPCount = %v, want 1.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelineEpochSpans.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("EpochSpans = %v, want 1.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelineTimingPoints.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("TimingPoints = %v, want 1.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelinePCREntries.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("PCREntries = %v, want 1.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelineEpochKeys.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("EpochKeys = %v, want 1.0", got)
+	}
+
+	// Test pacing
+	sampler.nextAt = time.Now().Add(time.Hour)
+	// Mutate index with second RAP (unbound)
+	err := idx.ApplyIngestResult(mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 3000,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+		},
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2500, Joinable: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("second apply failed: %v", err)
+	}
+
+	// Sample() should not publish because nextAt is in the future
+	sampler.Sample()
+	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 1.0 {
+		t.Fatalf("RAPCount prematurely updated across paced interval: %v", got)
+	}
+
+	// When nextAt is past, Sample() publishes
+	sampler.nextAt = time.Now().Add(-time.Millisecond)
+	sampler.Sample()
+	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 2.0 {
+		t.Fatalf("RAPCount did not update after interval elapsed: %v, want 2.0", got)
+	}
+	if got := gaugeValue(t, metrics.IngestTimelineBoundRAPRatio.WithLabelValues(lbl)); got < 0.49 || got > 0.51 {
+		t.Fatalf("BoundRAPRatio = %v, want 0.5", got)
 	}
 }

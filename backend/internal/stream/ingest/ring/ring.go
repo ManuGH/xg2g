@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 var (
@@ -143,6 +144,21 @@ type MasterRing struct {
 	// is the core's; packetizing them for delivery is the ring's, and neither
 	// parses them twice.
 	activePSI mediafacts.ActivePSI
+
+	// timelineIndex maintains the canonical timing index when configured via WithTimelineIndex.
+	// MasterRing acts as the single writer and commit gatekeeper under mu.
+	timelineIndex *timeline.MediaIndex
+}
+
+// Option configures an optional capability on a MasterRing.
+type Option func(*MasterRing)
+
+// WithTimelineIndex configures a canonical timeline.MediaIndex for the ring.
+// When set, MasterRing acts as the timeline's single writer and commit gatekeeper.
+func WithTimelineIndex(idx *timeline.MediaIndex) Option {
+	return func(r *MasterRing) {
+		r.timelineIndex = idx
+	}
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -150,8 +166,8 @@ func NewMasterRing(capacityBytes int) *MasterRing {
 	return NewMasterRingWithProgram(capacityBytes, 0)
 }
 
-// NewMasterRingWithCore creates a new MasterRing using an explicitly supplied media facts core.
-func NewMasterRingWithCore(capacityBytes int, core mediafacts.Core) *MasterRing {
+// NewMasterRingWithCore creates a new MasterRing using an explicitly supplied media facts core and options.
+func NewMasterRingWithCore(capacityBytes int, core mediafacts.Core, opts ...Option) *MasterRing {
 	capacityBytes = (capacityBytes / TSPacketSize) * TSPacketSize
 	if capacityBytes < TSPacketSize*5 {
 		capacityBytes = TSPacketSize * 5 // min 5 packets (~940 bytes)
@@ -163,6 +179,11 @@ func NewMasterRingWithCore(capacityBytes int, core mediafacts.Core) *MasterRing 
 		maxKeyframes:   64,
 		ingestDeadline: mediafacts.DefaultIngestDeadline,
 		core:           core,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
 	}
 	r.notEmpty = sync.NewCond(&r.mu)
 	return r
@@ -445,6 +466,12 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 		return 0, r.retireCore(ctx, ErrRingAdvanced)
 	}
 
+	if r.timelineIndex != nil {
+		if err := r.timelineIndex.ApplyIngestResult(res); err != nil {
+			return 0, r.retireCore(ctx, err)
+		}
+	}
+
 	genBefore := r.generation
 	r.applyLocked(res)
 
@@ -471,6 +498,9 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 		if r.head-r.tail > int64(r.capacity) {
 			r.tail = r.head - int64(r.capacity)
 			r.pruneKeyframesLocked()
+			if r.timelineIndex != nil {
+				r.timelineIndex.PruneBefore(r.tail)
+			}
 		}
 	}
 
@@ -487,6 +517,21 @@ func (r *MasterRing) RandomAccess() RandomAccessObservation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.facts.RandomAccess
+}
+
+// Timeline returns the canonical read-only timeline reader, or nil if this ring
+// does not maintain a timeline index (e.g. variant or non-canonical rings).
+//
+// To prevent Go typed-nil interface bugs where an interface variable containing a
+// nil pointer is not equal to nil, this returns an explicit untyped nil when
+// r.timelineIndex is nil.
+func (r *MasterRing) Timeline() timeline.TimelineReader {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.timelineIndex == nil {
+		return nil
+	}
+	return r.timelineIndex
 }
 
 func (r *MasterRing) pruneKeyframesLocked() {

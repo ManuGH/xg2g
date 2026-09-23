@@ -82,3 +82,21 @@ type EpochSpan struct {
 	EndOffset   int64
 	Closed      bool
 }
+
+// TimelineStats captures point-in-time count and ratio statistics of a MediaIndex.
+type TimelineStats struct {
+	TotalRAPs    int
+	BoundRAPs    int
+	EpochSpans   int
+	TimingPoints int
+	PCREntries   int
+	EpochKeys    int
+}
+
+// BoundRAPRatio returns the ratio of bound RAPs to total RAPs, or 1.0 if there are no RAPs.
+func (s TimelineStats) BoundRAPRatio() float64 {
+	if s.TotalRAPs == 0 {
+		return 1.0
+	}
+	return float64(s.BoundRAPs) / float64(s.TotalRAPs)
+}

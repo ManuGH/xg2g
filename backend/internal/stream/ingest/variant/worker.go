@@ -400,6 +400,8 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		// re-enter at the next random access point.
 		sampler := ingeststats.NewSubscriberSampler(ingeststats.RoleVariantWorker, masterReader)
 		defer sampler.Flush()
+		timelineSampler := ingeststats.NewTimelineSampler(ingeststats.RoleVariantWorker, masterReader.Ring().Timeline())
+		defer timelineSampler.Flush()
 
 		buf := make([]byte, 32*1024)
 		for {
@@ -408,6 +410,7 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			}
 			n, rerr := masterReader.Read(buf)
 			sampler.Sample()
+			timelineSampler.Sample()
 
 			// Checked between the read and the write, not before the read: the read
 			// can block for a whole GOP while waiting to recover, and the topology

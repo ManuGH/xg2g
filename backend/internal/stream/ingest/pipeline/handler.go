@@ -348,6 +348,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sampler := ingeststats.NewSubscriberSampler(subscriberRole, reader)
 	defer sampler.Flush()
+	timelineSampler := ingeststats.NewTimelineSampler(subscriberRole, reader.Ring().Timeline())
+	defer timelineSampler.Flush()
 
 	// Runtime Plan Transparency Headers
 	//
@@ -429,6 +431,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		n, err := reader.Read(chunk)
 		sampler.Sample()
+		timelineSampler.Sample()
 		if n > 0 {
 			if _, writeErr := w.Write(chunk[:n]); writeErr != nil {
 				return

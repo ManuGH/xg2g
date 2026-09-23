@@ -337,6 +337,11 @@ func (s *SubscriberReader) Offset() int64 {
 	return s.readOffset
 }
 
+// Ring returns the underlying MasterRing instance.
+func (s *SubscriberReader) Ring() *MasterRing {
+	return s.ring
+}
+
 // Close closes the subscriber reader and wakes any waiting operations.
 func (s *SubscriberReader) Close() error {
 	s.ring.mu.Lock()

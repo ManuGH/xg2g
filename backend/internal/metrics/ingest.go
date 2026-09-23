@@ -68,4 +68,40 @@ var (
 		Name: "xg2g_ingest_variant_worker_stopped_total",
 		Help: "Stream variant worker terminations by reason (generation_change, shutdown, error)",
 	}, []string{"reason"})
+
+	// IngestTimelineBoundRAPRatio tracks the ratio of bound RAPs to total RAPs in the canonical timeline.
+	IngestTimelineBoundRAPRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_bound_rap_ratio",
+		Help: "Ratio of random access points bound to canonical PES timing in the canonical media index [0..1]",
+	}, []string{"role"})
+
+	// IngestTimelineRAPCount tracks the total number of random access points in the canonical media index.
+	IngestTimelineRAPCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_rap_count",
+		Help: "Total number of random access points currently held in the canonical media index",
+	}, []string{"role"})
+
+	// IngestTimelineEpochSpans tracks the number of program epoch spans held in the canonical media index.
+	IngestTimelineEpochSpans = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_epoch_spans",
+		Help: "Total number of timeline epoch spans currently tracked in the canonical media index",
+	}, []string{"role"})
+
+	// IngestTimelineTimingPoints tracks the number of PES timing points held in the canonical media index.
+	IngestTimelineTimingPoints = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_timing_points",
+		Help: "Total number of PES timing points currently indexed in the canonical media index",
+	}, []string{"role"})
+
+	// IngestTimelinePCREntries tracks the number of PCR entries held in the canonical media index.
+	IngestTimelinePCREntries = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_pcr_entries",
+		Help: "Total number of canonical PCR entries currently indexed in the canonical media index",
+	}, []string{"role"})
+
+	// IngestTimelineEpochKeys tracks the number of epoch map keys in rapsByPTS held in the canonical media index.
+	IngestTimelineEpochKeys = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_ingest_timeline_epoch_keys",
+		Help: "Total number of active epoch keys in the PTS RAP index",
+	}, []string{"role"})
 )
