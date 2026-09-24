@@ -88,28 +88,24 @@ const (
 // CalculateMPEG2CRC32 calculates the standard ISO/IEC 13818-1 32-bit CRC.
 func CalculateMPEG2CRC32(data []byte) uint32 { return mediafacts.CalculateMPEG2CRC32(data) }
 
-// MasterRing is a thread-safe, multi-reader circular FIFO buffer for MPEG-TS streams.
-// It maintains an in-band, stateful index of PAT, PMT, and PES/IDR Keyframe byte offsets.
-// MasterRing is a thread-safe, multi-reader circular FIFO buffer for MPEG-TS
-// streams. It owns the bytes, their monotonic offsets, the entry-point index and
-// the generation; what the bytes mean is read by a mediafacts.Core it holds.
+// MasterRing is a thread-safe, multi-reader circular FIFO coordinator for MPEG-TS streams.
+// It composes a pure byte store (packetStore), an atomic media facts coordinator,
+// an optional canonical timeline index (timeline.MediaIndex), and a lightweight
+// derived subscriber join cache (attachIndex).
+//
+// Invariant: MasterRing.mu is the sole COMMIT and PUBLICATION lock for the stream.
+// All visible state (bytes, head, tail, keyframes, generation, facts, PSI) is
+// committed and published atomically under this lock.
 type MasterRing struct {
-	mu              sync.Mutex
-	notEmpty        *sync.Cond
-	buf             []byte
-	capacity        int
-	head            int64 // total bytes written monotonically
-	tail            int64 // oldest valid byte offset in buffer
-	isClosed        bool
-	keyframeOffsets []int64
-	maxKeyframes    int
-	generation      uint64
+	mu       sync.Mutex
+	notEmpty *sync.Cond
+	isClosed bool
 
-	// generationResumeFloor is the conservative byte offset below which audio
-	// recovery after an identity change must not resume. For a successfully
-	// committed Push with an identity change, it is published at the commit end;
-	// for SetTargetProgram, at the committed head. Guarded by mu.
-	generationResumeFloor int64
+	// store is the pure circular byte buffer for monotonic stream storage.
+	store *packetStore
+
+	// attachIndex is the lightweight derived join and recovery cache for subscribers.
+	attachIndex *attachIndex
 
 	// ingestMu serialises writers and owns the core for the length of a call. It
 	// exists so the core can run without r.mu: a core behind a socket may hang,
@@ -136,28 +132,32 @@ type MasterRing struct {
 
 	// facts is the last answer the core gave, cached so an accessor never calls
 	// across the boundary while holding the ring lock. The facts only move when a
-	// chunk is ingested, so a cache cannot be stale between chunks.
+	// chunk is ingested, so a cache cannot be stale between chunks. Guarded by mu.
 	facts mediafacts.Facts
 
 	// activePSI is the PAT/PMT sections the core last accepted, kept because the
-	// subscriber is delivered those tables ahead of an entry point. Interpretation
-	// is the core's; packetizing them for delivery is the ring's, and neither
-	// parses them twice.
+	// subscriber is delivered those tables ahead of an entry point. Guarded by mu.
 	activePSI mediafacts.ActivePSI
 
-	// timelineIndex maintains the canonical timing index when configured via WithTimelineIndex.
-	// MasterRing acts as the single writer and commit gatekeeper under mu.
+	// timelineIndex maintains the canonical timing index when configured via WithCanonicalTimeline.
+	// MasterRing acts as the exclusive owner, single writer, and commit gatekeeper under mu.
 	timelineIndex *timeline.MediaIndex
+
+	// timelineReader exposes canonical timeline queries synchronized under MasterRing.mu.
+	timelineReader timeline.TimelineReader
 }
 
 // Option configures an optional capability on a MasterRing.
 type Option func(*MasterRing)
 
-// WithTimelineIndex configures a canonical timeline.MediaIndex for the ring.
-// When set, MasterRing acts as the timeline's single writer and commit gatekeeper.
-func WithTimelineIndex(idx *timeline.MediaIndex) Option {
+// WithCanonicalTimeline configures the ring to instantiate and exclusively own its
+// canonical timeline.MediaIndex. Callers access the timeline strictly via
+// MasterRing.Timeline() to guarantee synchronized visibility under MasterRing.mu.
+// No raw pointer is retained by the caller, eliminating any potential bypass path.
+func WithCanonicalTimeline() Option {
 	return func(r *MasterRing) {
-		r.timelineIndex = idx
+		r.timelineIndex = timeline.NewMediaIndex()
+		r.timelineReader = &ringTimelineReader{ring: r}
 	}
 }
 
@@ -174,9 +174,8 @@ func NewMasterRingWithCore(capacityBytes int, core mediafacts.Core, opts ...Opti
 	}
 
 	r := &MasterRing{
-		buf:            make([]byte, capacityBytes),
-		capacity:       capacityBytes,
-		maxKeyframes:   64,
+		store:          newPacketStore(capacityBytes),
+		attachIndex:    newAttachIndex(64),
 		ingestDeadline: mediafacts.DefaultIngestDeadline,
 		core:           core,
 	}
@@ -196,6 +195,10 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 
 // SetTargetProgram configures the desired program number for PMT resolution,
 // immediately invalidating existing PSI and decoder states if the target changed.
+//
+// Invariant: Control plane SetTargetProgram != transport plane Ingest.
+// It never produces synthetic byte-positioned timeline history and does NOT
+// invoke MediaCommit or MediaIndex.ApplyIngestResult.
 func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error {
 	// Before the core is entered, a caller that gave up means the call never
 	// happened. Nothing was interpreted, so nothing diverged, and the core is
@@ -256,12 +259,25 @@ func (r *MasterRing) SetTargetProgram(ctx context.Context, progNum uint16) error
 		r.coreUnusable = true
 		return ErrRingClosed
 	}
-	genBefore := r.generation
-	r.applyLocked(res)
-	if r.generation != genBefore {
-		r.generationResumeFloor = r.head
+
+	// Control plane does NOT trigger MediaCommit or MediaIndex.ApplyIngestResult.
+	// We only invalidate attachIndex if the core reported an actual EventProgramIdentityChanged.
+	// A no-op (e.g. reselecting the same program) must not alter generation or keyframes.
+	hasIdentityChange := false
+	for _, ev := range res.Events {
+		if ev.Kind == mediafacts.EventProgramIdentityChanged {
+			hasIdentityChange = true
+			break
+		}
+	}
+
+	if hasIdentityChange {
+		r.attachIndex.invalidateOnProgramChange(r.store.headOffset())
 		r.notEmpty.Broadcast()
 	}
+
+	r.facts = res.Facts
+	r.activePSI = res.PSI
 	return nil
 }
 
@@ -279,45 +295,6 @@ func (r *MasterRing) retireCore(callerCtx context.Context, err error) error {
 		return errors.Join(mediafacts.ErrCoreTimeout, err)
 	}
 	return err
-}
-
-// applyLocked takes what the core said about a chunk and acts on it.
-//
-// This is where the ownership split is executed. The core reported that the
-// program's identity changed and where the entry points are; the epoch those
-// belong to, and whether an entry point is still reachable, are decided here -
-// in order, because an entry point found before an identity change and one found
-// after it belong to different programs.
-func (r *MasterRing) applyLocked(res mediafacts.ParseResult) {
-	for _, ev := range res.Events {
-		switch ev.Kind {
-		case mediafacts.EventProgramIdentityChanged:
-			r.keyframeOffsets = r.keyframeOffsets[:0]
-			r.generation++
-		case mediafacts.EventRandomAccessPoint:
-			if ev.Joinable {
-				r.keyframeOffsets = append(r.keyframeOffsets, ev.Offset)
-				if len(r.keyframeOffsets) > r.maxKeyframes {
-					r.keyframeOffsets = r.keyframeOffsets[1:]
-				}
-			}
-		case mediafacts.EventRandomAccessPointInvalidated:
-			for i, off := range r.keyframeOffsets {
-				if off == ev.Offset {
-					r.keyframeOffsets = append(r.keyframeOffsets[:i], r.keyframeOffsets[i+1:]...)
-					break
-				}
-			}
-		default:
-			// EventUnknown, or a kind this build does not know. Both are refused
-			// rather than guessed at: across a wire boundary the zero value is what a
-			// truncated or mis-decoded event looks like, and the two things this
-			// switch can do - end an epoch, offer an attach point - are the two things
-			// that must never happen by accident.
-		}
-	}
-	r.facts = res.Facts
-	r.activePSI = res.PSI
 }
 
 // Push writes a chunk of TS packets into the ring buffer and indexes PAT/PMT/IDR boundaries.
@@ -359,7 +336,7 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 		r.mu.Unlock()
 		return 0, ErrRingClosed
 	}
-	startOffset := r.head
+	startOffset := r.store.headOffset()
 	r.mu.Unlock()
 
 	// Waiting for that lock is a wait like any other, and a caller can give up
@@ -428,8 +405,14 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 		return 0, r.retireCore(ctx, ErrCoreIncomplete)
 	}
 
-	// 3. Commit. Facts, events, PSI and bytes become visible together, under one
-	//    hold of the lock, or none of them do.
+	// 3. Commit. Facts, events, PSI and bytes become visible together under r.mu (Publication Lock),
+	//    or none of them do.
+	commit := mediaCommit{
+		StartOffset: startOffset,
+		Data:        data,
+		Result:      res,
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -447,12 +430,6 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	// The context is read once more here, under the lock, and that read is the
 	// commit's linearization point: a cancellation visible by then wins, and one
 	// that becomes visible after it does not.
-	//
-	// Stated that way on purpose. Cancellation is asynchronous, so "no commit may
-	// happen after the caller gives up" is not implementable - there is always a
-	// last instruction. What is implementable, and what a remote core can be held
-	// to, is a single point where the question is asked for the last time, with
-	// nothing between it and the commit that could wait.
 	if err := ctx.Err(); err != nil {
 		return 0, r.retireCore(ctx, err)
 	}
@@ -462,52 +439,40 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	if r.isClosed {
 		return 0, r.retireCore(ctx, ErrRingClosed)
 	}
-	if r.head != startOffset {
+	if r.store.headOffset() != commit.StartOffset {
 		return 0, r.retireCore(ctx, ErrRingAdvanced)
 	}
 
+	// Step A: Timeline index update.
+	// Fail-Closed: If timelineIndex rejects the result, fail closed without mutating packetStore or attachIndex.
 	if r.timelineIndex != nil {
-		if err := r.timelineIndex.ApplyIngestResult(res); err != nil {
+		if err := r.timelineIndex.ApplyIngestResult(commit.Result); err != nil {
 			return 0, r.retireCore(ctx, err)
 		}
 	}
 
-	genBefore := r.generation
-	r.applyLocked(res)
+	// Step B: Derived join cache update.
+	genBefore := r.attachIndex.generationValue()
+	genChanged := r.attachIndex.applyEvents(commit.Result.Events)
 
-	// 4. Write data into circular buffer safely, supporting len(data) > capacity without panic
-	remaining := data
-	for len(remaining) > 0 {
-		chunk := remaining
-		if len(chunk) > r.capacity {
-			chunk = chunk[:r.capacity]
-		}
-		remaining = remaining[len(chunk):]
+	// Step C: Infallible byte commit into packetStore.
+	newHead, newTail := r.store.writeCommitted(commit.Data)
 
-		chunkLen := len(chunk)
-		writePos := int(r.head % int64(r.capacity))
-		firstChunk := r.capacity - writePos
-		if chunkLen <= firstChunk {
-			copy(r.buf[writePos:], chunk)
-		} else {
-			copy(r.buf[writePos:], chunk[:firstChunk])
-			copy(r.buf[:chunkLen-firstChunk], chunk[firstChunk:])
-		}
-
-		r.head += int64(chunkLen)
-		if r.head-r.tail > int64(r.capacity) {
-			r.tail = r.head - int64(r.capacity)
-			r.pruneKeyframesLocked()
-			if r.timelineIndex != nil {
-				r.timelineIndex.PruneBefore(r.tail)
-			}
-		}
+	// Step D: Pruning on new tail.
+	r.attachIndex.pruneBefore(newTail)
+	if r.timelineIndex != nil {
+		r.timelineIndex.PruneBefore(newTail)
 	}
 
-	if r.generation != genBefore {
-		r.generationResumeFloor = r.head
+	if genChanged || r.attachIndex.generationValue() != genBefore {
+		r.attachIndex.setGenerationResumeFloor(newHead)
 	}
 
+	// Step E: Publish facts and active PSI.
+	r.facts = commit.Result.Facts
+	r.activePSI = commit.Result.PSI
+
+	// Step F: Wake blocked readers.
 	r.notEmpty.Broadcast()
 	return n, nil
 }
@@ -522,6 +487,10 @@ func (r *MasterRing) RandomAccess() RandomAccessObservation {
 // Timeline returns the canonical read-only timeline reader, or nil if this ring
 // does not maintain a timeline index (e.g. variant or non-canonical rings).
 //
+// Invariant: The returned TimelineReader synchronizes all queries under MasterRing.mu,
+// establishing MasterRing.mu as the single shared publication lock across timeline truth
+// and packet store bytes.
+//
 // To prevent Go typed-nil interface bugs where an interface variable containing a
 // nil pointer is not equal to nil, this returns an explicit untyped nil when
 // r.timelineIndex is nil.
@@ -531,22 +500,50 @@ func (r *MasterRing) Timeline() timeline.TimelineReader {
 	if r.timelineIndex == nil {
 		return nil
 	}
-	return r.timelineIndex
+	if r.timelineReader == nil {
+		r.timelineReader = &ringTimelineReader{ring: r}
+	}
+	return r.timelineReader
 }
 
-func (r *MasterRing) pruneKeyframesLocked() {
-	validIdx := -1
-	for i, offset := range r.keyframeOffsets {
-		if offset >= r.tail {
-			validIdx = i
-			break
-		}
+// ReadAt reads up to len(p) bytes from the master ring starting at offset under the publication lock r.mu.
+// It returns ErrSubscriberOverrun if offset < tail, or reads available bytes up to head.
+func (r *MasterRing) ReadAt(p []byte, offset int64) (int, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.store.readAt(p, offset)
+}
+
+// TimelineObservation captures an atomic snapshot of timeline state and packet store bounds under a single lock.
+type TimelineObservation struct {
+	Tail        int64
+	Head        int64
+	ActiveEpoch mediafacts.TimelineEpoch
+	HasEpoch    bool
+	LatestRAP   timeline.RAPEntry
+	HasLatest   bool
+	RAPCount    int
+}
+
+// TimelineObservation returns an atomic snapshot of the current stream bounds and timeline state
+// under a single acquisition of the publication lock MasterRing.mu.
+func (r *MasterRing) TimelineObservation() (TimelineObservation, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.timelineIndex == nil {
+		return TimelineObservation{}, false
 	}
-	if validIdx == -1 {
-		r.keyframeOffsets = r.keyframeOffsets[:0]
-	} else if validIdx > 0 {
-		r.keyframeOffsets = r.keyframeOffsets[validIdx:]
+	obs := TimelineObservation{
+		Tail: r.store.tailOffset(),
+		Head: r.store.headOffset(),
 	}
+	obs.ActiveEpoch, obs.HasEpoch = r.timelineIndex.ActiveEpoch()
+	obs.LatestRAP, obs.HasLatest = r.timelineIndex.FindPrecedingRAP(obs.Head)
+	if obs.HasLatest && (obs.LatestRAP.Offset < obs.Tail || obs.LatestRAP.Offset >= obs.Head) {
+		obs.HasLatest = false
+	}
+	obs.RAPCount = r.timelineIndex.Stats().TotalRAPs
+	return obs, true
 }
 
 // PrimedAttachPoint represents an atomic, generation-locked stream entry point.
@@ -564,21 +561,12 @@ func (r *MasterRing) PrimedAttachPoint() PrimedAttachPoint {
 	defer r.mu.Unlock()
 
 	preamble := r.patpmtPreambleLocked()
-
-	var kfOffset int64
-	var hasKf bool
-	if len(r.keyframeOffsets) > 0 {
-		latest := r.keyframeOffsets[len(r.keyframeOffsets)-1]
-		if latest >= r.tail {
-			kfOffset = latest
-			hasKf = true
-		}
-	}
+	kfOffset, hasKf := r.attachIndex.latestKeyframeOffset(r.store.tailOffset())
 
 	return PrimedAttachPoint{
 		Preamble:       preamble,
 		KeyframeOffset: kfOffset,
-		Generation:     r.generation,
+		Generation:     r.attachIndex.generationValue(),
 		HasKeyframe:    hasKf,
 	}
 }
@@ -597,14 +585,7 @@ func (r *MasterRing) LatestKeyframeOffset() (int64, bool) {
 // Callers that already hold r.mu use this; the exported wrappers must not, because
 // r.mu is not reentrant and SubscriberReader.Read holds it across recovery.
 func (r *MasterRing) latestKeyframeOffsetLocked() (int64, bool) {
-	if len(r.keyframeOffsets) == 0 {
-		return 0, false
-	}
-	latest := r.keyframeOffsets[len(r.keyframeOffsets)-1]
-	if latest < r.tail {
-		return 0, false
-	}
-	return latest, true
+	return r.attachIndex.latestKeyframeOffset(r.store.tailOffset())
 }
 
 // PATPMTPreamble returns the active PAT and PMT, packetized for delivery.
@@ -634,7 +615,7 @@ func (r *MasterRing) patpmtPreambleLocked() []byte {
 func (r *MasterRing) Generation() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.generation
+	return r.attachIndex.generationValue()
 }
 
 // GenerationResumeFloor returns the conservative recovery floor byte offset
@@ -642,7 +623,7 @@ func (r *MasterRing) Generation() uint64 {
 func (r *MasterRing) GenerationResumeFloor() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.generationResumeFloor
+	return r.attachIndex.resumeFloor()
 }
 
 // VideoDetails returns authoritative video PID and Codec discovered from PMT.
@@ -656,21 +637,21 @@ func (r *MasterRing) VideoDetails() (uint16, VideoCodec) {
 func (r *MasterRing) Head() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.head
+	return r.store.headOffset()
 }
 
 // Tail returns the oldest valid byte offset.
 func (r *MasterRing) Tail() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tail
+	return r.store.tailOffset()
 }
 
 // BufferedBytes returns total valid unpruned bytes in the ring.
 func (r *MasterRing) BufferedBytes() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return int(r.head - r.tail)
+	return r.store.bufferedBytes()
 }
 
 // Close closes the master ring buffer, waking all blocked subscriber readers.
@@ -694,12 +675,6 @@ func (r *MasterRing) ScramblingObservation() (scrambled uint64, clear uint64) {
 }
 
 // StreamScrambling reports descrambling per elementary stream.
-//
-// Separate counters because the two faults they distinguish need different answers:
-// video clear with audio scrambled is a service the receiver is only half
-// descrambling, while neither clear is a service it is not descrambling at all.
-
-// Scrambling returns the per-stream descrambling observation.
 func (r *MasterRing) Scrambling() StreamScrambling {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -720,22 +695,12 @@ func (r *MasterRing) Scrambling() StreamScrambling {
 func (r *MasterRing) KeyframeOffsets() []int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]int64, len(r.keyframeOffsets))
-	copy(out, r.keyframeOffsets)
-	return out
+	return r.attachIndex.keyframeOffsetsCopy()
 }
 
 // ReadinessFacts is everything the ring knows that bears on whether a channel is
 // presentable. It is a snapshot, taken without blocking the ingest.
-//
-// Deliberately facts rather than a verdict: what counts as presentable is a policy
-// question that belongs one layer up, and keeping it there means the policy can be
-// measured against reality before it is enforced.
 type ReadinessFacts struct {
-	// Generation increments whenever the PSI describing this stream changes, which
-	// is what a PMT version bump or a codec change looks like from here. A consumer
-	// that carries timestamps across a generation change is describing two different
-	// streams as if they were one.
 	Generation uint64
 
 	HasPAT        bool
@@ -748,25 +713,14 @@ type ReadinessFacts struct {
 	AudioPIDs   []uint16
 	AudioTracks []AudioTrackInfo
 
-	// ParameterSetsSeen reports whether the decoder configuration for the current
-	// codec has been observed: SPS and PPS, plus VPS for HEVC.
 	ParameterSetsSeen bool
 
 	RandomAccess RandomAccessObservation
 	Scrambling   StreamScrambling
 
-	// CleanEntryPoints counts entry points whose own access unit contained no
-	// scrambled packet. An entry point is only usable if this is non-zero.
 	CleanEntryPoints uint64
-
-	// CleanAccessUnits counts every complete picture that arrived without an
-	// encrypted packet in it, joinable or not. This is what proves the receiver is
-	// descrambling, and it becomes true up to a GOP before the next clean entry
-	// point does.
 	CleanAccessUnits uint64
-
-	// AttachAvailable reports whether an entry point is currently within the buffer.
-	AttachAvailable bool
+	AttachAvailable  bool
 }
 
 // ReadinessFacts captures what the ring currently knows about this stream.
@@ -774,25 +728,15 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Everything the stream says about itself comes from the core. The two fields
-	// added here are the ones it cannot answer: which lifecycle epoch this is, and
-	// whether an entry point is still inside a buffer it cannot see.
-	// Copied on the way out. The cached facts are the ring's own state, and a
-	// consumer that received the backing arrays could write through a snapshot
-	// into the ring - or read them while a concurrent Push replaces what they
-	// describe. The pre-seam code copied these for the same reason.
 	f := r.facts
 	f.AudioPIDs = append([]uint16(nil), f.AudioPIDs...)
 	f.AudioTracks = append([]AudioTrackInfo(nil), f.AudioTracks...)
 	f.Scrambling.AudioPIDs = append([]uint16(nil), f.Scrambling.AudioPIDs...)
 
-	attach := false
-	if len(r.keyframeOffsets) > 0 {
-		attach = r.keyframeOffsets[len(r.keyframeOffsets)-1] >= r.tail
-	}
+	_, attach := r.attachIndex.latestKeyframeOffset(r.store.tailOffset())
 
 	return ReadinessFacts{
-		Generation:        r.generation,
+		Generation:        r.attachIndex.generationValue(),
 		HasPAT:            f.HasPAT,
 		HasPMT:            f.HasPMT,
 		PMTVersion:        f.PMTVersion,

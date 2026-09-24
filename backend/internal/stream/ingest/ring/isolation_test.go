@@ -308,7 +308,7 @@ func TestIsolation_ARingThatMovedUnderTheChunkRefusesTheCommit(t *testing.T) {
 
 	// Something else advanced the ring while the chunk was being read.
 	r.mu.Lock()
-	r.head += TSPacketSize
+	r.store.head += TSPacketSize
 	r.mu.Unlock()
 
 	close(core.release)

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
-	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // TestMemoryBound_RollingTailPruningStrictlyBounded verifies that when a long-running
@@ -25,8 +24,6 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 		chunkBytes      = chunkPackets * TSPacketSize
 		iterations      = 1000
 	)
-
-	idx := timeline.NewMediaIndex()
 
 	var currentEpoch mediafacts.TimelineEpoch = 1
 
@@ -128,7 +125,7 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 		},
 	}
 
-	r := NewMasterRingWithCore(capacityBytes, mock, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(capacityBytes, mock, WithCanonicalTimeline())
 	data := tsPacketChunk(chunkPackets)
 
 	for i := 0; i < iterations; i++ {
@@ -140,20 +137,21 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 	// Ring tail verification
 	expectedHead := int64(iterations * chunkBytes)
 	expectedTail := expectedHead - int64(capacityBytes)
-	if r.head != expectedHead {
-		t.Errorf("head = %d, want %d", r.head, expectedHead)
+	if r.Head() != expectedHead {
+		t.Errorf("head = %d, want %d", r.Head(), expectedHead)
 	}
-	if r.tail != expectedTail {
-		t.Errorf("tail = %d, want %d", r.tail, expectedTail)
+	if r.Tail() != expectedTail {
+		t.Errorf("tail = %d, want %d", r.Tail(), expectedTail)
 	}
 
 	// Ring keyframes bounded by maxKeyframes and strictly >= tail
-	if len(r.keyframeOffsets) > r.maxKeyframes {
-		t.Errorf("keyframeOffsets len = %d > max %d", len(r.keyframeOffsets), r.maxKeyframes)
+	kfs := r.KeyframeOffsets()
+	if len(kfs) > 64 {
+		t.Errorf("keyframeOffsets len = %d > max 64", len(kfs))
 	}
-	for _, kf := range r.keyframeOffsets {
-		if kf < r.tail {
-			t.Errorf("found stale keyframe %d < tail %d", kf, r.tail)
+	for _, kf := range kfs {
+		if kf < r.Tail() {
+			t.Errorf("found stale keyframe %d < tail %d", kf, r.Tail())
 		}
 	}
 
@@ -201,8 +199,7 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 }
 
 func ExampleMasterRing_Timeline() {
-	idx := timeline.NewMediaIndex()
-	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithCanonicalTimeline())
 	reader := r.Timeline()
 	stats := reader.Stats()
 	fmt.Printf("Total RAPs: %d\n", stats.TotalRAPs)

@@ -46,7 +46,6 @@ func tsPacketChunk(numPackets int) []byte {
 // carrying non-canonical timing authority fails with ErrNonCanonicalTiming, retires
 // the core immediately, and causes zero ring mutation (all-or-nothing commit).
 func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.T) {
-	idx := timeline.NewMediaIndex()
 	baseCore := mediafacts.NewGoCore(1)
 
 	mock := customMockCore{
@@ -65,7 +64,7 @@ func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.
 		},
 	}
 
-	r := NewMasterRingWithCore(10*TSPacketSize, mock, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(10*TSPacketSize, mock, WithCanonicalTimeline())
 	data := tsPacketChunk(2)
 
 	_, err := r.Push(context.Background(), data)
@@ -74,17 +73,17 @@ func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.
 	}
 
 	// Verify zero ring mutation
-	if r.head != 0 {
-		t.Errorf("head mutated: got %d, want 0", r.head)
+	if r.Head() != 0 {
+		t.Errorf("head mutated: got %d, want 0", r.Head())
 	}
-	if r.tail != 0 {
-		t.Errorf("tail mutated: got %d, want 0", r.tail)
+	if r.Tail() != 0 {
+		t.Errorf("tail mutated: got %d, want 0", r.Tail())
 	}
-	if r.generation != 0 {
-		t.Errorf("generation mutated: got %d, want 0", r.generation)
+	if r.Generation() != 0 {
+		t.Errorf("generation mutated: got %d, want 0", r.Generation())
 	}
-	if len(r.keyframeOffsets) != 0 {
-		t.Errorf("keyframeOffsets mutated: got %v", r.keyframeOffsets)
+	if len(r.KeyframeOffsets()) != 0 {
+		t.Errorf("keyframeOffsets mutated: got %v", r.KeyframeOffsets())
 	}
 
 	// Verify core retired
@@ -93,7 +92,7 @@ func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.
 	}
 
 	// Verify timeline index unmutated
-	stats := idx.Stats()
+	stats := r.Timeline().Stats()
 	if stats.TotalRAPs != 0 || stats.PCREntries != 0 {
 		t.Errorf("timeline index mutated: %+v", stats)
 	}
@@ -109,9 +108,6 @@ func TestLifecycle_NonCanonicalTimingErrorRetiresCoreWithoutMutation(t *testing.
 // channel switching constructs a new pipeline/ring for the new program target.
 // Both rings maintain completely isolated MediaIndex instances and state.
 func TestLifecycle_ProductionZap_NewPipelinePerTarget(t *testing.T) {
-	idx1 := timeline.NewMediaIndex()
-	idx2 := timeline.NewMediaIndex()
-
 	core1 := customMockCore{
 		Core: mediafacts.NewGoCore(1),
 		ingestFn: func(ctx context.Context, startOffset int64, data []byte) (mediafacts.ParseResult, error) {
@@ -188,8 +184,8 @@ func TestLifecycle_ProductionZap_NewPipelinePerTarget(t *testing.T) {
 		},
 	}
 
-	ring1 := NewMasterRingWithCore(10*TSPacketSize, core1, WithTimelineIndex(idx1))
-	ring2 := NewMasterRingWithCore(10*TSPacketSize, core2, WithTimelineIndex(idx2))
+	ring1 := NewMasterRingWithCore(10*TSPacketSize, core1, WithCanonicalTimeline())
+	ring2 := NewMasterRingWithCore(10*TSPacketSize, core2, WithCanonicalTimeline())
 
 	data := tsPacketChunk(2)
 	if _, err := ring1.Push(context.Background(), data); err != nil {
@@ -225,8 +221,6 @@ func TestLifecycle_ProductionZap_NewPipelinePerTarget(t *testing.T) {
 // 4. New program starts in Epoch 2
 // 5. MediaIndex transitions cleanly without ErrInconsistentEpochTransition
 func TestLifecycle_ContractZap_SameRingZapLifecycle(t *testing.T) {
-	idx := timeline.NewMediaIndex()
-
 	chunkSize := int64(2 * TSPacketSize)
 	var step int
 
@@ -331,7 +325,7 @@ func TestLifecycle_ContractZap_SameRingZapLifecycle(t *testing.T) {
 		},
 	}
 
-	r := NewMasterRingWithCore(20*TSPacketSize, mock, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(20*TSPacketSize, mock, WithCanonicalTimeline())
 	data := tsPacketChunk(2)
 
 	// Ingest program 1

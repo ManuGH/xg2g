@@ -53,11 +53,13 @@ func (r *MasterRing) NewSubscriberReader(startOffset int64) *SubscriberReader {
 }
 
 func (r *MasterRing) newSubscriberReaderLocked(startOffset int64) *SubscriberReader {
-	if startOffset < r.tail {
-		startOffset = r.tail
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+	if startOffset < tail {
+		startOffset = tail
 	}
-	if startOffset > r.head {
-		startOffset = r.head
+	if startOffset > head {
+		startOffset = head
 	}
 
 	return &SubscriberReader{
@@ -72,14 +74,16 @@ func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	hasAnyKeyframes := len(r.attachIndex.keyframeOffsets) > 0
+
 	if r.isClosed {
-		if len(r.keyframeOffsets) == 0 && r.scrambledVideoConfirmedLocked() {
+		if !hasAnyKeyframes && r.scrambledVideoConfirmedLocked() {
 			return PrimedAttachPoint{}, nil, ErrScrambledStream
 		}
 		return PrimedAttachPoint{}, nil, ErrRingClosed
 	}
 
-	if len(r.keyframeOffsets) == 0 {
+	if !hasAnyKeyframes {
 		// Distinguish "no keyframe yet" (retry, the GOP boundary is still ahead) from
 		// "no keyframe ever" (encrypted payload, retrying can only burn the timeout).
 		if r.scrambledVideoConfirmedLocked() {
@@ -96,7 +100,7 @@ func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader
 	attach := PrimedAttachPoint{
 		Preamble:       r.patpmtPreambleLocked(),
 		KeyframeOffset: latestKf,
-		Generation:     r.generation,
+		Generation:     r.attachIndex.generationValue(),
 		HasKeyframe:    true,
 	}
 
@@ -135,7 +139,7 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// over, so a generation change discards what is left and starts recovery
 		// again from the new one.
 		if len(s.pendingPrefix) > 0 {
-			if s.pendingPrefixGeneration != s.ring.generation {
+			if s.pendingPrefixGeneration != s.ring.attachIndex.generationValue() {
 				s.pendingPrefix = nil
 				s.awaitingRandomAccess = true
 				continue
@@ -149,7 +153,10 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 			return n, nil
 		}
 
-		if s.ring.isClosed && s.readOffset >= s.ring.head {
+		head := s.ring.store.headOffset()
+		tail := s.ring.store.tailOffset()
+
+		if s.ring.isClosed && s.readOffset >= head {
 			return 0, io.EOF
 		}
 
@@ -158,10 +165,10 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// the eviction happened to leave behind, which is mid-GOP in all but the
 		// luckiest case. Recovery re-enters at a decodable boundary instead, with
 		// the active topology restated in front of it.
-		if s.readOffset < s.ring.tail {
-			s.droppedBytes += s.ring.tail - s.readOffset
+		if s.readOffset < tail {
+			s.droppedBytes += tail - s.readOffset
 			s.overruns++
-			s.readOffset = s.ring.tail
+			s.readOffset = tail
 			s.awaitingRandomAccess = true
 		}
 
@@ -181,24 +188,21 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 			continue
 		}
 
-		available := int(s.ring.head - s.readOffset)
+		available := int(head - s.readOffset)
 		if available > 0 {
 			toRead := available
 			if toRead > maxRead {
 				toRead = maxRead
 			}
 
-			readPos := int(s.readOffset % int64(s.ring.capacity))
-			firstChunk := s.ring.capacity - readPos
-			if toRead <= firstChunk {
-				copy(p[:toRead], s.ring.buf[readPos:readPos+toRead])
-			} else {
-				copy(p[:firstChunk], s.ring.buf[readPos:])
-				copy(p[firstChunk:toRead], s.ring.buf[:toRead-firstChunk])
+			n, nextOffset, err := s.ring.store.readAt(p[:toRead], s.readOffset)
+			if err != nil {
+				// If store returns overrun, loop back to handle overrun
+				continue
 			}
 
-			s.readOffset += int64(toRead)
-			return toRead, nil
+			s.readOffset = nextOffset
+			return n, nil
 		}
 
 		// No data available yet, wait for push
@@ -224,6 +228,10 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 		return false
 	}
 
+	generation := s.ring.attachIndex.generationValue()
+	floor := s.ring.attachIndex.resumeFloor()
+	tail := s.ring.store.tailOffset()
+
 	// 2. Topology known, video: only a random access point will do.
 	if facts.VideoPID != 0 {
 		latest, ok := s.ring.latestKeyframeOffsetLocked()
@@ -236,26 +244,26 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 		}
 		s.readOffset = latest
 		s.pendingPrefix = s.ring.patpmtPreambleLocked()
-		s.pendingPrefixGeneration = s.ring.generation
+		s.pendingPrefixGeneration = generation
 		return true
 	}
 
 	// 3. Topology known, audio-only: the PMT names no decodable video.
 	// There are no random access points to wait for.
 	// Eviction up to the retained tail is accounted first:
-	if s.readOffset < s.ring.tail {
-		s.droppedBytes += s.ring.tail - s.readOffset
+	if s.readOffset < tail {
+		s.droppedBytes += tail - s.readOffset
 		s.overruns++
-		s.readOffset = s.ring.tail
+		s.readOffset = tail
 	}
 	// Advance past any retained bytes of a previous generation up to the
 	// recovery floor:
-	if s.readOffset < s.ring.generationResumeFloor {
-		s.resyncSkippedBytes += s.ring.generationResumeFloor - s.readOffset
-		s.readOffset = s.ring.generationResumeFloor
+	if s.readOffset < floor {
+		s.resyncSkippedBytes += floor - s.readOffset
+		s.readOffset = floor
 	}
 	s.pendingPrefix = s.ring.patpmtPreambleLocked()
-	s.pendingPrefixGeneration = s.ring.generation
+	s.pendingPrefixGeneration = generation
 	return true
 }
 
@@ -301,7 +309,7 @@ func (s *SubscriberReader) Stats() SubscriberStats {
 	s.ring.mu.Lock()
 	defer s.ring.mu.Unlock()
 
-	lag := s.ring.head - s.readOffset
+	lag := s.ring.store.headOffset() - s.readOffset
 	if lag < 0 {
 		lag = 0
 	}

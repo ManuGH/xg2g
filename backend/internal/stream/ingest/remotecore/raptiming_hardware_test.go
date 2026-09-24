@@ -163,7 +163,6 @@ func TestMasterRing_Step5dHardwareReplay_DerivedViewAndBoundRAPs(t *testing.T) {
 			var (
 				remote *RemoteCore
 				r      *ring.MasterRing
-				idx    *timeline.MediaIndex
 			)
 
 			initRing := func(target uint16) {
@@ -178,8 +177,7 @@ func TestMasterRing_Step5dHardwareReplay_DerivedViewAndBoundRAPs(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Start remote core: %v", err)
 				}
-				idx = timeline.NewMediaIndex()
-				r = ring.NewMasterRingWithCore(ringCap, remote, ring.WithTimelineIndex(idx))
+				r = ring.NewMasterRingWithCore(ringCap, remote, ring.WithCanonicalTimeline())
 			}
 			defer func() {
 				if r != nil {
