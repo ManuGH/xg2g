@@ -11,6 +11,7 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/timeline"
@@ -301,8 +302,21 @@ func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
 
 			// Invariant 2: External TimelineReader queries synchronized under MasterRing.mu.
 			if rap, ok := tl.FindPrecedingRAP(math.MaxInt64); ok {
-				if rap.Offset+int64(TSPacketSize) > r.Head() {
-					t.Errorf("INVARIANT VIOLATION: RAP at %d published in Timeline before bytes committed in store", rap.Offset)
+				// Reading bytes at rap.Offset must either succeed with valid sync byte
+				// or fail with ErrSubscriberOverrun if concurrent writer advanced tail in between.
+				// It must NEVER return io.EOF (which would indicate uncommitted bytes).
+				n, _, err := r.ReadAt(buf, rap.Offset)
+				if err == nil {
+					if n < TSPacketSize {
+						t.Errorf("ReadAt returned short read at RAP %d: %d < %d", rap.Offset, n, TSPacketSize)
+					}
+					if buf[0] != SyncByte {
+						t.Errorf("corrupted byte at RAP %d: got 0x%02x, want 0x%02x", rap.Offset, buf[0], SyncByte)
+					}
+				} else if errors.Is(err, io.EOF) {
+					t.Errorf("INVARIANT VIOLATION: RAP at %d published in Timeline before bytes committed in store (EOF)", rap.Offset)
+				} else if !errors.Is(err, ErrSubscriberOverrun) {
+					t.Errorf("unexpected ReadAt error at RAP %d: %v", rap.Offset, err)
 				}
 			}
 
@@ -356,4 +370,171 @@ func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+// TestMediaCommit_TimelineReaderBlocksDuringCommit proves that when a caller holds an
+// already-obtained TimelineReader, all query operations block deterministically while
+// MasterRing.mu is held (simulating an active commit transaction in progress), preventing
+// any intermediate state observation.
+func TestMediaCommit_TimelineReaderBlocksDuringCommit(t *testing.T) {
+	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithCanonicalTimeline())
+	defer r.Close()
+
+	tl := r.Timeline()
+
+	// Simulate an active commit transaction by acquiring MasterRing.mu
+	r.mu.Lock()
+
+	queryDone := make(chan struct{})
+	go func() {
+		// Attempt query via previously obtained reader. Must block on r.mu.
+		_, _ = tl.FindPrecedingRAP(math.MaxInt64)
+		close(queryDone)
+	}()
+
+	// Deterministic assertion: query must NOT return while r.mu is held.
+	select {
+	case <-queryDone:
+		r.mu.Unlock()
+		t.Fatal("ATOMIC INVARIANT VIOLATION: TimelineReader query returned while MasterRing.mu was locked")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: query is properly blocked waiting for MasterRing.mu publication lock
+	}
+
+	// Release MasterRing.mu (simulating commit completion)
+	r.mu.Unlock()
+
+	// The blocked query must now unblock promptly
+	select {
+	case <-queryDone:
+		// Succeeded
+	case <-time.After(1 * time.Second):
+		t.Fatal("TimelineReader query failed to unblock after MasterRing.mu was unlocked")
+	}
+}
+
+// TestMediaCommit_DeterministicVisibilityWindow_UncommittedAndPrunedClamped proves that
+// TimelineReader never publishes uncommitted or pruned RAPs under any circumstance.
+// Even if the underlying MediaIndex contains records beyond head or before tail (simulating
+// the original visibility window), TimelineReader clamps queries strictly to [tail, head).
+func TestMediaCommit_DeterministicVisibilityWindow_UncommittedAndPrunedClamped(t *testing.T) {
+	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithCanonicalTimeline())
+	defer r.Close()
+
+	tl := r.Timeline()
+
+	// 1. NEGATIVTEST: Intermediate state where MediaIndex has accepted an ingest result
+	// with a RAP at offset 188 and Epoch 1, but bytes have NOT yet been committed to packetStore (head == 0).
+	r.mu.Lock()
+	err := r.timelineIndex.ApplyIngestResult(mediafacts.ParseResult{
+		Coverage: mediafacts.ParseCoverageComplete,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:         mediafacts.DiscontinuityScopeProgram,
+						ObservedAt:    0,
+						HasEpochAfter: true,
+						EpochAfter:    1,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+					RAP: mediafacts.TimingPoint{
+						Epoch:      1,
+						PID:        256,
+						ObservedAt: 188,
+						SubjectAt:  188,
+						HasPTS:     true,
+						PTS90k:     90000,
+					},
+				},
+			},
+		},
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 188, Joinable: true},
+		},
+	})
+	if err != nil {
+		r.mu.Unlock()
+		t.Fatalf("ApplyIngestResult failed: %v", err)
+	}
+	// head is still 0!
+	if r.store.headOffset() != 0 {
+		r.mu.Unlock()
+		t.Fatalf("head = %d, want 0", r.store.headOffset())
+	}
+	r.mu.Unlock()
+
+	// External TimelineReader query MUST NOT observe the uncommitted RAP or epoch!
+	if rap, ok := tl.FindPrecedingRAP(math.MaxInt64); ok {
+		t.Fatalf("NEGATIVTEST FAILED: Uncommitted RAP at %d observed before bytes committed (head=%d)", rap.Offset, r.Head())
+	}
+	if rap, ok := tl.FindFollowingRAP(0); ok {
+		t.Fatalf("NEGATIVTEST FAILED: Uncommitted RAP at %d observed via FindFollowingRAP before bytes committed", rap.Offset)
+	}
+	if raps := tl.RAPsBetween(0, 1000); len(raps) != 0 {
+		t.Fatalf("NEGATIVTEST FAILED: Uncommitted RAPs observed via RAPsBetween: %+v", raps)
+	}
+	if span, ok := tl.EpochForOffset(188); ok {
+		t.Fatalf("NEGATIVTEST FAILED: Uncommitted Epoch observed via EpochForOffset: %+v", span)
+	}
+
+	// 2. POSITIVE COMMIT: Write bytes up to offset 376 (covers the RAP at 188).
+	data := make([]byte, 2*TSPacketSize)
+	for i := range data {
+		data[i] = SyncByte
+	}
+	data[TSPacketSize+1] = 0x40 // PUSI on second packet (offset 188)
+
+	r.mu.Lock()
+	r.store.writeCommitted(data)
+	r.mu.Unlock()
+
+	if r.Head() != int64(2*TSPacketSize) {
+		t.Fatalf("head = %d, want %d", r.Head(), 2*TSPacketSize)
+	}
+
+	// Now that bytes are in store, the RAP MUST be visible and readable
+	rap, ok := tl.FindPrecedingRAP(math.MaxInt64)
+	if !ok {
+		t.Fatal("RAP at 188 not found after byte commit")
+	}
+	if rap.Offset != 188 {
+		t.Fatalf("got RAP at %d, want 188", rap.Offset)
+	}
+
+	buf := make([]byte, TSPacketSize)
+	n, _, err := r.ReadAt(buf, rap.Offset)
+	if err != nil || n != TSPacketSize || buf[0] != SyncByte || buf[1]&0x40 == 0 {
+		t.Fatalf("ReadAt bytes corrupted or failed: n=%d, err=%v, buf[0]=0x%02x, buf[1]=0x%02x", n, err, buf[0], buf[1])
+	}
+
+	// 3. NEGATIVTEST PRUNING: Advance tail past offset 188 without pruning timelineIndex
+	// (simulating the intermediate pruning window where bytes are overwritten before index prune).
+	r.mu.Lock()
+	// Write enough packets to push tail past 188 in a 10-packet ring
+	extraData := make([]byte, 12*TSPacketSize)
+	for i := range extraData {
+		extraData[i] = SyncByte
+	}
+	r.store.writeCommitted(extraData)
+	if r.store.tailOffset() <= 188 {
+		r.mu.Unlock()
+		t.Fatalf("tail = %d, want > 188", r.store.tailOffset())
+	}
+	r.mu.Unlock()
+
+	// Querying offset 188 MUST return not found because bytes are pruned!
+	if rap, ok := tl.FindPrecedingRAP(188); ok {
+		t.Fatalf("NEGATIVTEST PRUNING FAILED: Pruned RAP at %d observed after byte eviction (tail=%d)", rap.Offset, r.Tail())
+	}
+	if raps := tl.RAPsBetween(0, 188); len(raps) != 0 {
+		t.Fatalf("NEGATIVTEST PRUNING FAILED: Pruned RAPs observed via RAPsBetween: %+v", raps)
+	}
+	if _, ok := tl.EpochForOffset(188); ok {
+		t.Fatalf("NEGATIVTEST PRUNING FAILED: Pruned Epoch observed for offset 188 (tail=%d)", r.Tail())
+	}
 }

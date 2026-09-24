@@ -139,8 +139,8 @@ type MasterRing struct {
 	// subscriber is delivered those tables ahead of an entry point. Guarded by mu.
 	activePSI mediafacts.ActivePSI
 
-	// timelineIndex maintains the canonical timing index when configured via WithTimelineIndex.
-	// MasterRing acts as the single writer and commit gatekeeper under mu.
+	// timelineIndex maintains the canonical timing index when configured via WithCanonicalTimeline.
+	// MasterRing acts as the exclusive owner, single writer, and commit gatekeeper under mu.
 	timelineIndex *timeline.MediaIndex
 
 	// timelineReader exposes canonical timeline queries synchronized under MasterRing.mu.
@@ -157,21 +157,6 @@ type Option func(*MasterRing)
 func WithCanonicalTimeline() Option {
 	return func(r *MasterRing) {
 		r.timelineIndex = timeline.NewMediaIndex()
-		r.timelineReader = &ringTimelineReader{ring: r}
-	}
-}
-
-// WithTimelineIndex configures a canonical timeline.MediaIndex for the ring.
-// When set, MasterRing takes exclusive ownership of the index and gatekeeps all access under mu.
-//
-// Deprecated: Prefer WithCanonicalTimeline(), which constructs and owns the index internally,
-// ensuring no caller retains a naked pointer that could bypass the MasterRing.mu publication lock.
-func WithTimelineIndex(idx *timeline.MediaIndex) Option {
-	return func(r *MasterRing) {
-		if idx == nil {
-			idx = timeline.NewMediaIndex()
-		}
-		r.timelineIndex = idx
 		r.timelineReader = &ringTimelineReader{ring: r}
 	}
 }
@@ -554,6 +539,9 @@ func (r *MasterRing) TimelineObservation() (TimelineObservation, bool) {
 	}
 	obs.ActiveEpoch, obs.HasEpoch = r.timelineIndex.ActiveEpoch()
 	obs.LatestRAP, obs.HasLatest = r.timelineIndex.FindPrecedingRAP(obs.Head)
+	if obs.HasLatest && (obs.LatestRAP.Offset < obs.Tail || obs.LatestRAP.Offset >= obs.Head) {
+		obs.HasLatest = false
+	}
 	obs.RAPCount = r.timelineIndex.Stats().TotalRAPs
 	return obs, true
 }

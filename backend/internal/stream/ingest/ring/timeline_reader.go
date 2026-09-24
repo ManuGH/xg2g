@@ -38,7 +38,7 @@ func (tr *ringTimelineReader) FindPrecedingRAP(offset int64) (timeline.RAPEntry,
 	if !ok {
 		return timeline.RAPEntry{}, false
 	}
-	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset > tr.ring.store.headOffset() {
+	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset >= tr.ring.store.headOffset() {
 		return timeline.RAPEntry{}, false
 	}
 	return rap, true
@@ -54,7 +54,7 @@ func (tr *ringTimelineReader) FindFollowingRAP(offset int64) (timeline.RAPEntry,
 	if !ok {
 		return timeline.RAPEntry{}, false
 	}
-	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset > tr.ring.store.headOffset() {
+	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset >= tr.ring.store.headOffset() {
 		return timeline.RAPEntry{}, false
 	}
 	return rap, true
@@ -70,7 +70,7 @@ func (tr *ringTimelineReader) FindRAPPrecedingPTS(epoch mediafacts.TimelineEpoch
 	if !ok {
 		return timeline.RAPEntry{}, false
 	}
-	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset > tr.ring.store.headOffset() {
+	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset >= tr.ring.store.headOffset() {
 		return timeline.RAPEntry{}, false
 	}
 	return rap, true
@@ -86,7 +86,7 @@ func (tr *ringTimelineReader) FindRAPNearestPTS(epoch mediafacts.TimelineEpoch, 
 	if !ok {
 		return timeline.RAPEntry{}, false
 	}
-	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset > tr.ring.store.headOffset() {
+	if rap.Offset < tr.ring.store.tailOffset() || rap.Offset >= tr.ring.store.headOffset() {
 		return timeline.RAPEntry{}, false
 	}
 	return rap, true
@@ -100,7 +100,7 @@ func (tr *ringTimelineReader) EpochForOffset(offset int64) (timeline.EpochSpan, 
 	}
 	tail := tr.ring.store.tailOffset()
 	head := tr.ring.store.headOffset()
-	if offset < tail || offset > head {
+	if offset < tail || offset >= head {
 		return timeline.EpochSpan{}, false
 	}
 	return tr.ring.timelineIndex.EpochForOffset(offset)
@@ -117,19 +117,40 @@ func (tr *ringTimelineReader) RAPsBetween(startOffset, endOffset int64) []timeli
 	if startOffset < tail {
 		startOffset = tail
 	}
-	if endOffset > head {
-		endOffset = head
+	if endOffset >= head {
+		endOffset = head - 1
 	}
 	if startOffset > endOffset {
 		return nil
 	}
-	return tr.ring.timelineIndex.RAPsBetween(startOffset, endOffset)
+	raw := tr.ring.timelineIndex.RAPsBetween(startOffset, endOffset)
+	if len(raw) == 0 {
+		return nil
+	}
+	raps := make([]timeline.RAPEntry, 0, len(raw))
+	for _, rap := range raw {
+		if rap.Offset >= tail && rap.Offset < head {
+			raps = append(raps, rap)
+		}
+	}
+	return raps
 }
 
 func (tr *ringTimelineReader) DiscontinuitiesBetween(startOffset, endOffset int64) []timeline.DiscontinuityEntry {
 	tr.ring.mu.Lock()
 	defer tr.ring.mu.Unlock()
 	if tr.ring.timelineIndex == nil {
+		return nil
+	}
+	tail := tr.ring.store.tailOffset()
+	head := tr.ring.store.headOffset()
+	if startOffset < tail {
+		startOffset = tail
+	}
+	if endOffset >= head {
+		endOffset = head - 1
+	}
+	if startOffset > endOffset {
 		return nil
 	}
 	return tr.ring.timelineIndex.DiscontinuitiesBetween(startOffset, endOffset)
