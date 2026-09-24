@@ -1868,3 +1868,224 @@ func TestMediaIndex_StatsAndBoundRAPRatio(t *testing.T) {
 		t.Errorf("BoundRAPRatio = %f, want 0.5", ratio)
 	}
 }
+
+func TestMediaIndex_PresentationTimeline_PIDTrackSeparation(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest program discontinuity establishing Epoch 1 at offset 0
+	err := idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+			// Video PID 256 timing points: PTS 10000 at 1000
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     10000,
+				ObservedAt: 1000,
+				SubjectAt:  1000,
+			}),
+			rapRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     10000,
+				ObservedAt: 1000,
+				SubjectAt:  1000,
+			}),
+			// Audio PID 257 timing points: PTS 8000 at 1100
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        257,
+				HasPTS:     true,
+				PTS90k:     8000,
+				ObservedAt: 1100,
+				SubjectAt:  1100,
+			}),
+			// Video PID 256 timing points: PTS 50000 at 3000
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     50000,
+				ObservedAt: 3000,
+				SubjectAt:  3000,
+			}),
+			// Audio PID 257 timing points: PTS 48000 at 3100
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        257,
+				HasPTS:     true,
+				PTS90k:     48000,
+				ObservedAt: 3100,
+				SubjectAt:  3100,
+			}),
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+		},
+	))
+	if err != nil {
+		t.Fatalf("ApplyIngestResult failed: %v", err)
+	}
+
+	pt, ok := idx.PresentationTimeline(1)
+	if !ok {
+		t.Fatalf("PresentationTimeline(1) returned ok=false")
+	}
+
+	if pt.Epoch != 1 {
+		t.Errorf("Epoch = %d, want 1", pt.Epoch)
+	}
+	if pt.TotalRAPs != 1 || pt.JoinableRAPs != 1 {
+		t.Errorf("RAP counts = total:%d joinable:%d, want 1/1", pt.TotalRAPs, pt.JoinableRAPs)
+	}
+	if !pt.HasFirstRAP || pt.FirstRAPOffset != 1000 {
+		t.Errorf("FirstRAP = has:%v offset:%d, want true/1000", pt.HasFirstRAP, pt.FirstRAPOffset)
+	}
+
+	if len(pt.Tracks) != 2 {
+		t.Fatalf("len(Tracks) = %d, want 2", len(pt.Tracks))
+	}
+
+	// Tracks must be sorted by PID ascending: 256, then 257
+	vTrack := pt.Tracks[0]
+	if vTrack.PID != 256 {
+		t.Errorf("Track[0] PID = %d, want 256", vTrack.PID)
+	}
+	if !vTrack.HasPTS || vTrack.EarliestPTS90k != 10000 || vTrack.LatestPTS90k != 50000 {
+		t.Errorf("Video Track PTS = earliest:%d latest:%d, want 10000/50000", vTrack.EarliestPTS90k, vTrack.LatestPTS90k)
+	}
+	if vTrack.ObservedSpan90k != 40000 {
+		t.Errorf("Video ObservedSpan90k = %d, want 40000", vTrack.ObservedSpan90k)
+	}
+	if vTrack.SampleCount != 2 {
+		t.Errorf("Video SampleCount = %d, want 2", vTrack.SampleCount)
+	}
+
+	aTrack := pt.Tracks[1]
+	if aTrack.PID != 257 {
+		t.Errorf("Track[1] PID = %d, want 257", aTrack.PID)
+	}
+	if !aTrack.HasPTS || aTrack.EarliestPTS90k != 8000 || aTrack.LatestPTS90k != 48000 {
+		t.Errorf("Audio Track PTS = earliest:%d latest:%d, want 8000/48000", aTrack.EarliestPTS90k, aTrack.LatestPTS90k)
+	}
+	if aTrack.ObservedSpan90k != 40000 {
+		t.Errorf("Audio ObservedSpan90k = %d, want 40000", aTrack.ObservedSpan90k)
+	}
+}
+
+func TestMediaIndex_FindRAPByTime_ModesAndJoinability(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest epoch 1 and 3 RAPs:
+	// RAP 1: offset 1000, PTS 10000, Joinable=true
+	// RAP 2: offset 2000, PTS 20000, Joinable=false (scrambled)
+	// RAP 3: offset 3000, PTS 30000, Joinable=true
+	_ = idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 1000, ObservedAt: 1000}),
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 2000, ObservedAt: 2000}),
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 30000, SubjectAt: 3000, ObservedAt: 3000}),
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: false},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 3000, Joinable: true},
+		},
+	))
+
+	// 1. JoinableOnly=true: target 20000 with Preceding -> should skip RAP 2 (Joinable=false) and return RAP 1 (PTS 10000)
+	rap, ok := idx.FindRAPByTime(1, 20000, SeekOptions{Mode: SeekModePreceding, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for preceding joinable")
+	}
+	if rap.Offset != 1000 || rap.PTS90k != 10000 {
+		t.Errorf("Expected RAP at 1000 (PTS 10000), got offset:%d PTS:%d", rap.Offset, rap.PTS90k)
+	}
+
+	// 2. JoinableOnly=false: target 20000 with Preceding -> should return RAP 2 (PTS 20000)
+	rapRaw, ok := idx.FindRAPByTime(1, 20000, SeekOptions{Mode: SeekModePreceding, JoinableOnly: false})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for preceding raw")
+	}
+	if rapRaw.Offset != 2000 || rapRaw.PTS90k != 20000 {
+		t.Errorf("Expected raw RAP at 2000 (PTS 20000), got offset:%d PTS:%d", rapRaw.Offset, rapRaw.PTS90k)
+	}
+
+	// 3. Following: target 15000 with JoinableOnly=true -> should skip RAP 2 (20000) and return RAP 3 (30000)
+	rapFoll, ok := idx.FindRAPByTime(1, 15000, SeekOptions{Mode: SeekModeFollowing, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for following joinable")
+	}
+	if rapFoll.Offset != 3000 || rapFoll.PTS90k != 30000 {
+		t.Errorf("Expected following RAP at 3000 (PTS 30000), got offset:%d PTS:%d", rapFoll.Offset, rapFoll.PTS90k)
+	}
+
+	// 4. Nearest: target 19000 with JoinableOnly=true -> RAP 1 (dist 9000) vs RAP 3 (dist 11000) -> RAP 1
+	rapNear, ok := idx.FindRAPByTime(1, 19000, SeekOptions{Mode: SeekModeNearest, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for nearest joinable")
+	}
+	if rapNear.Offset != 1000 {
+		t.Errorf("Expected nearest RAP 1000, got offset:%d", rapNear.Offset)
+	}
+}
+
+func TestMediaIndex_PresentationTimeline_EmptyAndMissingPTS(t *testing.T) {
+	idx := NewMediaIndex()
+
+	_ = idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    2,
+				},
+			},
+			// Timing point with HasPTS=false
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      2,
+				PID:        256,
+				HasPTS:     false,
+				ObservedAt: 500,
+				SubjectAt:  500,
+			}),
+		},
+		nil,
+	))
+
+	pt, ok := idx.PresentationTimeline(2)
+	if !ok {
+		t.Fatalf("PresentationTimeline(2) ok=false")
+	}
+	if len(pt.Tracks) != 1 {
+		t.Fatalf("len(Tracks) = %d, want 1", len(pt.Tracks))
+	}
+	if pt.Tracks[0].HasPTS {
+		t.Errorf("Track HasPTS should be false")
+	}
+	if pt.Tracks[0].ObservedSpan90k != 0 {
+		t.Errorf("Track ObservedSpan90k = %d, want 0", pt.Tracks[0].ObservedSpan90k)
+	}
+}

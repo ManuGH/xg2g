@@ -7,6 +7,9 @@ package ring
 import (
 	"errors"
 	"io"
+
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // SubscriberReader provides an independent read cursor over a MasterRing buffer.
@@ -283,6 +286,30 @@ func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 
 	s.readOffset = latest
 	return latest, nil
+}
+
+// SeekToTime repositions an existing SubscriberReader within the active program generation.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+// It restores the PAT/PMT preamble in pendingPrefix so the consumer immediately receives topology.
+func (s *SubscriberReader) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	if s.isClosed {
+		return SeekResult{}, io.EOF
+	}
+
+	seekRes, err := s.ring.seekToTimeLocked(epoch, pts, mode)
+	if err != nil {
+		return SeekResult{}, err
+	}
+
+	s.readOffset = seekRes.Offset
+	s.pendingPrefix = seekRes.Preamble
+	s.pendingPrefixGeneration = seekRes.Generation
+	s.awaitingRandomAccess = false
+
+	return seekRes, nil
 }
 
 // SubscriberStats is one consistent snapshot of a subscriber's ring accounting,

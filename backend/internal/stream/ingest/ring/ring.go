@@ -578,6 +578,116 @@ func (r *MasterRing) LatestKeyframeOffset() (int64, bool) {
 	return r.latestKeyframeOffsetLocked()
 }
 
+// SeekResult captures the resolved entry point and metadata from a time seek.
+type SeekResult struct {
+	Offset     int64
+	RAP        timeline.RAPEntry
+	Generation uint64
+	Preamble   []byte
+}
+
+// SeekToTime resolves a decodable stream entry point for epoch and PTS under the publication lock.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+func (r *MasterRing) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seekToTimeLocked(epoch, pts, mode)
+}
+
+func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	if r.isClosed {
+		return SeekResult{}, ErrRingClosed
+	}
+	if r.timelineIndex == nil {
+		return SeekResult{}, ErrNoTimeline
+	}
+
+	if !r.facts.HasPMT {
+		return SeekResult{}, ErrTopologyUnresolved
+	}
+	preamble := r.patpmtPreambleLocked()
+	if len(preamble) == 0 {
+		return SeekResult{}, ErrTopologyUnresolved
+	}
+
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+
+	rap, ok := r.timelineIndex.FindRAPByTime(epoch, pts, timeline.SeekOptions{
+		Mode:         mode,
+		JoinableOnly: true,
+	})
+	if !ok {
+		// Distinguish out-of-range PTS from general no RAP
+		raps := r.timelineIndex.RAPsBetween(tail, head-1)
+		var earliestPTS, latestPTS int64
+		var hasAny bool
+		for _, rapEntry := range raps {
+			if rapEntry.Epoch == epoch && rapEntry.HasPTS {
+				if !hasAny {
+					hasAny = true
+					earliestPTS = rapEntry.PTS90k
+					latestPTS = rapEntry.PTS90k
+				} else {
+					if rapEntry.PTS90k < earliestPTS {
+						earliestPTS = rapEntry.PTS90k
+					}
+					if rapEntry.PTS90k > latestPTS {
+						latestPTS = rapEntry.PTS90k
+					}
+				}
+			}
+		}
+		if hasAny && (pts < earliestPTS || pts > latestPTS) {
+			return SeekResult{}, ErrPTSOutOfRange
+		}
+		return SeekResult{}, ErrNoMatchingRAP
+	}
+
+	if rap.Offset < tail || rap.Offset >= head {
+		return SeekResult{}, ErrNoMatchingRAP
+	}
+
+	floor := r.attachIndex.resumeFloor()
+	if rap.Offset < floor {
+		return SeekResult{}, ErrHistoricalProgramSeekUnsupported
+	}
+
+	return SeekResult{
+		Offset:     rap.Offset,
+		RAP:        rap,
+		Generation: r.attachIndex.generationValue(),
+		Preamble:   preamble,
+	}, nil
+}
+
+// NewPrimedSubscriberAtTime atomically creates and positions a SubscriberReader at the given epoch and PTS.
+// It primes the reader with the active PAT/PMT preamble and clears overrun/resync state.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+func (r *MasterRing) NewPrimedSubscriberAtTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (PrimedAttachPoint, *SubscriberReader, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	seekRes, err := r.seekToTimeLocked(epoch, pts, mode)
+	if err != nil {
+		return PrimedAttachPoint{}, nil, err
+	}
+
+	attach := PrimedAttachPoint{
+		Preamble:       seekRes.Preamble,
+		KeyframeOffset: seekRes.Offset,
+		Generation:     seekRes.Generation,
+		HasKeyframe:    true,
+	}
+
+	reader := r.newSubscriberReaderLocked(seekRes.Offset)
+	reader.pendingPrefix = seekRes.Preamble
+	reader.pendingPrefixGeneration = seekRes.Generation
+	reader.awaitingRandomAccess = false
+
+	return attach, reader, nil
+}
+
 // latestKeyframeOffsetLocked reports the newest random access point still held by
 // the ring. A keyframe that has fallen behind the tail is gone even though its
 // offset is still indexed, so it is not a valid entry point.
