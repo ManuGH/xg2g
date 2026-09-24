@@ -19,7 +19,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/remotecore"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
-	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 var (
@@ -71,7 +70,7 @@ func NewSessionPipeline(ctx context.Context, normCfg normalizer.Config, ringCapa
 	if err != nil {
 		return nil, fmt.Errorf("start media core: %w", err)
 	}
-	return NewSessionPipelineWithCore(normCfg, ringCapacity, remoteCore, remoteCore, ring.WithTimelineIndex(timeline.NewMediaIndex()))
+	return NewSessionPipelineWithCore(normCfg, ringCapacity, remoteCore, remoteCore, ring.WithCanonicalTimeline())
 }
 
 // NewSessionPipelineWithCore creates a new live ingest pipeline using an explicitly provided media facts core and optional closer.

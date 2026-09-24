@@ -150,16 +150,29 @@ type MasterRing struct {
 // Option configures an optional capability on a MasterRing.
 type Option func(*MasterRing)
 
+// WithCanonicalTimeline configures the ring to instantiate and exclusively own its
+// canonical timeline.MediaIndex. Callers access the timeline strictly via
+// MasterRing.Timeline() to guarantee synchronized visibility under MasterRing.mu.
+// No raw pointer is retained by the caller, eliminating any potential bypass path.
+func WithCanonicalTimeline() Option {
+	return func(r *MasterRing) {
+		r.timelineIndex = timeline.NewMediaIndex()
+		r.timelineReader = &ringTimelineReader{ring: r}
+	}
+}
+
 // WithTimelineIndex configures a canonical timeline.MediaIndex for the ring.
-// When set, MasterRing acts as the timeline's single writer and commit gatekeeper.
+// When set, MasterRing takes exclusive ownership of the index and gatekeeps all access under mu.
+//
+// Deprecated: Prefer WithCanonicalTimeline(), which constructs and owns the index internally,
+// ensuring no caller retains a naked pointer that could bypass the MasterRing.mu publication lock.
 func WithTimelineIndex(idx *timeline.MediaIndex) Option {
 	return func(r *MasterRing) {
-		r.timelineIndex = idx
-		if idx != nil {
-			r.timelineReader = &ringTimelineReader{ring: r}
-		} else {
-			r.timelineReader = nil
+		if idx == nil {
+			idx = timeline.NewMediaIndex()
 		}
+		r.timelineIndex = idx
+		r.timelineReader = &ringTimelineReader{ring: r}
 	}
 }
 
@@ -514,6 +527,35 @@ func (r *MasterRing) ReadAt(p []byte, offset int64) (int, int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.store.readAt(p, offset)
+}
+
+// TimelineObservation captures an atomic snapshot of timeline state and packet store bounds under a single lock.
+type TimelineObservation struct {
+	Tail        int64
+	Head        int64
+	ActiveEpoch mediafacts.TimelineEpoch
+	HasEpoch    bool
+	LatestRAP   timeline.RAPEntry
+	HasLatest   bool
+	RAPCount    int
+}
+
+// TimelineObservation returns an atomic snapshot of the current stream bounds and timeline state
+// under a single acquisition of the publication lock MasterRing.mu.
+func (r *MasterRing) TimelineObservation() (TimelineObservation, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.timelineIndex == nil {
+		return TimelineObservation{}, false
+	}
+	obs := TimelineObservation{
+		Tail: r.store.tailOffset(),
+		Head: r.store.headOffset(),
+	}
+	obs.ActiveEpoch, obs.HasEpoch = r.timelineIndex.ActiveEpoch()
+	obs.LatestRAP, obs.HasLatest = r.timelineIndex.FindPrecedingRAP(obs.Head)
+	obs.RAPCount = r.timelineIndex.Stats().TotalRAPs
+	return obs, true
 }
 
 // PrimedAttachPoint represents an atomic, generation-locked stream entry point.

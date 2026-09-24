@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
-	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // TestMemoryBound_RollingTailPruningStrictlyBounded verifies that when a long-running
@@ -25,8 +24,6 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 		chunkBytes      = chunkPackets * TSPacketSize
 		iterations      = 1000
 	)
-
-	idx := timeline.NewMediaIndex()
 
 	var currentEpoch mediafacts.TimelineEpoch = 1
 
@@ -128,7 +125,7 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 		},
 	}
 
-	r := NewMasterRingWithCore(capacityBytes, mock, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(capacityBytes, mock, WithCanonicalTimeline())
 	data := tsPacketChunk(chunkPackets)
 
 	for i := 0; i < iterations; i++ {
@@ -202,8 +199,7 @@ func TestMemoryBound_RollingTailPruningStrictlyBounded(t *testing.T) {
 }
 
 func ExampleMasterRing_Timeline() {
-	idx := timeline.NewMediaIndex()
-	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(10*TSPacketSize, mediafacts.NewGoCore(1), WithCanonicalTimeline())
 	reader := r.Timeline()
 	stats := reader.Stats()
 	fmt.Printf("Total RAPs: %d\n", stats.TotalRAPs)

@@ -37,8 +37,6 @@ func (m *mockFailCore) SetTargetProgram(ctx context.Context, programNumber uint1
 func (m *mockFailCore) Reset() {}
 
 func TestMediaCommit_FailClosedOnMediaIndexError(t *testing.T) {
-	idx := timeline.NewMediaIndex()
-
 	// ParseResult with non-canonical timing authority (TimingAuthorityNone).
 	// MediaIndex.ApplyIngestResult will fail closed with ErrNonCanonicalTiming.
 	badRes := mediafacts.ParseResult{
@@ -52,7 +50,7 @@ func TestMediaCommit_FailClosedOnMediaIndexError(t *testing.T) {
 	}
 
 	core := &mockFailCore{result: badRes}
-	r := NewMasterRingWithCore(10*TSPacketSize, core, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(10*TSPacketSize, core, WithCanonicalTimeline())
 	defer r.Close()
 
 	data := make([]byte, TSPacketSize)
@@ -85,8 +83,6 @@ func TestMediaCommit_FailClosedOnMediaIndexError(t *testing.T) {
 }
 
 func TestMediaCommit_AtomicallyPublishesBytesAndTruth(t *testing.T) {
-	idx := timeline.NewMediaIndex()
-
 	goodRes := mediafacts.ParseResult{
 		Coverage: mediafacts.ParseCoverageComplete,
 		Timing: mediafacts.TimingResult{
@@ -126,7 +122,7 @@ func TestMediaCommit_AtomicallyPublishesBytesAndTruth(t *testing.T) {
 	}
 
 	core := &mockFailCore{result: goodRes}
-	r := NewMasterRingWithCore(10*TSPacketSize, core, WithTimelineIndex(idx))
+	r := NewMasterRingWithCore(10*TSPacketSize, core, WithCanonicalTimeline())
 	defer r.Close()
 
 	data := make([]byte, TSPacketSize)
@@ -227,10 +223,10 @@ func (m *mockStreamingCore) SetTargetProgram(ctx context.Context, programNumber 
 func (m *mockStreamingCore) Reset() {}
 
 func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
-	idx := timeline.NewMediaIndex()
 	core := &mockStreamingCore{}
 	// Small ring capacity: 10 packets (1880 bytes) to force wrap-arounds and tail pruning.
-	r := NewMasterRingWithCore(10*TSPacketSize, core, WithTimelineIndex(idx))
+	// WithCanonicalTimeline constructs and owns the index internally, eliminating any retained pointer bypass.
+	r := NewMasterRingWithCore(10*TSPacketSize, core, WithCanonicalTimeline())
 	defer r.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -261,7 +257,7 @@ func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
 		}
 	}()
 
-	// Reader goroutine 1: TimelineReader & byte consistency queries under MasterRing.mu.
+	// Reader goroutine 1: TimelineReader & atomic consistency queries under MasterRing.mu.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -275,27 +271,38 @@ func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
 			default:
 			}
 
-			// Invariant 1: Any RAP returned by Timeline must have its bytes already committed in PacketStore.
-			if rap, ok := tl.FindPrecedingRAP(math.MaxInt64); ok {
-				head := r.Head()
-				if rap.Offset+int64(TSPacketSize) > head {
-					t.Errorf("INVARIANT VIOLATION: RAP at %d published in Timeline before bytes committed in store (head=%d)", rap.Offset, head)
+			// Invariant 1 (Strict Atomic Publication): Observed under a single MasterRing.mu lock acquisition.
+			// Proves that at the exact linearization point of publication, head, tail, and timeline truth are in lockstep.
+			obs, ok := r.TimelineObservation()
+			if ok && obs.HasLatest {
+				if obs.LatestRAP.Offset+int64(TSPacketSize) > obs.Head {
+					t.Errorf("ATOMIC INVARIANT VIOLATION: LatestRAP %d exceeds Head %d under single lock", obs.LatestRAP.Offset, obs.Head)
+				}
+				if obs.LatestRAP.Offset < obs.Tail {
+					t.Errorf("ATOMIC INVARIANT VIOLATION: LatestRAP %d is below Tail %d under single lock", obs.LatestRAP.Offset, obs.Tail)
 				}
 
-				// Invariant 2: If the RAP has not been pruned, reading it must yield valid committed bytes.
-				n, _, err := r.ReadAt(buf, rap.Offset)
+				// If not pruned, verify actual bytes in PacketStore
+				n, _, err := r.ReadAt(buf, obs.LatestRAP.Offset)
 				if err == nil {
 					if n < TSPacketSize {
 						t.Errorf("ReadAt returned short read: %d < %d", n, TSPacketSize)
 					}
 					if buf[0] != SyncByte {
-						t.Errorf("corrupted byte at rap.Offset %d: got 0x%02x, want 0x%02x", rap.Offset, buf[0], SyncByte)
+						t.Errorf("corrupted byte at LatestRAP %d: got 0x%02x, want 0x%02x", obs.LatestRAP.Offset, buf[0], SyncByte)
 					}
 					if buf[1]&0x40 == 0 {
-						t.Errorf("byte at rap.Offset %d lost PUSI/RAP marker: 0x%02x", rap.Offset, buf[1])
+						t.Errorf("byte at LatestRAP %d lost PUSI/RAP marker: 0x%02x", obs.LatestRAP.Offset, buf[1])
 					}
 				} else if !errors.Is(err, ErrSubscriberOverrun) {
 					t.Errorf("unexpected ReadAt error: %v", err)
+				}
+			}
+
+			// Invariant 2: External TimelineReader queries synchronized under MasterRing.mu.
+			if rap, ok := tl.FindPrecedingRAP(math.MaxInt64); ok {
+				if rap.Offset+int64(TSPacketSize) > r.Head() {
+					t.Errorf("INVARIANT VIOLATION: RAP at %d published in Timeline before bytes committed in store", rap.Offset)
 				}
 			}
 
