@@ -7,6 +7,9 @@ package ring
 import (
 	"context"
 	"errors"
+	"io"
+	"math"
+	"sync"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
@@ -152,4 +155,198 @@ func TestMediaCommit_AtomicallyPublishesBytesAndTruth(t *testing.T) {
 	if stats := r.Timeline().Stats(); stats.TotalRAPs != 1 {
 		t.Errorf("timeline stats = %+v, want TotalRAPs=1", stats)
 	}
+}
+
+type mockStreamingCore struct {
+	mu sync.Mutex
+}
+
+func (m *mockStreamingCore) Ingest(ctx context.Context, startOffset int64, chunk []byte) (mediafacts.ParseResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	numPackets := len(chunk) / TSPacketSize
+	var events []mediafacts.Event
+	var records []mediafacts.TimingRecord
+
+	if startOffset == 0 {
+		records = append(records, mediafacts.TimingRecord{
+			Type: mediafacts.TimingRecordTypeDiscontinuity,
+			Discontinuity: mediafacts.DiscontinuityRecord{
+				Scope:         mediafacts.DiscontinuityScopeProgram,
+				ObservedAt:    0,
+				HasEpochAfter: true,
+				EpochAfter:    1,
+			},
+		})
+	}
+
+	for i := 0; i < numPackets; i++ {
+		pktOffset := startOffset + int64(i*TSPacketSize)
+		if chunk[i*TSPacketSize+1]&0x40 != 0 {
+			events = append(events, mediafacts.Event{
+				Kind:     mediafacts.EventRandomAccessPoint,
+				Offset:   pktOffset,
+				Joinable: true,
+			})
+			records = append(records, mediafacts.TimingRecord{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:      1,
+					PID:        256,
+					ObservedAt: pktOffset,
+					SubjectAt:  pktOffset,
+					HasPTS:     true,
+					PTS90k:     pktOffset * 90,
+				},
+			})
+		}
+	}
+
+	return mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: startOffset + int64(len(chunk)),
+		Events:                 events,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records:   records,
+		},
+		Facts: mediafacts.Facts{
+			HasPAT:     true,
+			HasPMT:     true,
+			VideoPID:   256,
+			VideoCodec: CodecH264,
+		},
+	}, nil
+}
+
+func (m *mockStreamingCore) SetTargetProgram(ctx context.Context, programNumber uint16) (mediafacts.ParseResult, error) {
+	return mediafacts.ParseResult{Coverage: mediafacts.ParseCoverageComplete}, nil
+}
+
+func (m *mockStreamingCore) Reset() {}
+
+func TestMediaCommit_ConcurrentTimelineAndBytePublication(t *testing.T) {
+	idx := timeline.NewMediaIndex()
+	core := &mockStreamingCore{}
+	// Small ring capacity: 10 packets (1880 bytes) to force wrap-arounds and tail pruning.
+	r := NewMasterRingWithCore(10*TSPacketSize, core, WithTimelineIndex(idx))
+	defer r.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	const iterations = 300
+	chunkSize := 2 * TSPacketSize
+
+	// Writer goroutine: repeatedly pushes chunks with alternating RAPs.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			data := make([]byte, chunkSize)
+			// Packet 0: RAP
+			data[0] = SyncByte
+			data[1] = 0x40 // PUSI set -> RAP
+			data[2] = byte(i & 0xFF)
+			// Packet 1: non-RAP
+			data[TSPacketSize] = SyncByte
+			data[TSPacketSize+1] = 0x00
+			data[TSPacketSize+2] = byte(i & 0xFF)
+
+			if _, err := r.Push(ctx, data); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Reader goroutine 1: TimelineReader & byte consistency queries under MasterRing.mu.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tl := r.Timeline()
+		buf := make([]byte, TSPacketSize)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			// Invariant 1: Any RAP returned by Timeline must have its bytes already committed in PacketStore.
+			if rap, ok := tl.FindPrecedingRAP(math.MaxInt64); ok {
+				head := r.Head()
+				if rap.Offset+int64(TSPacketSize) > head {
+					t.Errorf("INVARIANT VIOLATION: RAP at %d published in Timeline before bytes committed in store (head=%d)", rap.Offset, head)
+				}
+
+				// Invariant 2: If the RAP has not been pruned, reading it must yield valid committed bytes.
+				n, _, err := r.ReadAt(buf, rap.Offset)
+				if err == nil {
+					if n < TSPacketSize {
+						t.Errorf("ReadAt returned short read: %d < %d", n, TSPacketSize)
+					}
+					if buf[0] != SyncByte {
+						t.Errorf("corrupted byte at rap.Offset %d: got 0x%02x, want 0x%02x", rap.Offset, buf[0], SyncByte)
+					}
+					if buf[1]&0x40 == 0 {
+						t.Errorf("byte at rap.Offset %d lost PUSI/RAP marker: 0x%02x", rap.Offset, buf[1])
+					}
+				} else if !errors.Is(err, ErrSubscriberOverrun) {
+					t.Errorf("unexpected ReadAt error: %v", err)
+				}
+			}
+
+			// Invariant 3: RAPsBetween for current tail must never return RAPs below that tail.
+			tail := r.Tail()
+			raps := tl.RAPsBetween(tail, math.MaxInt64)
+			head := r.Head()
+			for _, rap := range raps {
+				if rap.Offset < tail {
+					t.Errorf("INVARIANT VIOLATION: Timeline returned pruned RAP at %d (tail=%d)", rap.Offset, tail)
+				}
+				if rap.Offset+int64(TSPacketSize) > head {
+					t.Errorf("INVARIANT VIOLATION: Timeline returned uncommitted RAP at %d (head=%d)", rap.Offset, head)
+				}
+			}
+
+			if r.Head() >= int64(iterations*chunkSize) {
+				return
+			}
+		}
+	}()
+
+	// Reader goroutine 2: Active subscriber reading stream concurrently.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		readBuf := make([]byte, chunkSize)
+		sub := r.NewSubscriberReader(0)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			n, err := sub.Read(readBuf)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+					return
+				}
+			}
+			if n > 0 && readBuf[0] != SyncByte {
+				t.Errorf("subscriber read corrupted sync byte: 0x%02x", readBuf[0])
+			}
+
+			if r.Head() >= int64(iterations*chunkSize) {
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
 }

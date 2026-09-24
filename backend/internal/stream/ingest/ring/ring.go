@@ -142,6 +142,9 @@ type MasterRing struct {
 	// timelineIndex maintains the canonical timing index when configured via WithTimelineIndex.
 	// MasterRing acts as the single writer and commit gatekeeper under mu.
 	timelineIndex *timeline.MediaIndex
+
+	// timelineReader exposes canonical timeline queries synchronized under MasterRing.mu.
+	timelineReader timeline.TimelineReader
 }
 
 // Option configures an optional capability on a MasterRing.
@@ -152,6 +155,11 @@ type Option func(*MasterRing)
 func WithTimelineIndex(idx *timeline.MediaIndex) Option {
 	return func(r *MasterRing) {
 		r.timelineIndex = idx
+		if idx != nil {
+			r.timelineReader = &ringTimelineReader{ring: r}
+		} else {
+			r.timelineReader = nil
+		}
 	}
 }
 
@@ -481,6 +489,10 @@ func (r *MasterRing) RandomAccess() RandomAccessObservation {
 // Timeline returns the canonical read-only timeline reader, or nil if this ring
 // does not maintain a timeline index (e.g. variant or non-canonical rings).
 //
+// Invariant: The returned TimelineReader synchronizes all queries under MasterRing.mu,
+// establishing MasterRing.mu as the single shared publication lock across timeline truth
+// and packet store bytes.
+//
 // To prevent Go typed-nil interface bugs where an interface variable containing a
 // nil pointer is not equal to nil, this returns an explicit untyped nil when
 // r.timelineIndex is nil.
@@ -490,7 +502,18 @@ func (r *MasterRing) Timeline() timeline.TimelineReader {
 	if r.timelineIndex == nil {
 		return nil
 	}
-	return r.timelineIndex
+	if r.timelineReader == nil {
+		r.timelineReader = &ringTimelineReader{ring: r}
+	}
+	return r.timelineReader
+}
+
+// ReadAt reads up to len(p) bytes from the master ring starting at offset under the publication lock r.mu.
+// It returns ErrSubscriberOverrun if offset < tail, or reads available bytes up to head.
+func (r *MasterRing) ReadAt(p []byte, offset int64) (int, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.store.readAt(p, offset)
 }
 
 // PrimedAttachPoint represents an atomic, generation-locked stream entry point.
