@@ -232,10 +232,10 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	facts := s.ring.facts
 
-	// 1. Topology unknown: no complete PMT parsed yet. A service that turns out
-	// to carry video must not have been given bytes from the middle of a picture.
-	// Remain blocked.
-	if !facts.HasPMT {
+	// 1. Complete topology validation: verify that both PAT and PMT sections are
+	// present, packetizable, and PMTPID != patPID.
+	preamble, ok := s.ring.canDeliverPreambleLocked()
+	if !ok {
 		return false
 	}
 
@@ -243,10 +243,10 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	floor := s.ring.attachIndex.resumeFloor()
 	tail := s.ring.store.tailOffset()
 
-	// 2. Topology known, video: only a random access point will do.
+	// 2. Topology known, video: only a random access point at or after the recovery floor will do.
 	if facts.VideoPID != 0 {
 		latest, ok := s.ring.latestKeyframeOffsetLocked()
-		if !ok {
+		if !ok || latest < floor {
 			return false
 		}
 
@@ -254,7 +254,7 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 			s.resyncSkippedBytes += latest - s.readOffset
 		}
 		s.readOffset = latest
-		s.pendingPrefix = s.ring.patpmtPreambleLocked()
+		s.pendingPrefix = preamble
 		s.pendingPrefixGeneration = generation
 		s.generation = generation
 		return true
@@ -274,7 +274,7 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 		s.resyncSkippedBytes += floor - s.readOffset
 		s.readOffset = floor
 	}
-	s.pendingPrefix = s.ring.patpmtPreambleLocked()
+	s.pendingPrefix = preamble
 	s.pendingPrefixGeneration = generation
 	s.generation = generation
 	return true

@@ -67,6 +67,10 @@ var ErrCoreUnusable = errors.New("media facts core is unusable after an earlier 
 // land. The chunk is refused rather than committed at the wrong offset.
 var ErrRingAdvanced = errors.New("ring advanced while the chunk was being interpreted")
 
+// ErrEventBeyondProcessedBytes reports that the media core returned an event or
+// timing record referencing byte offsets outside the processed chunk boundaries.
+var ErrEventBeyondProcessedBytes = errors.New("media facts core reported event beyond processed chunk bytes")
+
 // The interpretation of transport stream bytes lives in mediafacts. These aliases
 // keep the names consumers already import while the boundary is drawn: the ring
 // owns bytes, offsets and the generation; mediafacts owns what the bytes mean.
@@ -401,8 +405,47 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	// boundary exists to prevent, so the chunk is refused and nothing moves: not
 	// the head, not the generation, not the index, not the facts. The core is
 	// finished either way - it consumed what the ring is about to throw away.
-	if want := startOffset + int64(n); res.ProcessedThroughOffset != want {
+	want := startOffset + int64(n)
+	if res.ProcessedThroughOffset != want {
 		return 0, r.retireCore(ctx, ErrCoreIncomplete)
+	}
+
+	// Invariant: "No truth without corresponding bytes".
+	// An event or timing record referencing bytes outside the processed stream bytes
+	// (or extending beyond current chunk boundary 'want') cannot be committed into the ring or timeline index.
+	for _, ev := range res.Events {
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			if ev.Offset < 0 || ev.Offset+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap offset %d outside [0, %d)", ErrEventBeyondProcessedBytes, ev.Offset, want))
+			}
+		} else {
+			if ev.Offset < 0 || ev.Offset > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: event offset %d outside [0, %d)", ErrEventBeyondProcessedBytes, ev.Offset, want))
+			}
+		}
+	}
+	for _, rec := range res.Timing.Records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt < 0 || rec.RAP.SubjectAt+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap timing subject %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.RAP.SubjectAt, want))
+			}
+			if rec.RAP.ObservedAt < 0 || rec.RAP.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap timing observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.RAP.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt < 0 || rec.PCR.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pcr observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PCR.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.ObservedAt < 0 || rec.PES.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pes observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PES.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt < 0 || rec.Discontinuity.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: discontinuity observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.Discontinuity.ObservedAt, want))
+			}
+		}
 	}
 
 	// 3. Commit. Facts, events, PSI and bytes become visible together under r.mu (Publication Lock),
@@ -465,7 +508,14 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	}
 
 	if genChanged || r.attachIndex.generationValue() != genBefore {
-		r.attachIndex.setGenerationResumeFloor(newHead)
+		floor := newHead
+		if len(r.attachIndex.keyframeOffsets) > 0 {
+			firstKF := r.attachIndex.keyframeOffsets[0]
+			if firstKF >= commit.StartOffset && firstKF < newHead {
+				floor = firstKF
+			}
+		}
+		r.attachIndex.setGenerationResumeFloor(floor)
 	}
 
 	// Step E: Publish facts and active PSI.

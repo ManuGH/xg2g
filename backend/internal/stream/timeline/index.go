@@ -38,6 +38,10 @@ var (
 	// ErrNonMonotonicObservedAt is returned when incoming timing records break non-decreasing
 	// ObservedAt order, violating the precondition required for binary search and deterministic indexing.
 	ErrNonMonotonicObservedAt = errors.New("non-monotonic observed_at in timing records")
+
+	// ErrEventBeyondProcessedBytes is returned when an event or timing record refers to an offset
+	// at or beyond ProcessedThroughOffset, violating "no truth without corresponding bytes".
+	ErrEventBeyondProcessedBytes = errors.New("event or timing point beyond processed chunk bytes")
 )
 
 // MediaIndex provides thread-safe, deterministic indexing and querying of canonical media facts.
@@ -91,7 +95,58 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 		return ErrNonCanonicalTiming
 	}
 
-	// 1. Pre-validation: every RAP timing record binds exactly one RAP event of this result.
+	// 1. Pre-validation: "No truth without corresponding bytes".
+	// All events and timing records must fall within ProcessedThroughOffset (when specified).
+	for _, ev := range res.Events {
+		if ev.Offset < 0 {
+			return ErrEventBeyondProcessedBytes
+		}
+		if res.ProcessedThroughOffset > 0 {
+			if ev.Kind == mediafacts.EventRandomAccessPoint {
+				if ev.Offset+mediafacts.TSPacketSize > res.ProcessedThroughOffset {
+					return ErrEventBeyondProcessedBytes
+				}
+			} else if ev.Offset > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		}
+	}
+	for _, rec := range res.Timing.Records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt < 0 || rec.RAP.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if res.ProcessedThroughOffset > 0 {
+				if rec.RAP.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.RAP.ObservedAt > res.ProcessedThroughOffset {
+					return ErrEventBeyondProcessedBytes
+				}
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if res.ProcessedThroughOffset > 0 && rec.PCR.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if res.ProcessedThroughOffset > 0 && rec.PES.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if res.ProcessedThroughOffset > 0 && rec.Discontinuity.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		}
+	}
+
+	// 2. Pre-validation: every RAP timing record binds exactly one RAP event of this result.
 	rapEvents := make(map[int64]bool)
 	for _, ev := range res.Events {
 		if ev.Kind == mediafacts.EventRandomAccessPoint {

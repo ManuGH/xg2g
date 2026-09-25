@@ -6,6 +6,7 @@ package ring
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -275,7 +276,7 @@ func TestMasterRing_TimingPoints_ObservedAtDistinctFromSubjectAt(t *testing.T) {
 		}
 	}
 
-	_, err := r.Push(ctx, makeTSPacket(false, false, 0))
+	_, err := r.Push(ctx, make([]byte, 3*TSPacketSize))
 	if err != nil {
 		t.Fatalf("Push failed: %v", err)
 	}
@@ -286,11 +287,11 @@ func TestMasterRing_TimingPoints_ObservedAtDistinctFromSubjectAt(t *testing.T) {
 		t.Fatalf("Expected visible timing point, got ok:%v pt:%+v", ok, pt)
 	}
 
-	// Now push 5 packets to advance tail past 0 (tail becomes 188), but tail < ObservedAt (500)
+	// Now push 4 packets to advance tail past 0 (tail becomes 376), but tail < ObservedAt (500)
 	core.customResult = nil
-	_, err = r.Push(ctx, make([]byte, 5*TSPacketSize))
+	_, err = r.Push(ctx, make([]byte, 4*TSPacketSize))
 	if err != nil {
-		t.Fatalf("Push 5 packets failed: %v", err)
+		t.Fatalf("Push 4 packets failed: %v", err)
 	}
 
 	tail := r.Tail()
@@ -951,13 +952,57 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		t.Fatalf("expected packet 1 with tag 1, got %d bytes, tag %d", nPkt1, pkt1Buf[2])
 	}
 
-	// Push subsequent Program 2 transition with new PMT
+	// 2. Push Program 2 transition chunk (establishing identity change at offset 188).
+	// Head becomes 376; resumeFloor becomes 376!
 	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
 		return mediafacts.ParseResult{
 			Coverage:               mediafacts.ParseCoverageComplete,
 			ProcessedThroughOffset: startOffset + int64(len(c)),
 			Events: []mediafacts.Event{
 				{Kind: mediafacts.EventProgramIdentityChanged, Offset: startOffset},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 5000, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0x11, 0x22, 0x33, 0x44}},
+			},
+		}
+	}
+
+	_, err = r.Push(ctx, makeTSPacket(false, false, 99))
+	if err != nil {
+		t.Fatalf("Push program 2 transition chunk failed: %v", err)
+	}
+
+	// 3. Reader attempts to read: it must remain blocked waiting for a keyframe at or after floor (376).
+	readDone := make(chan []byte, 1)
+	readErr := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 10*TSPacketSize)
+		n, rErr := reader.Read(buf)
+		if rErr != nil {
+			readErr <- rErr
+			return
+		}
+		readDone <- append([]byte(nil), buf[:n]...)
+	}()
+
+	select {
+	case <-readDone:
+		t.Fatalf("reader unblocked before a keyframe at or after floor (376) was pushed")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: reader is correctly waiting!
+	}
+
+	// 4. Push Program 2 keyframe chunk at offset 376 (>= resumeFloor).
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
 				{Kind: mediafacts.EventRandomAccessPoint, Offset: startOffset, Joinable: true},
 			},
 			Timing: mediafacts.TimingResult{
@@ -976,20 +1021,21 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 
 	_, err = r.Push(ctx, makeTSPacket(true, false, 2))
 	if err != nil {
-		t.Fatalf("Push program 2 failed: %v", err)
+		t.Fatalf("Push program 2 keyframe chunk failed: %v", err)
 	}
 
-	// Reader reads: must detect generation change, must NOT deliver old payload (tag 1)
-	// and must NOT deliver old PMT (PID 4096), but must deliver new PMT (PID 5000)
-	// and new packet (tag 2).
-	afterBuf := make([]byte, 10*TSPacketSize)
-	n3, err := reader.Read(afterBuf)
-	if err != nil {
-		t.Fatalf("reader.Read after program change failed: %v", err)
+	// 5. Reader must now unblock, deliver new PMT (PID 5000), and never deliver old PMT or old payload.
+	var afterBuf []byte
+	select {
+	case err := <-readErr:
+		t.Fatalf("reader.Read failed after keyframe pushed: %v", err)
+	case afterBuf = <-readDone:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("reader timed out waiting for recovery")
 	}
 
 	hasNewPMT := false
-	for i := 0; i+TSPacketSize <= n3; i += TSPacketSize {
+	for i := 0; i+TSPacketSize <= len(afterBuf); i += TSPacketSize {
 		pkt := afterBuf[i : i+TSPacketSize]
 		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
 		if pid == 4096 {
@@ -1117,7 +1163,7 @@ func TestMasterRing_ExtractWindow_HistoricalProgramWithPreamble_FailsClosed(t *t
 	}
 }
 
-func TestMasterRing_ExtractWindow_EndRAPWithoutPublishedBytes_FailsClosed(t *testing.T) {
+func TestMasterRing_Push_EndRAPWithoutPublishedBytes_FailsClosedBeforeCommit(t *testing.T) {
 	core := &mockTimeCore{
 		epoch:    1,
 		hasPMT:   true,
@@ -1129,8 +1175,8 @@ func TestMasterRing_ExtractWindow_EndRAPWithoutPublishedBytes_FailsClosed(t *tes
 
 	ctx := context.Background()
 
-	// Push 2 packets (offsets 0 and 188). Total head = 376.
-	// But mock says EndRAP is at offset 376 (which is == head, so 0 bytes written for EndRAP!)
+	// Push 2 packets (offsets 0 and 188). Total head would be 376.
+	// But mock says EndRAP is at offset 376 (which is == want, so 0 bytes written for EndRAP!)
 	chunk := append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 1)...)
 
 	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
@@ -1158,19 +1204,35 @@ func TestMasterRing_ExtractWindow_EndRAPWithoutPublishedBytes_FailsClosed(t *tes
 	}
 
 	_, err := r.Push(ctx, chunk)
-	if err != nil {
-		t.Fatalf("Push failed: %v", err)
+	if err == nil {
+		t.Fatalf("Push succeeded unexpectedly for RAP without published bytes")
+	}
+	if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+		t.Fatalf("Push error = %v, want ErrEventBeyondProcessedBytes", err)
 	}
 
-	// Extract window [10000, 20000]: EndRAP at offset 376 == head has no published packet in the ring!
-	// Must fail closed with ErrNoCanonicalEndBoundary!
-	_, err = r.ExtractWindow(WindowRequest{
-		Epoch:    1,
-		StartPTS: 10000,
-		EndPTS:   20000,
-	})
-	if err != ErrNoCanonicalEndBoundary {
-		t.Errorf("ExtractWindow with EndRAP at head: got %v, want ErrNoCanonicalEndBoundary", err)
+	// Invariant: "No truth without corresponding bytes"
+	// Verify ring bytes are completely unchanged:
+	if r.Head() != 0 {
+		t.Errorf("Head = %d, want 0", r.Head())
+	}
+	if r.BufferedBytes() != 0 {
+		t.Errorf("BufferedBytes = %d, want 0", r.BufferedBytes())
+	}
+
+	// Verify timeline index is completely unchanged:
+	timelines := r.Timeline().PresentationTimelines()
+	if len(timelines) != 0 {
+		t.Errorf("PresentationTimelines count = %d, want 0", len(timelines))
+	}
+	raps := r.timelineIndex.RAPsBetween(0, 1000)
+	if len(raps) != 0 {
+		t.Errorf("RAPs in index = %d, want 0", len(raps))
+	}
+
+	// Verify attach index is completely unchanged:
+	if len(r.KeyframeOffsets()) != 0 {
+		t.Errorf("KeyframeOffsets = %v, want empty", r.KeyframeOffsets())
 	}
 }
 
