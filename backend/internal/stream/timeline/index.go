@@ -6,6 +6,7 @@ package timeline
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 
@@ -845,15 +846,15 @@ func (idx *MediaIndex) presentationTimelineLocked(epoch mediafacts.TimelineEpoch
 		}
 	}
 
-	pids := make([]int, 0, len(tracksMap))
+	pids := make([]uint16, 0, len(tracksMap))
 	for pid := range tracksMap {
-		pids = append(pids, int(pid))
+		pids = append(pids, pid)
 	}
-	sort.Ints(pids)
+	slices.Sort(pids)
 
 	pt.Tracks = make([]TrackPresentation, 0, len(pids))
-	for _, p := range pids {
-		t := *tracksMap[uint16(p)]
+	for _, pid := range pids {
+		t := *tracksMap[pid]
 		if t.HasPTS && t.SampleCount >= 2 && t.LatestPTS90k >= t.EarliestPTS90k {
 			t.ObservedSpan90k = t.LatestPTS90k - t.EarliestPTS90k
 		}

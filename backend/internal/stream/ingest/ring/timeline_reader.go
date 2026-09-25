@@ -5,6 +5,8 @@
 package ring
 
 import (
+	"slices"
+
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
@@ -263,15 +265,15 @@ func (tr *ringTimelineReader) presentationTimelineLocked(epoch mediafacts.Timeli
 		}
 	}
 
-	pids := make([]int, 0, len(tracksMap))
+	pids := make([]uint16, 0, len(tracksMap))
 	for p := range tracksMap {
-		pids = append(pids, int(p))
+		pids = append(pids, p)
 	}
-	sortInts(pids)
+	slices.Sort(pids)
 
 	pt.Tracks = make([]timeline.TrackPresentation, 0, len(pids))
 	for _, p := range pids {
-		t := *tracksMap[uint16(p)]
+		t := *tracksMap[p]
 		if t.HasPTS && t.SampleCount >= 2 && t.LatestPTS90k >= t.EarliestPTS90k {
 			t.ObservedSpan90k = t.LatestPTS90k - t.EarliestPTS90k
 		}
@@ -340,14 +342,4 @@ func (tr *ringTimelineReader) FindRAPByTime(epoch mediafacts.TimelineEpoch, pts 
 		return timeline.RAPEntry{}, false
 	}
 	return rap, true
-}
-
-func sortInts(a []int) {
-	for i := 0; i < len(a); i++ {
-		for j := i + 1; j < len(a); j++ {
-			if a[i] > a[j] {
-				a[i], a[j] = a[j], a[i]
-			}
-		}
-	}
 }
