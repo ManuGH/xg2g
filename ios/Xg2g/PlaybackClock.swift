@@ -15,24 +15,44 @@ private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "p
 /// anchor synchronization, renderer attachment/detachment, and boundary time observation.
 /// Decouples clock ownership from audio rendering so that video and audio are timed
 /// against a single authoritative clock owner.
+///
+/// Thread safety is enforced via an internal lock protecting synchronizer replacement,
+/// timebase queries, and active detach token lifetimes.
 public final class PlaybackClock: @unchecked Sendable {
 
+    private let lock = NSLock()
+    private var _synchronizer: AVSampleBufferRenderSynchronizer
+    private var activeDetachTokens: [RetainedDetachToken] = []
+
     /// The underlying system render synchronizer timing both audio and video renderers.
-    public private(set) var synchronizer: AVSampleBufferRenderSynchronizer
+    public var synchronizer: AVSampleBufferRenderSynchronizer {
+        lock.lock()
+        defer { lock.unlock() }
+        return _synchronizer
+    }
 
     /// The master timebase established by the synchronizer.
     public var timebase: CMTimebase {
-        synchronizer.timebase
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        return sync.timebase
     }
 
     /// Current rate of the master clock timebase.
     public var rate: Float {
-        Float(CMTimebaseGetRate(timebase))
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        return Float(CMTimebaseGetRate(sync.timebase))
     }
 
     /// Current presentation timestamp of the master clock.
     public var currentTime: CMTime {
-        CMTimebaseGetTime(timebase)
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        return CMTimebaseGetTime(sync.timebase)
     }
 
     /// True if the master clock is actively running (rate > 0).
@@ -41,12 +61,15 @@ public final class PlaybackClock: @unchecked Sendable {
     }
 
     public init(synchronizer: AVSampleBufferRenderSynchronizer = AVSampleBufferRenderSynchronizer()) {
-        self.synchronizer = synchronizer
+        self._synchronizer = synchronizer
     }
 
     /// Sets the playback clock rate starting at a specific reference PTS.
     public func setRate(_ rate: Float, time: CMTime) {
-        synchronizer.setRate(rate, time: time)
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        sync.setRate(rate, time: time)
     }
 
     /// Shorthand to start playback at rate 1.0 from a given anchor timestamp.
@@ -60,27 +83,45 @@ public final class PlaybackClock: @unchecked Sendable {
     }
 
     /// Rebuilds the synchronizer for full session teardown, returning the retired
-    /// synchronizer so the caller can keep it alive until asynchronous detachments finish.
+    /// synchronizer. In-flight detachments keep the old synchronizer alive via RetainedDetachToken.
     @discardableResult
     public func reset() -> AVSampleBufferRenderSynchronizer {
-        let old = synchronizer
-        synchronizer = AVSampleBufferRenderSynchronizer()
+        lock.lock()
+        let old = _synchronizer
+        _synchronizer = AVSampleBufferRenderSynchronizer()
+        lock.unlock()
         return old
     }
 
     /// Attaches an audio or video queued sample buffer renderer to this clock.
     public func attachRenderer(_ renderer: AVQueuedSampleBufferRendering) {
-        synchronizer.addRenderer(renderer)
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        sync.addRenderer(renderer)
     }
 
-    /// Asynchronously detaches a renderer from this clock, keeping it alive until AVFoundation finishes.
+    /// Asynchronously detaches a renderer from this clock (or an explicit synchronizer),
+    /// guaranteeing that BOTH the synchronizer and the renderer remain strongly retained in memory
+    /// until AVFoundation completes the removal operation and fires the completion callback.
     public func detachRenderer(
         _ renderer: AVQueuedSampleBufferRendering,
+        from explicitSynchronizer: AVSampleBufferRenderSynchronizer? = nil,
         at time: CMTime = .invalid,
         completion: (@Sendable () -> Void)? = nil
     ) {
-        let token = RetainedToken(renderer)
-        synchronizer.removeRenderer(renderer, at: time) { _ in
+        lock.lock()
+        let syncToDetach = explicitSynchronizer ?? _synchronizer
+        let token = RetainedDetachToken(synchronizer: syncToDetach, renderer: renderer)
+        activeDetachTokens.append(token)
+        lock.unlock()
+
+        syncToDetach.removeRenderer(renderer, at: time) { [weak self] _ in
+            if let self {
+                self.lock.lock()
+                self.activeDetachTokens.removeAll(where: { $0 === token })
+                self.lock.unlock()
+            }
             _ = token
             completion?()
         }
@@ -92,18 +133,28 @@ public final class PlaybackClock: @unchecked Sendable {
         queue: DispatchQueue?,
         using block: @Sendable @escaping () -> Void
     ) -> Any {
-        synchronizer.addBoundaryTimeObserver(forTimes: times, queue: queue, using: block)
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        return sync.addBoundaryTimeObserver(forTimes: times, queue: queue, using: block)
     }
 
     /// Removes a previously registered boundary time observer.
     public func removeTimeObserver(_ observer: Any) {
-        synchronizer.removeTimeObserver(observer)
+        lock.lock()
+        let sync = _synchronizer
+        lock.unlock()
+        sync.removeTimeObserver(observer)
     }
 }
 
-private final class RetainedToken: @unchecked Sendable {
-    let value: Any
-    init(_ value: Any) {
-        self.value = value
+/// Strongly holds both the synchronizer and the renderer for the duration of an asynchronous detach.
+private final class RetainedDetachToken: @unchecked Sendable {
+    let synchronizer: AVSampleBufferRenderSynchronizer
+    let renderer: AVQueuedSampleBufferRendering
+
+    init(synchronizer: AVSampleBufferRenderSynchronizer, renderer: AVQueuedSampleBufferRendering) {
+        self.synchronizer = synchronizer
+        self.renderer = renderer
     }
 }

@@ -10,16 +10,18 @@ import Testing
 
 /// Comprehensive lifecycle proof for Apple B3: Unified A/V Playback Clock Owner (`PlaybackClock`).
 ///
-/// Validates the 6-point contract across all 9 required lifecycle scenarios:
+/// Validates the 6-point contract across key lifecycle scenarios:
 /// 1. Initial start (synchronizer identity, rate, audio & video binding).
 /// 2. Audio error recovery (clock paused/re-anchored, synchronizer & video layer stable, audio renderer replaced).
 /// 3. Track switch (continuity maintained, clock continuous).
 /// 4. Video-only playback (pipeline starts clock on picture alone, audio muted).
-/// 5. Prepared zap (independent clocks, zero cross-talk).
-/// 6. Direct zap (MainActor surface handover before session retirement).
+/// 5. Prepared zap isolation & transition (independent clocks during preparation, clean transition to Session B).
+/// 6. Direct zap PresentationContext handover order (surface handed to incoming session before outgoing stops).
 /// 7. Session stop (observer teardown, clock park, fresh synchronizer + audio renderer re-attachment).
 /// 8. Session restart (surface and audio bind cleanly to the new synchronizer).
-/// 9. Late asynchronous detach completion (prior removal finishing late does not disrupt new session).
+/// 9. Late asynchronous audio detach (prior removal finishing late does not disrupt new active session).
+/// 10. Overlapping stop & audio recovery serialization (quiesces ingestQueue and cancels recovery before clock reset).
+/// 11. Coordinator direct zap handover (tests full ZapCoordinator atomic handover and retirement).
 @Suite @MainActor struct PlaybackClockLifecycleTests {
 
     // MARK: - 1. Initial Start
@@ -162,34 +164,62 @@ import Testing
         pipeline.stopStreaming()
     }
 
-    // MARK: - 5. Prepared Zap (Independent Clocks)
+    // MARK: - 5. Prepared Zap (Clock Isolation & Transition)
 
-    @Test func preparedZapMaintainsIndependentClocksWithoutCrossTalk() {
+    @Test func preparedZapMaintainsIndependentClocksAndTransitionsCleanly() async throws {
+        let presenter = SystemVideoPresenter()
+        let context = PresentationContext(presenter: presenter, renderView: nil)
+
         let sessionA = NativeTSVideoPipeline()
         let sessionB = NativeTSVideoPipeline()
+
+        sessionA.presentationContext = context
+        sessionB.presentationContext = context
+        _ = context.issueGeneration(to: sessionA)
+        _ = context.issueGeneration(to: sessionB)
 
         #expect(sessionA.presentationSynchronizer !== sessionB.presentationSynchronizer)
         #expect(sessionA.clock !== sessionB.clock)
 
-        let presenter = SystemVideoPresenter()
-        presenter.attach(to: sessionA.presentationSynchronizer)
-
+        // Session A playing on screen
+        context.bindWithoutPreparation(sessionA)
         let anchorA = CMTime(value: 100_000, timescale: 90_000)
         sessionA.clock.start(at: anchorA)
         sessionA.audioRenderer.setAudible(true)
 
-        // Session B remains parked and silent during preparation
+        // Phase 1: Verify clock isolation during preparation of Session B
         #expect(sessionA.clock.rate == 1.0)
         #expect(sessionB.clock.rate == 0.0)
         #expect(sessionA.audioRenderer.isAudible == true)
         #expect(sessionB.audioRenderer.isAudible == false)
 
-        presenter.detach(from: sessionA.presentationSynchronizer)
+        // Phase 2: Transition surface and clock to Session B
+        context.bindWithoutPreparation(sessionB)
+        let anchorB = CMTime(value: 200_000, timescale: 90_000)
+        sessionB.clock.start(at: anchorB)
+        sessionB.audioRenderer.setAudible(true)
+
+        // Outgoing Session A is stopped
         sessionA.stopStreaming()
+
+        for _ in 0..<50 {
+            if presenter.attachedSynchronizer === sessionB.presentationSynchronizer { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        // Phase 3: Verify Session B owns surface and clock while Session A is stopped
+        #expect(presenter.attachedSynchronizer === sessionB.presentationSynchronizer)
+        #expect(sessionB.clock.rate == 1.0)
+        #expect(sessionB.clock.isClockRunning == true)
+        #expect(sessionB.audioRenderer.isAudible == true)
+        #expect(sessionA.clock.rate == 0.0)
+        #expect(sessionA.audioRenderer.isAudible == false)
+
+        context.unbind()
         sessionB.stopStreaming()
     }
 
-    // MARK: - 6. Direct Zap Handover Order
+    // MARK: - 6. Direct Zap Handover Order (PresentationContext)
 
     @Test func directZapPreservesMainActorHandoverOrder() async throws {
         let presenter = SystemVideoPresenter()
@@ -279,9 +309,9 @@ import Testing
         pipeline.stopStreaming()
     }
 
-    // MARK: - 9. Late Asynchronous Detach Completion (Sequence & Impact Verified)
+    // MARK: - 9. Late Asynchronous Audio Detach
 
-    @Test func lateAsynchronousDetachCompletionDoesNotDisruptNewSession() async throws {
+    @Test func lateAsynchronousAudioRendererDetachDoesNotDisruptActiveSession() async throws {
         let presenter = SystemVideoPresenter()
         let context = PresentationContext(presenter: presenter, renderView: nil)
 
@@ -323,7 +353,7 @@ import Testing
         #expect(clockB.rate == 1.0)
         #expect(sessionB.audioRenderer.isAudible == true)
 
-        // Step 3: Track execution order of late asynchronous detach
+        // Step 3: Track execution order of late asynchronous audio renderer detach from Clock A
         final class DetachTracker: @unchecked Sendable {
             private let lock = NSLock()
             private var _orderLog: [String] = []
@@ -353,10 +383,10 @@ import Testing
             try await Task.sleep(nanoseconds: 10_000_000)
         }
 
-        // Step 4: Verify ordering: Session B was already active before Session A detach finished
+        // Step 4: Verify ordering: Session B was already active before Session A audio detach finished
         #expect(tracker.orderLog == ["sessionB_active", "sessionA_detach_completed"])
 
-        // Step 5: Verify that the late detach callback from Clock A has zero impact on Session B
+        // Step 5: Verify that the late audio detach callback from Clock A has zero impact on Session B
         #expect(presenter.attachedSynchronizer === syncB)
         #expect(sessionB.presentationSynchronizer === syncB)
         #expect(sessionB.audioRenderer.synchronizer === syncB)
@@ -366,5 +396,99 @@ import Testing
 
         context.unbind()
         sessionB.stopStreaming()
+    }
+
+    // MARK: - 10. Overlapping Stop and Audio Error Recovery Serialization
+
+    @Test func overlappingStopAndAudioErrorRecoverySerializesSafelyWithoutCorruptingNewClock() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let neutralURL = URL(string: "http://127.0.0.1:8080/live/fixture.ts")!
+        pipeline.startStreaming(url: neutralURL)
+
+        let initialClock = pipeline.clock
+        let initialSync = pipeline.presentationSynchronizer
+        let realRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
+
+        // Trigger an audio error that posts recovery onto ingestQueue
+        let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
+        pipeline.audioRendererDidEncounterError(realRenderer, error: simulatedError)
+
+        // Immediately invoke stopStreaming() concurrently / before recovery drains
+        pipeline.stopStreaming()
+
+        // Drain any work remaining on ingestQueue
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        // Post-stop: new synchronizer must be active, audioRenderer must be bound to new synchronizer
+        let postStopSync = pipeline.presentationSynchronizer
+        #expect(postStopSync !== initialSync)
+        #expect(pipeline.clock.rate == 0.0)
+        #expect(pipeline.audioRenderer.synchronizer === postStopSync)
+        #expect(pipeline.audioRenderer.isAudible == false)
+
+        // Verify that restarting after this race starts cleanly with the new clock
+        let restartAnchor = CMTime(value: 300_000, timescale: 90_000)
+        pipeline.clock.start(at: restartAnchor)
+        pipeline.audioRenderer.setAudible(true)
+
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.audioRenderer.isAudible == true)
+        #expect(pipeline.presentationSynchronizer === postStopSync)
+        #expect(initialClock === pipeline.clock)
+        #expect(CMTimebaseGetRate(initialSync.timebase) == 0.0) // Old synchronizer was parked and never touched by stale recovery
+
+        pipeline.stopStreaming()
+    }
+
+    // MARK: - 11. Coordinator Direct Zap Handover
+
+    @Test func coordinatorHandoverTransfersSurfaceAtomicallyBeforeRetiringSession() async throws {
+        let srefA = "fixture-channel-a"
+        let srefB = "fixture-channel-b"
+
+        let coordinator = ZapCoordinator(
+            streamURL: { sref in URL(string: "http://127.0.0.1:8080/live/\(sref).ts") }
+        )
+
+        // Step 1: Start Channel A outright through coordinator
+        let urlA = URL(string: "http://127.0.0.1:8080/live/\(srefA).ts")!
+        await coordinator.play(unprepared: urlA)
+
+        #expect(coordinator.presentedServiceRef == "\(srefA).ts")
+        guard let sessionA = coordinator.playing else {
+            Issue.record("Expected sessionA to be playing")
+            return
+        }
+        #expect(coordinator.surface.attachedSynchronizer === sessionA.presentationSynchronizer)
+        #expect(sessionA.presentationSynchronizer === sessionA.clock.synchronizer)
+
+        // Step 2: Hand over to Channel B directly through coordinator
+        let urlB = URL(string: "http://127.0.0.1:8080/live/\(srefB).ts")!
+        await coordinator.play(unprepared: urlB)
+
+        #expect(coordinator.presentedServiceRef == "\(srefB).ts")
+        guard let sessionB = coordinator.playing else {
+            Issue.record("Expected sessionB to be playing")
+            return
+        }
+        #expect(sessionB !== sessionA)
+        #expect(sessionB.presentationSynchronizer !== sessionA.presentationSynchronizer)
+
+        // Await surface attachment to Session B
+        for _ in 0..<50 {
+            if coordinator.surface.attachedSynchronizer === sessionB.presentationSynchronizer { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(coordinator.surface.attachedSynchronizer === sessionB.presentationSynchronizer)
+
+        // Verify Session A was retired and stopped by the coordinator
+        #expect(sessionA.clock.rate == 0.0)
+        #expect(sessionA.audioRenderer.isAudible == false)
+
+        await coordinator.stop()
+        #expect(coordinator.presentedServiceRef == nil)
+        #expect(coordinator.playing == nil)
     }
 }

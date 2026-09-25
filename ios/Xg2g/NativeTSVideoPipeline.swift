@@ -404,6 +404,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.log(msg)
     }
 
+    /// Aborts any in-flight recovery attempt, obsoleting any queued recovery blocks on ingestQueue.
+    private func cancelRecovery() {
+        recoveryLock.lock()
+        _recoveryEpoch = _recoveryEpoch.next()
+        _lifecycle = .stable
+        recoveryLock.unlock()
+    }
+
     /// Callback invoked when the very first picture of this session is displayed on screen.
     public var onFirstPictureVisible: (@Sendable () -> Void)?
 
@@ -880,36 +888,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         stopSystemMonitoring()
         removeFirstPictureObserver()
 
-        preRollVideoLock.lock()
-        preRollVideoFrames.removeAll()
-        preRollVideoLock.unlock()
-
-        clock.stop()
-        audioRenderer.detachFromClock()
-        let oldSync = clock.reset()
-        audioRenderer.attachToClock()
-        _ = oldSync
-
-        isAudioClockStarted = false
-        audioBuffersPreRolledCount = 0
-        firstAudioPTS = nil
-        firstVideoFieldPTS = nil
-        firstDecodedPicturePTS = nil
-        commitAnchor = nil
-        latestVideoPTS = .invalid
-        preRollStartTime = 0
-        audioContinuity.reset()
-        selectedAudioPID = nil
-        availableAudioTracks.removeAll()
-        availableSubtitleTracks.removeAll()
-        selectedSubtitleTrack = nil
+        // 1. Invalidate any in-flight recovery attempt so any queued recovery block bails out
+        cancelRecovery()
 
         zapLock.lock()
         let currentZap = currentZapId
         zapLock.unlock()
 
-        // The parse chain is owned by `ingestQueue`; resetting it from here while
-        // a feed is in flight would corrupt the assembler state mid-packet.
+        // 2. The parse chain is owned by `ingestQueue`. Drain and reset ingestQueue FIRST
+        // to guarantee that any active or queued audio recovery or packet processing
+        // finishes completely before the clock or audio renderer are replaced.
         ingestQueue.sync {
             decodeGateState = .closed(reason: .startup)
             gatedAccessUnitCount = 0
@@ -933,6 +921,32 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             currentSubtitleFrame = nil
             onSubtitleFrameEmitted?(nil)
         }
+
+        preRollVideoLock.lock()
+        preRollVideoFrames.removeAll()
+        preRollVideoLock.unlock()
+
+        // 3. Serialized teardown of the master clock and audio renderer:
+        // Park current clock, detach audio renderer (keeping old synchronizer & renderer alive in PlaybackClock),
+        // reset to fresh synchronizer, and attach fresh audio renderer.
+        clock.stop()
+        audioRenderer.detachFromClock()
+        clock.reset()
+        audioRenderer.attachToClock()
+
+        isAudioClockStarted = false
+        audioBuffersPreRolledCount = 0
+        firstAudioPTS = nil
+        firstVideoFieldPTS = nil
+        firstDecodedPicturePTS = nil
+        commitAnchor = nil
+        latestVideoPTS = .invalid
+        preRollStartTime = 0
+        audioContinuity.reset()
+        selectedAudioPID = nil
+        availableAudioTracks.removeAll()
+        availableSubtitleTracks.removeAll()
+        selectedSubtitleTrack = nil
     }
 
     // MARK: - LiveStreamIngestDelegate (Streaming Ingest)

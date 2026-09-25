@@ -205,7 +205,12 @@ public final class SystemVideoPresenter: NSObject {
 
     private func completeAttach(to synchronizer: AVSampleBufferRenderSynchronizer) {
         guard attachedSynchronizer !== synchronizer else { return }
+        let currentRate = Float(CMTimebaseGetRate(synchronizer.timebase))
+        let currentTime = CMTimebaseGetTime(synchronizer.timebase)
         synchronizer.addRenderer(displayLayer.sampleBufferRenderer)
+        if currentRate > 0 && currentTime.isValid {
+            synchronizer.setRate(currentRate, time: currentTime)
+        }
         attachedSynchronizer = synchronizer
         pendingSynchronizer = nil
         logger.notice("[SystemVideo] display layer attached to render synchronizer")
