@@ -438,6 +438,9 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 				return 0, r.retireCore(ctx, fmt.Errorf("%w: pcr observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PCR.ObservedAt, want))
 			}
 		case mediafacts.TimingRecordTypePES:
+			if rec.PES.SubjectAt < 0 || rec.PES.SubjectAt+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pes timing subject %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PES.SubjectAt, want))
+			}
 			if rec.PES.ObservedAt < 0 || rec.PES.ObservedAt > want {
 				return 0, r.retireCore(ctx, fmt.Errorf("%w: pes observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PES.ObservedAt, want))
 			}

@@ -16,9 +16,46 @@ import (
 
 // rawIngestResult is a canonical result carrying exactly the records and events given.
 func rawIngestResult(records []mediafacts.TimingRecord, events []mediafacts.Event) mediafacts.ParseResult {
+	var maxThrough int64
+	for _, ev := range events {
+		through := ev.Offset
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			through += mediafacts.TSPacketSize
+		}
+		if through > maxThrough {
+			maxThrough = through
+		}
+	}
+	for _, rec := range records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt+mediafacts.TSPacketSize > maxThrough {
+				maxThrough = rec.RAP.SubjectAt + mediafacts.TSPacketSize
+			}
+			if rec.RAP.ObservedAt > maxThrough {
+				maxThrough = rec.RAP.ObservedAt
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt > maxThrough {
+				maxThrough = rec.PCR.ObservedAt
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.SubjectAt+mediafacts.TSPacketSize > maxThrough {
+				maxThrough = rec.PES.SubjectAt + mediafacts.TSPacketSize
+			}
+			if rec.PES.ObservedAt > maxThrough {
+				maxThrough = rec.PES.ObservedAt
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt > maxThrough {
+				maxThrough = rec.Discontinuity.ObservedAt
+			}
+		}
+	}
 	return mediafacts.ParseResult{
-		Coverage: mediafacts.ParseCoverageComplete,
-		Events:   events,
+		Coverage:               mediafacts.ParseCoverageComplete,
+		Events:                 events,
+		ProcessedThroughOffset: maxThrough,
 		Timing: mediafacts.TimingResult{
 			Authority: mediafacts.TimingAuthorityCanonical,
 			Records:   records,
@@ -2088,4 +2125,138 @@ func TestMediaIndex_PresentationTimeline_EmptyAndMissingPTS(t *testing.T) {
 	if pt.Tracks[0].ObservedSpan90k != 0 {
 		t.Errorf("Track ObservedSpan90k = %d, want 0", pt.Tracks[0].ObservedSpan90k)
 	}
+}
+
+func TestMediaIndex_ApplyIngestResult_BoundsValidation(t *testing.T) {
+	t.Run("ProcessedThroughOffset_ZeroWithEventsFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 0,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if _, ok := idx.FindPrecedingRAP(1000); ok {
+			t.Errorf("index mutated after bounds violation")
+		}
+	})
+
+	t.Run("ProcessedThroughOffset_NegativeFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: -1,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+	})
+
+	t.Run("PES_SubjectAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  200, // 200 + 188 = 388 > 376
+							ObservedAt: 300,
+						},
+					},
+				},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if len(idx.TimingPoints()) != 0 {
+			t.Errorf("timing points added after bounds violation")
+		}
+	})
+
+	t.Run("PES_ObservedAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  0,
+							ObservedAt: 500, // 500 > 376
+						},
+					},
+				},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if len(idx.TimingPoints()) != 0 {
+			t.Errorf("timing points added after bounds violation")
+		}
+	})
+
+	t.Run("RAP_SubjectAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+						RAP: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  200, // 200 + 188 = 388 > 376
+							ObservedAt: 300,
+						},
+					},
+				},
+			},
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if _, ok := idx.FindPrecedingRAP(1000); ok {
+			t.Errorf("RAP added after bounds violation")
+		}
+	})
 }

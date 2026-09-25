@@ -432,7 +432,8 @@ func TestMediaCommit_DeterministicVisibilityWindow_UncommittedAndPrunedClamped(t
 	// with a RAP at offset 188 and Epoch 1, but bytes have NOT yet been committed to packetStore (head == 0).
 	r.mu.Lock()
 	err := r.timelineIndex.ApplyIngestResult(mediafacts.ParseResult{
-		Coverage: mediafacts.ParseCoverageComplete,
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 376,
 		Timing: mediafacts.TimingResult{
 			Authority: mediafacts.TimingAuthorityCanonical,
 			Records: []mediafacts.TimingRecord{

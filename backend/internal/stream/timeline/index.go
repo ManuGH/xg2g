@@ -97,19 +97,20 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 	}
 
 	// 1. Pre-validation: "No truth without corresponding bytes".
-	// All events and timing records must fall within ProcessedThroughOffset (when specified).
+	// All events and timing records must fall within ProcessedThroughOffset.
+	if res.ProcessedThroughOffset < 0 || (res.ProcessedThroughOffset == 0 && (len(res.Events) > 0 || len(res.Timing.Records) > 0)) {
+		return ErrEventBeyondProcessedBytes
+	}
 	for _, ev := range res.Events {
 		if ev.Offset < 0 {
 			return ErrEventBeyondProcessedBytes
 		}
-		if res.ProcessedThroughOffset > 0 {
-			if ev.Kind == mediafacts.EventRandomAccessPoint {
-				if ev.Offset+mediafacts.TSPacketSize > res.ProcessedThroughOffset {
-					return ErrEventBeyondProcessedBytes
-				}
-			} else if ev.Offset > res.ProcessedThroughOffset {
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			if ev.Offset+mediafacts.TSPacketSize > res.ProcessedThroughOffset {
 				return ErrEventBeyondProcessedBytes
 			}
+		} else if ev.Offset > res.ProcessedThroughOffset {
+			return ErrEventBeyondProcessedBytes
 		}
 	}
 	for _, rec := range res.Timing.Records {
@@ -118,30 +119,22 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 			if rec.RAP.SubjectAt < 0 || rec.RAP.ObservedAt < 0 {
 				return ErrEventBeyondProcessedBytes
 			}
-			if res.ProcessedThroughOffset > 0 {
-				if rec.RAP.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.RAP.ObservedAt > res.ProcessedThroughOffset {
-					return ErrEventBeyondProcessedBytes
-				}
-			}
-		case mediafacts.TimingRecordTypePCR:
-			if rec.PCR.ObservedAt < 0 {
+			if rec.RAP.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.RAP.ObservedAt > res.ProcessedThroughOffset {
 				return ErrEventBeyondProcessedBytes
 			}
-			if res.ProcessedThroughOffset > 0 && rec.PCR.ObservedAt > res.ProcessedThroughOffset {
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt < 0 || rec.PCR.ObservedAt > res.ProcessedThroughOffset {
 				return ErrEventBeyondProcessedBytes
 			}
 		case mediafacts.TimingRecordTypePES:
-			if rec.PES.ObservedAt < 0 {
+			if rec.PES.SubjectAt < 0 || rec.PES.ObservedAt < 0 {
 				return ErrEventBeyondProcessedBytes
 			}
-			if res.ProcessedThroughOffset > 0 && rec.PES.ObservedAt > res.ProcessedThroughOffset {
+			if rec.PES.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.PES.ObservedAt > res.ProcessedThroughOffset {
 				return ErrEventBeyondProcessedBytes
 			}
 		case mediafacts.TimingRecordTypeDiscontinuity:
-			if rec.Discontinuity.ObservedAt < 0 {
-				return ErrEventBeyondProcessedBytes
-			}
-			if res.ProcessedThroughOffset > 0 && rec.Discontinuity.ObservedAt > res.ProcessedThroughOffset {
+			if rec.Discontinuity.ObservedAt < 0 || rec.Discontinuity.ObservedAt > res.ProcessedThroughOffset {
 				return ErrEventBeyondProcessedBytes
 			}
 		}

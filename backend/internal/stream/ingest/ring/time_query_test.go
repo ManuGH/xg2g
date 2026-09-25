@@ -1236,6 +1236,148 @@ func TestMasterRing_Push_EndRAPWithoutPublishedBytes_FailsClosedBeforeCommit(t *
 	}
 }
 
+func TestMasterRing_Push_PESTimingBeyondProcessedBytes_FailsClosedBeforeCommit(t *testing.T) {
+	t.Run("SubjectAtBeyond", func(t *testing.T) {
+		core := &mockTimeCore{
+			epoch:    1,
+			hasPMT:   true,
+			videoPID: 256,
+		}
+
+		r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+		defer r.Close()
+
+		ctx := context.Background()
+
+		// Push 2 packets (offsets 0 and 188). Total head would be 376.
+		// PES timing record specifies SubjectAt: 200 (200 + 188 = 388 > 376)
+		chunk := append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 1)...)
+
+		core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+			return mediafacts.ParseResult{
+				Coverage:               mediafacts.ParseCoverageComplete,
+				ProcessedThroughOffset: startOffset + int64(len(c)),
+				Events: []mediafacts.Event{
+					{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				},
+				Timing: mediafacts.TimingResult{
+					Authority: mediafacts.TimingAuthorityCanonical,
+					Records: []mediafacts.TimingRecord{
+						{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+						rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+						{
+							Type: mediafacts.TimingRecordTypePES,
+							PES: mediafacts.TimingPoint{
+								Epoch:      1,
+								PID:        256,
+								HasPTS:     true,
+								PTS90k:     20000,
+								SubjectAt:  200, // 200 + 188 = 388 > 376
+								ObservedAt: 300,
+							},
+						},
+					},
+				},
+				Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+				PSI: mediafacts.ActivePSI{
+					PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+					PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+				},
+			}
+		}
+
+		_, err := r.Push(ctx, chunk)
+		if err == nil {
+			t.Fatalf("Push succeeded unexpectedly for PES SubjectAt beyond published bytes")
+		}
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("Push error = %v, want ErrEventBeyondProcessedBytes", err)
+		}
+
+		// Invariant: "No truth without corresponding bytes"
+		if r.Head() != 0 {
+			t.Errorf("Head = %d, want 0", r.Head())
+		}
+		if r.BufferedBytes() != 0 {
+			t.Errorf("BufferedBytes = %d, want 0", r.BufferedBytes())
+		}
+		timelines := r.Timeline().PresentationTimelines()
+		if len(timelines) != 0 {
+			t.Errorf("PresentationTimelines count = %d, want 0", len(timelines))
+		}
+	})
+
+	t.Run("ObservedAtBeyond", func(t *testing.T) {
+		core := &mockTimeCore{
+			epoch:    1,
+			hasPMT:   true,
+			videoPID: 256,
+		}
+
+		r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+		defer r.Close()
+
+		ctx := context.Background()
+
+		// Push 2 packets (offsets 0 and 188). Total head would be 376.
+		// PES timing record specifies ObservedAt: 400 (> 376)
+		chunk := append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 1)...)
+
+		core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+			return mediafacts.ParseResult{
+				Coverage:               mediafacts.ParseCoverageComplete,
+				ProcessedThroughOffset: startOffset + int64(len(c)),
+				Events: []mediafacts.Event{
+					{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				},
+				Timing: mediafacts.TimingResult{
+					Authority: mediafacts.TimingAuthorityCanonical,
+					Records: []mediafacts.TimingRecord{
+						{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+						rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+						{
+							Type: mediafacts.TimingRecordTypePES,
+							PES: mediafacts.TimingPoint{
+								Epoch:      1,
+								PID:        256,
+								HasPTS:     true,
+								PTS90k:     20000,
+								SubjectAt:  0,
+								ObservedAt: 400, // 400 > 376
+							},
+						},
+					},
+				},
+				Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+				PSI: mediafacts.ActivePSI{
+					PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+					PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+				},
+			}
+		}
+
+		_, err := r.Push(ctx, chunk)
+		if err == nil {
+			t.Fatalf("Push succeeded unexpectedly for PES ObservedAt beyond published bytes")
+		}
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("Push error = %v, want ErrEventBeyondProcessedBytes", err)
+		}
+
+		// Invariant: "No truth without corresponding bytes"
+		if r.Head() != 0 {
+			t.Errorf("Head = %d, want 0", r.Head())
+		}
+		if r.BufferedBytes() != 0 {
+			t.Errorf("BufferedBytes = %d, want 0", r.BufferedBytes())
+		}
+		timelines := r.Timeline().PresentationTimelines()
+		if len(timelines) != 0 {
+			t.Errorf("PresentationTimelines count = %d, want 0", len(timelines))
+		}
+	})
+}
+
 func TestMasterRing_SeekToTime_ExtractWindow_IncompletePreamble_FailsClosed(t *testing.T) {
 	core := &mockTimeCore{
 		epoch:    1,
