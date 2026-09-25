@@ -647,6 +647,91 @@ func (r *MasterRing) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode 
 	return r.seekToTimeLocked(epoch, pts, mode)
 }
 
+// presentationRangeLocked computes the retained presentation PTS bounds [earliestPTS, latestPTS]
+// for an epoch within [tail, head).
+// It returns ErrEpochNotFound if the epoch is unknown or not retained,
+// and ErrEpochNoTiming if the epoch has no presentation timing points with PTS.
+func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (int64, int64, error) {
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+
+	var epochFound bool
+	for _, span := range r.timelineIndex.EpochSpans() {
+		if span.Epoch == epoch {
+			if span.Closed && span.EndOffset <= tail {
+				continue
+			}
+			if span.StartOffset >= head {
+				continue
+			}
+			epochFound = true
+			break
+		}
+	}
+	if !epochFound {
+		for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+			if rap.Epoch == epoch {
+				epochFound = true
+				break
+			}
+		}
+		if !epochFound {
+			for _, tp := range r.timelineIndex.TimingPoints() {
+				if tp.Epoch == epoch && tp.SubjectAt >= tail && tp.SubjectAt < head {
+					epochFound = true
+					break
+				}
+			}
+		}
+	}
+	if !epochFound {
+		return 0, 0, ErrEpochNotFound
+	}
+
+	var earliestPTS, latestPTS int64
+	var hasTiming bool
+
+	for _, tp := range r.timelineIndex.TimingPoints() {
+		if tp.Epoch == epoch && tp.SubjectAt >= tail && tp.SubjectAt < head && tp.HasPTS {
+			if !hasTiming {
+				hasTiming = true
+				earliestPTS = tp.PTS90k
+				latestPTS = tp.PTS90k
+			} else {
+				if tp.PTS90k < earliestPTS {
+					earliestPTS = tp.PTS90k
+				}
+				if tp.PTS90k > latestPTS {
+					latestPTS = tp.PTS90k
+				}
+			}
+		}
+	}
+
+	for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+		if rap.Epoch == epoch && rap.Offset >= tail && rap.Offset < head && rap.HasPTS {
+			if !hasTiming {
+				hasTiming = true
+				earliestPTS = rap.PTS90k
+				latestPTS = rap.PTS90k
+			} else {
+				if rap.PTS90k < earliestPTS {
+					earliestPTS = rap.PTS90k
+				}
+				if rap.PTS90k > latestPTS {
+					latestPTS = rap.PTS90k
+				}
+			}
+		}
+	}
+
+	if !hasTiming {
+		return 0, 0, ErrEpochNoTiming
+	}
+
+	return earliestPTS, latestPTS, nil
+}
+
 func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
 	if r.isClosed {
 		return SeekResult{}, ErrRingClosed
@@ -660,6 +745,15 @@ func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64,
 		return SeekResult{}, ErrTopologyUnresolved
 	}
 
+	earliestPTS, latestPTS, err := r.presentationRangeLocked(epoch)
+	if err != nil {
+		return SeekResult{}, err
+	}
+
+	if pts < earliestPTS || pts > latestPTS {
+		return SeekResult{}, ErrPTSOutOfRange
+	}
+
 	tail := r.store.tailOffset()
 	head := r.store.headOffset()
 
@@ -667,34 +761,7 @@ func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64,
 		Mode:         mode,
 		JoinableOnly: true,
 	})
-	if !ok {
-		// Distinguish out-of-range PTS from general no RAP
-		raps := r.timelineIndex.RAPsBetween(tail, head-1)
-		var earliestPTS, latestPTS int64
-		var hasAny bool
-		for _, rapEntry := range raps {
-			if rapEntry.Epoch == epoch && rapEntry.HasPTS {
-				if !hasAny {
-					hasAny = true
-					earliestPTS = rapEntry.PTS90k
-					latestPTS = rapEntry.PTS90k
-				} else {
-					if rapEntry.PTS90k < earliestPTS {
-						earliestPTS = rapEntry.PTS90k
-					}
-					if rapEntry.PTS90k > latestPTS {
-						latestPTS = rapEntry.PTS90k
-					}
-				}
-			}
-		}
-		if hasAny && (pts < earliestPTS || pts > latestPTS) {
-			return SeekResult{}, ErrPTSOutOfRange
-		}
-		return SeekResult{}, ErrNoMatchingRAP
-	}
-
-	if rap.Offset < tail || rap.Offset >= head {
+	if !ok || rap.Offset < tail || rap.Offset >= head {
 		return SeekResult{}, ErrNoMatchingRAP
 	}
 

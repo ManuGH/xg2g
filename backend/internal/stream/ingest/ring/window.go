@@ -30,31 +30,35 @@ var (
 	ErrNoCanonicalEndBoundary           = errors.New("no canonical end boundary found in epoch")
 	ErrWindowTooLarge                   = errors.New("window extraction exceeds maximum byte limit")
 	ErrWindowSpansMultipleEpochs        = errors.New("window extraction spans multiple epochs or program discontinuity")
+	ErrWindowHasTrackDiscontinuity      = errors.New("window extraction contains track discontinuity")
 	ErrInvalidWindowRange               = errors.New("invalid window PTS range")
 )
 
 // WindowRequest defines a live window extraction request.
 type WindowRequest struct {
-	Epoch           mediafacts.TimelineEpoch
-	StartPTS        int64
-	EndPTS          int64
-	IncludePreamble bool
+	Epoch                      mediafacts.TimelineEpoch
+	StartPTS                   int64
+	EndPTS                     int64
+	IncludePreamble            bool
+	RejectTrackDiscontinuities bool
 }
 
 // WindowSlice contains the packet-aligned raw transport stream slice between two RAPs.
 type WindowSlice struct {
-	Epoch             mediafacts.TimelineEpoch
-	RequestedStartPTS int64
-	RequestedEndPTS   int64
-	ActualStartPTS90k int64
-	ActualEndPTS90k   int64
-	StartOffset       int64
-	EndOffset         int64
-	StartRAP          timeline.RAPEntry
-	EndRAP            timeline.RAPEntry
-	Preamble          []byte
-	Data              []byte
-	PacketCount       int
+	Epoch                 mediafacts.TimelineEpoch
+	RequestedStartPTS     int64
+	RequestedEndPTS       int64
+	ActualStartPTS90k     int64
+	ActualEndPTS90k       int64
+	StartOffset           int64
+	EndOffset             int64
+	StartRAP              timeline.RAPEntry
+	EndRAP                timeline.RAPEntry
+	HasTrackDiscontinuity bool
+	TrackDiscontinuities  []timeline.DiscontinuityEntry
+	Preamble              []byte
+	Data                  []byte
+	PacketCount           int
 }
 
 // ExtractWindow atomically reads a contiguous window of TS packets between StartRAP and EndRAP.
@@ -85,6 +89,15 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		return WindowSlice{}, ErrInvalidWindowRange
 	}
 
+	earliestPTS, latestPTS, err := r.presentationRangeLocked(req.Epoch)
+	if err != nil {
+		return WindowSlice{}, err
+	}
+
+	if req.StartPTS < earliestPTS || req.StartPTS > latestPTS {
+		return WindowSlice{}, ErrPTSOutOfRange
+	}
+
 	tail := r.store.tailOffset()
 	head := r.store.headOffset()
 
@@ -93,34 +106,7 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		Mode:         timeline.SeekModePreceding,
 		JoinableOnly: true,
 	})
-	if !ok {
-		// Distinguish out-of-range PTS from general no RAP
-		raps := r.timelineIndex.RAPsBetween(tail, head-1)
-		var earliestPTS, latestPTS int64
-		var hasAny bool
-		for _, rap := range raps {
-			if rap.Epoch == req.Epoch && rap.HasPTS {
-				if !hasAny {
-					hasAny = true
-					earliestPTS = rap.PTS90k
-					latestPTS = rap.PTS90k
-				} else {
-					if rap.PTS90k < earliestPTS {
-						earliestPTS = rap.PTS90k
-					}
-					if rap.PTS90k > latestPTS {
-						latestPTS = rap.PTS90k
-					}
-				}
-			}
-		}
-		if hasAny && (req.StartPTS < earliestPTS || req.StartPTS > latestPTS) {
-			return WindowSlice{}, ErrPTSOutOfRange
-		}
-		return WindowSlice{}, ErrNoMatchingRAP
-	}
-
-	if startRAP.Offset < tail || startRAP.Offset >= head {
+	if !ok || startRAP.Offset < tail || startRAP.Offset >= head {
 		return WindowSlice{}, ErrNoMatchingRAP
 	}
 
@@ -151,14 +137,22 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		return WindowSlice{}, ErrNoCanonicalEndBoundary
 	}
 
-	// 3. Verify no program discontinuity exists strictly between StartRAP and EndRAP
+	// 3. Scan discontinuities strictly between StartRAP and EndRAP
+	var trackDiscs []timeline.DiscontinuityEntry
 	if endRAP.Offset > startRAP.Offset+1 {
 		discs := r.timelineIndex.DiscontinuitiesBetween(startRAP.Offset+1, endRAP.Offset-1)
 		for _, d := range discs {
 			if d.Scope == mediafacts.DiscontinuityScopeProgram {
 				return WindowSlice{}, ErrWindowSpansMultipleEpochs
 			}
+			if d.Scope == mediafacts.DiscontinuityScopeTrack {
+				trackDiscs = append(trackDiscs, d)
+			}
 		}
+	}
+
+	if req.RejectTrackDiscontinuities && len(trackDiscs) > 0 {
+		return WindowSlice{}, ErrWindowHasTrackDiscontinuity
 	}
 
 	// 4. Memory ceiling check
@@ -181,17 +175,19 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 	}
 
 	res := WindowSlice{
-		Epoch:             req.Epoch,
-		RequestedStartPTS: req.StartPTS,
-		RequestedEndPTS:   req.EndPTS,
-		ActualStartPTS90k: startRAP.PTS90k,
-		ActualEndPTS90k:   endRAP.PTS90k,
-		StartOffset:       startRAP.Offset,
-		EndOffset:         endRAP.Offset,
-		StartRAP:          startRAP,
-		EndRAP:            endRAP,
-		Data:              buf,
-		PacketCount:       len(buf) / TSPacketSize,
+		Epoch:                 req.Epoch,
+		RequestedStartPTS:     req.StartPTS,
+		RequestedEndPTS:       req.EndPTS,
+		ActualStartPTS90k:     startRAP.PTS90k,
+		ActualEndPTS90k:       endRAP.PTS90k,
+		StartOffset:           startRAP.Offset,
+		EndOffset:             endRAP.Offset,
+		StartRAP:              startRAP,
+		EndRAP:                endRAP,
+		HasTrackDiscontinuity: len(trackDiscs) > 0,
+		TrackDiscontinuities:  trackDiscs,
+		Data:                  buf,
+		PacketCount:           len(buf) / TSPacketSize,
 	}
 
 	if req.IncludePreamble {

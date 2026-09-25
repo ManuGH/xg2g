@@ -963,6 +963,19 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 			},
 			Timing: mediafacts.TimingResult{
 				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypeDiscontinuity,
+						Discontinuity: mediafacts.DiscontinuityRecord{
+							Scope:          mediafacts.DiscontinuityScopeProgram,
+							ObservedAt:     startOffset,
+							HasEpochBefore: true,
+							EpochBefore:    1,
+							HasEpochAfter:  true,
+							EpochAfter:     2,
+						},
+					},
+				},
 			},
 			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 5000, VideoPID: 256},
 			PSI: mediafacts.ActivePSI{
@@ -997,7 +1010,7 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		// Expected: reader is correctly waiting!
 	}
 
-	// 4. Push Program 2 keyframe chunk at offset 376 (>= resumeFloor).
+	// 4. Push Program 2 keyframe chunk at offset 376 (>= resumeFloor) in Epoch 2.
 	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
 		return mediafacts.ParseResult{
 			Coverage:               mediafacts.ParseCoverageComplete,
@@ -1008,7 +1021,7 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 			Timing: mediafacts.TimingResult{
 				Authority: mediafacts.TimingAuthorityCanonical,
 				Records: []mediafacts.TimingRecord{
-					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 50000, SubjectAt: startOffset, ObservedAt: startOffset}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 2, PID: 256, HasPTS: true, PTS90k: 50000, SubjectAt: startOffset, ObservedAt: startOffset}),
 				},
 			},
 			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 5000, VideoPID: 256},
@@ -1057,6 +1070,49 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 	}
 	if n4 != TSPacketSize || pkt2Buf[2] != 2 {
 		t.Fatalf("expected packet 2 with tag 2, got %d bytes, tag %d", n4, pkt2Buf[2])
+	}
+
+	// 6. Verify TimelineEpoch and Program Change interplay:
+	pt1, ok1 := r.Timeline().PresentationTimeline(1)
+	if !ok1 {
+		t.Fatalf("PresentationTimeline(1) failed")
+	}
+	if !pt1.Closed || pt1.EndOffset != 188 {
+		t.Errorf("Epoch 1 PresentationTimeline: Closed=%v EndOffset=%d, want Closed=true EndOffset=188", pt1.Closed, pt1.EndOffset)
+	}
+
+	pt2, ok2 := r.Timeline().PresentationTimeline(2)
+	if !ok2 {
+		t.Fatalf("PresentationTimeline(2) failed")
+	}
+	if pt2.Closed || pt2.StartOffset != 188 {
+		t.Errorf("Epoch 2 PresentationTimeline: Closed=%v StartOffset=%d, want Closed=false StartOffset=188", pt2.Closed, pt2.StartOffset)
+	}
+
+	// SeekToTime on historical Epoch 1 (before resumeFloor 376) fails closed with ErrHistoricalProgramSeekUnsupported:
+	_, err = r.SeekToTime(1, 10000, timeline.SeekModePreceding)
+	if err != ErrHistoricalProgramSeekUnsupported {
+		t.Errorf("SeekToTime on historical Epoch 1: got %v, want ErrHistoricalProgramSeekUnsupported", err)
+	}
+
+	// SeekToTime on active Epoch 2 (at offset 376 >= resumeFloor) succeeds with new preamble:
+	seekRes, err := r.SeekToTime(2, 50000, timeline.SeekModePreceding)
+	if err != nil {
+		t.Fatalf("SeekToTime on active Epoch 2 failed: %v", err)
+	}
+	if seekRes.Offset != 376 {
+		t.Errorf("SeekToTime Offset = %d, want 376", seekRes.Offset)
+	}
+
+	// ExtractWindow on historical Epoch 1 with IncludePreamble fails closed with ErrHistoricalProgramSeekUnsupported:
+	_, err = r.ExtractWindow(WindowRequest{
+		Epoch:           1,
+		StartPTS:        10000,
+		EndPTS:          10000,
+		IncludePreamble: true,
+	})
+	if err != ErrHistoricalProgramSeekUnsupported {
+		t.Errorf("ExtractWindow on historical Epoch 1 with preamble: got %v, want ErrHistoricalProgramSeekUnsupported", err)
 	}
 }
 
@@ -1615,4 +1671,297 @@ func TestMasterRing_ConcurrentRace_TimeQueriesAndCommits(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestMasterRing_SeekToTime_ErrorContractAndModes(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Ingest Epoch 1 with 3 packets:
+	// - Packet 0 (offset 0): RAP 1 with PTS 10000, Joinable: true
+	// - Packet 1 (offset 188): PES with PTS 20000, no RAP
+	// - Packet 2 (offset 376): RAP 2 with PTS 30000, Joinable: true
+	// Retained presentation range for Epoch 1: [10000, 30000]
+	chunk := append(append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 2)...), makeTSPacket(true, false, 3)...)
+
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES:  mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 188, ObservedAt: 188},
+					},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 30000, SubjectAt: 376, ObservedAt: 376}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, chunk)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// Ingest Epoch 2 with 1 packet, but NO timing points with PTS (Epoch without timing)
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: startOffset, HasEpochBefore: true, EpochBefore: 1, HasEpochAfter: true, EpochAfter: 2}},
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES:  mediafacts.TimingPoint{Epoch: 2, PID: 256, HasPTS: false, SubjectAt: startOffset, ObservedAt: startOffset},
+					},
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err = r.Push(ctx, makeTSPacket(false, false, 4))
+	if err != nil {
+		t.Fatalf("Push epoch 2 failed: %v", err)
+	}
+
+	t.Run("ErrEpochNotFound", func(t *testing.T) {
+		modes := []timeline.SeekMode{timeline.SeekModePreceding, timeline.SeekModeFollowing, timeline.SeekModeNearest}
+		for _, m := range modes {
+			_, err := r.SeekToTime(999, 20000, m)
+			if !errors.Is(err, ErrEpochNotFound) {
+				t.Errorf("mode %v: got %v, want ErrEpochNotFound", m, err)
+			}
+		}
+	})
+
+	t.Run("ErrEpochNoTiming", func(t *testing.T) {
+		modes := []timeline.SeekMode{timeline.SeekModePreceding, timeline.SeekModeFollowing, timeline.SeekModeNearest}
+		for _, m := range modes {
+			_, err := r.SeekToTime(2, 20000, m)
+			if !errors.Is(err, ErrEpochNoTiming) {
+				t.Errorf("mode %v: got %v, want ErrEpochNoTiming", m, err)
+			}
+		}
+	})
+
+	t.Run("SeekModePreceding_Bounds", func(t *testing.T) {
+		// pts < earliestPTS (5000 < 10000) -> ErrPTSOutOfRange
+		_, err := r.SeekToTime(1, 5000, timeline.SeekModePreceding)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 5000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts > latestPTS (35000 > 30000) -> ErrPTSOutOfRange
+		_, err = r.SeekToTime(1, 35000, timeline.SeekModePreceding)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 35000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts == earliestPTS (10000) -> RAP 1 (offset 0)
+		res, err := r.SeekToTime(1, 10000, timeline.SeekModePreceding)
+		if err != nil || res.Offset != 0 {
+			t.Errorf("pts 10000: got (%+v, %v), want offset 0", res, err)
+		}
+
+		// pts == latestPTS (30000) -> RAP 2 (offset 376)
+		res, err = r.SeekToTime(1, 30000, timeline.SeekModePreceding)
+		if err != nil || res.Offset != 376 {
+			t.Errorf("pts 30000: got (%+v, %v), want offset 376", res, err)
+		}
+
+		// pts == 20000 (between RAPs) -> RAP 1 (offset 0)
+		res, err = r.SeekToTime(1, 20000, timeline.SeekModePreceding)
+		if err != nil || res.Offset != 0 {
+			t.Errorf("pts 20000: got (%+v, %v), want offset 0", res, err)
+		}
+	})
+
+	t.Run("SeekModeFollowing_Bounds", func(t *testing.T) {
+		// pts < earliestPTS (5000 < 10000) -> ErrPTSOutOfRange
+		_, err := r.SeekToTime(1, 5000, timeline.SeekModeFollowing)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 5000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts > latestPTS (35000 > 30000) -> ErrPTSOutOfRange
+		_, err = r.SeekToTime(1, 35000, timeline.SeekModeFollowing)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 35000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts == earliestPTS (10000) -> RAP 1 (offset 0)
+		res, err := r.SeekToTime(1, 10000, timeline.SeekModeFollowing)
+		if err != nil || res.Offset != 0 {
+			t.Errorf("pts 10000: got (%+v, %v), want offset 0", res, err)
+		}
+
+		// pts == latestPTS (30000) -> RAP 2 (offset 376)
+		res, err = r.SeekToTime(1, 30000, timeline.SeekModeFollowing)
+		if err != nil || res.Offset != 376 {
+			t.Errorf("pts 30000: got (%+v, %v), want offset 376", res, err)
+		}
+
+		// pts == 20000 (between RAPs) -> RAP 2 (offset 376)
+		res, err = r.SeekToTime(1, 20000, timeline.SeekModeFollowing)
+		if err != nil || res.Offset != 376 {
+			t.Errorf("pts 20000: got (%+v, %v), want offset 376", res, err)
+		}
+	})
+
+	t.Run("SeekModeNearest_Bounds", func(t *testing.T) {
+		// pts < earliestPTS (5000 < 10000) -> ErrPTSOutOfRange
+		_, err := r.SeekToTime(1, 5000, timeline.SeekModeNearest)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 5000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts > latestPTS (35000 > 30000) -> ErrPTSOutOfRange
+		_, err = r.SeekToTime(1, 35000, timeline.SeekModeNearest)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("pts 35000: got %v, want ErrPTSOutOfRange", err)
+		}
+
+		// pts == earliestPTS (10000) -> RAP 1 (offset 0)
+		res, err := r.SeekToTime(1, 10000, timeline.SeekModeNearest)
+		if err != nil || res.Offset != 0 {
+			t.Errorf("pts 10000: got (%+v, %v), want offset 0", res, err)
+		}
+
+		// pts == latestPTS (30000) -> RAP 2 (offset 376)
+		res, err = r.SeekToTime(1, 30000, timeline.SeekModeNearest)
+		if err != nil || res.Offset != 376 {
+			t.Errorf("pts 30000: got (%+v, %v), want offset 376", res, err)
+		}
+
+		// pts == 14000 (closer to 10000) -> RAP 1 (offset 0)
+		res, err = r.SeekToTime(1, 14000, timeline.SeekModeNearest)
+		if err != nil || res.Offset != 0 {
+			t.Errorf("pts 14000: got (%+v, %v), want offset 0", res, err)
+		}
+
+		// pts == 26000 (closer to 30000) -> RAP 2 (offset 376)
+		res, err = r.SeekToTime(1, 26000, timeline.SeekModeNearest)
+		if err != nil || res.Offset != 376 {
+			t.Errorf("pts 26000: got (%+v, %v), want offset 376", res, err)
+		}
+	})
+}
+
+func TestMasterRing_ExtractWindow_TrackDiscontinuities(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Ingest 3 packets in Epoch 1:
+	// - Packet 0 (offset 0): RAP 1 with PTS 10000, Joinable: true
+	// - Packet 1 (offset 188): Audio track discontinuity on PID 257
+	// - Packet 2 (offset 376): RAP 2 with PTS 30000, Joinable: true
+	chunk := append(append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 2)...), makeTSPacket(true, false, 3)...)
+
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					{
+						Type: mediafacts.TimingRecordTypeDiscontinuity,
+						Discontinuity: mediafacts.DiscontinuityRecord{
+							Scope:      mediafacts.DiscontinuityScopeTrack,
+							TrackPID:   257,
+							ObservedAt: 188,
+						},
+					},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 30000, SubjectAt: 376, ObservedAt: 376}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, chunk)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	t.Run("AllowTrackDiscontinuities_ExposesInSlice", func(t *testing.T) {
+		slice, err := r.ExtractWindow(WindowRequest{
+			Epoch:                      1,
+			StartPTS:                   10000,
+			EndPTS:                     30000,
+			RejectTrackDiscontinuities: false,
+		})
+		if err != nil {
+			t.Fatalf("ExtractWindow failed: %v", err)
+		}
+		if !slice.HasTrackDiscontinuity {
+			t.Errorf("slice.HasTrackDiscontinuity = false, want true")
+		}
+		if len(slice.TrackDiscontinuities) != 1 {
+			t.Fatalf("len(TrackDiscontinuities) = %d, want 1", len(slice.TrackDiscontinuities))
+		}
+		disc := slice.TrackDiscontinuities[0]
+		if disc.Scope != mediafacts.DiscontinuityScopeTrack || disc.TrackPID != 257 || disc.ObservedAt != 188 {
+			t.Errorf("TrackDiscontinuity entry mismatch: %+v", disc)
+		}
+	})
+
+	t.Run("RejectTrackDiscontinuities_FailsClosed", func(t *testing.T) {
+		_, err := r.ExtractWindow(WindowRequest{
+			Epoch:                      1,
+			StartPTS:                   10000,
+			EndPTS:                     30000,
+			RejectTrackDiscontinuities: true,
+		})
+		if !errors.Is(err, ErrWindowHasTrackDiscontinuity) {
+			t.Errorf("got %v, want ErrWindowHasTrackDiscontinuity", err)
+		}
+	})
 }
