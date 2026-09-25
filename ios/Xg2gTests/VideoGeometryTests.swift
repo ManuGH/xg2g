@@ -402,7 +402,10 @@ struct VideoGeometryTests {
         }
 
         // Wait for async presentation pump to process fields
-        try await Task.sleep(nanoseconds: 100_000_000)
+        for _ in 0..<50 {
+            if presenter.enqueuedCount > initialEnqueued { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
 
         // Verify presenter received all fields and generation was preserved
         #expect(presenter.enqueuedCount > initialEnqueued)

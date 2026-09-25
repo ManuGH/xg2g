@@ -491,4 +491,85 @@ import Testing
         #expect(coordinator.presentedServiceRef == nil)
         #expect(coordinator.playing == nil)
     }
+
+    // MARK: - 12. Surface Attachment While Clock Is Already Running
+
+    @Test func attachSurfaceWhileClockIsAlreadyRunningPreservesClockRateAndDoesNotShiftTime() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let clock = pipeline.clock
+        let anchor = CMTime(value: 100_000, timescale: 90_000)
+
+        // Step 1: Start clock on pipeline before any surface is attached
+        clock.start(at: anchor)
+        pipeline.audioRenderer.setAudible(true)
+
+        #expect(clock.isClockRunning == true)
+        #expect(clock.rate == 1.0)
+        let rateBeforeAttach = clock.rate
+
+        // Allow playback to advance slightly
+        try await Task.sleep(nanoseconds: 20_000_000)
+        let timeBeforeAttach = clock.currentTime
+
+        // Step 2: Attach surface (SystemVideoPresenter) to the running session
+        let presenter = SystemVideoPresenter()
+        presenter.attach(to: pipeline.presentationSynchronizer)
+
+        for _ in 0..<50 {
+            if presenter.attachedSynchronizer === pipeline.presentationSynchronizer { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        // Step 3: Assert surface attachment did NOT alter clock rate or rewrite timebase
+        #expect(presenter.attachedSynchronizer === pipeline.presentationSynchronizer)
+        #expect(clock.rate == rateBeforeAttach)
+        #expect(clock.isClockRunning == true)
+
+        let timeAfterAttach = clock.currentTime
+        // Verify time progressed monotonically without being reset or shifted backwards
+        #expect(CMTimeCompare(timeAfterAttach, timeBeforeAttach) >= 0)
+
+        presenter.detach(from: pipeline.presentationSynchronizer)
+        pipeline.stopStreaming()
+    }
+
+    // MARK: - 13. Concurrent Reset and Clock Operations Serialization
+
+    @Test func concurrentResetAndClockOperationsSerializeSafelyUnderExecutionContract() async throws {
+        let clock = PlaybackClock()
+
+        // Concurrently run setRate, attachRenderer, stop, and reset across multiple tasks
+        await withTaskGroup(of: Void.self) { group in
+            // Group A: Mutate rate and attach/detach
+            for i in 0..<10 {
+                group.addTask {
+                    let renderer = AVSampleBufferAudioRenderer()
+                    let anchor = CMTime(value: Int64(i * 10_000), timescale: 90_000)
+                    clock.setRate(1.0, time: anchor)
+                    clock.attachRenderer(renderer)
+                    clock.stop()
+                    _ = clock.rate
+                    _ = clock.isClockRunning
+                }
+            }
+
+            // Group B: Concurrently trigger reset()
+            for _ in 0..<5 {
+                group.addTask {
+                    let retired = clock.reset()
+                    #expect(retired !== clock.synchronizer)
+                }
+            }
+        }
+
+        // Post-concurrency sanity: clock must remain functional and internally consistent
+        let finalAnchor = CMTime(value: 500_000, timescale: 90_000)
+        clock.start(at: finalAnchor)
+        #expect(clock.rate == 1.0)
+        #expect(clock.isClockRunning == true)
+
+        clock.stop()
+        #expect(clock.rate == 0.0)
+        #expect(clock.isClockRunning == false)
+    }
 }

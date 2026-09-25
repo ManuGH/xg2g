@@ -415,6 +415,8 @@ struct DeterministicZapTransactionTests {
         let epochDuringRecovery = b.recoveryEpoch
         #expect(epochDuringRecovery != .initial)
 
+        b.drainIngestQueueForTesting()
+
         driveToPresentable(b, generation: genB, audioFrom: 600.0, pictureFrom: 600.4)
         #expect(audioB.resetCount > 0, "iteration \(iteration): a failure must reset the renderer")
         #expect(b.lifecycle == .stable, "iteration \(iteration): a new anchor closes the recovery")

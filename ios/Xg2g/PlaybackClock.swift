@@ -16,11 +16,19 @@ private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "p
 /// Decouples clock ownership from audio rendering so that video and audio are timed
 /// against a single authoritative clock owner.
 ///
-/// Thread safety is enforced via an internal lock protecting synchronizer replacement,
-/// timebase queries, and active detach token lifetimes.
+/// Execution Contract & Serialization Guarantee:
+/// All mutative clock operations (`setRate`, `start`, `stop`, `reset`, `attachRenderer`, `detachRenderer`),
+/// observer operations (`addBoundaryTimeObserver`, `removeTimeObserver`), and state queries (`rate`,
+/// `timebase`, `currentTime`, `synchronizer`) are strictly serialized under an internal lock.
+/// This guarantees:
+/// 1. `setRate` and `attachRenderer` never operate on a synchronizer that is concurrently being retired by `reset()`.
+/// 2. `reset()` atomically replaces the internal synchronizer; any in-flight or subsequent clock operation
+///    either completes on the old synchronizer prior to reset or executes cleanly against the new synchronizer.
+/// 3. Detached renderers and retired synchronizers are strongly retained in `activeDetachTokens` until AVFoundation
+///    asynchronously signals completion via `removeRenderer` completion handlers.
 public final class PlaybackClock: @unchecked Sendable {
 
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
     private var _synchronizer: AVSampleBufferRenderSynchronizer
     private var activeDetachTokens: [RetainedDetachToken] = []
 
@@ -34,25 +42,22 @@ public final class PlaybackClock: @unchecked Sendable {
     /// The master timebase established by the synchronizer.
     public var timebase: CMTimebase {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        return sync.timebase
+        defer { lock.unlock() }
+        return _synchronizer.timebase
     }
 
     /// Current rate of the master clock timebase.
     public var rate: Float {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        return Float(CMTimebaseGetRate(sync.timebase))
+        defer { lock.unlock() }
+        return Float(CMTimebaseGetRate(_synchronizer.timebase))
     }
 
     /// Current presentation timestamp of the master clock.
     public var currentTime: CMTime {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        return CMTimebaseGetTime(sync.timebase)
+        defer { lock.unlock() }
+        return CMTimebaseGetTime(_synchronizer.timebase)
     }
 
     /// True if the master clock is actively running (rate > 0).
@@ -65,11 +70,11 @@ public final class PlaybackClock: @unchecked Sendable {
     }
 
     /// Sets the playback clock rate starting at a specific reference PTS.
+    /// Serialized against synchronizer replacement (`reset()`).
     public func setRate(_ rate: Float, time: CMTime) {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        sync.setRate(rate, time: time)
+        defer { lock.unlock() }
+        _synchronizer.setRate(rate, time: time)
     }
 
     /// Shorthand to start playback at rate 1.0 from a given anchor timestamp.
@@ -83,22 +88,23 @@ public final class PlaybackClock: @unchecked Sendable {
     }
 
     /// Rebuilds the synchronizer for full session teardown, returning the retired
-    /// synchronizer. In-flight detachments keep the old synchronizer alive via RetainedDetachToken.
+    /// synchronizer. Atomic and serialized with all other clock operations.
+    /// In-flight detachments keep the old synchronizer alive via RetainedDetachToken.
     @discardableResult
     public func reset() -> AVSampleBufferRenderSynchronizer {
         lock.lock()
+        defer { lock.unlock() }
         let old = _synchronizer
         _synchronizer = AVSampleBufferRenderSynchronizer()
-        lock.unlock()
         return old
     }
 
     /// Attaches an audio or video queued sample buffer renderer to this clock.
+    /// Serialized against synchronizer replacement (`reset()`).
     public func attachRenderer(_ renderer: AVQueuedSampleBufferRendering) {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        sync.addRenderer(renderer)
+        defer { lock.unlock() }
+        _synchronizer.addRenderer(renderer)
     }
 
     /// Asynchronously detaches a renderer from this clock (or an explicit synchronizer),
@@ -114,8 +120,6 @@ public final class PlaybackClock: @unchecked Sendable {
         let syncToDetach = explicitSynchronizer ?? _synchronizer
         let token = RetainedDetachToken(synchronizer: syncToDetach, renderer: renderer)
         activeDetachTokens.append(token)
-        lock.unlock()
-
         syncToDetach.removeRenderer(renderer, at: time) { [weak self] _ in
             if let self {
                 self.lock.lock()
@@ -125,6 +129,7 @@ public final class PlaybackClock: @unchecked Sendable {
             _ = token
             completion?()
         }
+        lock.unlock()
     }
 
     /// Registers a boundary time observer on this clock.
@@ -134,17 +139,15 @@ public final class PlaybackClock: @unchecked Sendable {
         using block: @Sendable @escaping () -> Void
     ) -> Any {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        return sync.addBoundaryTimeObserver(forTimes: times, queue: queue, using: block)
+        defer { lock.unlock() }
+        return _synchronizer.addBoundaryTimeObserver(forTimes: times, queue: queue, using: block)
     }
 
     /// Removes a previously registered boundary time observer.
     public func removeTimeObserver(_ observer: Any) {
         lock.lock()
-        let sync = _synchronizer
-        lock.unlock()
-        sync.removeTimeObserver(observer)
+        defer { lock.unlock() }
+        _synchronizer.removeTimeObserver(observer)
     }
 }
 
