@@ -924,6 +924,33 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		t.Errorf("Attach KeyframeOffset = %d, want 0", attach.KeyframeOffset)
 	}
 
+	// 1. Consume initial preamble and packet 1 before program change
+	preambleBuf := make([]byte, 10*TSPacketSize)
+	nPreamble, err := reader.Read(preambleBuf)
+	if err != nil {
+		t.Fatalf("reader.Read initial preamble failed: %v", err)
+	}
+	hasInitialPMT := false
+	for i := 0; i+TSPacketSize <= nPreamble; i += TSPacketSize {
+		pkt := preambleBuf[i : i+TSPacketSize]
+		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
+		if pid == 4096 {
+			hasInitialPMT = true
+		}
+	}
+	if !hasInitialPMT {
+		t.Fatalf("expected initial preamble to carry PMT PID 4096")
+	}
+
+	pkt1Buf := make([]byte, TSPacketSize)
+	nPkt1, err := reader.Read(pkt1Buf)
+	if err != nil {
+		t.Fatalf("reader.Read packet 1 failed: %v", err)
+	}
+	if nPkt1 != TSPacketSize || pkt1Buf[2] != 1 {
+		t.Fatalf("expected packet 1 with tag 1, got %d bytes, tag %d", nPkt1, pkt1Buf[2])
+	}
+
 	// Push subsequent Program 2 transition with new PMT
 	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
 		return mediafacts.ParseResult{
@@ -952,17 +979,274 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		t.Fatalf("Push program 2 failed: %v", err)
 	}
 
-	// Reader reads: must detect generation change and resync cleanly
-	buf := make([]byte, 10*TSPacketSize)
-	n, err := reader.Read(buf)
+	// Reader reads: must detect generation change, must NOT deliver old payload (tag 1)
+	// and must NOT deliver old PMT (PID 4096), but must deliver new PMT (PID 5000)
+	// and new packet (tag 2).
+	afterBuf := make([]byte, 10*TSPacketSize)
+	n3, err := reader.Read(afterBuf)
 	if err != nil {
 		t.Fatalf("reader.Read after program change failed: %v", err)
 	}
-	if n < TSPacketSize {
-		t.Fatalf("reader.Read returned %d bytes, want at least 1 packet", n)
+
+	hasNewPMT := false
+	for i := 0; i+TSPacketSize <= n3; i += TSPacketSize {
+		pkt := afterBuf[i : i+TSPacketSize]
+		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
+		if pid == 4096 {
+			t.Errorf("Reader delivered stale PMT (PID 4096) after program change")
+		}
+		if pid == 5000 {
+			hasNewPMT = true
+		}
 	}
-	if buf[0] != SyncByte {
-		t.Errorf("First byte = 0x%X, want 0x47", buf[0])
+	if !hasNewPMT {
+		t.Errorf("Reader did not deliver new PMT (PID 5000) after program change")
+	}
+
+	// Read next packet: must be Program 2's packet (tag 2), NOT old packet
+	pkt2Buf := make([]byte, TSPacketSize)
+	n4, err := reader.Read(pkt2Buf)
+	if err != nil {
+		t.Fatalf("reader.Read after preamble failed: %v", err)
+	}
+	if n4 != TSPacketSize || pkt2Buf[2] != 2 {
+		t.Fatalf("expected packet 2 with tag 2, got %d bytes, tag %d", n4, pkt2Buf[2])
+	}
+}
+
+func TestMasterRing_ExtractWindow_HistoricalProgramWithPreamble_FailsClosed(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Ingest Program 1 with RAP 1 at offset 0 (PTS 10000) and RAP 2 at offset 376 (PTS 20000)
+	chunk := make([]byte, 4*TSPacketSize)
+	for i := 0; i < 4; i++ {
+		chunk[i*TSPacketSize] = SyncByte
+	}
+
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 376, ObservedAt: 376}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, chunk)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// Trigger program identity change (zap to Program 2)
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventProgramIdentityChanged, Offset: startOffset},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: startOffset, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 50000, SubjectAt: startOffset, ObservedAt: startOffset}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 5000, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0x11, 0x22, 0x33, 0x44}},
+			},
+		}
+	}
+	_, err = r.Push(ctx, makeTSPacket(true, false, 2))
+	if err != nil {
+		t.Fatalf("Push program 2 failed: %v", err)
+	}
+
+	// Extracting historical Program 1 window WITH preamble must fail closed with ErrHistoricalProgramSeekUnsupported!
+	_, err = r.ExtractWindow(WindowRequest{
+		Epoch:           1,
+		StartPTS:        10000,
+		EndPTS:          20000,
+		IncludePreamble: true,
+	})
+	if err != ErrHistoricalProgramSeekUnsupported {
+		t.Errorf("ExtractWindow with preamble on historical program: got %v, want ErrHistoricalProgramSeekUnsupported", err)
+	}
+
+	// Extracting historical Program 1 window WITHOUT preamble (raw TS) succeeds
+	slice, err := r.ExtractWindow(WindowRequest{
+		Epoch:           1,
+		StartPTS:        10000,
+		EndPTS:          20000,
+		IncludePreamble: false,
+	})
+	if err != nil {
+		t.Errorf("ExtractWindow without preamble on historical program failed: %v", err)
+	}
+	if slice.StartOffset != 0 || slice.EndOffset != 376 {
+		t.Errorf("Slice range = %d..%d, want 0..376", slice.StartOffset, slice.EndOffset)
+	}
+	if len(slice.Preamble) != 0 {
+		t.Errorf("Slice has preamble length %d, want 0", len(slice.Preamble))
+	}
+}
+
+func TestMasterRing_ExtractWindow_EndRAPWithoutPublishedBytes_FailsClosed(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Push 2 packets (offsets 0 and 188). Total head = 376.
+	// But mock says EndRAP is at offset 376 (which is == head, so 0 bytes written for EndRAP!)
+	chunk := append(makeTSPacket(true, false, 1), makeTSPacket(false, false, 1)...)
+
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 376, ObservedAt: 376}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, chunk)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// Extract window [10000, 20000]: EndRAP at offset 376 == head has no published packet in the ring!
+	// Must fail closed with ErrNoCanonicalEndBoundary!
+	_, err = r.ExtractWindow(WindowRequest{
+		Epoch:    1,
+		StartPTS: 10000,
+		EndPTS:   20000,
+	})
+	if err != ErrNoCanonicalEndBoundary {
+		t.Errorf("ExtractWindow with EndRAP at head: got %v, want ErrNoCanonicalEndBoundary", err)
+	}
+}
+
+func TestMasterRing_SeekToTime_ExtractWindow_IncompletePreamble_FailsClosed(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// 1. PAT is present, but PMT sections are empty even though HasPMT == true
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 188, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 188, ObservedAt: 188}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: nil, // Missing PMT sections!
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, append(makeTSPacket(true, false, 1), makeTSPacket(true, false, 2)...))
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// SeekToTime must fail closed with ErrTopologyUnresolved
+	_, err = r.SeekToTime(1, 10000, timeline.SeekModePreceding)
+	if err != ErrTopologyUnresolved {
+		t.Errorf("SeekToTime with missing PMT sections: got %v, want ErrTopologyUnresolved", err)
+	}
+
+	// ExtractWindow with IncludePreamble: true must fail closed with ErrTopologyUnresolved
+	_, err = r.ExtractWindow(WindowRequest{
+		Epoch:           1,
+		StartPTS:        10000,
+		EndPTS:          20000,
+		IncludePreamble: true,
+	})
+	if err != ErrTopologyUnresolved {
+		t.Errorf("ExtractWindow with missing PMT sections: got %v, want ErrTopologyUnresolved", err)
+	}
+
+	// 2. PMT PID is 0 (patPID): emit would deliver PMT as PAT, so it must fail closed
+	r.facts.PMTPID = 0
+	r.activePSI.PMTSections = [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}}
+	_, err = r.SeekToTime(1, 10000, timeline.SeekModePreceding)
+	if err != ErrTopologyUnresolved {
+		t.Errorf("SeekToTime with PMTPID == 0: got %v, want ErrTopologyUnresolved", err)
+	}
+
+	// 3. PAT sections are empty
+	r.facts.PMTPID = 4096
+	r.activePSI.PATSections = nil
+	_, err = r.SeekToTime(1, 10000, timeline.SeekModePreceding)
+	if err != ErrTopologyUnresolved {
+		t.Errorf("SeekToTime with empty PAT sections: got %v, want ErrTopologyUnresolved", err)
 	}
 }
 
@@ -986,20 +1270,22 @@ func BenchmarkMasterRing_ExtractWindowLockHoldDuration(b *testing.B) {
 		payload[i*TSPacketSize] = SyncByte
 	}
 
+	endRAPOffset := int64(len(payload)) - TSPacketSize
+
 	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
 		return mediafacts.ParseResult{
 			Coverage:               mediafacts.ParseCoverageComplete,
 			ProcessedThroughOffset: startOffset + int64(len(c)),
 			Events: []mediafacts.Event{
 				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
-				{Kind: mediafacts.EventRandomAccessPoint, Offset: int64(len(c)), Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: endRAPOffset, Joinable: true},
 			},
 			Timing: mediafacts.TimingResult{
 				Authority: mediafacts.TimingAuthorityCanonical,
 				Records: []mediafacts.TimingRecord{
 					{Type: mediafacts.TimingRecordTypeDiscontinuity, Discontinuity: mediafacts.DiscontinuityRecord{Scope: mediafacts.DiscontinuityScopeProgram, ObservedAt: 0, HasEpochAfter: true, EpochAfter: 1}},
 					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
-					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 50000, SubjectAt: int64(len(c)), ObservedAt: int64(len(c))}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 50000, SubjectAt: endRAPOffset, ObservedAt: endRAPOffset}),
 				},
 			},
 			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
@@ -1033,8 +1319,8 @@ func BenchmarkMasterRing_ExtractWindowLockHoldDuration(b *testing.B) {
 		totalDuration += elapsed
 	}
 	if b.N > 0 {
-		avgHold := totalDuration / time.Duration(b.N)
-		b.Logf("Measured Average MasterRing.mu hold time for 4 MiB ExtractWindow: %v", avgHold)
+		avgTime := totalDuration / time.Duration(b.N)
+		b.Logf("Measured Average ExtractWindow execution time for 4 MiB payload: %v", avgTime)
 	}
 }
 

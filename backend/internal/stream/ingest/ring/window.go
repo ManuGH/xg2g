@@ -72,12 +72,11 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		return WindowSlice{}, ErrNoTimeline
 	}
 
+	var preamble []byte
 	if req.IncludePreamble {
-		if !r.facts.HasPMT {
-			return WindowSlice{}, ErrTopologyUnresolved
-		}
-		preamble := r.patpmtPreambleLocked()
-		if len(preamble) == 0 {
+		var ok bool
+		preamble, ok = r.canDeliverPreambleLocked()
+		if !ok {
 			return WindowSlice{}, ErrTopologyUnresolved
 		}
 	}
@@ -125,8 +124,15 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		return WindowSlice{}, ErrNoMatchingRAP
 	}
 
+	if req.IncludePreamble {
+		floor := r.attachIndex.resumeFloor()
+		if startRAP.Offset < floor {
+			return WindowSlice{}, ErrHistoricalProgramSeekUnsupported
+		}
+	}
+
 	// 2. Resolve EndRAP strictly in monotonic byte order
-	allRAPs := r.timelineIndex.RAPsBetween(startRAP.Offset+1, head)
+	allRAPs := r.timelineIndex.RAPsBetween(startRAP.Offset+1, head-TSPacketSize)
 	var endRAP timeline.RAPEntry
 	var foundEnd bool
 	for _, rap := range allRAPs {
@@ -141,7 +147,7 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 		return WindowSlice{}, ErrNoCanonicalEndBoundary
 	}
 
-	if endRAP.Offset > head {
+	if endRAP.Offset < tail || endRAP.Offset+TSPacketSize > head {
 		return WindowSlice{}, ErrNoCanonicalEndBoundary
 	}
 
@@ -189,7 +195,7 @@ func (r *MasterRing) ExtractWindow(req WindowRequest) (WindowSlice, error) {
 	}
 
 	if req.IncludePreamble {
-		res.Preamble = r.patpmtPreambleLocked()
+		res.Preamble = preamble
 	}
 
 	return res, nil

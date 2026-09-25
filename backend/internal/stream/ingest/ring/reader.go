@@ -39,6 +39,7 @@ type SubscriberReader struct {
 	// outlives its generation must be dropped rather than finished.
 	pendingPrefix           []byte
 	pendingPrefixGeneration uint64
+	generation              uint64
 
 	// awaitingRandomAccess marks a subscriber that was overtaken and has not found
 	// a decodable re-entry point yet. It stays set across wake-ups until one exists.
@@ -68,6 +69,7 @@ func (r *MasterRing) newSubscriberReaderLocked(startOffset int64) *SubscriberRea
 	return &SubscriberReader{
 		ring:       r,
 		readOffset: startOffset,
+		generation: r.attachIndex.generationValue(),
 	}
 }
 
@@ -141,8 +143,14 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// is not only about how the pair is captured but about how it is handed
 		// over, so a generation change discards what is left and starts recovery
 		// again from the new one.
+		currentGen := s.ring.attachIndex.generationValue()
+		if s.generation != currentGen {
+			s.pendingPrefix = nil
+			s.awaitingRandomAccess = true
+		}
+
 		if len(s.pendingPrefix) > 0 {
-			if s.pendingPrefixGeneration != s.ring.attachIndex.generationValue() {
+			if s.pendingPrefixGeneration != currentGen {
 				s.pendingPrefix = nil
 				s.awaitingRandomAccess = true
 				continue
@@ -248,6 +256,7 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 		s.readOffset = latest
 		s.pendingPrefix = s.ring.patpmtPreambleLocked()
 		s.pendingPrefixGeneration = generation
+		s.generation = generation
 		return true
 	}
 
@@ -267,6 +276,7 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	}
 	s.pendingPrefix = s.ring.patpmtPreambleLocked()
 	s.pendingPrefixGeneration = generation
+	s.generation = generation
 	return true
 }
 
@@ -307,6 +317,7 @@ func (s *SubscriberReader) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64,
 	s.readOffset = seekRes.Offset
 	s.pendingPrefix = seekRes.Preamble
 	s.pendingPrefixGeneration = seekRes.Generation
+	s.generation = seekRes.Generation
 	s.awaitingRandomAccess = false
 
 	return seekRes, nil

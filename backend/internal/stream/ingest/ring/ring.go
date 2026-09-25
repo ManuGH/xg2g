@@ -602,11 +602,8 @@ func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64,
 		return SeekResult{}, ErrNoTimeline
 	}
 
-	if !r.facts.HasPMT {
-		return SeekResult{}, ErrTopologyUnresolved
-	}
-	preamble := r.patpmtPreambleLocked()
-	if len(preamble) == 0 {
+	preamble, ok := r.canDeliverPreambleLocked()
+	if !ok {
 		return SeekResult{}, ErrTopologyUnresolved
 	}
 
@@ -681,6 +678,7 @@ func (r *MasterRing) NewPrimedSubscriberAtTime(epoch mediafacts.TimelineEpoch, p
 	}
 
 	reader := r.newSubscriberReaderLocked(seekRes.Offset)
+	reader.generation = seekRes.Generation
 	reader.pendingPrefix = seekRes.Preamble
 	reader.pendingPrefixGeneration = seekRes.Generation
 	reader.awaitingRandomAccess = false
@@ -703,6 +701,29 @@ func (r *MasterRing) PATPMTPreamble() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.patpmtPreambleLocked()
+}
+
+// canDeliverPreambleLocked verifies that both PAT and PMT sections are present and valid,
+// and returns the packetized preamble bytes containing both tables.
+func (r *MasterRing) canDeliverPreambleLocked() ([]byte, bool) {
+	if !r.facts.HasPAT || !r.facts.HasPMT || r.facts.PMTPID == patPID {
+		return nil, false
+	}
+	if len(r.activePSI.PATSections) == 0 || len(r.activePSI.PMTSections) == 0 {
+		return nil, false
+	}
+	pat := packetizePSISections(patPID, r.activePSI.PATSections)
+	if len(pat) == 0 {
+		return nil, false
+	}
+	pmt := packetizePSISections(r.facts.PMTPID, r.activePSI.PMTSections)
+	if len(pmt) == 0 {
+		return nil, false
+	}
+	preamble := make([]byte, len(pat)+len(pmt))
+	copy(preamble, pat)
+	copy(preamble[len(pat):], pmt)
+	return preamble, true
 }
 
 // patpmtPreambleLocked builds the active topology preamble for callers already
