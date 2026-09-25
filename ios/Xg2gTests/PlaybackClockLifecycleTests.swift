@@ -644,12 +644,16 @@ import Testing
         let url1 = URL(string: "http://127.0.0.1:8080/live/fixture1.ts")!
         let url2 = URL(string: "http://127.0.0.1:8080/live/fixture2.ts")!
 
-        // Step 1: Start Session 1
+        // Step 1: Start Session 1 and verify initial active renderer identity
         pipeline.startStreaming(url: url1)
         #expect(pipeline.isStreaming == true)
         let gen1 = pipeline.activeSessionGeneration
         #expect(gen1 > 0)
-        let token1 = pipeline.audioRenderer.activeRendererToken
+        guard let nativeAudio = pipeline.audioRenderer as? NativeTSAudioRenderer else {
+            Issue.record("Expected NativeTSAudioRenderer")
+            return
+        }
+        let token1 = nativeAudio.activeRendererToken
         let sync1 = pipeline.presentationSynchronizer
 
         let anchor1 = CMTime(value: 100_000, timescale: 90_000)
@@ -657,29 +661,78 @@ import Testing
         #expect(pipeline.clock.rate == 1.0)
         #expect(pipeline.lifecycle == .stable)
 
-        // Step 2: Callback validation succeeds for Session 1 right before stop occurs
-        let epoch1 = pipeline.recoveryEpoch
+        // Step 2: Intercept callback between origin token capture and pipeline delegate delivery.
+        // Simulate rapid Stop/Restart occurring precisely inside this race window.
+        var interceptedOriginToken: Int64?
+        var session2Started = false
+        var sync2: AVSampleBufferRenderSynchronizer?
+        var token2: Int64 = 0
 
-        // Step 3: Stop Session 1 and immediately start Session 2 (rapid zap / re-tune)
-        pipeline.stopStreaming()
-        #expect(pipeline.isStreaming == false)
-        #expect(pipeline.activeSessionGeneration == 0)
+        nativeAudio.onBeforeDelegateErrorDelivery = { originToken, error in
+            interceptedOriginToken = originToken
 
-        pipeline.startStreaming(url: url2)
-        #expect(pipeline.isStreaming == true)
-        let gen2 = pipeline.activeSessionGeneration
-        #expect(gen2 > gen1)
-        let token2 = pipeline.audioRenderer.activeRendererToken
-        #expect(token2 != token1)
-        let sync2 = pipeline.presentationSynchronizer
-        #expect(sync2 !== sync1)
+            // Stop Session 1 right after origin check captured originToken
+            pipeline.stopStreaming()
+            #expect(pipeline.isStreaming == false)
+            #expect(pipeline.activeSessionGeneration == 0)
 
-        let anchor2 = CMTime(value: 200_000, timescale: 90_000)
-        pipeline.clock.start(at: anchor2)
+            // Start Session 2 immediately (rapid channel zap / re-tune)
+            pipeline.startStreaming(url: url2)
+            #expect(pipeline.isStreaming == true)
+            #expect(pipeline.activeSessionGeneration > gen1)
+            token2 = nativeAudio.activeRendererToken
+            #expect(token2 != originToken)
+            sync2 = pipeline.presentationSynchronizer
+            #expect(sync2 !== sync1)
+
+            let anchor2 = CMTime(value: 200_000, timescale: 90_000)
+            pipeline.clock.start(at: anchor2)
+            #expect(pipeline.clock.rate == 1.0)
+            #expect(pipeline.lifecycle == .stable)
+            session2Started = true
+        }
+
+        // Step 3: Trigger error using the production simulation path on NativeTSAudioRenderer.
+        // This executes activeRendererTokenIfCurrent(_audioRenderer) to capture token1,
+        // triggers onBeforeDelegateErrorDelivery (which performs stop & restart),
+        // and then delivers audioRendererDidEncounterError(self, rendererToken: token1, error: error).
+        let simulatedError = NSError(
+            domain: "AVFoundationErrorDomain",
+            code: -11800,
+            userInfo: [NSLocalizedDescriptionKey: "Hardware error during Session 1"]
+        )
+        nativeAudio.simulateFailureForTesting(error: simulatedError)
+        nativeAudio.onBeforeDelegateErrorDelivery = nil
+
+        // Verify the callback window was traversed
+        #expect(interceptedOriginToken == token1)
+        #expect(session2Started == true)
+
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        // Assert: Session 2 must be completely undisturbed!
+        // Clock remains running at 1.0, lifecycle is stable, synchronizer is sync2, token is token2
         #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
         #expect(pipeline.lifecycle == .stable)
+        #expect(pipeline.presentationSynchronizer === sync2)
+        #expect(nativeAudio.activeRendererToken == token2)
+        #expect(pipeline.activeSessionGeneration > gen1)
 
-        // Step 4: Delayed recovery block from Session 1 arrives on ingestQueue
+        // Step 4: Test status change through the same race window
+        // Direct call to delegate with old token1 must also be rejected
+        pipeline.audioRendererDidChangeStatus(nativeAudio, rendererToken: token1, status: .failed)
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+        #expect(pipeline.presentationSynchronizer === sync2)
+
+        // Step 5: Test delayed recovery block queued for old session generation and token arriving on ingestQueue
+        let epoch1 = pipeline.recoveryEpoch
         pipeline.simulateDelayedAudioRecoveryBlockForTesting(
             sessionGeneration: gen1,
             rendererToken: token1,
@@ -688,24 +741,12 @@ import Testing
         pipeline.drainIngestQueueForTesting()
         await Task.yield()
 
-        // Assert: Session 2 must be completely untouched: clock running, rate 1.0, lifecycle stable, renderer intact
+        // Assert: Session 2 still completely untouched
         #expect(pipeline.clock.rate == 1.0)
         #expect(pipeline.clock.isClockRunning == true)
         #expect(pipeline.lifecycle == .stable)
         #expect(pipeline.presentationSynchronizer === sync2)
-        #expect(pipeline.audioRenderer.activeRendererToken == token2)
-
-        // Step 5: Test the race where beginRecovery itself is attempted with Session 1's identity after stop/restart
-        let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Late error from session 1"])
-        let staleRenderer = NativeTSAudioRenderer(clock: PlaybackClock())
-        staleRenderer.detachFromClock()
-        pipeline.audioRendererDidEncounterError(staleRenderer, error: simulatedError)
-        pipeline.drainIngestQueueForTesting()
-        await Task.yield()
-
-        #expect(pipeline.clock.rate == 1.0)
-        #expect(pipeline.clock.isClockRunning == true)
-        #expect(pipeline.lifecycle == .stable)
+        #expect(nativeAudio.activeRendererToken == token2)
 
         pipeline.stopStreaming()
     }

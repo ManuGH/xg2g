@@ -10,8 +10,18 @@ import OSLog
 private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "audio-renderer")
 
 public protocol NativeTSAudioRendererDelegate: AnyObject, Sendable {
-    func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error)
-    func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus)
+    func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, rendererToken: Int64, error: Error)
+    func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, rendererToken: Int64, status: AVQueuedSampleBufferRenderingStatus)
+}
+
+public extension NativeTSAudioRendererDelegate {
+    func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
+        audioRendererDidEncounterError(renderer, rendererToken: renderer.activeRendererToken, error: error)
+    }
+
+    func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
+        audioRendererDidChangeStatus(renderer, rendererToken: renderer.activeRendererToken, status: status)
+    }
 }
 
 /// Plays compressed audio (`CMSampleBuffer`s) using `AVSampleBufferAudioRenderer`
@@ -45,10 +55,40 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         return _rendererToken
     }
 
-    private func isCurrentActiveRenderer(_ renderer: AVSampleBufferAudioRenderer) -> Bool {
+    private func activeRendererTokenIfCurrent(_ renderer: AVSampleBufferAudioRenderer) -> Int64? {
         bufferLock.lock()
         defer { bufferLock.unlock() }
-        return _isAttachedToClock && renderer === _audioRenderer
+        guard _isAttachedToClock && renderer === _audioRenderer else { return nil }
+        return _rendererToken
+    }
+
+    #if DEBUG
+    public var onBeforeDelegateErrorDelivery: ((Int64, Error) -> Void)?
+    public var onBeforeDelegateStatusDelivery: ((Int64, AVQueuedSampleBufferRenderingStatus) -> Void)?
+
+    public func simulateFailureForTesting(error: Error) {
+        guard let token = activeRendererTokenIfCurrent(_audioRenderer) else { return }
+        notifyErrorEncountered(rendererToken: token, error: error)
+    }
+
+    public func simulateStatusChangeForTesting(status: AVQueuedSampleBufferRenderingStatus) {
+        guard let token = activeRendererTokenIfCurrent(_audioRenderer) else { return }
+        notifyStatusChanged(rendererToken: token, status: status)
+    }
+    #endif
+
+    private func notifyErrorEncountered(rendererToken: Int64, error: Error) {
+        #if DEBUG
+        onBeforeDelegateErrorDelivery?(rendererToken, error)
+        #endif
+        delegate?.audioRendererDidEncounterError(self, rendererToken: rendererToken, error: error)
+    }
+
+    private func notifyStatusChanged(rendererToken: Int64, status: AVQueuedSampleBufferRenderingStatus) {
+        #if DEBUG
+        onBeforeDelegateStatusDelivery?(rendererToken, status)
+        #endif
+        delegate?.audioRendererDidChangeStatus(self, rendererToken: rendererToken, status: status)
     }
 
     public var synchronizer: AVSampleBufferRenderSynchronizer {
@@ -168,8 +208,8 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         let renderer = _audioRenderer
         statusObserver = renderer.observe(\.status, options: [.new]) { [weak self] observedRenderer, _ in
             guard let self = self else { return }
-            guard self.isCurrentActiveRenderer(observedRenderer) else { return }
-            self.delegate?.audioRendererDidChangeStatus(self, status: observedRenderer.status)
+            guard let token = self.activeRendererTokenIfCurrent(observedRenderer) else { return }
+            self.notifyStatusChanged(rendererToken: token, status: observedRenderer.status)
         }
     }
 
@@ -405,11 +445,12 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             }
 
             if renderer.status == .failed, let error = renderer.error {
-                guard self.isCurrentActiveRenderer(renderer) else { return }
+                guard let token = self.activeRendererTokenIfCurrent(renderer) else { return }
                 let errStr = "[AudioRenderer] ❌ Render error: \(error.localizedDescription)"
                 print(errStr)
                 logger.error("\(errStr, privacy: .public)")
-                delegate?.audioRendererDidEncounterError(self, error: error)
+                self.notifyErrorEncountered(rendererToken: token, error: error)
+                return
             }
         }
     }
