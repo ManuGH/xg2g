@@ -161,7 +161,7 @@ struct DeterministicZapTransactionTests {
             let error = NSError(domain: "AVFoundationErrorDomain", code: -11800,
                                 userInfo: [NSLocalizedDescriptionKey: "controlled failure"])
             failureReason = error
-            session.audioRendererDidEncounterError(anyRenderer, error: error)
+            session.audioRendererDidEncounterError(anyRenderer, rendererToken: activeRendererToken, error: error)
         }
 
         /// The delegate signature names the concrete type and nothing is read from it,

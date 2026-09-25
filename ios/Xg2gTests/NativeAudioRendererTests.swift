@@ -99,7 +99,7 @@ struct NativeAudioRendererTests {
 
         // Trigger an audio renderer failure
         let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
-        pipeline.audioRendererDidEncounterError(realRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(realRenderer, rendererToken: realRenderer.activeRendererToken, error: simulatedError)
 
         try await Task.sleep(nanoseconds: 50_000_000)
 

@@ -67,7 +67,7 @@ import Testing
 
         // Trigger fatal audio failure during active session
         let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
-        pipeline.audioRendererDidEncounterError(realRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(realRenderer, rendererToken: realRenderer.activeRendererToken, error: simulatedError)
 
         // Deterministically drain the serial ingestQueue without arbitrary sleep timeouts
         pipeline.drainIngestQueueForTesting()
@@ -411,7 +411,7 @@ import Testing
 
         // Trigger an audio error that posts recovery onto ingestQueue
         let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
-        pipeline.audioRendererDidEncounterError(realRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(realRenderer, rendererToken: realRenderer.activeRendererToken, error: simulatedError)
 
         // Immediately invoke stopStreaming() concurrently / before recovery drains
         pipeline.stopStreaming()
@@ -601,7 +601,7 @@ import Testing
 
         // Step 4: A late audio error callback arrives from the old renderer of the stopped session
         let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Late error from old renderer"])
-        pipeline.audioRendererDidEncounterError(oldRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(oldRenderer, rendererToken: oldRenderer.activeRendererToken, error: simulatedError)
         pipeline.drainIngestQueueForTesting()
         await Task.yield()
 
@@ -615,7 +615,7 @@ import Testing
         detachedRenderer.detachFromClock()
         #expect(detachedRenderer.isAttachedToClock == false)
 
-        pipeline.audioRendererDidChangeStatus(detachedRenderer, status: .failed)
+        pipeline.audioRendererDidChangeStatus(detachedRenderer, rendererToken: detachedRenderer.activeRendererToken, status: .failed)
         pipeline.drainIngestQueueForTesting()
         await Task.yield()
 
@@ -631,7 +631,7 @@ import Testing
         let activeRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
         #expect(activeRenderer.isAttachedToClock == true)
 
-        pipeline.audioRendererDidEncounterError(activeRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(activeRenderer, rendererToken: activeRenderer.activeRendererToken, error: simulatedError)
         #expect(pipeline.lifecycle == .recovering)
 
         pipeline.stopStreaming()
@@ -655,6 +655,7 @@ import Testing
         }
         let token1 = nativeAudio.activeRendererToken
         let sync1 = pipeline.presentationSynchronizer
+        let epoch1 = pipeline.recoveryEpoch
 
         let anchor1 = CMTime(value: 100_000, timescale: 90_000)
         pipeline.clock.start(at: anchor1)
@@ -732,7 +733,6 @@ import Testing
         #expect(pipeline.presentationSynchronizer === sync2)
 
         // Step 5: Test delayed recovery block queued for old session generation and token arriving on ingestQueue
-        let epoch1 = pipeline.recoveryEpoch
         pipeline.simulateDelayedAudioRecoveryBlockForTesting(
             sessionGeneration: gen1,
             rendererToken: token1,

@@ -2112,17 +2112,24 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     private func handleAudioRendererWasFlushedAutomatically(_ notification: Notification) {
-        let msg = "[1080i50-AUDIO] ⚠️ Audio renderer was flushed automatically by system — re-anchoring"
-        print(msg)
-        logger.notice("\(msg, privacy: .public)")
-        TelemetryServer.shared.log(msg)
+        // Ensure notification corresponds to this pipeline's active attached renderer
+        guard let flushedRenderer = notification.object as? AVSampleBufferAudioRenderer else { return }
+        guard let nativeAudio = audioRenderer as? NativeTSAudioRenderer,
+              let matchingToken = nativeAudio.activeRendererTokenIfCurrent(flushedRenderer) else {
+            return
+        }
 
         let (currentGen, currentToken) = currentSessionAndRendererIdentity()
-        guard currentGen > 0 else { return }
+        guard currentGen > 0, matchingToken == currentToken else { return }
 
         guard let recovery = beginRecovery(forSessionGeneration: currentGen, rendererToken: currentToken, reason: "renderer flushed by the system") else {
             return
         }
+
+        let msg = "[1080i50-AUDIO] ⚠️ Audio renderer was flushed automatically by system — re-anchoring"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
 
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
@@ -2205,10 +2212,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
-    public func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
-        audioRendererDidEncounterError(renderer, rendererToken: audioRenderer.activeRendererToken, error: error)
-    }
-
     public func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, rendererToken: Int64, status: AVQueuedSampleBufferRenderingStatus) {
         let (currentGen, currentToken) = currentSessionAndRendererIdentity()
         guard currentGen > 0 else { return }
@@ -2220,10 +2223,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if status == .failed {
             audioRendererDidEncounterError(renderer, rendererToken: rendererToken, error: renderer.audioRenderer.error ?? NSError(domain: "AVFoundation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio renderer status failed"]))
         }
-    }
-
-    public func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
-        audioRendererDidChangeStatus(renderer, rendererToken: audioRenderer.activeRendererToken, status: status)
     }
 
     // MARK: - PESPacketAssemblerDelegate

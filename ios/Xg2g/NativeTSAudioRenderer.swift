@@ -14,16 +14,6 @@ public protocol NativeTSAudioRendererDelegate: AnyObject, Sendable {
     func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, rendererToken: Int64, status: AVQueuedSampleBufferRenderingStatus)
 }
 
-public extension NativeTSAudioRendererDelegate {
-    func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
-        audioRendererDidEncounterError(renderer, rendererToken: renderer.activeRendererToken, error: error)
-    }
-
-    func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
-        audioRendererDidChangeStatus(renderer, rendererToken: renderer.activeRendererToken, status: status)
-    }
-}
-
 /// Plays compressed audio (`CMSampleBuffer`s) using `AVSampleBufferAudioRenderer`
 /// synchronized via `AVSampleBufferRenderSynchronizer`.
 ///
@@ -55,7 +45,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         return _rendererToken
     }
 
-    private func activeRendererTokenIfCurrent(_ renderer: AVSampleBufferAudioRenderer) -> Int64? {
+    public func activeRendererTokenIfCurrent(_ renderer: AVSampleBufferAudioRenderer) -> Int64? {
         bufferLock.lock()
         defer { bufferLock.unlock() }
         guard _isAttachedToClock && renderer === _audioRenderer else { return nil }
