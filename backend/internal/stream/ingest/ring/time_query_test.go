@@ -925,15 +925,10 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		t.Errorf("Attach KeyframeOffset = %d, want 0", attach.KeyframeOffset)
 	}
 
-	// 1. Consume initial preamble and packet 1 before program change
-	preambleBuf := make([]byte, 10*TSPacketSize)
-	nPreamble, err := reader.Read(preambleBuf)
-	if err != nil {
-		t.Fatalf("reader.Read initial preamble failed: %v", err)
-	}
+	// 1. Verify attach.Preamble carries the initial PMT PID 4096 (matching NewPrimedSubscriber contract)
 	hasInitialPMT := false
-	for i := 0; i+TSPacketSize <= nPreamble; i += TSPacketSize {
-		pkt := preambleBuf[i : i+TSPacketSize]
+	for i := 0; i+TSPacketSize <= len(attach.Preamble); i += TSPacketSize {
+		pkt := attach.Preamble[i : i+TSPacketSize]
 		pid := uint16(pkt[1]&0x1F)<<8 | uint16(pkt[2])
 		if pid == 4096 {
 			hasInitialPMT = true
@@ -943,13 +938,14 @@ func TestMasterRing_Reader_SubsequentProgramChange(t *testing.T) {
 		t.Fatalf("expected initial preamble to carry PMT PID 4096")
 	}
 
-	pkt1Buf := make([]byte, TSPacketSize)
-	nPkt1, err := reader.Read(pkt1Buf)
-	if err != nil {
-		t.Fatalf("reader.Read packet 1 failed: %v", err)
+	// Reader reads stream bytes starting at keyframe offset 0 (tag 1)
+	pkt0Buf := make([]byte, TSPacketSize)
+	nPkt0, err := reader.Read(pkt0Buf)
+	if err != nil || nPkt0 != TSPacketSize {
+		t.Fatalf("reader.Read packet 0 failed: n=%d, err=%v", nPkt0, err)
 	}
-	if nPkt1 != TSPacketSize || pkt1Buf[2] != 1 {
-		t.Fatalf("expected packet 1 with tag 1, got %d bytes, tag %d", nPkt1, pkt1Buf[2])
+	if pkt0Buf[2] != 1 {
+		t.Fatalf("expected packet 0 with tag 1, got tag %d", pkt0Buf[2])
 	}
 
 	// 2. Push Program 2 transition chunk (establishing identity change at offset 188).
@@ -1964,4 +1960,172 @@ func TestMasterRing_ExtractWindow_TrackDiscontinuities(t *testing.T) {
 			t.Errorf("got %v, want ErrWindowHasTrackDiscontinuity", err)
 		}
 	})
+}
+
+func TestMasterRing_SeekToTime_VideoPIDScoped_AudioDoesNotWidenRange(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Ingest 4 packets (4 * 188 bytes = 752 bytes):
+	// Packet 0: Video RAP 1 (offset 0, PTS 10000, PID 256)
+	// Packet 1: Audio PES 1 (offset 188, PTS 5000, PID 257) - leading audio PTS
+	// Packet 2: Video RAP 2 (offset 376, PTS 30000, PID 256)
+	// Packet 3: Audio PES 2 (offset 564, PTS 45000, PID 257) - trailing audio PTS
+	chunk := make([]byte, 4*TSPacketSize)
+	copy(chunk[0:TSPacketSize], makeTSPacket(true, false, 0))
+	copy(chunk[TSPacketSize:2*TSPacketSize], makeTSPacket(false, false, 1))
+	copy(chunk[2*TSPacketSize:3*TSPacketSize], makeTSPacket(true, false, 2))
+	copy(chunk[3*TSPacketSize:4*TSPacketSize], makeTSPacket(false, false, 3))
+
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypeDiscontinuity,
+						Discontinuity: mediafacts.DiscontinuityRecord{
+							Scope:         mediafacts.DiscontinuityScopeProgram,
+							ObservedAt:    0,
+							HasEpochAfter: true,
+							EpochAfter:    1,
+						},
+					},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+					pesRecord(mediafacts.TimingPoint{Epoch: 1, PID: 257, HasPTS: true, PTS90k: 5000, SubjectAt: 188, ObservedAt: 188}),
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 30000, SubjectAt: 376, ObservedAt: 376}),
+					pesRecord(mediafacts.TimingPoint{Epoch: 1, PID: 257, HasPTS: true, PTS90k: 45000, SubjectAt: 564, ObservedAt: 564}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, chunk)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	// 1. Audio leading PTS is 5000; Video range is [10000, 30000].
+	// Seeking at PTS 6000 or 8000 must fail with ErrPTSOutOfRange, because video presentation starts at 10000.
+	for _, mode := range []timeline.SeekMode{timeline.SeekModePreceding, timeline.SeekModeFollowing, timeline.SeekModeNearest} {
+		_, err := r.SeekToTime(1, 6000, mode)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("SeekToTime(1, 6000, %v) error = %v, want ErrPTSOutOfRange", mode, err)
+		}
+	}
+
+	// 2. Audio trailing PTS is 45000; Video range is [10000, 30000].
+	// Seeking at PTS 35000 or 40000 must fail with ErrPTSOutOfRange, because video presentation ends at 30000.
+	for _, mode := range []timeline.SeekMode{timeline.SeekModePreceding, timeline.SeekModeFollowing, timeline.SeekModeNearest} {
+		_, err := r.SeekToTime(1, 35000, mode)
+		if !errors.Is(err, ErrPTSOutOfRange) {
+			t.Errorf("SeekToTime(1, 35000, %v) error = %v, want ErrPTSOutOfRange", mode, err)
+		}
+	}
+
+	// 3. Seeking within [10000, 30000] succeeds on Video RAPs
+	res, err := r.SeekToTime(1, 15000, timeline.SeekModePreceding)
+	if err != nil {
+		t.Fatalf("SeekToTime(1, 15000, Preceding) failed: %v", err)
+	}
+	if res.Offset != 0 || res.RAP.PTS90k != 10000 {
+		t.Errorf("res mismatch: offset=%d, pts=%d", res.Offset, res.RAP.PTS90k)
+	}
+
+	res2, err := r.SeekToTime(1, 20000, timeline.SeekModeFollowing)
+	if err != nil {
+		t.Fatalf("SeekToTime(1, 20000, Following) failed: %v", err)
+	}
+	if res2.Offset != 376 || res2.RAP.PTS90k != 30000 {
+		t.Errorf("res2 mismatch: offset=%d, pts=%d", res2.Offset, res2.RAP.PTS90k)
+	}
+}
+
+func TestMasterRing_NewPrimedSubscriberAtTime_NoPreambleDoubleDelivery(t *testing.T) {
+	core := &mockTimeCore{
+		epoch:    1,
+		hasPMT:   true,
+		videoPID: 256,
+	}
+
+	r := NewMasterRingWithCore(100*TSPacketSize, core, WithCanonicalTimeline())
+	defer r.Close()
+
+	ctx := context.Background()
+
+	// Push keyframe at offset 0 (tag 42)
+	core.customResult = func(startOffset int64, c []byte) mediafacts.ParseResult {
+		return mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: startOffset + int64(len(c)),
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+			},
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypeDiscontinuity,
+						Discontinuity: mediafacts.DiscontinuityRecord{
+							Scope:         mediafacts.DiscontinuityScopeProgram,
+							ObservedAt:    0,
+							HasEpochAfter: true,
+							EpochAfter:    1,
+						},
+					},
+					rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 0, ObservedAt: 0}),
+				},
+			},
+			Facts: mediafacts.Facts{HasPAT: true, HasPMT: true, PMTPID: 4096, VideoPID: 256},
+			PSI: mediafacts.ActivePSI{
+				PATSections: [][]byte{{0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00, 0xE8, 0xF9, 0x5E, 0x7D}},
+				PMTSections: [][]byte{{0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x00, 0xF0, 0x00, 0x1B, 0xE1, 0x00, 0xF0, 0x00, 0xAA, 0xBB, 0xCC, 0xDD}},
+			},
+		}
+	}
+
+	_, err := r.Push(ctx, makeTSPacket(true, false, 42))
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+
+	attach, reader, err := r.NewPrimedSubscriberAtTime(1, 10000, timeline.SeekModePreceding)
+	if err != nil {
+		t.Fatalf("NewPrimedSubscriberAtTime failed: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	// Preamble must be present in attach point for caller to deliver
+	if len(attach.Preamble) == 0 {
+		t.Fatalf("attach.Preamble is empty")
+	}
+
+	// Reader itself must NOT deliver the preamble in Read(); it must directly yield the ring packet at offset 0
+	buf := make([]byte, TSPacketSize)
+	n, err := reader.Read(buf)
+	if err != nil || n != TSPacketSize {
+		t.Fatalf("reader.Read failed: n=%d, err=%v", n, err)
+	}
+	if buf[2] != 42 {
+		t.Fatalf("reader.Read yielded unexpected packet tag %d, want 42 (preamble was erroneously double-queued into reader)", buf[2])
+	}
 }

@@ -795,7 +795,7 @@ func (idx *MediaIndex) presentationTimelineLocked(epoch mediafacts.TimelineEpoch
 
 	// 1. Evaluate RAPs for this epoch
 	for _, r := range idx.rapsByOffset {
-		if r.Epoch == epoch {
+		if r.HasTimingBinding && r.Epoch == epoch {
 			if !pt.HasFirstRAP {
 				pt.HasFirstRAP = true
 				pt.FirstRAPOffset = r.Offset
@@ -856,7 +856,7 @@ func (idx *MediaIndex) presentationTimelineLocked(epoch mediafacts.TimelineEpoch
 
 	// 3. Collect Discontinuities for this epoch
 	for _, d := range idx.discontinuities {
-		if d.EpochBefore == epoch || d.EpochAfter == epoch {
+		if (d.HasEpochBefore && d.EpochBefore == epoch) || (d.HasEpochAfter && d.EpochAfter == epoch) {
 			pt.Discontinuities = append(pt.Discontinuities, d)
 		}
 	}

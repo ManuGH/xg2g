@@ -647,10 +647,26 @@ func (r *MasterRing) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode 
 	return r.seekToTimeLocked(epoch, pts, mode)
 }
 
+// videoPIDForEpochLocked determines the target video PID for an epoch under MasterRing.mu.
+// It checks retained RAPs for the epoch first; if none specify a non-zero PID, it falls back to r.facts.VideoPID.
+func (r *MasterRing) videoPIDForEpochLocked(epoch mediafacts.TimelineEpoch) uint16 {
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+	for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+		if rap.HasTimingBinding && rap.Epoch == epoch && rap.PID != 0 {
+			return rap.PID
+		}
+	}
+	if r.facts.VideoPID != 0 {
+		return r.facts.VideoPID
+	}
+	return 0
+}
+
 // presentationRangeLocked computes the retained presentation PTS bounds [earliestPTS, latestPTS]
 // for an epoch within [tail, head).
 // It returns ErrEpochNotFound if the epoch is unknown or not retained,
-// and ErrEpochNoTiming if the epoch has no presentation timing points with PTS.
+// and ErrEpochNoTiming if the epoch has no presentation timing points with PTS for the video track.
 func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (int64, int64, error) {
 	tail := r.store.tailOffset()
 	head := r.store.headOffset()
@@ -670,7 +686,7 @@ func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (in
 	}
 	if !epochFound {
 		for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
-			if rap.Epoch == epoch {
+			if rap.HasTimingBinding && rap.Epoch == epoch {
 				epochFound = true
 				break
 			}
@@ -688,11 +704,12 @@ func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (in
 		return 0, 0, ErrEpochNotFound
 	}
 
+	videoPID := r.videoPIDForEpochLocked(epoch)
 	var earliestPTS, latestPTS int64
 	var hasTiming bool
 
 	for _, tp := range r.timelineIndex.TimingPoints() {
-		if tp.Epoch == epoch && tp.SubjectAt >= tail && tp.SubjectAt < head && tp.HasPTS {
+		if tp.Epoch == epoch && (videoPID == 0 || tp.PID == videoPID) && tp.SubjectAt >= tail && tp.SubjectAt < head && tp.HasPTS {
 			if !hasTiming {
 				hasTiming = true
 				earliestPTS = tp.PTS90k
@@ -709,7 +726,7 @@ func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (in
 	}
 
 	for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
-		if rap.Epoch == epoch && rap.Offset >= tail && rap.Offset < head && rap.HasPTS {
+		if rap.HasTimingBinding && rap.Epoch == epoch && (videoPID == 0 || rap.PID == videoPID) && rap.Offset >= tail && rap.Offset < head && rap.HasPTS {
 			if !hasTiming {
 				hasTiming = true
 				earliestPTS = rap.PTS90k
@@ -779,7 +796,9 @@ func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64,
 }
 
 // NewPrimedSubscriberAtTime atomically creates and positions a SubscriberReader at the given epoch and PTS.
-// It primes the reader with the active PAT/PMT preamble and clears overrun/resync state.
+// It returns a PrimedAttachPoint carrying the active PAT/PMT preamble and the keyframe offset,
+// and returns a SubscriberReader positioned directly at that keyframe offset without pre-loading the preamble,
+// matching the contract of NewPrimedSubscriber.
 // It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
 func (r *MasterRing) NewPrimedSubscriberAtTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (PrimedAttachPoint, *SubscriberReader, error) {
 	r.mu.Lock()
@@ -799,9 +818,6 @@ func (r *MasterRing) NewPrimedSubscriberAtTime(epoch mediafacts.TimelineEpoch, p
 
 	reader := r.newSubscriberReaderLocked(seekRes.Offset)
 	reader.generation = seekRes.Generation
-	reader.pendingPrefix = seekRes.Preamble
-	reader.pendingPrefixGeneration = seekRes.Generation
-	reader.awaitingRandomAccess = false
 
 	return attach, reader, nil
 }

@@ -290,7 +290,7 @@ func (tr *ringTimelineReader) presentationTimelineLocked(epoch mediafacts.Timeli
 	pt.LastRAPOffset = 0
 
 	for _, r := range raps {
-		if r.Epoch != epoch || r.Offset < tail || r.Offset >= head {
+		if !r.HasTimingBinding || r.Epoch != epoch || r.Offset < tail || r.Offset >= head {
 			continue
 		}
 		if !pt.HasFirstRAP {
@@ -304,6 +304,14 @@ func (tr *ringTimelineReader) presentationTimelineLocked(epoch mediafacts.Timeli
 			pt.JoinableRAPs++
 		}
 	}
+
+	var clampedDisc []timeline.DiscontinuityEntry
+	for _, d := range pt.Discontinuities {
+		if d.ObservedAt >= tail && d.ObservedAt < head {
+			clampedDisc = append(clampedDisc, d)
+		}
+	}
+	pt.Discontinuities = clampedDisc
 
 	return pt, true
 }

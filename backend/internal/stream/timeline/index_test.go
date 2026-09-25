@@ -2260,3 +2260,121 @@ func TestMediaIndex_ApplyIngestResult_BoundsValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestPresentationTimeline_UnboundRAPsAndFlaglessDiscontinuitiesNotAttributedToEpoch0(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// 1. Establish Epoch 0 with a canonical program start discontinuity and timing point
+	res0 := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 376,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:         mediafacts.DiscontinuityScopeProgram,
+						ObservedAt:    0,
+						HasEpochAfter: true,
+						EpochAfter:    0,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypePES,
+					PES: mediafacts.TimingPoint{
+						Epoch:      0,
+						PID:        256,
+						HasPTS:     true,
+						PTS90k:     90000,
+						SubjectAt:  0,
+						ObservedAt: 0,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(res0); err != nil {
+		t.Fatalf("ApplyIngestResult res0 failed: %v", err)
+	}
+
+	// 2. Ingest an unbound RAP (EventRandomAccessPoint without TimingRecordRAP) and a track-scope discontinuity
+	// Track-scope discontinuity has HasEpochBefore=false and HasEpochAfter=false.
+	resUnbound := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 752,
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+		},
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:          mediafacts.DiscontinuityScopeTrack,
+						TrackPID:       256,
+						Reason:         mediafacts.DiscontinuityReasonTransportTimingLoss,
+						ObservedAt:     400,
+						HasEpochBefore: false,
+						HasEpochAfter:  false,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(resUnbound); err != nil {
+		t.Fatalf("ApplyIngestResult resUnbound failed: %v", err)
+	}
+
+	// 3. Ingest a bound RAP for Epoch 0
+	resBound := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 1128,
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 752, Joinable: true},
+		},
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+					RAP: mediafacts.TimingPoint{
+						Epoch:      0,
+						PID:        256,
+						HasPTS:     true,
+						PTS90k:     95000,
+						SubjectAt:  752,
+						ObservedAt: 752,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(resBound); err != nil {
+		t.Fatalf("ApplyIngestResult resBound failed: %v", err)
+	}
+
+	pt, ok := idx.PresentationTimeline(0)
+	if !ok {
+		t.Fatalf("expected PresentationTimeline(0) to exist")
+	}
+
+	// Unbound RAP at offset 376 must NOT be counted into Epoch 0
+	if pt.TotalRAPs != 1 {
+		t.Errorf("pt.TotalRAPs = %d, want 1 (unbound RAP must not be counted)", pt.TotalRAPs)
+	}
+	if !pt.HasFirstRAP || pt.FirstRAPOffset != 752 {
+		t.Errorf("pt.FirstRAPOffset = %d (has=%v), want 752", pt.FirstRAPOffset, pt.HasFirstRAP)
+	}
+	if !pt.HasLastRAP || pt.LastRAPOffset != 752 {
+		t.Errorf("pt.LastRAPOffset = %d (has=%v), want 752", pt.LastRAPOffset, pt.HasLastRAP)
+	}
+
+	// Track-scope discontinuity at 400 (without HasEpoch* flags) must NOT be attributed to Epoch 0
+	for _, d := range pt.Discontinuities {
+		if d.Scope == mediafacts.DiscontinuityScopeTrack {
+			t.Errorf("track-scope discontinuity without epoch flags was misattributed to Epoch 0: %+v", d)
+		}
+	}
+}
