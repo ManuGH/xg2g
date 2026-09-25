@@ -56,6 +56,9 @@ public protocol PlaybackAudioOutput: AnyObject {
     /// Replaces the renderer after a failure or teardown, carrying audibility across.
     func reset()
 
+    /// True while the audio renderer is actively attached to its playback clock synchronizer.
+    var isAttachedToClock: Bool { get }
+
     /// Whether this session contributes sound. False until it owns the surface.
     func setAudible(_ audible: Bool)
 

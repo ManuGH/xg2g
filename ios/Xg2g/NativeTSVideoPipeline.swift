@@ -884,6 +884,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ingest?.close()
         notePlaybackStateChanged()
         ingest = nil
+        sessionState = PipelineSessionState(generation: 0)
 
         stopSystemMonitoring()
         removeFirstPictureObserver()
@@ -2039,17 +2040,35 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
+        guard sessionState.generation > 0 else {
+            let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error for stopped session (generation \(sessionState.generation))"
+            logger.notice("\(msg, privacy: .public)")
+            return
+        }
+
+        if let activeNative = audioRenderer as? NativeTSAudioRenderer {
+            guard renderer === activeNative, activeNative.isAttachedToClock else {
+                let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error from detached or mismatched renderer"
+                logger.notice("\(msg, privacy: .public)")
+                return
+            }
+        } else {
+            guard audioRenderer.isAttachedToClock else {
+                let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error from detached audio output"
+                logger.notice("\(msg, privacy: .public)")
+                return
+            }
+        }
+
         let msg = "[1080i50-AUDIO] ❌ Audio renderer error: \(error.localizedDescription) — resetting"
         print(msg)
         logger.error("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
 
-        guard sessionState.generation > 0 else { return }
-
         let recovery = beginRecovery("audio renderer error")
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
-            guard self.isCurrentRecovery(recovery) else { return }
+            guard self.sessionState.generation > 0, self.isCurrentRecovery(recovery) else { return }
             self.clock.stop()
             self.audioRenderer.recoverAudioRenderer()
             self.isAudioClockStarted = false
@@ -2071,7 +2090,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
-        if status == .failed && sessionState.generation > 0 {
+        guard sessionState.generation > 0 else { return }
+        if let activeNative = audioRenderer as? NativeTSAudioRenderer {
+            guard renderer === activeNative, activeNative.isAttachedToClock else { return }
+        } else {
+            guard audioRenderer.isAttachedToClock else { return }
+        }
+        if status == .failed {
             audioRendererDidEncounterError(renderer, error: renderer.audioRenderer.error ?? NSError(domain: "AVFoundation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio renderer status failed"]))
         }
     }

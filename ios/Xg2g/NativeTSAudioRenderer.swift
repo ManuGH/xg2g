@@ -24,6 +24,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     public private(set) var clock: PlaybackClock
     public private(set) var audioRenderer: AVSampleBufferAudioRenderer
+    public private(set) var isAttachedToClock: Bool = true
 
     public var synchronizer: AVSampleBufferRenderSynchronizer {
         clock.synchronizer
@@ -125,6 +126,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         bufferLock.lock()
         self.audioRenderer = freshRenderer
         self.clock.attachRenderer(freshRenderer)
+        self.isAttachedToClock = true
         setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0
@@ -137,6 +139,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     private func setupStatusObserver() {
         statusObserver = audioRenderer.observe(\.status, options: [.new]) { [weak self] renderer, _ in
             guard let self = self else { return }
+            guard self.isAttachedToClock, renderer === self.audioRenderer else { return }
             self.delegate?.audioRendererDidChangeStatus(self, status: renderer.status)
         }
     }
@@ -369,6 +372,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             }
 
             if renderer.status == .failed, let error = renderer.error {
+                guard self.isAttachedToClock, renderer === self.audioRenderer else { return }
                 let errStr = "[AudioRenderer] ❌ Render error: \(error.localizedDescription)"
                 print(errStr)
                 logger.error("\(errStr, privacy: .public)")
@@ -396,6 +400,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     /// Detaches the active audio renderer from the clock, keeping both alive until AVFoundation finishes.
     public func detachFromClock() {
         bufferLock.lock()
+        isAttachedToClock = false
         pendingBuffers.removeAll(keepingCapacity: true)
         if isRequestingData {
             audioRenderer.stopRequestingMediaData()
@@ -421,6 +426,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         bufferLock.lock()
         self.audioRenderer = renderer
         self.clock.attachRenderer(renderer)
+        self.isAttachedToClock = true
         setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0

@@ -572,4 +572,68 @@ import Testing
         #expect(clock.rate == 0.0)
         #expect(clock.isClockRunning == false)
     }
+
+    // MARK: - 14. Late Audio Error Callback Rejection After Stop or From Detached Renderer
+
+    @Test func lateAudioErrorFromStoppedSessionOrDetachedRendererIsRejectedWithoutDisruptingClock() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let neutralURL = URL(string: "http://127.0.0.1:8080/live/fixture.ts")!
+
+        // Step 1: Start streaming on session
+        pipeline.startStreaming(url: neutralURL)
+        #expect(pipeline.isStreaming == true)
+
+        let oldRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
+        let oldSync = pipeline.presentationSynchronizer
+        #expect(oldRenderer.isAttachedToClock == true)
+
+        // Step 2: Stop streaming
+        pipeline.stopStreaming()
+        #expect(pipeline.isStreaming == false)
+        #expect(pipeline.presentationSynchronizer !== oldSync)
+
+        // Step 3: Simulate that the clock was restarted or prepared on the fresh synchronizer
+        let restartAnchor = CMTime(value: 300_000, timescale: 90_000)
+        pipeline.clock.start(at: restartAnchor)
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+
+        // Step 4: A late audio error callback arrives from the old renderer of the stopped session
+        let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Late error from old renderer"])
+        pipeline.audioRendererDidEncounterError(oldRenderer, error: simulatedError)
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        // Assert: The callback must be rejected; clock must NOT be stopped, no recovery initiated
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+
+        // Step 5: A late failure callback arrives from an explicitly detached renderer
+        let detachedRenderer = NativeTSAudioRenderer(clock: PlaybackClock())
+        detachedRenderer.detachFromClock()
+        #expect(detachedRenderer.isAttachedToClock == false)
+
+        pipeline.audioRendererDidChangeStatus(detachedRenderer, status: .failed)
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        // Assert: Detached renderer callback must be rejected; clock continues running
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+
+        // Step 6: Verify that active error recovery still works when session is actually streaming
+        pipeline.startStreaming(url: neutralURL)
+        #expect(pipeline.isStreaming == true)
+
+        let activeRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
+        #expect(activeRenderer.isAttachedToClock == true)
+
+        pipeline.audioRendererDidEncounterError(activeRenderer, error: simulatedError)
+        #expect(pipeline.lifecycle == .recovering)
+
+        pipeline.stopStreaming()
+    }
 }

@@ -96,11 +96,15 @@ struct DeterministicZapTransactionTests {
             spans.removeAll()
         }
 
+        private(set) var isAttachedToClock: Bool = true
+
         func detachFromClock() {
+            isAttachedToClock = false
             flush()
         }
 
         func attachToClock() {
+            isAttachedToClock = true
             status = .rendering
             failureReason = nil
         }
