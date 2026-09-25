@@ -59,6 +59,9 @@ public protocol PlaybackAudioOutput: AnyObject {
     /// True while the audio renderer is actively attached to its playback clock synchronizer.
     var isAttachedToClock: Bool { get }
 
+    /// Monotonically increasing identity token for the active underlying audio renderer instance.
+    var activeRendererToken: Int64 { get }
+
     /// Whether this session contributes sound. False until it owns the surface.
     func setAudible(_ audible: Bool)
 

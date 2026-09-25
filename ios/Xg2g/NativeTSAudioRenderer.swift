@@ -23,8 +23,33 @@ public protocol NativeTSAudioRendererDelegate: AnyObject, Sendable {
 public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     public private(set) var clock: PlaybackClock
-    public private(set) var audioRenderer: AVSampleBufferAudioRenderer
-    public private(set) var isAttachedToClock: Bool = true
+    private let bufferLock = NSLock()
+    private var _audioRenderer: AVSampleBufferAudioRenderer
+    public var audioRenderer: AVSampleBufferAudioRenderer {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return _audioRenderer
+    }
+
+    private var _isAttachedToClock: Bool = true
+    public var isAttachedToClock: Bool {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return _isAttachedToClock
+    }
+
+    private var _rendererToken: Int64 = 1
+    public var activeRendererToken: Int64 {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return _rendererToken
+    }
+
+    private func isCurrentActiveRenderer(_ renderer: AVSampleBufferAudioRenderer) -> Bool {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return _isAttachedToClock && renderer === _audioRenderer
+    }
 
     public var synchronizer: AVSampleBufferRenderSynchronizer {
         clock.synchronizer
@@ -39,7 +64,6 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     private var enqueuedStartPTS: CMTime?
     private var enqueuedEndPTS: CMTime?
     private var lastDiagnosticLogTime: CFTimeInterval = 0
-    private let bufferLock = NSLock()
 
     /// True while a backpressure `requestMediaDataWhenReady` is armed. Guarded by
     /// `bufferLock` together with `pendingBuffers`, because arming and tearing
@@ -96,27 +120,29 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     }
 
     public var status: AVQueuedSampleBufferRenderingStatus {
-        return audioRenderer.status
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return _audioRenderer.status
     }
 
     private var statusObserver: NSKeyValueObservation?
 
     public init(clock: PlaybackClock = PlaybackClock()) {
         self.clock = clock
-        self.audioRenderer = AVSampleBufferAudioRenderer()
-        clock.attachRenderer(audioRenderer)
+        let renderer = AVSampleBufferAudioRenderer()
+        self._audioRenderer = renderer
+        clock.attachRenderer(renderer)
         // Silent until granted audibility. A session is built to be prepared, and
         // preparing one must never be heard.
-        audioRenderer.isMuted = true
-        audioRenderer.volume = 0.0
+        renderer.isMuted = true
+        renderer.volume = 0.0
         setupStatusObserver()
     }
 
     /// Binds this audio renderer to a session's master playback clock.
     public func bind(to newClock: PlaybackClock) {
         guard self.clock !== newClock else { return }
-        let oldRenderer = self.audioRenderer
-        self.clock.detachRenderer(oldRenderer)
+        detachFromClock()
 
         self.clock = newClock
         let freshRenderer = AVSampleBufferAudioRenderer()
@@ -124,9 +150,10 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         freshRenderer.volume = isAudible ? 1.0 : 0.0
 
         bufferLock.lock()
-        self.audioRenderer = freshRenderer
+        self._audioRenderer = freshRenderer
+        self._isAttachedToClock = true
+        self._rendererToken += 1
         self.clock.attachRenderer(freshRenderer)
-        self.isAttachedToClock = true
         setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0
@@ -137,10 +164,12 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     }
 
     private func setupStatusObserver() {
-        statusObserver = audioRenderer.observe(\.status, options: [.new]) { [weak self] renderer, _ in
+        statusObserver?.invalidate()
+        let renderer = _audioRenderer
+        statusObserver = renderer.observe(\.status, options: [.new]) { [weak self] observedRenderer, _ in
             guard let self = self else { return }
-            guard self.isAttachedToClock, renderer === self.audioRenderer else { return }
-            self.delegate?.audioRendererDidChangeStatus(self, status: renderer.status)
+            guard self.isCurrentActiveRenderer(observedRenderer) else { return }
+            self.delegate?.audioRendererDidChangeStatus(self, status: observedRenderer.status)
         }
     }
 
@@ -155,9 +184,13 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     /// is player-lifetime policy, and a playback session that owned it would reconfigure
     /// the whole process every time a channel was prepared.
     public func setAudible(_ audible: Bool) {
+        bufferLock.lock()
         isAudible = audible
-        audioRenderer.isMuted = !audible
-        audioRenderer.volume = audible ? 1.0 : 0.0
+        let renderer = _audioRenderer
+        bufferLock.unlock()
+
+        renderer.isMuted = !audible
+        renderer.volume = audible ? 1.0 : 0.0
     }
 
     /// Whether this renderer has been granted audibility.
@@ -295,18 +328,18 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                 // Never leave the request armed with an empty queue — that is the
                 // exact state the spin loop lived in.
                 if isRequestingData {
-                    audioRenderer.stopRequestingMediaData()
+                    _audioRenderer.stopRequestingMediaData()
                     isRequestingData = false
                 }
                 bufferLock.unlock()
                 return
             }
 
-            guard audioRenderer.isReadyForMoreMediaData else {
+            guard _audioRenderer.isReadyForMoreMediaData else {
                 // Full. Ask to be told when it drains, and stop pushing until then.
                 if !isRequestingData {
                     isRequestingData = true
-                    audioRenderer.requestMediaDataWhenReady(on: renderQueue) { [weak self] in
+                    _audioRenderer.requestMediaDataWhenReady(on: renderQueue) { [weak self] in
                         self?.drainPendingBuffers()
                     }
                 }
@@ -314,7 +347,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                 return
             }
 
-            let renderer = audioRenderer
+            let renderer = _audioRenderer
             let buffer = pendingBuffers.removeFirst()
             enqueuedCount += 1
             // Remembered because readiness is asked about the timeline, not about the
@@ -372,7 +405,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             }
 
             if renderer.status == .failed, let error = renderer.error {
-                guard self.isAttachedToClock, renderer === self.audioRenderer else { return }
+                guard self.isCurrentActiveRenderer(renderer) else { return }
                 let errStr = "[AudioRenderer] ❌ Render error: \(error.localizedDescription)"
                 print(errStr)
                 logger.error("\(errStr, privacy: .public)")
@@ -389,31 +422,34 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         bufferLock.lock()
         pendingBuffers.removeAll(keepingCapacity: true)
         if isRequestingData {
-            audioRenderer.stopRequestingMediaData()
+            _audioRenderer.stopRequestingMediaData()
             isRequestingData = false
         }
+        let renderer = _audioRenderer
         bufferLock.unlock()
 
-        audioRenderer.flush()
+        renderer.flush()
     }
 
     /// Detaches the active audio renderer from the clock, keeping both alive until AVFoundation finishes.
     public func detachFromClock() {
         bufferLock.lock()
-        isAttachedToClock = false
+        _isAttachedToClock = false
+        _rendererToken += 1
         pendingBuffers.removeAll(keepingCapacity: true)
         if isRequestingData {
-            audioRenderer.stopRequestingMediaData()
+            _audioRenderer.stopRequestingMediaData()
             isRequestingData = false
         }
+        statusObserver?.invalidate()
+        statusObserver = nil
         enqueuedStartPTS = nil
         enqueuedEndPTS = nil
+        let oldRenderer = _audioRenderer
+        let activeClock = self.clock
         bufferLock.unlock()
 
-        audioRenderer.flush()
-
-        let oldRenderer = self.audioRenderer
-        let activeClock = self.clock
+        oldRenderer.flush()
         activeClock.detachRenderer(oldRenderer)
     }
 
@@ -424,9 +460,10 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         renderer.volume = isAudible ? 1.0 : 0.0
 
         bufferLock.lock()
-        self.audioRenderer = renderer
+        self._audioRenderer = renderer
         self.clock.attachRenderer(renderer)
-        self.isAttachedToClock = true
+        self._isAttachedToClock = true
+        self._rendererToken += 1
         setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0

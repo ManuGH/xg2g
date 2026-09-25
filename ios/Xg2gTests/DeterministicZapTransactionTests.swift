@@ -97,14 +97,17 @@ struct DeterministicZapTransactionTests {
         }
 
         private(set) var isAttachedToClock: Bool = true
+        private(set) var activeRendererToken: Int64 = 1
 
         func detachFromClock() {
             isAttachedToClock = false
+            activeRendererToken += 1
             flush()
         }
 
         func attachToClock() {
             isAttachedToClock = true
+            activeRendererToken += 1
             status = .rendering
             failureReason = nil
         }

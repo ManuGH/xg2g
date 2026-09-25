@@ -360,6 +360,39 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         return _recoveryEpoch
     }
 
+    /// Opens a recovery attempt bound to an active session generation and renderer token.
+    /// Returns the epoch if successfully opened, or nil if the session was stopped/retired or the renderer changed.
+    @discardableResult
+    private func beginRecovery(
+        forSessionGeneration expectedGeneration: Int,
+        rendererToken expectedToken: Int64,
+        reason: String
+    ) -> RecoveryEpoch? {
+        recoveryLock.lock()
+        defer { recoveryLock.unlock() }
+
+        sessionStateLock.lock()
+        let currentGen = _sessionState.generation
+        sessionStateLock.unlock()
+
+        guard currentGen == expectedGeneration, expectedGeneration > 0 else {
+            return nil
+        }
+
+        guard audioRenderer.isAttachedToClock, audioRenderer.activeRendererToken == expectedToken else {
+            return nil
+        }
+
+        _recoveryEpoch = _recoveryEpoch.next()
+        _lifecycle = .recovering
+        let epoch = _recoveryEpoch
+
+        let msg = "[1080i50-RECOVERY] ↻ \(epoch) opened for session gen-\(expectedGeneration): \(reason)"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        return epoch
+    }
+
     /// Opens a recovery attempt and returns its epoch.
     @discardableResult
     private func beginRecovery(_ reason: String) -> RecoveryEpoch {
@@ -373,6 +406,26 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
         return epoch
+    }
+
+    /// Whether an asynchronous recovery block still belongs to the active attempt, session generation, and renderer.
+    private func isCurrentRecovery(
+        _ epoch: RecoveryEpoch,
+        forSessionGeneration expectedGeneration: Int,
+        rendererToken expectedToken: Int64
+    ) -> Bool {
+        recoveryLock.lock()
+        defer { recoveryLock.unlock() }
+
+        guard _recoveryEpoch == epoch else { return false }
+
+        sessionStateLock.lock()
+        let currentGen = _sessionState.generation
+        sessionStateLock.unlock()
+
+        guard currentGen == expectedGeneration, expectedGeneration > 0 else { return false }
+        guard audioRenderer.isAttachedToClock, audioRenderer.activeRendererToken == expectedToken else { return false }
+        return true
     }
 
     /// Whether an asynchronous step still belongs to the current attempt.
@@ -470,6 +523,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    /// The stream zap/generation number currently active (0 when stopped).
+    public var activeSessionGeneration: Int {
+        sessionStateLock.lock()
+        defer { sessionStateLock.unlock() }
+        return _sessionState.generation
+    }
+
+    private func currentSessionAndRendererIdentity() -> (generation: Int, rendererToken: Int64) {
+        let gen = activeSessionGeneration
+        let token = audioRenderer.activeRendererToken
+        return (gen, token)
+    }
+
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
     private var systemMonitoringTimer: Timer?
@@ -521,6 +587,37 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// Deterministically drains any pending asynchronous work on the ingestQueue (test helper).
     public func drainIngestQueueForTesting() {
         ingestQueue.sync {}
+    }
+
+    /// Simulates an asynchronous audio recovery block queued for a specific session generation
+    /// and renderer token (used to verify that late-arriving blocks from overlapping stop/restart are discarded).
+    public func simulateDelayedAudioRecoveryBlockForTesting(
+        sessionGeneration: Int,
+        rendererToken: Int64,
+        epoch: RecoveryEpoch
+    ) {
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard self.isCurrentRecovery(epoch, forSessionGeneration: sessionGeneration, rendererToken: rendererToken) else {
+                let skipMsg = "[1080i50-AUDIO] ℹ️ Discarding stale audio recovery block for retired session gen-\(sessionGeneration)"
+                logger.notice("\(skipMsg, privacy: .public)")
+                return
+            }
+            self.clock.stop()
+            self.audioRenderer.recoverAudioRenderer()
+            self.isAudioClockStarted = false
+            self.firstAudioPTS = nil
+            self.firstDecodedPicturePTS = nil
+            self.firstVideoFieldPTS = nil
+            self.commitAnchor = nil
+            self.audioBuffersPreRolledCount = 0
+            self.preRollStartTime = 0
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.presentationContext?.requestReset(from: self)
+            }
+        }
     }
     #endif
 
@@ -884,13 +981,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ingest?.close()
         notePlaybackStateChanged()
         ingest = nil
-        sessionState = PipelineSessionState(generation: 0)
+
+        // Atomically invalidate session state and cancel any active/queued recovery under recoveryLock
+        recoveryLock.lock()
+        sessionStateLock.lock()
+        _sessionState = PipelineSessionState(generation: 0)
+        sessionStateLock.unlock()
+        _recoveryEpoch = _recoveryEpoch.next()
+        _lifecycle = .stable
+        recoveryLock.unlock()
 
         stopSystemMonitoring()
         removeFirstPictureObserver()
-
-        // 1. Invalidate any in-flight recovery attempt so any queued recovery block bails out
-        cancelRecovery()
 
         zapLock.lock()
         let currentZap = currentZapId
@@ -2015,12 +2117,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
 
-        guard sessionState.generation > 0 else { return }
+        let (currentGen, currentToken) = currentSessionAndRendererIdentity()
+        guard currentGen > 0 else { return }
 
-        let recovery = beginRecovery("renderer flushed by the system")
+        guard let recovery = beginRecovery(forSessionGeneration: currentGen, rendererToken: currentToken, reason: "renderer flushed by the system") else {
+            return
+        }
+
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
-            guard self.isCurrentRecovery(recovery) else { return }
+            guard self.isCurrentRecovery(recovery, forSessionGeneration: currentGen, rendererToken: currentToken) else { return }
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
             // The picture anchor goes with it. Re-anchoring audio while keeping a
@@ -2040,24 +2146,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
-        guard sessionState.generation > 0 else {
-            let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error for stopped session (generation \(sessionState.generation))"
+        let (currentGen, currentToken) = currentSessionAndRendererIdentity()
+        guard currentGen > 0 else {
+            let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error for stopped session (generation \(currentGen))"
             logger.notice("\(msg, privacy: .public)")
             return
         }
 
         if let activeNative = audioRenderer as? NativeTSAudioRenderer {
-            guard renderer === activeNative, activeNative.isAttachedToClock else {
+            guard renderer === activeNative, activeNative.isAttachedToClock, activeNative.activeRendererToken == currentToken else {
                 let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error from detached or mismatched renderer"
                 logger.notice("\(msg, privacy: .public)")
                 return
             }
         } else {
-            guard audioRenderer.isAttachedToClock else {
+            guard audioRenderer.isAttachedToClock, audioRenderer.activeRendererToken == currentToken else {
                 let msg = "[1080i50-AUDIO] ℹ️ Ignoring audio renderer error from detached audio output"
                 logger.notice("\(msg, privacy: .public)")
                 return
             }
+        }
+
+        guard let recovery = beginRecovery(forSessionGeneration: currentGen, rendererToken: currentToken, reason: "audio renderer error: \(error.localizedDescription)") else {
+            let msg = "[1080i50-AUDIO] ℹ️ Recovery refused: session gen-\(currentGen) or renderer token \(currentToken) is no longer active"
+            logger.notice("\(msg, privacy: .public)")
+            return
         }
 
         let msg = "[1080i50-AUDIO] ❌ Audio renderer error: \(error.localizedDescription) — resetting"
@@ -2065,10 +2178,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.error("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
 
-        let recovery = beginRecovery("audio renderer error")
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
-            guard self.sessionState.generation > 0, self.isCurrentRecovery(recovery) else { return }
+            guard self.isCurrentRecovery(recovery, forSessionGeneration: currentGen, rendererToken: currentToken) else {
+                let skipMsg = "[1080i50-AUDIO] ℹ️ Discarding stale audio recovery block for retired session gen-\(currentGen)"
+                logger.notice("\(skipMsg, privacy: .public)")
+                return
+            }
             self.clock.stop()
             self.audioRenderer.recoverAudioRenderer()
             self.isAudioClockStarted = false
@@ -2090,11 +2206,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
-        guard sessionState.generation > 0 else { return }
+        let (currentGen, currentToken) = currentSessionAndRendererIdentity()
+        guard currentGen > 0 else { return }
         if let activeNative = audioRenderer as? NativeTSAudioRenderer {
-            guard renderer === activeNative, activeNative.isAttachedToClock else { return }
+            guard renderer === activeNative, activeNative.isAttachedToClock, activeNative.activeRendererToken == currentToken else { return }
         } else {
-            guard audioRenderer.isAttachedToClock else { return }
+            guard audioRenderer.isAttachedToClock, audioRenderer.activeRendererToken == currentToken else { return }
         }
         if status == .failed {
             audioRendererDidEncounterError(renderer, error: renderer.audioRenderer.error ?? NSError(domain: "AVFoundation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio renderer status failed"]))

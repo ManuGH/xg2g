@@ -636,4 +636,77 @@ import Testing
 
         pipeline.stopStreaming()
     }
+
+    // MARK: - 15. Late Audio Recovery Overlapping Stop & Restart Discarded
+
+    @Test func lateAudioRecoveryOverlappingStopAndRestartIsDiscardedWithoutDisruptingNewSession() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let url1 = URL(string: "http://127.0.0.1:8080/live/fixture1.ts")!
+        let url2 = URL(string: "http://127.0.0.1:8080/live/fixture2.ts")!
+
+        // Step 1: Start Session 1
+        pipeline.startStreaming(url: url1)
+        #expect(pipeline.isStreaming == true)
+        let gen1 = pipeline.activeSessionGeneration
+        #expect(gen1 > 0)
+        let token1 = pipeline.audioRenderer.activeRendererToken
+        let sync1 = pipeline.presentationSynchronizer
+
+        let anchor1 = CMTime(value: 100_000, timescale: 90_000)
+        pipeline.clock.start(at: anchor1)
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.lifecycle == .stable)
+
+        // Step 2: Callback validation succeeds for Session 1 right before stop occurs
+        let epoch1 = pipeline.recoveryEpoch
+
+        // Step 3: Stop Session 1 and immediately start Session 2 (rapid zap / re-tune)
+        pipeline.stopStreaming()
+        #expect(pipeline.isStreaming == false)
+        #expect(pipeline.activeSessionGeneration == 0)
+
+        pipeline.startStreaming(url: url2)
+        #expect(pipeline.isStreaming == true)
+        let gen2 = pipeline.activeSessionGeneration
+        #expect(gen2 > gen1)
+        let token2 = pipeline.audioRenderer.activeRendererToken
+        #expect(token2 != token1)
+        let sync2 = pipeline.presentationSynchronizer
+        #expect(sync2 !== sync1)
+
+        let anchor2 = CMTime(value: 200_000, timescale: 90_000)
+        pipeline.clock.start(at: anchor2)
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.lifecycle == .stable)
+
+        // Step 4: Delayed recovery block from Session 1 arrives on ingestQueue
+        pipeline.simulateDelayedAudioRecoveryBlockForTesting(
+            sessionGeneration: gen1,
+            rendererToken: token1,
+            epoch: epoch1
+        )
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        // Assert: Session 2 must be completely untouched: clock running, rate 1.0, lifecycle stable, renderer intact
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+        #expect(pipeline.presentationSynchronizer === sync2)
+        #expect(pipeline.audioRenderer.activeRendererToken == token2)
+
+        // Step 5: Test the race where beginRecovery itself is attempted with Session 1's identity after stop/restart
+        let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Late error from session 1"])
+        let staleRenderer = NativeTSAudioRenderer(clock: PlaybackClock())
+        staleRenderer.detachFromClock()
+        pipeline.audioRendererDidEncounterError(staleRenderer, error: simulatedError)
+        pipeline.drainIngestQueueForTesting()
+        await Task.yield()
+
+        #expect(pipeline.clock.rate == 1.0)
+        #expect(pipeline.clock.isClockRunning == true)
+        #expect(pipeline.lifecycle == .stable)
+
+        pipeline.stopStreaming()
+    }
 }
