@@ -18,12 +18,16 @@ public protocol NativeTSAudioRendererDelegate: AnyObject, Sendable {
 /// synchronized via `AVSampleBufferRenderSynchronizer`.
 ///
 /// Principles:
-/// - Audio establishes the master physical clock through `synchronizer.addRenderer(audioRenderer)`.
+/// - Master clock is owned by PlaybackClock; audio renderer attaches as a sink.
 /// - Supports immediate `flush()` on discontinuity, channel zap, or reset.
 public final class NativeTSAudioRenderer: @unchecked Sendable {
 
+    public private(set) var clock: PlaybackClock
     public private(set) var audioRenderer: AVSampleBufferAudioRenderer
-    public private(set) var synchronizer: AVSampleBufferRenderSynchronizer
+
+    public var synchronizer: AVSampleBufferRenderSynchronizer {
+        clock.synchronizer
+    }
 
     private let renderQueue = DispatchQueue(label: "io.github.manugh.xg2g.audio.renderer", qos: .userInteractive)
     private var isAudioSessionActive = false
@@ -87,7 +91,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     public weak var delegate: NativeTSAudioRendererDelegate?
 
     public var timebase: CMTimebase {
-        return synchronizer.timebase
+        return clock.timebase
     }
 
     public var status: AVQueuedSampleBufferRenderingStatus {
@@ -96,15 +100,38 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     private var statusObserver: NSKeyValueObservation?
 
-    public init() {
+    public init(clock: PlaybackClock = PlaybackClock()) {
+        self.clock = clock
         self.audioRenderer = AVSampleBufferAudioRenderer()
-        self.synchronizer = AVSampleBufferRenderSynchronizer()
-        self.synchronizer.addRenderer(audioRenderer)
+        clock.attachRenderer(audioRenderer)
         // Silent until granted audibility. A session is built to be prepared, and
         // preparing one must never be heard.
         audioRenderer.isMuted = true
         audioRenderer.volume = 0.0
         setupStatusObserver()
+    }
+
+    /// Binds this audio renderer to a session's master playback clock.
+    public func bind(to newClock: PlaybackClock) {
+        guard self.clock !== newClock else { return }
+        let oldRenderer = self.audioRenderer
+        self.clock.detachRenderer(oldRenderer)
+
+        self.clock = newClock
+        let freshRenderer = AVSampleBufferAudioRenderer()
+        freshRenderer.isMuted = !isAudible
+        freshRenderer.volume = isAudible ? 1.0 : 0.0
+
+        bufferLock.lock()
+        self.audioRenderer = freshRenderer
+        self.clock.attachRenderer(freshRenderer)
+        setupStatusObserver()
+        enqueuedCount = 0
+        lastDiagnosticLogTime = 0
+        underrunCount = 0
+        minLeadMs = .greatestFiniteMagnitude
+        lastLeadMs = 0
+        bufferLock.unlock()
     }
 
     private func setupStatusObserver() {
@@ -302,11 +329,11 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             // Only meaningful once the clock actually runs; before that the
             // timebase sits at zero and every lead would read as astronomical.
             var leadMs: Double = 0
-            if CMTimebaseGetRate(synchronizer.timebase) > 0 {
+            if clock.rate > 0 {
                 let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
-                let clock = CMTimebaseGetTime(synchronizer.timebase)
-                if pts.isValid && clock.isValid {
-                    leadMs = (pts.seconds - clock.seconds) * 1000.0
+                let clockTime = clock.currentTime
+                if pts.isValid && clockTime.isValid {
+                    leadMs = (pts.seconds - clockTime.seconds) * 1000.0
                     lastLeadMs = leadMs
                     minLeadMs = min(minLeadMs, leadMs)
                     if leadMs < Self.underrunThresholdMs {
@@ -335,7 +362,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                 @unknown default: statusStr = "other"
                 }
                 let session = AVAudioSession.sharedInstance()
-                let diag = "[AudioRenderer] 📊 Enqueued: \(currentCount) | Status: \(statusStr) | PTS: \(String(format: "%.3f", pts.seconds))s | Dur: \(String(format: "%.1f", dur.seconds * 1000))ms | Rate: \(CMTimebaseGetRate(self.synchronizer.timebase)) | Time: \(String(format: "%.3f", CMTimebaseGetTime(self.synchronizer.timebase).seconds))s | Lead: \(String(format: "%.0f", leadMs))ms | Ready: \(renderer.isReadyForMoreMediaData) | Route: \(session.outputNumberOfChannels)/\(session.maximumOutputNumberOfChannels)ch"
+                let diag = "[AudioRenderer] 📊 Enqueued: \(currentCount) | Status: \(statusStr) | PTS: \(String(format: "%.3f", pts.seconds))s | Dur: \(String(format: "%.1f", dur.seconds * 1000))ms | Rate: \(self.clock.rate) | Time: \(String(format: "%.3f", self.clock.currentTime.seconds))s | Lead: \(String(format: "%.0f", leadMs))ms | Ready: \(renderer.isReadyForMoreMediaData) | Route: \(session.outputNumberOfChannels)/\(session.maximumOutputNumberOfChannels)ch"
                 print(diag)
                 logger.notice("\(diag, privacy: .public)")
                 TelemetryServer.shared.log(diag)
@@ -366,41 +393,34 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         audioRenderer.flush()
     }
 
-    /// Starts or resumes the synchronizer playback clock at a specific reference time.
-    public func setRate(_ rate: Float, time: CMTime) {
-        synchronizer.setRate(rate, time: time)
-    }
-
-    /// Stops the master playback clock.
-    public func stopClock() {
-        synchronizer.setRate(0.0, time: .invalid)
-    }
-
-    /// Complete reset of the renderer and synchronizer state.
-    public func reset() {
+    /// Detaches the active audio renderer from the clock, keeping both alive until AVFoundation finishes.
+    public func detachFromClock() {
+        bufferLock.lock()
+        pendingBuffers.removeAll(keepingCapacity: true)
+        if isRequestingData {
+            audioRenderer.stopRequestingMediaData()
+            isRequestingData = false
+        }
         enqueuedStartPTS = nil
         enqueuedEndPTS = nil
-        flush()
-        stopClock()
+        bufferLock.unlock()
 
-        synchronizer.removeRenderer(audioRenderer, at: .invalid) { _ in }
+        audioRenderer.flush()
 
+        let oldRenderer = self.audioRenderer
+        let activeClock = self.clock
+        activeClock.detachRenderer(oldRenderer)
+    }
+
+    /// Instantiates a fresh audio renderer and attaches it to the current clock synchronizer.
+    public func attachToClock() {
         let renderer = AVSampleBufferAudioRenderer()
-        let sync = AVSampleBufferRenderSynchronizer()
-        sync.addRenderer(renderer)
-
-        // Carried across the replacement. A new renderer is audible by default, and a
-        // session that has not been granted audibility must not become audible by
-        // recovering from an error.
         renderer.isMuted = !isAudible
         renderer.volume = isAudible ? 1.0 : 0.0
 
         bufferLock.lock()
-        // `flush()` above emptied the queue and tore down any armed request, so a
-        // drain block still in flight for the old renderer finds nothing to do and
-        // returns without touching the replacement.
-        audioRenderer = renderer
-        synchronizer = sync
+        self.audioRenderer = renderer
+        self.clock.attachRenderer(renderer)
         setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0
@@ -408,5 +428,18 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         minLeadMs = .greatestFiniteMagnitude
         lastLeadMs = 0
         bufferLock.unlock()
+    }
+
+    /// Replaces the audio renderer on the existing clock without altering the synchronizer,
+    /// used when recovering from an audio renderer failure during active video playback.
+    public func recoverAudioRenderer() {
+        detachFromClock()
+        attachToClock()
+    }
+
+    /// Complete reset of the renderer on the active clock.
+    public func reset() {
+        detachFromClock()
+        attachToClock()
     }
 }

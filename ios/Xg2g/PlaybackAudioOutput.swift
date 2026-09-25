@@ -18,12 +18,15 @@ import CoreMedia
 /// the real synchronizer and the real audio session. Only tests substitute anything,
 /// and what they substitute is exactly the part that was never ours to begin with.
 ///
-/// The clock stays an `AVSampleBufferRenderSynchronizer` even here: it is what the
-/// display layer must be attached to, it costs nothing to create, and it does not
-/// depend on media services. Faking it would only weaken the test.
+/// The clock is owned exclusively by `PlaybackClock`. The audio output binds to that
+/// clock and routes its renderer through it. Clock rate control and timebase authority
+/// belong to `PlaybackClock`, not to this protocol.
 public protocol PlaybackAudioOutput: AnyObject {
-    /// The clock this session's audio and video are timed against.
+    /// The clock synchronizer this session's audio is timed against.
     var synchronizer: AVSampleBufferRenderSynchronizer { get }
+
+    /// Binds this audio output to the session's master playback clock.
+    func bind(to clock: PlaybackClock)
 
     /// Reports failures and status changes back to the session.
     var delegate: NativeTSAudioRendererDelegate? { get set }
@@ -37,16 +40,20 @@ public protocol PlaybackAudioOutput: AnyObject {
     /// Hands one decoded audio frame over for playback.
     func enqueue(sampleBuffer: CMSampleBuffer)
 
-    /// Starts or stops the clock at a timestamp.
-    func setRate(_ rate: Float, time: CMTime)
-
-    /// Parks the clock.
-    func stopClock()
-
     /// Discards what is queued, keeping the renderer.
     func flush()
 
-    /// Replaces the renderer after a failure, carrying audibility across.
+    /// Detaches the active audio renderer from the current clock.
+    func detachFromClock()
+
+    /// Instantiates a fresh audio renderer and attaches it to the current clock.
+    func attachToClock()
+
+    /// Replaces the audio renderer on the existing clock without altering the synchronizer,
+    /// used when recovering from an audio renderer failure during active video playback.
+    func recoverAudioRenderer()
+
+    /// Replaces the renderer after a failure or teardown, carrying audibility across.
     func reset()
 
     /// Whether this session contributes sound. False until it owns the surface.

@@ -57,12 +57,20 @@ struct DeterministicZapTransactionTests {
     /// else. Failures and status changes are raised by the test rather than by a
     /// process dying somewhere.
     final class ControllableAudioOutput: PlaybackAudioOutput {
-        let synchronizer = AVSampleBufferRenderSynchronizer()
+        private var clock: PlaybackClock?
+        private let fallbackSynchronizer = AVSampleBufferRenderSynchronizer()
+        var synchronizer: AVSampleBufferRenderSynchronizer {
+            clock?.synchronizer ?? fallbackSynchronizer
+        }
+
+        func bind(to clock: PlaybackClock) {
+            self.clock = clock
+        }
+
         weak var delegate: NativeTSAudioRendererDelegate?
 
         private(set) var isAudible = false
-        private(set) var rate: Float = 0
-        private(set) var rateStartTime: CMTime = .invalid
+        var rate: Float { clock?.rate ?? 0 }
         private(set) var flushCount = 0
         private(set) var resetCount = 0
         private(set) var prunedTotal = 0
@@ -83,24 +91,28 @@ struct DeterministicZapTransactionTests {
             enqueuedCount += 1
         }
 
-        func setRate(_ rate: Float, time: CMTime) {
-            self.rate = rate
-            self.rateStartTime = time
-            synchronizer.setRate(rate, time: time)
-        }
-
-        func stopClock() { setRate(0, time: .invalid) }
-
         func flush() {
             flushCount += 1
             spans.removeAll()
         }
 
+        func detachFromClock() {
+            flush()
+        }
+
+        func attachToClock() {
+            status = .rendering
+            failureReason = nil
+        }
+
+        func recoverAudioRenderer() {
+            reset()
+        }
+
         func reset() {
             resetCount += 1
-            spans.removeAll()
-            rate = 0
-            rateStartTime = .invalid
+            detachFromClock()
+            attachToClock()
             // Audibility survives a reset, exactly as the real renderer must.
         }
 

@@ -235,6 +235,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private let ac3FrameParser = AC3FrameParser()
     private let aacFrameParser = AACADTSFrameParser()
     private let audioSampleBufferAssembler = AudioSampleBufferAssembler()
+    /// The master playback clock timing this session's audio and video.
+    public let clock: PlaybackClock
+
     /// The audio side of this session.
     ///
     /// Typed as the protocol so a test can substitute a controllable implementation.
@@ -506,16 +509,27 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    #if DEBUG
+    /// Deterministically drains any pending asynchronous work on the ingestQueue (test helper).
+    public func drainIngestQueueForTesting() {
+        ingestQueue.sync {}
+    }
+    #endif
+
     /// - Parameter audioOutput: substituted only by tests. Everything that decides a
     ///   start anchor, a re-anchor or a commit is this class's own; the renderer behind
     ///   this is Apple's, and proving the two together is what made the commit proof
     ///   depend on whether the simulator's media services happened to survive the run.
     public convenience override init() {
-        self.init(audioOutput: NativeTSAudioRenderer())
+        let clock = PlaybackClock()
+        let audio = NativeTSAudioRenderer(clock: clock)
+        self.init(clock: clock, audioOutput: audio)
     }
 
-    public init(audioOutput: PlaybackAudioOutput) {
+    public init(clock: PlaybackClock = PlaybackClock(), audioOutput: PlaybackAudioOutput) {
+        self.clock = clock
         self.audioRenderer = audioOutput
+        audioOutput.bind(to: clock)
         super.init()
         self.finishInit()
     }
@@ -784,7 +798,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // and waits for the commit like any other.
         guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
 
-        audioRenderer.setRate(1.0, time: anchor)
+        clock.setRate(1.0, time: anchor)
         isAudioClockStarted = true
         notePlaybackStateChanged()
 
@@ -870,7 +884,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         preRollVideoFrames.removeAll()
         preRollVideoLock.unlock()
 
-        audioRenderer.reset()
+        clock.stop()
+        audioRenderer.detachFromClock()
+        let oldSync = clock.reset()
+        audioRenderer.attachToClock()
+        _ = oldSync
+
         isAudioClockStarted = false
         audioBuffersPreRolledCount = 0
         firstAudioPTS = nil
@@ -1703,7 +1722,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 // what keeps it silent and invisible until then.
                 guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
                 audioRenderer.setAudible(true)
-                audioRenderer.setRate(1.0, time: anchorPTS)
+                clock.setRate(1.0, time: anchorPTS)
                 isAudioClockStarted = true
                 // Paused until this instant, as far as PiP is concerned.
                 notePlaybackStateChanged()
@@ -1800,7 +1819,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         audioRenderer.flush()
-        audioRenderer.setRate(0.0, time: pts)
+        clock.setRate(0.0, time: pts)
 
         isAudioClockStarted = false
         firstAudioPTS = pts
@@ -1878,7 +1897,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             ingestQueue.async { [weak self] in
                 guard let self = self else { return }
                 self.isAudioInterrupted = true
-                self.audioRenderer.stopClock()
+                self.clock.stop()
                 self.isAudioClockStarted = false
                 self.notePlaybackStateChanged()
             }
@@ -2017,7 +2036,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
             guard self.isCurrentRecovery(recovery) else { return }
-            self.audioRenderer.reset()
+            self.clock.stop()
+            self.audioRenderer.recoverAudioRenderer()
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
             // The picture anchor goes with it. Re-anchoring audio while keeping a
@@ -2438,23 +2458,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         removeFirstPictureObserver()
         guard pts.isValid else { return }
 
-        let synchronizer = audioRenderer.synchronizer
-        if CMTimebaseGetRate(synchronizer.timebase) > 0 {
-            let now = CMTimebaseGetTime(synchronizer.timebase)
+        if clock.rate > 0 {
+            let now = clock.currentTime
             if now.isValid && now >= pts {
                 recordFirstPictureVisible()
                 return
             }
         }
 
-        let token = synchronizer.addBoundaryTimeObserver(
+        let token = clock.addBoundaryTimeObserver(
             forTimes: [NSValue(time: pts)],
             queue: .main
         ) { [weak self] in
             self?.recordFirstPictureVisible()
             self?.removeFirstPictureObserver()
         }
-        firstPictureObserver = (token, synchronizer)
+        firstPictureObserver = (token, clock.synchronizer)
     }
 
     private func removeFirstPictureObserver() {
@@ -2698,7 +2717,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
 extension NativeTSVideoPipeline: PresentablePlaybackSession {
     public var presentationSynchronizer: AVSampleBufferRenderSynchronizer {
-        audioRenderer.synchronizer
+        clock.synchronizer
     }
 
     /// Whether this session could be put on screen right now.
@@ -2781,7 +2800,7 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
 
         let (known, decodable) = sessionState.mutate { ($0.audioTracksKnown, $0.hasDecodableAudio) }
         if known && !decodable {
-            audioRenderer.synchronizer.setRate(1.0, time: anchor)
+            clock.start(at: anchor)
             isAudioClockStarted = true
             let msg = "[COMMIT-\(presentationGeneration)] ⏱️ video-only clock started at \(String(format: "%.3f", anchor.seconds))s (no native audio codec on device) | flushed \(framesToFlush.count) pre-roll video frame(s)"
             logger.notice("\(msg, privacy: .public)")
@@ -2791,7 +2810,7 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
 
         let pruned = audioRenderer.pruneBuffersBefore(time: anchor)
         audioRenderer.setAudible(true)
-        audioRenderer.setRate(1.0, time: anchor)
+        clock.start(at: anchor)
         isAudioClockStarted = true
 
         let msg = "[COMMIT-\(presentationGeneration)] ⏱️ clock started at \(String(format: "%.3f", anchor.seconds))s | trimmed \(pruned.prunedCount) leading audio buffer(s) | remaining lead \(String(format: "%.0f", pruned.remainingLeadMs))ms | flushed \(framesToFlush.count) pre-roll video frame(s)"
@@ -2806,7 +2825,7 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
 
         audioRenderer.setAudible(false)
         guard isAudioClockStarted else { return }
-        audioRenderer.setRate(0.0, time: .invalid)
+        clock.stop()
         isAudioClockStarted = false
         logger.notice("[Presentation] \(self.presentationGeneration.description, privacy: .public) silenced")
     }
