@@ -447,9 +447,9 @@ final class AppModel {
     ///
     /// Same identity as the preparation client, so the server can put a client's
     /// telemetry next to the channel changes it made.
-    func makePlaybackTelemetryClient() -> PlaybackTelemetryClient? {
+    func makePlaybackTelemetryClient() -> HTTPPlaybackTelemetrySink? {
         guard let api else { return nil }
-        return PlaybackTelemetryClient(api: api, clientID: Self.zapClientID)
+        return HTTPPlaybackTelemetrySink(api: api, clientID: Self.zapClientID)
     }
 
     /// The legacy burst smoother URL for a service reference.

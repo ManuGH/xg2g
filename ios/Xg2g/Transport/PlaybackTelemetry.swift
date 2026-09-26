@@ -16,7 +16,7 @@ protocol PlaybackTelemetrySink: Sendable {
 /// picture moved and the sound kept playing is known here alone, and until this
 /// existed it stayed here: a frozen picture left no trace on the server, and the
 /// Xcode console that did see it was gone with the next launch.
-struct PlaybackTelemetryClient: PlaybackTelemetrySink {
+struct HTTPPlaybackTelemetrySink: PlaybackTelemetrySink {
     private let api: any APIClient
     private let clientID: String
 
