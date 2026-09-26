@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/deadline"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -913,4 +918,85 @@ func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "serviceRef must be a valid live Enigma2 reference")
+}
+
+type slowProbeScanner struct {
+	fixedPlaybackInfoScanner
+	probeDuration time.Duration
+	probeCalls    atomic.Int32
+}
+
+func (s *slowProbeScanner) ProbeCapability(ctx context.Context, serviceRef string) (scan.Capability, bool, error) {
+	s.probeCalls.Add(1)
+	select {
+	case <-time.After(s.probeDuration):
+		return scan.Capability{}, false, nil
+	case <-ctx.Done():
+		return scan.Capability{}, false, ctx.Err()
+	}
+}
+
+func TestPostLivePlaybackInfo_ProbeTimeoutReturns503WithoutDroppingConnection(t *testing.T) {
+	// Set live interactive probe budget to 80ms for fast deterministic test execution
+	v3recordings.SetLiveInteractiveProbeBudgetForTest(80 * time.Millisecond)
+	t.Cleanup(func() {
+		v3recordings.SetLiveInteractiveProbeBudgetForTest(v3recordings.DefaultLiveInteractiveProbeBudget)
+	})
+
+	svc := new(MockRecordingsService)
+	s := createTestServerDTO(svc)
+	slowScanner := &slowProbeScanner{
+		probeDuration: 500 * time.Millisecond,
+	}
+	s.v3Scan = slowScanner
+
+	// Wrap handler in real HTTP server with WriteTimeoutMiddleware and WithRoutePolicy(RouteDeadlineAPIBounded)
+	timeouts := deadline.DeadlineTimeouts{
+		APIWriteTimeout:      300 * time.Millisecond,
+		MediaWriteTimeout:    1 * time.Second,
+		StreamingIdleTimeout: 1 * time.Second,
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/api/v3/live/stream-info", middleware.WithRoutePolicy(
+		deadline.RoutePolicy{Class: deadline.RouteDeadlineAPIBounded},
+		middleware.RuntimeEnforced,
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
+	})))
+
+	ts := httptest.NewServer(middleware.WriteTimeoutMiddleware(timeouts, middleware.RuntimeEnforced)(mux))
+	defer ts.Close()
+
+	body := `{
+		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
+		"capabilities":{
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
+			"container":["mpegts","ts"],
+			"videoCodecs":["h264"],
+			"audioCodecs":["aac"],
+			"hlsEngines":["native"],
+			"preferredHlsEngine":"native",
+			"runtimeProbeUsed":true,
+			"runtimeProbeVersion":1
+		}
+	}`
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(ts.URL+"/api/v3/live/stream-info", "application/json", strings.NewReader(body))
+	require.NoError(t, err, "HTTP request over TCP connection must not be dropped when probe times out")
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Type"), "application/problem+json")
+	assert.Equal(t, "5", resp.Header.Get("Retry-After"))
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var problem map[string]any
+	err = json.Unmarshal(bodyBytes, &problem)
+	require.NoError(t, err)
+	assert.Equal(t, float64(503), problem["status"])
+	assert.Equal(t, "UNAVAILABLE", problem["code"])
+	assert.Equal(t, "missing_scan_truth", problem["truthReason"])
 }
