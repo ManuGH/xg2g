@@ -166,7 +166,7 @@ public final class SystemVideoPresenter: NSObject {
     /// accumulating one per zap — each retired, each parked at rate 0, and each
     /// still holding a reference to the renderer that is supposed to be driven by
     /// the live one.
-    private weak var attachedSynchronizer: AVSampleBufferRenderSynchronizer?
+    public private(set) weak var attachedSynchronizer: AVSampleBufferRenderSynchronizer?
 
     /// Which synchronizer the layer is on its way to, when a move is in flight.
     ///

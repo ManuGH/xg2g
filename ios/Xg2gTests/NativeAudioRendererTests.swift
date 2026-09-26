@@ -94,16 +94,19 @@ struct NativeAudioRendererTests {
         pipeline.startStreaming(url: dummyURL)
 
         let initialSync = pipeline.audioRenderer.synchronizer
+        let realRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
+        let initialAudioRenderer = realRenderer.audioRenderer
 
         // Trigger an audio renderer failure
         let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
-        let realRenderer = pipeline.audioRenderer as! NativeTSAudioRenderer
-        pipeline.audioRendererDidEncounterError(realRenderer, error: simulatedError)
+        pipeline.audioRendererDidEncounterError(realRenderer, rendererToken: realRenderer.activeRendererToken, error: simulatedError)
 
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        // A new synchronizer was constructed upon reset
-        #expect(pipeline.audioRenderer.synchronizer !== initialSync)
+        // Under B3, the synchronizer remains stable so video is not orphaned,
+        // while the underlying AVSampleBufferAudioRenderer is replaced.
+        #expect(pipeline.audioRenderer.synchronizer === initialSync)
+        #expect(realRenderer.audioRenderer !== initialAudioRenderer)
         #expect(pipeline.audioRenderer.status != .failed)
         pipeline.stopStreaming()
     }

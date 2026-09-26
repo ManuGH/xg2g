@@ -57,12 +57,20 @@ struct DeterministicZapTransactionTests {
     /// else. Failures and status changes are raised by the test rather than by a
     /// process dying somewhere.
     final class ControllableAudioOutput: PlaybackAudioOutput {
-        let synchronizer = AVSampleBufferRenderSynchronizer()
+        private var clock: PlaybackClock?
+        private let fallbackSynchronizer = AVSampleBufferRenderSynchronizer()
+        var synchronizer: AVSampleBufferRenderSynchronizer {
+            clock?.synchronizer ?? fallbackSynchronizer
+        }
+
+        func bind(to clock: PlaybackClock) {
+            self.clock = clock
+        }
+
         weak var delegate: NativeTSAudioRendererDelegate?
 
         private(set) var isAudible = false
-        private(set) var rate: Float = 0
-        private(set) var rateStartTime: CMTime = .invalid
+        var rate: Float { clock?.rate ?? 0 }
         private(set) var flushCount = 0
         private(set) var resetCount = 0
         private(set) var prunedTotal = 0
@@ -83,24 +91,35 @@ struct DeterministicZapTransactionTests {
             enqueuedCount += 1
         }
 
-        func setRate(_ rate: Float, time: CMTime) {
-            self.rate = rate
-            self.rateStartTime = time
-            synchronizer.setRate(rate, time: time)
-        }
-
-        func stopClock() { setRate(0, time: .invalid) }
-
         func flush() {
             flushCount += 1
             spans.removeAll()
         }
 
+        private(set) var isAttachedToClock: Bool = true
+        private(set) var activeRendererToken: Int64 = 1
+
+        func detachFromClock() {
+            isAttachedToClock = false
+            activeRendererToken += 1
+            flush()
+        }
+
+        func attachToClock() {
+            isAttachedToClock = true
+            activeRendererToken += 1
+            status = .rendering
+            failureReason = nil
+        }
+
+        func recoverAudioRenderer() {
+            reset()
+        }
+
         func reset() {
             resetCount += 1
-            spans.removeAll()
-            rate = 0
-            rateStartTime = .invalid
+            detachFromClock()
+            attachToClock()
             // Audibility survives a reset, exactly as the real renderer must.
         }
 
@@ -142,7 +161,7 @@ struct DeterministicZapTransactionTests {
             let error = NSError(domain: "AVFoundationErrorDomain", code: -11800,
                                 userInfo: [NSLocalizedDescriptionKey: "controlled failure"])
             failureReason = error
-            session.audioRendererDidEncounterError(anyRenderer, error: error)
+            session.audioRendererDidEncounterError(anyRenderer, rendererToken: activeRendererToken, error: error)
         }
 
         /// The delegate signature names the concrete type and nothing is read from it,
@@ -402,6 +421,8 @@ struct DeterministicZapTransactionTests {
 
         let epochDuringRecovery = b.recoveryEpoch
         #expect(epochDuringRecovery != .initial)
+
+        b.drainIngestQueueForTesting()
 
         driveToPresentable(b, generation: genB, audioFrom: 600.0, pictureFrom: 600.4)
         #expect(audioB.resetCount > 0, "iteration \(iteration): a failure must reset the renderer")
