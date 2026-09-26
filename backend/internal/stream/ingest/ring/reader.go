@@ -7,6 +7,9 @@ package ring
 import (
 	"errors"
 	"io"
+
+	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
+	"github.com/ManuGH/xg2g/internal/stream/timeline"
 )
 
 // SubscriberReader provides an independent read cursor over a MasterRing buffer.
@@ -36,6 +39,7 @@ type SubscriberReader struct {
 	// outlives its generation must be dropped rather than finished.
 	pendingPrefix           []byte
 	pendingPrefixGeneration uint64
+	generation              uint64
 
 	// awaitingRandomAccess marks a subscriber that was overtaken and has not found
 	// a decodable re-entry point yet. It stays set across wake-ups until one exists.
@@ -65,6 +69,7 @@ func (r *MasterRing) newSubscriberReaderLocked(startOffset int64) *SubscriberRea
 	return &SubscriberReader{
 		ring:       r,
 		readOffset: startOffset,
+		generation: r.attachIndex.generationValue(),
 	}
 }
 
@@ -138,8 +143,14 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		// is not only about how the pair is captured but about how it is handed
 		// over, so a generation change discards what is left and starts recovery
 		// again from the new one.
+		currentGen := s.ring.attachIndex.generationValue()
+		if s.generation != currentGen {
+			s.pendingPrefix = nil
+			s.awaitingRandomAccess = true
+		}
+
 		if len(s.pendingPrefix) > 0 {
-			if s.pendingPrefixGeneration != s.ring.attachIndex.generationValue() {
+			if s.pendingPrefixGeneration != currentGen {
 				s.pendingPrefix = nil
 				s.awaitingRandomAccess = true
 				continue
@@ -221,10 +232,10 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	facts := s.ring.facts
 
-	// 1. Topology unknown: no complete PMT parsed yet. A service that turns out
-	// to carry video must not have been given bytes from the middle of a picture.
-	// Remain blocked.
-	if !facts.HasPMT {
+	// 1. Complete topology validation: verify that both PAT and PMT sections are
+	// present, packetizable, and PMTPID != patPID.
+	preamble, ok := s.ring.canDeliverPreambleLocked()
+	if !ok {
 		return false
 	}
 
@@ -232,10 +243,10 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 	floor := s.ring.attachIndex.resumeFloor()
 	tail := s.ring.store.tailOffset()
 
-	// 2. Topology known, video: only a random access point will do.
+	// 2. Topology known, video: only a random access point at or after the recovery floor will do.
 	if facts.VideoPID != 0 {
 		latest, ok := s.ring.latestKeyframeOffsetLocked()
-		if !ok {
+		if !ok || latest < floor {
 			return false
 		}
 
@@ -243,8 +254,9 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 			s.resyncSkippedBytes += latest - s.readOffset
 		}
 		s.readOffset = latest
-		s.pendingPrefix = s.ring.patpmtPreambleLocked()
+		s.pendingPrefix = preamble
 		s.pendingPrefixGeneration = generation
+		s.generation = generation
 		return true
 	}
 
@@ -262,8 +274,9 @@ func (s *SubscriberReader) resyncToRandomAccessLocked() bool {
 		s.resyncSkippedBytes += floor - s.readOffset
 		s.readOffset = floor
 	}
-	s.pendingPrefix = s.ring.patpmtPreambleLocked()
+	s.pendingPrefix = preamble
 	s.pendingPrefixGeneration = generation
+	s.generation = generation
 	return true
 }
 
@@ -283,6 +296,31 @@ func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
 
 	s.readOffset = latest
 	return latest, nil
+}
+
+// SeekToTime repositions an existing SubscriberReader within the active program generation.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+// It restores the PAT/PMT preamble in pendingPrefix so the consumer immediately receives topology.
+func (s *SubscriberReader) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	if s.isClosed {
+		return SeekResult{}, io.EOF
+	}
+
+	seekRes, err := s.ring.seekToTimeLocked(epoch, pts, mode)
+	if err != nil {
+		return SeekResult{}, err
+	}
+
+	s.readOffset = seekRes.Offset
+	s.pendingPrefix = seekRes.Preamble
+	s.pendingPrefixGeneration = seekRes.Generation
+	s.generation = seekRes.Generation
+	s.awaitingRandomAccess = false
+
+	return seekRes, nil
 }
 
 // SubscriberStats is one consistent snapshot of a subscriber's ring accounting,

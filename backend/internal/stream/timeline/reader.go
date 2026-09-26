@@ -25,4 +25,7 @@ type TimelineReader interface {
 	TimingPoints() []TimingPointEntry
 	EpochSpans() []EpochSpan
 	Stats() TimelineStats
+	PresentationTimeline(epoch mediafacts.TimelineEpoch) (PresentationTimeline, bool)
+	PresentationTimelines() []PresentationTimeline
+	FindRAPByTime(epoch mediafacts.TimelineEpoch, pts int64, opts SeekOptions) (RAPEntry, bool)
 }

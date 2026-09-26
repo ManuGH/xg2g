@@ -67,6 +67,10 @@ var ErrCoreUnusable = errors.New("media facts core is unusable after an earlier 
 // land. The chunk is refused rather than committed at the wrong offset.
 var ErrRingAdvanced = errors.New("ring advanced while the chunk was being interpreted")
 
+// ErrEventBeyondProcessedBytes reports that the media core returned an event or
+// timing record referencing byte offsets outside the processed chunk boundaries.
+var ErrEventBeyondProcessedBytes = errors.New("media facts core reported event beyond processed chunk bytes")
+
 // The interpretation of transport stream bytes lives in mediafacts. These aliases
 // keep the names consumers already import while the boundary is drawn: the ring
 // owns bytes, offsets and the generation; mediafacts owns what the bytes mean.
@@ -401,8 +405,50 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	// boundary exists to prevent, so the chunk is refused and nothing moves: not
 	// the head, not the generation, not the index, not the facts. The core is
 	// finished either way - it consumed what the ring is about to throw away.
-	if want := startOffset + int64(n); res.ProcessedThroughOffset != want {
+	want := startOffset + int64(n)
+	if res.ProcessedThroughOffset != want {
 		return 0, r.retireCore(ctx, ErrCoreIncomplete)
+	}
+
+	// Invariant: "No truth without corresponding bytes".
+	// An event or timing record referencing bytes outside the processed stream bytes
+	// (or extending beyond current chunk boundary 'want') cannot be committed into the ring or timeline index.
+	for _, ev := range res.Events {
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			if ev.Offset < 0 || ev.Offset+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap offset %d outside [0, %d)", ErrEventBeyondProcessedBytes, ev.Offset, want))
+			}
+		} else {
+			if ev.Offset < 0 || ev.Offset > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: event offset %d outside [0, %d)", ErrEventBeyondProcessedBytes, ev.Offset, want))
+			}
+		}
+	}
+	for _, rec := range res.Timing.Records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt < 0 || rec.RAP.SubjectAt+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap timing subject %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.RAP.SubjectAt, want))
+			}
+			if rec.RAP.ObservedAt < 0 || rec.RAP.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: rap timing observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.RAP.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt < 0 || rec.PCR.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pcr observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PCR.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.SubjectAt < 0 || rec.PES.SubjectAt+TSPacketSize > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pes timing subject %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PES.SubjectAt, want))
+			}
+			if rec.PES.ObservedAt < 0 || rec.PES.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: pes observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.PES.ObservedAt, want))
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt < 0 || rec.Discontinuity.ObservedAt > want {
+				return 0, r.retireCore(ctx, fmt.Errorf("%w: discontinuity observed %d outside [0, %d)", ErrEventBeyondProcessedBytes, rec.Discontinuity.ObservedAt, want))
+			}
+		}
 	}
 
 	// 3. Commit. Facts, events, PSI and bytes become visible together under r.mu (Publication Lock),
@@ -465,7 +511,14 @@ func (r *MasterRing) Push(ctx context.Context, data []byte) (int, error) {
 	}
 
 	if genChanged || r.attachIndex.generationValue() != genBefore {
-		r.attachIndex.setGenerationResumeFloor(newHead)
+		floor := newHead
+		if len(r.attachIndex.keyframeOffsets) > 0 {
+			firstKF := r.attachIndex.keyframeOffsets[0]
+			if firstKF >= commit.StartOffset && firstKF < newHead {
+				floor = firstKF
+			}
+		}
+		r.attachIndex.setGenerationResumeFloor(floor)
 	}
 
 	// Step E: Publish facts and active PSI.
@@ -578,6 +631,197 @@ func (r *MasterRing) LatestKeyframeOffset() (int64, bool) {
 	return r.latestKeyframeOffsetLocked()
 }
 
+// SeekResult captures the resolved entry point and metadata from a time seek.
+type SeekResult struct {
+	Offset     int64
+	RAP        timeline.RAPEntry
+	Generation uint64
+	Preamble   []byte
+}
+
+// SeekToTime resolves a decodable stream entry point for epoch and PTS under the publication lock.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+func (r *MasterRing) SeekToTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seekToTimeLocked(epoch, pts, mode)
+}
+
+// videoPIDForEpochLocked determines the target video PID for an epoch under MasterRing.mu.
+// It checks retained RAPs for the epoch first; if none specify a non-zero PID, it falls back to r.facts.VideoPID.
+func (r *MasterRing) videoPIDForEpochLocked(epoch mediafacts.TimelineEpoch) uint16 {
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+	for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+		if rap.HasTimingBinding && rap.Epoch == epoch && rap.PID != 0 {
+			return rap.PID
+		}
+	}
+	if r.facts.VideoPID != 0 {
+		return r.facts.VideoPID
+	}
+	return 0
+}
+
+// presentationRangeLocked computes the retained presentation PTS bounds [earliestPTS, latestPTS]
+// for an epoch within [tail, head).
+// It returns ErrEpochNotFound if the epoch is unknown or not retained,
+// and ErrEpochNoTiming if the epoch has no presentation timing points with PTS for the video track.
+func (r *MasterRing) presentationRangeLocked(epoch mediafacts.TimelineEpoch) (int64, int64, error) {
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+
+	var epochFound bool
+	for _, span := range r.timelineIndex.EpochSpans() {
+		if span.Epoch == epoch {
+			if span.Closed && span.EndOffset <= tail {
+				continue
+			}
+			if span.StartOffset >= head {
+				continue
+			}
+			epochFound = true
+			break
+		}
+	}
+	if !epochFound {
+		for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+			if rap.HasTimingBinding && rap.Epoch == epoch {
+				epochFound = true
+				break
+			}
+		}
+		if !epochFound {
+			for _, tp := range r.timelineIndex.TimingPoints() {
+				if tp.Epoch == epoch && tp.SubjectAt >= tail && tp.SubjectAt < head {
+					epochFound = true
+					break
+				}
+			}
+		}
+	}
+	if !epochFound {
+		return 0, 0, ErrEpochNotFound
+	}
+
+	videoPID := r.videoPIDForEpochLocked(epoch)
+	var earliestPTS, latestPTS int64
+	var hasTiming bool
+
+	for _, tp := range r.timelineIndex.TimingPoints() {
+		if tp.Epoch == epoch && (videoPID == 0 || tp.PID == videoPID) && tp.SubjectAt >= tail && tp.SubjectAt < head && tp.HasPTS {
+			if !hasTiming {
+				hasTiming = true
+				earliestPTS = tp.PTS90k
+				latestPTS = tp.PTS90k
+			} else {
+				if tp.PTS90k < earliestPTS {
+					earliestPTS = tp.PTS90k
+				}
+				if tp.PTS90k > latestPTS {
+					latestPTS = tp.PTS90k
+				}
+			}
+		}
+	}
+
+	for _, rap := range r.timelineIndex.RAPsBetween(tail, head-1) {
+		if rap.HasTimingBinding && rap.Epoch == epoch && (videoPID == 0 || rap.PID == videoPID) && rap.Offset >= tail && rap.Offset < head && rap.HasPTS {
+			if !hasTiming {
+				hasTiming = true
+				earliestPTS = rap.PTS90k
+				latestPTS = rap.PTS90k
+			} else {
+				if rap.PTS90k < earliestPTS {
+					earliestPTS = rap.PTS90k
+				}
+				if rap.PTS90k > latestPTS {
+					latestPTS = rap.PTS90k
+				}
+			}
+		}
+	}
+
+	if !hasTiming {
+		return 0, 0, ErrEpochNoTiming
+	}
+
+	return earliestPTS, latestPTS, nil
+}
+
+func (r *MasterRing) seekToTimeLocked(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (SeekResult, error) {
+	if r.isClosed {
+		return SeekResult{}, ErrRingClosed
+	}
+	if r.timelineIndex == nil {
+		return SeekResult{}, ErrNoTimeline
+	}
+
+	preamble, ok := r.canDeliverPreambleLocked()
+	if !ok {
+		return SeekResult{}, ErrTopologyUnresolved
+	}
+
+	earliestPTS, latestPTS, err := r.presentationRangeLocked(epoch)
+	if err != nil {
+		return SeekResult{}, err
+	}
+
+	if pts < earliestPTS || pts > latestPTS {
+		return SeekResult{}, ErrPTSOutOfRange
+	}
+
+	tail := r.store.tailOffset()
+	head := r.store.headOffset()
+
+	rap, ok := r.timelineIndex.FindRAPByTime(epoch, pts, timeline.SeekOptions{
+		Mode:         mode,
+		JoinableOnly: true,
+	})
+	if !ok || rap.Offset < tail || rap.Offset >= head {
+		return SeekResult{}, ErrNoMatchingRAP
+	}
+
+	floor := r.attachIndex.resumeFloor()
+	if rap.Offset < floor {
+		return SeekResult{}, ErrHistoricalProgramSeekUnsupported
+	}
+
+	return SeekResult{
+		Offset:     rap.Offset,
+		RAP:        rap,
+		Generation: r.attachIndex.generationValue(),
+		Preamble:   preamble,
+	}, nil
+}
+
+// NewPrimedSubscriberAtTime atomically creates and positions a SubscriberReader at the given epoch and PTS.
+// It returns a PrimedAttachPoint carrying the active PAT/PMT preamble and the keyframe offset,
+// and returns a SubscriberReader positioned directly at that keyframe offset without pre-loading the preamble,
+// matching the contract of NewPrimedSubscriber.
+// It unconditionally enforces Joinable == true, HasPMT == true, non-empty preamble, and Offset >= resumeFloor.
+func (r *MasterRing) NewPrimedSubscriberAtTime(epoch mediafacts.TimelineEpoch, pts int64, mode timeline.SeekMode) (PrimedAttachPoint, *SubscriberReader, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	seekRes, err := r.seekToTimeLocked(epoch, pts, mode)
+	if err != nil {
+		return PrimedAttachPoint{}, nil, err
+	}
+
+	attach := PrimedAttachPoint{
+		Preamble:       seekRes.Preamble,
+		KeyframeOffset: seekRes.Offset,
+		Generation:     seekRes.Generation,
+		HasKeyframe:    true,
+	}
+
+	reader := r.newSubscriberReaderLocked(seekRes.Offset)
+	reader.generation = seekRes.Generation
+
+	return attach, reader, nil
+}
+
 // latestKeyframeOffsetLocked reports the newest random access point still held by
 // the ring. A keyframe that has fallen behind the tail is gone even though its
 // offset is still indexed, so it is not a valid entry point.
@@ -593,6 +837,29 @@ func (r *MasterRing) PATPMTPreamble() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.patpmtPreambleLocked()
+}
+
+// canDeliverPreambleLocked verifies that both PAT and PMT sections are present and valid,
+// and returns the packetized preamble bytes containing both tables.
+func (r *MasterRing) canDeliverPreambleLocked() ([]byte, bool) {
+	if !r.facts.HasPAT || !r.facts.HasPMT || r.facts.PMTPID == patPID {
+		return nil, false
+	}
+	if len(r.activePSI.PATSections) == 0 || len(r.activePSI.PMTSections) == 0 {
+		return nil, false
+	}
+	pat := packetizePSISections(patPID, r.activePSI.PATSections)
+	if len(pat) == 0 {
+		return nil, false
+	}
+	pmt := packetizePSISections(r.facts.PMTPID, r.activePSI.PMTSections)
+	if len(pmt) == 0 {
+		return nil, false
+	}
+	preamble := make([]byte, len(pat)+len(pmt))
+	copy(preamble, pat)
+	copy(preamble[len(pat):], pmt)
+	return preamble, true
 }
 
 // patpmtPreambleLocked builds the active topology preamble for callers already

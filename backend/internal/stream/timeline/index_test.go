@@ -16,9 +16,46 @@ import (
 
 // rawIngestResult is a canonical result carrying exactly the records and events given.
 func rawIngestResult(records []mediafacts.TimingRecord, events []mediafacts.Event) mediafacts.ParseResult {
+	var maxThrough int64
+	for _, ev := range events {
+		through := ev.Offset
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			through += mediafacts.TSPacketSize
+		}
+		if through > maxThrough {
+			maxThrough = through
+		}
+	}
+	for _, rec := range records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt+mediafacts.TSPacketSize > maxThrough {
+				maxThrough = rec.RAP.SubjectAt + mediafacts.TSPacketSize
+			}
+			if rec.RAP.ObservedAt > maxThrough {
+				maxThrough = rec.RAP.ObservedAt
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt > maxThrough {
+				maxThrough = rec.PCR.ObservedAt
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.SubjectAt+mediafacts.TSPacketSize > maxThrough {
+				maxThrough = rec.PES.SubjectAt + mediafacts.TSPacketSize
+			}
+			if rec.PES.ObservedAt > maxThrough {
+				maxThrough = rec.PES.ObservedAt
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt > maxThrough {
+				maxThrough = rec.Discontinuity.ObservedAt
+			}
+		}
+	}
 	return mediafacts.ParseResult{
-		Coverage: mediafacts.ParseCoverageComplete,
-		Events:   events,
+		Coverage:               mediafacts.ParseCoverageComplete,
+		Events:                 events,
+		ProcessedThroughOffset: maxThrough,
 		Timing: mediafacts.TimingResult{
 			Authority: mediafacts.TimingAuthorityCanonical,
 			Records:   records,
@@ -1866,5 +1903,478 @@ func TestMediaIndex_StatsAndBoundRAPRatio(t *testing.T) {
 	}
 	if ratio := stats.BoundRAPRatio(); ratio < 0.49 || ratio > 0.51 {
 		t.Errorf("BoundRAPRatio = %f, want 0.5", ratio)
+	}
+}
+
+func TestMediaIndex_PresentationTimeline_PIDTrackSeparation(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest program discontinuity establishing Epoch 1 at offset 0
+	err := idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+			// Video PID 256 timing points: PTS 10000 at 1000
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     10000,
+				ObservedAt: 1000,
+				SubjectAt:  1000,
+			}),
+			rapRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     10000,
+				ObservedAt: 1000,
+				SubjectAt:  1000,
+			}),
+			// Audio PID 257 timing points: PTS 8000 at 1100
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        257,
+				HasPTS:     true,
+				PTS90k:     8000,
+				ObservedAt: 1100,
+				SubjectAt:  1100,
+			}),
+			// Video PID 256 timing points: PTS 50000 at 3000
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        256,
+				HasPTS:     true,
+				PTS90k:     50000,
+				ObservedAt: 3000,
+				SubjectAt:  3000,
+			}),
+			// Audio PID 257 timing points: PTS 48000 at 3100
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      1,
+				PID:        257,
+				HasPTS:     true,
+				PTS90k:     48000,
+				ObservedAt: 3100,
+				SubjectAt:  3100,
+			}),
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+		},
+	))
+	if err != nil {
+		t.Fatalf("ApplyIngestResult failed: %v", err)
+	}
+
+	pt, ok := idx.PresentationTimeline(1)
+	if !ok {
+		t.Fatalf("PresentationTimeline(1) returned ok=false")
+	}
+
+	if pt.Epoch != 1 {
+		t.Errorf("Epoch = %d, want 1", pt.Epoch)
+	}
+	if pt.TotalRAPs != 1 || pt.JoinableRAPs != 1 {
+		t.Errorf("RAP counts = total:%d joinable:%d, want 1/1", pt.TotalRAPs, pt.JoinableRAPs)
+	}
+	if !pt.HasFirstRAP || pt.FirstRAPOffset != 1000 {
+		t.Errorf("FirstRAP = has:%v offset:%d, want true/1000", pt.HasFirstRAP, pt.FirstRAPOffset)
+	}
+
+	if len(pt.Tracks) != 2 {
+		t.Fatalf("len(Tracks) = %d, want 2", len(pt.Tracks))
+	}
+
+	// Tracks must be sorted by PID ascending: 256, then 257
+	vTrack := pt.Tracks[0]
+	if vTrack.PID != 256 {
+		t.Errorf("Track[0] PID = %d, want 256", vTrack.PID)
+	}
+	if !vTrack.HasPTS || vTrack.EarliestPTS90k != 10000 || vTrack.LatestPTS90k != 50000 {
+		t.Errorf("Video Track PTS = earliest:%d latest:%d, want 10000/50000", vTrack.EarliestPTS90k, vTrack.LatestPTS90k)
+	}
+	if vTrack.ObservedSpan90k != 40000 {
+		t.Errorf("Video ObservedSpan90k = %d, want 40000", vTrack.ObservedSpan90k)
+	}
+	if vTrack.SampleCount != 2 {
+		t.Errorf("Video SampleCount = %d, want 2", vTrack.SampleCount)
+	}
+
+	aTrack := pt.Tracks[1]
+	if aTrack.PID != 257 {
+		t.Errorf("Track[1] PID = %d, want 257", aTrack.PID)
+	}
+	if !aTrack.HasPTS || aTrack.EarliestPTS90k != 8000 || aTrack.LatestPTS90k != 48000 {
+		t.Errorf("Audio Track PTS = earliest:%d latest:%d, want 8000/48000", aTrack.EarliestPTS90k, aTrack.LatestPTS90k)
+	}
+	if aTrack.ObservedSpan90k != 40000 {
+		t.Errorf("Audio ObservedSpan90k = %d, want 40000", aTrack.ObservedSpan90k)
+	}
+}
+
+func TestMediaIndex_FindRAPByTime_ModesAndJoinability(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// Ingest epoch 1 and 3 RAPs:
+	// RAP 1: offset 1000, PTS 10000, Joinable=true
+	// RAP 2: offset 2000, PTS 20000, Joinable=false (scrambled)
+	// RAP 3: offset 3000, PTS 30000, Joinable=true
+	_ = idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    1,
+				},
+			},
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 10000, SubjectAt: 1000, ObservedAt: 1000}),
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 20000, SubjectAt: 2000, ObservedAt: 2000}),
+			rapRecord(mediafacts.TimingPoint{Epoch: 1, PID: 256, HasPTS: true, PTS90k: 30000, SubjectAt: 3000, ObservedAt: 3000}),
+		},
+		[]mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 1000, Joinable: true},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 2000, Joinable: false},
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 3000, Joinable: true},
+		},
+	))
+
+	// 1. JoinableOnly=true: target 20000 with Preceding -> should skip RAP 2 (Joinable=false) and return RAP 1 (PTS 10000)
+	rap, ok := idx.FindRAPByTime(1, 20000, SeekOptions{Mode: SeekModePreceding, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for preceding joinable")
+	}
+	if rap.Offset != 1000 || rap.PTS90k != 10000 {
+		t.Errorf("Expected RAP at 1000 (PTS 10000), got offset:%d PTS:%d", rap.Offset, rap.PTS90k)
+	}
+
+	// 2. JoinableOnly=false: target 20000 with Preceding -> should return RAP 2 (PTS 20000)
+	rapRaw, ok := idx.FindRAPByTime(1, 20000, SeekOptions{Mode: SeekModePreceding, JoinableOnly: false})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for preceding raw")
+	}
+	if rapRaw.Offset != 2000 || rapRaw.PTS90k != 20000 {
+		t.Errorf("Expected raw RAP at 2000 (PTS 20000), got offset:%d PTS:%d", rapRaw.Offset, rapRaw.PTS90k)
+	}
+
+	// 3. Following: target 15000 with JoinableOnly=true -> should skip RAP 2 (20000) and return RAP 3 (30000)
+	rapFoll, ok := idx.FindRAPByTime(1, 15000, SeekOptions{Mode: SeekModeFollowing, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for following joinable")
+	}
+	if rapFoll.Offset != 3000 || rapFoll.PTS90k != 30000 {
+		t.Errorf("Expected following RAP at 3000 (PTS 30000), got offset:%d PTS:%d", rapFoll.Offset, rapFoll.PTS90k)
+	}
+
+	// 4. Nearest: target 19000 with JoinableOnly=true -> RAP 1 (dist 9000) vs RAP 3 (dist 11000) -> RAP 1
+	rapNear, ok := idx.FindRAPByTime(1, 19000, SeekOptions{Mode: SeekModeNearest, JoinableOnly: true})
+	if !ok {
+		t.Fatalf("FindRAPByTime failed for nearest joinable")
+	}
+	if rapNear.Offset != 1000 {
+		t.Errorf("Expected nearest RAP 1000, got offset:%d", rapNear.Offset)
+	}
+}
+
+func TestMediaIndex_PresentationTimeline_EmptyAndMissingPTS(t *testing.T) {
+	idx := NewMediaIndex()
+
+	_ = idx.ApplyIngestResult(rawIngestResult(
+		[]mediafacts.TimingRecord{
+			{
+				Type: mediafacts.TimingRecordTypeDiscontinuity,
+				Discontinuity: mediafacts.DiscontinuityRecord{
+					Scope:         mediafacts.DiscontinuityScopeProgram,
+					ObservedAt:    0,
+					HasEpochAfter: true,
+					EpochAfter:    2,
+				},
+			},
+			// Timing point with HasPTS=false
+			pesRecord(mediafacts.TimingPoint{
+				Epoch:      2,
+				PID:        256,
+				HasPTS:     false,
+				ObservedAt: 500,
+				SubjectAt:  500,
+			}),
+		},
+		nil,
+	))
+
+	pt, ok := idx.PresentationTimeline(2)
+	if !ok {
+		t.Fatalf("PresentationTimeline(2) ok=false")
+	}
+	if len(pt.Tracks) != 1 {
+		t.Fatalf("len(Tracks) = %d, want 1", len(pt.Tracks))
+	}
+	if pt.Tracks[0].HasPTS {
+		t.Errorf("Track HasPTS should be false")
+	}
+	if pt.Tracks[0].ObservedSpan90k != 0 {
+		t.Errorf("Track ObservedSpan90k = %d, want 0", pt.Tracks[0].ObservedSpan90k)
+	}
+}
+
+func TestMediaIndex_ApplyIngestResult_BoundsValidation(t *testing.T) {
+	t.Run("ProcessedThroughOffset_ZeroWithEventsFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 0,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 0, Joinable: true},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if _, ok := idx.FindPrecedingRAP(1000); ok {
+			t.Errorf("index mutated after bounds violation")
+		}
+	})
+
+	t.Run("ProcessedThroughOffset_NegativeFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: -1,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+	})
+
+	t.Run("PES_SubjectAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  200, // 200 + 188 = 388 > 376
+							ObservedAt: 300,
+						},
+					},
+				},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if len(idx.TimingPoints()) != 0 {
+			t.Errorf("timing points added after bounds violation")
+		}
+	})
+
+	t.Run("PES_ObservedAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypePES,
+						PES: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  0,
+							ObservedAt: 500, // 500 > 376
+						},
+					},
+				},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if len(idx.TimingPoints()) != 0 {
+			t.Errorf("timing points added after bounds violation")
+		}
+	})
+
+	t.Run("RAP_SubjectAtBeyondProcessedThroughOffsetFails", func(t *testing.T) {
+		idx := NewMediaIndex()
+		res := mediafacts.ParseResult{
+			Coverage:               mediafacts.ParseCoverageComplete,
+			ProcessedThroughOffset: 376,
+			Timing: mediafacts.TimingResult{
+				Authority: mediafacts.TimingAuthorityCanonical,
+				Records: []mediafacts.TimingRecord{
+					{
+						Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+						RAP: mediafacts.TimingPoint{
+							Epoch:      1,
+							PID:        256,
+							HasPTS:     true,
+							PTS90k:     90000,
+							SubjectAt:  200, // 200 + 188 = 388 > 376
+							ObservedAt: 300,
+						},
+					},
+				},
+			},
+			Events: []mediafacts.Event{
+				{Kind: mediafacts.EventRandomAccessPoint, Offset: 200, Joinable: true},
+			},
+		}
+		err := idx.ApplyIngestResult(res)
+		if !errors.Is(err, ErrEventBeyondProcessedBytes) {
+			t.Fatalf("expected ErrEventBeyondProcessedBytes, got: %v", err)
+		}
+		if _, ok := idx.FindPrecedingRAP(1000); ok {
+			t.Errorf("RAP added after bounds violation")
+		}
+	})
+}
+
+func TestPresentationTimeline_UnboundRAPsAndFlaglessDiscontinuitiesNotAttributedToEpoch0(t *testing.T) {
+	idx := NewMediaIndex()
+
+	// 1. Establish Epoch 0 with a canonical program start discontinuity and timing point
+	res0 := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 376,
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:         mediafacts.DiscontinuityScopeProgram,
+						ObservedAt:    0,
+						HasEpochAfter: true,
+						EpochAfter:    0,
+					},
+				},
+				{
+					Type: mediafacts.TimingRecordTypePES,
+					PES: mediafacts.TimingPoint{
+						Epoch:      0,
+						PID:        256,
+						HasPTS:     true,
+						PTS90k:     90000,
+						SubjectAt:  0,
+						ObservedAt: 0,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(res0); err != nil {
+		t.Fatalf("ApplyIngestResult res0 failed: %v", err)
+	}
+
+	// 2. Ingest an unbound RAP (EventRandomAccessPoint without TimingRecordRAP) and a track-scope discontinuity
+	// Track-scope discontinuity has HasEpochBefore=false and HasEpochAfter=false.
+	resUnbound := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 752,
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 376, Joinable: true},
+		},
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeDiscontinuity,
+					Discontinuity: mediafacts.DiscontinuityRecord{
+						Scope:          mediafacts.DiscontinuityScopeTrack,
+						TrackPID:       256,
+						Reason:         mediafacts.DiscontinuityReasonTransportTimingLoss,
+						ObservedAt:     400,
+						HasEpochBefore: false,
+						HasEpochAfter:  false,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(resUnbound); err != nil {
+		t.Fatalf("ApplyIngestResult resUnbound failed: %v", err)
+	}
+
+	// 3. Ingest a bound RAP for Epoch 0
+	resBound := mediafacts.ParseResult{
+		Coverage:               mediafacts.ParseCoverageComplete,
+		ProcessedThroughOffset: 1128,
+		Events: []mediafacts.Event{
+			{Kind: mediafacts.EventRandomAccessPoint, Offset: 752, Joinable: true},
+		},
+		Timing: mediafacts.TimingResult{
+			Authority: mediafacts.TimingAuthorityCanonical,
+			Records: []mediafacts.TimingRecord{
+				{
+					Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+					RAP: mediafacts.TimingPoint{
+						Epoch:      0,
+						PID:        256,
+						HasPTS:     true,
+						PTS90k:     95000,
+						SubjectAt:  752,
+						ObservedAt: 752,
+					},
+				},
+			},
+		},
+	}
+	if err := idx.ApplyIngestResult(resBound); err != nil {
+		t.Fatalf("ApplyIngestResult resBound failed: %v", err)
+	}
+
+	pt, ok := idx.PresentationTimeline(0)
+	if !ok {
+		t.Fatalf("expected PresentationTimeline(0) to exist")
+	}
+
+	// Unbound RAP at offset 376 must NOT be counted into Epoch 0
+	if pt.TotalRAPs != 1 {
+		t.Errorf("pt.TotalRAPs = %d, want 1 (unbound RAP must not be counted)", pt.TotalRAPs)
+	}
+	if !pt.HasFirstRAP || pt.FirstRAPOffset != 752 {
+		t.Errorf("pt.FirstRAPOffset = %d (has=%v), want 752", pt.FirstRAPOffset, pt.HasFirstRAP)
+	}
+	if !pt.HasLastRAP || pt.LastRAPOffset != 752 {
+		t.Errorf("pt.LastRAPOffset = %d (has=%v), want 752", pt.LastRAPOffset, pt.HasLastRAP)
+	}
+
+	// Track-scope discontinuity at 400 (without HasEpoch* flags) must NOT be attributed to Epoch 0
+	for _, d := range pt.Discontinuities {
+		if d.Scope == mediafacts.DiscontinuityScopeTrack {
+			t.Errorf("track-scope discontinuity without epoch flags was misattributed to Epoch 0: %+v", d)
+		}
 	}
 }

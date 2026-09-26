@@ -6,6 +6,7 @@ package timeline
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 
@@ -38,6 +39,10 @@ var (
 	// ErrNonMonotonicObservedAt is returned when incoming timing records break non-decreasing
 	// ObservedAt order, violating the precondition required for binary search and deterministic indexing.
 	ErrNonMonotonicObservedAt = errors.New("non-monotonic observed_at in timing records")
+
+	// ErrEventBeyondProcessedBytes is returned when an event or timing record refers to an offset
+	// at or beyond ProcessedThroughOffset, violating "no truth without corresponding bytes".
+	ErrEventBeyondProcessedBytes = errors.New("event or timing point beyond processed chunk bytes")
 )
 
 // MediaIndex provides thread-safe, deterministic indexing and querying of canonical media facts.
@@ -91,7 +96,51 @@ func (idx *MediaIndex) ApplyIngestResult(res mediafacts.ParseResult) error {
 		return ErrNonCanonicalTiming
 	}
 
-	// 1. Pre-validation: every RAP timing record binds exactly one RAP event of this result.
+	// 1. Pre-validation: "No truth without corresponding bytes".
+	// All events and timing records must fall within ProcessedThroughOffset.
+	if res.ProcessedThroughOffset < 0 || (res.ProcessedThroughOffset == 0 && (len(res.Events) > 0 || len(res.Timing.Records) > 0)) {
+		return ErrEventBeyondProcessedBytes
+	}
+	for _, ev := range res.Events {
+		if ev.Offset < 0 {
+			return ErrEventBeyondProcessedBytes
+		}
+		if ev.Kind == mediafacts.EventRandomAccessPoint {
+			if ev.Offset+mediafacts.TSPacketSize > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		} else if ev.Offset > res.ProcessedThroughOffset {
+			return ErrEventBeyondProcessedBytes
+		}
+	}
+	for _, rec := range res.Timing.Records {
+		switch rec.Type {
+		case mediafacts.TimingRecordTypeRandomAccessPoint:
+			if rec.RAP.SubjectAt < 0 || rec.RAP.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if rec.RAP.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.RAP.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		case mediafacts.TimingRecordTypePCR:
+			if rec.PCR.ObservedAt < 0 || rec.PCR.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		case mediafacts.TimingRecordTypePES:
+			if rec.PES.SubjectAt < 0 || rec.PES.ObservedAt < 0 {
+				return ErrEventBeyondProcessedBytes
+			}
+			if rec.PES.SubjectAt+mediafacts.TSPacketSize > res.ProcessedThroughOffset || rec.PES.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		case mediafacts.TimingRecordTypeDiscontinuity:
+			if rec.Discontinuity.ObservedAt < 0 || rec.Discontinuity.ObservedAt > res.ProcessedThroughOffset {
+				return ErrEventBeyondProcessedBytes
+			}
+		}
+	}
+
+	// 2. Pre-validation: every RAP timing record binds exactly one RAP event of this result.
 	rapEvents := make(map[int64]bool)
 	for _, ev := range res.Events {
 		if ev.Kind == mediafacts.EventRandomAccessPoint {
@@ -712,5 +761,199 @@ func (idx *MediaIndex) Stats() TimelineStats {
 		TimingPoints: len(idx.timingPoints),
 		PCREntries:   len(idx.pcrs),
 		EpochKeys:    len(idx.rapsByPTS),
+	}
+}
+
+// PresentationTimeline computes presentation timing and RAP metrics for an epoch.
+// PES points are evaluated using SubjectAt. Tracks are keyed by PID without inferred media types.
+func (idx *MediaIndex) PresentationTimeline(epoch mediafacts.TimelineEpoch) (PresentationTimeline, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.presentationTimelineLocked(epoch)
+}
+
+func (idx *MediaIndex) presentationTimelineLocked(epoch mediafacts.TimelineEpoch) (PresentationTimeline, bool) {
+	var span EpochSpan
+	var foundSpan bool
+	for _, s := range idx.epochSpans {
+		if s.Epoch == epoch {
+			span = s
+			foundSpan = true
+			break
+		}
+	}
+	if !foundSpan {
+		return PresentationTimeline{}, false
+	}
+
+	pt := PresentationTimeline{
+		Epoch:       epoch,
+		StartOffset: span.StartOffset,
+		EndOffset:   span.EndOffset,
+		Closed:      span.Closed,
+	}
+
+	// 1. Evaluate RAPs for this epoch
+	for _, r := range idx.rapsByOffset {
+		if r.HasTimingBinding && r.Epoch == epoch {
+			if !pt.HasFirstRAP {
+				pt.HasFirstRAP = true
+				pt.FirstRAPOffset = r.Offset
+			}
+			pt.HasLastRAP = true
+			pt.LastRAPOffset = r.Offset
+			pt.TotalRAPs++
+			if r.Joinable {
+				pt.JoinableRAPs++
+			}
+		}
+	}
+
+	// 2. Evaluate TimingPoints for this epoch, grouped strictly by PID
+	tracksMap := make(map[uint16]*TrackPresentation)
+	for _, tp := range idx.timingPoints {
+		if tp.Epoch != epoch {
+			continue
+		}
+		track, exists := tracksMap[tp.PID]
+		if !exists {
+			track = &TrackPresentation{
+				PID: tp.PID,
+			}
+			tracksMap[tp.PID] = track
+		}
+		track.SampleCount++
+		if tp.HasPTS {
+			if !track.HasPTS {
+				track.HasPTS = true
+				track.EarliestPTS90k = tp.PTS90k
+				track.LatestPTS90k = tp.PTS90k
+			} else {
+				if tp.PTS90k < track.EarliestPTS90k {
+					track.EarliestPTS90k = tp.PTS90k
+				}
+				if tp.PTS90k > track.LatestPTS90k {
+					track.LatestPTS90k = tp.PTS90k
+				}
+			}
+		}
+	}
+
+	pids := make([]uint16, 0, len(tracksMap))
+	for pid := range tracksMap {
+		pids = append(pids, pid)
+	}
+	slices.Sort(pids)
+
+	pt.Tracks = make([]TrackPresentation, 0, len(pids))
+	for _, pid := range pids {
+		t := *tracksMap[pid]
+		if t.HasPTS && t.SampleCount >= 2 && t.LatestPTS90k >= t.EarliestPTS90k {
+			t.ObservedSpan90k = t.LatestPTS90k - t.EarliestPTS90k
+		}
+		pt.Tracks = append(pt.Tracks, t)
+	}
+
+	// 3. Collect Discontinuities for this epoch
+	for _, d := range idx.discontinuities {
+		if (d.HasEpochBefore && d.EpochBefore == epoch) || (d.HasEpochAfter && d.EpochAfter == epoch) {
+			pt.Discontinuities = append(pt.Discontinuities, d)
+		}
+	}
+
+	return pt, true
+}
+
+// PresentationTimelines returns PresentationTimeline for all tracked epochs in chronological order.
+func (idx *MediaIndex) PresentationTimelines() []PresentationTimeline {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	res := make([]PresentationTimeline, 0, len(idx.epochSpans))
+	for _, span := range idx.epochSpans {
+		if pt, ok := idx.presentationTimelineLocked(span.Epoch); ok {
+			res = append(res, pt)
+		}
+	}
+	return res
+}
+
+// FindRAPByTime finds a RAP in epoch matching target PTS subject to SeekOptions.
+func (idx *MediaIndex) FindRAPByTime(epoch mediafacts.TimelineEpoch, pts int64, opts SeekOptions) (RAPEntry, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	raw := idx.rapsByPTS[epoch]
+	if len(raw) == 0 {
+		return RAPEntry{}, false
+	}
+
+	var list []RAPEntry
+	if opts.JoinableOnly {
+		list = make([]RAPEntry, 0, len(raw))
+		for _, r := range raw {
+			if r.Joinable {
+				list = append(list, r)
+			}
+		}
+	} else {
+		list = raw
+	}
+
+	n := len(list)
+	if n == 0 {
+		return RAPEntry{}, false
+	}
+
+	switch opts.Mode {
+	case SeekModePreceding:
+		i := sort.Search(n, func(i int) bool {
+			return list[i].PTS90k > pts
+		})
+		if i == 0 {
+			return RAPEntry{}, false
+		}
+		return list[i-1], true
+
+	case SeekModeFollowing:
+		i := sort.Search(n, func(i int) bool {
+			return list[i].PTS90k >= pts
+		})
+		if i == n {
+			return RAPEntry{}, false
+		}
+		return list[i], true
+
+	case SeekModeNearest:
+		i := sort.Search(n, func(i int) bool {
+			return list[i].PTS90k > pts
+		})
+		if i == 0 {
+			targetPTS := list[0].PTS90k
+			last := sort.Search(n, func(j int) bool {
+				return list[j].PTS90k > targetPTS
+			})
+			return list[last-1], true
+		}
+		if i == n {
+			return list[n-1], true
+		}
+
+		targetAfterPTS := list[i].PTS90k
+		lastAfter := sort.Search(n, func(j int) bool {
+			return list[j].PTS90k > targetAfterPTS
+		})
+		afterEntry := list[lastAfter-1]
+
+		distBefore := distancePTS(list[i-1].PTS90k, pts)
+		distAfter := distancePTS(afterEntry.PTS90k, pts)
+
+		if distBefore <= distAfter {
+			return list[i-1], true
+		}
+		return afterEntry, true
+
+	default:
+		return RAPEntry{}, false
 	}
 }

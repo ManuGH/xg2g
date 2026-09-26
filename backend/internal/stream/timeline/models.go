@@ -100,3 +100,49 @@ func (s TimelineStats) BoundRAPRatio() float64 {
 	}
 	return float64(s.BoundRAPs) / float64(s.TotalRAPs)
 }
+
+// TrackPresentation captures observed presentation metrics for a single elementary stream PID.
+type TrackPresentation struct {
+	PID             uint16
+	HasPTS          bool
+	EarliestPTS90k  int64
+	LatestPTS90k    int64
+	ObservedSpan90k int64 // LatestPTS90k - EarliestPTS90k (0 if SampleCount < 2)
+	SampleCount     int
+}
+
+// PresentationTimeline provides an atomic snapshot of an epoch's presentation window.
+// Timing boundaries are derived strictly from canonical PES timing points evaluated at SubjectAt.
+// Tracks are keyed by PID without inferred media types.
+type PresentationTimeline struct {
+	Epoch           mediafacts.TimelineEpoch
+	StartOffset     int64
+	EndOffset       int64
+	Closed          bool
+	Tracks          []TrackPresentation // Sorted by PID ascending
+	TotalRAPs       int
+	JoinableRAPs    int
+	HasFirstRAP     bool
+	FirstRAPOffset  int64
+	HasLastRAP      bool
+	LastRAPOffset   int64
+	Discontinuities []DiscontinuityEntry
+}
+
+// SeekMode specifies alignment strategy when seeking to a timestamp.
+type SeekMode int
+
+const (
+	// SeekModePreceding seeks to the greatest PTS <= target PTS (standard for video decoders).
+	SeekModePreceding SeekMode = iota
+	// SeekModeNearest seeks to the closest PTS to target PTS.
+	SeekModeNearest
+	// SeekModeFollowing seeks to the smallest PTS >= target PTS.
+	SeekModeFollowing
+)
+
+// SeekOptions controls RAP selection during raw diagnostic seeks.
+type SeekOptions struct {
+	Mode         SeekMode
+	JoinableOnly bool // When true, only RAPs with Joinable == true are eligible.
+}
