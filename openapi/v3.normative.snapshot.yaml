@@ -888,6 +888,87 @@ components:
           allOf:
             - $ref: "#/components/schemas/PlaybackEngineErrorContext"
 
+    PlaybackTelemetryBatch:
+      type: object
+      required: [client, events]
+      additionalProperties: false
+      description: One upload of playback telemetry from one client.
+      properties:
+        client:
+          $ref: "#/components/schemas/PlaybackTelemetryClient"
+        events:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/PlaybackTelemetryEvent"
+
+    PlaybackTelemetryClient:
+      type: object
+      required: [platform]
+      additionalProperties: false
+      description: The client build that observed the events.
+      properties:
+        platform:
+          type: string
+          enum: [ios, tvos, android, web]
+        appVersion:
+          type: string
+          maxLength: 64
+        build:
+          type: string
+          maxLength: 64
+        device:
+          type: string
+          maxLength: 64
+          description: Hardware model identifier, never a user-assigned device name.
+
+    PlaybackTelemetryEvent:
+      type: object
+      required: [kind, occurredAt]
+      additionalProperties: false
+      description: |
+        One observation about the stream on screen. `heartbeat` is a periodic
+        sample of a healthy window, `degraded` the same sample for a window in
+        which the client saw a fault (named in `reasons`), and `session_start`
+        and `session_end` bracket one channel being shown.
+      properties:
+        kind:
+          type: string
+          enum: [session_start, heartbeat, degraded, session_end]
+        occurredAt:
+          type: string
+          format: date-time
+          description: Client wall-clock time the observation was taken.
+        zapId:
+          type: string
+          maxLength: 64
+          description: The channel change this stream belongs to, as sent in X-Xg2g-Zap-Id.
+        serviceRef:
+          type: string
+          maxLength: 128
+        sessionId:
+          type: string
+          maxLength: 64
+          description: Server session identifier, for session-based playback paths.
+        reasons:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            maxLength: 64
+          description: Machine-readable causes of a degraded window, e.g. audio_underruns.
+        detail:
+          type: string
+          maxLength: 512
+        metrics:
+          type: object
+          maxProperties: 48
+          description: Numeric figures for the window, keyed by lowerCamelCase name.
+          additionalProperties:
+            type: number
+            format: double
+
     PlaybackEngineErrorContext:
       type: object
       additionalProperties: false
@@ -3655,6 +3736,7 @@ x-xg2g-native-contract:
     - NowNextResponse
     - PairingSecretRequest
     - PairingStatusResponse
+    - PlaybackTelemetryBatch
     - PlaybackTicketResponse
     - PublishedEndpoint
     - RecordingResponse
@@ -4186,6 +4268,13 @@ x-xg2g-operation-policies:
     audit: true
     redactErrors: false
   ReportPlaybackFeedback:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostPlaybackTelemetry:
     class: session
     auth: bearer_scope
     browserTrust: same_origin_or_allowed_origin
@@ -6246,6 +6335,35 @@ paths:
           description: Feedback accepted
         "404":
           description: Session not found
+
+  /telemetry/playback:
+    post:
+      summary: Report client playback telemetry
+      description: |
+        Playback health reported by a client about the stream it is showing:
+        periodic samples, degraded windows, and the start and end of a viewing
+        session. The server writes every event to its log and counts it by
+        platform and kind; nothing is stored. Clients send it best-effort and
+        must neither retry nor let a failed upload affect playback.
+      operationId: postPlaybackTelemetry
+      tags: [streams]
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaybackTelemetryBatch"
+      responses:
+        "202":
+          description: Telemetry accepted
+        "400":
+          description: The batch is malformed or exceeds its limits
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /sessions/{sessionId}/playback-ticket:
     post:

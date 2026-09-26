@@ -254,6 +254,32 @@ enum class PlaybackInfoMode(val wireValue: String) {
     }
 }
 
+enum class PlaybackTelemetryClientPlatform(val wireValue: String) {
+    IOS("ios"),
+    TVOS("tvos"),
+    ANDROID("android"),
+    WEB("web");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackTelemetryClientPlatform"): PlaybackTelemetryClientPlatform =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackTelemetryClientPlatform")
+    }
+}
+
+enum class PlaybackTelemetryEventKind(val wireValue: String) {
+    SESSION_START("session_start"),
+    HEARTBEAT("heartbeat"),
+    DEGRADED("degraded"),
+    SESSION_END("session_end");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "PlaybackTelemetryEventKind"): PlaybackTelemetryEventKind =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known PlaybackTelemetryEventKind")
+    }
+}
+
 enum class PublishedEndpointKind(val wireValue: String) {
     PUBLIC_HTTPS("public_https"),
     LOCAL_HTTPS("local_https"),
@@ -1360,6 +1386,114 @@ data class PlaybackNetworkContext(
         internetValidated?.let { put("internetValidated", it) }
         kind?.let { put("kind", it) }
         metered?.let { put("metered", it) }
+    }
+}
+
+/**
+ * One upload of playback telemetry from one client.
+ */
+data class PlaybackTelemetryBatch(
+    /**
+     * The client build that observed the events.
+     */
+    val client: PlaybackTelemetryClient,
+    val events: List<PlaybackTelemetryEvent>
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackTelemetryBatch"): PlaybackTelemetryBatch = PlaybackTelemetryBatch(
+            client = PlaybackTelemetryClient.fromJson(requireObject(json.requireField("client", owner), owner, "client"), owner),
+            events = requireArray(json.requireField("events", owner), owner, "events").let { array -> (0 until array.length()).map { index -> PlaybackTelemetryEvent.fromJson(requireObject(array.get(index), owner, "events"), owner) } }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("client", client.toJson())
+        put("events", JSONArray(events.map { element -> element.toJson() }))
+    }
+}
+
+/**
+ * The client build that observed the events.
+ */
+data class PlaybackTelemetryClient(
+    val appVersion: String? = null,
+    val build: String? = null,
+    /**
+     * Hardware model identifier, never a user-assigned device name.
+     */
+    val device: String? = null,
+    val platform: PlaybackTelemetryClientPlatform
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackTelemetryClient"): PlaybackTelemetryClient = PlaybackTelemetryClient(
+            appVersion = json.optionalField("appVersion")?.let { requireString(it, owner, "appVersion") },
+            build = json.optionalField("build")?.let { requireString(it, owner, "build") },
+            device = json.optionalField("device")?.let { requireString(it, owner, "device") },
+            platform = PlaybackTelemetryClientPlatform.fromWire(requireString(json.requireField("platform", owner), owner, "platform"), owner)
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        appVersion?.let { put("appVersion", it) }
+        build?.let { put("build", it) }
+        device?.let { put("device", it) }
+        put("platform", platform.wireValue)
+    }
+}
+
+/**
+ * One observation about the stream on screen. `heartbeat` is a periodic
+ * sample of a healthy window, `degraded` the same sample for a window in
+ * which the client saw a fault (named in `reasons`), and `session_start`
+ * and `session_end` bracket one channel being shown.
+ */
+data class PlaybackTelemetryEvent(
+    val detail: String? = null,
+    val kind: PlaybackTelemetryEventKind,
+    /**
+     * Numeric figures for the window, keyed by lowerCamelCase name.
+     */
+    val metrics: Map<String, Double>? = null,
+    /**
+     * Client wall-clock time the observation was taken.
+     */
+    val occurredAt: Instant,
+    /**
+     * Machine-readable causes of a degraded window, e.g. audio_underruns.
+     */
+    val reasons: List<String>? = null,
+    val serviceRef: String? = null,
+    /**
+     * Server session identifier, for session-based playback paths.
+     */
+    val sessionId: String? = null,
+    /**
+     * The channel change this stream belongs to, as sent in X-Xg2g-Zap-Id.
+     */
+    val zapId: String? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "PlaybackTelemetryEvent"): PlaybackTelemetryEvent = PlaybackTelemetryEvent(
+            detail = json.optionalField("detail")?.let { requireString(it, owner, "detail") },
+            kind = PlaybackTelemetryEventKind.fromWire(requireString(json.requireField("kind", owner), owner, "kind"), owner),
+            metrics = json.optionalField("metrics")?.let { requireObject(it, owner, "metrics").let { obj -> obj.keys().asSequence().associateWith { key -> requireDouble(obj.get(key), owner, "metrics") } } },
+            occurredAt = requireInstant(json.requireField("occurredAt", owner), owner, "occurredAt"),
+            reasons = json.optionalField("reasons")?.let { requireArray(it, owner, "reasons").let { array -> (0 until array.length()).map { index -> requireString(array.get(index), owner, "reasons") } } },
+            serviceRef = json.optionalField("serviceRef")?.let { requireString(it, owner, "serviceRef") },
+            sessionId = json.optionalField("sessionId")?.let { requireString(it, owner, "sessionId") },
+            zapId = json.optionalField("zapId")?.let { requireString(it, owner, "zapId") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        detail?.let { put("detail", it) }
+        put("kind", kind.wireValue)
+        metrics?.let { put("metrics", JSONObject(it.mapValues { (_, value) -> value })) }
+        put("occurredAt", occurredAt.toString())
+        reasons?.let { put("reasons", JSONArray(it.map { element -> element })) }
+        serviceRef?.let { put("serviceRef", it) }
+        sessionId?.let { put("sessionId", it) }
+        zapId?.let { put("zapId", it) }
     }
 }
 
