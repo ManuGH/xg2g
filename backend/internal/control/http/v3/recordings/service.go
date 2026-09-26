@@ -147,7 +147,13 @@ func (s *Service) probeLiveTruthBounded(ctx context.Context, probeSource channel
 	budget := liveInteractiveProbeBudget()
 	if deadline, ok := ctx.Deadline(); ok {
 		// Leave at least 500ms safety margin for response serialization and network write.
-		if remaining := time.Until(deadline) - 500*time.Millisecond; remaining > 0 && remaining < budget {
+		remaining := time.Until(deadline) - 500*time.Millisecond
+		if remaining <= 0 {
+			// If less than safety margin remains, fail fast immediately so the handler
+			// can write and flush the 503 response before the deadline expires.
+			return scan.Capability{}, false, false, nil
+		}
+		if remaining < budget {
 			budget = remaining
 		}
 	}

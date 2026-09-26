@@ -108,6 +108,19 @@ func (s *DeadlineState) setCurrentDeadline(value time.Time) {
 	s.mu.Unlock()
 }
 
+// CurrentDeadline returns the active write deadline for the request, if any.
+func (s *DeadlineState) CurrentDeadline() (time.Time, bool) {
+	if s == nil {
+		return time.Time{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.currentDeadline.IsZero() {
+		return time.Time{}, false
+	}
+	return s.currentDeadline, true
+}
+
 func (s *DeadlineState) deadlineExpired() bool {
 	s.mu.Lock()
 	value := s.currentDeadline
@@ -218,7 +231,15 @@ func WithRoutePolicy(policy deadline.RoutePolicy, mode RuntimeMode) func(http.Ha
 				http.Error(w, "failed to bind deadline policy", http.StatusInternalServerError)
 				return
 			}
-			next.ServeHTTP(w, r)
+			ctx := r.Context()
+			if policy.Class != deadline.RouteDeadlineStreaming {
+				if d, ok := state.CurrentDeadline(); ok {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithDeadline(ctx, d)
+					defer cancel()
+				}
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

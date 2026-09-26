@@ -210,3 +210,41 @@ func TestService_ResolvePlaybackInfo_LiveProbeClampedByContextDeadline(t *testin
 	// Must return well before the 600ms deadline (around 100ms clamped budget), not wait for 3.5s budget
 	assert.Less(t, elapsed, 400*time.Millisecond, "probe budget should be clamped to leave write margin before context deadline")
 }
+
+func TestService_ResolvePlaybackInfo_LiveProbeImmediateFailFastWhenDeadlineUnderMargin(t *testing.T) {
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(string) (scan.Capability, bool) {
+			return scan.Capability{}, false
+		},
+		probeCapabilityFn: func(ctx context.Context, sRef string) (scan.Capability, bool, error) {
+			select {
+			case <-time.After(2 * time.Second):
+				return okLiveCapability(), true, nil
+			case <-ctx.Done():
+				return scan.Capability{}, false, ctx.Err()
+			}
+		},
+	}
+
+	svc := NewService(stubDeps{svc: &stubRecordingsService{}, truthSource: truthSource, cfg: liveProbeTestConfig()})
+
+	// Caller context with 300ms deadline (less than 500ms safety margin).
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := svc.ResolvePlaybackInfo(ctx, PlaybackInfoRequest{
+		SubjectID:   testLiveRef,
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-tight-deadline",
+		Headers:     map[string]string{PlaybackInfoContextHeader: PlaybackInfoContextPlayerStart},
+	})
+	elapsed := time.Since(start)
+
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	// Must fail fast almost immediately, preserving remaining time to serialize and flush 503
+	assert.Less(t, elapsed, 100*time.Millisecond, "should fail fast when remaining time is less than safety margin")
+}

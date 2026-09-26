@@ -13,6 +13,7 @@ import (
 
 	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/household"
@@ -73,9 +74,19 @@ func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request, pa
 }
 
 func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string, caps *v3playbackinfo.PlaybackCapabilities, apiVersion string, schemaType string, wire v3playbackinfo.WireParams) {
+	ctx := r.Context()
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		if state, ok := middleware.DeadlineStateFromContext(ctx); ok {
+			if d, ok := state.CurrentDeadline(); ok {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, d)
+				defer cancel()
+			}
+		}
+	}
 	deps := s.recordingsModuleDeps()
 	serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, recordingId, caps, apiVersion, schemaType, wire)
-	dto, err := s.buildPlaybackInfoHTTPResponse(r.Context(), deps, recordingId, caps, schemaType, serviceRequest)
+	dto, err := s.buildPlaybackInfoHTTPResponse(ctx, deps, recordingId, caps, schemaType, serviceRequest)
 	if err != nil {
 		v3playbackinfo.WritePlaybackInfoServiceError(w, r, recordingId, schemaType, err)
 		return
