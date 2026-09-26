@@ -88,7 +88,7 @@ func NewWithDeps(cfg config.AppConfig, cfgMgr *config.Manager, constructorDeps C
 	adm := admission.NewController(cfg)
 	s.WireV3Runtime(s.v3RuntimeDeps, adm)
 
-	s.initHDHR(cfg, deps.channelManager)
+	warnRemovedHDHR(cfg)
 	s.registerHealthCheckers(cfg)
 
 	return s, nil

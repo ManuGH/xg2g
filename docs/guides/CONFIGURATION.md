@@ -185,14 +185,14 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `hdhr.baseUrl` | - | - | Active | Advanced |
-| `hdhr.deviceId` | - | - | Active | Advanced |
-| `hdhr.enabled` | - | `false` | Active | Advanced |
-| `hdhr.firmwareName` | - | - | Active | Advanced |
-| `hdhr.friendlyName` | - | - | Active | Advanced |
-| `hdhr.modelNumber` | - | - | Active | Advanced |
-| `hdhr.plexForceHls` | - | - | Active | Advanced |
-| `hdhr.tunerCount` | - | - | Active | Advanced |
+| `hdhr.baseUrl` | - | - | Deprecated | Advanced |
+| `hdhr.deviceId` | - | - | Deprecated | Advanced |
+| `hdhr.enabled` | - | `false` | Deprecated | Advanced |
+| `hdhr.firmwareName` | - | - | Deprecated | Advanced |
+| `hdhr.friendlyName` | - | - | Deprecated | Advanced |
+| `hdhr.modelNumber` | - | - | Deprecated | Advanced |
+| `hdhr.plexForceHls` | - | - | Deprecated | Advanced |
+| `hdhr.tunerCount` | - | - | Deprecated | Advanced |
 
 ### hls
 

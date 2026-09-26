@@ -18,7 +18,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
-	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -39,7 +38,6 @@ type Server struct {
 	configHolder   ConfigHolder
 	status         jobs.Status
 	cb             *resilience.CircuitBreaker
-	hdhr           *hdhr.Server      // HDHomeRun emulation server
 	auditLogger    AuditLogger       // Optional: for audit logging
 	healthManager  *health.Manager   // Health and readiness checks
 	channelManager *channels.Manager // Channel management

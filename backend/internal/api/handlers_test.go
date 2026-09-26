@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,14 +98,33 @@ func TestHandleRefreshInternal(t *testing.T) {
 	}
 }
 
-// TestHDHomeRunServer tests the HDHomeRunServer getter.
-func TestHDHomeRunServer(t *testing.T) {
-	s := &Server{
-		hdhr: nil,
-	}
+// TestRemovedHDHRWarning pins who is told the HDHomeRun emulation is gone: only an
+// operator who explicitly enables it. An absent or disabled switch asks for
+// nothing and must stay quiet.
+func TestRemovedHDHRWarning(t *testing.T) {
+	enabled, disabled := true, false
 
-	if got := s.HDHomeRunServer(); got != nil {
-		t.Errorf("expected nil HDHomeRun server, got %v", got)
+	for _, tc := range []struct {
+		name    string
+		enabled *bool
+		warn    bool
+	}{
+		{"absent", nil, false},
+		{"disabled", &disabled, false},
+		{"enabled", &enabled, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, warn := removedHDHRWarning(tc.enabled)
+			if warn != tc.warn {
+				t.Fatalf("warn = %v, want %v", warn, tc.warn)
+			}
+			if warn && !strings.Contains(msg, "hdhr.enabled") {
+				t.Fatalf("warning %q does not name the key the operator set", msg)
+			}
+			if !warn && msg != "" {
+				t.Fatalf("no warning expected, got message %q", msg)
+			}
+		})
 	}
 }
 
