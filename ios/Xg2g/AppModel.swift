@@ -326,6 +326,9 @@ final class AppModel {
             preparationsProvider: { [weak self] in
                 self?.makeZapPreparationClient()
             },
+            telemetryProvider: { [weak self] in
+                self?.makePlaybackTelemetryClient()
+            },
             streamURL: { [weak self] serviceRef in
                 self?.liveStreamURL(for: serviceRef)
             }
@@ -438,6 +441,15 @@ final class AppModel {
     func makeZapPreparationClient() -> ZapPreparationClient? {
         guard let api else { return nil }
         return ZapPreparationClient(api: api, clientID: Self.zapClientID)
+    }
+
+    /// A playback telemetry client, when a backend address has been configured.
+    ///
+    /// Same identity as the preparation client, so the server can put a client's
+    /// telemetry next to the channel changes it made.
+    func makePlaybackTelemetryClient() -> PlaybackTelemetryClient? {
+        guard let api else { return nil }
+        return PlaybackTelemetryClient(api: api, clientID: Self.zapClientID)
     }
 
     /// The legacy burst smoother URL for a service reference.
