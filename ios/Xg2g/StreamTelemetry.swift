@@ -144,6 +144,23 @@ public struct TelemetryValues: Sendable {
     public var audioLeadMs: Double = 0.0    // Current cushion
     public var audioMinLeadMs: Double = 0.0 // Worst cushion in the last window
 
+    /// Gaps of 250 ms or more with no bytes arriving, and the longest of them.
+    /// Kept by the pipeline all along but only ever printed, so nothing reading
+    /// telemetry could tell a starved stream from a starved decoder.
+    public var networkStalls: Int = 0
+    public var longestNetworkStallMs: Double = 0.0
+
+    /// Fields handed to the display, cumulative for the stream.
+    ///
+    /// The per-second rates only refresh while fields are flowing, so a picture
+    /// that stops keeps reporting the last healthy rate. A total that stops
+    /// growing is the reading that cannot go stale.
+    public var presentedFieldsTotal: Int = 0
+
+    /// Stream bytes received, cumulative. The bitrate is recomputed only when
+    /// bytes arrive, so it too keeps its last value once they stop.
+    public var bytesReceivedTotal: Int = 0
+
     /// Access units emitted without a PES timestamp. A healthy broadcast stream
     /// carries one PTS per coded picture, so a rising count means the assembler
     /// is splitting pictures into multiple access units.
@@ -271,6 +288,9 @@ public struct TelemetryValues: Sendable {
             "audio_underruns": audioUnderruns,
             "audio_lead_ms": audioLeadMs,
             "audio_min_lead_ms": audioMinLeadMs,
+            "network_stalls": networkStalls,
+            "longest_network_stall_ms": longestNetworkStallMs,
+            "presented_fields_total": presentedFieldsTotal,
             "continuity_errors": continuityErrors,
             "pes_errors": pesErrors,
             "codec": codec,
