@@ -42,4 +42,47 @@ describe('playbackRenderProbe', () => {
     expect(isBlackRenderSuspect(started, settled)).toBe(false);
     expect(describeHlsRenderProbe('stable', settled, started)).toContain('frames=96');
   });
+
+  it('reports buffer shape and every stall and hole with per-beat deltas', () => {
+    const counters = {
+      stalls: 1,
+      stallMs: 400,
+      holeJumps: 2,
+      nudges: 0,
+      stallErrors: 1,
+      appendErrors: 0,
+    };
+    const previous = snapshot({ stalls: counters });
+    const beat = snapshot({
+      currentTime: 42,
+      bufferedAhead: 0.95,
+      bufferedRanges: 3,
+      bufferedTail: 7.5,
+      liveLatency: 4.25,
+      stalls: { ...counters, stalls: 4, stallMs: 1900, holeJumps: 9, nudges: 2 },
+    });
+
+    const line = describeHlsRenderProbe('heartbeat', beat, previous);
+
+    expect(line).toContain('buf=0.95');
+    expect(line).toContain('ranges=3');
+    expect(line).toContain('tail=7.50');
+    expect(line).toContain('lat=4.25');
+    expect(line).toContain('stalls=4 stall_ms=1900 holes=9 nudges=2 stall_errs=1 append_errs=0');
+    expect(line).toContain('dstalls=3 dstall_ms=1500 dholes=7 dnudges=2 dstall_errs=0');
+  });
+
+  it('leaves the line unchanged for snapshots without buffer shape or counters', () => {
+    const line = describeHlsRenderProbe('heartbeat', snapshot({ currentTime: 42 }), snapshot());
+
+    expect(line).toBe(
+      'hlsjs_render stage=heartbeat t=42.00 rs=4 ns=2 paused=0 dims=1280x720 buf=18.00 rate=1.00 frames=0 drop=0 dt=30.00 df=0',
+    );
+  });
+
+  it('marks an unknown live latency explicitly instead of omitting it', () => {
+    const line = describeHlsRenderProbe('heartbeat', snapshot({ liveLatency: null }));
+
+    expect(line).toContain('lat=na');
+  });
 });

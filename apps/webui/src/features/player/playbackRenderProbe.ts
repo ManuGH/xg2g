@@ -1,4 +1,5 @@
 import type { VideoElementRef } from '../../types/v3-player';
+import type { PlaybackStallCounters } from './playbackStallTracker';
 
 export interface PlaybackFrameCounters {
   totalFrames: number | null;
@@ -14,6 +15,14 @@ export interface HlsRenderProbeSnapshot extends PlaybackFrameCounters {
   paused: boolean;
   bufferedAhead: number;
   playbackRate: number;
+  /** Number of disjoint buffered ranges; more than one means holes ahead or behind. */
+  bufferedRanges?: number;
+  /** Seconds from the playhead to the end of the last buffered range. */
+  bufferedTail?: number;
+  /** hls.js distance to the live edge in seconds, when known. */
+  liveLatency?: number | null;
+  /** Stall and hole counters for the session, cumulative. */
+  stalls?: PlaybackStallCounters;
 }
 
 export function readPlaybackFrameCounters(videoEl: NonNullable<VideoElementRef>): PlaybackFrameCounters {
@@ -61,6 +70,11 @@ export function describeHlsRenderProbe(
     ? snapshot.totalFrames - baseline.totalFrames
     : null;
 
+  const stalls = snapshot.stalls;
+  const baseStalls = baseline?.stalls;
+  const stallDelta = (pick: (c: PlaybackStallCounters) => number): string =>
+    stalls && baseStalls ? formatProbeInt(pick(stalls) - pick(baseStalls)) : 'na';
+
   return [
     `hlsjs_render stage=${stage}`,
     `t=${formatProbeFloat(snapshot.currentTime)}`,
@@ -74,6 +88,20 @@ export function describeHlsRenderProbe(
     `drop=${formatProbeInt(snapshot.droppedFrames)}`,
     baseline ? `dt=${formatProbeFloat(deltaTime)}` : null,
     baseline ? `df=${formatProbeInt(deltaFrames)}` : null,
+    snapshot.bufferedRanges !== undefined ? `ranges=${snapshot.bufferedRanges}` : null,
+    snapshot.bufferedTail !== undefined ? `tail=${formatProbeFloat(snapshot.bufferedTail)}` : null,
+    snapshot.liveLatency !== undefined ? `lat=${formatProbeFloat(snapshot.liveLatency)}` : null,
+    stalls ? `stalls=${stalls.stalls}` : null,
+    stalls ? `stall_ms=${formatProbeInt(stalls.stallMs)}` : null,
+    stalls ? `holes=${stalls.holeJumps}` : null,
+    stalls ? `nudges=${stalls.nudges}` : null,
+    stalls ? `stall_errs=${stalls.stallErrors}` : null,
+    stalls ? `append_errs=${stalls.appendErrors}` : null,
+    stalls && baseStalls ? `dstalls=${stallDelta((c) => c.stalls)}` : null,
+    stalls && baseStalls ? `dstall_ms=${stallDelta((c) => c.stallMs)}` : null,
+    stalls && baseStalls ? `dholes=${stallDelta((c) => c.holeJumps)}` : null,
+    stalls && baseStalls ? `dnudges=${stallDelta((c) => c.nudges)}` : null,
+    stalls && baseStalls ? `dstall_errs=${stallDelta((c) => c.stallErrors)}` : null,
   ].filter(Boolean).join(' ');
 }
 

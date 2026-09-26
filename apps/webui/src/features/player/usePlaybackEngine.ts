@@ -16,6 +16,7 @@ import {
   readPlaybackFrameCounters,
   type HlsRenderProbeSnapshot,
 } from './playbackRenderProbe';
+import { createPlaybackStallTracker } from './playbackStallTracker';
 import {
   extractHlsHttpStatus,
   isNonFatalHlsStallDetail,
@@ -162,6 +163,9 @@ export function usePlaybackEngine({
   const hlsRenderHeartbeatTimerRef = useRef<number | null>(null);
   const hlsRenderHeartbeatSessionRef = useRef<string | null>(null);
   const lastHlsRenderSnapshotRef = useRef<HlsRenderProbeSnapshot | null>(null);
+  // Every stall and buffer hole of the session, reported with the render
+  // heartbeat. The warnings themselves stay deduped; the counts do not.
+  const stallTrackerRef = useRef(createPlaybackStallTracker());
   const networkRetryTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
@@ -340,6 +344,8 @@ export function usePlaybackEngine({
 
   const captureHlsRenderProbeSnapshot = useCallback((videoEl: NonNullable<VideoElementRef>): HlsRenderProbeSnapshot => {
     const counters = readPlaybackFrameCounters(videoEl);
+    const trackedSessionId = sessionIdRef.current;
+    const hlsLatency = hlsRef.current?.latency;
     return {
       currentTime: videoEl.currentTime,
       readyState: videoEl.readyState,
@@ -351,8 +357,12 @@ export function usePlaybackEngine({
       playbackRate: videoEl.playbackRate,
       totalFrames: counters.totalFrames,
       droppedFrames: counters.droppedFrames,
+      bufferedRanges: videoEl.buffered.length,
+      bufferedTail: bufferedTailSeconds(videoEl),
+      liveLatency: typeof hlsLatency === 'number' && Number.isFinite(hlsLatency) ? hlsLatency : null,
+      stalls: trackedSessionId ? stallTrackerRef.current.snapshot(trackedSessionId) : undefined,
     };
-  }, [bufferedAheadSeconds]);
+  }, [bufferedAheadSeconds, bufferedTailSeconds, hlsRef, sessionIdRef]);
 
   const playbackEngineContext = useCallback((
     phase: NonNullable<PlaybackEngineErrorContext['phase']>,
@@ -1093,6 +1103,12 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal) {
+          // Counted before the warning dedupe below, so the heartbeat shows
+          // every hole jump and nudge, not only the first of the session.
+          if (sessionIdRef.current) {
+            stallTrackerRef.current.ensureSession(sessionIdRef.current);
+            stallTrackerRef.current.hlsNonFatal(data.details);
+          }
           // Non-fatal hls.js events are how a live stall / rough cold-start
           // manifests, but were dropped silently here - leaving the backend
           // blind to WHY playback froze. Surface the stall class to server
@@ -1377,6 +1393,15 @@ export function usePlaybackEngine({
       }
     };
 
+    const countStallStarted = () => {
+      const trackedSessionId = sessionIdRef.current;
+      if (!trackedSessionId) {
+        return;
+      }
+      stallTrackerRef.current.ensureSession(trackedSessionId);
+      stallTrackerRef.current.stallStarted();
+    };
+
     const onWaiting = () => {
       if (decodeRecoveryInFlightRef.current) {
         debugLog('[V3Player] Event: waiting ignored during decode recovery');
@@ -1408,6 +1433,7 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
+      countStallStarted();
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting', 'decode');
       scheduleNativeStallRecovery(videoEl, 'waiting');
       scheduleHlsStallRecovery(videoEl, 'waiting');
@@ -1444,6 +1470,7 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       setStatus('buffering');
+      countStallStarted();
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_STALLED, 'stalled', 'decode');
       scheduleNativeStallRecovery(videoEl, 'stalled');
       scheduleHlsStallRecovery(videoEl, 'stalled');
@@ -1484,6 +1511,10 @@ export function usePlaybackEngine({
     const onPlaying = () => {
       onPlaybackMilestone?.('firstFrame');
       debugLog('[V3Player] Event: playing');
+      if (sessionIdRef.current) {
+        stallTrackerRef.current.ensureSession(sessionIdRef.current);
+        stallTrackerRef.current.stallEnded();
+      }
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       decodeRecoveryInFlightRef.current = false;
