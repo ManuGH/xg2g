@@ -401,7 +401,7 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		sampler := ingeststats.NewSubscriberSampler(ingeststats.RoleVariantWorker, masterReader)
 		defer sampler.Flush()
 		timelineSampler := ingeststats.NewTimelineSampler(ingeststats.RoleVariantWorker, masterReader.Ring().Timeline())
-		defer timelineSampler.Flush()
+		defer timelineSampler.Close()
 
 		buf := make([]byte, 32*1024)
 		for {

@@ -12,6 +12,7 @@
 package ingeststats
 
 import (
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -128,35 +129,59 @@ func (s *SubscriberSampler) publish(observeLag bool) {
 	}
 }
 
-// TimelineSampler turns a canonical TimelineReader's stats into Prometheus gauges.
-// It is sampled on the same cadence (sampleInterval = 250ms) as SubscriberSampler.
+// TimelineSampler publishes the canonical timeline stats of the rings a role is
+// reading. It is sampled on the same cadence (sampleInterval = 250ms) as
+// SubscriberSampler.
+//
+// The timeline belongs to the ring, not to the subscription, and one role can be
+// reading several rings at once - two viewers on two channels are two native
+// clients. A gauge per role written by each subscription alone would show
+// whichever ring sampled last, and would keep showing it after the stream ended.
+// So every subscription registers its ring with the role, and each publication
+// states the whole role: the sum over the distinct rings it is reading right
+// now. When the last subscription of a role closes, the role's series are
+// removed rather than left at their final value.
 type TimelineSampler struct {
 	role   Role
 	reader timeline.TimelineReader
 	nextAt time.Time
+	closed bool
 }
 
-// NewTimelineSampler binds a timeline sampler to a reader. It creates the role's series
-// immediately. If reader is nil (e.g. ring has no canonical timeline index), it returns nil.
+// timelineRoles is which rings each role is reading, and how many subscriptions
+// read each of them. Two subscriptions on one ring share a reader, so the ring is
+// counted once. The mutex also orders every gauge write, so a publication cannot
+// land after the series it belongs to has been removed.
+var timelineRoles = struct {
+	mu      sync.Mutex
+	readers map[Role]map[timeline.TimelineReader]int
+}{readers: make(map[Role]map[timeline.TimelineReader]int)}
+
+// NewTimelineSampler registers a subscription's ring with its role and publishes
+// the role at once. If reader is nil (the ring keeps no canonical timeline index),
+// it returns nil.
 func NewTimelineSampler(role Role, reader timeline.TimelineReader) *TimelineSampler {
 	if reader == nil {
 		return nil
 	}
 
-	label := string(role)
-	metrics.IngestTimelineBoundRAPRatio.WithLabelValues(label)
-	metrics.IngestTimelineRAPCount.WithLabelValues(label)
-	metrics.IngestTimelineEpochSpans.WithLabelValues(label)
-	metrics.IngestTimelineTimingPoints.WithLabelValues(label)
-	metrics.IngestTimelinePCREntries.WithLabelValues(label)
-	metrics.IngestTimelineEpochKeys.WithLabelValues(label)
+	timelineRoles.mu.Lock()
+	defer timelineRoles.mu.Unlock()
+
+	rings := timelineRoles.readers[role]
+	if rings == nil {
+		rings = make(map[timeline.TimelineReader]int)
+		timelineRoles.readers[role] = rings
+	}
+	rings[reader]++
+	publishTimelineRoleLocked(role)
 
 	return &TimelineSampler{role: role, reader: reader}
 }
 
-// Sample publishes current timeline stats if sampleInterval has elapsed.
+// Sample publishes the role if sampleInterval has elapsed.
 func (s *TimelineSampler) Sample() {
-	if s == nil || s.reader == nil {
+	if s == nil || s.closed {
 		return
 	}
 	now := time.Now()
@@ -164,25 +189,71 @@ func (s *TimelineSampler) Sample() {
 		return
 	}
 	s.nextAt = now.Add(sampleInterval)
-	s.publish()
+
+	timelineRoles.mu.Lock()
+	defer timelineRoles.mu.Unlock()
+	publishTimelineRoleLocked(s.role)
 }
 
-// Flush publishes the latest timeline stats immediately.
-func (s *TimelineSampler) Flush() {
-	if s == nil || s.reader == nil {
+// Close withdraws the subscription's ring from its role and publishes what the
+// role is still reading. Call it once the subscription has ended; calling it
+// again does nothing.
+func (s *TimelineSampler) Close() {
+	if s == nil || s.closed {
 		return
 	}
-	s.publish()
+	s.closed = true
+
+	timelineRoles.mu.Lock()
+	defer timelineRoles.mu.Unlock()
+
+	if rings := timelineRoles.readers[s.role]; rings != nil {
+		if rings[s.reader]--; rings[s.reader] <= 0 {
+			delete(rings, s.reader)
+		}
+		if len(rings) == 0 {
+			delete(timelineRoles.readers, s.role)
+		}
+	}
+	publishTimelineRoleLocked(s.role)
 }
 
-func (s *TimelineSampler) publish() {
-	stats := s.reader.Stats()
-	label := string(s.role)
+// publishTimelineRoleLocked states the role's timeline gauges as the sum over the
+// rings it is reading. A role reading nothing has no series at all. The ratio has
+// no value while no random access point is indexed, so its series is absent then
+// instead of claiming every one of zero RAPs is bound.
+func publishTimelineRoleLocked(role Role) {
+	label := string(role)
+	rings := timelineRoles.readers[role]
+	if len(rings) == 0 {
+		metrics.IngestTimelineBoundRAPRatio.DeleteLabelValues(label)
+		metrics.IngestTimelineRAPCount.DeleteLabelValues(label)
+		metrics.IngestTimelineEpochSpans.DeleteLabelValues(label)
+		metrics.IngestTimelineTimingPoints.DeleteLabelValues(label)
+		metrics.IngestTimelinePCREntries.DeleteLabelValues(label)
+		metrics.IngestTimelineEpochKeys.DeleteLabelValues(label)
+		return
+	}
 
-	metrics.IngestTimelineBoundRAPRatio.WithLabelValues(label).Set(stats.BoundRAPRatio())
-	metrics.IngestTimelineRAPCount.WithLabelValues(label).Set(float64(stats.TotalRAPs))
-	metrics.IngestTimelineEpochSpans.WithLabelValues(label).Set(float64(stats.EpochSpans))
-	metrics.IngestTimelineTimingPoints.WithLabelValues(label).Set(float64(stats.TimingPoints))
-	metrics.IngestTimelinePCREntries.WithLabelValues(label).Set(float64(stats.PCREntries))
-	metrics.IngestTimelineEpochKeys.WithLabelValues(label).Set(float64(stats.EpochKeys))
+	var sum timeline.TimelineStats
+	for reader := range rings {
+		stats := reader.Stats()
+		sum.TotalRAPs += stats.TotalRAPs
+		sum.BoundRAPs += stats.BoundRAPs
+		sum.EpochSpans += stats.EpochSpans
+		sum.TimingPoints += stats.TimingPoints
+		sum.PCREntries += stats.PCREntries
+		sum.EpochKeys += stats.EpochKeys
+	}
+
+	if sum.TotalRAPs > 0 {
+		metrics.IngestTimelineBoundRAPRatio.WithLabelValues(label).Set(float64(sum.BoundRAPs) / float64(sum.TotalRAPs))
+	} else {
+		metrics.IngestTimelineBoundRAPRatio.DeleteLabelValues(label)
+	}
+	metrics.IngestTimelineRAPCount.WithLabelValues(label).Set(float64(sum.TotalRAPs))
+	metrics.IngestTimelineEpochSpans.WithLabelValues(label).Set(float64(sum.EpochSpans))
+	metrics.IngestTimelineTimingPoints.WithLabelValues(label).Set(float64(sum.TimingPoints))
+	metrics.IngestTimelinePCREntries.WithLabelValues(label).Set(float64(sum.PCREntries))
+	metrics.IngestTimelineEpochKeys.WithLabelValues(label).Set(float64(sum.EpochKeys))
 }

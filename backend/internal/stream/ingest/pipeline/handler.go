@@ -349,7 +349,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sampler := ingeststats.NewSubscriberSampler(subscriberRole, reader)
 	defer sampler.Flush()
 	timelineSampler := ingeststats.NewTimelineSampler(subscriberRole, reader.Ring().Timeline())
-	defer timelineSampler.Flush()
+	defer timelineSampler.Close()
 
 	// Runtime Plan Transparency Headers
 	//
