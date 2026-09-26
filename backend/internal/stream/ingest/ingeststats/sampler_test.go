@@ -210,13 +210,84 @@ func TestRecordVariantWorkerStopped_SeparatesReasons(t *testing.T) {
 	}
 }
 
-func gaugeValue(t *testing.T, g prometheus.Gauge) float64 {
+// timelineRoleFor gives each test its own role. The gauges and the role registry
+// are process-global, so a shared label would let one test read another's rings.
+func timelineRoleFor(t *testing.T) Role {
 	t.Helper()
-	var m dto.Metric
-	if err := g.Write(&m); err != nil {
-		t.Fatalf("read gauge: %v", err)
+	return Role("test_" + t.Name())
+}
+
+// timelineSeries reports the role's series in a timeline gauge, and whether it
+// exists at all. WithLabelValues cannot answer the second question: it creates the
+// series it is asked about.
+func timelineSeries(t *testing.T, vec *prometheus.GaugeVec, role Role) (float64, bool) {
+	t.Helper()
+
+	ch := make(chan prometheus.Metric, 64)
+	go func() {
+		vec.Collect(ch)
+		close(ch)
+	}()
+
+	var (
+		value float64
+		found bool
+	)
+	for m := range ch {
+		var out dto.Metric
+		if err := m.Write(&out); err != nil {
+			t.Fatalf("read gauge: %v", err)
+		}
+		for _, lp := range out.GetLabel() {
+			if lp.GetName() == "role" && lp.GetValue() == string(role) {
+				value, found = out.GetGauge().GetValue(), true
+			}
+		}
 	}
-	return m.GetGauge().GetValue()
+	return value, found
+}
+
+// indexWithRAPs returns a canonical index holding bound+unbound random access
+// points, the first bound of them carrying a RAP timing record.
+func indexWithRAPs(t *testing.T, bound, unbound int) *timeline.MediaIndex {
+	t.Helper()
+
+	idx := timeline.NewMediaIndex()
+	total := bound + unbound
+	if total == 0 {
+		return idx
+	}
+
+	res := mediafacts.ParseResult{
+		Coverage: mediafacts.ParseCoverageComplete,
+		Timing:   mediafacts.TimingResult{Authority: mediafacts.TimingAuthorityCanonical},
+	}
+	for i := range total {
+		offset := int64(i) * 10 * ring.TSPacketSize
+		res.Events = append(res.Events, mediafacts.Event{
+			Kind:     mediafacts.EventRandomAccessPoint,
+			Offset:   offset,
+			Joinable: true,
+		})
+		if i < bound {
+			res.Timing.Records = append(res.Timing.Records, mediafacts.TimingRecord{
+				Type: mediafacts.TimingRecordTypeRandomAccessPoint,
+				RAP: mediafacts.TimingPoint{
+					Epoch:      1,
+					PID:        257,
+					ObservedAt: offset,
+					SubjectAt:  offset,
+					HasPTS:     true,
+					PTS90k:     int64(i+1) * 90000,
+				},
+			})
+		}
+		res.ProcessedThroughOffset = offset + ring.TSPacketSize
+	}
+	if err := idx.ApplyIngestResult(res); err != nil {
+		t.Fatalf("apply ingest: %v", err)
+	}
+	return idx
 }
 
 func TestTimelineSampler_NilSafety(t *testing.T) {
@@ -228,10 +299,11 @@ func TestTimelineSampler_NilSafety(t *testing.T) {
 
 	// Safe to call methods on nil receiver
 	s.Sample()
-	s.Flush()
+	s.Close()
 }
 
 func TestTimelineSampler_PublishesGaugesAndPaces(t *testing.T) {
+	role := timelineRoleFor(t)
 	idx := timeline.NewMediaIndex()
 
 	res := mediafacts.ParseResult{
@@ -295,32 +367,28 @@ func TestTimelineSampler_PublishesGaugesAndPaces(t *testing.T) {
 		t.Fatalf("apply ingest failed: %v", err)
 	}
 
-	sampler := NewTimelineSampler(RoleNativeClient, idx)
+	// Registering publishes the role at once.
+	sampler := NewTimelineSampler(role, idx)
 	if sampler == nil {
 		t.Fatal("expected non-nil sampler")
 	}
+	defer sampler.Close()
 
-	// Flush immediately publishes gauges
-	sampler.Flush()
-
-	lbl := string(RoleNativeClient)
-	if got := gaugeValue(t, metrics.IngestTimelineBoundRAPRatio.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("BoundRAPRatio = %v, want 1.0", got)
-	}
-	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("RAPCount = %v, want 1.0", got)
-	}
-	if got := gaugeValue(t, metrics.IngestTimelineEpochSpans.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("EpochSpans = %v, want 1.0", got)
-	}
-	if got := gaugeValue(t, metrics.IngestTimelineTimingPoints.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("TimingPoints = %v, want 1.0", got)
-	}
-	if got := gaugeValue(t, metrics.IngestTimelinePCREntries.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("PCREntries = %v, want 1.0", got)
-	}
-	if got := gaugeValue(t, metrics.IngestTimelineEpochKeys.WithLabelValues(lbl)); got != 1.0 {
-		t.Fatalf("EpochKeys = %v, want 1.0", got)
+	for _, tc := range []struct {
+		name string
+		vec  *prometheus.GaugeVec
+		want float64
+	}{
+		{"BoundRAPRatio", metrics.IngestTimelineBoundRAPRatio, 1},
+		{"RAPCount", metrics.IngestTimelineRAPCount, 1},
+		{"EpochSpans", metrics.IngestTimelineEpochSpans, 1},
+		{"TimingPoints", metrics.IngestTimelineTimingPoints, 1},
+		{"PCREntries", metrics.IngestTimelinePCREntries, 1},
+		{"EpochKeys", metrics.IngestTimelineEpochKeys, 1},
+	} {
+		if got, ok := timelineSeries(t, tc.vec, role); !ok || got != tc.want {
+			t.Fatalf("%s = %v (present %v), want %v", tc.name, got, ok, tc.want)
+		}
 	}
 
 	// Test pacing
@@ -342,17 +410,118 @@ func TestTimelineSampler_PublishesGaugesAndPaces(t *testing.T) {
 
 	// Sample() should not publish because nextAt is in the future
 	sampler.Sample()
-	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 1.0 {
+	if got, _ := timelineSeries(t, metrics.IngestTimelineRAPCount, role); got != 1 {
 		t.Fatalf("RAPCount prematurely updated across paced interval: %v", got)
 	}
 
 	// When nextAt is past, Sample() publishes
 	sampler.nextAt = time.Now().Add(-time.Millisecond)
 	sampler.Sample()
-	if got := gaugeValue(t, metrics.IngestTimelineRAPCount.WithLabelValues(lbl)); got != 2.0 {
-		t.Fatalf("RAPCount did not update after interval elapsed: %v, want 2.0", got)
+	if got, _ := timelineSeries(t, metrics.IngestTimelineRAPCount, role); got != 2 {
+		t.Fatalf("RAPCount did not update after interval elapsed: %v, want 2", got)
 	}
-	if got := gaugeValue(t, metrics.IngestTimelineBoundRAPRatio.WithLabelValues(lbl)); got < 0.49 || got > 0.51 {
+	if got, _ := timelineSeries(t, metrics.IngestTimelineBoundRAPRatio, role); got < 0.49 || got > 0.51 {
 		t.Fatalf("BoundRAPRatio = %v, want 0.5", got)
+	}
+}
+
+// Two viewers on two channels are two rings under one role. The role has to state
+// both of them, not whichever sampled last.
+func TestTimelineSampler_SumsTheDistinctRingsOfARole(t *testing.T) {
+	role := timelineRoleFor(t)
+	first := indexWithRAPs(t, 1, 0)
+	second := indexWithRAPs(t, 1, 2)
+
+	a := NewTimelineSampler(role, first)
+	defer a.Close()
+	b := NewTimelineSampler(role, second)
+	defer b.Close()
+
+	// The first subscription samples last. A gauge written per subscription would
+	// now show its ring alone.
+	a.Sample()
+
+	if got, _ := timelineSeries(t, metrics.IngestTimelineRAPCount, role); got != 4 {
+		t.Fatalf("RAPCount = %v, want 4 (1 + 3 over both rings)", got)
+	}
+	if got, _ := timelineSeries(t, metrics.IngestTimelineBoundRAPRatio, role); got != 0.5 {
+		t.Fatalf("BoundRAPRatio = %v, want 0.5 (2 bound of 4 over both rings)", got)
+	}
+}
+
+// Two subscriptions on one ring read one timeline. Counting it twice would double
+// every figure the moment a second viewer joins a channel.
+func TestTimelineSampler_CountsASharedRingOnce(t *testing.T) {
+	role := timelineRoleFor(t)
+	idx := indexWithRAPs(t, 2, 1)
+
+	a := NewTimelineSampler(role, idx)
+	defer a.Close()
+	b := NewTimelineSampler(role, idx)
+	defer b.Close()
+
+	if got, _ := timelineSeries(t, metrics.IngestTimelineRAPCount, role); got != 3 {
+		t.Fatalf("RAPCount = %v, want 3 from the one shared ring", got)
+	}
+
+	// One of the two leaving does not take the ring away from the other.
+	a.Close()
+	if got, ok := timelineSeries(t, metrics.IngestTimelineRAPCount, role); !ok || got != 3 {
+		t.Fatalf("RAPCount = %v (present %v) after one of two subscriptions closed, want 3", got, ok)
+	}
+}
+
+// A stream that has ended has no timeline. Its last figures must not stay behind
+// as if it were still running.
+func TestTimelineSampler_RemovesTheRoleWhenItsLastSubscriptionCloses(t *testing.T) {
+	role := timelineRoleFor(t)
+	first := indexWithRAPs(t, 1, 0)
+	second := indexWithRAPs(t, 2, 0)
+
+	a := NewTimelineSampler(role, first)
+	b := NewTimelineSampler(role, second)
+
+	a.Close()
+	if got, _ := timelineSeries(t, metrics.IngestTimelineRAPCount, role); got != 2 {
+		t.Fatalf("RAPCount = %v after the first ring's subscription closed, want 2", got)
+	}
+
+	// Closing twice must not withdraw a registration it does not hold.
+	a.Close()
+	if got, ok := timelineSeries(t, metrics.IngestTimelineRAPCount, role); !ok || got != 2 {
+		t.Fatalf("RAPCount = %v (present %v) after a repeated Close, want 2", got, ok)
+	}
+
+	b.Close()
+	for _, tc := range []struct {
+		name string
+		vec  *prometheus.GaugeVec
+	}{
+		{"BoundRAPRatio", metrics.IngestTimelineBoundRAPRatio},
+		{"RAPCount", metrics.IngestTimelineRAPCount},
+		{"EpochSpans", metrics.IngestTimelineEpochSpans},
+		{"TimingPoints", metrics.IngestTimelineTimingPoints},
+		{"PCREntries", metrics.IngestTimelinePCREntries},
+		{"EpochKeys", metrics.IngestTimelineEpochKeys},
+	} {
+		if got, ok := timelineSeries(t, tc.vec, role); ok {
+			t.Errorf("%s still published as %v after the role's last subscription closed", tc.name, got)
+		}
+	}
+}
+
+// With no random access point indexed there is no ratio to report. Publishing 1.0
+// would make an empty or stuck index look perfectly bound.
+func TestTimelineSampler_HasNoRatioWithoutRAPs(t *testing.T) {
+	role := timelineRoleFor(t)
+
+	s := NewTimelineSampler(role, indexWithRAPs(t, 0, 0))
+	defer s.Close()
+
+	if got, ok := timelineSeries(t, metrics.IngestTimelineBoundRAPRatio, role); ok {
+		t.Fatalf("BoundRAPRatio published as %v with no RAPs indexed", got)
+	}
+	if got, ok := timelineSeries(t, metrics.IngestTimelineRAPCount, role); !ok || got != 0 {
+		t.Fatalf("RAPCount = %v (present %v), want a present 0", got, ok)
 	}
 }
