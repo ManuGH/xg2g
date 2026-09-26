@@ -97,7 +97,7 @@ type DeadlineTimeouts struct {
 
 func DefaultTimeouts() DeadlineTimeouts {
 	return DeadlineTimeouts{
-		APIWriteTimeout:      5 * time.Second,
+		APIWriteTimeout:      10 * time.Second,
 		MediaWriteTimeout:    30 * time.Second,
 		StreamingIdleTimeout: 15 * time.Second,
 	}

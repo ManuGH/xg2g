@@ -87,4 +87,7 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 			Int("status", status).
 			Msg("failed to encode problem response")
 	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }

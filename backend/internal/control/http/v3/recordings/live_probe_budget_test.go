@@ -170,3 +170,43 @@ func TestService_ResolvePlaybackInfo_LiveConcurrentProbesDeduped(t *testing.T) {
 
 	assert.Equal(t, int32(1), atomic.LoadInt32(&truthSource.probeCalls), "concurrent interactive requests must share a single probe")
 }
+
+func TestService_ResolvePlaybackInfo_LiveProbeClampedByContextDeadline(t *testing.T) {
+	assert.Equal(t, 3500*time.Millisecond, DefaultLiveInteractiveProbeBudget)
+
+	truthSource := &stubTruthSource{
+		getCapabilityFn: func(string) (scan.Capability, bool) {
+			return scan.Capability{}, false
+		},
+		probeCapabilityFn: func(ctx context.Context, sRef string) (scan.Capability, bool, error) {
+			select {
+			case <-time.After(2 * time.Second):
+				return okLiveCapability(), true, nil
+			case <-ctx.Done():
+				return scan.Capability{}, false, ctx.Err()
+			}
+		},
+	}
+
+	svc := NewService(stubDeps{svc: &stubRecordingsService{}, truthSource: truthSource, cfg: liveProbeTestConfig()})
+
+	// Caller context with 600ms deadline. probeLiveTruthBounded clamps remaining budget to max(0, 600ms - 500ms) = 100ms.
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := svc.ResolvePlaybackInfo(ctx, PlaybackInfoRequest{
+		SubjectID:   testLiveRef,
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-clamped-deadline",
+		Headers:     map[string]string{PlaybackInfoContextHeader: PlaybackInfoContextPlayerStart},
+	})
+	elapsed := time.Since(start)
+
+	require.NotNil(t, err)
+	assert.Equal(t, PlaybackInfoErrorUnverified, err.Kind)
+	// Must return well before the 600ms deadline (around 100ms clamped budget), not wait for 3.5s budget
+	assert.Less(t, elapsed, 400*time.Millisecond, "probe budget should be clamped to leave write margin before context deadline")
+}

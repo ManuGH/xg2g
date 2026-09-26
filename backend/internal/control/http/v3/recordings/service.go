@@ -83,16 +83,19 @@ func NewService(deps Deps, opts ...Option) *Service {
 	return s
 }
 
-// defaultLiveInteractiveProbeBudget bounds how long an interactive live playback
+// DefaultLiveInteractiveProbeBudget bounds how long an interactive live playback
 // request waits for a cold capability probe before returning "unverified, retry".
 // A cold relay probe (descrambler not yet locked) can take ~20-33s through its
 // failing ffprobe fallbacks; blocking the request that long freezes the player on
 // the first-ever play of a channel. The probe keeps running past this budget to
 // populate the persistent truth cache, so the client's retry is served from cache.
-const defaultLiveInteractiveProbeBudget = 5 * time.Second
+// Bounded strictly below APIWriteTimeout to guarantee adequate headroom to serialize
+// and flush the HTTP 503 problem details response over the network.
+const DefaultLiveInteractiveProbeBudget = 3500 * time.Millisecond
+const defaultLiveInteractiveProbeBudget = DefaultLiveInteractiveProbeBudget
 
 // liveInteractiveProbeBudgetNs holds the interactive probe budget
-// (see defaultLiveInteractiveProbeBudget). Overridable via setLiveInteractiveProbeBudget.
+// (see DefaultLiveInteractiveProbeBudget). Overridable via SetLiveInteractiveProbeBudgetForTest.
 var liveInteractiveProbeBudgetNs atomic.Int64
 
 func init() {
@@ -103,11 +106,16 @@ func liveInteractiveProbeBudget() time.Duration {
 	return time.Duration(liveInteractiveProbeBudgetNs.Load())
 }
 
-//nolint:unused // Called from live_probe_budget_test.go
-func setLiveInteractiveProbeBudget(d time.Duration) {
+// SetLiveInteractiveProbeBudgetForTest overrides the interactive live probe budget in tests.
+func SetLiveInteractiveProbeBudgetForTest(d time.Duration) {
 	if d > 0 {
 		liveInteractiveProbeBudgetNs.Store(int64(d))
 	}
+}
+
+//nolint:unused // Kept for backward compatibility within recordings package
+func setLiveInteractiveProbeBudget(d time.Duration) {
+	SetLiveInteractiveProbeBudgetForTest(d)
 }
 
 type liveProbeOutcome struct {
@@ -136,7 +144,15 @@ func (s *Service) probeLiveTruthBounded(ctx context.Context, probeSource channel
 		return liveProbeOutcome{cap: c, found: f, err: e}, nil
 	})
 
-	timer := time.NewTimer(liveInteractiveProbeBudget())
+	budget := liveInteractiveProbeBudget()
+	if deadline, ok := ctx.Deadline(); ok {
+		// Leave at least 500ms safety margin for response serialization and network write.
+		if remaining := time.Until(deadline) - 500*time.Millisecond; remaining > 0 && remaining < budget {
+			budget = remaining
+		}
+	}
+
+	timer := time.NewTimer(budget)
 	defer timer.Stop()
 
 	select {
