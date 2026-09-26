@@ -134,6 +134,7 @@ final class AppModel {
     private let addressStore: ServerAddressStore
     private let credentials: CredentialStore
     private let keyStore: DeviceKeyStore
+    private let makeAPIClient: (ServerAddress, any RequestAuthorizer) -> any APIClient
 
     private var address: ServerAddress?
     private var identity: ServerIdentity?
@@ -830,14 +831,21 @@ final class AppModel {
         return list[prevIdx]
     }
 
+    /// `makeAPIClient` builds the transport for one server. Production wires
+    /// `HTTPAPIClient`; tests hand in a scripted client so the pairing flow can
+    /// be driven end to end without a network.
     init(
         addressStore: ServerAddressStore = ServerAddressStore(),
         credentials: CredentialStore = KeychainCredentialStore(backend: SecItemKeychainBackend()),
-        keyStore: DeviceKeyStore = SecureEnclaveDeviceKeyStore()
+        keyStore: DeviceKeyStore = SecureEnclaveDeviceKeyStore(),
+        makeAPIClient: @escaping (ServerAddress, any RequestAuthorizer) -> any APIClient = {
+            HTTPAPIClient(address: $0, authorizer: $1)
+        }
     ) {
         self.addressStore = addressStore
         self.credentials = credentials
         self.keyStore = keyStore
+        self.makeAPIClient = makeAPIClient
     }
 
     // MARK: - Launch
@@ -890,17 +898,14 @@ final class AppModel {
         self.address = address
         self.identity = identity
 
-        let refreshClient = HTTPAPIClient(
-            address: address,
-            authorizer: DeviceProofAuthorizer(keyStore: keyStore)
-        )
+        let refreshClient = makeAPIClient(address, DeviceProofAuthorizer(keyStore: keyStore))
 
         let sessionCoord = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
         self.session = sessionCoord
 
-        let authorized = HTTPAPIClient(
-            address: address,
-            authorizer: DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
+        let authorized = makeAPIClient(
+            address,
+            DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
         )
         self.api = authorized
 
@@ -910,7 +915,7 @@ final class AppModel {
         playback = PlaybackCoordinator(address: address, api: authorized)
         enrollment = EnrollmentCoordinator(
             identity: identity,
-            api: HTTPAPIClient(address: address),
+            api: makeAPIClient(address, UnauthenticatedRequests()),
             keyStore: keyStore,
             credentials: credentials
         )
@@ -963,6 +968,49 @@ final class AppModel {
 
     func pairingStatus() async -> Xg2gContract.PairingStatus? {
         try? await enrollment?.pairingStatus()
+    }
+
+    /// What one status poll means for the screen that is waiting for approval.
+    enum PairingPoll: Equatable, Sendable {
+        /// Still pending — or the poll itself failed, which says nothing about
+        /// the pairing. Ask again later.
+        case keepWaiting
+        /// Approved; the credential exchange has run. `state` and `lastError`
+        /// carry its outcome.
+        case completed
+        /// The server will never approve this pairing. `lastError` says why;
+        /// only a fresh code can help, so there is nothing left to wait for.
+        case ended
+    }
+
+    /// One poll of the pairing the user is waiting on.
+    ///
+    /// The pending/approved half is the happy path. The other three statuses
+    /// are the reason this exists: the server expires a pairing after its TTL
+    /// and keeps answering `expired` to every later poll, so a loop that only
+    /// looks for `approved` spins forever behind a spinner (seen 2026-09-20:
+    /// 16 hours of "Warte auf Bestätigung…").
+    func pollPairing() async -> PairingPoll {
+        guard let status = await pairingStatus() else { return .keepWaiting }
+        switch status {
+        case .pending:
+            return .keepWaiting
+        case .approved:
+            await completePairing()
+            return .completed
+        // Each ending names its remedy: the button next to the text is
+        // "request a new code", and the text has to make that the obvious
+        // next step rather than "choose another server".
+        case .expired:
+            lastError = "Der Kopplungscode ist abgelaufen. Bitte einen neuen Code anfordern."
+            return .ended
+        case .consumed:
+            lastError = "Dieser Kopplungscode wurde bereits verwendet. Bitte einen neuen Code anfordern."
+            return .ended
+        case .revoked:
+            lastError = "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
+            return .ended
+        }
     }
 
     func completePairing() async {

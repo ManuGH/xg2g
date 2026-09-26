@@ -496,7 +496,15 @@ struct PairingView: View {
 
     @State private var invitation: EnrollmentCoordinator.Invitation?
     @State private var isStarting = false
-    @State private var isWaiting = false
+
+    /// The poll runs exactly while there is a pairing and nothing has gone
+    /// wrong with it: every ending and a failed exchange surface as
+    /// `lastError`, which is also what replaces the spinner on screen. Derived
+    /// rather than flagged by the loop, so a loop cancelled by a newer
+    /// invitation cannot switch off the spinner the newer loop relies on.
+    private var isWaiting: Bool {
+        invitation != nil && model.lastError == nil
+    }
 
     var body: some View {
         ZStack {
@@ -542,12 +550,23 @@ struct PairingView: View {
                             .glassCard(cornerRadius: 16)
 
                         if isWaiting {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .tint(Theme.Colors.accentLive)
-                                Text("Warte auf Bestätigung in der Admin-Konsole…")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            VStack(spacing: 6) {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .tint(Theme.Colors.accentLive)
+                                    Text("Warte auf Bestätigung in der Admin-Konsole…")
+                                        .font(.footnote)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                                // `.timer` counts down to a future date on its
+                                // own; no timer to own, nothing to invalidate.
+                                HStack(spacing: 4) {
+                                    Text("Code gültig noch")
+                                    Text(invitation.expiresAt, style: .timer)
+                                        .monospacedDigit()
+                                }
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                             }
                             .padding(.top, 8)
                         }
@@ -589,8 +608,17 @@ struct PairingView: View {
                         .foregroundStyle(Theme.Colors.statusError)
                         .multilineTextAlignment(.center)
 
-                        Button("Anderen Server wählen") {
-                            model.changeServer()
+                        HStack(spacing: 20) {
+                            // Only once a pairing was issued: before that the
+                            // "Kopplung starten" button above is the same action.
+                            if invitation != nil {
+                                Button("Neuen Code anfordern") {
+                                    startPairing()
+                                }
+                            }
+                            Button("Anderen Server wählen") {
+                                model.changeServer()
+                            }
                         }
                         .font(.footnote.bold())
                         .foregroundStyle(Theme.Colors.accentAction)
@@ -611,15 +639,14 @@ struct PairingView: View {
             }
             .task(id: invitation?.pairingID) {
                 guard invitation != nil else { return }
-                isWaiting = true
-                defer { isWaiting = false }
 
                 while !Task.isCancelled {
-                    if await model.pairingStatus() == .approved {
-                        await model.completePairing()
+                    switch await model.pollPairing() {
+                    case .keepWaiting:
+                        try? await Task.sleep(for: .seconds(2))
+                    case .completed, .ended:
                         return
                     }
-                    try? await Task.sleep(for: .seconds(2))
                 }
             }
         }
@@ -628,6 +655,9 @@ struct PairingView: View {
     private func startPairing() {
         guard !isStarting else { return }
         isStarting = true
+        // Clearing the old invitation changes the task id above, which cancels
+        // the poll of a pairing that is about to be replaced.
+        invitation = nil
         Task {
             invitation = await model.beginPairing()
             isStarting = false
