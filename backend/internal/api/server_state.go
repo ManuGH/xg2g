@@ -8,7 +8,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
-	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -72,11 +71,6 @@ func (s *Server) GetConfig() config.AppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg
-}
-
-// HDHomeRunServer returns the HDHomeRun server instance if enabled
-func (s *Server) HDHomeRunServer() *hdhr.Server {
-	return s.hdhr
 }
 
 // GetSeriesEngine returns the SeriesEngine instance (for scheduler wiring)

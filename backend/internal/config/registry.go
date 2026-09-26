@@ -311,14 +311,17 @@ func buildRegistry() (*Registry, error) {
 		// --- FEATURE FLAGS ---
 		{Path: "readyStrict", Env: "XG2G_READY_STRICT", FieldPath: "ReadyStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		// --- HDHR ---
-		{Path: "hdhr.enabled", Env: "", FieldPath: "HDHR.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
-		{Path: "hdhr.deviceId", Env: "", FieldPath: "HDHR.DeviceID", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.friendlyName", Env: "", FieldPath: "HDHR.FriendlyName", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.modelNumber", Env: "", FieldPath: "HDHR.ModelNumber", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.firmwareName", Env: "", FieldPath: "HDHR.FirmwareName", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.baseUrl", Env: "", FieldPath: "HDHR.BaseURL", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.tunerCount", Env: "", FieldPath: "HDHR.TunerCount", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "hdhr.plexForceHls", Env: "", FieldPath: "HDHR.PlexForceHLS", Profile: ProfileAdvanced, Status: StatusActive},
+		// The HDHomeRun emulation was removed with the legacy HTTP surface (#210).
+		// The keys stay registered so existing configs keep loading under
+		// KnownFields(true); they are inert, and hdhr.enabled: true logs a warning.
+		{Path: "hdhr.enabled", Env: "", FieldPath: "HDHR.Enabled", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: false},
+		{Path: "hdhr.deviceId", Env: "", FieldPath: "HDHR.DeviceID", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.friendlyName", Env: "", FieldPath: "HDHR.FriendlyName", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.modelNumber", Env: "", FieldPath: "HDHR.ModelNumber", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.firmwareName", Env: "", FieldPath: "HDHR.FirmwareName", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.baseUrl", Env: "", FieldPath: "HDHR.BaseURL", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.tunerCount", Env: "", FieldPath: "HDHR.TunerCount", Profile: ProfileAdvanced, Status: StatusDeprecated},
+		{Path: "hdhr.plexForceHls", Env: "", FieldPath: "HDHR.PlexForceHLS", Profile: ProfileAdvanced, Status: StatusDeprecated},
 
 		// --- RECEIVER USAGE POLICY ---
 		{Path: "receiver_usage.mode", Env: "", FieldPath: "ReceiverUsage.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "disabled"},

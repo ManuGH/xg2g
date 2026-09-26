@@ -133,21 +133,6 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 
-	// SSDP announcer (best-effort; stops via ctx).
-	if !a.proxyOnly && a.apiServer != nil {
-		if hdhrSrv := a.apiServer.HDHomeRunServer(); hdhrSrv != nil {
-			g.Go(func() error {
-				if err := hdhrSrv.StartSSDPAnnouncer(ctx); err != nil {
-					a.logger.Error().
-						Err(err).
-						Str("event", "ssdp.failed").
-						Msg("SSDP announcer failed")
-				}
-				return nil
-			})
-		}
-	}
-
 	// Jobs Scheduler (EPG)
 	// We run this as part of the daemon lifecycle.
 	if a.cfgHolder != nil {

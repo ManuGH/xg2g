@@ -10,14 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/channels"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
 	"github.com/ManuGH/xg2g/internal/dvr"
-	"github.com/ManuGH/xg2g/internal/hdhr"
 	"github.com/ManuGH/xg2g/internal/health"
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -134,44 +132,25 @@ func (s *Server) newHealthManager(cfg config.AppConfig) *health.Manager {
 	return health.NewManager(cfg.Version)
 }
 
-func (s *Server) initHDHR(cfg config.AppConfig, cm *channels.Manager) {
-	logger := log.WithComponent("api")
-	hdhrEnabled := false
-	if cfg.HDHR.Enabled != nil {
-		hdhrEnabled = *cfg.HDHR.Enabled
+// warnRemovedHDHR tells an operator who still enables the HDHomeRun emulation
+// that it is gone. Its HTTP endpoints were removed with the legacy surface in
+// #210, and announcing a device whose URLs all answer 404 only sends clients to
+// dead ends, so nothing is started any more. Startup-only, not hot-path.
+func warnRemovedHDHR(cfg config.AppConfig) {
+	if msg, warn := removedHDHRWarning(cfg.HDHR.Enabled); warn {
+		logger := log.WithComponent("api")
+		logger.Warn().Bool("hdhr_enabled", true).Msg(msg)
 	}
-	if !hdhrEnabled {
-		return
-	}
+}
 
-	tunerCount := 4
-	if cfg.HDHR.TunerCount != nil {
-		tunerCount = *cfg.HDHR.TunerCount
+// removedHDHRWarning reports whether the configuration still asks for the
+// removed HDHomeRun emulation. Only an explicit hdhr.enabled: true is worth a
+// warning; an absent or disabled switch asks for nothing.
+func removedHDHRWarning(enabled *bool) (string, bool) {
+	if enabled == nil || !*enabled {
+		return "", false
 	}
-	plexForceHLS := false
-	if cfg.HDHR.PlexForceHLS != nil {
-		plexForceHLS = *cfg.HDHR.PlexForceHLS
-	}
-
-	hdhrConf := hdhr.Config{
-		Enabled:          hdhrEnabled,
-		DeviceID:         cfg.HDHR.DeviceID,
-		FriendlyName:     cfg.HDHR.FriendlyName,
-		ModelName:        cfg.HDHR.ModelNumber,
-		FirmwareName:     cfg.HDHR.FirmwareName,
-		BaseURL:          cfg.HDHR.BaseURL,
-		TunerCount:       tunerCount,
-		PlexForceHLS:     plexForceHLS,
-		PlaylistFilename: s.snap.Runtime.PlaylistFilename,
-		DataDir:          cfg.DataDir,
-		Logger:           logger,
-	}
-
-	s.hdhr = hdhr.NewServer(hdhrConf, cm)
-	logger.Info().
-		Bool("hdhr_enabled", true).
-		Str("device_id", hdhrConf.DeviceID).
-		Msg("HDHomeRun emulation enabled")
+	return "hdhr.enabled is set but has no effect: the HDHomeRun emulation was removed (deprecated, inert); nothing is announced on the network", true
 }
 
 func (s *Server) registerHealthCheckers(cfg config.AppConfig) {
