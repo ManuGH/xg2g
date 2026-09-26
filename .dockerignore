@@ -31,8 +31,16 @@ data/
 dist/
 # 2. Ignore local WebUI builds (Docker builds its own via multi-stage)
 internal/control/http/dist/
-# 3. Ignore Android client sources; server images do not consume them
+backend/internal/control/http/dist/
+**/dist/
+# 3. Ignore mobile/client sources; server images do not consume them
 android/
+ios/
+
+# 4. Large test data and artifacts
+testdata/
+test-results/
+media-core/target/
 
 # Documentation & non-build files
 docs/
@@ -40,6 +48,9 @@ red/
 design/
 support/
 infra/monitoring/
+.gemini/
+.claude/
+var/
 *.md
 !backend/**/*.md
 LICENSE

@@ -51,7 +51,7 @@ docker-clean: ## Remove Docker build cache
 docker-ffmpeg-base: ## Build reusable FFmpeg runtime base image
 	@echo "🏗️  Building reusable FFmpeg base image $(FFMPEG_BASE_TAG)..."
 	@docker build \
-		-f Dockerfile.ffmpeg-base \
+		-f infra/docker/Dockerfile.ffmpeg-base \
 		-t $(FFMPEG_BASE_TAG) \
 		-t $(FFMPEG_BASE_IMAGE):latest \
 		.
