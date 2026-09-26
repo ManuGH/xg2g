@@ -54,6 +54,7 @@ make ci-pr
 | [**Codec & Container Matrix**](arch/CODEC_MATRIX.md) | FFmpeg remux & transcode logic, hardware acceleration (VAAPI/NVENC). |
 | [**WebUI Architecture**](webui/README.md) | React frontend layout, state management, and player telemetry. |
 | [**ADR Index**](ADR/README.md) | Architecture Decision Records and technical rationale. |
+| [**Agentic Tooling & Xcode Runbook**](../AGENTS.md#ios-client--agentic-xcode-tooling-truth) | Xcode 27 MCP Server, stdio bridge, and Device Hub automation. |
 | [**Scanner Governance**](SCANNER_GOVERNANCE.md) | Static checks, Gitleaks, CodeQL, and CI rules. |
 
 ---
