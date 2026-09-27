@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${XG2G_ENV_FILE:-/etc/xg2g/xg2g.env}"
-PLAYLIST_FILE="${XG2G_PLAYLIST_FILE:-/var/lib/xg2g/playlist.m3u}"
-CONTAINER_NAME="${XG2G_CONTAINER_NAME:-xg2g}"
+if [[ "${1:-}" == "staging" ]]; then
+  ENV_FILE="${XG2G_ENV_FILE:-/etc/xg2g/xg2g-staging.env}"
+  PLAYLIST_FILE="${XG2G_PLAYLIST_FILE:-/var/lib/xg2g-staging/playlist.m3u8}"
+  CONTAINER_NAME="${XG2G_CONTAINER_NAME:-xg2g-staging}"
+  XG2G_POST_DEPLOY_API_ORIGIN="${XG2G_POST_DEPLOY_API_ORIGIN:-http://127.0.0.1:8089}"
+  XG2G_POST_DEPLOY_MEDIA_ORIGIN="${XG2G_POST_DEPLOY_MEDIA_ORIGIN:-http://127.0.0.1:8089}"
+  shift
+fi
+
+ENV_FILE="${ENV_FILE:-${XG2G_ENV_FILE:-/etc/xg2g/xg2g.env}}"
+PLAYLIST_FILE="${PLAYLIST_FILE:-${XG2G_PLAYLIST_FILE:-/var/lib/xg2g/playlist.m3u}}"
+if [[ ! -f "${PLAYLIST_FILE}" && -f "${PLAYLIST_FILE}8" ]]; then
+  PLAYLIST_FILE="${PLAYLIST_FILE}8"
+fi
+CONTAINER_NAME="${CONTAINER_NAME:-${XG2G_CONTAINER_NAME:-xg2g}}"
 READY_TIMEOUT_SEC="${XG2G_POST_DEPLOY_READY_TIMEOUT_SEC:-60}"
 SERVICE_NAME_OVERRIDE="${XG2G_POST_DEPLOY_SERVICE_NAME:-}"
 SERVICE_REF_OVERRIDE="${XG2G_POST_DEPLOY_SERVICE_REF:-}"
@@ -257,19 +269,33 @@ discover_service() {
   local match_name="${1:-}"
   local encoded_ref=""
   local service_name=""
+  local cur_tvg_id=""
 
   [[ -f "${PLAYLIST_FILE}" ]] || fail "playlist file not found: ${PLAYLIST_FILE}"
 
   while IFS= read -r line; do
     if [[ "${line}" == \#EXTINF:* ]]; then
       service_name="${line##*,}"
+      if [[ "${line}" =~ tvg-id=\"([^\"]+)\" ]]; then
+        cur_tvg_id="${BASH_REMATCH[1]}"
+      else
+        cur_tvg_id=""
+      fi
       continue
     fi
-    if [[ "${line}" == http* ]] && [[ "${line}" == *"ref="* ]]; then
-      encoded_ref="${line#*ref=}"
-      encoded_ref="${encoded_ref%%&*}"
-      if [[ -z "${match_name}" ]] || [[ "${service_name,,}" == *"${match_name,,}"* ]]; then
-        printf '%s\t%s\n' "$(url_decode "${encoded_ref}")" "${service_name}"
+    if [[ "${line}" == http* ]]; then
+      local extracted_ref=""
+      if [[ "${line}" == *"ref="* ]]; then
+        extracted_ref="${line#*ref=}"
+        extracted_ref="${extracted_ref%%&*}"
+        extracted_ref="$(url_decode "${extracted_ref}")"
+      elif [[ -n "${cur_tvg_id}" ]]; then
+        extracted_ref="${cur_tvg_id}"
+      else
+        extracted_ref="${line##*/}"
+      fi
+      if [[ -n "${extracted_ref}" ]] && ([[ -z "${match_name}" ]] || [[ "${service_name,,}" == *"${match_name,,}"* ]]); then
+        printf '%s\t%s\n' "${extracted_ref}" "${service_name}"
         return 0
       fi
     fi
@@ -431,17 +457,20 @@ verify_direct_live_hls() {
 
   caps="$(jq -nc '{
     capabilitiesVersion: 2,
+    clientIdentity: {
+      platform: "web",
+      surface: "browser",
+      browserEngine: "blink"
+    },
     container: ["mp4","ts"],
     videoCodecs: ["h264"],
     audioCodecs: ["aac","mp3","ac3"],
     supportsHls: true,
     supportsRange: true,
-    deviceType: "web",
     hlsEngines: ["hlsjs"],
     preferredHlsEngine: "hlsjs",
     runtimeProbeUsed: true,
-    runtimeProbeVersion: 1,
-    clientFamilyFallback: "chrome"
+    runtimeProbeVersion: 1
   }')"
   info_body="$(jq -nc --arg ref "${SERVICE_REF}" --argjson caps "${caps}" '{serviceRef:$ref,capabilities:$caps}')"
   curl_json "POST" "${API_BASE}/live/stream-info" "${info_body}"
@@ -540,18 +569,21 @@ verify_hw_transcode_gpu() {
 
   caps="$(jq -nc '{
     capabilitiesVersion: 2,
+    clientIdentity: {
+      platform: "web",
+      surface: "browser",
+      browserEngine: "blink"
+    },
     container: ["mp4","ts"],
     videoCodecs: ["h264"],
     audioCodecs: ["aac","mp3","ac3"],
     supportsHls: true,
     supportsRange: true,
-    deviceType: "web",
     hlsEngines: ["hlsjs"],
     preferredHlsEngine: "hlsjs",
     maxVideo: {width: 640, height: 360, fps: 60},
     runtimeProbeUsed: true,
-    runtimeProbeVersion: 1,
-    clientFamilyFallback: "chrome"
+    runtimeProbeVersion: 1
   }')"
   info_body="$(jq -nc --arg ref "${SERVICE_REF}" --argjson caps "${caps}" '{serviceRef:$ref,capabilities:$caps}')"
   curl_json "POST" "${API_BASE}/live/stream-info" "${info_body}"
