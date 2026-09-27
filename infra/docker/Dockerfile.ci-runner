@@ -67,10 +67,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Extract pre-built FFmpeg from ffmpeg-source
+# 2. Extract pre-built FFmpeg from ffmpeg-source and register dynamic libraries
 COPY --from=ffmpeg-source /opt/ffmpeg /opt/ffmpeg
 COPY --from=ffmpeg-source /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-source /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+RUN echo "/opt/ffmpeg/lib" > /etc/ld.so.conf.d/ffmpeg.conf && ldconfig
 
 # 3. Install Go 1.26.5
 ARG GO_VERSION=1.26.5
@@ -99,7 +100,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 
 # 6. Install pinned QA tools
 ARG GOLANGCI_LINT_VERSION=2.8.0
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION}
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION} \
+    && ln -sf /usr/local/bin/golangci-lint /go/bin/golangci-lint
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
 

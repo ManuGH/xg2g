@@ -25,6 +25,9 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 20
+    env:
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib
+      TZ: UTC
 
     steps:
       - name: Checkout

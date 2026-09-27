@@ -28,6 +28,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 15
     env:
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib
       GOTOOLCHAIN: auto
       TZ: UTC
 
@@ -36,6 +37,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           fetch-depth: 0
+
+      - name: Symlink tools to GOPATH
+        run: |
+          set -euo pipefail
+          mkdir -p /go/bin
+          ln -sf /usr/local/bin/golangci-lint /go/bin/golangci-lint || true
 
       - name: Token URL gate
         run: |
@@ -74,6 +81,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 20
     env:
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib
       GOTOOLCHAIN: auto
       TZ: UTC
 
