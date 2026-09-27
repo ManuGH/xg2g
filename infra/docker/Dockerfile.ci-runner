@@ -80,9 +80,14 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o
     && mkdir -p /go/bin /go/pkg /go/src \
     && chmod -R 777 /go
 
-# 4. Install Node.js 22.14.0
-ARG NODE_VERSION=22.14.0
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${TARGETARCH}.tar.xz" -o /tmp/node.tar.xz \
+# 4. Install Node.js 26.3.0 matching .node-version
+ARG NODE_VERSION=26.3.0
+RUN case "${TARGETARCH}" in \
+        amd64) NODE_ARCH="x64" ;; \
+        arm64) NODE_ARCH="arm64" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz \
     && tar -C /usr/local --strip-components=1 -xJf /tmp/node.tar.xz \
     && rm /tmp/node.tar.xz
 
@@ -93,7 +98,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && chmod -R a+w /usr/local/rustup /usr/local/cargo
 
 # 6. Install pinned QA tools
-ARG GOLANGCI_LINT_VERSION=2.8.0
+ARG GOLANGCI_LINT_VERSION=2.12.2
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION}
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
