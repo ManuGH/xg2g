@@ -60,4 +60,4 @@ Currently, `xg2g` maintains dual delivery packagers: MPEG-TS (`.ts`) and fMP4 (`
 - `make ci-pr`
 
 ### Manual Verification
-- Deploy to Staging (`./scripts/fast_deploy.sh --confirm-staging`) and verify zero-latency JIT copy-mode playback on `xg2g.home.matrixcentral.de`.
+- Deploy to Staging (`./scripts/fast_deploy.sh --confirm-staging`) and verify zero-latency JIT copy-mode playback on `tv.example.com`.
