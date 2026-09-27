@@ -887,6 +887,81 @@ components:
           allOf:
             - $ref: "#/components/schemas/PlaybackEngineErrorContext"
 
+    ClientPlaybackTraceBatch:
+      type: object
+      additionalProperties: false
+      required: [observedAt, events]
+      description: A bounded, ordered playback event window with no channel or device identity.
+      properties:
+        observedAt:
+          type: string
+          format: date-time
+        events:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/ClientPlaybackTraceEvent"
+
+    ClientPlaybackTraceEvent:
+      type: object
+      additionalProperties: false
+      required: [sequence, elapsedMs, stage, event]
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000
+        elapsedMs:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 604800000
+          description: Monotonic milliseconds since this playback started.
+        stage:
+          type: string
+          enum: [lifecycle, network, transport, demux, decode, audio, render]
+          x-enum-varnames:
+            - ClientTraceStageLifecycle
+            - ClientTraceStageNetwork
+            - ClientTraceStageTransport
+            - ClientTraceStageDemux
+            - ClientTraceStageDecode
+            - ClientTraceStageAudio
+            - ClientTraceStageRender
+        event:
+          type: string
+          enum: [playback_started, request_started, http_response, first_byte, transport_gap, stream_closed, psi_ready, video_parameters_ready, first_idr, first_decoded_frame, first_picture_rendered, first_picture_visible, continuity_error, pts_discontinuity, pes_error, decode_error, decoder_recovery, audio_underrun, audio_clock_started, audio_clock_stopped, frame_drop, frame_late]
+          x-enum-varnames:
+            - ClientTracePlaybackStarted
+            - ClientTraceRequestStarted
+            - ClientTraceHttpResponse
+            - ClientTraceFirstByte
+            - ClientTraceTransportGap
+            - ClientTraceStreamClosed
+            - ClientTracePsiReady
+            - ClientTraceVideoParametersReady
+            - ClientTraceFirstIdr
+            - ClientTraceFirstDecodedFrame
+            - ClientTraceFirstPictureRendered
+            - ClientTraceFirstPictureVisible
+            - ClientTraceContinuityError
+            - ClientTracePtsDiscontinuity
+            - ClientTracePesError
+            - ClientTraceDecodeError
+            - ClientTraceDecoderRecovery
+            - ClientTraceAudioUnderrun
+            - ClientTraceAudioClockStarted
+            - ClientTraceAudioClockStopped
+            - ClientTraceFrameDrop
+            - ClientTraceFrameLate
+        valueMs:
+          type: number
+          minimum: 0
+          maximum: 300000
+          description: Optional measured duration or gap in milliseconds.
+
     PlaybackTelemetryBatch:
       type: object
       required: [client, events]
@@ -3724,6 +3799,7 @@ x-xg2g-native-contract:
     - ApprovePairingResponse
     - AuthSessionResponse
     - Bouquet
+    - ClientPlaybackTraceBatch
     - DeviceGrantResponse
     - DeviceRefreshRequest
     - ECPublicKeyJWK
@@ -3750,6 +3826,13 @@ x-xg2g-native-contract:
     - ZapPreparationResponse
 
 x-xg2g-operation-policies:
+  PostSessionPlaybackTrace:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
   PostSessionPlaybackTicket:
     class: read
     auth: bearer_scope
@@ -6334,6 +6417,34 @@ paths:
       responses:
         "202":
           description: Feedback accepted
+        "404":
+          description: Session not found
+
+  /sessions/{sessionId}/trace:
+    post:
+      summary: Upload a bounded playback event window for a session
+      operationId: postSessionPlaybackTrace
+      tags: [streams]
+      security:
+        - BearerAuth: [v3:read]
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientPlaybackTraceBatch"
+      responses:
+        "204":
+          description: Trace window accepted and written to structured backend logs
+        "400":
+          description: Trace window is malformed or exceeds its limits
         "404":
           description: Session not found
 

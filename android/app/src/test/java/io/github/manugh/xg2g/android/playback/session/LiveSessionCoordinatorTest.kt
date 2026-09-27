@@ -124,6 +124,8 @@ class LiveSessionCoordinatorTest {
 
         override suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?) = Unit
 
+        override suspend fun reportPlaybackTrace(sessionId: String, trace: io.github.manugh.xg2g.android.contract.ClientPlaybackTraceBatch) = Unit
+
         override suspend fun stopSession(sessionId: String) {
             // Mirrors the real PlaybackApiClient, whose stop enters an IO context. Without
             // NonCancellable cleanup this block is skipped when start() was cancelled.

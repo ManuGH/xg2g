@@ -58,6 +58,53 @@ private fun requireInstant(value: Any, owner: String, name: String): Instant {
 
 private fun JSONObject.optionalField(name: String): Any? = if (isNull(name)) null else get(name)
 
+enum class ClientPlaybackTraceEventEvent(val wireValue: String) {
+    PLAYBACK_STARTED("playback_started"),
+    REQUEST_STARTED("request_started"),
+    HTTP_RESPONSE("http_response"),
+    FIRST_BYTE("first_byte"),
+    TRANSPORT_GAP("transport_gap"),
+    STREAM_CLOSED("stream_closed"),
+    PSI_READY("psi_ready"),
+    VIDEO_PARAMETERS_READY("video_parameters_ready"),
+    FIRST_IDR("first_idr"),
+    FIRST_DECODED_FRAME("first_decoded_frame"),
+    FIRST_PICTURE_RENDERED("first_picture_rendered"),
+    FIRST_PICTURE_VISIBLE("first_picture_visible"),
+    CONTINUITY_ERROR("continuity_error"),
+    PTS_DISCONTINUITY("pts_discontinuity"),
+    PES_ERROR("pes_error"),
+    DECODE_ERROR("decode_error"),
+    DECODER_RECOVERY("decoder_recovery"),
+    AUDIO_UNDERRUN("audio_underrun"),
+    AUDIO_CLOCK_STARTED("audio_clock_started"),
+    AUDIO_CLOCK_STOPPED("audio_clock_stopped"),
+    FRAME_DROP("frame_drop"),
+    FRAME_LATE("frame_late");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "ClientPlaybackTraceEventEvent"): ClientPlaybackTraceEventEvent =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known ClientPlaybackTraceEventEvent")
+    }
+}
+
+enum class ClientPlaybackTraceEventStage(val wireValue: String) {
+    LIFECYCLE("lifecycle"),
+    NETWORK("network"),
+    TRANSPORT("transport"),
+    DEMUX("demux"),
+    DECODE("decode"),
+    AUDIO("audio"),
+    RENDER("render");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "ClientPlaybackTraceEventStage"): ClientPlaybackTraceEventStage =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known ClientPlaybackTraceEventStage")
+    }
+}
+
 enum class DeviceAuthDeviceType(val wireValue: String) {
     ANDROID_PHONE("android_phone"),
     ANDROID_TABLET("android_tablet"),
@@ -473,6 +520,58 @@ data class Breadcrumb(
     fun toJson(): JSONObject = JSONObject().apply {
         name?.let { put("name", it) }
         path?.let { put("path", it) }
+    }
+}
+
+/**
+ * A bounded, ordered playback event window with no channel or device identity.
+ */
+data class ClientPlaybackTraceBatch(
+    val events: List<ClientPlaybackTraceEvent>,
+    val observedAt: Instant
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "ClientPlaybackTraceBatch"): ClientPlaybackTraceBatch = ClientPlaybackTraceBatch(
+            events = requireArray(json.requireField("events", owner), owner, "events").let { array -> (0 until array.length()).map { index -> ClientPlaybackTraceEvent.fromJson(requireObject(array.get(index), owner, "events"), owner) } },
+            observedAt = requireInstant(json.requireField("observedAt", owner), owner, "observedAt")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("events", JSONArray(events.map { element -> element.toJson() }))
+        put("observedAt", observedAt.toString())
+    }
+}
+
+data class ClientPlaybackTraceEvent(
+    /**
+     * Monotonic milliseconds since this playback started.
+     */
+    val elapsedMs: Long,
+    val event: ClientPlaybackTraceEventEvent,
+    val sequence: Long,
+    val stage: ClientPlaybackTraceEventStage,
+    /**
+     * Optional measured duration or gap in milliseconds.
+     */
+    val valueMs: Double? = null
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "ClientPlaybackTraceEvent"): ClientPlaybackTraceEvent = ClientPlaybackTraceEvent(
+            elapsedMs = requireLong(json.requireField("elapsedMs", owner), owner, "elapsedMs"),
+            event = ClientPlaybackTraceEventEvent.fromWire(requireString(json.requireField("event", owner), owner, "event"), owner),
+            sequence = requireLong(json.requireField("sequence", owner), owner, "sequence"),
+            stage = ClientPlaybackTraceEventStage.fromWire(requireString(json.requireField("stage", owner), owner, "stage"), owner),
+            valueMs = json.optionalField("valueMs")?.let { requireDouble(it, owner, "valueMs") }
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("elapsedMs", elapsedMs)
+        put("event", event.wireValue)
+        put("sequence", sequence)
+        put("stage", stage.wireValue)
+        valueMs?.let { put("valueMs", it) }
     }
 }
 

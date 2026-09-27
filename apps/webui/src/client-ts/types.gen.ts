@@ -473,6 +473,28 @@ export type PlaybackFeedbackRequest = {
 };
 
 /**
+ * A bounded, ordered playback event window with no channel or device identity.
+ */
+export type ClientPlaybackTraceBatch = {
+    observedAt: string;
+    events: Array<ClientPlaybackTraceEvent>;
+};
+
+export type ClientPlaybackTraceEvent = {
+    sequence: number;
+    /**
+     * Monotonic milliseconds since this playback started.
+     */
+    elapsedMs: number;
+    stage: 'lifecycle' | 'network' | 'transport' | 'demux' | 'decode' | 'audio' | 'render';
+    event: 'playback_started' | 'request_started' | 'http_response' | 'first_byte' | 'transport_gap' | 'stream_closed' | 'psi_ready' | 'video_parameters_ready' | 'first_idr' | 'first_decoded_frame' | 'first_picture_rendered' | 'first_picture_visible' | 'continuity_error' | 'pts_discontinuity' | 'pes_error' | 'decode_error' | 'decoder_recovery' | 'audio_underrun' | 'audio_clock_started' | 'audio_clock_stopped' | 'frame_drop' | 'frame_late';
+    /**
+     * Optional measured duration or gap in milliseconds.
+     */
+    valueMs?: number;
+};
+
+/**
  * One upload of playback telemetry from one client.
  */
 export type PlaybackTelemetryBatch = {
@@ -4233,6 +4255,35 @@ export type ReportPlaybackFeedbackResponses = {
      */
     202: unknown;
 };
+
+export type PostSessionPlaybackTraceData = {
+    body: ClientPlaybackTraceBatch;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionId}/trace';
+};
+
+export type PostSessionPlaybackTraceErrors = {
+    /**
+     * Trace window is malformed or exceeds its limits
+     */
+    400: unknown;
+    /**
+     * Session not found
+     */
+    404: unknown;
+};
+
+export type PostSessionPlaybackTraceResponses = {
+    /**
+     * Trace window accepted and written to structured backend logs
+     */
+    204: void;
+};
+
+export type PostSessionPlaybackTraceResponse = PostSessionPlaybackTraceResponses[keyof PostSessionPlaybackTraceResponses];
 
 export type PostPlaybackTelemetryData = {
     body: PlaybackTelemetryBatch;

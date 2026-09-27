@@ -69,6 +69,7 @@ var operationRoutes = map[string]operationRoute{
 	"PostServicesNowNext":              {Method: "POST", Path: "/services/now-next"},
 	"PostSessionHeartbeat":             {Method: "POST", Path: "/sessions/{sessionID}/heartbeat"},
 	"PostSessionPlaybackTicket":        {Method: "POST", Path: "/sessions/{sessionId}/playback-ticket"},
+	"PostSessionPlaybackTrace":         {Method: "POST", Path: "/sessions/{sessionId}/trace"},
 	"PostSystemEntitlementOverride":    {Method: "POST", Path: "/system/entitlements/overrides"},
 	"PostSystemEntitlementReceipt":     {Method: "POST", Path: "/system/entitlements/receipts"},
 	"PostSystemRefresh":                {Method: "POST", Path: "/system/refresh"},
@@ -159,6 +160,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("PostServicesNowNext", handler.PostServicesNowNext)
 	register.add("PostSessionHeartbeat", handler.PostSessionHeartbeat)
 	register.add("PostSessionPlaybackTicket", handler.PostSessionPlaybackTicket)
+	register.add("PostSessionPlaybackTrace", handler.PostSessionPlaybackTrace)
 	register.add("PostSystemEntitlementOverride", handler.PostSystemEntitlementOverride)
 	register.add("PostSystemEntitlementReceipt", handler.PostSystemEntitlementReceipt)
 	register.add("PostSystemRefresh", handler.PostSystemRefresh)

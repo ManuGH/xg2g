@@ -17,13 +17,16 @@ import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+import io.github.manugh.xg2g.android.contract.ClientPlaybackTraceEventEvent
+import io.github.manugh.xg2g.android.playback.trace.ClientPlaybackTraceRecorder
 import io.github.manugh.xg2g.android.transport.playback.PlaybackSessionBinding
 import io.github.manugh.xg2g.android.transport.playback.PlayerMediaTransport
 
 @OptIn(markerClass = [UnstableApi::class])
 internal class PlayerHolder(
     context: Context,
-    private val mediaTransport: PlayerMediaTransport
+    private val mediaTransport: PlayerMediaTransport,
+    private val traceRecorder: ClientPlaybackTraceRecorder
 ) {
     private companion object {
         const val TAG = "PlayerHolder"
@@ -104,10 +107,13 @@ internal class PlayerHolder(
     /** Invoked after a rebuilt decoder has rendered a frame successfully. */
     var onRecovered: (() -> Unit)? = null
 
+    /** Called when Media3 reports a playback anomaly worth uploading. */
+    var onPlaybackTraceAnomaly: (() -> Unit)? = null
+
     private var lastRearmAtMs = 0L
     private var consecutiveFastFailures = 0
     private var awaitingRecoveryFirstFrame = false
-    private val playbackLogger = Xg2gPlaybackLogger()
+    private val playbackLogger = Xg2gPlaybackLogger(traceRecorder) { onPlaybackTraceAnomaly?.invoke() }
 
     /**
      * media3 ranks the Fire TV software AVC decoder (c2.android.avc.decoder) ahead of the
@@ -169,15 +175,23 @@ internal class PlayerHolder(
                     override fun onPlayerError(error: PlaybackException) {
                         val exoError = error as? ExoPlaybackException
                         if (exoError?.type != ExoPlaybackException.TYPE_RENDERER) {
+                            recordTrace(ClientPlaybackTraceEventEvent.TRANSPORT_GAP)
                             return
                         }
                         when (rendererTrackType(exoError, this@apply)) {
-                            C.TRACK_TYPE_VIDEO -> rebuildPlayer(error.errorCodeName, exoError.rendererName)
-                            C.TRACK_TYPE_AUDIO -> degradeAudio(error.errorCodeName, exoError.rendererName)
+                            C.TRACK_TYPE_VIDEO -> {
+                                recordTrace(ClientPlaybackTraceEventEvent.DECODE_ERROR)
+                                rebuildPlayer(error.errorCodeName, exoError.rendererName)
+                            }
+                            C.TRACK_TYPE_AUDIO -> {
+                                recordTrace(ClientPlaybackTraceEventEvent.AUDIO_UNDERRUN)
+                                degradeAudio(error.errorCodeName, exoError.rendererName)
+                            }
                         }
                     }
 
                     override fun onRenderedFirstFrame() {
+                        recordTrace(ClientPlaybackTraceEventEvent.FIRST_PICTURE_RENDERED)
                         scheduleHealthyPlaybackReset()
                         if (awaitingRecoveryFirstFrame) {
                             awaitingRecoveryFirstFrame = false
@@ -294,6 +308,10 @@ internal class PlayerHolder(
         stalledChecks += 1
         if (stalledChecks >= MAX_STALLED_CHECKS) {
             Log.w(TAG, "[DECODER_RECOVERY] video output stalled at $rendered rendered frames while playing")
+            recordTrace(
+                ClientPlaybackTraceEventEvent.FRAME_LATE,
+                WATCHDOG_INTERVAL_MS.toDouble() * MAX_STALLED_CHECKS
+            )
             rebuildPlayer("VIDEO_OUTPUT_STALLED", renderer = null)
         }
     }
@@ -337,6 +355,7 @@ internal class PlayerHolder(
         }
 
         isRecovering = true
+        recordTrace(ClientPlaybackTraceEventEvent.DECODER_RECOVERY)
         resetWatchdogSample()
         val backoffMs = (REARM_DELAY_MS shl consecutiveFastFailures).coerceAtMost(MAX_BACKOFF_MS)
         val recoveryGeneration = requestGeneration
@@ -394,6 +413,7 @@ internal class PlayerHolder(
             return
         }
         audioDisabled = true
+        recordTrace(ClientPlaybackTraceEventEvent.AUDIO_CLOCK_STOPPED)
         val label = renderer?.let { "$reason in $it" } ?: reason
         Log.e(TAG, "[DECODER_RECOVERY] $label -> disabling the failing audio track; video continues")
         val current = player
@@ -431,6 +451,12 @@ internal class PlayerHolder(
         }
         recoveryCount++
         return recoveryCount <= MAX_RECOVERIES_PER_WINDOW
+    }
+
+    private fun recordTrace(event: ClientPlaybackTraceEventEvent, valueMs: Double? = null) {
+        if (traceRecorder.record(event, valueMs)) {
+            onPlaybackTraceAnomaly?.invoke()
+        }
     }
 
     fun playUrl(

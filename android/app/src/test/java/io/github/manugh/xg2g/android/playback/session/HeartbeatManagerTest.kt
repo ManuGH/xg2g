@@ -78,6 +78,7 @@ class HeartbeatManagerTest {
         override suspend fun getRecordingPlaylistIfReady(recordingId: String): String? = unsupported()
         override suspend fun getPlaybackUrlIfReady(playbackUrl: String): String? = unsupported()
         override suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?) = unsupported()
+        override suspend fun reportPlaybackTrace(sessionId: String, trace: io.github.manugh.xg2g.android.contract.ClientPlaybackTraceBatch) = unsupported()
         override suspend fun stopSession(sessionId: String) = unsupported()
         override fun sessionPlaylistUrl(sessionId: String): String = unsupported()
         override fun recordingPlaylistUrl(recordingId: String): String = unsupported()

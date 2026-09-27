@@ -10,6 +10,7 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.contract.ClientPlaybackTraceBatch
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
@@ -197,6 +198,21 @@ internal class PlaybackApiClient(
             val request = Request.Builder()
                 .url(apiUrl("sessions", sessionId, "feedback"))
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            execute(request).use { response ->
+                if (!response.isSuccessful) {
+                    throw errorMapper.toHttpException(response, response.body.string())
+                }
+            }
+        }
+    }
+
+    override suspend fun reportPlaybackTrace(sessionId: String, trace: ClientPlaybackTraceBatch) {
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(apiUrl("sessions", sessionId, "trace"))
+                .post(trace.toJson().toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             execute(request).use { response ->

@@ -13,10 +13,15 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import io.github.manugh.xg2g.android.BuildConfig
+import io.github.manugh.xg2g.android.contract.ClientPlaybackTraceEventEvent
+import io.github.manugh.xg2g.android.playback.trace.ClientPlaybackTraceRecorder
 import java.io.IOException
 
 @OptIn(markerClass = [UnstableApi::class])
-internal class Xg2gPlaybackLogger : AnalyticsListener {
+internal class Xg2gPlaybackLogger(
+    private val traceRecorder: ClientPlaybackTraceRecorder,
+    private val onTraceAnomaly: () -> Unit
+) : AnalyticsListener {
 
     init {
         if (BuildConfig.DEBUG) {
@@ -31,6 +36,7 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         mediaLoadData: MediaLoadData,
         retryCount: Int
     ) {
+        traceRecorder.record(ClientPlaybackTraceEventEvent.REQUEST_STARTED)
         Log.i(
             TAG,
             "[XG2G_NETWORK] LoadStarted -> uri=${loadEventInfo.uri} dataType=${mediaLoadData.dataType} trackType=${mediaLoadData.trackType} startMs=${mediaLoadData.mediaStartTimeMs} endMs=${mediaLoadData.mediaEndTimeMs} retry=$retryCount"
@@ -164,6 +170,12 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         droppedFrames: Int,
         elapsedMs: Long
     ) {
+        if (droppedFrames > 0 && traceRecorder.record(
+                ClientPlaybackTraceEventEvent.FRAME_DROP,
+                elapsedMs.toDouble()
+            )) {
+            onTraceAnomaly()
+        }
         Log.w(TAG, "[XG2G_PLAYBACK] DroppedVideoFrames -> dropped $droppedFrames frames in ${elapsedMs}ms")
     }
 
@@ -181,6 +193,7 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
     ) {
         val loadTimeMs = loadEventInfo.loadDurationMs
         val bytes = loadEventInfo.bytesLoaded
+        traceRecorder.record(ClientPlaybackTraceEventEvent.HTTP_RESPONSE, loadTimeMs.toDouble())
         Log.d(TAG, "[XG2G_NETWORK] LoadCompleted -> uri=${loadEventInfo.uri.lastPathSegment} duration=${loadTimeMs}ms bytes=$bytes")
     }
 
@@ -191,6 +204,13 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         error: IOException,
         wasCanceled: Boolean
     ) {
+        traceRecorder.record(ClientPlaybackTraceEventEvent.HTTP_RESPONSE, loadEventInfo.loadDurationMs.toDouble())
+        if (!wasCanceled && traceRecorder.record(
+                ClientPlaybackTraceEventEvent.TRANSPORT_GAP,
+                loadEventInfo.loadDurationMs.toDouble()
+            )) {
+            onTraceAnomaly()
+        }
         Log.e(TAG, "[XG2G_NETWORK] LoadError -> uri=${loadEventInfo.uri} duration=${loadEventInfo.loadDurationMs}ms canceled=$wasCanceled error=${error.message}", error)
     }
 

@@ -17,6 +17,41 @@ import Foundation
 /// which accepts Go's fractional and non-fractional forms; Foundation's
 /// `.iso8601` strategy rejects the fractional one.
 enum Xg2gContract {
+    enum ClientPlaybackTraceEventEvent: String, Codable, Sendable, CaseIterable, Equatable {
+        case playbackStarted = "playback_started"
+        case requestStarted = "request_started"
+        case httpResponse = "http_response"
+        case firstByte = "first_byte"
+        case transportGap = "transport_gap"
+        case streamClosed = "stream_closed"
+        case psiReady = "psi_ready"
+        case videoParametersReady = "video_parameters_ready"
+        case firstIdr = "first_idr"
+        case firstDecodedFrame = "first_decoded_frame"
+        case firstPictureRendered = "first_picture_rendered"
+        case firstPictureVisible = "first_picture_visible"
+        case continuityError = "continuity_error"
+        case ptsDiscontinuity = "pts_discontinuity"
+        case pesError = "pes_error"
+        case decodeError = "decode_error"
+        case decoderRecovery = "decoder_recovery"
+        case audioUnderrun = "audio_underrun"
+        case audioClockStarted = "audio_clock_started"
+        case audioClockStopped = "audio_clock_stopped"
+        case frameDrop = "frame_drop"
+        case frameLate = "frame_late"
+    }
+
+    enum ClientPlaybackTraceEventStage: String, Codable, Sendable, CaseIterable, Equatable {
+        case lifecycle
+        case network
+        case transport
+        case demux
+        case decode
+        case audio
+        case render
+    }
+
     enum DeviceAuthDeviceType: String, Codable, Sendable, CaseIterable, Equatable {
         case androidPhone = "android_phone"
         case androidTablet = "android_tablet"
@@ -264,6 +299,44 @@ enum Xg2gContract {
         ) {
             self.name = name
             self.path = path
+        }
+    }
+
+    /// A bounded, ordered playback event window with no channel or device identity.
+    struct ClientPlaybackTraceBatch: Codable, Sendable, Equatable {
+        let events: [ClientPlaybackTraceEvent]
+        let observedAt: Date
+
+        init(
+            events: [ClientPlaybackTraceEvent],
+            observedAt: Date
+        ) {
+            self.events = events
+            self.observedAt = observedAt
+        }
+    }
+
+    struct ClientPlaybackTraceEvent: Codable, Sendable, Equatable {
+        /// Monotonic milliseconds since this playback started.
+        let elapsedMs: Int64
+        let event: ClientPlaybackTraceEventEvent
+        let sequence: Int64
+        let stage: ClientPlaybackTraceEventStage
+        /// Optional measured duration or gap in milliseconds.
+        let valueMs: Double?
+
+        init(
+            elapsedMs: Int64,
+            event: ClientPlaybackTraceEventEvent,
+            sequence: Int64,
+            stage: ClientPlaybackTraceEventStage,
+            valueMs: Double? = nil
+        ) {
+            self.elapsedMs = elapsedMs
+            self.event = event
+            self.sequence = sequence
+            self.stage = stage
+            self.valueMs = valueMs
         }
     }
 

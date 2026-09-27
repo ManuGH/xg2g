@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.playback.net
 
+import io.github.manugh.xg2g.android.contract.ClientPlaybackTraceBatch
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
@@ -13,6 +14,7 @@ internal interface PlaybackApi {
     suspend fun getPlaybackUrlIfReady(playbackUrl: String): String?
     suspend fun heartbeat(sessionId: String): SessionSnapshot
     suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?)
+    suspend fun reportPlaybackTrace(sessionId: String, trace: ClientPlaybackTraceBatch)
     suspend fun stopSession(sessionId: String)
     fun sessionPlaylistUrl(sessionId: String): String
     fun recordingPlaylistUrl(recordingId: String): String
