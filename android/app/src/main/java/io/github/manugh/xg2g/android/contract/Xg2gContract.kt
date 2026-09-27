@@ -306,6 +306,33 @@ enum class RecordingItemStatus(val wireValue: String) {
     }
 }
 
+enum class SessionClientTelemetryRequestPlatform(val wireValue: String) {
+    IOS("ios"),
+    TVOS("tvos"),
+    ANDROID("android"),
+    WEB("web");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "SessionClientTelemetryRequestPlatform"): SessionClientTelemetryRequestPlatform =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known SessionClientTelemetryRequestPlatform")
+    }
+}
+
+enum class SessionClientTelemetryRequestThermalState(val wireValue: String) {
+    NOMINAL("Nominal"),
+    FAIR("Fair"),
+    SERIOUS("Serious"),
+    CRITICAL("Critical"),
+    UNKNOWN("Unknown");
+
+    companion object {
+        fun fromWire(value: String, owner: String = "SessionClientTelemetryRequestThermalState"): SessionClientTelemetryRequestThermalState =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw Xg2gContractException("$owner: '$value' is not a known SessionClientTelemetryRequestThermalState")
+    }
+}
+
 enum class TimerCreateRequestAfterEvent(val wireValue: String) {
     DEFAULT("default"),
     STANDBY("standby"),
@@ -1690,6 +1717,81 @@ data class Service(
         number?.let { put("number", it) }
         resolution?.let { put("resolution", it) }
         serviceRef?.let { put("serviceRef", it) }
+    }
+}
+
+/**
+ * A bounded playback-health snapshot from a client. It deliberately excludes
+ * channel names, stream URLs, device identifiers, and free-form log text.
+ */
+data class SessionClientTelemetryRequest(
+    val appVersion: String? = null,
+    val audioLeadMs: Double,
+    val audioUnderruns: Int,
+    val continuityErrors: Int,
+    val continuityErrorsDelta: Int,
+    val decodeErrors: Int,
+    val decodeErrorsDelta: Int,
+    val decodedFps: Double,
+    val droppedFrames: Int,
+    val ingestBacklogBytes: Int,
+    val ingestGapCount1000ms: Int,
+    val ingestGapCount250ms: Int,
+    val ingestGapCount600ms: Int,
+    val ingestGapLastMs: Double,
+    val ingestGapMaxMs: Double,
+    val lateFrames: Int,
+    val observedAt: Instant,
+    val platform: SessionClientTelemetryRequestPlatform,
+    val ptsDiscontinuities: Int,
+    val thermalState: SessionClientTelemetryRequestThermalState
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "SessionClientTelemetryRequest"): SessionClientTelemetryRequest = SessionClientTelemetryRequest(
+            appVersion = json.optionalField("appVersion")?.let { requireString(it, owner, "appVersion") },
+            audioLeadMs = requireDouble(json.requireField("audioLeadMs", owner), owner, "audioLeadMs"),
+            audioUnderruns = requireInt(json.requireField("audioUnderruns", owner), owner, "audioUnderruns"),
+            continuityErrors = requireInt(json.requireField("continuityErrors", owner), owner, "continuityErrors"),
+            continuityErrorsDelta = requireInt(json.requireField("continuityErrorsDelta", owner), owner, "continuityErrorsDelta"),
+            decodeErrors = requireInt(json.requireField("decodeErrors", owner), owner, "decodeErrors"),
+            decodeErrorsDelta = requireInt(json.requireField("decodeErrorsDelta", owner), owner, "decodeErrorsDelta"),
+            decodedFps = requireDouble(json.requireField("decodedFps", owner), owner, "decodedFps"),
+            droppedFrames = requireInt(json.requireField("droppedFrames", owner), owner, "droppedFrames"),
+            ingestBacklogBytes = requireInt(json.requireField("ingestBacklogBytes", owner), owner, "ingestBacklogBytes"),
+            ingestGapCount1000ms = requireInt(json.requireField("ingestGapCount1000Ms", owner), owner, "ingestGapCount1000Ms"),
+            ingestGapCount250ms = requireInt(json.requireField("ingestGapCount250Ms", owner), owner, "ingestGapCount250Ms"),
+            ingestGapCount600ms = requireInt(json.requireField("ingestGapCount600Ms", owner), owner, "ingestGapCount600Ms"),
+            ingestGapLastMs = requireDouble(json.requireField("ingestGapLastMs", owner), owner, "ingestGapLastMs"),
+            ingestGapMaxMs = requireDouble(json.requireField("ingestGapMaxMs", owner), owner, "ingestGapMaxMs"),
+            lateFrames = requireInt(json.requireField("lateFrames", owner), owner, "lateFrames"),
+            observedAt = requireInstant(json.requireField("observedAt", owner), owner, "observedAt"),
+            platform = SessionClientTelemetryRequestPlatform.fromWire(requireString(json.requireField("platform", owner), owner, "platform"), owner),
+            ptsDiscontinuities = requireInt(json.requireField("ptsDiscontinuities", owner), owner, "ptsDiscontinuities"),
+            thermalState = SessionClientTelemetryRequestThermalState.fromWire(requireString(json.requireField("thermalState", owner), owner, "thermalState"), owner)
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        appVersion?.let { put("appVersion", it) }
+        put("audioLeadMs", audioLeadMs)
+        put("audioUnderruns", audioUnderruns)
+        put("continuityErrors", continuityErrors)
+        put("continuityErrorsDelta", continuityErrorsDelta)
+        put("decodeErrors", decodeErrors)
+        put("decodeErrorsDelta", decodeErrorsDelta)
+        put("decodedFps", decodedFps)
+        put("droppedFrames", droppedFrames)
+        put("ingestBacklogBytes", ingestBacklogBytes)
+        put("ingestGapCount1000Ms", ingestGapCount1000ms)
+        put("ingestGapCount250Ms", ingestGapCount250ms)
+        put("ingestGapCount600Ms", ingestGapCount600ms)
+        put("ingestGapLastMs", ingestGapLastMs)
+        put("ingestGapMaxMs", ingestGapMaxMs)
+        put("lateFrames", lateFrames)
+        put("observedAt", observedAt.toString())
+        put("platform", platform.wireValue)
+        put("ptsDiscontinuities", ptsDiscontinuities)
+        put("thermalState", thermalState.wireValue)
     }
 }
 

@@ -14,12 +14,12 @@ import (
 type EventType string
 
 const (
-	EventStartSession        EventType = "session.start"
-	EventStopSession         EventType = "session.stop"
-	EventLeaseLost           EventType = "lease.lost"
-	EventPipelineTick        EventType = "pipeline.tick" // heartbeat/renew
-	EventSessionStateChanged EventType = "session.state_changed"
-	EventSessionTelemetry    EventType = "session.telemetry"
+	EventStartSession           EventType = "session.start"
+	EventStopSession            EventType = "session.stop"
+	EventLeaseLost              EventType = "lease.lost"
+	EventPipelineTick           EventType = "pipeline.tick" // heartbeat/renew
+	EventSessionStateChanged    EventType = "session.state_changed"
+	EventSessionTelemetry       EventType = "session.telemetry"
 	EventSessionClientTelemetry EventType = "session.client_telemetry"
 )
 
@@ -87,8 +87,8 @@ type ClientPlaybackTelemetry struct {
 
 // SessionClientTelemetryEvent fans a client snapshot out to live session observers.
 type SessionClientTelemetryEvent struct {
-	Type        EventType                `json:"type"`
-	SessionID   string                   `json:"sessionId"`
-	Telemetry   ClientPlaybackTelemetry   `json:"telemetry"`
-	ReceivedAt  time.Time                 `json:"receivedAt"`
+	Type       EventType               `json:"type"`
+	SessionID  string                  `json:"sessionId"`
+	Telemetry  ClientPlaybackTelemetry `json:"telemetry"`
+	ReceivedAt time.Time               `json:"receivedAt"`
 }

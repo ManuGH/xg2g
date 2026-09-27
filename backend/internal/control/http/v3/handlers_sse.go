@@ -33,9 +33,9 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	// Subscribe to the bus before querying state to close the race window:
 	// any event published between GetSession and the subscription would be lost.
 	var (
-		stateSub        bus.Subscriber
-		telemSub        bus.Subscriber
-		clientTelemSub  bus.Subscriber
+		stateSub       bus.Subscriber
+		telemSub       bus.Subscriber
+		clientTelemSub bus.Subscriber
 	)
 	if deps.bus != nil {
 		var subErr error

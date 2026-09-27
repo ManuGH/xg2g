@@ -147,6 +147,21 @@ enum Xg2gContract {
         case unknown
     }
 
+    enum SessionClientTelemetryRequestPlatform: String, Codable, Sendable, CaseIterable, Equatable {
+        case ios
+        case tvos
+        case android
+        case web
+    }
+
+    enum SessionClientTelemetryRequestThermalState: String, Codable, Sendable, CaseIterable, Equatable {
+        case nominal = "Nominal"
+        case fair = "Fair"
+        case serious = "Serious"
+        case critical = "Critical"
+        case unknown = "Unknown"
+    }
+
     enum TimerCreateRequestAfterEvent: String, Codable, Sendable, CaseIterable, Equatable {
         case `default` = "default"
         case standby
@@ -1198,6 +1213,98 @@ enum Xg2gContract {
             self.number = number
             self.resolution = resolution
             self.serviceRef = serviceRef
+        }
+    }
+
+    /// A bounded playback-health snapshot from a client. It deliberately excludes
+    /// channel names, stream URLs, device identifiers, and free-form log text.
+    struct SessionClientTelemetryRequest: Codable, Sendable, Equatable {
+        let appVersion: String?
+        let audioLeadMs: Double
+        let audioUnderruns: Int
+        let continuityErrors: Int
+        let continuityErrorsDelta: Int
+        let decodeErrors: Int
+        let decodeErrorsDelta: Int
+        let decodedFps: Double
+        let droppedFrames: Int
+        let ingestBacklogBytes: Int
+        let ingestGapCount1000ms: Int
+        let ingestGapCount250ms: Int
+        let ingestGapCount600ms: Int
+        let ingestGapLastMs: Double
+        let ingestGapMaxMs: Double
+        let lateFrames: Int
+        let observedAt: Date
+        let platform: SessionClientTelemetryRequestPlatform
+        let ptsDiscontinuities: Int
+        let thermalState: SessionClientTelemetryRequestThermalState
+
+        private enum CodingKeys: String, CodingKey {
+            case appVersion
+            case audioLeadMs
+            case audioUnderruns
+            case continuityErrors
+            case continuityErrorsDelta
+            case decodeErrors
+            case decodeErrorsDelta
+            case decodedFps
+            case droppedFrames
+            case ingestBacklogBytes
+            case ingestGapCount1000ms = "ingestGapCount1000Ms"
+            case ingestGapCount250ms = "ingestGapCount250Ms"
+            case ingestGapCount600ms = "ingestGapCount600Ms"
+            case ingestGapLastMs
+            case ingestGapMaxMs
+            case lateFrames
+            case observedAt
+            case platform
+            case ptsDiscontinuities
+            case thermalState
+        }
+
+        init(
+            audioLeadMs: Double,
+            audioUnderruns: Int,
+            continuityErrors: Int,
+            continuityErrorsDelta: Int,
+            decodeErrors: Int,
+            decodeErrorsDelta: Int,
+            decodedFps: Double,
+            droppedFrames: Int,
+            ingestBacklogBytes: Int,
+            ingestGapCount1000ms: Int,
+            ingestGapCount250ms: Int,
+            ingestGapCount600ms: Int,
+            ingestGapLastMs: Double,
+            ingestGapMaxMs: Double,
+            lateFrames: Int,
+            observedAt: Date,
+            platform: SessionClientTelemetryRequestPlatform,
+            ptsDiscontinuities: Int,
+            thermalState: SessionClientTelemetryRequestThermalState,
+            appVersion: String? = nil
+        ) {
+            self.appVersion = appVersion
+            self.audioLeadMs = audioLeadMs
+            self.audioUnderruns = audioUnderruns
+            self.continuityErrors = continuityErrors
+            self.continuityErrorsDelta = continuityErrorsDelta
+            self.decodeErrors = decodeErrors
+            self.decodeErrorsDelta = decodeErrorsDelta
+            self.decodedFps = decodedFps
+            self.droppedFrames = droppedFrames
+            self.ingestBacklogBytes = ingestBacklogBytes
+            self.ingestGapCount1000ms = ingestGapCount1000ms
+            self.ingestGapCount250ms = ingestGapCount250ms
+            self.ingestGapCount600ms = ingestGapCount600ms
+            self.ingestGapLastMs = ingestGapLastMs
+            self.ingestGapMaxMs = ingestGapMaxMs
+            self.lateFrames = lateFrames
+            self.observedAt = observedAt
+            self.platform = platform
+            self.ptsDiscontinuities = ptsDiscontinuities
+            self.thermalState = thermalState
         }
     }
 
