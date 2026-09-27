@@ -139,3 +139,47 @@ func TestAuthorizeRequest(t *testing.T) {
 		t.Fatal("AuthorizeRequest should accept bearer token")
 	}
 }
+
+func TestExtractToken_CaseInsensitiveSchemes(t *testing.T) {
+	tests := []struct {
+		name       string
+		header     string
+		wantToken  string
+		wantSource string
+	}{
+		{"standard Bearer", "Bearer my-secret-token", "my-secret-token", BearerSource},
+		{"lowercase bearer", "bearer my-secret-token", "my-secret-token", BearerSource},
+		{"mixed case bEaReR", "bEaReR my-secret-token", "my-secret-token", BearerSource},
+		{"standard DPoP", "DPoP dpop-access-token", "dpop-access-token", DPoPSource},
+		{"lowercase dpop", "dpop dpop-access-token", "dpop-access-token", DPoPSource},
+		{"mixed case DpOp", "DpOp dpop-access-token", "dpop-access-token", DPoPSource},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("Authorization", tt.header)
+			token, source := ExtractTokenDetailedWithOptions(req, TokenExtractOptions{})
+			if token != tt.wantToken {
+				t.Errorf("token = %q, want %q", token, tt.wantToken)
+			}
+			if source != tt.wantSource {
+				t.Errorf("source = %q, want %q", source, tt.wantSource)
+			}
+		})
+	}
+}
+
+func TestRequestCredentialKind_CaseInsensitiveSchemes(t *testing.T) {
+	reqBearer, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	reqBearer.Header.Set("Authorization", "bearer test-token")
+	if got := RequestCredentialKind(reqBearer); got != CredentialExplicit {
+		t.Errorf("got %v, want CredentialExplicit for lowercase bearer", got)
+	}
+
+	reqDPoP, _ := http.NewRequest(http.MethodPost, "/test", nil)
+	reqDPoP.Header.Set("Authorization", "dpop test-token")
+	if got := RequestCredentialKind(reqDPoP); got != CredentialExplicit {
+		t.Errorf("got %v, want CredentialExplicit for lowercase dpop", got)
+	}
+}

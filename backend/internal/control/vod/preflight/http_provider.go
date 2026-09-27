@@ -22,10 +22,15 @@ type HTTPPreflightProvider struct {
 
 func NewHTTPPreflightProvider(client *http.Client, timeout time.Duration, outboundPolicy platformnet.OutboundPolicy) *HTTPPreflightProvider {
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{
+			Transport: platformnet.NewSafeTransport(outboundPolicy),
+		}
 	} else {
 		// Shallow copy to avoid mutating the passed client
 		c := *client
+		if c.Transport == nil {
+			c.Transport = platformnet.NewSafeTransport(outboundPolicy)
+		}
 		client = &c
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {

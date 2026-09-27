@@ -5,8 +5,10 @@
 package net
 
 import (
+	"context"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // PointsAtReceiver reports whether rawURL addresses the same host as
@@ -31,6 +33,12 @@ import (
 // configured receiver there is nothing to protect, and refusing every URL would
 // be a worse failure than the one being prevented.
 func PointsAtReceiver(rawURL, receiverBaseURL string) bool {
+	return PointsAtReceiverContext(context.Background(), rawURL, receiverBaseURL)
+}
+
+// PointsAtReceiverContext reports whether rawURL addresses the same host or IP as
+// receiverBaseURL, taking into account hostname to IP resolution.
+func PointsAtReceiverContext(ctx context.Context, rawURL, receiverBaseURL string) bool {
 	receiverHost, ok := hostOf(receiverBaseURL)
 	if !ok {
 		return false
@@ -39,7 +47,33 @@ func PointsAtReceiver(rawURL, receiverBaseURL string) bool {
 	if !ok {
 		return false
 	}
-	return candidateHost == receiverHost
+	if strings.EqualFold(candidateHost, receiverHost) {
+		return true
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	receiverIPs, err := resolveHostIPs(lookupCtx, receiverHost)
+	if err != nil {
+		return false
+	}
+	candidateIPs, err := resolveHostIPs(lookupCtx, candidateHost)
+	if err != nil {
+		return false
+	}
+
+	for _, rip := range receiverIPs {
+		for _, cip := range candidateIPs {
+			if rip.Equal(cip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hostOf normalizes the host of a URL that may arrive without a scheme.

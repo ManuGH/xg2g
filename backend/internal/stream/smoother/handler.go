@@ -7,9 +7,11 @@ package smoother
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -34,6 +36,25 @@ type Handler struct {
 	receiverHost string
 	streamPort   int
 	cfg          Config
+	client       *http.Client
+}
+
+// isValidServiceRef validates that serviceRef conforms strictly to DVB/Enigma2
+// service reference syntax and rejects path traversal, authority injection, or query strings.
+func isValidServiceRef(ref string) bool {
+	if ref == "" || len(ref) > 256 {
+		return false
+	}
+	if strings.ContainsAny(ref, "/\\?#@ \t\r\n\x00") || strings.Contains(ref, "..") {
+		return false
+	}
+	for _, r := range ref {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ':' || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // NewHandler creates a new TS smoothing HTTP handler.
@@ -48,10 +69,23 @@ func NewHandler(receiverBaseURL string, streamPort int, cfg Config) *Handler {
 		streamPort = 8001
 	}
 
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ResponseHeaderTimeout: 10 * time.Second,
+		DisableKeepAlives:     true,
+	}
+
 	return &Handler{
 		receiverHost: host,
 		streamPort:   streamPort,
 		cfg:          cfg,
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   0, // continuous streaming
+		},
 	}
 }
 
@@ -75,6 +109,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serviceRef = unescaped
 	}
 
+	if !isValidServiceRef(serviceRef) {
+		http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
+		return
+	}
+
 	targetURL := fmt.Sprintf("http://%s:%d/%s", h.receiverHost, h.streamPort, serviceRef)
 	logger := log.L().With().
 		Str("serviceRef", serviceRef).
@@ -90,8 +129,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{
-		Timeout: 0, // continuous streaming
+	client := h.client
+	if client == nil {
+		client = &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
+			Timeout: 0,
+		}
 	}
 
 	resp, err := client.Do(req)

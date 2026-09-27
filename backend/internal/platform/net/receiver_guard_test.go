@@ -107,3 +107,20 @@ func TestPointsAtReceiver_IPv6(t *testing.T) {
 		t.Error("a different IPv6 host was treated as the receiver")
 	}
 }
+
+func TestPointsAtReceiver_HostnameAndIPEquivalence(t *testing.T) {
+	// Candidate specifies IP while receiver base specifies hostname resolving to that IP
+	if !PointsAtReceiver("http://127.0.0.1:8001/stream", "http://localhost:8080") {
+		t.Errorf("expected 127.0.0.1 to match receiver at localhost")
+	}
+
+	// Receiver base specifies IP while candidate specifies hostname resolving to that IP
+	if !PointsAtReceiver("http://localhost:8001/stream", "http://127.0.0.1:8080") {
+		t.Errorf("expected localhost candidate to match receiver at 127.0.0.1")
+	}
+
+	// External IP that does not resolve to the receiver host
+	if PointsAtReceiver("http://192.0.2.1:8001/stream", "http://localhost:8080") {
+		t.Errorf("expected 192.0.2.1 to NOT match receiver at localhost")
+	}
+}

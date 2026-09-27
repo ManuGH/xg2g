@@ -171,33 +171,44 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 
 		// 0b. Check DPoP Access Tokens (Android / Sender-Constrained API Clients)
 		if req, ok := ctx.Value(dpopRequestContextKey{}).(*http.Request); ok && req != nil {
-			dpopProof := req.Header.Get("DPoP")
-			if dpopProof != "" {
-				validator := s.getDPoPValidator()
-				if validator != nil {
-					proofClaims, err := validator.ValidateProof(req, dpopProof, token, time.Now().UTC())
-					if err == nil && proofClaims != nil {
-						if dpopToken, user, err := idSvc.ValidateDPoPAccessToken(ctx, token, proofClaims.JWKThumbprint); err == nil && dpopToken != nil && user != nil {
-							var scopes []string
-							if dpopToken.Scopes != "" {
-								scopes = strings.Split(dpopToken.Scopes, " ")
-							} else {
-								scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
-							}
-							principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
-							// The one credential class that names a device. The
-							// binding was just enforced by
-							// ValidateDPoPAccessToken, which refuses a token
-							// whose bound_jkt is not the proof's thumbprint —
-							// so this device ID is proven, not asserted.
-							principal.DeviceID = dpopToken.DeviceID
-							principal = s.projectTokenPrincipal(ctx, principal, cfg)
-							if principal != nil {
-								return auth.Authenticated(principal)
-							}
-						}
-					}
+			dpopProof := strings.TrimSpace(req.Header.Get("DPoP"))
+			authHeader := req.Header.Get("Authorization")
+			isDPoPAuth := len(authHeader) >= 5 && strings.EqualFold(authHeader[:5], "DPoP ")
+
+			if dpopProof != "" || isDPoPAuth {
+				if dpopProof == "" {
+					return auth.InvalidCredentials()
 				}
+				validator := s.getDPoPValidator()
+				if validator == nil {
+					return auth.InvalidCredentials()
+				}
+				proofClaims, err := validator.ValidateProof(req, dpopProof, token, time.Now().UTC())
+				if err != nil || proofClaims == nil {
+					return auth.InvalidCredentials()
+				}
+				dpopToken, user, err := idSvc.ValidateDPoPAccessToken(ctx, token, proofClaims.JWKThumbprint)
+				if err != nil || dpopToken == nil || user == nil {
+					return auth.InvalidCredentials()
+				}
+				var scopes []string
+				if dpopToken.Scopes != "" {
+					scopes = strings.Split(dpopToken.Scopes, " ")
+				} else {
+					scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
+				}
+				principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
+				// The one credential class that names a device. The
+				// binding was just enforced by
+				// ValidateDPoPAccessToken, which refuses a token
+				// whose bound_jkt is not the proof's thumbprint —
+				// so this device ID is proven, not asserted.
+				principal.DeviceID = dpopToken.DeviceID
+				principal = s.projectTokenPrincipal(ctx, principal, cfg)
+				if principal != nil {
+					return auth.Authenticated(principal)
+				}
+				return auth.InvalidCredentials()
 			}
 		}
 	}
@@ -271,7 +282,8 @@ func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
 	cfg := s.GetConfig()
 	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
-		if result := s.TokenPrincipal(r.Context(), token); result.OK() {
+		ctx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		if result := s.TokenPrincipal(ctx, token); result.OK() {
 			return newScopeSet(result.Principal.Scopes), true
 		}
 		return nil, false
