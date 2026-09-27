@@ -46,6 +46,8 @@ const SECTIONS = [
   { src: 'docs/ops', dest: 'ops' },
   { src: 'docs/ADR', dest: 'adr' },
   { src: 'docs/release', dest: 'release' },
+  { src: 'docs/dev', dest: 'dev' },
+  { src: 'docs/webui', dest: 'webui' },
 ];
 
 function titleFromFilename(filename) {
@@ -55,13 +57,63 @@ function titleFromFilename(filename) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function processMarkdown(content, filename) {
+function resolveMarkdownLink(link, srcPath) {
+  if (!link || link.startsWith('http://') || link.startsWith('https://') || link.startsWith('mailto:') || link.startsWith('#')) {
+    return link;
+  }
+  if (link.startsWith('/xg2g/')) {
+    return link;
+  }
+
+  const [targetPath, hashPart] = link.split('#');
+  const hash = hashPart ? `#${hashPart}` : '';
+  if (!targetPath) return link;
+
+  const sourceDir = path.dirname(srcPath);
+  const absTarget = path.normalize(path.resolve(sourceDir, targetPath));
+
+  for (const section of SECTIONS) {
+    const sectionAbs = path.resolve(REPO_ROOT, section.src);
+    if (absTarget === sectionAbs || absTarget.startsWith(sectionAbs + path.sep)) {
+      const rel = path.relative(sectionAbs, absTarget);
+      const parts = rel ? rel.split(path.sep) : [];
+      const filename = parts.pop() || '';
+      const base = filename.replace(/\.md$/i, '').toLowerCase();
+      const dirParts = parts.map((p) => p.toLowerCase());
+
+      let slug;
+      if (base === 'readme' || base === 'index') {
+        slug = [section.dest, ...dirParts].filter(Boolean).join('/');
+      } else {
+        slug = [section.dest, ...dirParts, base].filter(Boolean).join('/');
+      }
+      return `/xg2g/${slug}/${hash}`;
+    }
+  }
+
+  const openapiAbs = path.resolve(REPO_ROOT, 'backend/api/openapi.yaml');
+  if (absTarget === openapiAbs) {
+    return `/xg2g/api-reference/${hash}`;
+  }
+
+  if (absTarget.startsWith(REPO_ROOT + path.sep)) {
+    const relFromRoot = path.relative(REPO_ROOT, absTarget).replace(/\\/g, '/');
+    return `https://github.com/ManuGH/xg2g/blob/main/${relFromRoot}${hash}`;
+  }
+
+  return link;
+}
+
+function processMarkdown(content, filename, srcPath) {
   let title = '';
+  let frontmatter = '';
   let body = content;
 
   // Check for existing frontmatter
   const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (frontmatterMatch) {
+    frontmatter = frontmatterMatch[0];
+    body = content.slice(frontmatter.length);
     const fm = frontmatterMatch[1];
     const titleMatch = fm.match(/^title:\s*["']?(.*?)["']?$/m);
     if (titleMatch) {
@@ -84,22 +136,17 @@ function processMarkdown(content, filename) {
   // Sanitize title for YAML
   const safeTitle = title.replace(/"/g, '\\"').replace(/[\r\n]/g, ' ');
 
-  // Rewrite relative links:
-  // 1. .md links to lowercase without .md or lowercased
-  body = body.replace(/\]\(([^)]+?)\.md(#[^)]+)?\)/g, (match, p1, p2) => {
-    // Ignore external URLs
-    if (p1.startsWith('http://') || p1.startsWith('https://')) return match;
-    const hash = p2 || '';
-    // lowercase relative path
-    const lower = p1.toLowerCase();
-    return `](${lower}/${hash})`;
+  // Rewrite internal links to canonical absolute routes
+  body = body.replace(/\]\(([^)]+?)\)/g, (match, link) => {
+    const resolved = resolveMarkdownLink(link, srcPath);
+    return `](${resolved})`;
   });
 
-  if (!frontmatterMatch) {
-    return `---\ntitle: "${safeTitle}"\n---\n\n${body}`;
+  if (frontmatter) {
+    return `${frontmatter}${body}`;
   }
 
-  return content;
+  return `---\ntitle: "${safeTitle}"\n---\n\n${body}`;
 }
 
 function syncDirectory(srcDir, destDir) {
@@ -116,7 +163,7 @@ function syncDirectory(srcDir, destDir) {
       syncDirectory(srcPath, destPath);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       const raw = fs.readFileSync(srcPath, 'utf8');
-      const processed = processMarkdown(raw, entry.name);
+      const processed = processMarkdown(raw, entry.name, srcPath);
       fs.writeFileSync(destPath, processed, 'utf8');
 
       // If this is a README.md, also write it as index.md so the directory root route (e.g. /tutorials/) resolves directly
