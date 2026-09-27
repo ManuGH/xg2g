@@ -35,19 +35,14 @@ if (fs.existsSync(llmsSrc)) {
   fs.copyFileSync(llmsSrc, llmsDest);
 }
 
-// Source directories to sync
+// Source directories to sync (public user-facing documentation only)
 const SECTIONS = [
   { src: 'docs/tutorials', dest: 'tutorials' },
   { src: 'docs/how-to', dest: 'how-to' },
   { src: 'docs/reference', dest: 'reference' },
   { src: 'docs/explanation', dest: 'explanation' },
   { src: 'docs/guides', dest: 'guides' },
-  { src: 'docs/arch', dest: 'arch' },
-  { src: 'docs/ops', dest: 'ops' },
-  { src: 'docs/ADR', dest: 'adr' },
   { src: 'docs/release', dest: 'release' },
-  { src: 'docs/dev', dest: 'dev' },
-  { src: 'docs/webui', dest: 'webui' },
 ];
 
 const MAINTAINER_INTERNAL_OPS = new Set([
@@ -202,12 +197,18 @@ function syncDirectory(srcDir, destDir) {
   }
 }
 
-// Clean destination section directories before syncing to avoid stale/excluded files
+// Purge all subdirectories in SRC_CONTENT_DIR to remove any decommissioned sections
+if (fs.existsSync(SRC_CONTENT_DIR)) {
+  for (const entry of fs.readdirSync(SRC_CONTENT_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      fs.rmSync(path.join(SRC_CONTENT_DIR, entry.name), { recursive: true, force: true });
+    }
+  }
+}
+
+// Sync public sections
 for (const section of SECTIONS) {
   const dest = path.join(SRC_CONTENT_DIR, section.dest);
-  if (fs.existsSync(dest)) {
-    fs.rmSync(dest, { recursive: true, force: true });
-  }
   syncDirectory(path.join(REPO_ROOT, section.src), dest);
 }
 
