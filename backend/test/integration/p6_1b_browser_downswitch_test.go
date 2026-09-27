@@ -1,3 +1,5 @@
+//go:build integration_slow || integration_browser
+
 package test
 
 import (
@@ -242,6 +244,9 @@ func TestP6_1b_BrowserDownswitchAgainstLiveSpike(t *testing.T) {
 	nodeCmd.Dir = filepath.Join(repoRoot, "e2e")
 	nodeOut, err := nodeCmd.CombinedOutput()
 	t.Logf("Node Harness Output:\n%s", string(nodeOut))
+	if err != nil && (strings.Contains(string(nodeOut), "browserType.launch: Executable doesn't exist") || strings.Contains(string(nodeOut), "npx playwright install")) {
+		t.Skipf("Playwright Chromium browser not installed: %s", string(nodeOut))
+	}
 	require.NoError(t, err, "Node Playwright harness failed: %s", string(nodeOut))
 
 	var harnessRes NodeHarnessResult
