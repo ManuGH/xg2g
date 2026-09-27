@@ -9,8 +9,18 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "media-core/**"
+      - "backend/internal/infra/media/**"
+      - "Dockerfile*"
+      - ".github/workflows/rust-media-core.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "media-core/**"
+      - "backend/internal/infra/media/**"
+      - "Dockerfile*"
+      - ".github/workflows/rust-media-core.yml"
 
 concurrency:
   group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

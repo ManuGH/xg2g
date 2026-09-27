@@ -13,8 +13,16 @@ on:
           - "true"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".gitignore"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".gitignore"
   schedule:
     - cron: "11 4 * * 1" # weekly
 

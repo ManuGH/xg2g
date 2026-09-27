@@ -146,6 +146,14 @@ jobs:
           cd apps/webui
           npm run build
 
+      - name: Cache Playwright browser
+        if: steps.scope.outputs.webui_gate_needed == 'true'
+        id: cache-playwright
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4.2.4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('apps/webui/package-lock.json') }}
+
       - name: WebUI browser smoke
         if: steps.scope.outputs.webui_gate_needed == 'true'
         shell: bash
@@ -153,8 +161,20 @@ jobs:
           set -euo pipefail
           # ffmpeg generates the HLS fixture for the real-hls.js playback spec;
           # without it that spec skips itself (see scripts/gen-hls-fixture.sh).
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-          npx playwright install --with-deps chromium
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already installed"
+          elif docker pull ghcr.io/manugh/xg2g-ffmpeg:8.1.2 2>/dev/null; then
+            echo "Extracting pre-built ffmpeg 8.1.2 from ghcr.io/manugh/xg2g-ffmpeg:8.1.2..."
+            cid=$(docker create ghcr.io/manugh/xg2g-ffmpeg:8.1.2)
+            sudo docker cp "$cid":/usr/local/bin/ffmpeg /usr/local/bin/ffmpeg || sudo docker cp "$cid":/opt/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
+            docker rm "$cid" >/dev/null
+          else
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
+            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
+          fi
+          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          fi
           make webui-browser-smoke
 
       - name: WebUI gate skipped by scope

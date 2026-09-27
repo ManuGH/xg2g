@@ -4,8 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/govulncheck.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/govulncheck.yml"
   schedule:
     - cron: "57 3 * * 0" # weekly
 
