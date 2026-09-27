@@ -66,6 +66,7 @@ var operationRoutes = map[string]operationRoute{
 	"PostRecordingRename":              {Method: "POST", Path: "/recordings/{recordingId}/rename"},
 	"PostServicesIdToggle":             {Method: "POST", Path: "/services/{id}/toggle"},
 	"PostServicesNowNext":              {Method: "POST", Path: "/services/now-next"},
+	"PostSessionClientTelemetry":       {Method: "POST", Path: "/sessions/{sessionID}/telemetry"},
 	"PostSessionHeartbeat":             {Method: "POST", Path: "/sessions/{sessionID}/heartbeat"},
 	"PostSessionPlaybackTicket":        {Method: "POST", Path: "/sessions/{sessionId}/playback-ticket"},
 	"PostSystemEntitlementOverride":    {Method: "POST", Path: "/system/entitlements/overrides"},
@@ -155,6 +156,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("PostRecordingRename", handler.PostRecordingRename)
 	register.add("PostServicesIdToggle", handler.PostServicesIdToggle)
 	register.add("PostServicesNowNext", handler.PostServicesNowNext)
+	register.add("PostSessionClientTelemetry", handler.PostSessionClientTelemetry)
 	register.add("PostSessionHeartbeat", handler.PostSessionHeartbeat)
 	register.add("PostSessionPlaybackTicket", handler.PostSessionPlaybackTicket)
 	register.add("PostSystemEntitlementOverride", handler.PostSystemEntitlementOverride)

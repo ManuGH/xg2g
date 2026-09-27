@@ -33,8 +33,9 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 	// Subscribe to the bus before querying state to close the race window:
 	// any event published between GetSession and the subscription would be lost.
 	var (
-		stateSub bus.Subscriber
-		telemSub bus.Subscriber
+		stateSub        bus.Subscriber
+		telemSub        bus.Subscriber
+		clientTelemSub  bus.Subscriber
 	)
 	if deps.bus != nil {
 		var subErr error
@@ -51,6 +52,13 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer func() { _ = telemSub.Close() }()
+
+		clientTelemSub, subErr = deps.bus.Subscribe(r.Context(), string(model.EventSessionClientTelemetry))
+		if subErr != nil {
+			writeProblem(w, r, http.StatusInternalServerError, "sessions/events/subscribe_failed", "Subscription Failed", "SUBSCRIBE_FAILED", "Failed to subscribe to client playback telemetry events.", nil)
+			return
+		}
+		defer func() { _ = clientTelemSub.Close() }()
 	}
 
 	// Query the state snapshot (subscription already active, no event is missed)
@@ -115,6 +123,15 @@ func (s *Server) handleV3SessionEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if event, ok := msg.(model.SessionTelemetryEvent); ok && event.SessionID == sessionID {
+				if err := writeSSEEvent(w, flusher, string(event.Type), event); err != nil {
+					return
+				}
+			}
+		case msg, open := <-clientTelemSub.C():
+			if !open {
+				return
+			}
+			if event, ok := msg.(model.SessionClientTelemetryEvent); ok && event.SessionID == sessionID {
 				if err := writeSSEEvent(w, flusher, string(event.Type), event); err != nil {
 					return
 				}

@@ -55,7 +55,59 @@ var (
 		Name: "xg2g_playback_start_total",
 		Help: "Playback start attempts by schema/mode",
 	}, []string{"schema", "mode"})
+
+	clientPlaybackTelemetryReports = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_client_playback_telemetry_reports_total",
+		Help: "Client playback telemetry snapshots received by bounded platform and outcome labels.",
+	}, []string{"platform", "outcome"})
+
+	clientPlaybackIngestGapSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_client_playback_ingest_gap_seconds",
+		Help:    "Largest transport data-arrival gap reported in client playback snapshots.",
+		Buckets: []float64{0.1, 0.25, 0.5, 0.6, 1, 1.5, 2, 3, 5, 10, 30},
+	}, []string{"platform"})
+
+	clientPlaybackDecodedFPS = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_client_playback_decoded_fps",
+		Help:    "Decoded frames per second reported by playback clients.",
+		Buckets: []float64{0, 5, 10, 15, 20, 24, 25, 30, 50, 60, 120, 240},
+	}, []string{"platform"})
+
+	clientPlaybackAudioLeadSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "xg2g_client_playback_audio_lead_seconds",
+		Help:    "Audio buffer lead reported by playback clients.",
+		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 120},
+	}, []string{"platform"})
+
+	clientPlaybackErrorDeltaTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_client_playback_error_delta_total",
+		Help: "Continuity and decoder error increments reported by playback clients.",
+	}, []string{"platform", "kind"})
 )
+
+// RecordClientPlaybackTelemetry records a validated snapshot without session or
+// device labels, keeping cardinality bounded as sessions and clients change.
+func RecordClientPlaybackTelemetry(platform, outcome string, decodedFPS, audioLeadMs, maxIngestGapMs float64, continuityDelta, decodeDelta int) {
+	switch platform {
+	case "ios", "tvos", "android", "web":
+	default:
+		platform = "unknown"
+	}
+	switch outcome {
+	case "accepted", "invalid", "not_found", "closed", "unavailable":
+	default:
+		outcome = "unknown"
+	}
+	clientPlaybackTelemetryReports.WithLabelValues(platform, outcome).Inc()
+	if outcome != "accepted" {
+		return
+	}
+	clientPlaybackIngestGapSeconds.WithLabelValues(platform).Observe(maxIngestGapMs / 1_000)
+	clientPlaybackDecodedFPS.WithLabelValues(platform).Observe(decodedFPS)
+	clientPlaybackAudioLeadSeconds.WithLabelValues(platform).Observe(audioLeadMs / 1_000)
+	clientPlaybackErrorDeltaTotal.WithLabelValues(platform, "continuity").Add(float64(continuityDelta))
+	clientPlaybackErrorDeltaTotal.WithLabelValues(platform, "decode").Add(float64(decodeDelta))
+}
 
 // IncPlaybackStart increments playback starts with strict low-cardinality labels.
 func IncPlaybackStart(schema, mode string) {

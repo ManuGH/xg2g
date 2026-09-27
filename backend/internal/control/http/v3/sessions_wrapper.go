@@ -43,6 +43,13 @@ func (s *Server) PostSessionHeartbeat(w http.ResponseWriter, r *http.Request, se
 	})).ServeHTTP(w, r)
 }
 
+// PostSessionClientTelemetry implements POST /sessions/{sessionID}/telemetry.
+func (s *Server) PostSessionClientTelemetry(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handleSessionClientTelemetry(w, r, sessionID)
+	})).ServeHTTP(w, r)
+}
+
 // ServeHLS implements GET /sessions/{sessionID}/hls/{filename}.
 func (s *Server) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
 	_ = sessionID

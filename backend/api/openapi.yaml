@@ -741,6 +741,110 @@ components:
           format: date-time
           description: Renewed lease expiry after the heartbeat acknowledgement.
 
+    SessionClientTelemetryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - observedAt
+        - decodedFps
+        - audioLeadMs
+        - audioUnderruns
+        - ingestGapCount250Ms
+        - ingestGapCount600Ms
+        - ingestGapCount1000Ms
+        - ingestGapLastMs
+        - ingestGapMaxMs
+        - continuityErrors
+        - continuityErrorsDelta
+        - decodeErrors
+        - decodeErrorsDelta
+        - ptsDiscontinuities
+        - ingestBacklogBytes
+        - droppedFrames
+        - lateFrames
+        - thermalState
+      description: |
+        A bounded playback-health snapshot from a client. It deliberately excludes
+        channel names, stream URLs, device identifiers, and free-form log text.
+      properties:
+        platform:
+          type: string
+          enum: [ios, tvos, android, web]
+        appVersion:
+          type: string
+          maxLength: 64
+        observedAt:
+          type: string
+          format: date-time
+        decodedFps:
+          type: number
+          minimum: 0
+          maximum: 240
+        audioLeadMs:
+          type: number
+          minimum: 0
+          maximum: 120000
+        audioUnderruns:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ingestGapCount250Ms:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ingestGapCount600Ms:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ingestGapCount1000Ms:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ingestGapLastMs:
+          type: number
+          minimum: 0
+          maximum: 120000
+        ingestGapMaxMs:
+          type: number
+          minimum: 0
+          maximum: 120000
+        continuityErrors:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        continuityErrorsDelta:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        decodeErrors:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        decodeErrorsDelta:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ptsDiscontinuities:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        ingestBacklogBytes:
+          type: integer
+          minimum: 0
+          maximum: 67108864
+        droppedFrames:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        lateFrames:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+        thermalState:
+          type: string
+          enum: [Nominal, Fair, Serious, Critical, Unknown]
+
     Service:
       type: object
       properties:
@@ -3661,6 +3765,7 @@ x-xg2g-native-contract:
     - RecordingResponse
     - RecordingResumeRequest
     - Service
+    - SessionClientTelemetryRequest
     - StartPairingRequest
     - StartPairingResponse
     - TimerCreateRequest
@@ -3668,6 +3773,13 @@ x-xg2g-native-contract:
     - ZapPreparationResponse
 
 x-xg2g-operation-policies:
+  PostSessionClientTelemetry:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
   PostSessionPlaybackTicket:
     class: read
     auth: bearer_scope
@@ -6815,6 +6927,57 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
         "503":
           description: Session subsystem unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /sessions/{sessionID}/telemetry:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Report client playback telemetry for a session
+      operationId: postSessionClientTelemetry
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionClientTelemetryRequest"
+      responses:
+        "202":
+          description: Telemetry accepted for live session subscribers and aggregate metrics.
+        "400":
+          description: Invalid telemetry payload or observation timestamp.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Session not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "410":
+          description: Session is terminal or its lease has expired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "413":
+          description: Request body exceeds the telemetry size limit.
+        "503":
+          description: Session telemetry bus is unavailable.
           content:
             application/problem+json:
               schema:
