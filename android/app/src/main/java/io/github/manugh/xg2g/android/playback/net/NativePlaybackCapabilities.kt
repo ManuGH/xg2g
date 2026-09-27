@@ -28,7 +28,7 @@ internal data class NativePlaybackCapabilities(
 ) {
     companion object {
         private const val FEATURE_TELEVISION = "android.hardware.type.television"
-        private const val RUNTIME_PROBE_VERSION = 3
+        private const val RUNTIME_PROBE_VERSION = 2
 
         @Volatile
         private var cached: NativePlaybackCapabilities? = null
@@ -49,10 +49,9 @@ internal data class NativePlaybackCapabilities(
 
         internal fun fromMimeEntries(
             isTv: Boolean,
-            entries: List<NativeDecoderMimeEntry>,
-            deviceModel: String? = null,
+            entries: List<NativeDecoderMimeEntry>
         ): NativePlaybackCapabilities {
-            return NativePlaybackCapabilityProbe.fromMimeEntries(isTv, entries, deviceModel)
+            return NativePlaybackCapabilityProbe.fromMimeEntries(isTv, entries)
         }
 
         internal fun runtimeProbeVersion(): Int = RUNTIME_PROBE_VERSION
@@ -164,8 +163,7 @@ private object NativePlaybackCapabilityProbe {
 
     fun fromMimeEntries(
         isTv: Boolean,
-        entries: List<NativeDecoderMimeEntry>,
-        deviceModel: String?,
+        entries: List<NativeDecoderMimeEntry>
     ): NativePlaybackCapabilities {
         return buildCapabilities(
             isTv = isTv,
@@ -173,7 +171,6 @@ private object NativePlaybackCapabilityProbe {
             deviceContext = NativePlaybackDeviceContext(
                 platform = if (isTv) "android-tv" else "android",
                 osName = "android",
-                model = deviceModel,
             ),
             networkContext = null,
         )
@@ -204,13 +201,7 @@ private object NativePlaybackCapabilityProbe {
         // Report only codecs backed by a real decoder entry. Advertising MP2 unconditionally
         // made the planner copy MPEG-1 Layer II audio to Fire OS devices whose MP3 decoder cannot
         // decode Layer II, producing a deterministic MediaCodecAudioRenderer failure.
-        // AFTMM exposes Dolby decoders, but its HDMI offload path runs on a separate clock.
-        // Ask the server for AAC so Media3 can use the regular audio clock for live playback.
         val audioCodecs = audioTargets
-            .filterNot { target ->
-                isTv && deviceContext?.model?.equals("AFTMM", ignoreCase = true) == true &&
-                    target.token in setOf("ac3", "eac3", "ac4")
-            }
             .filter { target -> entries.any { entry -> target.mimeTypes.any { mime -> mime.equals(entry.mimeType, ignoreCase = true) } } }
             .map { it.token }
             .sorted()
