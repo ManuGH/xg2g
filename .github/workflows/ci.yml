@@ -26,6 +26,7 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init
     timeout-minutes: 15
     env:
       LD_LIBRARY_PATH: /opt/ffmpeg/lib
@@ -79,6 +80,7 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init
     timeout-minutes: 20
     env:
       LD_LIBRARY_PATH: /opt/ffmpeg/lib
