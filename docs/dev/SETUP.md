@@ -5,7 +5,7 @@
 | Tool | Version | Notes |
 | :--- | :--- | :--- |
 | **Go** | 1.26.5 | Pinned exactly in `backend/go.mod`, `mise.toml`, and `mk/variables.mk` |
-| **Node.js** | 24 LTS | Pinned in `.node-version`, `.nvmrc`, and `mise.toml` |
+| **Node.js** | 26 | Pinned in `.node-version`, `.nvmrc`, and `mise.toml`; matches the Dockerfile WebUI builder |
 | **Docker** | Recent | Required for container builds and integration tests |
 | **Make** | GNU Make | Build orchestration |
 

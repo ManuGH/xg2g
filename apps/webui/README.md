@@ -7,7 +7,7 @@ For documentation beyond local commands, start with
 
 ## Prerequisites
 
-- Node.js 24 LTS (pinned by the repo root `.node-version` / `.nvmrc`)
+- Node.js 26 (pinned by the repo root `.node-version` / `.nvmrc`; the Dockerfile WebUI builder uses the same major)
 - npm
 - Backend API running on `http://localhost:8080` for local dev proxy
 
