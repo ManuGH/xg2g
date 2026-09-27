@@ -21,41 +21,68 @@ make ci-pr
 
 ---
 
-## Documentation Index
+## Documentation Structure (Diátaxis Framework)
 
-### 1. User & Operations Guides
+The **xg2g** documentation is systematically organized according to the [Diátaxis framework](https://diataxis.fr/) across four distinct operational quadrants:
 
-| Document | Description |
-| :--- | :--- |
-| [**Getting Started**](guides/GETTING_STARTED.md) | Setup, linking receiver via OpenWebIf, and first stream playback. |
-| [**Linux Installation**](guides/INSTALLATION.md) | Automated installer (`setup-linux.sh`), systemd unit setup, and reverse proxying. |
-| [**Configuration Guide**](guides/CONFIGURATION.md) | Environment variables (`xg2g.env`) and configuration parameters. |
-| [**Troubleshooting**](guides/TROUBLESHOOTING.md) | Diagnostics, `xg2g-admin doctor`, and common error states. |
+```
+                  PRACTICAL
+                     ▲
+                     │
+    [How-To Guides]  │  [Tutorials]
+    Problem-oriented │  Learning-oriented
+    docs/how-to/     │  docs/tutorials/
+                     │
+◄────────────────────┼────────────────────►
+WORK                 │                 STUDY
+                     │
+    [Reference]      │  [Explanation]
+    Information-     │  Understanding-
+    oriented         │  oriented
+    docs/reference/  │  docs/explanation/
+                     │
+                     ▼
+                THEORETICAL
+```
 
----
+### 1. 🎓 [Tutorials](tutorials/README.md) (Learning-Oriented)
 
-### 2. Architecture & Operations
+Step-by-step guidance for beginners to achieve their first success:
+- [**Getting Started with xg2g**](guides/GETTING_STARTED.md): Setup, linking receiver via OpenWebIf, and first stream playback.
+- [**Local Development Environment**](guides/DEVELOPMENT.md): Toolchain setup, building backend, running WebUI, mock tuner twin.
 
-| Document | Description |
-| :--- | :--- |
-| [**2026 System Overview**](arch/SYSTEM_OVERVIEW_2026.md) | Architecture, network layout, storage model, and system invariants. |
-| [**Deployment Guide**](ops/DEPLOYMENT.md) | Docker Compose, systemd unit supervision, and updates. |
-| [**Security Operations**](ops/SECURITY.md) | Auth tokens, session secret, TLS proxy setup, and security model. |
-| [**Client Profiles**](ops/CLIENT_PROFILES.md) | Client capabilities, browser probes, and codec fallback rules. |
+### 2. 🛠️ [How-To Guides](how-to/README.md) (Problem-Oriented)
 
----
+Practical recipes to solve concrete operational and administrative tasks:
+- [**Linux Host Installation**](guides/INSTALLATION.md): Automated installer (`setup-linux.sh`), systemd unit setup, and reverse proxying.
+- [**Production Deployment**](ops/DEPLOYMENT.md): Docker Compose orchestration, container limits, storage mounts, and auto-restart policies.
+- [**Maintainer Incident Triage**](ops/RUNBOOK_SYSTEMD_COMPOSE.md): Step-by-step triage sequence for receiver stalls, tuner starvation, and playback lockups.
+- [**Troubleshooting & Diagnostics**](guides/TROUBLESHOOTING.md): Diagnostics, `xg2g-admin doctor`, and common error states.
+- [**Security Hardening**](ops/SECURITY.md): Auth tokens, session secret, TLS proxy setup, and security model.
 
-### 3. Maintainer Reference
+### 3. 📖 [Reference](reference/README.md) (Information-Oriented)
 
-| Document | Description |
-| :--- | :--- |
-| [**Engineering Charter**](ENGINEERING_CHARTER.md) | Governing system principles, invariants, and review gate. |
-| [**Repository Map**](dev/REPO_MAP.md) | Codebase layout, modules, and file responsibilities. |
-| [**Codec & Container Matrix**](arch/CODEC_MATRIX.md) | FFmpeg remux & transcode logic, hardware acceleration (VAAPI/NVENC). |
-| [**WebUI Architecture**](webui/README.md) | React frontend layout, state management, and player telemetry. |
-| [**ADR Index**](ADR/README.md) | Architecture Decision Records and technical rationale. |
-| [**Agentic Tooling & Xcode Runbook**](../AGENTS.md#ios-client--agentic-xcode-tooling-truth) | Xcode 27 MCP Server, stdio bridge, and Device Hub automation. |
-| [**Scanner Governance**](SCANNER_GOVERNANCE.md) | Static checks, Gitleaks, CodeQL, and CI rules. |
+Authoritative, complete descriptions of configuration surfaces, schemas, and reason codes:
+- [**Configuration Guide**](guides/CONFIGURATION.md): Environment variables (`xg2g.env`) and configuration parameters.
+- [**Config Surfaces Inventory**](guides/CONFIG_SURFACES.md): Generated inventory mapping every code reference to configuration keys.
+- [**Configuration Schema**](guides/config.schema.json): Machine-readable JSON Schema for runtime configuration validation.
+- [**Lease Reason Code Matrix**](ADR/lease_reason_matrix.md): Formally audited tuner lease reason codes and preemption states.
+- [**Client Profiles Catalog**](ops/CLIENT_PROFILES.md): Client capabilities, browser probes, and codec fallback rules.
+
+### 4. 🧠 [Explanation](explanation/README.md) (Understanding-Oriented)
+
+Architectural principles, system models, design rationale, and technical background:
+- [**2026 System Overview**](arch/SYSTEM_OVERVIEW_2026.md): Architecture, network layout, storage model, and system invariants.
+- [**Engineering Charter**](ENGINEERING_CHARTER.md): Governing system principles, invariants, and review gate.
+- [**Architecture Invariants (ADR-005)**](ADR/005-Architecture-Invariants.md): Hard non-negotiables for package layering, failure isolation, and hermetic execution.
+- [**Concurrency Manifest (ADR-006)**](ADR/006-Concurrency-Manifest.md): Concurrency hierarchy, mutex ordering, and goroutine leak prevention across media pipelines.
+- [**Composite Lease Model (ADR-029)**](ADR/029-resource-arbitration-composite-lease-model.md): Multi-resource composite tuner lease model, state machine, and conflict resolution.
+- [**Lease Reconciliation (ADR-030)**](ADR/030-lease-reconciliation.md): 3-phase reconciliation engine (Snapshot, Deterministic Analysis, Bounded Remediation) and startup gates.
+- [**Codec & Container Matrix**](arch/CODEC_MATRIX.md): FFmpeg remux & transcode logic, hardware acceleration (VAAPI/NVENC).
+- [**ADR Catalog**](ADR/README.md): Architecture Decision Records and technical rationale.
+- [**WebUI Architecture**](webui/README.md): React frontend layout, state management, and player telemetry.
+- [**Agentic Tooling & Xcode Runbook**](../AGENTS.md#ios-client--agentic-xcode-tooling-truth): Xcode MCP Server, stdio bridge, and Device Hub automation.
+- [**Scanner Governance**](SCANNER_GOVERNANCE.md): Static checks, Gitleaks, CodeQL, and CI rules.
 
 ---
 

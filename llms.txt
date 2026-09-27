@@ -1,0 +1,48 @@
+# xg2g
+
+> High-performance Enigma2/OpenWebIf proxy, physical tuner arbiter, and adaptive streaming gateway for DVB-S2/C/T2 broadcasts.
+
+xg2g is a specialized media gateway designed to run in front of Linux-based DVB set-top boxes (Enigma2 / OpenWebIf). It exposes a clean REST and streaming API to client applications (iOS, Android, Android TV, WebUI), coordinates physical DVB tuner leases, eliminates tuner starvation and set-top box lockups, and transcodes or remuxes live MPEG-TS broadcasts into modern HTTP Live Streaming (HLS) and fragmented MP4 (fMP4) streams with zero-copy hardware acceleration.
+
+## System Architecture & Non-Negotiable Invariants
+
+- [System Overview](docs/arch/SYSTEM_OVERVIEW_2026.md): Full technical architecture, operational domains, storage contracts, and network topologies.
+- [Architecture Invariants (ADR-005)](docs/ADR/005-Architecture-Invariants.md): Hard non-negotiables for package layering, failure isolation, and hermetic execution.
+- [Concurrency Manifest (ADR-006)](docs/ADR/006-Concurrency-Manifest.md): Concurrency hierarchy, mutex ordering, and goroutine leak prevention across media pipelines.
+- [Lease Arbitration & Reconciliation (ADR-029)](docs/ADR/029-resource-arbitration-composite-lease-model.md): Multi-resource composite tuner lease model, state machine, and conflict resolution.
+- [Lease Reconciliation & Startup Gate (ADR-030)](docs/ADR/030-lease-reconciliation.md): 3-phase reconciliation engine (Snapshot, Deterministic Analysis, Bounded Remediation) and startup gates.
+- [Lease Reason Code Matrix](docs/ADR/lease_reason_matrix.md): Exhaustive audited reason code catalog for lease state transitions, preemptions, and rejections.
+- [Resource Conflict Policy Engine (ADR-031)](docs/ADR/031-resource-conflict-policy-engine.md): Dynamic tuner priority, client preemption, and graceful downgrade rules.
+- [Device Identity Convergence (ADR-032)](docs/ADR/032-device-identity-convergence.md): Cryptographically bound client identity and device enrollment sessions.
+- [Global Health Death Line (ADR-007)](docs/ADR/007-Global-Health-Death-Line.md): Fail-closed operational health gates and circuit breakers.
+
+## Media Pipeline & Codec Matrix
+
+- [Codec & Transcoding Matrix](docs/arch/CODEC_MATRIX.md): Hardware acceleration (Intel VAAPI, NVIDIA NVENC, Apple Silicon VideoToolbox), transcode fallbacks, and copy-mode heuristics.
+- [Native WebKit HLS HEVC Passthrough (ADR-026)](docs/ADR/026-native-webkit-hls-hevc-copy.md): Zero-transcode HEVC remuxing for Apple Safari and native iOS AVPlayer pipelines.
+- [Playback Capability Claims (ADR-028)](docs/ADR/028-playback-capability-claims.md): Client-advertised decoding capabilities and automatic server-side profile matching.
+- [Playback Confidence Policy (ADR-025)](docs/ADR/025-playback-confidence-policy.md): Metric-driven playback degradation detection and stall remediation.
+- [Streaming Configuration Guide](docs/STREAMING_CONFIGURATION.md): Segmenter tuning, buffer window sizing, and low-latency HLS configuration.
+
+## Operations, Runbooks & Triage
+
+- [Maintainer Incident Triage Runbook](docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md): Authoritative operational triage sequence for receiver stalls, tuner exhaustion, and crash loops.
+- [Linux Deployment Guide](docs/ops/DEPLOYMENT.md): Production host layout, systemd service management, and container isolation.
+- [Deployment Runtime Contract](docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md): Normative contracts for port bindings, mount topologies, and permission sets.
+- [Security Operations Model](docs/ops/SECURITY.md): Token authentication, decision secrets, reverse proxy boundaries, and threat model.
+- [Client Profiles & Capability Engine](docs/ops/CLIENT_PROFILES.md): Capability matrices across WebUI, iOS, Android, and Android TV targets.
+
+## API & Wire Contracts
+
+- [OpenAPI 3.0 Specification](backend/api/openapi.yaml): Canonical REST API contract for bouquets, channels, EPG, streaming sessions, and tuner leases.
+- [Configuration Surface Inventory](docs/guides/CONFIG_SURFACES.md): Complete audited inventory of all environment variables and configuration keys.
+- [Configuration Schema](docs/guides/config.schema.json): Formal JSON schema for runtime configuration validation.
+- [Configuration Reference Guide](docs/guides/CONFIGURATION.md): Human-readable descriptions, defaults, and bounds for all configuration settings.
+
+## Developer & Contributor Governance
+
+- [Engineering Charter](docs/ENGINEERING_CHARTER.md): Core design philosophy, zero-drift governance, and strict PR acceptance gates.
+- [Agent Governance & Collaborative Roles](AGENTS.md): Repository ownership contracts (Codex vs. Antigravity), branching rules, and CI gates.
+- [Repository Map](docs/dev/REPO_MAP.md): High-level tour of repository directories, Go packages, frontend modules, and mobile targets.
+- [Hermeticity Guarantee](docs/HERMETICITY.md): Isolated testing, digital twin mocks, and deterministic verification rules.
+- [CI Contract & Merge Gates](docs/CI_CONTRACT.md): Required status checks, matrix testing, and merge validation procedures.

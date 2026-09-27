@@ -42,6 +42,7 @@ ALLOWLIST=(
     "LICENSE"
     "README.md"
     "TECH_DEBT.md"
+    "llms.txt"
 
     # Build & container
     "Dockerfile"
@@ -57,6 +58,7 @@ ALLOWLIST=(
     "backend/"
     "hack/"
     "ios/"
+    "media-core/"
     "scripts/"
 
     # Test fixtures (canonical location enforced by ci/check-test-assets-location.sh)
