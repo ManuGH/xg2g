@@ -823,8 +823,10 @@ public final class MetalVideoView: UIView {
             logger.notice("\(msg, privacy: .public)")
             TelemetryServer.shared.log(msg)
 
+            let handedOver = presentedFieldCount
             telemetry?.mutate {
                 $0.fieldsSubmittedPerSec = rate
+                $0.presentedFieldsTotal += handedOver
                 $0.sourceFrameRate = self.estimatedFrameDuration > 0 ? 1.0 / self.estimatedFrameDuration : 0
                 $0.queuedFieldCount = self.fieldQueue.count
             }
@@ -1177,6 +1179,7 @@ public final class MetalVideoView: UIView {
         let bottomFields = Double(bottomFieldCount) / elapsed
         let repeats = Double(repeatedPresentationCount) / elapsed
         let distinctFields = topFields + bottomFields
+        let distinctFieldCount = topFieldCount + bottomFieldCount
         let avgCadence = fieldIntervalSamples > 0 ? (fieldIntervalAccumulator / Double(fieldIntervalSamples)) : 0.0
         let avgJitter = fieldIntervalSamples > 0 ? (jitterAccumulator / Double(fieldIntervalSamples)) : 0.0
 
@@ -1193,6 +1196,7 @@ public final class MetalVideoView: UIView {
             $0.topFieldsPerSec = topFields
             $0.bottomFieldsPerSec = bottomFields
             $0.fieldsSubmittedPerSec = distinctFields
+            $0.presentedFieldsTotal += distinctFieldCount
             $0.generatedFieldsPerSec = distinctFields
             $0.repeatedFieldsPerSec = repeats
             $0.repeatedFieldCount = cumulativeRepeats

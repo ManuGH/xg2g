@@ -78,11 +78,13 @@ final class PlaybackManager: ObservableObject {
 
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
+         telemetryProvider: (@MainActor () -> (any PlaybackTelemetrySink)?)? = nil,
          streamURL: @escaping @MainActor (String) -> URL?) {
         self.streamURLProvider = streamURL
         self.coordinator = ZapCoordinator(
             preparations: preparations,
             preparationsProvider: preparationsProvider,
+            telemetryProvider: telemetryProvider,
             streamURL: streamURL
         )
 

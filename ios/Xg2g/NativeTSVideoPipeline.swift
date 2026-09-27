@@ -1187,9 +1187,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if now.timeIntervalSince(lastBitrateCheck) >= 1.0 {
             let elapsed = now.timeIntervalSince(lastBitrateCheck)
             let kbps = (Double(bytesReceived * 8) / 1000.0) / elapsed
+            let received = bytesReceived
             telemetry.mutate {
                 $0.tsBitrateKbps = kbps
                 $0.ingestBacklogBytes = backlog
+                $0.bytesReceivedTotal += received
             }
 
             let snapshot = telemetry.snapshot()
@@ -1204,6 +1206,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 $0.audioUnderruns = audio.underruns
                 $0.audioLeadMs = audio.currentLeadMs
                 $0.audioMinLeadMs = audio.minLeadMs
+                $0.networkStalls = stalls
+                $0.longestNetworkStallMs = longestStall
             }
 
             let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | Scrambled: \(snapshot.scrambledPackets) (V \(snapshot.scrambledVideoPackets) / A \(snapshot.scrambledAudioPackets), clear run \(snapshot.videoClearRun)) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB | Stalls: \(stalls) (worst \(String(format: "%.0f", longestStall))ms) | AudioLead: \(String(format: "%.0f", audio.currentLeadMs))ms (min \(String(format: "%.0f", audio.minLeadMs))ms) | Underruns: \(audio.underruns) | AudioQueue: \(audio.pendingBuffers)"

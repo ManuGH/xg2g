@@ -121,6 +121,20 @@ enum Xg2gContract {
         case deny
     }
 
+    enum PlaybackTelemetryClientPlatform: String, Codable, Sendable, CaseIterable, Equatable {
+        case ios
+        case tvos
+        case android
+        case web
+    }
+
+    enum PlaybackTelemetryEventKind: String, Codable, Sendable, CaseIterable, Equatable {
+        case sessionStart = "session_start"
+        case heartbeat
+        case degraded
+        case sessionEnd = "session_end"
+    }
+
     enum PublishedEndpointKind: String, Codable, Sendable, CaseIterable, Equatable {
         case publicHttps = "public_https"
         case localHttps = "local_https"
@@ -944,6 +958,82 @@ enum Xg2gContract {
             self.internetValidated = internetValidated
             self.kind = kind
             self.metered = metered
+        }
+    }
+
+    /// One upload of playback telemetry from one client.
+    struct PlaybackTelemetryBatch: Codable, Sendable, Equatable {
+        /// The client build that observed the events.
+        let client: PlaybackTelemetryClient
+        let events: [PlaybackTelemetryEvent]
+
+        init(
+            client: PlaybackTelemetryClient,
+            events: [PlaybackTelemetryEvent]
+        ) {
+            self.client = client
+            self.events = events
+        }
+    }
+
+    /// The client build that observed the events.
+    struct PlaybackTelemetryClient: Codable, Sendable, Equatable {
+        let appVersion: String?
+        let build: String?
+        /// Hardware model identifier, never a user-assigned device name.
+        let device: String?
+        let platform: PlaybackTelemetryClientPlatform
+
+        init(
+            platform: PlaybackTelemetryClientPlatform,
+            appVersion: String? = nil,
+            build: String? = nil,
+            device: String? = nil
+        ) {
+            self.appVersion = appVersion
+            self.build = build
+            self.device = device
+            self.platform = platform
+        }
+    }
+
+    /// One observation about the stream on screen. `heartbeat` is a periodic
+    /// sample of a healthy window, `degraded` the same sample for a window in
+    /// which the client saw a fault (named in `reasons`), and `session_start`
+    /// and `session_end` bracket one channel being shown.
+    struct PlaybackTelemetryEvent: Codable, Sendable, Equatable {
+        let detail: String?
+        let kind: PlaybackTelemetryEventKind
+        /// Numeric figures for the window, keyed by lowerCamelCase name.
+        let metrics: [String: Double]?
+        /// Client wall-clock time the observation was taken.
+        let occurredAt: Date
+        /// Machine-readable causes of a degraded window, e.g. audio_underruns.
+        let reasons: [String]?
+        let serviceRef: String?
+        /// Server session identifier, for session-based playback paths.
+        let sessionId: String?
+        /// The channel change this stream belongs to, as sent in X-Xg2g-Zap-Id.
+        let zapId: String?
+
+        init(
+            kind: PlaybackTelemetryEventKind,
+            occurredAt: Date,
+            detail: String? = nil,
+            metrics: [String: Double]? = nil,
+            reasons: [String]? = nil,
+            serviceRef: String? = nil,
+            sessionId: String? = nil,
+            zapId: String? = nil
+        ) {
+            self.detail = detail
+            self.kind = kind
+            self.metrics = metrics
+            self.occurredAt = occurredAt
+            self.reasons = reasons
+            self.serviceRef = serviceRef
+            self.sessionId = sessionId
+            self.zapId = zapId
         }
     }
 

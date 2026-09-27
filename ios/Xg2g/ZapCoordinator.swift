@@ -106,10 +106,16 @@ final class ZapCoordinator: ObservableObject {
     private let streamURL: @MainActor (String) -> URL?
     private let makeSession: @MainActor () -> NativeTSVideoPipeline
 
+    /// Carries the health of the channel on screen back to the backend. `nil` in
+    /// tests and wherever no telemetry destination was given.
+    private let telemetryReporter: PlaybackTelemetryReporter?
+
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
+         telemetryProvider: (@MainActor () -> (any PlaybackTelemetrySink)?)? = nil,
          streamURL: @escaping @MainActor (String) -> URL?,
          makeSession: @escaping @MainActor () -> NativeTSVideoPipeline = { NativeTSVideoPipeline() }) {
+        self.telemetryReporter = telemetryProvider.map { PlaybackTelemetryReporter(sinkProvider: $0) }
         let surface = SystemVideoPresenter()
         self.surface = surface
         self.context = PresentationContext(presenter: surface, renderView: nil)
@@ -308,7 +314,12 @@ final class ZapCoordinator: ObservableObject {
         // The telemetry endpoint answers for the channel on screen, which is why this
         // moves at the commit and not when the session was built: for the whole
         // preparation the numbers worth reading are still the playing channel's.
-        installTelemetry(for: session)
+        installTelemetry(for: session, zapID: zapID, serviceRef: serviceRef, startMetrics: [
+            "transportMs": Double(transportMs),
+            "presentationMs": Double(presentationMs),
+            "bindMs": Double(bindMs),
+            "zapTotalMs": Double(totalMs),
+        ])
 
         // Told last, and its answer changes nothing on screen. The picture and audio are
         // already proven here; a bookkeeping call that fails is worth a log line, not a
@@ -366,7 +377,7 @@ final class ZapCoordinator: ObservableObject {
 
         follow(session)
         phase = .idle
-        installTelemetry(for: session)
+        installTelemetry(for: session, zapID: zapID, serviceRef: url.lastPathComponent)
 
         if let retiring, retiring !== session {
             summarize(retiring, zapID: zapID, event: "retire.stats")
@@ -511,10 +522,12 @@ final class ZapCoordinator: ObservableObject {
     ///
     /// Weak, and replaced rather than cleared: a retired session going away must not
     /// blank the numbers of the channel that replaced it.
-    private func installTelemetry(for session: NativeTSVideoPipeline) {
+    private func installTelemetry(for session: NativeTSVideoPipeline, zapID: String, serviceRef: String,
+                                  startMetrics: [String: Double] = [:]) {
         TelemetryServer.shared.setTelemetryProvider { [weak session] in
             session?.telemetry.toDictionary() ?? [:]
         }
+        telemetryReporter?.watch(session, zapID: zapID, serviceRef: serviceRef, startMetrics: startMetrics)
     }
 
     /// What a session did while it was on screen.
@@ -532,6 +545,7 @@ final class ZapCoordinator: ObservableObject {
             earlyIssues \(t.earlyStabilityIssues) | \(session.recoveryEpoch) | \
             ttfp \(Int(t.ttfpTotalMs))ms visible \(Int(t.ttfpVisibleMs))ms
             """)
+        telemetryReporter?.finish(session, reason: event)
     }
 
     private func note(_ zapID: String, _ event: String, _ serviceRef: String, extra: String = "") {

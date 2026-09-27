@@ -76,6 +76,9 @@ public struct TestTSPlayerScreen: View {
             preparationsProvider: { [weak model] in
                 model?.makeZapPreparationClient()
             },
+            telemetryProvider: { [weak model] in
+                model?.makePlaybackTelemetryClient()
+            },
             streamURL: { [weak model] serviceRef in
                 model?.liveStreamURL(for: serviceRef)
             }

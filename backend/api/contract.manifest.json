@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "a92b6d35054b808ba0205b718246661368da3fd34b8647983415b4530d2a51c9"
+    "sha256": "746eb9e1172215ccc9cb7efab6b5667bd4c55f2cfd37ced54926433116161741"
   },
   "paths": [
     "/auth/device/refresh",
@@ -69,6 +69,7 @@
     "/system/info",
     "/system/refresh",
     "/system/scan",
+    "/telemetry/playback",
     "/timers",
     "/timers/conflicts:preview",
     "/timers/{timerId}"
@@ -2397,6 +2398,26 @@
       ]
     },
     {
+      "operationId": "postPlaybackTelemetry",
+      "method": "POST",
+      "path": "/telemetry/playback",
+      "parameters": [],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "202"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
       "operationId": "getTimers",
       "method": "GET",
       "path": "/timers",
@@ -2651,6 +2672,9 @@
     "PlaybackTargetHls",
     "PlaybackTargetProfile",
     "PlaybackTargetVideo",
+    "PlaybackTelemetryBatch",
+    "PlaybackTelemetryClient",
+    "PlaybackTelemetryEvent",
     "PlaybackTicketResponse",
     "PlaybackTrace",
     "PlaybackTraceFfmpegPlan",
@@ -2739,6 +2763,7 @@
       "NowNextResponse",
       "PairingSecretRequest",
       "PairingStatusResponse",
+      "PlaybackTelemetryBatch",
       "PlaybackTicketResponse",
       "PublishedEndpoint",
       "RecordingResponse",
@@ -2788,6 +2813,9 @@
       "PlaybackInfoMode",
       "PlaybackMaxVideo",
       "PlaybackNetworkContext",
+      "PlaybackTelemetryBatch",
+      "PlaybackTelemetryClient",
+      "PlaybackTelemetryEvent",
       "PlaybackTicketResponse",
       "PlaybackVideoCodecSignal",
       "PublishedEndpoint",
@@ -2814,7 +2842,7 @@
       "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
       "language": "kotlin",
       "generator": "gen-native-contract",
-      "sha256": "81a86e1eb273ba489bd0ffc41b4880192ae31b18b5adcc8904a9083801d6f453"
+      "sha256": "4446970353c2479023c7f3f6d8735810fd53074f20459322e4f555c7cf2316c5"
     },
     {
       "path": "apps/webui/src/client-ts/client.gen.ts",
@@ -2826,19 +2854,19 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "e846139676c386217d988f9cb1028217bc4e1ee97c7135f549f76ff1826fa3e5"
+      "sha256": "aa0b17f6163fcf55b41eee84bd6e469ecd40eb494703ac29c1f1e6d847208931"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "b7c680aaec3253ad09331b7819cfc0b420a21db77cc3b3dd1cd0aba3ec02d5d5"
+      "sha256": "76e88e50ad093740baa5fc2ce44c6de0fc76a3a4dfbec88058a1a85f2fee1bc4"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "5ca486dac039041459ef7e4ca1a3fef3e0cb6bddf82828bb8a791339508cb09c"
+      "sha256": "0294d075aa9f004264c87f86f1370206dd25a67cb342387075c8177fda999a3a"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2850,37 +2878,37 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "855200780f0df8606159039578efe406fbb80b0395a80a1a4a8037c885a1aeda"
+      "sha256": "43ffe9a9011df80182b6e176a203fa5d963a73dd403e0be15b4bdd9cbb9ec234"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "7d404a53c6e222e7ef3c57a7b62df15f0204cda24803851c29bc15b7bde41946"
+      "sha256": "cb80c6bc934f97a1798ce12ea513a54940d1739c0f8e8d4aeeb7ffff695ade6d"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "100366bcf28f41e366fa2728d71186258ef5a7262d19f80dec85290f9a61f488"
+      "sha256": "b08e4e0c804353a270a28d8f4f19c461c126130e7c8dbd5e1e127dfdc8b64c07"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "37e8bf0937a32acebbd5668bc7338a09d19d11c5d83255e3aedb44b6f691566b"
+      "sha256": "9f483f77c0d5082e56e93d720a05de3039926c1cc429a22bc071b61403caaddd"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
       "language": "swift",
       "generator": "gen-native-contract",
-      "sha256": "051411f367d52884c3938bd8539f49a8a30f7bf2332eb5102e4a0491f9dac666"
+      "sha256": "a0ed32db42aff0f4b886a65f8412968cd3eba1bf7e632efc9fdfbe5d82ea1df1"
     },
     {
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "aee4637a44b4ae1297f74faf11a072772ef912a4fee1a67ec17ceff0035b757f"
+      "sha256": "09222e491b9b5a5cc3058b026187ff7c670eeed98eb0063f66703f0f9de4efec"
     }
   ]
 }

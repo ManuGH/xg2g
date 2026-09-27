@@ -473,6 +473,62 @@ export type PlaybackFeedbackRequest = {
 };
 
 /**
+ * One upload of playback telemetry from one client.
+ */
+export type PlaybackTelemetryBatch = {
+    client: PlaybackTelemetryClient;
+    events: Array<PlaybackTelemetryEvent>;
+};
+
+/**
+ * The client build that observed the events.
+ */
+export type PlaybackTelemetryClient = {
+    platform: 'ios' | 'tvos' | 'android' | 'web';
+    appVersion?: string;
+    build?: string;
+    /**
+     * Hardware model identifier, never a user-assigned device name.
+     */
+    device?: string;
+};
+
+/**
+ * One observation about the stream on screen. `heartbeat` is a periodic
+ * sample of a healthy window, `degraded` the same sample for a window in
+ * which the client saw a fault (named in `reasons`), and `session_start`
+ * and `session_end` bracket one channel being shown.
+ *
+ */
+export type PlaybackTelemetryEvent = {
+    kind: 'session_start' | 'heartbeat' | 'degraded' | 'session_end';
+    /**
+     * Client wall-clock time the observation was taken.
+     */
+    occurredAt: string;
+    /**
+     * The channel change this stream belongs to, as sent in X-Xg2g-Zap-Id.
+     */
+    zapId?: string;
+    serviceRef?: string;
+    /**
+     * Server session identifier, for session-based playback paths.
+     */
+    sessionId?: string;
+    /**
+     * Machine-readable causes of a degraded window, e.g. audio_underruns.
+     */
+    reasons?: Array<string>;
+    detail?: string;
+    /**
+     * Numeric figures for the window, keyed by lowerCamelCase name.
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
+/**
  * Correlation context attached by the WebUI playback engine to feedback events.
  * All fields optional; absence indicates the call-site could not determine the value.
  *
@@ -4174,6 +4230,29 @@ export type ReportPlaybackFeedbackErrors = {
 export type ReportPlaybackFeedbackResponses = {
     /**
      * Feedback accepted
+     */
+    202: unknown;
+};
+
+export type PostPlaybackTelemetryData = {
+    body: PlaybackTelemetryBatch;
+    path?: never;
+    query?: never;
+    url: '/telemetry/playback';
+};
+
+export type PostPlaybackTelemetryErrors = {
+    /**
+     * The batch is malformed or exceeds its limits
+     */
+    400: ProblemDetails;
+};
+
+export type PostPlaybackTelemetryError = PostPlaybackTelemetryErrors[keyof PostPlaybackTelemetryErrors];
+
+export type PostPlaybackTelemetryResponses = {
+    /**
+     * Telemetry accepted
      */
     202: unknown;
 };

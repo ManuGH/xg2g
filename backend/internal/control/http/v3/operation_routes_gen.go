@@ -61,6 +61,7 @@ var operationRoutes = map[string]operationRoute{
 	"PostHouseholdUnlock":              {Method: "POST", Path: "/household/unlock"},
 	"PostLivePlaybackInfo":             {Method: "POST", Path: "/live/stream-info"},
 	"PostLivePlaybackSummary":          {Method: "POST", Path: "/live/playback-summary"},
+	"PostPlaybackTelemetry":            {Method: "POST", Path: "/telemetry/playback"},
 	"PostRecordingDelete":              {Method: "POST", Path: "/recordings/{recordingId}/delete"},
 	"PostRecordingPlaybackInfo":        {Method: "POST", Path: "/recordings/{recordingId}/stream-info"},
 	"PostRecordingRename":              {Method: "POST", Path: "/recordings/{recordingId}/rename"},
@@ -150,6 +151,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("PostHouseholdUnlock", handler.PostHouseholdUnlock)
 	register.add("PostLivePlaybackInfo", handler.PostLivePlaybackInfo)
 	register.add("PostLivePlaybackSummary", handler.PostLivePlaybackSummary)
+	register.add("PostPlaybackTelemetry", handler.PostPlaybackTelemetry)
 	register.add("PostRecordingDelete", handler.PostRecordingDelete)
 	register.add("PostRecordingPlaybackInfo", handler.PostRecordingPlaybackInfo)
 	register.add("PostRecordingRename", handler.PostRecordingRename)
