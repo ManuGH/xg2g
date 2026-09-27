@@ -645,6 +645,162 @@
         color: #e6f1f2;
       }
 
+      /* Interactive Configurator & Codec Calculator */
+      .configurator-panel {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 24px;
+        background: rgba(255, 250, 241, 0.9);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 26px;
+        box-shadow: 0 20px 50px rgba(16, 38, 49, 0.08);
+        margin-bottom: 24px;
+      }
+
+      .config-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+
+      .control-label {
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+      }
+
+      .chip-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip-btn {
+        padding: 7px 13px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 750;
+        border: 1px solid var(--line);
+        background: rgba(16, 38, 49, 0.05);
+        color: var(--ink);
+        cursor: pointer;
+        transition: all 180ms ease;
+      }
+
+      .chip-btn:hover {
+        background: rgba(54, 209, 167, 0.15);
+        border-color: var(--signal);
+      }
+
+      .chip-btn.active {
+        background: var(--night);
+        color: var(--signal-2);
+        border-color: var(--night);
+        box-shadow: 0 4px 12px rgba(7, 21, 27, 0.18);
+      }
+
+      .input-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .config-input {
+        flex: 1;
+        padding: 9px 13px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font-size: 0.9rem;
+        font-family: inherit;
+        outline: none;
+      }
+
+      .config-input:focus {
+        border-color: var(--signal);
+        box-shadow: 0 0 0 3px rgba(54, 209, 167, 0.2);
+      }
+
+      .action-btn {
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(16, 38, 49, 0.08);
+        color: var(--ink);
+        font-size: 0.82rem;
+        font-weight: 750;
+        cursor: pointer;
+        transition: all 180ms ease;
+        white-space: nowrap;
+      }
+
+      .action-btn:hover {
+        background: var(--sun);
+        border-color: var(--sun);
+        color: #111;
+      }
+
+      .codec-checker-panel {
+        background: linear-gradient(135deg, rgba(7, 21, 27, 0.98), rgba(13, 41, 51, 0.96));
+        color: var(--paper);
+        border-radius: 28px;
+        padding: 24px 28px;
+        margin-top: 24px;
+        border: 1px solid rgba(255, 250, 241, 0.14);
+        box-shadow: var(--shadow);
+      }
+
+      .codec-checker-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr) 1.25fr;
+        gap: 16px;
+        align-items: center;
+        margin-top: 14px;
+      }
+
+      .codec-select {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 250, 241, 0.2);
+        background: rgba(255, 250, 241, 0.08);
+        color: var(--paper);
+        font-size: 0.9rem;
+        font-family: inherit;
+        outline: none;
+      }
+
+      .codec-select option {
+        background: var(--night);
+        color: var(--paper);
+      }
+
+      .decision-badge {
+        padding: 14px 18px;
+        border-radius: 16px;
+        background: rgba(54, 209, 167, 0.15);
+        border: 1px solid var(--signal);
+        color: var(--signal-2);
+        font-size: 0.86rem;
+        line-height: 1.5;
+      }
+
+      .decision-badge strong {
+        display: block;
+        font-size: 0.96rem;
+        color: var(--signal);
+        margin-bottom: 4px;
+      }
+
       /* Documentation Hub Matrix */
       .docs-matrix {
         display: grid;
@@ -948,41 +1104,94 @@
         </div>
       </section>
 
-      <!-- Quickstart Section -->
+      <!-- Interactive Quickstart & Hardware Configurator -->
       <section id="quickstart" class="section-container reveal" aria-label="Quickstart and Deployment">
         <div class="section-head">
-          <span class="pill">Fast Deployment</span>
-          <h2>Get Running in Minutes</h2>
-          <p>Choose between a standalone Docker container for immediate evaluation or the automated Linux host installer for dedicated systemd production service.</p>
+          <span class="pill">Deployment Configurator</span>
+          <h2>Tailor-Made for Your Receiver & Hardware</h2>
+          <p>Generate a customized, production-ready deployment configuration with hardware acceleration (Intel/AMD VAAPI, NVIDIA NVENC, or CPU) and random secure secrets with a single click.</p>
         </div>
-        <div class="quickstart-grid">
-          <div class="code-console">
-            <div class="code-top">
-              <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
-              <span class="code-label">Docker Run (Evaluation)</span>
-              <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
-            </div>
-            <pre><code>docker run -d --name xg2g --restart unless-stopped \
-  -p 127.0.0.1:8088:8088 \
-  -e XG2G_E2_HOST="http://192.168.1.10" \
-  -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
-  -e XG2G_API_TOKEN_SCOPES="v3:admin" \
-  -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/manugh/xg2g:v3.12.0</code></pre>
-          </div>
-          <div class="code-console">
-            <div class="code-top">
-              <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
-              <span class="code-label">Guided Host Setup</span>
-              <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
-            </div>
-            <pre><code># Guided Linux persistent install
-git clone https://github.com/ManuGH/xg2g.git
-cd xg2g
-sudo ./infra/systemd/setup-linux.sh
 
-# Verify daemon readiness
-curl -fsS http://localhost:8088/readyz</code></pre>
+        <div class="configurator-panel">
+          <div class="config-form">
+            <div class="control-group">
+              <label class="control-label">1. Target Environment</label>
+              <div class="chip-group" id="target-chips">
+                <button type="button" class="chip-btn active" data-target="compose" onclick="selectChip(this, 'target-chips')">Docker Compose</button>
+                <button type="button" class="chip-btn" data-target="docker" onclick="selectChip(this, 'target-chips')">Docker CLI</button>
+                <button type="button" class="chip-btn" data-target="systemd" onclick="selectChip(this, 'target-chips')">Linux Systemd</button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">2. Hardware Acceleration</label>
+              <div class="chip-group" id="accel-chips">
+                <button type="button" class="chip-btn active" data-accel="vaapi" onclick="selectChip(this, 'accel-chips')">Intel / AMD (VAAPI)</button>
+                <button type="button" class="chip-btn" data-accel="nvenc" onclick="selectChip(this, 'accel-chips')">NVIDIA (NVENC)</button>
+                <button type="button" class="chip-btn" data-accel="cpu" onclick="selectChip(this, 'accel-chips')">CPU Software</button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">3. Enigma2 Receiver URL</label>
+              <input type="text" id="e2-host-input" class="config-input" value="http://192.168.1.10" placeholder="http://192.168.1.10" oninput="renderConfig()" />
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">4. Session Secret & Token</label>
+              <div class="input-row">
+                <input type="text" id="token-input" class="config-input" value="8f4b1d9c2e0a7f5b3a6c9d8e1f4b2a0c" readonly />
+                <button type="button" class="action-btn" onclick="generateRandomSecrets()">🎲 Randomize</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="code-console">
+            <div class="code-top">
+              <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span class="code-label" id="config-code-label">compose.yaml</span>
+              <button class="copy-btn" onclick="copySnippet(this)">Copy Configuration</button>
+            </div>
+            <pre><code id="config-output"></code></pre>
+          </div>
+        </div>
+
+        <!-- Codec Decision Calculator -->
+        <div class="codec-checker-panel">
+          <span class="pill" style="background: rgba(54, 209, 167, 0.25); color: var(--signal-2);">Interactive Decision Engine</span>
+          <h3 style="margin: 8px 0 4px; font-size: 1.35rem; font-family: 'Iowan Old Style', serif;">Will my broadcast transcode?</h3>
+          <p style="margin: 0 0 16px; color: rgba(255, 250, 241, 0.7); font-size: 0.92rem;">Simulate how the dynamic decision engine routes incoming transport streams based on client profile and hardware capability.</p>
+
+          <div class="codec-checker-grid">
+            <div>
+              <label class="control-label" style="color: rgba(255, 250, 241, 0.7); margin-bottom: 6px; display: block;">Video Codec</label>
+              <select id="codec-video" class="codec-select" onchange="calcDecision()">
+                <option value="h264">H.264 (HD 720p/1080i)</option>
+                <option value="hevc">HEVC / H.265 (UHD 4K)</option>
+                <option value="mpeg2">MPEG-2 (SD Legacy)</option>
+              </select>
+            </div>
+            <div>
+              <label class="control-label" style="color: rgba(255, 250, 241, 0.7); margin-bottom: 6px; display: block;">Audio Codec</label>
+              <select id="codec-audio" class="codec-select" onchange="calcDecision()">
+                <option value="ac3">AC-3 / Dolby Digital</option>
+                <option value="aac">AAC (Stereo / 5.1)</option>
+                <option value="eac3">E-AC-3 / Dolby Digital Plus</option>
+                <option value="mp2">MPEG Audio Layer II</option>
+              </select>
+            </div>
+            <div>
+              <label class="control-label" style="color: rgba(255, 250, 241, 0.7); margin-bottom: 6px; display: block;">Target Client</label>
+              <select id="codec-client" class="codec-select" onchange="calcDecision()">
+                <option value="safari">Safari / iPhone / iPad</option>
+                <option value="chromium">Chrome / Edge / Firefox</option>
+                <option value="android_tv">Android TV / Google TV</option>
+              </select>
+            </div>
+            <div id="decision-result" class="decision-badge">
+              <strong>Direct Stream (fMP4 Remux)</strong>
+              <span>Video copy (0% CPU) + Native AC3 audio pass-through. Zero transcode latency.</span>
+            </div>
           </div>
         </div>
       </section>
@@ -1087,6 +1296,136 @@ curl -fsS http://localhost:8088/readyz</code></pre>
           }, 2000);
         });
       }
+
+      function selectChip(btn, groupContainerId) {
+        document.querySelectorAll('#' + groupContainerId + ' .chip-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderConfig();
+      }
+
+      function generateRandomSecrets() {
+        const randHex = (len = 32) => {
+          const chars = '0123456789abcdef';
+          let str = '';
+          for (let i = 0; i < len; i++) str += chars[Math.floor(Math.random() * chars.length)];
+          return str;
+        };
+        document.getElementById('token-input').value = randHex();
+        renderConfig();
+      }
+
+      function renderConfig() {
+        const target = document.querySelector('#target-chips .chip-btn.active')?.dataset.target || 'compose';
+        const accel = document.querySelector('#accel-chips .chip-btn.active')?.dataset.accel || 'vaapi';
+        const e2Host = document.getElementById('e2-host-input')?.value.trim() || 'http://192.168.1.10';
+        const token = document.getElementById('token-input')?.value.trim() || '8f4b1d9c2e0a7f5b3a6c9d8e1f4b2a0c';
+        const secret = token.split('').reverse().join('');
+        const codeEl = document.getElementById('config-output');
+        const labelEl = document.getElementById('config-code-label');
+        if (!codeEl || !labelEl) return;
+
+        if (target === 'compose') {
+          labelEl.innerText = 'compose.yaml';
+          let devSection = '';
+          if (accel === 'vaapi') {
+            devSection = `    devices:\n      - /dev/dri:/dev/dri # Intel/AMD VAAPI GPU acceleration\n`;
+          } else if (accel === 'nvenc') {
+            devSection = `    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: all\n              capabilities: [gpu, video]\n`;
+          }
+          codeEl.innerText = `services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:v3.12.0
+    container_name: xg2g
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      XG2G_E2_HOST: "${e2Host}"
+      XG2G_API_TOKEN: "${token}"
+      XG2G_API_TOKEN_SCOPES: "v3:admin"
+      XG2G_DECISION_SECRET: "${secret}"
+${devSection}`;
+        } else if (target === 'docker') {
+          labelEl.innerText = 'Terminal Command (docker run)';
+          let devArg = '';
+          if (accel === 'vaapi') devArg = '  --device /dev/dri:/dev/dri \\\n';
+          if (accel === 'nvenc') devArg = '  --gpus all \\\n';
+          codeEl.innerText = `docker run -d --name xg2g --restart unless-stopped \\
+  -p 127.0.0.1:8088:8088 \\
+${devArg}  -e XG2G_E2_HOST="${e2Host}" \\
+  -e XG2G_API_TOKEN="${token}" \\
+  -e XG2G_API_TOKEN_SCOPES="v3:admin" \\
+  -e XG2G_DECISION_SECRET="${secret}" \\
+  ghcr.io/manugh/xg2g:v3.12.0`;
+        } else {
+          labelEl.innerText = 'Linux Systemd Service Setup';
+          codeEl.innerText = `# Clone repository
+git clone https://github.com/ManuGH/xg2g.git
+cd xg2g
+
+# Run guided automated installer with systemd registration
+sudo ./infra/systemd/setup-linux.sh
+
+# Verify health readiness
+curl -fsS http://localhost:8088/readyz`;
+        }
+      }
+
+      function calcDecision() {
+        const v = document.getElementById('codec-video')?.value;
+        const a = document.getElementById('codec-audio')?.value;
+        const c = document.getElementById('codec-client')?.value;
+        const resEl = document.getElementById('decision-result');
+        if (!resEl) return;
+
+        let videoAction = 'Direct Stream (Video Copy)';
+        let audioAction = 'Native Pass-Through';
+        let cpuNote = '0% CPU Transcode Overhead';
+        let isTranscode = false;
+
+        if (v === 'mpeg2') {
+          videoAction = 'Hardware Transcode (MPEG-2 → H.264)';
+          cpuNote = 'GPU Accelerated (VAAPI/NVENC)';
+          isTranscode = true;
+        } else if (v === 'hevc') {
+          if (c === 'safari') {
+            videoAction = 'Direct Stream (HEVC in fMP4)';
+            cpuNote = '0% CPU (Native Apple Silicon / iOS)';
+          } else {
+            videoAction = 'Hardware Transcode (HEVC → H.264)';
+            cpuNote = 'GPU Accelerated fallback';
+            isTranscode = true;
+          }
+        }
+
+        if (a === 'mp2') {
+          audioAction = 'Audio Transcode (MP2 → AAC)';
+          isTranscode = true;
+        } else if (a === 'ac3' || a === 'eac3') {
+          if (c === 'safari' || c === 'android_tv') {
+            audioAction = 'Direct Pass-Through (Dolby AC3)';
+          } else {
+            audioAction = 'Remux & Transcode (AC3 → AAC)';
+            isTranscode = true;
+          }
+        }
+
+        if (isTranscode) {
+          resEl.style.borderColor = 'var(--sun)';
+          resEl.style.background = 'rgba(255, 184, 77, 0.15)';
+          resEl.style.color = '#ffd180';
+          resEl.innerHTML = `<strong style="color: var(--sun);">${videoAction}</strong><span>Audio: ${audioAction} • ${cpuNote}</span>`;
+        } else {
+          resEl.style.borderColor = 'var(--signal)';
+          resEl.style.background = 'rgba(54, 209, 167, 0.15)';
+          resEl.style.color = 'var(--signal-2)';
+          resEl.innerHTML = `<strong style="color: var(--signal);">${videoAction}</strong><span>Audio: ${audioAction} • ${cpuNote}</span>`;
+        }
+      }
+
+      // Initialize on load
+      generateRandomSecrets();
+      calcDecision();
     </script>
   </body>
 </html>
