@@ -2,19 +2,12 @@ package io.github.manugh.xg2g.android.playback.player
 
 import android.content.Context
 import android.media.MediaFormat
-import android.os.Build
 import android.os.Handler
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import androidx.media3.exoplayer.audio.AudioOutputProvider
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
-import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 
@@ -82,41 +75,6 @@ internal class Xg2gVideoRenderer(builder: Builder) : MediaCodecVideoRenderer(bui
 internal class Xg2gRenderersFactory(
     context: Context
 ) : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
-
-    override fun buildAudioSink(
-        context: Context,
-        enableFloatOutput: Boolean,
-        enableAudioTrackPlaybackParams: Boolean
-    ): AudioSink? {
-        if (!Build.MODEL.startsWith("AFT", ignoreCase = true)) {
-            return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
-        }
-        // Fire OS routes AC-3 through a separate HDMI offload clock. Keep audio on the
-        // Media3 PCM clock so its timestamps can govern video presentation as well.
-        val pcmBuffer = DefaultAudioTrackBufferSizeProvider.Builder()
-            .setMinPcmBufferDurationUs(600_000)
-            .setMaxPcmBufferDurationUs(1_200_000)
-            .build()
-        val deviceOutput = AudioTrackAudioOutputProvider.Builder(context)
-            .setAudioTrackBufferSizeProvider(pcmBuffer)
-            .build()
-        val pcmOnlyOutput = object : AudioOutputProvider by deviceOutput {
-            override fun getFormatSupport(
-                formatConfig: AudioOutputProvider.FormatConfig
-            ): AudioOutputProvider.FormatSupport =
-                if (formatConfig.format.sampleMimeType == MimeTypes.AUDIO_RAW) {
-                    deviceOutput.getFormatSupport(formatConfig)
-                } else {
-                    AudioOutputProvider.FormatSupport.UNSUPPORTED
-                }
-        }
-        Log.i("PlayerHolder", "[AUDIO_OUTPUT] requiring decoded PCM on Fire TV")
-        return DefaultAudioSink.Builder(context)
-            .setAudioOutputProvider(pcmOnlyOutput)
-            .setEnableFloatOutput(enableFloatOutput)
-            .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
-            .build()
-    }
 
     override fun buildVideoRenderers(
         context: Context,
