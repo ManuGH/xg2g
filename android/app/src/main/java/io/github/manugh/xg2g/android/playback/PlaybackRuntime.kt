@@ -35,6 +35,11 @@ internal class PlaybackRuntime(
     private val playerHolder = PlayerHolder(context.applicationContext, playbackApi.playerMediaTransport)
     private val heartbeatManager = HeartbeatManager(playbackApi, scope)
     private val readinessPoller = ReadinessPoller(playbackApi, PlaybackErrorMapper())
+    private val telemetryReporter = io.github.manugh.xg2g.android.transport.playback.PlaybackTelemetryReporter(
+        scope = scope,
+        sinkProvider = { playbackApi.telemetrySink },
+        snapshotProvider = { playerHolder.telemetrySnapshot() }
+    )
     private val liveSessionCoordinator = LiveSessionCoordinator(
         playbackApi = playbackApi,
         readinessPoller = readinessPoller,
@@ -71,6 +76,7 @@ internal class PlaybackRuntime(
         playerHolder.onUnrecoverable = { reason ->
             Log.e(TAG, "playback abandoned after repeated decoder failures: $reason")
             terminalError = reason
+            telemetryReporter.finish("unrecoverable: $reason")
             reportSessionFeedback("error", null, reason)
             mutateState { current -> current.copy(lastError = reason) }
         }
@@ -103,12 +109,25 @@ internal class PlaybackRuntime(
                 val playbackUrl = playbackApi.resolvePlaybackUrl(
                     snapshot.playbackUrl ?: playbackApi.sessionPlaylistUrl(snapshot.sessionId)
                 )
+                val ticket = runCatching { playbackApi.mintPlaybackTicket(snapshot.sessionId) }
+                    .onFailure { Log.w(TAG, "failed to mint playback ticket: ${it.message}") }
+                    .getOrNull()
+
+                val binding = PlaybackSessionBinding(
+                    sessionId = snapshot.sessionId,
+                    playbackDecisionToken = request.playbackDecisionToken,
+                    accessToken = null,
+                    profileId = null,
+                    isLive = true,
+                    playbackTicket = ticket?.ticket
+                )
+                playerHolder.sessionBinding = binding
                 playerHolder.playUrl(
                     url = playbackUrl,
                     mediaId = snapshot.sessionId,
                     title = request.title ?: request.serviceRef,
                     isLive = true,
-                    requestHeaders = playbackApi.playbackRequestHeaders(playbackUrl)
+                    requestHeaders = playbackApi.playbackRequestHeaders(playbackUrl, ticket?.ticket)
                 )
                 updateSession(snapshot)
             }
@@ -145,6 +164,16 @@ internal class PlaybackRuntime(
                 updateSession(snapshot)
             }
         }
+
+        val zapId = when (request) {
+            is NativePlaybackRequest.Live -> request.params["zapId"] ?: request.correlationId ?: UUID.randomUUID().toString()
+            is NativePlaybackRequest.Recording -> request.correlationId ?: UUID.randomUUID().toString()
+        }
+        val serviceRef = when (request) {
+            is NativePlaybackRequest.Live -> request.serviceRef
+            is NativePlaybackRequest.Recording -> "rec:${request.recordingId}"
+        }
+        telemetryReporter.watch(zapId = zapId, serviceRef = serviceRef)
     }
 
     override suspend fun stop(force: Boolean) {
@@ -153,6 +182,7 @@ internal class PlaybackRuntime(
             is NativePlaybackRequest.Live -> liveSessionCoordinator.stop(current.session?.sessionId)
             is NativePlaybackRequest.Recording, null -> heartbeatManager.stop()
         }
+        telemetryReporter.finish(reason = "stopped")
         playerHolder.clear()
         reportedReadySessionId = null
         reportedErrorSignature = null
@@ -170,6 +200,7 @@ internal class PlaybackRuntime(
     }
 
     override fun close() {
+        telemetryReporter.stopWatching()
         heartbeatManager.stop()
         playerEventForwarder.dispose()
         playerHolder.release()

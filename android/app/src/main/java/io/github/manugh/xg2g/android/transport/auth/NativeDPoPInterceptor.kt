@@ -11,11 +11,18 @@ internal class NativeDPoPInterceptor(
     private val stateStore: PersistedDeviceAuthStateStore,
     private val dpopProvider: DPoPProvider,
     private val stateMachine: AuthStateMachine? = null,
-    private val profileIdProvider: () -> String? = { null }
+    private val profileIdProvider: () -> String? = { null },
+    private val fallbackTokenProvider: () -> String? = { null }
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
+
+        // Playback ticket requests must not be overwritten by DPoP or device auth
+        if (original.header("X-Playback-Ticket") != null) {
+            return chain.proceed(original)
+        }
+
         val builder = original.newBuilder()
 
         val urlStr = original.url.toString()
@@ -28,6 +35,11 @@ internal class NativeDPoPInterceptor(
             builder.header("Authorization", "DPoP $accessToken")
             val proof = dpopProvider.createProof(method, urlStr, accessToken)
             builder.header("DPoP", proof)
+        } else if (original.header("Authorization") == null) {
+            val fallback = fallbackTokenProvider()?.trim()?.takeIf { it.isNotEmpty() }
+            if (fallback != null) {
+                builder.header("Authorization", "Bearer $fallback")
+            }
         }
 
         val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
@@ -64,9 +76,10 @@ internal fun createNativeAuthenticatedOkHttpClient(
     dpopProvider: DPoPProvider,
     stateMachine: AuthStateMachine? = null,
     profileIdProvider: () -> String? = { null },
+    fallbackTokenProvider: () -> String? = { null },
     baseClient: OkHttpClient = OkHttpClient()
 ): OkHttpClient {
     return baseClient.newBuilder()
-        .addInterceptor(NativeDPoPInterceptor(stateStore, dpopProvider, stateMachine, profileIdProvider))
+        .addInterceptor(NativeDPoPInterceptor(stateStore, dpopProvider, stateMachine, profileIdProvider, fallbackTokenProvider))
         .build()
 }

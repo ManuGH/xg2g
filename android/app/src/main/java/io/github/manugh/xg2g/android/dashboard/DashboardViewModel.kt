@@ -131,7 +131,8 @@ internal class DashboardViewModel(
                 baseUrlProvider = baseUrlProvider,
                 stateStore = stateStore,
                 dpopProvider = dpopProvider,
-                stateMachine = stateMachine
+                stateMachine = stateMachine,
+                fallbackTokenProvider = authTokenProvider
             )
             return DashboardViewModel(client, serverLabelProvider(), authTokenProvider) as T
         }

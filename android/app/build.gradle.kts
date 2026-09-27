@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.manugh.xg2g.android"
-        minSdk = 26
+        minSdk = 25
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
@@ -55,9 +55,9 @@ android {
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             manifestPlaceholders["appLabel"] = "xg2g Staging"
-            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"
-            manifestPlaceholders["deepLinkHost"] = "staging.example.invalid"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
         }
         create("prod") {
             dimension = "environment"
@@ -95,6 +95,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -102,6 +103,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.13.0")

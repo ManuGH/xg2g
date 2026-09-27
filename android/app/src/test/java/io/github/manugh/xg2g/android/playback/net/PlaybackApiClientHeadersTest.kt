@@ -175,4 +175,18 @@ class PlaybackApiClientHeadersTest {
         assertEquals("http://127.0.0.1:8080/ui/", headers["Referer"])
         assertEquals(null, headers["Cookie"])
     }
+
+    @Test
+    fun `playback request headers include ticket cookie and headers when ticket is provided`() {
+        val headers = playbackRequestHeaders(
+            uiBaseUrl = "http://127.0.0.1:8080/ui/".toHttpUrl(),
+            playbackTicket = "tkt_secret_999"
+        )
+
+        assertEquals("http://127.0.0.1:8080", headers["Origin"])
+        assertEquals("http://127.0.0.1:8080/ui/", headers["Referer"])
+        assertEquals("xg2g_playback=tkt_secret_999", headers["Cookie"])
+        assertEquals("tkt_secret_999", headers["X-Playback-Ticket"])
+        assertEquals("Bearer tkt_secret_999", headers["Authorization"])
+    }
 }

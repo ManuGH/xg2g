@@ -142,4 +142,52 @@ class NativeDPoPInterceptorTest {
 
         assertEquals(AuthStateKind.DeviceGrantActive, stateMachine.currentState.kind)
     }
+
+    @Test
+    fun `requests with X-Playback-Ticket pass through untouched without DPoP or device auth`() {
+        val stateStore = FakeStateStore(
+            PersistedDeviceAuthState(
+                serverUrl = "http://127.0.0.1:8080",
+                deviceGrantId = "dg_123",
+                deviceGrant = "grant_abc",
+                accessToken = "at_valid_123"
+            )
+        )
+        val dpopProvider = FakeDPoPProvider()
+        val interceptor = NativeDPoPInterceptor(stateStore, dpopProvider)
+
+        var passedAuth: String? = null
+        var passedTicket: String? = null
+        var passedDpop: String? = null
+
+        val mockClient = OkHttpClient.Builder()
+            .addInterceptor(interceptor)
+            .addInterceptor { chain ->
+                val req = chain.request()
+                passedAuth = req.header("Authorization")
+                passedTicket = req.header("X-Playback-Ticket")
+                passedDpop = req.header("DPoP")
+                Response.Builder()
+                    .request(req)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("OK".toResponseBody("text/plain".toMediaType()))
+                    .build()
+            }
+            .build()
+
+        val request = Request.Builder()
+            .url("http://127.0.0.1:8080/api/v3/sessions/sess_1/hls/index.m3u8")
+            .header("X-Playback-Ticket", "tkt_sample_123")
+            .header("Authorization", "Bearer tkt_sample_123")
+            .build()
+
+        val response = mockClient.newCall(request).execute()
+
+        assertEquals(200, response.code)
+        assertEquals("Bearer tkt_sample_123", passedAuth)
+        assertEquals("tkt_sample_123", passedTicket)
+        assertEquals(null, passedDpop)
+    }
 }
