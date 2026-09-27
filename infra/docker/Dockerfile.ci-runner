@@ -98,7 +98,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && chmod -R a+w /usr/local/rustup /usr/local/cargo
 
 # 6. Install pinned QA tools
-ARG GOLANGCI_LINT_VERSION=2.12.2
+ARG GOLANGCI_LINT_VERSION=2.8.0
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION}
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
