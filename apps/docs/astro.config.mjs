@@ -6,6 +6,32 @@ import { scalarStarlight } from '@scalar/starlight';
 export default defineConfig({
   site: 'https://manugh.github.io',
   base: '/xg2g',
+  redirects: {
+    '/tutorials/how-to': '/xg2g/how-to/',
+    '/tutorials/how-to/readme': '/xg2g/how-to/',
+    '/tutorials/reference': '/xg2g/reference/',
+    '/tutorials/reference/readme': '/xg2g/reference/',
+    '/tutorials/explanation': '/xg2g/explanation/',
+    '/tutorials/explanation/readme': '/xg2g/explanation/',
+    '/how-to/tutorials': '/xg2g/tutorials/',
+    '/how-to/tutorials/readme': '/xg2g/tutorials/',
+    '/how-to/reference': '/xg2g/reference/',
+    '/how-to/reference/readme': '/xg2g/reference/',
+    '/how-to/explanation': '/xg2g/explanation/',
+    '/how-to/explanation/readme': '/xg2g/explanation/',
+    '/reference/tutorials': '/xg2g/tutorials/',
+    '/reference/tutorials/readme': '/xg2g/tutorials/',
+    '/reference/how-to': '/xg2g/how-to/',
+    '/reference/how-to/readme': '/xg2g/how-to/',
+    '/reference/explanation': '/xg2g/explanation/',
+    '/reference/explanation/readme': '/xg2g/explanation/',
+    '/explanation/tutorials': '/xg2g/tutorials/',
+    '/explanation/tutorials/readme': '/xg2g/tutorials/',
+    '/explanation/how-to': '/xg2g/how-to/',
+    '/explanation/how-to/readme': '/xg2g/how-to/',
+    '/explanation/reference': '/xg2g/reference/',
+    '/explanation/reference/readme': '/xg2g/reference/',
+  },
   integrations: [
     starlight({
       title: 'xg2g',
@@ -50,6 +76,10 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'guides' } }],
         },
         {
+          label: 'Developer Documentation',
+          items: [{ autogenerate: { directory: 'dev' } }],
+        },
+        {
           label: 'Architecture',
           items: [{ autogenerate: { directory: 'arch' } }],
         },
@@ -60,6 +90,10 @@ export default defineConfig({
         {
           label: 'Architecture Decision Records (ADR)',
           items: [{ autogenerate: { directory: 'adr' } }],
+        },
+        {
+          label: 'WebUI Architecture',
+          items: [{ autogenerate: { directory: 'webui' } }],
         },
         {
           label: 'Release Notes',
