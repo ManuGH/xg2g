@@ -206,3 +206,55 @@ func TestVirtualClock_ConcurrentRaceFree(t *testing.T) {
 	wg.Wait()
 	require.NotNil(t, vc)
 }
+
+func TestVirtualClock_NonPositiveTickerPanic(t *testing.T) {
+	vc := NewVirtual(time.Now())
+
+	assert.Panics(t, func() {
+		vc.NewTicker(0)
+	}, "NewTicker(0) must panic")
+
+	assert.Panics(t, func() {
+		vc.NewTicker(-time.Second)
+	}, "NewTicker(-1s) must panic")
+
+	tk := vc.NewTicker(time.Second)
+	assert.Panics(t, func() {
+		tk.Reset(0)
+	}, "Ticker.Reset(0) must panic")
+	tk.Stop()
+}
+
+func TestVirtualClock_ActiveWaitersAccurateAfterStop(t *testing.T) {
+	vc := NewVirtual(time.Now())
+
+	tm := vc.NewTimer(10 * time.Second)
+	tk := vc.NewTicker(5 * time.Second)
+	assert.Equal(t, 2, vc.ActiveWaiters())
+
+	tk.Stop()
+	assert.Equal(t, 1, vc.ActiveWaiters(), "Stopped ticker must not count as active waiter")
+
+	tm.Stop()
+	assert.Equal(t, 0, vc.ActiveWaiters(), "Stopped timer must not count as active waiter")
+
+	// Ensure Advance cleans up pruned tickers and timers cleanly
+	vc.Advance(15 * time.Second)
+	assert.Equal(t, 0, vc.ActiveWaiters())
+}
+
+func TestVirtualClock_SetAtomic(t *testing.T) {
+	start := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
+	vc := NewVirtual(start)
+
+	tm := vc.NewTimer(5 * time.Minute)
+	vc.Set(start.Add(10 * time.Minute))
+
+	assert.Equal(t, start.Add(10*time.Minute), vc.Now())
+	select {
+	case <-tm.C():
+		// Due timer fired
+	default:
+		t.Fatal("timer should have fired when Set advanced past its deadline")
+	}
+}

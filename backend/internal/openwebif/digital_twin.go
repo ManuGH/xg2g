@@ -83,6 +83,14 @@ func WithMaxStreamBatches(batches int) DigitalTwinOption {
 	}
 }
 
+func WithDemuxersPerTuner(n int) DigitalTwinOption {
+	return func(c *DigitalTwinConfig) {
+		if n > 0 {
+			c.DemuxersPerTuner = n
+		}
+	}
+}
+
 // TunerAllocation tracks a physical tuner assigned to a DVB transponder.
 type TunerAllocation struct {
 	PhysicalTunerID int
@@ -228,6 +236,19 @@ func (dt *DigitalTwin) acquireTuner(serviceRef string) (int, error) {
 
 	// Case 1: Transponder already active -> share existing tuner
 	if alloc, ok := dt.allocations[tpKey]; ok {
+		// Enforce hardware demuxer limit per physical tuner
+		if dt.config.DemuxersPerTuner > 0 && len(alloc.ActiveStreams) >= dt.config.DemuxersPerTuner {
+			if _, exists := alloc.ActiveStreams[serviceRef]; !exists {
+				if dt.config.CrashOnTunerExhaustion {
+					dt.assertionFailed = true
+					msg := fmt.Sprintf("%s (Demuxer exhaustion on tuner %d: %d concurrent services on transponder %s)",
+						OpenATVAssertionMessage, alloc.PhysicalTunerID, len(alloc.ActiveStreams), tpKey)
+					dt.assertionLog = append(dt.assertionLog, msg)
+					return -1, fmt.Errorf("CRASH: %s", msg)
+				}
+				return -1, fmt.Errorf("demuxer exhaustion: tuner %d reached limit of %d concurrent services", alloc.PhysicalTunerID, dt.config.DemuxersPerTuner)
+			}
+		}
 		alloc.ActiveStreams[serviceRef]++
 		dt.totalStreams.Add(1)
 		return alloc.PhysicalTunerID, nil

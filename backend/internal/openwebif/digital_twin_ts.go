@@ -200,7 +200,7 @@ func GenerateAudioPacket(cc uint8, pts uint64, scrambled bool) []byte {
 	// PES Header (offset 4)
 	pesHeader := []byte{
 		0x00, 0x00, 0x01, 0xC0, // Audio Stream 0
-		0x00, 0xB0, // Length = 176
+		0x00, 0xB2, // Length = 178 (184-byte payload - 6-byte PES prefix)
 		0x80, 0x80, 0x05, // PTS present
 		byte(0x21 | ((pts >> 29) & 0x0E)),
 		byte(pts >> 22),
