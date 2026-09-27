@@ -320,7 +320,9 @@ final class PlaybackManager: ObservableObject {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
 
+        var stoppedLive = false
         if case .live = state {
+            stoppedLive = true
             await coordinator.stop()
         } else if case .recording = state {
             recordingCleanupHook?()
@@ -330,6 +332,13 @@ final class PlaybackManager: ObservableObject {
 
         guard self.activeTransitionID == transactionID else { return }
         self.state = .idle
+
+        // The live screen claims the lock screen entry and its controls, and releases
+        // them only when it is closed itself. Stopped from the mini player, that screen
+        // is long gone: the entry stayed up, with controls still wired to it.
+        if stoppedLive {
+            NowPlayingManager.shared.clear()
+        }
     }
 
     func stop() {
