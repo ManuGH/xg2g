@@ -4,15 +4,22 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".gitignore"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".gitignore"
   schedule:
     - cron: "17 3 * * 0" # weekly
 
 concurrency:
   group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # CodeQL is relatively heavy; queue newer runs instead of canceling in-progress work.
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read

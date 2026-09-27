@@ -3,7 +3,7 @@ name: Security - Gitleaks
 on:
   workflow_dispatch:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
   schedule:

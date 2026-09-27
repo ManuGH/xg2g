@@ -1,0 +1,133 @@
+# ==============================================================================
+# Hermetic CI Runner Image for xg2g
+# ==============================================================================
+# Single source of truth for build, test, and verification environments.
+# Contains:
+# - FFmpeg 8.1.2 & ffprobe (with VAAPI, x264, x265, dav1d)
+# - Go 1.26.5 toolchain
+# - Node.js 22.x & Playwright browser headless dependencies
+# - Rust 1.91.0 (with rustfmt, clippy, musl/gnu targets)
+# - Pinned QA tools: golangci-lint, check-jsonschema, actionlint
+# ==============================================================================
+
+ARG FFMPEG_BASE_IMAGE=ghcr.io/manugh/xg2g-ffmpeg:8.1.2
+FROM ${FFMPEG_BASE_IMAGE} AS ffmpeg-source
+
+FROM debian:trixie-slim
+
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    GOTOOLCHAIN=auto \
+    GOROOT=/usr/local/go \
+    GOPATH=/go \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:/usr/local/go/bin:/go/bin:/opt/ffmpeg/bin:/usr/local/bin:$PATH
+
+# 1. Base build tools, runtime libraries, and Playwright Chromium dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    make \
+    build-essential \
+    pkg-config \
+    python3 \
+    python3-pip \
+    python3-venv \
+    jq \
+    sudo \
+    tar \
+    gzip \
+    xz-utils \
+    # Hardware/Media runtime dependencies
+    mesa-va-drivers \
+    libva-drm2 \
+    libva2 \
+    libx264-164 \
+    libx265-215 \
+    libdav1d7 \
+    # Headless Playwright / Chromium dependencies
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Extract pre-built FFmpeg from ffmpeg-source
+COPY --from=ffmpeg-source /opt/ffmpeg /opt/ffmpeg
+COPY --from=ffmpeg-source /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg-source /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+
+# 3. Install Go 1.26.5
+ARG GO_VERSION=1.26.5
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && mkdir -p /go/bin /go/pkg /go/src \
+    && chmod -R 777 /go
+
+# 4. Install Node.js 26.3.0 matching .node-version
+ARG NODE_VERSION=26.3.0
+RUN case "${TARGETARCH}" in \
+        amd64) NODE_ARCH="x64" ;; \
+        arm64) NODE_ARCH="arm64" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz \
+    && tar -C /usr/local --strip-components=1 -xJf /tmp/node.tar.xz \
+    && rm /tmp/node.tar.xz
+
+# 5. Install Rust 1.91.0 toolchain
+ARG RUST_VERSION=1.91.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal \
+    && rustup component add rustfmt clippy \
+    && chmod -R a+w /usr/local/rustup /usr/local/cargo
+
+# 6. Install pinned QA tools
+ARG GOLANGCI_LINT_VERSION=2.8.0
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION}
+
+RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
+
+ARG ACTIONLINT_VERSION=1.7.12
+RUN curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${TARGETARCH}.tar.gz" -o /tmp/actionlint.tar.gz \
+    && tar -C /usr/local/bin -xzf /tmp/actionlint.tar.gz actionlint \
+    && rm /tmp/actionlint.tar.gz
+
+# 7. Smoke verify all toolchains
+RUN go version \
+    && rustc --version \
+    && node --version \
+    && ffmpeg -version | head -n 1 \
+    && golangci-lint --version \
+    && check-jsonschema --version \
+    && actionlint -version
+
+# 8. Create non-root runner user for CI execution
+ARG USER_UID=1001
+ARG USER_GID=1001
+RUN groupadd -g ${USER_GID} runner \
+    && useradd -u ${USER_UID} -g runner -m -s /bin/bash runner \
+    && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
+    && chmod 0440 /etc/sudoers.d/runner \
+    && mkdir -p /workspace && chown -R runner:runner /workspace
+
+USER runner
+WORKDIR /workspace
+HEALTHCHECK NONE
+CMD ["/bin/bash"]
+
