@@ -24,12 +24,12 @@ workflow belongs in `docs/dev/`.
 | :--- | :--- |
 | Browser/client compatibility policy | [Client Profiles](CLIENT_PROFILES.md) |
 | Enigma2 stream URL resolution | [Streaming Configuration](../STREAMING_CONFIGURATION.md) |
-| HLS media protocol contract | [HLS Protocol Contract](HLS_PROTOCOL_CONTRACT.md) |
-| Session lifecycle behavior | [Session Lifecycle](SESSION_LIFECYCLE.md) |
+| HLS media protocol contract | [HLS Protocol Contract](../arch/HLS_PROTOCOL_CONTRACT.md) |
+| Session lifecycle behavior | [Session Lifecycle](../arch/SESSION_LIFECYCLE.md) |
 | Deployment runtime and FFmpeg invariants | [Deployment Runtime Contract](DEPLOYMENT_RUNTIME_CONTRACT.md) |
 | Safari/iOS manual repro | [Safari Repro Run](archive/SAFARI_REPRO_RUN.md) |
 | Safari/iOS audit notes | [Safari Audit](SAFARI_AUDIT.md) |
-| Live playback attestation | [Live Playback Attestation](live-playback-attestation.md) |
+| Live playback attestation | [Live Playback Attestation](../arch/LIVE_PLAYBACK_ATTESTATION.md) |
 
 ## Incidents And CI
 

@@ -84,6 +84,37 @@ plus headroom, yielding a 150s health wait and `TimeoutStartSec=180`.
 `systemctl reload xg2g` is best-effort and does **not** gate on health. For a health-gated cycle,
 use `systemctl restart xg2g` and verify container health via Docker.
 
+### Triage Diagnostic Sequence & Failure Order
+
+When troubleshooting start or restart failures on LXC 110 or production hosts:
+
+1. **Run diagnostics first:**
+   ```bash
+   systemctl status xg2g.service --no-pager -l
+   journalctl -xeu xg2g.service --no-pager -n 120
+   docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' xg2g
+   docker logs --since 5m xg2g
+   ```
+
+2. **Classify failure cause before editing:**
+   - `ExecStartPre` fails with `No such image`: the live unit is checking a stale hardcoded tag. Treat `services.xg2g.image` in `/srv/xg2g/docker-compose.yml` as image truth.
+   - Container logs fail with `XG2G_DECISION_SECRET is required but not set`: `/etc/xg2g/xg2g.env` is missing a mandatory live-stream signing secret (min 32 ASCII bytes; see [SECURITY.md](SECURITY.md)).
+   - `systemctl start` or `restart` fails at `ExecStartPost` with `Container is unhealthy`: inspect Docker health details, not just `/readyz`.
+
+3. **Health nuance (`/readyz` vs Docker health):**
+   `/readyz` can return `200` while Docker health is still `unhealthy`. When that happens, inspect the container health log directly:
+   ```bash
+   docker inspect -f '{{json .State.Health}}' xg2g
+   ```
+   A known failure mode is metrics-only health drift: readiness endpoint is healthy, but Docker healthcheck fails because `http://localhost:9091/metrics` is unreachable. Fix by setting `XG2G_METRICS_LISTEN=:9091` in `/etc/xg2g/xg2g.env`.
+
+4. **Environment reload truth:**
+   `docker compose restart` does NOT reload changed env files — containers keep the environment they were created with. After editing `/etc/xg2g/xg2g.env` or `/etc/xg2g/xg2g-staging.env`, always run:
+   ```bash
+   docker compose up -d --force-recreate
+   ```
+   and verify via `docker exec <container> printenv <VAR>`.
+
 ### Configuration Updates
 1. Edit the environment file:
    ```bash
