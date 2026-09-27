@@ -72,28 +72,8 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Guides',
+          label: 'User Guides',
           items: [{ autogenerate: { directory: 'guides' } }],
-        },
-        {
-          label: 'Developer Documentation',
-          items: [{ autogenerate: { directory: 'dev' } }],
-        },
-        {
-          label: 'Architecture',
-          items: [{ autogenerate: { directory: 'arch' } }],
-        },
-        {
-          label: 'Operations & Runbooks',
-          items: [{ autogenerate: { directory: 'ops' } }],
-        },
-        {
-          label: 'Architecture Decision Records (ADR)',
-          items: [{ autogenerate: { directory: 'adr' } }],
-        },
-        {
-          label: 'WebUI Architecture',
-          items: [{ autogenerate: { directory: 'webui' } }],
         },
         {
           label: 'Release Notes',
