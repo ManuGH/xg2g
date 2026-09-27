@@ -1,3 +1,5 @@
+//go:build integration || integration_fast
+
 package contract_test
 
 import (

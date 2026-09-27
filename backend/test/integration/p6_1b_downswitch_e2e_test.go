@@ -1,3 +1,5 @@
+//go:build integration_slow
+
 package test
 
 import (

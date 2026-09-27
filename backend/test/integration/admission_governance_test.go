@@ -1,5 +1,6 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
+//go:build integration
 
 package test
 
