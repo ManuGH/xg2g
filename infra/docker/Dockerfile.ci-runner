@@ -127,7 +127,7 @@ RUN groupadd -g ${USER_GID} runner \
     && useradd -u ${USER_UID} -g runner -m -s /bin/bash runner \
     && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
     && chmod 0440 /etc/sudoers.d/runner \
-    && mkdir -p /workspace && chown -R runner:runner /workspace
+    && mkdir -p /workspace && chown -R runner:runner /workspace /go && chmod -R a+rwX /go
 
 USER runner
 WORKDIR /workspace
