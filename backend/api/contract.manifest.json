@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "a92b6d35054b808ba0205b718246661368da3fd34b8647983415b4530d2a51c9"
+    "sha256": "5dd0baeb0bf03d126046d98873995a0317c4b5c19ccb12fee9964c3962e091b7"
   },
   "paths": [
     "/auth/device/refresh",
@@ -51,6 +51,7 @@
     "/sessions/{sessionID}/heartbeat",
     "/sessions/{sessionID}/hls/{filename}",
     "/sessions/{sessionID}/hls/{variant}/{filename}",
+    "/sessions/{sessionID}/telemetry",
     "/sessions/{sessionId}/feedback",
     "/sessions/{sessionId}/playback-ticket",
     "/stream/prepare",
@@ -1961,6 +1962,53 @@
       ]
     },
     {
+      "operationId": "postSessionClientTelemetry",
+      "method": "POST",
+      "path": "/sessions/{sessionID}/telemetry",
+      "parameters": [
+        {
+          "name": "sessionID",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "202"
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "404",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "410",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "413"
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
+    {
       "operationId": "reportPlaybackFeedback",
       "method": "POST",
       "path": "/sessions/{sessionId}/feedback",
@@ -2695,6 +2743,7 @@
     "SeriesRuleRunReport",
     "SeriesRuleUpdate",
     "Service",
+    "SessionClientTelemetryRequest",
     "SessionHeartbeatResponse",
     "SessionRecord",
     "SessionResponse",
@@ -2744,6 +2793,7 @@
       "RecordingResponse",
       "RecordingResumeRequest",
       "Service",
+      "SessionClientTelemetryRequest",
       "StartPairingRequest",
       "StartPairingResponse",
       "TimerCreateRequest",
@@ -2800,6 +2850,7 @@
       "RecordingRoot",
       "ResumeSummary",
       "Service",
+      "SessionClientTelemetryRequest",
       "StartPairingRequest",
       "StartPairingResponse",
       "Timer",
@@ -2814,7 +2865,7 @@
       "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
       "language": "kotlin",
       "generator": "gen-native-contract",
-      "sha256": "81a86e1eb273ba489bd0ffc41b4880192ae31b18b5adcc8904a9083801d6f453"
+      "sha256": "3a7cf35a718a35de3a122d556486ed04e281bed1d03a9d3cb63bc948544679e5"
     },
     {
       "path": "apps/webui/src/client-ts/client.gen.ts",
@@ -2826,19 +2877,19 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "e846139676c386217d988f9cb1028217bc4e1ee97c7135f549f76ff1826fa3e5"
+      "sha256": "707fbaa23308d77c07fba67601f9a0088a2f9fd478e9458d7c3d612d4485614a"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "b7c680aaec3253ad09331b7819cfc0b420a21db77cc3b3dd1cd0aba3ec02d5d5"
+      "sha256": "4e7629df517ad10043ffb8e7a409cd646afcbb13e6bed21ace594e071b6b5b23"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "5ca486dac039041459ef7e4ca1a3fef3e0cb6bddf82828bb8a791339508cb09c"
+      "sha256": "7e449dbdeafa009392c156fac864eff327822edc81b27f1a4d12d95753fafdea"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2850,37 +2901,37 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "855200780f0df8606159039578efe406fbb80b0395a80a1a4a8037c885a1aeda"
+      "sha256": "a0070dce1eabdb62873d0e4ace5f88d845e5e0caeeeb8d4e1ea48d8ca42a3e18"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "7d404a53c6e222e7ef3c57a7b62df15f0204cda24803851c29bc15b7bde41946"
+      "sha256": "4292f96dee6e840d6d991a9cabb997156070fbee7326ddb90e8173964a4db8a2"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "100366bcf28f41e366fa2728d71186258ef5a7262d19f80dec85290f9a61f488"
+      "sha256": "511a1f9b1f6ea055d9a71d69eaea92bb4058691a5731eb39a79a452a59e02056"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "37e8bf0937a32acebbd5668bc7338a09d19d11c5d83255e3aedb44b6f691566b"
+      "sha256": "4e2c52aa2bac70eac651a4d1b97a4abc7256f72d3726805068f5742f3d7fda83"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
       "language": "swift",
       "generator": "gen-native-contract",
-      "sha256": "051411f367d52884c3938bd8539f49a8a30f7bf2332eb5102e4a0491f9dac666"
+      "sha256": "fe3bfa05a69f4f0da46fe805e948bf4d33399328db2e6e199613387fe8947484"
     },
     {
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "aee4637a44b4ae1297f74faf11a072772ef912a4fee1a67ec17ceff0035b757f"
+      "sha256": "0de7b46cf6febb90806b0c6f8de82a75ed812749c26160a43d711c53516e3055"
     }
   ]
 }

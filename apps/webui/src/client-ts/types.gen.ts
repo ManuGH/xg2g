@@ -381,6 +381,34 @@ export type SessionHeartbeatResponse = {
     leaseExpiresAt: string;
 };
 
+/**
+ * A bounded playback-health snapshot from a client. It deliberately excludes
+ * channel names, stream URLs, device identifiers, and free-form log text.
+ *
+ */
+export type SessionClientTelemetryRequest = {
+    platform: 'ios' | 'tvos' | 'android' | 'web';
+    appVersion?: string;
+    observedAt: string;
+    decodedFps: number;
+    audioLeadMs: number;
+    audioUnderruns: number;
+    ingestGapCount250Ms: number;
+    ingestGapCount600Ms: number;
+    ingestGapCount1000Ms: number;
+    ingestGapLastMs: number;
+    ingestGapMaxMs: number;
+    continuityErrors: number;
+    continuityErrorsDelta: number;
+    decodeErrors: number;
+    decodeErrorsDelta: number;
+    ptsDiscontinuities: number;
+    ingestBacklogBytes: number;
+    droppedFrames: number;
+    lateFrames: number;
+    thermalState: 'Nominal' | 'Fair' | 'Serious' | 'Critical' | 'Unknown';
+};
+
 export type Service = {
     id?: string;
     name?: string;
@@ -4715,6 +4743,47 @@ export type PostSessionHeartbeatResponses = {
 };
 
 export type PostSessionHeartbeatResponse = PostSessionHeartbeatResponses[keyof PostSessionHeartbeatResponses];
+
+export type PostSessionClientTelemetryData = {
+    body: SessionClientTelemetryRequest;
+    path: {
+        sessionID: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/telemetry';
+};
+
+export type PostSessionClientTelemetryErrors = {
+    /**
+     * Invalid telemetry payload or observation timestamp.
+     */
+    400: ProblemDetails;
+    /**
+     * Session not found.
+     */
+    404: ProblemDetails;
+    /**
+     * Session is terminal or its lease has expired.
+     */
+    410: ProblemDetails;
+    /**
+     * Request body exceeds the telemetry size limit.
+     */
+    413: unknown;
+    /**
+     * Session telemetry bus is unavailable.
+     */
+    503: ProblemDetails;
+};
+
+export type PostSessionClientTelemetryError = PostSessionClientTelemetryErrors[keyof PostSessionClientTelemetryErrors];
+
+export type PostSessionClientTelemetryResponses = {
+    /**
+     * Telemetry accepted for live session subscribers and aggregate metrics.
+     */
+    202: unknown;
+};
 
 export type ServeHlsData = {
     body?: never;

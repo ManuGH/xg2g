@@ -4,6 +4,7 @@
 package v3
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,21 +23,43 @@ const maxClientTelemetryBodyBytes = 8 * 1024
 // handleSessionClientTelemetry accepts one bounded client playback snapshot and
 // fans it out to subscribers of the addressed live session.
 func (s *Server) handleSessionClientTelemetry(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
-	var req SessionClientTelemetryRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxClientTelemetryBodyBytes))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxClientTelemetryBodyBytes))
+	if err != nil {
 		metrics.RecordClientPlaybackTelemetry("unknown", "invalid", 0, 0, 0, 0, 0)
 		if isTelemetryBodyTooLarge(err) {
 			writeRegisteredProblem(w, r, http.StatusRequestEntityTooLarge, "sessions/telemetry/too_large", "Telemetry Payload Too Large", problemcode.CodeInvalidInput, "The telemetry payload exceeds the 8 KiB limit.", nil)
 			return
 		}
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "The telemetry payload is malformed or contains unsupported fields.", nil)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "The telemetry payload is malformed.", nil)
 		return
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		metrics.RecordClientPlaybackTelemetry(string(req.Platform), "invalid", 0, 0, 0, 0, 0)
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "The request must contain exactly one JSON object.", nil)
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(body, &present); err != nil || present == nil {
+		metrics.RecordClientPlaybackTelemetry("unknown", "invalid", 0, 0, 0, 0, 0)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "The request must contain one JSON object.", nil)
+		return
+	}
+	for _, required := range []string{
+		"platform", "observedAt", "decodedFps", "audioLeadMs", "audioUnderruns",
+		"ingestGapCount250Ms", "ingestGapCount600Ms", "ingestGapCount1000Ms",
+		"ingestGapLastMs", "ingestGapMaxMs", "continuityErrors", "continuityErrorsDelta",
+		"decodeErrors", "decodeErrorsDelta", "ptsDiscontinuities", "ingestBacklogBytes",
+		"droppedFrames", "lateFrames", "thermalState",
+	} {
+		value, exists := present[required]
+		if !exists || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			metrics.RecordClientPlaybackTelemetry("unknown", "invalid", 0, 0, 0, 0, 0)
+			writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "A required telemetry field is missing or null.", nil)
+			return
+		}
+	}
+
+	var req SessionClientTelemetryRequest
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		metrics.RecordClientPlaybackTelemetry("unknown", "invalid", 0, 0, 0, 0, 0)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "sessions/telemetry/invalid", "Invalid Telemetry", problemcode.CodeInvalidInput, "The telemetry payload is malformed or contains unsupported fields.", nil)
 		return
 	}
 
