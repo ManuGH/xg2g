@@ -165,6 +165,12 @@ func TestAppendLiveHLSArgs_NegativeCTSOffsetsOnlyForCopiedFMP4(t *testing.T) {
 			if hasFragDiscont != tc.wantOption {
 				t.Fatalf("frag_discont present = %v, want %v (args: %v)", hasFragDiscont, tc.wantOption, args)
 			}
+			// With a per-fragment sidx, movenc rewrites each fragment's first PTS to the
+			// previous fragment's end, which duplicates a PTS at every open-GOP boundary.
+			hasSkipSidx := strings.Contains(strings.Join(args, " "), "+skip_sidx")
+			if hasSkipSidx != tc.wantOption {
+				t.Fatalf("skip_sidx present = %v, want %v (args: %v)", hasSkipSidx, tc.wantOption, args)
+			}
 		})
 	}
 }
