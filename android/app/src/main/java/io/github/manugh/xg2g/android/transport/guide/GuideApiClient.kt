@@ -35,11 +35,13 @@ internal class GuideApiClient(
     dpopProvider: DPoPProvider,
     stateMachine: AuthStateMachine? = null,
     private val profileIdProvider: () -> String? = { null },
+    fallbackTokenProvider: () -> String? = { null },
     private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
-        profileIdProvider = profileIdProvider
+        profileIdProvider = profileIdProvider,
+        fallbackTokenProvider = fallbackTokenProvider
     )
 ) {
     constructor(
@@ -48,17 +50,28 @@ internal class GuideApiClient(
         dpopProvider: DPoPProvider,
         stateMachine: AuthStateMachine? = null,
         profileIdProvider: () -> String? = { null },
-        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider)
+        fallbackTokenProvider: () -> String? = { null },
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider, fallbackTokenProvider)
     ) : this(
         baseUrlProvider = { baseUrl },
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
         profileIdProvider = profileIdProvider,
+        fallbackTokenProvider = fallbackTokenProvider,
         okHttpClient = okHttpClient
     )
 
     private val baseUrl: String get() = baseUrlProvider()
+
+    private fun Request.Builder.withAuth(authToken: String?): Request.Builder {
+        val token = authToken?.trim()?.takeIf { it.isNotEmpty() }
+        if (token != null) {
+            header("Authorization", "Bearer $token")
+        }
+        return this
+    }
+
     suspend fun ensureAuthSession(authToken: String?) {
         // Native REST API requests manage authentication per request
     }
@@ -71,6 +84,7 @@ internal class GuideApiClient(
         val request = Request.Builder()
             .url(apiUrl("services", "bouquets"))
             .get()
+            .withAuth(authToken)
             .build()
 
         executeJsonArray(request).mapNotNull { item ->
@@ -101,6 +115,7 @@ internal class GuideApiClient(
         val request = Request.Builder()
             .url(urlBuilder.build())
             .get()
+            .withAuth(authToken)
             .build()
 
         executeJsonArray(request).mapNotNull { item ->
@@ -141,6 +156,7 @@ internal class GuideApiClient(
         val request = Request.Builder()
             .url(urlBuilder.build())
             .get()
+            .withAuth(authToken)
             .build()
 
         val byServiceRef = linkedMapOf<String, MutableList<GuideProgram>>()
@@ -178,6 +194,7 @@ internal class GuideApiClient(
         val request = Request.Builder()
             .url(apiUrl("system", "health"))
             .get()
+            .withAuth(authToken)
             .build()
 
         val root = executeJsonObject(request)

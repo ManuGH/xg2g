@@ -157,6 +157,7 @@ internal class GuideViewModel(
                 apiClient = GuideApiClient(
                     baseUrlProvider = baseUrlProvider,
                     profileIdProvider = { store.getSelectedProfileId() },
+                    fallbackTokenProvider = authTokenProvider,
                     stateStore = stateStore,
                     dpopProvider = dpopProvider,
                     stateMachine = stateMachine

@@ -48,7 +48,8 @@ internal class PlaybackApiClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
-        profileIdProvider = { serverSettingsStore.getSelectedProfileId() }
+        profileIdProvider = { serverSettingsStore.getSelectedProfileId() },
+        fallbackTokenProvider = { serverSettingsStore.getAuthToken() }
     )
 ) : PlaybackApi {
 
@@ -60,6 +61,11 @@ internal class PlaybackApiClient(
      * letting it assemble its own was what put network wiring in the player.
      */
     val playerMediaTransport: PlayerMediaTransport = Media3PlayerTransport(okHttpClient, dpopProvider)
+
+    val telemetrySink: PlaybackTelemetrySink = HTTPPlaybackTelemetrySink(
+        okHttpClient = okHttpClient,
+        baseUrlProvider = { runCatching { requireUiBaseUrl() }.getOrNull() }
+    )
 
     override suspend fun ensureAuthSession(authToken: String?) {
         // Native API requests manage authentication directly via DPoP header per request
@@ -244,11 +250,29 @@ internal class PlaybackApiClient(
     override fun recordingPlaylistUrl(recordingId: String): String =
         recordingPlaylistHttpUrl(recordingId).toString()
 
-    fun playbackRequestHeaders(playbackUrl: String): Map<String, String> {
+    fun playbackRequestHeaders(playbackUrl: String, playbackTicket: String? = null): Map<String, String> {
         return playbackRequestHeaders(
             uiBaseUrl = requireUiBaseUrl(),
-            cookieHeader = null
+            cookieHeader = null,
+            playbackTicket = playbackTicket
         )
+    }
+
+    suspend fun mintPlaybackTicket(sessionId: String): PlaybackTicket = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(apiUrl("sessions", sessionId, "playback-ticket"))
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        executeJson(request) { json ->
+            PlaybackTicket(
+                sessionId = json.getString("sessionId"),
+                ticket = json.getString("ticket"),
+                cookie = json.optString("cookie", "xg2g_playback"),
+                path = json.optString("path", "/api/v3/sessions/$sessionId/hls/"),
+                expiresIn = json.optInt("expiresIn", 14400)
+            )
+        }
     }
 
     private fun recordingPlaylistHttpUrl(recordingId: String): HttpUrl =
@@ -419,15 +443,31 @@ internal fun HttpUrl.originHeaderValue(): String =
 internal fun HttpUrl.resolveAgainst(target: String): String =
     resolve(target)?.toString() ?: target
 
+internal data class PlaybackTicket(
+    val sessionId: String,
+    val ticket: String,
+    val cookie: String = "xg2g_playback",
+    val path: String = "/api/v3/sessions/$sessionId/hls/",
+    val expiresIn: Int = 14400
+)
+
 internal fun playbackRequestHeaders(
     uiBaseUrl: HttpUrl,
-    cookieHeader: String?
+    cookieHeader: String? = null,
+    playbackTicket: String? = null
 ): Map<String, String> = buildMap {
     put("Origin", uiBaseUrl.originHeaderValue())
     put("Referer", uiBaseUrl.toString())
-    cookieHeader
-        ?.takeIf { it.isNotBlank() }
-        ?.let { put("Cookie", it) }
+    val effectiveCookie = when {
+        !playbackTicket.isNullOrBlank() -> "xg2g_playback=$playbackTicket"
+        !cookieHeader.isNullOrBlank() -> cookieHeader
+        else -> null
+    }
+    effectiveCookie?.let { put("Cookie", it) }
+    playbackTicket?.takeIf { it.isNotBlank() }?.let {
+        put("X-Playback-Ticket", it)
+        put("Authorization", "Bearer $it")
+    }
 }
 
 private fun HttpUrl.portSuffixForOrigin(): String {

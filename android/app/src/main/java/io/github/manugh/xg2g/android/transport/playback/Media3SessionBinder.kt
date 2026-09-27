@@ -9,10 +9,11 @@ import okhttp3.OkHttpClient
 
 internal data class PlaybackSessionBinding(
     val sessionId: String,
-    val playbackDecisionToken: String?,
-    val accessToken: String?,
-    val profileId: String?,
-    val isLive: Boolean = true
+    val playbackDecisionToken: String? = null,
+    val accessToken: String? = null,
+    val profileId: String? = null,
+    val isLive: Boolean = true,
+    val playbackTicket: String? = null
 )
 
 internal class Media3SessionBinder(
@@ -30,7 +31,11 @@ internal class Media3SessionBinder(
                 val urlStr = original.url.toString()
                 val method = original.method
 
-                if (!binding.accessToken.isNullOrBlank()) {
+                if (!binding.playbackTicket.isNullOrBlank()) {
+                    builder.header("X-Playback-Ticket", binding.playbackTicket)
+                    builder.header("Cookie", "xg2g_playback=${binding.playbackTicket}")
+                    builder.header("Authorization", "Bearer ${binding.playbackTicket}")
+                } else if (!binding.accessToken.isNullOrBlank()) {
                     builder.header("Authorization", "DPoP ${binding.accessToken}")
                     val dynamicProof = dpopProvider.createProof(method, urlStr, binding.accessToken)
                     builder.header("DPoP", dynamicProof)

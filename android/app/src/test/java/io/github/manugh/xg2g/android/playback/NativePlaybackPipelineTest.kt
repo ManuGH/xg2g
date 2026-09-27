@@ -67,6 +67,44 @@ class NativePlaybackPipelineTest {
     }
 
     @Test
+    fun `Media3SessionBinder injects playback ticket headers and cookie when ticket is present`() {
+        var recordedAuth: String? = null
+        var recordedTicket: String? = null
+        var recordedCookie: String? = null
+
+        val binder = Media3SessionBinder(SoftwareDPoPProvider())
+        val binding = PlaybackSessionBinding(
+            sessionId = "sess_100",
+            playbackTicket = "tkt_123456"
+        )
+        val boundClientWithoutMock = binder.createBoundOkHttpClient(OkHttpClient(), binding)
+
+        val mockInterceptor = Interceptor { chain ->
+            val req = chain.request()
+            recordedAuth = req.header("Authorization")
+            recordedTicket = req.header("X-Playback-Ticket")
+            recordedCookie = req.header("Cookie")
+
+            Response.Builder()
+                .request(req)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body("OK".toResponseBody("text/plain".toMediaType()))
+                .build()
+        }
+
+        val testClient = boundClientWithoutMock.newBuilder().addInterceptor(mockInterceptor).build()
+
+        val request = Request.Builder().url("https://xg2g.local/api/v3/sessions/sess_100/hls/index.m3u8").build()
+        testClient.newCall(request).execute()
+
+        assertEquals("Bearer tkt_123456", recordedAuth)
+        assertEquals("tkt_123456", recordedTicket)
+        assertEquals("xg2g_playback=tkt_123456", recordedCookie)
+    }
+
+    @Test
     fun `PlaybackPreemptionHandler correctly classifies HTTP 409, 401, and Push events`() {
         val handler = PlaybackPreemptionHandler()
 

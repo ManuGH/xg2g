@@ -37,10 +37,12 @@ internal class RecordingsApiClient(
     stateStore: PersistedDeviceAuthStateStore,
     dpopProvider: DPoPProvider,
     stateMachine: AuthStateMachine? = null,
+    fallbackTokenProvider: () -> String? = { null },
     private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
-        stateMachine = stateMachine
+        stateMachine = stateMachine,
+        fallbackTokenProvider = fallbackTokenProvider
     )
 ) {
     constructor(
@@ -48,16 +50,27 @@ internal class RecordingsApiClient(
         stateStore: PersistedDeviceAuthStateStore,
         dpopProvider: DPoPProvider,
         stateMachine: AuthStateMachine? = null,
-        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine)
+        fallbackTokenProvider: () -> String? = { null },
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, fallbackTokenProvider = fallbackTokenProvider)
     ) : this(
         baseUrlProvider = { baseUrl },
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
+        fallbackTokenProvider = fallbackTokenProvider,
         okHttpClient = okHttpClient
     )
 
     private val baseUrl: String get() = baseUrlProvider()
+
+    private fun Request.Builder.withAuth(authToken: String?): Request.Builder {
+        val token = authToken?.trim()?.takeIf { it.isNotEmpty() }
+        if (token != null) {
+            header("Authorization", "Bearer $token")
+        }
+        return this
+    }
+
     suspend fun fetchRecordings(
         authToken: String?,
         root: String? = null,
@@ -75,7 +88,7 @@ internal class RecordingsApiClient(
             urlBuilder.addQueryParameter("path", path.trim())
         }
         val url = urlBuilder.build()
-        val request = Request.Builder().url(url).get().build().withSameOriginHeaders(url)
+        val request = Request.Builder().url(url).get().withAuth(authToken).build().withSameOriginHeaders(url)
         val response = okHttpClient.newCall(request).execute()
 
         val responseBody = response.body?.string().orEmpty()
@@ -104,7 +117,7 @@ internal class RecordingsApiClient(
             .addQueryParameter("limit", limit.toString())
             .build()
 
-        val request = Request.Builder().url(url).get().build().withSameOriginHeaders(url)
+        val request = Request.Builder().url(url).get().withAuth(authToken).build().withSameOriginHeaders(url)
         val response = okHttpClient.newCall(request).execute()
 
         val responseBody = response.body?.string().orEmpty()

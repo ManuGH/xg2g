@@ -103,7 +103,9 @@ class PlayerActivity : AppCompatActivity() {
         loadingTitle = findViewById(R.id.player_loading_title)
         loadingSubtitle = findViewById(R.id.player_loading_subtitle)
 
-        playerView.useController = false
+        playerView.useController = true
+        playerView.controllerShowTimeoutMs = 5_000
+        playerView.hideController()
         // Decoder recovery swaps the player roughly every half minute. Without this the view
         // drops to its black shutter each time; keeping the last frame makes the ~1s gap read
         // as a brief freeze instead of a blackout. media3's own buffering spinner is disabled
@@ -176,6 +178,7 @@ class PlayerActivity : AppCompatActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         session.updatePip(isInPictureInPictureMode)
+        playerView.useController = !isInPictureInPictureMode
         overlayView.isVisible = !isInPictureInPictureMode && shouldShowOverlay(session.state.value)
         loadingOverlay.isVisible = !isInPictureInPictureMode && !loadingDismissed
     }

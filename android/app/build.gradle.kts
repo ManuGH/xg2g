@@ -55,9 +55,9 @@ android {
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             manifestPlaceholders["appLabel"] = "xg2g Staging"
-            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"
-            manifestPlaceholders["deepLinkHost"] = "staging.example.invalid"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
         }
         create("prod") {
             dimension = "environment"

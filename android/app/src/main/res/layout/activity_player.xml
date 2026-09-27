@@ -12,7 +12,8 @@
         android:keepScreenOn="true"
         app:resize_mode="fit"
         app:show_buffering="never"
-        app:use_controller="false"
+        app:use_controller="true"
+        app:show_subtitle_button="true"
         app:shutter_background_color="#000000"
         app:use_artwork="false" />
 

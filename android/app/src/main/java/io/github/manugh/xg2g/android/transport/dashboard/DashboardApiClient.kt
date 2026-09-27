@@ -78,11 +78,13 @@ internal class DashboardApiClient(
     dpopProvider: DPoPProvider,
     stateMachine: AuthStateMachine? = null,
     private val profileIdProvider: () -> String? = { null },
+    fallbackTokenProvider: () -> String? = { null },
     private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
-        profileIdProvider = profileIdProvider
+        profileIdProvider = profileIdProvider,
+        fallbackTokenProvider = fallbackTokenProvider
     )
 ) {
     constructor(
@@ -91,17 +93,28 @@ internal class DashboardApiClient(
         dpopProvider: DPoPProvider,
         stateMachine: AuthStateMachine? = null,
         profileIdProvider: () -> String? = { null },
-        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider)
+        fallbackTokenProvider: () -> String? = { null },
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider, fallbackTokenProvider)
     ) : this(
         baseUrlProvider = { baseUrl },
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
         profileIdProvider = profileIdProvider,
+        fallbackTokenProvider = fallbackTokenProvider,
         okHttpClient = okHttpClient
     )
 
     private val baseUrl: String get() = baseUrlProvider()
+
+    private fun Request.Builder.withAuth(authToken: String?): Request.Builder {
+        val token = authToken?.trim()?.takeIf { it.isNotEmpty() }
+        if (token != null) {
+            header("Authorization", "Bearer $token")
+        }
+        return this
+    }
+
     private suspend fun ensureAuthSession(authToken: String?) {
         // Native REST API requests manage authentication per request
     }
@@ -111,7 +124,7 @@ internal class DashboardApiClient(
             return@withContext GuideHealthStatus(receiverHealthy = false, epgHealthy = false, missingChannels = 0)
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("system", "health")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("system", "health")).get().withAuth(authToken)
         val root = executeJsonObject(requestBuilder.build())
         val receiverStatus = root.optJSONObject("receiver")
             ?.optString("status")
@@ -136,7 +149,7 @@ internal class DashboardApiClient(
             return@withContext emptyList()
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("recordings")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("recordings")).get().withAuth(authToken)
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -168,7 +181,7 @@ internal class DashboardApiClient(
             return@withContext emptyList()
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("timers")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("timers")).get().withAuth(authToken)
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -201,7 +214,7 @@ internal class DashboardApiClient(
             return@withContext DashboardDvrStatus(diskFreeBytes = null, diskTotalBytes = null, recordingCount = 0, activeTimerCount = 0)
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("dvr", "status")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("dvr", "status")).get().withAuth(authToken)
         val root = executeJsonObject(requestBuilder.build())
         DashboardDvrStatus(
             diskFreeBytes = root.optLong("diskFreeBytes").takeIf { it > 0 },
@@ -216,7 +229,7 @@ internal class DashboardApiClient(
             return@withContext HouseholdUnlockStatus(pinConfigured = false, unlocked = false)
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).get().withAuth(authToken)
         val root = executeJsonObject(requestBuilder.build())
         HouseholdUnlockStatus(
             pinConfigured = root.optBoolean("pinConfigured", false),
@@ -229,7 +242,7 @@ internal class DashboardApiClient(
             return@withContext emptyList()
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("household", "profiles")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("household", "profiles")).get().withAuth(authToken)
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -285,6 +298,7 @@ internal class DashboardApiClient(
         val requestBuilder = Request.Builder()
             .url(apiUrl("household", "unlock"))
             .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .withAuth(authToken)
         val root = executeJsonObject(requestBuilder.build())
         HouseholdUnlockStatus(
             pinConfigured = root.optBoolean("pinConfigured", false),
@@ -297,7 +311,7 @@ internal class DashboardApiClient(
             return@withContext
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).delete()
+        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).delete().withAuth(authToken)
         execute(requestBuilder.build())
     }
 
@@ -314,7 +328,7 @@ internal class DashboardApiClient(
             )
         }
         ensureAuthSession(authToken)
-        val requestBuilder = Request.Builder().url(apiUrl("system", "scan")).get()
+        val requestBuilder = Request.Builder().url(apiUrl("system", "scan")).get().withAuth(authToken)
         val root = executeJsonObject(requestBuilder.build())
         SystemScanStatus(
             state = root.optString("state", "idle"),
@@ -335,6 +349,7 @@ internal class DashboardApiClient(
         val requestBuilder = Request.Builder()
             .url(apiUrl("system", "scan"))
             .post(ByteArray(0).toRequestBody(null))
+            .withAuth(authToken)
         execute(requestBuilder.build())
         true
     }

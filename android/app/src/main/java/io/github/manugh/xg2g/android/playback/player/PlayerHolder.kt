@@ -334,6 +334,7 @@ internal class PlayerHolder(
 
         handler.removeCallbacks(healthyPlaybackReset)
         val label = renderer?.let { "$reason in $it" } ?: reason
+        playbackLogger.pipelineWarnings.add("decoder recovery: $label")
         val sinceRearm = android.os.SystemClock.elapsedRealtime() - lastRearmAtMs
         if (lastRearmAtMs != 0L && sinceRearm < MIN_HEALTHY_PLAYBACK_MS) {
             consecutiveFastFailures++
@@ -415,6 +416,7 @@ internal class PlayerHolder(
         audioDisabled = true
         recordTrace(ClientPlaybackTraceEventEvent.AUDIO_CLOCK_STOPPED)
         val label = renderer?.let { "$reason in $it" } ?: reason
+        playbackLogger.pipelineWarnings.add("audio degraded: $label")
         Log.e(TAG, "[DECODER_RECOVERY] $label -> disabling the failing audio track; video continues")
         val current = player
         current.disableTrackType(C.TRACK_TYPE_AUDIO)
@@ -483,6 +485,7 @@ internal class PlayerHolder(
                 audioDisabled = false
                 player.enableTrackType(C.TRACK_TYPE_AUDIO)
             }
+            playbackLogger.resetSession()
             lastRearmAtMs = android.os.SystemClock.elapsedRealtime()
         }
 
@@ -544,6 +547,11 @@ internal class PlayerHolder(
         resetWatchdogSample()
         player.stop()
         player.clearMediaItems()
+        sessionBinding = null
+    }
+
+    fun telemetrySnapshot(): io.github.manugh.xg2g.android.transport.playback.PlaybackTelemetrySnapshot {
+        return playbackLogger.snapshot(player, recoveryCount.toLong())
     }
 
     fun release() {

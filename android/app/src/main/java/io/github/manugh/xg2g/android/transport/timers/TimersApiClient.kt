@@ -28,10 +28,12 @@ internal class TimersApiClient(
     stateStore: PersistedDeviceAuthStateStore,
     dpopProvider: DPoPProvider,
     stateMachine: AuthStateMachine? = null,
+    fallbackTokenProvider: () -> String? = { null },
     private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
-        stateMachine = stateMachine
+        stateMachine = stateMachine,
+        fallbackTokenProvider = fallbackTokenProvider
     )
 ) {
     constructor(
@@ -39,23 +41,34 @@ internal class TimersApiClient(
         stateStore: PersistedDeviceAuthStateStore,
         dpopProvider: DPoPProvider,
         stateMachine: AuthStateMachine? = null,
-        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine)
+        fallbackTokenProvider: () -> String? = { null },
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, fallbackTokenProvider = fallbackTokenProvider)
     ) : this(
         baseUrlProvider = { baseUrl },
         stateStore = stateStore,
         dpopProvider = dpopProvider,
         stateMachine = stateMachine,
+        fallbackTokenProvider = fallbackTokenProvider,
         okHttpClient = okHttpClient
     )
 
     private val baseUrl: String get() = baseUrlProvider()
+
+    private fun Request.Builder.withAuth(authToken: String?): Request.Builder {
+        val token = authToken?.trim()?.takeIf { it.isNotEmpty() }
+        if (token != null) {
+            header("Authorization", "Bearer $token")
+        }
+        return this
+    }
+
     suspend fun fetchTimers(authToken: String?): List<TimerItem> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext emptyList()
         }
         ensureAuthSession(authToken)
         val url = apiUrl("timers")
-        val requestBuilder = Request.Builder().url(url).get()
+        val requestBuilder = Request.Builder().url(url).get().withAuth(authToken)
 
         val request = requestBuilder.build()
         val response = okHttpClient.newCall(request).execute()
