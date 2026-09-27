@@ -71,7 +71,7 @@ class NativePlaybackCapabilitiesTest {
         assertEquals(2160, capabilities.maxVideo?.height)
         assertEquals(60, capabilities.maxVideo?.fps)
         assertTrue(capabilities.runtimeProbeUsed)
-        assertEquals(2, capabilities.runtimeProbeVersion)
+        assertEquals(3, capabilities.runtimeProbeVersion)
 
         val hevcSignal = capabilities.videoCodecSignals.first { it.codec == "hevc" }
         assertTrue(hevcSignal.supported)
@@ -104,6 +104,28 @@ class NativePlaybackCapabilitiesTest {
         assertEquals(listOf("aac"), capabilities.audioCodecs)
         assertEquals(false, capabilities.videoCodecSignals.first { it.codec == "h264" }.powerEfficient)
         assertEquals(false, capabilities.videoCodecSignals.first { it.codec == "av1" }.supported)
+    }
+
+    @Test
+    fun `fire tv requests aac instead of dolby offload for live playback`() {
+        val entries = listOf(
+            NativeDecoderMimeEntry("aac", "audio/mp4a-latm"),
+            NativeDecoderMimeEntry("ac3", "audio/ac3"),
+            NativeDecoderMimeEntry("eac3", "audio/eac3"),
+        )
+        val fireTv = NativePlaybackCapabilities.fromMimeEntries(
+            isTv = true,
+            entries = entries,
+            deviceModel = "AFTMM",
+        )
+        val otherTv = NativePlaybackCapabilities.fromMimeEntries(
+            isTv = true,
+            entries = entries,
+            deviceModel = "AFTSSS",
+        )
+
+        assertEquals(listOf("aac"), fireTv.audioCodecs)
+        assertEquals(listOf("aac", "ac3", "eac3"), otherTv.audioCodecs)
     }
 
     @Test
