@@ -83,6 +83,12 @@ node_modules/
 .node_modules_partial_*/
 apps/webui/dist/
 apps/webui/node_modules/
+apps/docs/dist/
+apps/docs/node_modules/
+apps/docs/.astro/
+apps/docs/public/
+apps/docs/src/content/docs/*
+!apps/docs/src/content/docs/index.mdx
 backend/internal/control/http/dist/
 dist/
 

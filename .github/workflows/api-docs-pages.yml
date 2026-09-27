@@ -6,8 +6,16 @@ on:
     branches: [main]
     paths:
       - "backend/api/openapi.yaml"
-      - "docs/api/**"
-      - "docs/assets/**"
+      - "docs/**"
+      - "apps/docs/**"
+      - "llms.txt"
+      - ".github/workflows/api-docs-pages.yml"
+  pull_request:
+    paths:
+      - "backend/api/openapi.yaml"
+      - "docs/**"
+      - "apps/docs/**"
+      - "llms.txt"
       - ".github/workflows/api-docs-pages.yml"
 
 permissions:
@@ -21,34 +29,43 @@ concurrency:
 
 jobs:
   build:
-    name: Build API Docs Artifact
+    name: Build Documentation Site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # Latest stable
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .node-version
+          cache: "npm"
+          cache-dependency-path: apps/docs/package-lock.json
 
-      - name: Build static API docs site
+      - name: Install dependencies
+        run: npm --prefix apps/docs ci
+
+      - name: Build Starlight documentation & search index
         run: |
           set -euo pipefail
-          rm -rf _site
-          mkdir -p _site
-          cp -R docs/api/. _site/
-          mkdir -p _site/assets
-          if [ -d docs/assets ]; then cp -R docs/assets/. _site/assets/; fi
-          cp backend/api/openapi.yaml _site/openapi.yaml
-          touch _site/.nojekyll
+          npm --prefix apps/docs run build
+          mkdir -p apps/docs/dist/api
+          if [ -d docs/api ]; then cp -R docs/api/. apps/docs/dist/api/; fi
+          touch apps/docs/dist/.nojekyll
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: _site
+          path: apps/docs/dist
 
   deploy:
-    name: Deploy API Docs
-    if: github.ref == 'refs/heads/main'
+    name: Deploy Documentation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
