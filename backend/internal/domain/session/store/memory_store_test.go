@@ -13,6 +13,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/platform/clock"
 )
 
 // TestMemoryStore_ScanSessions_NoLockContention verifies that slow callbacks
@@ -278,5 +279,82 @@ func TestMemoryStore_UpdateSessionAdvancesUpdatedAt(t *testing.T) {
 
 	if rec.UpdatedAtUnix < before {
 		t.Errorf("UpdateSession did not advance UpdatedAtUnix: got %d, want >= %d (was stale 1)", rec.UpdatedAtUnix, before)
+	}
+}
+
+// TestMemoryStore_VirtualClock_DeterministicTTLAndLeaseExpiry verifies that
+// lease expiration and idempotency TTL work deterministically in zero real milliseconds.
+func TestMemoryStore_VirtualClock_DeterministicTTLAndLeaseExpiry(t *testing.T) {
+	baseTime := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	vc := clock.NewVirtual(baseTime)
+	st := NewMemoryStoreWithClock(vc)
+	ctx := context.Background()
+
+	// 1. Idempotency TTL test
+	if err := st.PutIdempotency(ctx, "idem-test", "sess-100", 10*time.Second); err != nil {
+		t.Fatalf("PutIdempotency failed: %v", err)
+	}
+
+	// Immediate query: valid
+	sessID, ok, err := st.GetIdempotency(ctx, "idem-test")
+	if err != nil || !ok || sessID != "sess-100" {
+		t.Fatalf("expected idempotency hit, got ok=%v, sess=%s, err=%v", ok, sessID, err)
+	}
+
+	// Advance 5s: still valid
+	vc.Advance(5 * time.Second)
+	sessID, ok, err = st.GetIdempotency(ctx, "idem-test")
+	if err != nil || !ok || sessID != "sess-100" {
+		t.Fatalf("expected idempotency hit after 5s, got ok=%v", ok)
+	}
+
+	// Advance 6s more (total 11s): expired!
+	vc.Advance(6 * time.Second)
+	_, ok, err = st.GetIdempotency(ctx, "idem-test")
+	if err != nil || ok {
+		t.Fatalf("expected idempotency expiry after 11s, got ok=%v", ok)
+	}
+
+	// 2. Lease Expiry & Contention test
+	lease, ok, err := st.TryAcquireLease(ctx, "tuner-lease", "owner-A", 30*time.Second)
+	if err != nil || !ok || lease == nil {
+		t.Fatalf("expected lease acquisition, got ok=%v, err=%v", ok, err)
+	}
+
+	// Another owner tries to acquire after 20s: should fail (occupied)
+	vc.Advance(20 * time.Second)
+	_, ok, err = st.TryAcquireLease(ctx, "tuner-lease", "owner-B", 30*time.Second)
+	if err != nil || ok {
+		t.Fatalf("expected lease contention rejection for owner-B, got ok=%v", ok)
+	}
+
+	// Advance another 15s (total 35s): lease expired!
+	vc.Advance(15 * time.Second)
+	leaseB, ok, err := st.TryAcquireLease(ctx, "tuner-lease", "owner-B", 30*time.Second)
+	if err != nil || !ok || leaseB == nil {
+		t.Fatalf("expected owner-B to acquire expired lease, got ok=%v, err=%v", ok, err)
+	}
+	if leaseB.Owner() != "owner-B" {
+		t.Fatalf("expected owner-B, got %s", leaseB.Owner())
+	}
+
+	// 3. UpdateSession stamps virtual time
+	if err := st.PutSession(ctx, &model.SessionRecord{
+		SessionID: "vtime-sess",
+		State:     model.SessionReady,
+	}); err != nil {
+		t.Fatalf("PutSession failed: %v", err)
+	}
+
+	vc.Advance(100 * time.Second)
+	rec, err := st.UpdateSession(ctx, "vtime-sess", func(r *model.SessionRecord) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("UpdateSession failed: %v", err)
+	}
+
+	if rec.UpdatedAtUnix != vc.Now().Unix() {
+		t.Fatalf("expected UpdatedAtUnix to equal virtual time %d, got %d", vc.Now().Unix(), rec.UpdatedAtUnix)
 	}
 }
