@@ -102,7 +102,7 @@ internal class Xg2gPlaybackLogger(
         traceRecorder.record(ClientPlaybackTraceEventEvent.REQUEST_STARTED)
         Log.i(
             TAG,
-            "[XG2G_NETWORK] LoadStarted -> uri=${loadEventInfo.uri} dataType=${mediaLoadData.dataType} trackType=${mediaLoadData.trackType} startMs=${mediaLoadData.mediaStartTimeMs} endMs=${mediaLoadData.mediaEndTimeMs} retry=$retryCount"
+            "[XG2G_NETWORK] LoadStarted -> path=${loadEventInfo.uri.path} dataType=${mediaLoadData.dataType} trackType=${mediaLoadData.trackType} startMs=${mediaLoadData.mediaStartTimeMs} endMs=${mediaLoadData.mediaEndTimeMs} retry=$retryCount"
         )
     }
 
@@ -113,7 +113,7 @@ internal class Xg2gPlaybackLogger(
     ) {
         Log.w(
             TAG,
-            "[XG2G_NETWORK] LoadCanceled -> uri=${loadEventInfo.uri} duration=${loadEventInfo.loadDurationMs}ms bytes=${loadEventInfo.bytesLoaded}"
+            "[XG2G_NETWORK] LoadCanceled -> path=${loadEventInfo.uri.path} duration=${loadEventInfo.loadDurationMs}ms bytes=${loadEventInfo.bytesLoaded}"
         )
     }
 
@@ -307,7 +307,7 @@ internal class Xg2gPlaybackLogger(
             )) {
             onTraceAnomaly()
         }
-        Log.e(TAG, "[XG2G_NETWORK] LoadError -> uri=${loadEventInfo.uri} duration=${loadEventInfo.loadDurationMs}ms canceled=$wasCanceled error=${error.message}", error)
+        Log.e(TAG, "[XG2G_NETWORK] LoadError -> path=${loadEventInfo.uri.path} duration=${loadEventInfo.loadDurationMs}ms canceled=$wasCanceled errorType=${error.javaClass.simpleName}")
     }
 
     override fun onVideoInputFormatChanged(
