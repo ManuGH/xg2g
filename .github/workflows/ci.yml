@@ -148,12 +148,6 @@ jobs:
           set -euo pipefail
           if command -v ffmpeg >/dev/null 2>&1; then
             echo "ffmpeg already installed"
-          elif docker pull ghcr.io/manugh/xg2g-ffmpeg:8.1.2 2>/dev/null; then
-            echo "Extracting pre-built ffmpeg 8.1.2 from ghcr.io/manugh/xg2g-ffmpeg:8.1.2..."
-            cid=$(docker create ghcr.io/manugh/xg2g-ffmpeg:8.1.2)
-            sudo docker cp "$cid":/usr/local/bin/ffmpeg /usr/local/bin/ffmpeg || sudo docker cp "$cid":/opt/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
-            sudo docker cp "$cid":/usr/local/bin/ffprobe /usr/local/bin/ffprobe 2>/dev/null || sudo docker cp "$cid":/opt/ffmpeg/bin/ffprobe /usr/local/bin/ffprobe 2>/dev/null || true
-            docker rm "$cid" >/dev/null
           else
             sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
             sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg

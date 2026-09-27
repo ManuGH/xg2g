@@ -161,14 +161,7 @@ jobs:
           set -euo pipefail
           # ffmpeg generates the HLS fixture for the real-hls.js playback spec;
           # without it that spec skips itself (see scripts/gen-hls-fixture.sh).
-          if command -v ffmpeg >/dev/null 2>&1; then
-            echo "ffmpeg already installed"
-          elif docker pull ghcr.io/manugh/xg2g-ffmpeg:8.1.2 2>/dev/null; then
-            echo "Extracting pre-built ffmpeg 8.1.2 from ghcr.io/manugh/xg2g-ffmpeg:8.1.2..."
-            cid=$(docker create ghcr.io/manugh/xg2g-ffmpeg:8.1.2)
-            sudo docker cp "$cid":/usr/local/bin/ffmpeg /usr/local/bin/ffmpeg || sudo docker cp "$cid":/opt/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg
-            docker rm "$cid" >/dev/null
-          else
+          if ! command -v ffmpeg >/dev/null 2>&1; then
             sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
             sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
           fi
