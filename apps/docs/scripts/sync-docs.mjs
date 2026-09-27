@@ -50,6 +50,17 @@ const SECTIONS = [
   { src: 'docs/webui', dest: 'webui' },
 ];
 
+const MAINTAINER_INTERNAL_OPS = new Set([
+  'solo_maintainer_merge_policy.md',
+  'workspace_cleanup.md',
+  'branch_protection_cutover.md',
+  'ci_failure_playbook.md',
+  'ci_policy.md',
+  'walkthrough_governance.md',
+  'xg2g_sync_workflow.md',
+  'external_audit_mode.md',
+]);
+
 function titleFromFilename(filename) {
   const base = path.basename(filename, path.extname(filename));
   return base
@@ -80,6 +91,12 @@ function resolveMarkdownLink(link, srcPath) {
       const filename = parts.pop() || '';
       const base = filename.replace(/\.md$/i, '').toLowerCase();
       const dirParts = parts.map((p) => p.toLowerCase());
+
+      // If this file is excluded from public docs (maintainer-only or archive), link to GitHub repository
+      if (dirParts.includes('archive') || MAINTAINER_INTERNAL_OPS.has(filename.toLowerCase())) {
+        const relFromRoot = path.relative(REPO_ROOT, absTarget).replace(/\\/g, '/');
+        return `https://github.com/ManuGH/xg2g/blob/main/${relFromRoot}${hash}`;
+      }
 
       let slug;
       if (base === 'readme' || base === 'index') {
@@ -159,6 +176,16 @@ function syncDirectory(srcDir, destDir) {
     const destName = entry.name.toLowerCase();
     const destPath = path.join(destDir, destName);
 
+    // Exclude internal maintainer debug archives from public doc generation
+    if (entry.isDirectory() && destName === 'archive') {
+      continue;
+    }
+
+    // Exclude maintainer-only internal ops files from public doc generation
+    if (entry.isFile() && MAINTAINER_INTERNAL_OPS.has(destName)) {
+      continue;
+    }
+
     if (entry.isDirectory()) {
       syncDirectory(srcPath, destPath);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
@@ -175,10 +202,13 @@ function syncDirectory(srcDir, destDir) {
   }
 }
 
+// Clean destination section directories before syncing to avoid stale/excluded files
 for (const section of SECTIONS) {
-  const src = path.join(REPO_ROOT, section.src);
   const dest = path.join(SRC_CONTENT_DIR, section.dest);
-  syncDirectory(src, dest);
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+  syncDirectory(path.join(REPO_ROOT, section.src), dest);
 }
 
 // Generate landing page index.mdx if not present
