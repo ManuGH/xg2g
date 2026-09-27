@@ -56,6 +56,7 @@ workflow belongs in `docs/dev/`.
 | :--- | :--- |
 | Runtime defaults | [Runtime Policy Defaults](RUNTIME_POLICY_DEFAULTS.md) |
 | Observability | [Observability](OBSERVABILITY.md) |
+| Client playback telemetry | [Client Playback Telemetry](CLIENT_PLAYBACK_TELEMETRY.md) |
 | Observability decision fields | [Observability Decision Contract](OBSERVABILITY_DECISION_CONTRACT.md) |
 | SLOs | [SLOs](SLOS.md) |
 | Preflight behavior | [Preflight](PREFLIGHT.md) |
