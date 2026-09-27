@@ -135,6 +135,8 @@ backend/internal/control/http/v3/openapi.yaml
 .cursor/
 *.swp
 *.swo
+__pycache__/
+*.pyc
 .codex_patch.diff
 .copilot-instructions.md
 .worktrees/
