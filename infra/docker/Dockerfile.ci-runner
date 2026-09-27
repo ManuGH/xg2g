@@ -65,6 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    libxkbcommon0 \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Extract pre-built FFmpeg from ffmpeg-source and register dynamic libraries
@@ -98,10 +99,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && rustup component add rustfmt clippy \
     && chmod -R a+w /usr/local/rustup /usr/local/cargo
 
-# 6. Install pinned QA tools
+# 6. Install pinned QA tools (built with runner Go to match Go 1.26.5)
 ARG GOLANGCI_LINT_VERSION=2.8.0
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION} \
-    && ln -sf /usr/local/bin/golangci-lint /go/bin/golangci-lint
+RUN GOBIN=/usr/local/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION} \
+    && mkdir -p /go/bin && ln -sf /usr/local/bin/golangci-lint /go/bin/golangci-lint
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
 
