@@ -1,0 +1,70 @@
+---
+title: xg2g Streaming Gateway
+description: High-Performance Enigma2 Live TV & DVR Streaming Gateway
+template: splash
+hero:
+  tagline: Next-generation ultra-low-latency streaming gateway for Enigma2 receivers. Modern web UI, hardware acceleration (VAAPI/NVENC/Apple VT), adaptive HLS, and zero-stall pipelines.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quickstart Guide
+      link: /xg2g/guides/getting_started/
+      icon: right-arrow
+      variant: primary
+    - text: Interactive API Explorer
+      link: /xg2g/api-reference/
+      icon: external
+      variant: secondary
+    - text: GitHub Repository
+      link: https://github.com/ManuGH/xg2g
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Core Architecture
+
+<CardGrid stagger>
+  <Card title="Ultra-Low Latency & Adaptive HLS" icon="rocket">
+    Direct PES demuxing and fMP4 packaging tailored for Apple Safari, iOS, tvOS, and modern Web browsers with zero transcoder stall.
+  </Card>
+  <Card title="Hardware-Accelerated Transcoding" icon="setting">
+    Automated codec matrix and runtime probing for Intel Quick Sync (VAAPI), NVIDIA NVENC, and Apple VideoToolbox.
+  </Card>
+  <Card title="Intelligent Tuner Orchestration" icon="laptop">
+    Dynamic FBC tuner conflict resolution, priority-based reservation, and digital twin simulation for Enigma2 receivers.
+  </Card>
+  <Card title="Modern WebUI & PWA" icon="open-book">
+    React 19, TypeScript, and modern dark petrol design with instant zapping, EPG bouquet navigation, and live telemetry.
+  </Card>
+</CardGrid>
+
+## Quick Start (Docker Compose)
+
+Deploy in seconds on any Linux host with Docker:
+
+```yaml
+services:
+  xg2g:
+    image: ghcr.io/manugh/xg2g:latest
+    container_name: xg2g
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+      - "9091:9091"
+    environment:
+      - XG2G_ENIGMA2_HOST=http://enigma2.local
+      - XG2G_DECISION_SECRET=super-secret-decision-signing-key-min-32-bytes
+      - XG2G_STREAM_PASSTHROUGH=true
+      - XG2G_METRICS_LISTEN=:9091
+```
+
+## Diátaxis Documentation Hub
+
+Explore comprehensive guides organized by the 4 operational quadrants:
+
+- **[Tutorials (Learning-oriented)](/xg2g/tutorials/):** Step-by-step onboarding, end-to-end first stream setup.
+- **[How-To Guides (Problem-oriented)](/xg2g/how-to/):** Installation recipes, hardware acceleration setup, troubleshooting.
+- **[Reference (Information-oriented)](/xg2g/reference/):** Architecture details, codec matrix, config surfaces, and the OpenAPI contract.
+- **[Explanation (Understanding-oriented)](/xg2g/explanation/):** Streaming topology, session lifecycle, and Architecture Decision Records (ADRs).
