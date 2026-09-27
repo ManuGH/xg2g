@@ -16,12 +16,15 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/platform/clock"
 )
 
 // MemoryStore is an in-memory StateStore intended for tests and local iteration.
 // Not durable; not suitable for production.
 type MemoryStore struct {
 	mu sync.RWMutex
+
+	clock clock.Clock
 
 	sessions   map[string]*model.SessionRecord
 	recordings map[string]*model.Recording // Added for testing
@@ -69,7 +72,15 @@ type idemState struct {
 }
 
 func NewMemoryStore() *MemoryStore {
+	return NewMemoryStoreWithClock(clock.System)
+}
+
+func NewMemoryStoreWithClock(c clock.Clock) *MemoryStore {
+	if c == nil {
+		c = clock.System
+	}
 	return &MemoryStore{
+		clock:       c,
 		sessions:    make(map[string]*model.SessionRecord),
 		recordings:  make(map[string]*model.Recording),
 		leases:      make(map[string]leaseState),
@@ -80,13 +91,20 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
+func (m *MemoryStore) now() time.Time {
+	if m != nil && m.clock != nil {
+		return m.clock.Now()
+	}
+	return time.Now()
+}
+
 func (m *MemoryStore) Close() error { return nil }
 
 func (m *MemoryStore) PutIdempotency(ctx context.Context, idemKey, sessionID string, ttl time.Duration) error {
 	if idemKey == "" {
 		return nil
 	}
-	deadline := time.Now().Add(ttl)
+	deadline := m.now().Add(ttl)
 	m.mu.Lock()
 	m.idem[idemKey] = idemState{sessionID: sessionID, exp: deadline}
 	m.mu.Unlock()
@@ -97,7 +115,7 @@ func (m *MemoryStore) GetIdempotency(ctx context.Context, idemKey string) (strin
 	if idemKey == "" {
 		return "", false, nil
 	}
-	now := time.Now()
+	now := m.now()
 	m.mu.Lock()
 	st, ok := m.idem[idemKey]
 	if ok && now.After(st.exp) {
@@ -116,7 +134,7 @@ func (m *MemoryStore) DeleteIdempotencyIfMatch(ctx context.Context, idemKey, ses
 		return false, nil
 	}
 
-	now := time.Now()
+	now := m.now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -137,7 +155,7 @@ func (m *MemoryStore) DeleteIdempotencyIfMatch(ctx context.Context, idemKey, ses
 }
 
 func (m *MemoryStore) TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error) {
-	now := time.Now()
+	now := m.now()
 	deadline := now.Add(ttl)
 	m.mu.Lock()
 	ls, ok := m.leases[key]
@@ -173,7 +191,7 @@ func (m *MemoryStore) RenewLease(ctx context.Context, key, owner string, ttl tim
 	if ttl <= 0 {
 		return nil, false, errors.New("invalid ttl")
 	}
-	now := time.Now()
+	now := m.now()
 	exp := now.Add(ttl)
 	m.mu.Lock()
 	st, ok := m.leases[key]
@@ -194,7 +212,7 @@ func (m *MemoryStore) GetLease(ctx context.Context, key string) (Lease, bool, er
 	if !ok {
 		return nil, false, nil
 	}
-	if time.Now().After(st.exp) {
+	if m.now().After(st.exp) {
 		delete(m.leases, key)
 		return nil, false, nil
 	}
@@ -218,7 +236,7 @@ func (m *MemoryStore) ListLeases(ctx context.Context) ([]Lease, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 	res := make([]Lease, 0, len(m.leases))
 	for key, st := range m.leases {
 		if now.After(st.exp) {
@@ -305,7 +323,7 @@ func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.Se
 	// 1. Check Idempotency
 	if idemKey != "" {
 		if st, ok := m.idem[idemKey]; ok {
-			if time.Now().Before(st.exp) {
+			if m.now().Before(st.exp) {
 				return st.sessionID, true, nil
 			}
 			// Expired: delete and proceed to overwrite
@@ -318,7 +336,7 @@ func (m *MemoryStore) PutSessionWithIdempotency(ctx context.Context, s *model.Se
 
 	// 3. Write Idempotency
 	if idemKey != "" {
-		deadline := time.Now().Add(ttl)
+		deadline := m.now().Add(ttl)
 		m.idem[idemKey] = idemState{sessionID: s.SessionID, exp: deadline}
 	}
 	return "", false, nil
@@ -396,7 +414,7 @@ func (m *MemoryStore) UpdateSession(ctx context.Context, id string, fn func(*mod
 	// This is the source of truth for staleness gates (e.g. the recovery sweep's
 	// shouldRecover): a store that froze UpdatedAtUnix would make every Memory-backed
 	// session look stale. The two store implementations must agree on this semantic.
-	cpy.UpdatedAtUnix = time.Now().Unix()
+	cpy.UpdatedAtUnix = m.now().Unix()
 	// Save back
 	m.sessions[id] = cloneSessionRecord(cpy)
 	return cloneSessionRecord(cpy), nil
@@ -465,7 +483,7 @@ func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 	expiresAt := now.Add(req.TTL)
 
 	// 1. Multiplex-Reuse
@@ -610,7 +628,7 @@ func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string, gen
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 
 	// 1. Remove session from mux members matching generationToken
 	for muxID, members := range m.muxMembers {
@@ -685,7 +703,7 @@ func (m *MemoryStore) ForceAdminReleaseClaimSet(ctx context.Context, sessionID s
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 
 	// 1. Remove session from mux members regardless of generation token
 	for muxID, members := range m.muxMembers {
@@ -753,7 +771,7 @@ func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 	reapedMembers := 0
 	reapedMuxes := 0
 
@@ -811,7 +829,7 @@ func (m *MemoryStore) ApplyReconciliationPlan(ctx context.Context, plan model.Re
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	now := time.Now()
+	now := m.now()
 
 	// 1. Reap specific sessions
 	for _, sID := range plan.SessionsToReap {
