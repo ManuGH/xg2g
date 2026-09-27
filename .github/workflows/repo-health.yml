@@ -102,3 +102,11 @@ jobs:
           fetch-depth: 0
       - name: Verify docs are rendered and committed (no drift)
         run: ./hack/verify-docs-drift.sh
+
+      - name: Verify no hardcoded local paths in documentation
+        run: |
+          set -euo pipefail
+          if git grep -n "file:///Users/" docs/ backend/docs/ README.md; then
+            echo "ERROR: Found hardcoded local file:///Users/ paths in documentation!"
+            exit 1
+          fi
