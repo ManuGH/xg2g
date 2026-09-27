@@ -159,6 +159,12 @@ func TestAppendLiveHLSArgs_NegativeCTSOffsetsOnlyForCopiedFMP4(t *testing.T) {
 			if hasOption != tc.wantOption {
 				t.Fatalf("negative_cts_offsets present = %v, want %v (args: %v)", hasOption, tc.wantOption, args)
 			}
+			// Without frag_discont the copied video's start offset against audio lives
+			// only in a two-entry edit list that Media3 ignores, so video runs ahead.
+			hasFragDiscont := strings.Contains(strings.Join(args, " "), "+frag_discont")
+			if hasFragDiscont != tc.wantOption {
+				t.Fatalf("frag_discont present = %v, want %v (args: %v)", hasFragDiscont, tc.wantOption, args)
+			}
 		})
 	}
 }
