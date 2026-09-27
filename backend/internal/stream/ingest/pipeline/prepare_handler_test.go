@@ -70,6 +70,72 @@ func pollUntilSettled(t *testing.T, h *PrepareHandler, id, clientID string, with
 	}
 }
 
+func TestPrepareHTTP_PlaybackTraceAcceptsBoundedOrderedWindow(t *testing.T) {
+	recv := newFakeReceiver(t)
+	recv.serve(refB, presentableBroadcast(t))
+	h := newHandlerUnderTest(t, recv, DefaultPreparationConfig())
+	started := startPreparation(t, h, refB, "sterling-1")
+	ready := pollUntilSettled(t, h, started.PreparationID, "sterling-1", 5*time.Second)
+	if ready.State != string(PreparationReady) {
+		t.Fatalf("want ready preparation, got %q", ready.State)
+	}
+
+	body, err := json.Marshal(clientPlaybackTraceBatch{
+		ObservedAt: time.Now().UTC(),
+		Events: []clientPlaybackTraceEvent{
+			{Sequence: 1, ElapsedMs: 0, Stage: "lifecycle", Event: "playback_started"},
+			{Sequence: 2, ElapsedMs: 120, Stage: "network", Event: "first_byte"},
+			{Sequence: 3, ElapsedMs: 240, Stage: "render", Event: "first_picture_visible"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare/"+started.PreparationID+"/trace", strings.NewReader(string(body)))
+	req.Header.Set(clientIDHeader, "sterling-1")
+	req.Header.Set(zapIDHeader, "zap-http")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("trace: want 204, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPrepareHTTP_PlaybackTraceRejectsWrongOwnerAndInvalidOrder(t *testing.T) {
+	recv := newFakeReceiver(t)
+	recv.serve(refB, presentableBroadcast(t))
+	h := newHandlerUnderTest(t, recv, DefaultPreparationConfig())
+	started := startPreparation(t, h, refB, "sterling-1")
+	ready := pollUntilSettled(t, h, started.PreparationID, "sterling-1", 5*time.Second)
+	if ready.State != string(PreparationReady) {
+		t.Fatalf("want ready preparation, got %q", ready.State)
+	}
+	path := "/api/v3/stream/prepare/" + started.PreparationID + "/trace"
+	body, err := json.Marshal(clientPlaybackTraceBatch{
+		ObservedAt: time.Now().UTC(),
+		Events: []clientPlaybackTraceEvent{
+			{Sequence: 2, ElapsedMs: 100, Stage: "network", Event: "first_byte"},
+			{Sequence: 1, ElapsedMs: 200, Stage: "render", Event: "first_picture_visible"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(clientID string) int {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
+		req.Header.Set(clientIDHeader, clientID)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := request("other-client"); code != http.StatusForbidden {
+		t.Fatalf("wrong owner: want 403, got %d", code)
+	}
+	if code := request("sterling-1"); code != http.StatusBadRequest {
+		t.Fatalf("out-of-order trace: want 400, got %d", code)
+	}
+}
+
 // The whole cycle over HTTP: start, watch it become ready, take it.
 //
 // 202 on start is the point: accepted and running. A status code has never said

@@ -4364,6 +4364,13 @@ x-xg2g-operation-policies:
     rateLimit: global
     audit: false
     redactErrors: false
+  PostPreparationClientPlaybackTrace:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
   RunAllSeriesRules:
     class: write
     auth: bearer_scope
@@ -6588,6 +6595,51 @@ paths:
           description: Preparation not found
         "409":
           description: Generation mismatch
+
+  /stream/prepare/{preparationId}/trace:
+    post:
+      summary: Upload a bounded playback event window after a client-side anomaly
+      operationId: postPreparationClientPlaybackTrace
+      tags: [streams]
+      security:
+        - BearerAuth: [v3:write]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Xg2g-Client-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+        - name: X-Xg2g-Zap-Id
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientPlaybackTraceBatch"
+      responses:
+        "204":
+          description: Trace window accepted and written to structured backend logs.
+        "400":
+          description: Invalid or out-of-order trace events.
+        "403":
+          description: Preparation belongs to another client.
+        "404":
+          description: Preparation not found.
+        "409":
+          description: Preparation is not ready or committed.
+        "413":
+          description: Request body exceeds the trace size limit.
 
   /logs:
     get:

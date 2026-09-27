@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "63163e1c6365e1ac79c5a71ffe24ce08625490ad71b04e5b72af02f01279b0fa"
+    "sha256": "deb66a9eb9ed874076b2b8cd8e522e79314e834172709d442af1a378729b084a"
   },
   "paths": [
     "/auth/device/refresh",
@@ -57,6 +57,7 @@
     "/stream/prepare",
     "/stream/prepare/{preparationId}",
     "/stream/prepare/{preparationId}/commit",
+    "/stream/prepare/{preparationId}/trace",
     "/streams",
     "/streams/{id}",
     "/system/config",
@@ -2138,6 +2139,51 @@
       ]
     },
     {
+      "operationId": "postPreparationClientPlaybackTrace",
+      "method": "POST",
+      "path": "/stream/prepare/{preparationId}/trace",
+      "parameters": [
+        {
+          "name": "X-Xg2g-Client-Id",
+          "in": "header",
+          "required": true
+        },
+        {
+          "name": "X-Xg2g-Zap-Id",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409"
+        },
+        {
+          "status": "413"
+        }
+      ]
+    },
+    {
       "operationId": "getStreams",
       "method": "GET",
       "path": "/streams",
@@ -2886,19 +2932,19 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "df3ae326fa84ff9492bf8a9c76ebf6f87f2cde14ab3e6d380b30691f1167ca79"
+      "sha256": "d0b4f907b147ac6a84ff5a37602565e6845e2c0ee3ef047dbca0765e0f5874d6"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "d04b1600f1bd4164a031fc44b16eebeb427438c8823b387cf6f7de1fb3ef343d"
+      "sha256": "2993af7fe628064a7f25d0bc21f8d742764db680192b304229d311c62984166c"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "3ded773287d84a8b9160baef7a4608abb86d3f559fd1a6395017cccf7543d958"
+      "sha256": "0ae4024519272159697b06b96c81c310f568484da0111b79b39eceaae7845b85"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2910,25 +2956,25 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "19a833750a7989544df47d9288ec124a085f94a474ec7dc167317077f9c743df"
+      "sha256": "92eeb369fd54f378ec1bf6a3ffc26215647abeef29f6e9a256e92777bc342737"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "4c64c69ac571c3a804c7bceeafcc47596df6aca787ad30ec3c3a73aca457f04a"
+      "sha256": "4dd1757f1ea16a4bc4cad1af532c6454cc0cc3dc56d8c8c6bfaf4302c483be24"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "6e1a208e24fd775ad21cb58a7c9554a12ab4019c93fcc9375cef68b51e022987"
+      "sha256": "80683f2a60c19e7321d2eb8a71f708fd6737b9b99d386d3a4dd781a3d9845840"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "7a1b8696e3c41510a3b850f0ea73121505293b50400f83f089dd520882715062"
+      "sha256": "c546e01c2fd80cd2b6eb0a035f1ea35f70fdb0b8fcd2f864e62834445557cf70"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
@@ -2940,7 +2986,7 @@
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "b370fee5fedb4733032d24b383ad8535eaa1be5a1bb87d753f0d8591c3e8dedc"
+      "sha256": "37c357e70bf03a720a7b22b1a1627c986dc131dec23185a5435f047c610d8669"
     }
   ]
 }

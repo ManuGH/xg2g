@@ -4440,6 +4440,51 @@ export type CommitStreamPrepareResponses = {
 
 export type CommitStreamPrepareResponse = CommitStreamPrepareResponses[keyof CommitStreamPrepareResponses];
 
+export type PostPreparationClientPlaybackTraceData = {
+    body: ClientPlaybackTraceBatch;
+    headers: {
+        'X-Xg2g-Client-Id': string;
+        'X-Xg2g-Zap-Id'?: string;
+    };
+    path: {
+        preparationId: string;
+    };
+    query?: never;
+    url: '/stream/prepare/{preparationId}/trace';
+};
+
+export type PostPreparationClientPlaybackTraceErrors = {
+    /**
+     * Invalid or out-of-order trace events.
+     */
+    400: unknown;
+    /**
+     * Preparation belongs to another client.
+     */
+    403: unknown;
+    /**
+     * Preparation not found.
+     */
+    404: unknown;
+    /**
+     * Preparation is not ready or committed.
+     */
+    409: unknown;
+    /**
+     * Request body exceeds the trace size limit.
+     */
+    413: unknown;
+};
+
+export type PostPreparationClientPlaybackTraceResponses = {
+    /**
+     * Trace window accepted and written to structured backend logs.
+     */
+    204: void;
+};
+
+export type PostPreparationClientPlaybackTraceResponse = PostPreparationClientPlaybackTraceResponses[keyof PostPreparationClientPlaybackTraceResponses];
+
 export type GetLogsData = {
     body?: never;
     path?: never;
