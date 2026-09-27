@@ -118,6 +118,12 @@ function syncDirectory(srcDir, destDir) {
       const raw = fs.readFileSync(srcPath, 'utf8');
       const processed = processMarkdown(raw, entry.name);
       fs.writeFileSync(destPath, processed, 'utf8');
+
+      // If this is a README.md, also write it as index.md so the directory root route (e.g. /tutorials/) resolves directly
+      if (destName === 'readme.md') {
+        const indexPath = path.join(destDir, 'index.md');
+        fs.writeFileSync(indexPath, processed, 'utf8');
+      }
     }
   }
 }

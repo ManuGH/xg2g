@@ -39,10 +39,10 @@ export default defineConfig({
         {
           label: 'Diátaxis Quadrants',
           items: [
-            { label: 'Tutorials', slug: 'tutorials/readme' },
-            { label: 'How-To Guides', slug: 'how-to/readme' },
-            { label: 'Reference', slug: 'reference/readme' },
-            { label: 'Explanation', slug: 'explanation/readme' },
+            { label: 'Tutorials', slug: 'tutorials' },
+            { label: 'How-To Guides', slug: 'how-to' },
+            { label: 'Reference', slug: 'reference' },
+            { label: 'Explanation', slug: 'explanation' },
           ],
         },
         {
