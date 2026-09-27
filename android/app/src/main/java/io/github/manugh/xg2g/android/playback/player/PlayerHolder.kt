@@ -139,20 +139,22 @@ internal class PlayerHolder(
     var player: ExoPlayer = createPlayer()
         private set
 
-    private fun createLoadControl() = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-        .setAllocator(sharedAllocator)
-        .setBufferDurationsMs(
-            /* minBufferMs = */ 15_000,
-            /* maxBufferMs = */ 30_000,
-            // Copy streams can begin with a short partial-GOP segment (~640ms).
-            // One second keeps the fast path fast but prevents Media3 from
-            // consuming that fragment before the first full segment is published.
-            /* bufferForPlaybackMs = */ 1_000,
-            /* bufferForPlaybackAfterRebufferMs = */ 3_500
-        )
-        .setTargetBufferBytes(MAX_BUFFER_BYTES)
-        .setPrioritizeTimeOverSizeThresholds(false)
-        .build()
+    private fun createLoadControl() = LiveCushionLoadControl(
+        delegate = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setAllocator(sharedAllocator)
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 30_000,
+                // Start thresholds for recordings; live playback is gated by
+                // LiveCushionLoadControl instead.
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 3_500
+            )
+            .setTargetBufferBytes(MAX_BUFFER_BYTES)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build(),
+        bufferFull = { sharedAllocator.totalBytesAllocated >= MAX_BUFFER_BYTES }
+    )
 
     private fun createPlayer(): ExoPlayer {
         val renderersFactory = Xg2gRenderersFactory(appContext)
