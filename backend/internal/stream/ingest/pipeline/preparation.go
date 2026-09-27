@@ -270,7 +270,12 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 			outcome = OutcomeCancelled
 		}
 		m.finish(p, PreparationFailed, outcome, 0, 0, nil, err.Error())
-		logger.Info().Err(err).Str("event", "zap.prepare.failed").Str("outcome", string(outcome)).Msg("preparation could not acquire an ingest")
+		logger.Info().Err(err).
+			Str("event", "zap.prepare.failed").
+			Str("preparation_id", p.id).
+			Str("zap_id", p.zapID).
+			Str("outcome", string(outcome)).
+			Msg("preparation could not acquire an ingest")
 		return
 	}
 
@@ -323,6 +328,8 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 		m.release(p)
 		logger.Info().
 			Str("event", "zap.prepare.failed").
+			Str("preparation_id", p.id).
+			Str("zap_id", p.zapID).
 			Str("outcome", string(outcome)).
 			Dur("after", snap.ReadyAfterIngest).
 			Str("detail", detail).
@@ -340,6 +347,8 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 	m.setReady(p, snap)
 	logger.Info().
 		Str("event", "zap.prepare.ready").
+		Str("preparation_id", p.id).
+		Str("zap_id", p.zapID).
 		Uint64("generation", snap.Generation).
 		Dur("readyAfter", snap.ReadyAfter).
 		Msg("preparation is presentable; awaiting client commit")
@@ -350,7 +359,11 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 	case <-ctx.Done():
 	case <-time.After(m.cfg.CommitTimeout):
 		if m.expire(p) {
-			logger.Info().Str("event", "zap.prepare.expired").Msg("preparation expired without a commit")
+			logger.Info().
+				Str("event", "zap.prepare.expired").
+				Str("preparation_id", p.id).
+				Str("zap_id", p.zapID).
+				Msg("preparation expired without a commit")
 		}
 	}
 }

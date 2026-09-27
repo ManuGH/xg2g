@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -160,6 +161,7 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodPut, "/system/config"},
 		{http.MethodPost, "/sessions/{sessionId}/feedback"},
 		{http.MethodPost, "/telemetry/playback"},
+		{http.MethodPost, "/stream/prepare/{preparationId}/trace"},
 		{http.MethodPost, "/series-rules/run"},
 		{http.MethodPost, "/series-rules/{id}/run"},
 		{http.MethodGet, "/sessions/{sessionID}/hls/{filename}"},
@@ -288,8 +290,8 @@ func TestCanonicalBaselineParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 166)
-	require.Len(t, actual, 166)
+	require.Len(t, expected, 167)
+	require.Len(t, actual, 167)
 	if err := validatePolicyBindingParity(actual, expected); err != nil {
 		t.Fatalf("parity mismatch: %v", err)
 	}
@@ -299,7 +301,7 @@ func TestCanonicalBaselineParity(t *testing.T) {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 30, counts["outer"])
-	require.Equal(t, 136, counts["v3"])
+	require.Equal(t, 137, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -322,7 +324,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 166, snapshot.Len())
+			require.Equal(t, 167, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -355,7 +357,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 167)
+	require.Len(t, registrations, 168)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -372,7 +374,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		}
 		runtimeReady++
 	}
-	require.Equal(t, 167, runtimeReady)
+	require.Equal(t, 168, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -403,7 +405,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 166)
+		require.Len(t, actual, 167)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }
@@ -443,6 +445,14 @@ func TestMountedV3RoutesRetainAuthAndScopeProtection(t *testing.T) {
 	t.Run("write_scope_denied", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v3/system/refresh", nil)
 		req.Header.Set("Authorization", "Bearer read-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusForbidden, rec.Code)
+	})
+	t.Run("playback_trace_requires_write_scope", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare/prep-id/trace", strings.NewReader(`{"events":[]}`))
+		req.Header.Set("Authorization", "Bearer read-token")
+		req.Header.Set("X-Xg2g-Client-Id", "client")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusForbidden, rec.Code)

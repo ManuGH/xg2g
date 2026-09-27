@@ -903,6 +903,50 @@ components:
           items:
             $ref: "#/components/schemas/PlaybackTelemetryEvent"
 
+    ClientPlaybackTraceBatch:
+      type: object
+      additionalProperties: false
+      required: [observedAt, events]
+      description: A bounded, ordered playback event window with no channel or device identity.
+      properties:
+        observedAt:
+          type: string
+          format: date-time
+        events:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/ClientPlaybackTraceEvent"
+
+    ClientPlaybackTraceEvent:
+      type: object
+      additionalProperties: false
+      required: [sequence, elapsedMs, stage, event]
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000
+        elapsedMs:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 604800000
+          description: Monotonic milliseconds since this playback started.
+        stage:
+          type: string
+          enum: [lifecycle, network, transport, demux, decode, audio, render]
+        event:
+          type: string
+          enum: [playback_started, request_started, http_response, first_byte, transport_gap, stream_closed, psi_ready, video_parameters_ready, first_idr, first_decoded_frame, first_picture_rendered, first_picture_visible, continuity_error, pts_discontinuity, pes_error, decode_error, decoder_recovery, audio_underrun, audio_clock_started, audio_clock_stopped, frame_drop, frame_late]
+        valueMs:
+          type: number
+          minimum: 0
+          maximum: 300000
+          description: Optional measured duration or gap in milliseconds.
+
     PlaybackTelemetryClient:
       type: object
       required: [platform]
@@ -3737,6 +3781,7 @@ x-xg2g-native-contract:
     - PairingSecretRequest
     - PairingStatusResponse
     - PlaybackTelemetryBatch
+    - ClientPlaybackTraceBatch
     - PlaybackTicketResponse
     - PublishedEndpoint
     - RecordingResponse
@@ -4275,6 +4320,13 @@ x-xg2g-operation-policies:
     audit: false
     redactErrors: false
   PostPlaybackTelemetry:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostPreparationClientPlaybackTrace:
     class: session
     auth: bearer_scope
     browserTrust: same_origin_or_allowed_origin
@@ -6477,6 +6529,51 @@ paths:
           description: Preparation not found
         "409":
           description: Generation mismatch
+
+  /stream/prepare/{preparationId}/trace:
+    post:
+      summary: Upload a bounded playback event window after a client-side anomaly
+      operationId: postPreparationClientPlaybackTrace
+      tags: [streams]
+      security:
+        - BearerAuth: [v3:write]
+      parameters:
+        - name: preparationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Xg2g-Client-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+        - name: X-Xg2g-Zap-Id
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientPlaybackTraceBatch"
+      responses:
+        "204":
+          description: Trace window accepted and written to structured backend logs.
+        "400":
+          description: Invalid or out-of-order trace events.
+        "403":
+          description: Preparation belongs to another client.
+        "404":
+          description: Preparation not found.
+        "409":
+          description: Preparation is not ready or committed.
+        "413":
+          description: Request body exceeds the trace size limit.
 
   /logs:
     get:
