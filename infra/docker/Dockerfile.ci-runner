@@ -117,5 +117,17 @@ RUN go version \
     && check-jsonschema --version \
     && actionlint -version
 
+# 8. Create non-root runner user for CI execution
+ARG USER_UID=1001
+ARG USER_GID=1001
+RUN groupadd -g ${USER_GID} runner \
+    && useradd -u ${USER_UID} -g runner -m -s /bin/bash runner \
+    && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
+    && chmod 0440 /etc/sudoers.d/runner \
+    && mkdir -p /workspace && chown -R runner:runner /workspace
+
+USER runner
 WORKDIR /workspace
+HEALTHCHECK NONE
 CMD ["/bin/bash"]
+
