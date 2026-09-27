@@ -91,24 +91,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: apps/webui/package-lock.json
 
-      - name: Cache check-jsonschema
-        id: cache-check-jsonschema
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4.2.4
-        with:
-          path: ~/.local/bin/check-jsonschema
-          key: check-jsonschema-0.34.1-${{ runner.os }}
-
-      - name: Install check-jsonschema
-        if: steps.cache-check-jsonschema.outputs.cache-hit != 'true'
+      - name: Install and verify check-jsonschema
         run: |
           set -euo pipefail
-          python3 -m pip install --user check-jsonschema==0.34.1
-
-      - name: Verify check-jsonschema
-        run: |
-          set -euo pipefail
+          python3 -m pip install --user --no-cache-dir check-jsonschema==0.34.1
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          check-jsonschema --version
+          "$HOME/.local/bin/check-jsonschema" --version
 
       - name: Run PR gate bundle
         # The default PR gate is intentionally deterministic and must not
