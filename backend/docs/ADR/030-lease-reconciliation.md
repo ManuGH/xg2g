@@ -26,7 +26,7 @@ Without a deterministic reconciliation mechanism:
 8. **Strict 3-Phase Execution Model:** Reconciler execution is strictly partitioned into Phase 1 (Snapshot), Phase 2 (Deterministic Analysis), and Phase 3 (Bounded Remediation).
 9. **Mandatory Startup Gate Enforcement:** Production lease controllers wrap lease acquisition with persistent `LeaseIntent` lifecycle tracking (`PENDING` $\to$ `ACTIVE` $\to$ `RELEASING` $\to$ `TERMINAL`) and enforce a mandatory `StartupGate` (`GatePending` $\to$ `GateAccepted` / `GateRefused`). No lease may be acquired until startup reconciliation passes cleanly.
 10. **Composite Aggregate Recovery:** Multi-resource composite leases with incomplete or missing member leases are evaluated at the aggregate level and marked with status `CompositeStatusBroken` (`"broken"`).
-11. **Reason Code Matrix:** All reason codes are formally documented and audited in [lease_reason_matrix.md](file:///Users/manuel/StudioProjects/xg2g/backend/docs/ADR/lease_reason_matrix.md).
+11. **Reason Code Matrix:** All reason codes are formally documented and audited in [lease_reason_matrix.md](lease_reason_matrix.md).
 
 ## Consequences
 
