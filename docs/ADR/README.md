@@ -22,6 +22,9 @@ ADRs are stable reference points for maintainers and operationalize the [Enginee
 | [ADR-029](029-resource-arbitration-composite-lease-model.md) | Resource Arbitration and Composite Lease Model | ✅ ACTIVE |
 | [ADR-030](030-lease-reconciliation.md) | Lease Reconciliation Engine & Persistent Intent Model | ✅ ACTIVE |
 | [ADR-031](031-resource-conflict-policy-engine.md) | Resource Conflict Policy Engine | ✅ ACTIVE |
+| [ADR-032](032-device-identity-convergence.md) | Device Identity Convergence (DPoP Cryptographic Binding) | ✅ ACTIVE |
+| [ADR-033](033-capability-driven-live-playback-action.md) | Capability-Driven Playback Action for Live Ingest | 🟡 PROPOSED |
+| [Reason Matrix](lease_reason_matrix.md) | Lease Engine & Reconciliation Reason Code Audit Matrix | ✅ ACTIVE |
 
 ## Decision Rules
 
