@@ -506,6 +506,204 @@
         display: block;
       }
 
+      /* Sections & Showcase */
+      .section-container {
+        margin-top: 48px;
+      }
+
+      .section-head {
+        margin-bottom: 24px;
+      }
+
+      .section-head h2 {
+        margin: 6px 0 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+        font-size: clamp(2rem, 3.4vw, 3rem);
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        color: var(--ink);
+      }
+
+      .section-head p {
+        margin: 10px 0 0;
+        color: var(--ink-soft);
+        font-size: 1.05rem;
+        max-width: 760px;
+        line-height: 1.6;
+      }
+
+      .showcase-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+      }
+
+      .showcase-card {
+        border-radius: 28px;
+        background: rgba(255, 250, 241, 0.9);
+        border: 1px solid var(--line);
+        box-shadow: 0 20px 50px rgba(16, 38, 49, 0.08);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 220ms ease, box-shadow 220ms ease;
+      }
+
+      .showcase-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 28px 60px rgba(16, 38, 49, 0.12);
+      }
+
+      .showcase-card img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .showcase-content {
+        padding: 22px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .showcase-content h3 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+        font-size: 1.45rem;
+        color: var(--ink);
+      }
+
+      .showcase-content p {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+
+      /* Quickstart Code Consoles */
+      .quickstart-grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 20px;
+      }
+
+      .code-console {
+        border-radius: 24px;
+        background: var(--night);
+        color: var(--paper);
+        border: 1px solid rgba(255, 250, 241, 0.15);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .code-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        background: rgba(255, 250, 241, 0.05);
+        border-bottom: 1px solid rgba(255, 250, 241, 0.1);
+      }
+
+      .code-label {
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--signal-2);
+      }
+
+      .copy-btn {
+        background: rgba(255, 250, 241, 0.12);
+        color: var(--paper);
+        border: 1px solid rgba(255, 250, 241, 0.2);
+        border-radius: 8px;
+        padding: 5px 12px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 180ms ease;
+      }
+
+      .copy-btn:hover {
+        background: var(--signal);
+        color: var(--night);
+        border-color: var(--signal);
+      }
+
+      .code-console pre {
+        margin: 0;
+        padding: 20px;
+        overflow-x: auto;
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+
+      .code-console code {
+        color: #e6f1f2;
+      }
+
+      /* Documentation Hub Matrix */
+      .docs-matrix {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+      }
+
+      .docs-card {
+        border-radius: 22px;
+        background: rgba(255, 250, 241, 0.88);
+        border: 1px solid var(--line);
+        padding: 22px;
+        box-shadow: 0 14px 34px rgba(16, 38, 49, 0.06);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .docs-card h3 {
+        margin: 0 0 14px;
+        font-size: 1.15rem;
+        color: var(--ink);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .docs-card ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .docs-card li a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--ink-soft);
+        text-decoration: none;
+        font-size: 0.92rem;
+        font-weight: 600;
+        padding: 6px 8px;
+        border-radius: 8px;
+        transition: all 160ms ease;
+      }
+
+      .docs-card li a:hover {
+        color: var(--night);
+        background: rgba(54, 209, 167, 0.15);
+        transform: translateX(3px);
+      }
+
+      .docs-card li a span.arrow {
+        color: var(--signal);
+        font-weight: bold;
+      }
+
       .reveal {
         animation: rise 700ms ease both;
       }
@@ -549,8 +747,15 @@
         }
 
         .nav-links a:hover,
-        .button:hover {
+        .button:hover,
+        .showcase-card:hover {
           transform: none;
+        }
+      }
+
+      @media (max-width: 1100px) and (min-width: 901px) {
+        .docs-matrix {
+          grid-template-columns: repeat(2, 1fr);
         }
       }
 
@@ -569,7 +774,10 @@
         }
 
         .hero-body,
-        .quick-grid {
+        .quick-grid,
+        .showcase-grid,
+        .quickstart-grid,
+        .docs-matrix {
           grid-template-columns: 1fr;
         }
 
@@ -635,26 +843,28 @@
             <span>xg2g</span>
           </a>
           <div class="nav-links">
-            <a href="https://github.com/ManuGH/xg2g">Repository</a>
-            <a href="https://github.com/ManuGH/xg2g?tab=readme-ov-file#quickstart">Quickstart</a>
-            <a href="./openapi.yaml">OpenAPI YAML</a>
-            <a href="https://github.com/ManuGH/xg2g/tree/main/docs">Docs Portal</a>
+            <a href="https://github.com/ManuGH/xg2g">GitHub</a>
+            <a href="#showcase">WebUI & TV</a>
+            <a href="#quickstart">Quickstart</a>
+            <a href="#docs-hub">Architecture & Docs</a>
+            <a href="#reference">OpenAPI Spec</a>
           </div>
         </nav>
 
         <div class="hero-body">
           <div class="hero-copy reveal">
-            <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>OpenAPI /api/v3 Reference</p>
-            <h1 id="page-title">Control plane for live TV.</h1>
+            <p class="eyebrow"><span class="pulse" aria-hidden="true"></span>v3.12.0 • Self-Hosted Gateway</p>
+            <h1 id="page-title">Live TV & DVR without friction.</h1>
             <p class="lede">
-              The public contract for auth, sessions, health, playback decisions,
-              and live HLS delivery. Published from the repo so the API docs stay
-              close to the code that serves them.
+              Converts Enigma2 satellite and cable transport streams into browser-ready
+              HLS/fMP4 with hardware-accelerated transcoding (VAAPI/NVENC), tuner lease
+              arbitration, and unified access on iOS, Android, and Smart TVs.
             </p>
             <div class="cta-row" aria-label="Primary actions">
-              <a class="button button-primary" href="./openapi.yaml">Download OpenAPI</a>
-              <a class="button button-secondary" href="#reference">Browse Reference</a>
-              <a class="button button-secondary" href="https://github.com/ManuGH/xg2g/blob/main/backend/api/openapi.yaml">View Source</a>
+              <a class="button button-primary" href="#showcase">Explore WebUI</a>
+              <a class="button button-secondary" href="#quickstart">Quickstart</a>
+              <a class="button button-secondary" href="#docs-hub">Documentation Hub</a>
+              <a class="button button-secondary" href="#reference">OpenAPI Spec</a>
             </div>
           </div>
 
@@ -699,15 +909,128 @@
                 <span>stable API surface</span>
               </div>
               <div class="signal-item">
-                <strong>HLS</strong>
-                <span>browser playback path</span>
+                <strong>VAAPI</strong>
+                <span>hardware offload</span>
               </div>
               <div class="signal-item">
-                <strong>YAML</strong>
-                <span>source contract</span>
+                <strong>HLS</strong>
+                <span>zero-app browser</span>
               </div>
             </div>
           </aside>
+        </div>
+      </section>
+
+      <!-- Interface & TV Showcase -->
+      <section id="showcase" class="section-container reveal" aria-label="WebUI and TV Showcase">
+        <div class="section-head">
+          <span class="pill">Visual Experience</span>
+          <h2>Built for Browsers, Mobile and Smart TVs</h2>
+          <p>Zero-app delivery for live broadcasts and recordings. Instant stream startup with adaptive remuxing, tuner lease governance, and full EPG timeline scrub.</p>
+        </div>
+        <div class="showcase-grid">
+          <article class="showcase-card">
+            <img src="./assets/screenshots/webui-dashboard.png" alt="xg2g Operator Control Surface" loading="lazy" />
+            <div class="showcase-content">
+              <span class="pill">Operator Dashboard</span>
+              <h3>Active Sessions & Tuner Lease Arbitration</h3>
+              <p>Real-time visibility into running client sessions (Chromium hls.js, iPad Safari Native HLS), receiver connection health, and automatic tuner arbitration preventing tuner lockups.</p>
+            </div>
+          </article>
+          <article class="showcase-card">
+            <img src="./assets/screenshots/webui-epg-guide.png" alt="xg2g Interactive EPG and Bouquets" loading="lazy" />
+            <div class="showcase-content">
+              <span class="pill">Live TV Guide</span>
+              <h3>Interactive Bouquets & Sub-Second Zapping</h3>
+              <p>Browse satellite and cable bouquets directly in any browser. Supports live timeline progress, favorites filtering, and one-click playback without external player plugins.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Quickstart Section -->
+      <section id="quickstart" class="section-container reveal" aria-label="Quickstart and Deployment">
+        <div class="section-head">
+          <span class="pill">Fast Deployment</span>
+          <h2>Get Running in Minutes</h2>
+          <p>Choose between a standalone Docker container for immediate evaluation or the automated Linux host installer for dedicated systemd production service.</p>
+        </div>
+        <div class="quickstart-grid">
+          <div class="code-console">
+            <div class="code-top">
+              <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span class="code-label">Docker Run (Evaluation)</span>
+              <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+            </div>
+            <pre><code>docker run -d --name xg2g --restart unless-stopped \
+  -p 127.0.0.1:8088:8088 \
+  -e XG2G_E2_HOST="http://192.168.1.10" \
+  -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
+  -e XG2G_API_TOKEN_SCOPES="v3:admin" \
+  -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
+  ghcr.io/manugh/xg2g:v3.12.0</code></pre>
+          </div>
+          <div class="code-console">
+            <div class="code-top">
+              <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span class="code-label">Guided Host Setup</span>
+              <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+            </div>
+            <pre><code># Guided Linux persistent install
+git clone https://github.com/ManuGH/xg2g.git
+cd xg2g
+sudo ./infra/systemd/setup-linux.sh
+
+# Verify daemon readiness
+curl -fsS http://localhost:8088/readyz</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Comprehensive Documentation Hub -->
+      <section id="docs-hub" class="section-container reveal" aria-label="Documentation Hub">
+        <div class="section-head">
+          <span class="pill">Architecture & Reference</span>
+          <h2>Documentation Hub</h2>
+          <p>Over 90 architectural specifications, operational runbooks, and installation guides maintained directly alongside the code.</p>
+        </div>
+        <div class="docs-matrix">
+          <div class="docs-card">
+            <h3><span>🚀</span> Setup & Guides</h3>
+            <ul>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/guides/GETTING_STARTED.md">Getting Started <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/guides/INSTALLATION.md">Linux Installation <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/guides/CONFIGURATION.md">Configuration Guide <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/guides/TROUBLESHOOTING.md">Troubleshooting <span class="arrow">→</span></a></li>
+            </ul>
+          </div>
+          <div class="docs-card">
+            <h3><span>⚙️</span> Architecture</h3>
+            <ul>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/arch/SYSTEM_OVERVIEW_2026.md">2026 System Overview <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/arch/CODEC_MATRIX.md">Codec Matrix & FFmpeg <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/arch/ENIGMA2_STREAMING_TOPOLOGY.md">Streaming Topology <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/ADR/README.md">ADR Records Index <span class="arrow">→</span></a></li>
+            </ul>
+          </div>
+          <div class="docs-card">
+            <h3><span>🛡️</span> Operations & Security</h3>
+            <ul>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/ops/DEPLOYMENT.md">Deployment Guide <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/ops/SECURITY.md">Security Operations <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md">Triage & Diagnostics <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/blob/main/docs/ops/CLIENT_PROFILES.md">Client Capabilities <span class="arrow">→</span></a></li>
+            </ul>
+          </div>
+          <div class="docs-card">
+            <h3><span>📱</span> Ecosystem & Clients</h3>
+            <ul>
+              <li><a href="https://github.com/ManuGH/xg2g/tree/main/apps/webui">React WebUI <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/tree/main/ios">iOS & tvOS App <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/tree/main/android">Android & TV Client <span class="arrow">→</span></a></li>
+              <li><a href="https://github.com/ManuGH/xg2g/tree/main/media-core">Rust Media Core <span class="arrow">→</span></a></li>
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -748,5 +1071,22 @@
       </section>
     </main>
     <script src="https://cdn.redoc.ly/redoc/v2.1.5/bundles/redoc.standalone.js"></script>
+    <script>
+      function copySnippet(btn) {
+        const pre = btn.closest('.code-console').querySelector('code');
+        if (!pre) return;
+        navigator.clipboard.writeText(pre.innerText.trim()).then(() => {
+          const orig = btn.innerText;
+          btn.innerText = 'Copied!';
+          btn.style.background = 'var(--signal)';
+          btn.style.color = 'var(--night)';
+          setTimeout(() => {
+            btn.innerText = orig;
+            btn.style.background = '';
+            btn.style.color = '';
+          }, 2000);
+        });
+      }
+    </script>
   </body>
 </html>

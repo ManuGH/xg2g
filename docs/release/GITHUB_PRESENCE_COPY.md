@@ -12,15 +12,19 @@ Approved copy for public GitHub surfaces.
 
 `https://manugh.github.io/xg2g/`
 
+**Recommended Repo Topics**
+
+`enigma2`, `streaming-gateway`, `hls`, `fmp4`, `live-tv`, `dvr`, `openwebif`, `vuplus`, `dreambox`, `vaapi`, `nvenc`, `self-hosted`, `homelab`, `golang`, `react`
+
 ## Profile Bio
 
 ### Option A: xg2g-focused
 
-`Building self-hosted streaming tools for Enigma2 and browser playback.`
+`Building self-hosted streaming tools for Enigma2, hardware transcoding, and browser playback.`
 
 ### Option B: broader future-proof profile
 
-`Building self-hosted streaming and homelab infrastructure tools.`
+`Building self-hosted streaming, media pipeline, and homelab infrastructure tools.`
 
 ## Release Description Pattern
 
@@ -28,14 +32,14 @@ Use this order:
 
 1. One-line highlight
 2. Why this release matters
-3. What changed
+3. What changed (with WebUI / client visual evidence where relevant)
 4. Upgrade notes
 5. Breaking changes
-6. Quick links
+6. Quick links (Docs portal, OpenAPI contract, Release artifacts)
 7. Safari/iOS manual repro evidence when required
 
 ## Social Preview
 
 - Export the social preview image at `1280x640` or larger.
 - Keep the focal point centered so GitHub Open Graph crops remain readable.
-- Current source asset: `docs/assets/github/xg2g-github-hero.svg`
+- Current source assets: `docs/assets/github/xg2g-social-preview.png` and `docs/assets/screenshots/webui-dashboard.png`

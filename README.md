@@ -20,9 +20,13 @@
 
 Converts Enigma2 transport streams into browser-ready HLS/fMP4, with hardware-accelerated transcoding, adaptive bitrate streaming, recording and centralized policy enforcement.
 
-[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
+[**Interactive Website & API**](https://manugh.github.io/xg2g/) · [**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation Hub**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
 
 </div>
+
+<p align="center">
+  <img src="docs/assets/screenshots/webui-dashboard.png" alt="xg2g WebUI Control Surface & Active Streaming Sessions" width="100%" />
+</p>
 
 ---
 
