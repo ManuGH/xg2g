@@ -90,7 +90,7 @@ ARG BUILD_DATE
 
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
-RUN cd . && go mod download
+RUN go mod download
 
 COPY . /app
 # Copy built WebUI assets to the correct location for Go embedding
