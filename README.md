@@ -5,6 +5,8 @@
 
 [![CI Status](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/coverage.yml?branch=main&style=flat-square&label=coverage)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Docs](https://img.shields.io/badge/Docs-Starlight-0284c7?style=flat-square&logo=astro&logoColor=white)](https://manugh.github.io/xg2g/)
+[![API Spec](https://img.shields.io/badge/OpenAPI-v3.1-6BA539?style=flat-square&logo=openapiinitiative&logoColor=white)](https://manugh.github.io/xg2g/api-reference/)
 [![Release](https://img.shields.io/github/v/release/ManuGH/xg2g?style=flat-square&color=0066CC)](https://github.com/ManuGH/xg2g/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.26.5-00ADD8?style=flat-square&logo=go)](backend/go.mod)
 [![FFmpeg Pinned](https://img.shields.io/badge/FFmpeg-8.1.2-0078D7?style=flat-square&logo=ffmpeg)](docs/arch/CODEC_MATRIX.md)
@@ -20,7 +22,7 @@
 
 Converts Enigma2 transport streams into browser-ready HLS/fMP4, with hardware-accelerated transcoding, adaptive bitrate streaming, recording and centralized policy enforcement.
 
-[**Interactive Website & API**](https://manugh.github.io/xg2g/) · [**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation Hub**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
+[**Documentation Portal**](https://manugh.github.io/xg2g/) · [**Interactive API Explorer**](https://manugh.github.io/xg2g/api-reference/) · [**Getting Started**](https://manugh.github.io/xg2g/guides/getting_started/) · [**Linux Setup**](https://manugh.github.io/xg2g/guides/installation/) · [**Quickstart**](#quickstart) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
 
 </div>
 
