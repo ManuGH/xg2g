@@ -12,8 +12,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
-// Deprecated: SafariFallbackBrowserUA is retained only for backward-compatibility.
-// Profiles now set Container = "mpegts" directly on TS fallback plans without UA synthesis.
+// SafariFallbackBrowserUA is retained only for backward-compatibility.
+// Deprecated: Profiles now set Container = "mpegts" directly on TS fallback plans without UA synthesis.
 const SafariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
 
 type playbackFeedbackFallbackPlanID string

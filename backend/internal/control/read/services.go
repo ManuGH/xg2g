@@ -47,7 +47,6 @@ type Service struct {
 	ServiceRef string `json:"serviceRef"`
 }
 
-
 // BouquetWithCount represents a named bouquet with a service count.
 type BouquetWithCount struct {
 	Name  string
