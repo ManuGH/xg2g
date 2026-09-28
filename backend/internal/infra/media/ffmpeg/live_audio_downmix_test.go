@@ -60,14 +60,15 @@ func TestPlanLiveAudio_BroadcastDownmixFilter(t *testing.T) {
 	require.True(t, sel.IsMultiAudio)
 	require.Len(t, sel.Maps, 2)
 
-	// Stream 0 (5.1 deu) should have -filter:a:0 with BroadcastDownmixFilter
+	// Stream 0 (5.1 deu) should have -filter:a:0 with BroadcastDownmixFilter chained with aresample
 	filter0, ok0 := valueAfter(sel.AudioArgs, "-filter:a:0")
 	require.True(t, ok0, "expected -filter:a:0 for 6-channel input downmixed to stereo; args: %v", sel.AudioArgs)
-	assert.Equal(t, BroadcastDownmixFilter, filter0)
+	assert.Equal(t, BroadcastDownmixFilter+",aresample=async=1", filter0)
 
-	// Stream 1 (2.0 eng) should NOT have -filter:a:1 because it is already stereo
-	_, ok1 := valueAfter(sel.AudioArgs, "-filter:a:1")
-	assert.False(t, ok1, "2-channel input must not receive -filter:a:1; args: %v", sel.AudioArgs)
+	// Stream 1 (2.0 eng) should have -filter:a:1 with aresample, but NOT BroadcastDownmixFilter
+	filter1, ok1 := valueAfter(sel.AudioArgs, "-filter:a:1")
+	require.True(t, ok1, "expected -filter:a:1 with aresample; args: %v", sel.AudioArgs)
+	assert.Equal(t, "aresample=async=1", filter1)
 }
 
 func TestPlanLiveAudio_SingleAudio_BroadcastDownmixFilter(t *testing.T) {
@@ -109,7 +110,7 @@ func TestPlanLiveAudio_SingleAudio_BroadcastDownmixFilter(t *testing.T) {
 	sel := adapter.planLiveAudioSelection(context.Background(), spec, spec.Source.ID, pmt)
 	assert.False(t, sel.IsMultiAudio)
 
-	filter, ok := valueAfter(sel.AudioArgs, "-filter:a")
-	require.True(t, ok, "expected -filter:a for single 6-channel input downmixed to stereo; args: %v", sel.AudioArgs)
-	assert.Equal(t, BroadcastDownmixFilter, filter)
+	filter, ok := valueAfter(sel.AudioArgs, "-af")
+	require.True(t, ok, "expected -af for single 6-channel input downmixed to stereo; args: %v", sel.AudioArgs)
+	assert.Equal(t, BroadcastDownmixFilter+",aresample=async=1", filter)
 }

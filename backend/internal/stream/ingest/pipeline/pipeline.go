@@ -312,6 +312,11 @@ func (p *SessionPipeline) Close() {
 	}
 }
 
+// IsClosed reports whether the pipeline has been closed.
+func (p *SessionPipeline) IsClosed() bool {
+	return p.closed.Load()
+}
+
 // Done returns a channel that closes when the upstream ingest finishes.
 func (p *SessionPipeline) Done() <-chan struct{} {
 	return p.doneCh

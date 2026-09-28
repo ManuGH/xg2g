@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,64 +77,81 @@ func (a *LocalAdapter) acquireSharedIngestInput(ctx context.Context, spec ports.
 		return nil, fmt.Errorf("shared ingest is not configured; refusing to open the receiver directly")
 	}
 
-	source, err := a.LiveSources.AcquireLiveSource(ctx, spec.Source.ID)
-	if err != nil {
-		return nil, fmt.Errorf("acquire shared ingest for %q: %w", spec.Source.ID, err)
-	}
+	const maxAttempts = 3
+	var lastErr error
+	var lastSource ports.LiveSource
 
-	in := &sharedIngestInput{source: source}
-	ok := false
-	defer func() {
-		if !ok {
-			in.Release()
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		source, err := a.LiveSources.AcquireLiveSource(ctx, spec.Source.ID)
+		if err != nil {
+			return nil, fmt.Errorf("acquire shared ingest for %q: %w", spec.Source.ID, err)
 		}
-	}()
 
-	preamble, reader, err := source.Attach(ctx, sharedIngestAttachTimeout)
-	if err != nil {
-		// The playback trace publishes why a live start failed, and it used to learn
-		// that from the TS preflight. The preflight is gone, but the question it
-		// answered is not - so the same taxonomy is filled from what the ingest
-		// already observed, and the orchestrator's structured-failure path keeps
-		// working unchanged.
-		return nil, preflightErrorFromFacts(source.Facts(), err)
-	}
-	in.reader = reader
+		in := &sharedIngestInput{source: source}
+		preamble, reader, err := source.Attach(ctx, sharedIngestAttachTimeout)
+		if err != nil {
+			in.Release()
+			lastSource = source
+			lastErr = err
 
-	// The preamble is prepended rather than written separately so it is simply the
-	// head of the same byte stream: whatever reads the spool - FFmpeg or a probe -
-	// sees the PSI before the payload it describes, without either of them having
-	// to know a preamble exists.
-	in.spool = newBoundedStartupSpool(io.MultiReader(bytes.NewReader(preamble), reader), spec.SessionID, a)
-	go in.spool.run(sharedIngestSpoolMaxBytes)
+			// If the session pipeline was closed or closing (transient race on zap / channel switch), retry fresh!
+			if strings.Contains(err.Error(), "session pipeline closed") && attempt < maxAttempts {
+				a.Logger.Warn().
+					Str("session_id", spec.SessionID).
+					Int("attempt", attempt).
+					Str("service_ref", spec.Source.ID).
+					Msg("shared ingest pipeline closed during attach, retrying with fresh live source")
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Duration(attempt*75) * time.Millisecond):
+					continue
+				}
+			}
+			return nil, preflightErrorFromFacts(source.Facts(), err)
+		}
 
-	facts := source.Facts()
-	a.Logger.Info().
-		Str("session_id", spec.SessionID).
-		Str("startup_phase", "shared_ingest_attached").
-		Str("service_ref", spec.Source.ID).
-		Uint64("generation", facts.Generation).
-		Str("video_codec", facts.VideoCodec).
-		Int("preamble_bytes", len(preamble)).
-		Bool("descrambled", facts.Descrambled()).
-		Bool("joinable", facts.Joinable()).
-		Msg("live input attached to shared ingest")
+		in.reader = reader
 
-	// A failed snapshot is not fatal. The probes then fall back exactly as they do
-	// today when a probe fails, and the transcode still runs on shared ingest
-	// bytes - which is the property this change exists to establish.
-	path, err := a.writeStartupSnapshot(ctx, spec.SessionID, in.spool)
-	if err != nil {
-		a.Logger.Warn().Err(err).
+		// The preamble is prepended rather than written separately so it is simply the
+		// head of the same byte stream: whatever reads the spool - FFmpeg or a probe -
+		// sees the PSI before the payload it describes, without either of them having
+		// to know a preamble exists.
+		in.spool = newBoundedStartupSpool(io.MultiReader(bytes.NewReader(preamble), reader), spec.SessionID, a)
+		go in.spool.run(sharedIngestSpoolMaxBytes)
+
+		facts := source.Facts()
+		a.Logger.Info().
 			Str("session_id", spec.SessionID).
-			Str("startup_phase", "shared_ingest_snapshot_failed").
-			Msg("startup probes will fall back to defaults; no receiver connection was opened")
-	} else {
-		in.snapshotPath = path
+			Str("startup_phase", "shared_ingest_attached").
+			Str("service_ref", spec.Source.ID).
+			Uint64("generation", facts.Generation).
+			Str("video_codec", facts.VideoCodec).
+			Int("preamble_bytes", len(preamble)).
+			Bool("descrambled", facts.Descrambled()).
+			Bool("joinable", facts.Joinable()).
+			Msg("live input attached to shared ingest")
+
+		// A failed snapshot is not fatal. The probes then fall back exactly as they do
+		// today when a probe fails, and the transcode still runs on shared ingest
+		// bytes - which is the property this change exists to establish.
+		path, err := a.writeStartupSnapshot(ctx, spec.SessionID, in.spool)
+		if err != nil {
+			a.Logger.Warn().Err(err).
+				Str("session_id", spec.SessionID).
+				Str("startup_phase", "shared_ingest_snapshot_failed").
+				Msg("startup probes will fall back to defaults; no receiver connection was opened")
+		} else {
+			in.snapshotPath = path
+		}
+
+		return in, nil
 	}
 
-	ok = true
-	return in, nil
+	if lastSource != nil {
+		return nil, preflightErrorFromFacts(lastSource.Facts(), lastErr)
+	}
+	return nil, lastErr
 }
 
 // ProbePath is what the startup probes read instead of a receiver URL. It is
