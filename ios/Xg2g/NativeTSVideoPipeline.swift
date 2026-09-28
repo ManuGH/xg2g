@@ -499,8 +499,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var ingest: LiveStreamIngest?
 
 #if DEBUG
-    var currentStreamRequestForTesting: URLRequest? {
-        ingest?.currentRequestForTesting
+    var currentStreamHeaderFieldsForTesting: [String: String]? {
+        ingest?.currentRequestForTesting?.allHTTPHeaderFields
     }
 #endif
     

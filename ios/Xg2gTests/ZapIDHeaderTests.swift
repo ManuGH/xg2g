@@ -34,8 +34,8 @@ struct ZapIDHeaderTests {
         pipeline.startStreaming(url: streamURL, zapID: "ios-test-override-42")
         defer { pipeline.stopStreaming() }
 
-        let request = try #require(pipeline.currentStreamRequestForTesting)
-        #expect(request.value(forHTTPHeaderField: "X-Xg2g-Zap-Id") == "ios-test-override-42")
+        let headers = try #require(pipeline.currentStreamHeaderFieldsForTesting)
+        #expect(headers["X-Xg2g-Zap-Id"] == "ios-test-override-42")
         #expect(pipeline.currentZapId == 1)
     }
 
@@ -45,8 +45,8 @@ struct ZapIDHeaderTests {
         pipeline.startStreaming(url: streamURL)
         defer { pipeline.stopStreaming() }
 
-        let request = try #require(pipeline.currentStreamRequestForTesting)
-        #expect(request.value(forHTTPHeaderField: "X-Xg2g-Zap-Id")
+        let headers = try #require(pipeline.currentStreamHeaderFieldsForTesting)
+        #expect(headers["X-Xg2g-Zap-Id"]
                 == NativeTSVideoPipeline.zapIdentifier(pipeline.currentZapId))
     }
 
@@ -56,11 +56,11 @@ struct ZapIDHeaderTests {
         let coordinator = ZapCoordinator(streamURL: { _ in nil }, makeSession: { pipeline })
 
         await coordinator.play(unprepared: streamURL)
-        let request = pipeline.currentStreamRequestForTesting
+        let headers = pipeline.currentStreamHeaderFieldsForTesting
         await coordinator.stop()
 
         #expect(pipeline.currentZapId == 2)
-        #expect(try #require(request).value(forHTTPHeaderField: "X-Xg2g-Zap-Id")
+        #expect(try #require(headers)["X-Xg2g-Zap-Id"]
                 == NativeTSVideoPipeline.zapIdentifier(1))
     }
 
@@ -82,16 +82,16 @@ struct ZapIDHeaderTests {
         )
 
         let zapTask = Task { await coordinator.zap(to: "1:0:19:132F:3EF:1:C00000:0:0:0:") }
-        let opened = await eventually { pipeline.currentZapId == 2 && pipeline.currentStreamRequestForTesting != nil }
+        let opened = await eventually { pipeline.currentZapId == 2 && pipeline.currentStreamHeaderFieldsForTesting != nil }
         let prepareRequest = ZapIDReadyURLProtocol.lastRequest
-        let streamRequest = pipeline.currentStreamRequestForTesting
+        let streamHeaders = pipeline.currentStreamHeaderFieldsForTesting
         await coordinator.stop()
         zapTask.cancel()
         await zapTask.value
 
         #expect(opened)
         let prepareID = try #require(prepareRequest?.value(forHTTPHeaderField: "X-Xg2g-Zap-Id"))
-        let streamID = try #require(streamRequest?.value(forHTTPHeaderField: "X-Xg2g-Zap-Id"))
+        let streamID = try #require(streamHeaders?["X-Xg2g-Zap-Id"])
         #expect(streamID == prepareID)
         #expect(streamID == NativeTSVideoPipeline.zapIdentifier(1))
     }
