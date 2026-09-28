@@ -43,15 +43,40 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        // Vite 8 / Rolldown requires manualChunks as a function, not an object.
-        manualChunks(id) {
-          if (id.includes('/node_modules/hls.js/')) return 'hls'
-          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor-react'
-          if (id.includes('/node_modules/react-router-dom/')) return 'vendor-router'
-          if (id.includes('/node_modules/@tanstack/react-query/')) return 'vendor-query'
-          if (id.includes('/node_modules/i18next/') || id.includes('/node_modules/react-i18next/') || id.endsWith('/src/i18n.ts')) return 'vendor-i18n'
-          if (id.endsWith('/src/client-ts/client.gen.ts') || id.endsWith('/src/client-ts/sdk.gen.ts') || id.endsWith('/src/client-ts/types.gen.ts')) return 'api-client'
-        }
+        codeSplitting: {
+          groups: [
+            {
+              name: 'hls',
+              test: /[\\/]node_modules[\\/]hls\.js[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-react',
+              test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-router',
+              test: /[\\/]node_modules[\\/]react-router-dom[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-query',
+              test: /[\\/]node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-i18n',
+              test: /[\\/]node_modules[\\/](i18next|react-i18next)[\\/]|src[\\/]i18n\.ts$/,
+              priority: 20,
+            },
+            {
+              name: 'api-client',
+              test: /src[\\/]client-ts[\\/](client|sdk|types)\.gen\.ts$/,
+              priority: 20,
+            },
+          ],
+        },
       }
     }
   },
