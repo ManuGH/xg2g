@@ -183,7 +183,7 @@ func resolveIntentServiceRef(w http.ResponseWriter, r *http.Request, deps sessio
 			// FFmpeg without a tuner lease, a zap or a readiness check. Pointed at
 			// the receiver that is a live transcode opening the receiver behind
 			// shared ingest's back, under the source class meant for external IPTV.
-			if platformnet.PointsAtReceiver(u.String(), deps.cfg.Enigma2.BaseURL) {
+			if platformnet.PointsAtReceiverContext(r.Context(), u.String(), deps.cfg.Enigma2.BaseURL) {
 				respondIntentFailure(w, r, IntentErrInvalidInput,
 					"serviceRef must not address the receiver directly; use a service reference for live TV")
 				return "", true

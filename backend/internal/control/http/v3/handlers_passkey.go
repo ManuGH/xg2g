@@ -5,6 +5,7 @@
 package v3
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -465,7 +466,8 @@ func (s *Server) resolveRequestPrincipal(r *http.Request) *auth.Principal {
 	cfg := s.GetConfig()
 	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
-		if result := s.TokenPrincipal(r.Context(), token); result.OK() {
+		ctx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		if result := s.TokenPrincipal(ctx, token); result.OK() {
 			return result.Principal
 		}
 	}

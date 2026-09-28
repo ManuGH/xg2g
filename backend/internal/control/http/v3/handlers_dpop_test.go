@@ -439,3 +439,49 @@ func assertMatchesOpenAPIResponse(t *testing.T, req *http.Request, rr *httptest.
 
 	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input), "openapi response validation")
 }
+
+func TestDPoP_FailClosed_NoFallthroughToStaticTokens(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity.sqlite")
+	_, handler, _ := setupTestV3ServerWithIdentity(t, dbPath)
+
+	staticSecret := "test-admin-token-12345"
+
+	// 1. DPoP scheme without DPoP proof must FAIL CLOSED and not authenticate via static secret
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	req1.Header.Set("Authorization", "DPoP "+staticSecret)
+	req1.Header.Set("X-Forwarded-Proto", "https")
+	req1.Host = "localhost"
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusUnauthorized, rec1.Code, "missing proof on DPoP scheme must not fall through to static tokens")
+
+	// 2. DPoP scheme with invalid DPoP proof must FAIL CLOSED
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	req2.Header.Set("Authorization", "DPoP "+staticSecret)
+	req2.Header.Set("DPoP", "invalid.jwt.proof")
+	req2.Header.Set("X-Forwarded-Proto", "https")
+	req2.Host = "localhost"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusUnauthorized, rec2.Code, "invalid proof on DPoP scheme must not fall through to static tokens")
+
+	// 3. Bearer scheme with invalid DPoP proof present must FAIL CLOSED
+	req3 := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	req3.Header.Set("Authorization", "Bearer "+staticSecret)
+	req3.Header.Set("DPoP", "invalid.jwt.proof")
+	req3.Header.Set("X-Forwarded-Proto", "https")
+	req3.Host = "localhost"
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, req3)
+	require.Equal(t, http.StatusUnauthorized, rec3.Code, "invalid DPoP proof on Bearer scheme must fail closed immediately")
+
+	// 4. Standard valid Bearer without DPoP header works with static secret
+	req4 := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	req4.Header.Set("Authorization", "Bearer "+staticSecret)
+	req4.Header.Set("X-Forwarded-Proto", "https")
+	req4.Host = "localhost"
+	rec4 := httptest.NewRecorder()
+	handler.ServeHTTP(rec4, req4)
+	require.Equal(t, http.StatusOK, rec4.Code, "standard valid bearer without DPoP should authenticate")
+}

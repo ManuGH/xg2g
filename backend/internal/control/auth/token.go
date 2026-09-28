@@ -60,12 +60,12 @@ func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) 
 		return "", ""
 	}
 
-	// 1. Authorization Header (Bearer or DPoP)
+	// 1. Authorization Header (Bearer or DPoP, case-insensitive per RFC 6750 / RFC 9449)
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		if strings.HasPrefix(authHeader, "DPoP ") {
+		if len(authHeader) >= 5 && strings.EqualFold(authHeader[:5], "DPoP ") {
 			return strings.TrimSpace(authHeader[5:]), DPoPSource
 		}
-		if strings.HasPrefix(authHeader, "Bearer ") {
+		if len(authHeader) >= 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
 			return strings.TrimSpace(authHeader[7:]), BearerSource
 		}
 	}

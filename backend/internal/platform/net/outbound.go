@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/idna"
 )
@@ -135,10 +137,15 @@ func ParseValidatedOutboundURL(ctx context.Context, raw string, policy OutboundP
 	}
 
 	_, hostAllowed := allowedHosts[host]
+	isExplicitIP := net.ParseIP(host) != nil
+
 	ipAllowed := false
 	for _, ip := range ips {
 		if isBlockedIP(ip) && !ipInCIDRs(ip, allowedCIDRs) {
 			return nil, fmt.Errorf("blocked ip %s", ip.String())
+		}
+		if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP && !hostAllowed {
+			return nil, fmt.Errorf("blocked private ip %s for host %s", ip.String(), host)
 		}
 		if ipInCIDRs(ip, allowedCIDRs) {
 			ipAllowed = true
@@ -153,6 +160,99 @@ func ParseValidatedOutboundURL(ctx context.Context, raw string, policy OutboundP
 	normalized.Scheme = scheme
 	normalized.Host = joinHostPort(host, u.Port())
 	return &normalized, nil
+}
+
+// SafeDialContext returns a dialer function that validates destination IP addresses at dial time,
+// neutralizing Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding vulnerabilities.
+func SafeDialContext(policy OutboundPolicy, baseDialer *net.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if baseDialer == nil {
+		baseDialer = &net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+	}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if !policy.Enabled {
+			return nil, ErrOutboundDisabled
+		}
+		host, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address %q: %w", addr, err)
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port %q: %w", portStr, err)
+		}
+		if !portAllowed(policy.Allow.Ports, port) {
+			return nil, fmt.Errorf("port %d not allowed", port)
+		}
+
+		normalizedHost, err := NormalizeHost(host)
+		if err != nil {
+			return nil, err
+		}
+
+		allowedHosts, err := normalizeHostAllowlist(policy.Allow.Hosts)
+		if err != nil {
+			return nil, err
+		}
+		allowedCIDRs, err := parseCIDRAllowlist(policy.Allow.CIDRs)
+		if err != nil {
+			return nil, err
+		}
+
+		ips, err := resolveHostIPs(ctx, normalizedHost)
+		if err != nil {
+			return nil, err
+		}
+
+		_, hostAllowed := allowedHosts[normalizedHost]
+		isExplicitIP := net.ParseIP(normalizedHost) != nil
+
+		var dialableIPs []net.IP
+		for _, ip := range ips {
+			if isBlockedIP(ip) && !ipInCIDRs(ip, allowedCIDRs) {
+				return nil, fmt.Errorf("blocked ip %s", ip.String())
+			}
+			if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP && !hostAllowed {
+				return nil, fmt.Errorf("blocked private ip %s for host %s", ip.String(), normalizedHost)
+			}
+			if hostAllowed || ipInCIDRs(ip, allowedCIDRs) {
+				dialableIPs = append(dialableIPs, ip)
+			}
+		}
+
+		if len(dialableIPs) == 0 {
+			return nil, ErrOutboundNotAllowed
+		}
+
+		var lastErr error
+		for _, ip := range dialableIPs {
+			targetAddr := net.JoinHostPort(ip.String(), portStr)
+			conn, err := baseDialer.DialContext(ctx, network, targetAddr)
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}
+
+// NewSafeTransport returns a hardened http.Transport configured with SafeDialContext.
+func NewSafeTransport(policy OutboundPolicy) *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Transport{
+		DialContext:           SafeDialContext(policy, dialer),
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		IdleConnTimeout:       30 * time.Second,
+		DisableKeepAlives:     true,
+		ForceAttemptHTTP2:     false,
+	}
 }
 
 // ValidateOutboundURL verifies a URL against the outbound policy and returns a normalized URL string.
@@ -263,8 +363,16 @@ func resolveHostIPs(ctx context.Context, host string) ([]net.IP, error) {
 	return ips, nil
 }
 
+var cgnatNet = &net.IPNet{
+	IP:   net.IPv4(100, 64, 0, 0),
+	Mask: net.CIDRMask(10, 32),
+}
+
 func isBlockedIP(ip net.IP) bool {
 	if ip == nil {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 0 {
 		return true
 	}
 	return ip.IsLoopback() ||
@@ -272,6 +380,16 @@ func isBlockedIP(ip net.IP) bool {
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast()
+}
+
+func isPrivateOrInternalIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsPrivate() {
+		return true
+	}
+	return cgnatNet.Contains(ip)
 }
 
 func ipInCIDRs(ip net.IP, cidrs []*net.IPNet) bool {

@@ -80,7 +80,7 @@ func RequestCredentialKind(r *http.Request) CredentialKind {
 		}
 	}
 	if header := r.Header.Get("Authorization"); header != "" {
-		if strings.HasPrefix(header, "DPoP ") || strings.HasPrefix(header, "Bearer ") {
+		if (len(header) >= 5 && strings.EqualFold(header[:5], "DPoP ")) || (len(header) >= 7 && strings.EqualFold(header[:7], "Bearer ")) {
 			return CredentialExplicit
 		}
 	}
