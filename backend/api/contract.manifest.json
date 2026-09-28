@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "746eb9e1172215ccc9cb7efab6b5667bd4c55f2cfd37ced54926433116161741"
+    "sha256": "8734dc9bd41df0cbf8f980dfef0ae93c0a33ab1e6edfdf6e09c1f09e12a17586"
   },
   "paths": [
     "/auth/device/refresh",
@@ -56,6 +56,7 @@
     "/stream/prepare",
     "/stream/prepare/{preparationId}",
     "/stream/prepare/{preparationId}/commit",
+    "/stream/prepare/{preparationId}/trace",
     "/streams",
     "/streams/{id}",
     "/system/config",
@@ -2111,6 +2112,51 @@
       ]
     },
     {
+      "operationId": "postPreparationClientPlaybackTrace",
+      "method": "POST",
+      "path": "/stream/prepare/{preparationId}/trace",
+      "parameters": [
+        {
+          "name": "X-Xg2g-Client-Id",
+          "in": "header",
+          "required": true
+        },
+        {
+          "name": "X-Xg2g-Zap-Id",
+          "in": "header",
+          "required": false
+        },
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "204"
+        },
+        {
+          "status": "400"
+        },
+        {
+          "status": "403"
+        },
+        {
+          "status": "404"
+        },
+        {
+          "status": "409"
+        },
+        {
+          "status": "413"
+        }
+      ]
+    },
+    {
       "operationId": "getStreams",
       "method": "GET",
       "path": "/streams",
@@ -2587,6 +2633,8 @@
     "AuthSessionResponse",
     "Bouquet",
     "Breadcrumb",
+    "ClientPlaybackTraceBatch",
+    "ClientPlaybackTraceEvent",
     "ComponentStatus",
     "ConfigUpdate",
     "ConnectivityConfig",
@@ -2750,6 +2798,7 @@
       "ApprovePairingResponse",
       "AuthSessionResponse",
       "Bouquet",
+      "ClientPlaybackTraceBatch",
       "DeviceGrantResponse",
       "DeviceRefreshRequest",
       "ECPublicKeyJWK",
@@ -2781,6 +2830,8 @@
       "AuthSessionResponse",
       "Bouquet",
       "Breadcrumb",
+      "ClientPlaybackTraceBatch",
+      "ClientPlaybackTraceEvent",
       "DeviceAuthDeviceType",
       "DeviceGrantResponse",
       "DeviceRefreshRequest",
@@ -2842,7 +2893,7 @@
       "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
       "language": "kotlin",
       "generator": "gen-native-contract",
-      "sha256": "4446970353c2479023c7f3f6d8735810fd53074f20459322e4f555c7cf2316c5"
+      "sha256": "0a1869e414406f31bd7b1910cf28feeeef27cbd703f3297918fbed3940289af7"
     },
     {
       "path": "apps/webui/src/client-ts/client.gen.ts",
@@ -2854,19 +2905,19 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "aa0b17f6163fcf55b41eee84bd6e469ecd40eb494703ac29c1f1e6d847208931"
+      "sha256": "e8caf03a50b736b3f314159c8c34782aa9feb9abece3691e845024c66797fe80"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "76e88e50ad093740baa5fc2ce44c6de0fc76a3a4dfbec88058a1a85f2fee1bc4"
+      "sha256": "797ca832f2ad37425c2b5f03e5d54aecff6c0e3a6ec384bcfaecdde0c5976e45"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "0294d075aa9f004264c87f86f1370206dd25a67cb342387075c8177fda999a3a"
+      "sha256": "003e9326944a2d3acdbdc0cd8b99e35a6bc6e29c02e4bfdf5953a370448c41ce"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2878,37 +2929,37 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "43ffe9a9011df80182b6e176a203fa5d963a73dd403e0be15b4bdd9cbb9ec234"
+      "sha256": "cc1a60cc05c9f88b67a9cb0cd818efd9e0c377fdcf76f43a6b8910d271c2b7dc"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "cb80c6bc934f97a1798ce12ea513a54940d1739c0f8e8d4aeeb7ffff695ade6d"
+      "sha256": "6a40d35fe4c94cbecebfb6a316f45e40f130c65de1040c5995d9c396740be731"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "b08e4e0c804353a270a28d8f4f19c461c126130e7c8dbd5e1e127dfdc8b64c07"
+      "sha256": "d4f567490e551da3061aaed8eb6d087174af50c3e0ad13b0070a8d1961c579b1"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "9f483f77c0d5082e56e93d720a05de3039926c1cc429a22bc071b61403caaddd"
+      "sha256": "5a94f5ecab2cb18acfc7cc378c5b1d3e662a09000e04c9eca314ca154b622e6c"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
       "language": "swift",
       "generator": "gen-native-contract",
-      "sha256": "a0ed32db42aff0f4b886a65f8412968cd3eba1bf7e632efc9fdfbe5d82ea1df1"
+      "sha256": "d10ac63b3b0573e312f8ec779183a99cdbf9bf348017da5c581d9d8f17f6c923"
     },
     {
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "09222e491b9b5a5cc3058b026187ff7c670eeed98eb0063f66703f0f9de4efec"
+      "sha256": "9f9d9f369c2fbe02dc95e7141d8295d71d40337379278610b6fb26d364343ca7"
     }
   ]
 }

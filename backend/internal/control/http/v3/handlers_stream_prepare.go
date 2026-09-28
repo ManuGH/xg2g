@@ -30,3 +30,8 @@ func (s *Server) GetStreamPrepareStatus(w http.ResponseWriter, r *http.Request, 
 func (s *Server) CommitStreamPrepare(w http.ResponseWriter, r *http.Request, preparationId string, params CommitStreamPrepareParams) {
 	writeRegisteredProblem(w, r, http.StatusNotImplemented, "stream/prepare_not_mounted", "Stream Prepare Not Mounted", problemcode.CodeUnavailable, "Stream preparation is served through the primary ingest router", nil)
 }
+
+// PostPreparationClientPlaybackTrace implements ServerInterface (POST /stream/prepare/{preparationId}/trace).
+func (s *Server) PostPreparationClientPlaybackTrace(w http.ResponseWriter, r *http.Request, preparationId string, params PostPreparationClientPlaybackTraceParams) {
+	writeRegisteredProblem(w, r, http.StatusNotImplemented, "stream/prepare_not_mounted", "Stream Prepare Not Mounted", problemcode.CodeUnavailable, "Stream preparation is served through the primary ingest router", nil)
+}

@@ -5,12 +5,16 @@
 package pipeline
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -32,8 +36,33 @@ const (
 	// preparation per client is enforced against this value.
 	clientIDHeader = "X-Xg2g-Client-Id"
 	// maxClientIDLength caps what is accepted, like the zap identifier.
-	maxClientIDLength = 64
+	maxClientIDLength       = 64
+	maxClientTraceBodyBytes = 16 << 10
+	maxClientTraceEvents    = 128
 )
+
+type clientPlaybackTraceBatch struct {
+	ObservedAt time.Time                  `json:"observedAt"`
+	Events     []clientPlaybackTraceEvent `json:"events"`
+}
+
+type clientPlaybackTraceEvent struct {
+	ElapsedMs int64    `json:"elapsedMs"`
+	Event     string   `json:"event"`
+	Sequence  int64    `json:"sequence"`
+	Stage     string   `json:"stage"`
+	ValueMs   *float64 `json:"valueMs,omitempty"`
+}
+
+var clientTraceEventStages = map[string]string{
+	"playback_started": "lifecycle", "request_started": "network", "http_response": "network",
+	"first_byte": "network", "transport_gap": "network", "stream_closed": "network",
+	"psi_ready": "demux", "video_parameters_ready": "decode", "first_idr": "decode",
+	"first_decoded_frame": "decode", "first_picture_rendered": "render", "first_picture_visible": "render",
+	"continuity_error": "transport", "pts_discontinuity": "transport", "pes_error": "transport",
+	"decode_error": "decode", "decoder_recovery": "decode", "audio_underrun": "audio",
+	"audio_clock_started": "audio", "audio_clock_stopped": "audio", "frame_drop": "render", "frame_late": "render",
+}
 
 // PrepareHandler serves the preparation endpoints.
 type PrepareHandler struct {
@@ -100,6 +129,7 @@ func toResponse(st PreparationStatus) prepareResponse {
 //	POST   /api/v3/stream/prepare              start a preparation
 //	GET    /api/v3/stream/prepare/{id}         what became of it
 //	POST   /api/v3/stream/prepare/{id}/commit  take it
+//	POST   /api/v3/stream/prepare/{id}/trace   bounded playback event window
 //	DELETE /api/v3/stream/prepare/{id}         abandon it
 func (h *PrepareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	const prefix = "/api/v3/stream/prepare"
@@ -122,6 +152,8 @@ func (h *PrepareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case action == "commit" && r.Method == http.MethodPost:
 			h.commit(w, r, clientID, id)
+		case action == "trace" && r.Method == http.MethodPost:
+			h.playbackTrace(w, r, clientID, id)
 		case action == "" && r.Method == http.MethodGet:
 			h.status(w, clientID, id)
 		case action == "" && r.Method == http.MethodDelete:
@@ -130,6 +162,63 @@ func (h *PrepareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "unknown preparation endpoint")
 		}
 	}
+}
+
+// playbackTrace accepts a bounded client event window after a playback anomaly.
+// It is correlated with zap lifecycle logs, but never labels metrics by device.
+func (h *PrepareHandler) playbackTrace(w http.ResponseWriter, r *http.Request, clientID, id string) {
+	st, ok := h.resolve(w, clientID, id)
+	if !ok {
+		return
+	}
+	if st.State != PreparationReady && st.State != PreparationCommitted {
+		writeError(w, http.StatusConflict, "trace requires a ready or committed preparation")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxClientTraceBodyBytes))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "trace payload exceeds 16 KiB")
+		return
+	}
+	var batch clientPlaybackTraceBatch
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&batch); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid playback trace batch")
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid playback trace batch")
+		return
+	}
+	if len(batch.Events) == 0 || len(batch.Events) > maxClientTraceEvents || batch.ObservedAt.IsZero() ||
+		time.Since(batch.ObservedAt) > 2*time.Minute || time.Until(batch.ObservedAt) > 30*time.Second {
+		writeError(w, http.StatusBadRequest, "playback trace batch is outside supported bounds")
+		return
+	}
+	var previousSequence, previousElapsed int64
+	lastElapsed := batch.Events[len(batch.Events)-1].ElapsedMs
+	for index, event := range batch.Events {
+		expectedStage, knownEvent := clientTraceEventStages[event.Event]
+		if event.Sequence < 1 || event.Sequence > 1_000_000_000 || event.ElapsedMs < 0 || event.ElapsedMs > int64((7*24*time.Hour)/time.Millisecond) ||
+			(index > 0 && (event.Sequence <= previousSequence || event.ElapsedMs < previousElapsed)) ||
+			lastElapsed-event.ElapsedMs > 30_000 || !knownEvent || expectedStage != event.Stage ||
+			(event.ValueMs != nil && (math.IsNaN(*event.ValueMs) || math.IsInf(*event.ValueMs, 0) || *event.ValueMs < 0 || *event.ValueMs > 300_000)) {
+			writeError(w, http.StatusBadRequest, "playback trace events are invalid or out of order")
+			return
+		}
+		previousSequence, previousElapsed = event.Sequence, event.ElapsedMs
+	}
+	zapID := sanitizeZapID(r.Header.Get(zapIDHeader))
+	log.L().Info().
+		Str("event", "client.playback.trace").
+		Str("preparation_id", id).
+		Str("zap_id", zapID).
+		Time("observed_at", batch.ObservedAt).
+		Interface("timeline", batch.Events).
+		Msg("client playback trace window")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID string) {

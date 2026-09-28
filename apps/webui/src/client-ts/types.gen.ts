@@ -481,6 +481,28 @@ export type PlaybackTelemetryBatch = {
 };
 
 /**
+ * A bounded, ordered playback event window with no channel or device identity.
+ */
+export type ClientPlaybackTraceBatch = {
+    observedAt: string;
+    events: Array<ClientPlaybackTraceEvent>;
+};
+
+export type ClientPlaybackTraceEvent = {
+    sequence: number;
+    /**
+     * Monotonic milliseconds since this playback started.
+     */
+    elapsedMs: number;
+    stage: 'lifecycle' | 'network' | 'transport' | 'demux' | 'decode' | 'audio' | 'render';
+    event: 'playback_started' | 'request_started' | 'http_response' | 'first_byte' | 'transport_gap' | 'stream_closed' | 'psi_ready' | 'video_parameters_ready' | 'first_idr' | 'first_decoded_frame' | 'first_picture_rendered' | 'first_picture_visible' | 'continuity_error' | 'pts_discontinuity' | 'pes_error' | 'decode_error' | 'decoder_recovery' | 'audio_underrun' | 'audio_clock_started' | 'audio_clock_stopped' | 'frame_drop' | 'frame_late';
+    /**
+     * Optional measured duration or gap in milliseconds.
+     */
+    valueMs?: number;
+};
+
+/**
  * The client build that observed the events.
  */
 export type PlaybackTelemetryClient = {
@@ -4388,6 +4410,51 @@ export type CommitStreamPrepareResponses = {
 };
 
 export type CommitStreamPrepareResponse = CommitStreamPrepareResponses[keyof CommitStreamPrepareResponses];
+
+export type PostPreparationClientPlaybackTraceData = {
+    body: ClientPlaybackTraceBatch;
+    headers: {
+        'X-Xg2g-Client-Id': string;
+        'X-Xg2g-Zap-Id'?: string;
+    };
+    path: {
+        preparationId: string;
+    };
+    query?: never;
+    url: '/stream/prepare/{preparationId}/trace';
+};
+
+export type PostPreparationClientPlaybackTraceErrors = {
+    /**
+     * Invalid or out-of-order trace events.
+     */
+    400: unknown;
+    /**
+     * Preparation belongs to another client.
+     */
+    403: unknown;
+    /**
+     * Preparation not found.
+     */
+    404: unknown;
+    /**
+     * Preparation is not ready or committed.
+     */
+    409: unknown;
+    /**
+     * Request body exceeds the trace size limit.
+     */
+    413: unknown;
+};
+
+export type PostPreparationClientPlaybackTraceResponses = {
+    /**
+     * Trace window accepted and written to structured backend logs.
+     */
+    204: void;
+};
+
+export type PostPreparationClientPlaybackTraceResponse = PostPreparationClientPlaybackTraceResponses[keyof PostPreparationClientPlaybackTraceResponses];
 
 export type GetLogsData = {
     body?: never;
