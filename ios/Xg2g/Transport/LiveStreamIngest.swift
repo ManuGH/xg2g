@@ -100,6 +100,15 @@ final class LiveStreamIngest: NSObject, URLSessionDataDelegate, @unchecked Senda
         return _task != nil
     }
 
+#if DEBUG
+    /// Inspect the request built by open without changing URLSession configuration.
+    var currentRequestForTesting: URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _task?.originalRequest
+    }
+#endif
+
     init(delegate: LiveStreamIngestDelegate) {
         self._delegate = delegate
         super.init()

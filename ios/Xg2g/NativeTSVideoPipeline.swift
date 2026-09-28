@@ -497,6 +497,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// The open byte stream, when one is running. The pipeline holds a handle;
     /// the transport holds the socket.
     private var ingest: LiveStreamIngest?
+
+#if DEBUG
+    var currentStreamRequestForTesting: URLRequest? {
+        ingest?.currentRequestForTesting
+    }
+#endif
     
     /// TTFP stage timestamps and decode-rate counters for the *current* stream.
     ///
@@ -3058,4 +3064,3 @@ extension NativeTSVideoPipeline: DVBSubtitlePESAssemblerDelegate {
         TelemetryServer.shared.log(logMsg)
     }
 }
-
