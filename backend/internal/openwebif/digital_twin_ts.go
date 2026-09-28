@@ -36,8 +36,16 @@ func mpeg2CRC32(data []byte) uint32 {
 	return crc
 }
 
-// GeneratePATPacket builds a standard 188-byte PAT MPEG-TS packet.
+// GeneratePATPacket builds a standard 188-byte PAT MPEG-TS packet for program 1.
 func GeneratePATPacket(cc uint8) []byte {
+	return GeneratePATPacketWithProgram(cc, 1)
+}
+
+// GeneratePATPacketWithProgram builds a standard 188-byte PAT MPEG-TS packet for the given program number.
+func GeneratePATPacketWithProgram(cc uint8, programNumber uint16) []byte {
+	if programNumber == 0 {
+		programNumber = 1
+	}
 	pkt := make([]byte, tsPacketSize)
 	for i := range pkt {
 		pkt[i] = 0xFF
@@ -52,15 +60,18 @@ func GeneratePATPacket(cc uint8) []byte {
 	// Pointer field
 	pkt[4] = 0x00
 
+	progHi := byte(programNumber >> 8)
+	progLo := byte(programNumber & 0xFF)
+
 	// Table ID: 0x00 (PAT)
 	section := []byte{
 		0x00,       // Table ID
 		0xB0, 0x0D, // section_syntax_indicator=1, section_length=13 (9 + 4 CRC)
 		0x00, 0x01, // transport_stream_id = 1
-		0xC1,       // version=0, current_next=1
-		0x00,       // section_number = 0
-		0x00,       // last_section_number = 0
-		0x00, 0x01, // program_number = 1
+		0xC1,           // version=0, current_next=1
+		0x00,           // section_number = 0
+		0x00,           // last_section_number = 0
+		progHi, progLo, // program_number
 		0xE0 | (pidPMT >> 8), uint8(pidPMT & 0xFF), // PMT PID = 0x1000
 	}
 
@@ -76,8 +87,16 @@ func GeneratePATPacket(cc uint8) []byte {
 	return pkt
 }
 
-// GeneratePMTPacket builds a standard 188-byte PMT MPEG-TS packet.
+// GeneratePMTPacket builds a standard 188-byte PMT MPEG-TS packet for program 1.
 func GeneratePMTPacket(cc uint8) []byte {
+	return GeneratePMTPacketWithProgram(cc, 1)
+}
+
+// GeneratePMTPacketWithProgram builds a standard 188-byte PMT MPEG-TS packet for the given program number.
+func GeneratePMTPacketWithProgram(cc uint8, programNumber uint16) []byte {
+	if programNumber == 0 {
+		programNumber = 1
+	}
 	pkt := make([]byte, tsPacketSize)
 	for i := range pkt {
 		pkt[i] = 0xFF
@@ -92,13 +111,16 @@ func GeneratePMTPacket(cc uint8) []byte {
 	// Pointer field
 	pkt[4] = 0x00
 
+	progHi := byte(programNumber >> 8)
+	progLo := byte(programNumber & 0xFF)
+
 	// PMT Section:
 	// Stream 1: 0x1B (H.264 video) on pidVideo (0x0100)
 	// Stream 2: 0x0F (AAC audio) on pidAudio (0x0101)
 	section := []byte{
 		0x02,       // Table ID (PMT)
 		0xB0, 0x17, // section_syntax_indicator=1, section_length=23 (19 + 4 CRC)
-		0x00, 0x01, // program_number = 1
+		progHi, progLo, // program_number
 		0xC1,                                           // version=0, current_next=1
 		0x00,                                           // section_number = 0
 		0x00,                                           // last_section_number = 0
@@ -168,15 +190,20 @@ func GenerateVideoPacket(cc uint8, pcrBase uint64, scrambled bool) []byte {
 		byte(0x01 | ((pcrBase >> 14) & 0xFE)),
 		byte(pcrBase >> 7),
 		byte(0x01 | ((pcrBase << 1) & 0xFE)),
-		// NAL AUD (Access Unit Delimiter) + NAL IDR Slice header
+		// NAL AUD (Access Unit Delimiter)
 		0x00, 0x00, 0x00, 0x01, 0x09, 0xF0,
-		0x00, 0x00, 0x00, 0x01, 0x65, 0x88,
+		// NAL SPS (Sequence Parameter Set)
+		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E, 0xDA, 0x02, 0x80, 0xF6, 0x80,
+		// NAL PPS (Picture Parameter Set)
+		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38, 0x80,
+		// NAL IDR Slice header
+		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21, 0xA0, 0x33, 0xFF,
 	}
 
 	copy(pkt[12:], pesHeader)
-	// Fill rest with video payload bytes
+	// Fill rest with video payload bytes (using 0xAA to avoid accidental startcode emulation)
 	for i := 12 + len(pesHeader); i < tsPacketSize; i++ {
-		pkt[i] = byte(i)
+		pkt[i] = 0xAA
 	}
 	return pkt
 }
@@ -218,11 +245,16 @@ func GenerateAudioPacket(cc uint8, pts uint64, scrambled bool) []byte {
 	return pkt
 }
 
-// StreamTSBatch writes a batch of valid TS packets (PAT, PMT, Video, Audio) to w.
+// StreamTSBatch writes a batch of valid TS packets (PAT, PMT, Video, Audio) to w for program 1.
 func StreamTSBatch(w io.Writer, pcrBase *uint64, cc *uint8, scrambled bool) error {
-	pat := GeneratePATPacket(*cc)
+	return StreamTSBatchWithProgram(w, pcrBase, cc, scrambled, 1)
+}
+
+// StreamTSBatchWithProgram writes a batch of valid TS packets for the specified program number.
+func StreamTSBatchWithProgram(w io.Writer, pcrBase *uint64, cc *uint8, scrambled bool, programNumber uint16) error {
+	pat := GeneratePATPacketWithProgram(*cc, programNumber)
 	*cc = (*cc + 1) & 0x0F
-	pmt := GeneratePMTPacket(*cc)
+	pmt := GeneratePMTPacketWithProgram(*cc, programNumber)
 	*cc = (*cc + 1) & 0x0F
 	vid := GenerateVideoPacket(*cc, *pcrBase, scrambled)
 	*cc = (*cc + 1) & 0x0F
@@ -243,6 +275,11 @@ func StreamTSBatch(w io.Writer, pcrBase *uint64, cc *uint8, scrambled bool) erro
 
 // StreamTSContinuously streams TS batches until ctx is cancelled or maxBatches is reached (0 = infinite).
 func StreamTSContinuously(ctx context.Context, w io.Writer, maxBatches int, camGraceWindow time.Duration) error {
+	return StreamTSContinuouslyWithProgram(ctx, w, maxBatches, camGraceWindow, 1)
+}
+
+// StreamTSContinuouslyWithProgram streams TS batches with programNumber until ctx is cancelled or maxBatches is reached.
+func StreamTSContinuouslyWithProgram(ctx context.Context, w io.Writer, maxBatches int, camGraceWindow time.Duration, programNumber uint16) error {
 	startedAt := time.Now()
 	var pcrBase uint64 = 90000 // 1 sec at 90 kHz
 	var cc uint8 = 0
@@ -264,7 +301,7 @@ func StreamTSContinuously(ctx context.Context, w io.Writer, maxBatches int, camG
 			scrambled = true
 		}
 
-		if err := StreamTSBatch(w, &pcrBase, &cc, scrambled); err != nil {
+		if err := StreamTSBatchWithProgram(w, &pcrBase, &cc, scrambled, programNumber); err != nil {
 			return err
 		}
 		batches++
