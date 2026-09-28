@@ -562,6 +562,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// stalled the socket and the backlog then arrived as a burst. Picture
     /// delivery measured 0–49/s against a 25/s source because of it.
     private let ingestQueue = DispatchQueue(label: "io.github.manugh.xg2g.ingest", qos: .userInitiated)
+    private let ingestQueueKey = DispatchSpecificKey<Void>()
+
+    private func syncOnIngestQueue(_ block: () -> Void) {
+        if DispatchQueue.getSpecific(key: ingestQueueKey) != nil {
+            block()
+        } else {
+            ingestQueue.sync(execute: block)
+        }
+    }
+
     private let ingestStateLock = NSLock()
     private let zapLock = NSLock()
     public private(set) var currentZapId: Int = 0
@@ -592,7 +602,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     #if DEBUG
     /// Deterministically drains any pending asynchronous work on the ingestQueue (test helper).
     public func drainIngestQueueForTesting() {
-        ingestQueue.sync {}
+        syncOnIngestQueue {}
+    }
+
+    /// Dispatches an action onto the ingestQueue for deterministic concurrency testing.
+    public func executeOnIngestQueueForTesting(_ block: @escaping () -> Void) {
+        ingestQueue.async(execute: block)
     }
 
     /// Simulates an asynchronous audio recovery block queued for a specific session generation
@@ -646,6 +661,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     private func finishInit() {
+        ingestQueue.setSpecific(key: ingestQueueKey, value: ())
         tsParser.delegate = self
         pesAssembler.delegate = self
         accessUnitAssembler.delegate = self
@@ -841,7 +857,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func feedData(_ data: Data) {
-        ingestQueue.sync {
+        syncOnIngestQueue {
             self.tsParser.feed(data: data)
         }
     }
@@ -1014,7 +1030,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // 2. The parse chain is owned by `ingestQueue`. Drain and reset ingestQueue FIRST
         // to guarantee that any active or queued audio recovery or packet processing
         // finishes completely before the clock or audio renderer are replaced.
-        ingestQueue.sync {
+        syncOnIngestQueue {
             decodeGateState = .closed(reason: .startup)
             gatedAccessUnitCount = 0
             firstAccessUnitTime = 0

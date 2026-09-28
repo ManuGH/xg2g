@@ -750,4 +750,23 @@ import Testing
 
         pipeline.stopStreaming()
     }
+
+    // MARK: - 12. Reentrancy on IngestQueue
+
+    @Test func stopStreamingFromIngestQueueDoesNotDeadlock() {
+        var pipeline: NativeTSVideoPipeline? = NativeTSVideoPipeline()
+        let neutralURL = URL(string: "http://127.0.0.1:8080/live/fixture.ts")!
+        pipeline?.startStreaming(url: neutralURL)
+
+        let sema = DispatchSemaphore(value: 0)
+        pipeline?.executeOnIngestQueueForTesting {
+            // Calling stopStreaming or letting pipeline deinit on ingestQueue must not deadlock
+            pipeline?.stopStreaming()
+            pipeline = nil
+            sema.signal()
+        }
+
+        let waitResult = sema.wait(timeout: .now() + 3.0)
+        #expect(waitResult == .success)
+    }
 }

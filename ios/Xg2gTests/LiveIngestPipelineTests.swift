@@ -3,6 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import Foundation
+import QuartzCore
 import Testing
 
 @testable import Xg2g
@@ -35,6 +36,31 @@ enum LiveIngest {
     /// ORF1 HD: encrypted, so it also exercises the descrambled path end to end.
     static let serviceRef = ProcessInfo.processInfo.environment["XG2G_LIVE_SREF"]
         .flatMap { $0.isEmpty ? nil : $0 } ?? "1:0:19:132F:3EF:1:C00000:0:0:0:"
+
+    /// ORF2N HD: on the same transponder (3EF) for reliable dual-decode verification.
+    static let secondaryServiceRef = ProcessInfo.processInfo.environment["XG2G_LIVE_SREF_SECONDARY"]
+        .flatMap { $0.isEmpty ? nil : $0 } ?? "1:0:19:1334:3EF:1:C00000:0:0:0:"
+
+    static var serverRootURL: URL? {
+        guard let baseURL, let url = URL(string: baseURL) else { return nil }
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        let portStr = url.port.map { ":\($0)" } ?? ""
+        return URL(string: "\(scheme)://\(host)\(portStr)/")
+    }
+
+    static let token = ProcessInfo.processInfo.environment["XG2G_LIVE_TOKEN"] ?? "test04"
+    static let origin = ProcessInfo.processInfo.environment["XG2G_LIVE_ORIGIN"] ?? "https://xg2g.home.matrixcentral.de"
+
+    struct StaticBearerAuthorizer: RequestAuthorizer {
+        let token: String
+        let origin: String
+        func authorized(_ request: URLRequest) async throws -> URLRequest {
+            var req = request
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.setValue(origin, forHTTPHeaderField: "Origin")
+            return req
+        }
+    }
 
     static var streamURL: URL? {
         guard let baseURL else { return nil }
@@ -144,5 +170,93 @@ struct LiveIngestPipelineTests {
         // is ~500 frames, so this is a floor well under any healthy run.
         #expect(t.sampleBuffersDecodedCount > 100,
                 "only \(t.sampleBuffersDecodedCount) frames decoded in \(LiveIngest.observationSeconds)s; decoding is not sustained")
+    }
+
+    @MainActor
+    private func eventually(timeoutSeconds: Double = 15, _ condition: () -> Bool) async -> Bool {
+        let iterations = Int(timeoutSeconds * 20)
+        for _ in 0..<iterations {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return condition()
+    }
+
+    /// Tests the complete live zap transaction end-to-end:
+    /// Direct play of serviceRef (ORF1 HD) -> seamless prepared zap to secondaryServiceRef (ORF2N HD).
+    @Test @MainActor func coordinatorExecutesPreparedLiveZapTransaction() async throws {
+        let root = try #require(LiveIngest.serverRootURL)
+        let address = try ServerAddressParser.parseTrusted(root.absoluteString)
+        let authorizer = LiveIngest.StaticBearerAuthorizer(
+            token: LiveIngest.token,
+            origin: LiveIngest.origin
+        )
+        let apiClient = HTTPAPIClient(address: address, authorizer: authorizer)
+        let prepClient = ZapPreparationClient(api: apiClient, clientID: "simulator-zap-trans")
+
+        let coordinator = ZapCoordinator(
+            preparations: prepClient,
+            streamURL: { sref in
+                guard let base = LiveIngest.baseURL else { return nil }
+                return URL(string: "\(base)/\(sref)")
+            }
+        )
+
+        let sref1 = LiveIngest.serviceRef
+        let sref2 = LiveIngest.secondaryServiceRef
+        let url1 = try #require(URL(string: "\(LiveIngest.baseURL!)/\(sref1)"))
+
+        print("=== Step 1: Direct Playback Start (\(sref1)) ===")
+        let t0 = CACurrentMediaTime()
+        await coordinator.play(unprepared: url1)
+
+        #expect(coordinator.presentedServiceRef == sref1)
+        let firstDecode = await eventually(timeoutSeconds: 15) {
+            (coordinator.playing?.telemetry.snapshot().sampleBuffersDecodedCount ?? 0) > 0
+        }
+        let tDirect = CACurrentMediaTime() - t0
+        print("=== Direct Playback Decoded First Picture: \(Int(tDirect * 1000))ms (success: \(firstDecode)) ===")
+        #expect(firstDecode, "Direct start should decode first frame within 15s")
+
+        // Let it play for 3 seconds to establish steady-state decoding
+        try await Task.sleep(for: .seconds(3))
+
+        let framesBeforeZap = coordinator.playing?.telemetry.snapshot().sampleBuffersDecodedCount ?? 0
+        print("=== Frames decoded on channel 1 before zap: \(framesBeforeZap) ===")
+
+        print("=== Step 2: Coordinated Prepared Zap (\(sref1) -> \(sref2)) ===")
+        let zap0 = CACurrentMediaTime()
+        await coordinator.zap(to: sref2)
+        let tZap = CACurrentMediaTime() - zap0
+        print("=== Prepared Zap Completed and Bound: \(Int(tZap * 1000))ms ===")
+
+        #expect(coordinator.presentedServiceRef == sref2)
+        #expect(coordinator.phase == .idle)
+
+        // Let the new stream play for 3 seconds to prove continuous decode
+        try await Task.sleep(for: .seconds(3))
+
+        let framesAfterZap = coordinator.playing?.telemetry.snapshot().sampleBuffersDecodedCount ?? 0
+        print("=== Frames decoded on channel 2 after zap: \(framesAfterZap) ===")
+        #expect(framesAfterZap > 20, "Channel 2 must decode frames after zap")
+
+        if let session = coordinator.playing {
+            let t = session.telemetry.snapshot()
+            print("""
+            === Final Session Telemetry (\(sref2)) ===
+            ttfpTotalMs             \(t.ttfpTotalMs)
+            ttfpNetworkMs           \(t.ttfpNetworkMs)
+            ttfpPsiMs               \(t.ttfpPsiMs)
+            ttfpParamSetsMs         \(t.ttfpParamSetsMs)
+            ttfpIdrMs               \(t.ttfpIdrMs)
+            ttfpDecodeMs            \(t.ttfpDecodeMs)
+            ttfpMotionMs            \(t.ttfpMotionMs)
+            decodedFrames           \(t.sampleBuffersDecodedCount)
+            continuityErrors        \(t.continuityErrors)
+            scrambledPackets        \(t.scrambledPackets)
+            """)
+        }
+
+        await coordinator.stop()
     }
 }
