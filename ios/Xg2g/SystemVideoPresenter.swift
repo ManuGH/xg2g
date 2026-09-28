@@ -269,6 +269,19 @@ public final class SystemVideoPresenter: NSObject {
     /// When a start was announced, so the window it opens can expire.
     private var pictureInPictureStartedAt: CFTimeInterval?
 
+    /// Set when AVKit asks for the app's interface back, which is what the
+    /// window's restore button does and what its close button does not.
+    ///
+    /// `didStop` is the same call for both, so this is the only way to tell
+    /// "take me back to the player" from "I am done watching".
+    private var pictureInPictureRestoreRequested = false
+
+    /// Whether the app is in the background. Replaced by tests, which run
+    /// inside an app that is always in front.
+    var isApplicationInBackground: () -> Bool = {
+        UIApplication.shared.applicationState == .background
+    }
+
     /// How long `willStart` may vouch for a window that has not become active.
     private static let pictureInPictureStartWindow: Double = 3.0
 
@@ -521,6 +534,29 @@ public protocol SystemVideoPlaybackDelegate: AnyObject {
     /// True while the stream clock is running.
     var isSystemVideoPlaying: Bool { get }
     func systemVideoSetPlaying(_ playing: Bool)
+
+    /// The PiP window was closed without asking for the app back, while the
+    /// app is in the background. Nothing is left on screen, so whatever is
+    /// still playing is playing for nobody.
+    func systemVideoPictureInPictureDidDismiss()
+}
+
+/// Routes the PiP window's transport controls to whoever owns playback state.
+///
+/// The presenter holds its delegate weakly, and the screen that owns the state
+/// is a SwiftUI value, which cannot be a delegate. The screen keeps one of
+/// these alive and fills in the closures.
+@MainActor
+public final class SystemVideoPlaybackControls: SystemVideoPlaybackDelegate {
+    public var isPlaying: () -> Bool = { true }
+    public var setPlaying: (Bool) -> Void = { _ in }
+    public var dismissed: () -> Void = {}
+
+    public init() {}
+
+    public var isSystemVideoPlaying: Bool { isPlaying() }
+    public func systemVideoSetPlaying(_ playing: Bool) { setPlaying(playing) }
+    public func systemVideoPictureInPictureDidDismiss() { dismissed() }
 }
 
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
@@ -532,6 +568,9 @@ public protocol SystemVideoPlaybackDelegate: AnyObject {
 extension SystemVideoPresenter: @preconcurrency AVPictureInPictureSampleBufferPlaybackDelegate {
 
     public func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
+        let msg = "[SystemVideo] PiP setPlaying(\(playing)) (delegate: \(playbackDelegate != nil))"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
         playbackDelegate?.systemVideoSetPlaying(playing)
     }
 
@@ -590,12 +629,38 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
 
     public func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
         pictureInPictureStartedAt = CACurrentMediaTime()
+        pictureInPictureRestoreRequested = false
         logger.notice("[SystemVideo] PiP will start")
+    }
+
+    /// The player screen stays mounted while the window is up, so there is
+    /// nothing to rebuild before handing the picture back.
+    public func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+    ) {
+        pictureInPictureRestoreRequested = true
+        let msg = "[SystemVideo] PiP restore requested"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        completionHandler(true)
     }
 
     public func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         pictureInPictureStartedAt = nil
-        logger.notice("[SystemVideo] PiP stopped")
+        let restored = pictureInPictureRestoreRequested
+        pictureInPictureRestoreRequested = false
+
+        // Closing the window used to end here, and the stream played on in the
+        // background with no picture anywhere: audio, decode, network and a
+        // tuner, for nobody. A stop the app is coming back from — restore, or
+        // the user opening the app while the window is up — is not a close.
+        let background = isApplicationInBackground()
+        let msg = "[SystemVideo] PiP stopped (restore requested: \(restored), app in background: \(background))"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        guard !restored, background else { return }
+        playbackDelegate?.systemVideoPictureInPictureDidDismiss()
     }
 
     public func pictureInPictureController(

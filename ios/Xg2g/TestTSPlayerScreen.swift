@@ -30,7 +30,7 @@ public struct TestTSPlayerScreen: View {
         case direct = "DIRECT (Vu+:8001)"
         case legacySmoother = "SMOOTHER (legacy)"
     }
-    public enum PlaybackEngineMode: Equatable {
+    public enum PlaybackEngineMode: Equatable, Sendable {
         case nativeDirectLive
         case timeshiftHLS
     }
@@ -59,6 +59,9 @@ public struct TestTSPlayerScreen: View {
     @State private var currentSubtitleImage: CGImage?
     @State private var verticalDragOffset: CGFloat = 0
     @State private var isDraggingDown: Bool = false
+    /// What the PiP window's play, pause and close buttons reach. Held here because
+    /// the surface only keeps it weakly.
+    @State private var pictureInPictureControls = SystemVideoPlaybackControls()
 
     private struct ChannelPreset: Identifiable, Hashable {
         var id: String { serviceRef }
@@ -458,9 +461,20 @@ public struct TestTSPlayerScreen: View {
             setupPlayback()
         }
         .onDisappear {
+            // The idle timer was switched off for a picture nobody touches. Minimised,
+            // there is no picture, and a mini player closed later never came back here
+            // to switch it on again — the phone stopped locking itself.
+            UIApplication.shared.isIdleTimerDisabled = false
             if playbackManager.presentationMode == .hidden {
                 teardownPlayback()
             }
+        }
+        .onChange(of: isPlaying) { _, playing in
+            // Both sets of system controls cache the transport state and only ask again
+            // when told to. Without this the lock screen kept showing a running stream
+            // after a pause, and the PiP window a pause button over a stopped one.
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: playing)
+            coordinator.surface.playbackStateDidChange()
         }
         .onChange(of: coordinator.playing) { _, newPipeline in
             currentSubtitleImage = nil
@@ -1269,14 +1283,25 @@ public struct TestTSPlayerScreen: View {
         // being left pointing at the HLS player. No seek handler, so the skip
         // commands stay switched off — live has nothing to skip to until the
         // DVR path exists.
+        //
+        // Play goes back through the toggle rather than straight to a tune: pause on
+        // the live pipeline hands over to the timeshift player, and tuning underneath
+        // it left live audio playing behind a paused timeshift picture, with the
+        // timeshift session still open on the server.
         NowPlayingManager.shared.takeOver(.init(
-            play: { if !isPlaying { startCurrentPreset() } },
+            play: { if !isPlaying { togglePlayPause() } },
             pause: { if isPlaying { togglePlayPause() } },
             togglePlayPause: { togglePlayPause() },
             stop: { teardownPlayback() },
             nextChannel: { zapRelative(delta: 1) },
             previousChannel: { zapRelative(delta: -1) }
         ))
+        // The PiP window's buttons were never connected: it always reported playback
+        // as running, its pause did nothing, and closing it left the stream playing.
+        pictureInPictureControls.isPlaying = { isPlaying }
+        pictureInPictureControls.setPlaying = { play in applyPictureInPictureTransport(play: play) }
+        pictureInPictureControls.dismissed = { applyPictureInPictureTransport(play: false) }
+        coordinator.surface.playbackDelegate = pictureInPictureControls
         startCurrentPreset()
         scheduleControlsAutoHide()
     }
@@ -1562,6 +1587,30 @@ public struct TestTSPlayerScreen: View {
         }
     }
 
+    private func applyPictureInPictureTransport(play: Bool) {
+        switch PictureInPictureTransportAction.resolve(play: play, engine: engineMode, isPlaying: isPlaying) {
+        case .none:
+            break
+        case .stopLive:
+            stopLiveKeepingLastPicture()
+        case .resumeLive:
+            startCurrentPreset()
+        case .pauseTimeshift:
+            toggleTimeshiftPlayPause()
+        case .returnToLiveEdge:
+            jumpToLiveEdge()
+        }
+    }
+
+    /// Pause for a place that cannot show the timeshift player. The surface keeps the
+    /// last picture it was given, and resuming tunes the channel again at the live edge.
+    private func stopLiveKeepingLastPicture() {
+        let stopping = coordinator.playing
+        Task { await coordinator.stop() }
+        stopping?.notePlaybackStateChanged()
+        isPlaying = false
+    }
+
     private func cycleViewPreset() {
         Haptics.shared.impact(.light)
         viewPreset = viewPreset.next(includeAdvanced: model?.enableAdvancedAspectRatios ?? false)
@@ -1777,5 +1826,37 @@ struct TimeshiftTimelineBar: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         .shadow(color: Color.black.opacity(0.3), radius: 8)
+    }
+}
+
+/// What a transport request from the PiP window does to the engine on screen.
+///
+/// Pause on the live pipeline normally hands over to the timeshift player, but that
+/// player is not in the PiP window: only the live surface is. So pausing there stops
+/// the live stream and leaves its last picture up, and resuming tunes the channel again
+/// at the live edge. Timeshift that is already running can pause, and can only resume
+/// inside the window as live.
+enum PictureInPictureTransportAction: Equatable {
+    case none
+    case stopLive
+    case resumeLive
+    case pauseTimeshift
+    case returnToLiveEdge
+
+    static func resolve(
+        play: Bool,
+        engine: TestTSPlayerScreen.PlaybackEngineMode,
+        isPlaying: Bool
+    ) -> Self {
+        switch (engine, play) {
+        case (.nativeDirectLive, true):
+            return isPlaying ? .none : .resumeLive
+        case (.nativeDirectLive, false):
+            return isPlaying ? .stopLive : .none
+        case (.timeshiftHLS, true):
+            return isPlaying ? .none : .returnToLiveEdge
+        case (.timeshiftHLS, false):
+            return isPlaying ? .pauseTimeshift : .none
+        }
     }
 }
