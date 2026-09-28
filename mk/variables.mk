@@ -84,8 +84,8 @@ GOSEC_VERSION := v2.22.1
 GOLANGCI_LINT_MODULE := github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 # Tool executables
-GOLANGCI_LINT := $(TOOL_DIR)/golangci-lint
-GOVULNCHECK := $(TOOL_DIR)/govulncheck
-OAPI_CODEGEN := $(TOOL_DIR)/oapi-codegen
-SYFT := $(TOOL_DIR)/syft
-GRYPE := $(TOOL_DIR)/grype
+GOLANGCI_LINT ?= $(TOOL_DIR)/golangci-lint
+GOVULNCHECK ?= $(TOOL_DIR)/govulncheck
+OAPI_CODEGEN ?= $(TOOL_DIR)/oapi-codegen
+SYFT ?= $(TOOL_DIR)/syft
+GRYPE ?= $(TOOL_DIR)/grype

@@ -65,12 +65,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    libxkbcommon0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Extract pre-built FFmpeg from ffmpeg-source
+# 2. Extract pre-built FFmpeg from ffmpeg-source and register dynamic libraries
 COPY --from=ffmpeg-source /opt/ffmpeg /opt/ffmpeg
 COPY --from=ffmpeg-source /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-source /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+RUN echo "/opt/ffmpeg/lib" > /etc/ld.so.conf.d/ffmpeg.conf && ldconfig
 
 # 3. Install Go 1.26.5
 ARG GO_VERSION=1.26.5
@@ -97,9 +99,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && rustup component add rustfmt clippy \
     && chmod -R a+w /usr/local/rustup /usr/local/cargo
 
-# 6. Install pinned QA tools
+# 6. Install pinned QA tools (built with runner Go to match Go 1.26.5)
 ARG GOLANGCI_LINT_VERSION=2.8.0
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v${GOLANGCI_LINT_VERSION}
+RUN GOBIN=/usr/local/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION} \
+    && mkdir -p /go/bin && ln -sf /usr/local/bin/golangci-lint /go/bin/golangci-lint
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages check-jsonschema==0.34.1
 
@@ -124,7 +127,7 @@ RUN groupadd -g ${USER_GID} runner \
     && useradd -u ${USER_UID} -g runner -m -s /bin/bash runner \
     && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner \
     && chmod 0440 /etc/sudoers.d/runner \
-    && mkdir -p /workspace && chown -R runner:runner /workspace
+    && mkdir -p /workspace && chown -R runner:runner /workspace /go && chmod -R a+rwX /go
 
 USER runner
 WORKDIR /workspace

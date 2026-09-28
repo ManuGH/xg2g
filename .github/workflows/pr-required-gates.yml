@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -18,7 +19,16 @@ jobs:
   required-gates:
     name: Required Gates
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    container:
+      image: ghcr.io/manugh/xg2g-ci-runner:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init
+    timeout-minutes: 20
+    env:
+      LD_LIBRARY_PATH: /opt/ffmpeg/lib
+      TZ: UTC
 
     steps:
       - name: Checkout
@@ -117,17 +127,6 @@ jobs:
         if: steps.scope.outputs.skip_reason != ''
         run: echo "skip_reason=${{ steps.scope.outputs.skip_reason }}"
 
-      - name: Setup Node for WebUI gate
-        if: steps.scope.outputs.webui_gate_needed == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version-file: .node-version
-          cache: "npm"
-          cache-dependency-path: |
-            package-lock.json
-            apps/webui/package-lock.json
-            backend/e2e/fixture-server/package-lock.json
-
       - name: Install WebUI gate dependencies
         if: steps.scope.outputs.webui_gate_needed == 'true'
         shell: bash
@@ -159,14 +158,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # ffmpeg generates the HLS fixture for the real-hls.js playback spec;
-          # without it that spec skips itself (see scripts/gen-hls-fixture.sh).
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 update
-            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=15 ffmpeg
-          fi
+          # ffmpeg is pre-installed in ghcr.io/manugh/xg2g-ci-runner
           if [ "${{ steps.cache-playwright.outputs.cache-hit }}" != "true" ]; then
-            npx playwright install --with-deps chromium
+            npx playwright install chromium
           fi
           make webui-browser-smoke
 
