@@ -283,6 +283,13 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 		return
 	}
 	p.lease = lease
+	logger = logger.With().
+		Str("ingest_id", lease.Session().ID()).
+		Str("ingest_state", string(lease.IngestState())).
+		Logger()
+	logger.Info().
+		Str("event", "zap.prepare.acquired").
+		Msg("ingest session acquired for preparation")
 	p.mu.Unlock()
 
 	pipe, ok := lease.Session().Payload().(*SessionPipeline)

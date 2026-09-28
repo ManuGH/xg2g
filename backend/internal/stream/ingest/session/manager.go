@@ -86,7 +86,7 @@ func (m *Manager) Acquire(ctx context.Context, key SessionKey) (*Lease, error) {
 		// If starting, wait for start result outside mutex
 		if s.State() == StateStarting {
 			m.mu.Unlock()
-			lease, err := s.AwaitStart(ctx)
+			lease, err := s.AwaitStart(ctx, IngestStateWaiting)
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +108,7 @@ func (m *Manager) Acquire(ctx context.Context, key SessionKey) (*Lease, error) {
 
 	m.mu.Unlock()
 
-	lease, err := s.AwaitStart(ctx)
+	lease, err := s.AwaitStart(ctx, IngestStateNew)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

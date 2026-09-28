@@ -195,6 +195,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer lease.Release()
 
+	logger = logger.With().
+		Str("ingest_id", lease.Session().ID()).
+		Str("ingest_state", string(lease.IngestState())).
+		Logger()
+
 	logger.Info().
 		Dur("after", time.Since(requestedAt)).
 		Str("event", "zap.session").
