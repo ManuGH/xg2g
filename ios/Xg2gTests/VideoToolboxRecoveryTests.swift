@@ -7,6 +7,7 @@ import Foundation
 import Testing
 import UIKit
 import VideoToolbox
+import os
 
 @testable import Xg2g
 
@@ -188,6 +189,43 @@ struct VideoToolboxRecoveryTests {
         #expect(decoder.hasActiveSession)
     }
 
+    @Test func concurrentDelegateCallbacksRetainEveryEvent() throws {
+        let decoder = HardwareVideoDecoder()
+        let sink = MockRecoveryDecoderSink()
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(kCFAllocatorDefault, 16, 16,
+                                         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                                         nil, &pixelBuffer)
+        try #require(status == kCVReturnSuccess)
+        let frame = DecodedVideoFrame(pixelBuffer: try #require(pixelBuffer), pts: .zero,
+                                      structure: .wovenTopFieldFirst, generation: 0)
+        let iterations = 1_000
+
+        DispatchQueue.concurrentPerform(iterations: iterations) { _ in
+            sink.hardwareDecoder(decoder, didEmitFrame: frame)
+            sink.hardwareDecoder(decoder, didChangeHWActiveState: true)
+            sink.hardwareDecoder(decoder, didChangeVTDeinterlaceAccepted: true)
+            sink.hardwareDecoder(decoder, didEncounterDecodeError: kVTVideoDecoderBadDataErr)
+            sink.hardwareDecoder(decoder, didInvalidateSessionWithFatalError: kVTInvalidSessionErr)
+            sink.hardwareDecoder(decoder, didRequestSessionReconfiguration: kVTFormatDescriptionChangeNotSupportedErr)
+
+            // Reading snapshots must also be safe while other callbacks append.
+            _ = sink.emittedFrames
+            _ = sink.hwActiveStates
+            _ = sink.deinterlaceAcceptedStates
+            _ = sink.decodeErrors
+            _ = sink.fatalErrors
+            _ = sink.reconfigErrors
+        }
+
+        #expect(sink.emittedFrames.count == iterations)
+        #expect(sink.hwActiveStates.count == iterations)
+        #expect(sink.deinterlaceAcceptedStates.count == iterations)
+        #expect(sink.decodeErrors.count == iterations)
+        #expect(sink.fatalErrors.count == iterations)
+        #expect(sink.reconfigErrors.count == iterations)
+    }
+
     // MARK: - Test 6: Strict IDR-Only Recovery Never Fails Open on Timeout
 
     @Test func strictIDROnlyRecoveryNeverFailsOpenOnTimeout() async throws {
@@ -337,36 +375,48 @@ struct VideoToolboxRecoveryTests {
 
 // MARK: - Test Helpers & Mocks
 
-private final class MockRecoveryDecoderSink: HardwareVideoDecoderDelegate, @unchecked Sendable {
-    var emittedFrames: [DecodedVideoFrame] = []
-    var hwActiveStates: [Bool] = []
-    var deinterlaceAcceptedStates: [Bool] = []
-    var decodeErrors: [OSStatus] = []
-    var fatalErrors: [OSStatus] = []
-    var reconfigErrors: [OSStatus] = []
+private final class MockRecoveryDecoderSink: HardwareVideoDecoderDelegate, Sendable {
+    private struct Events {
+        var emittedFrames: [DecodedVideoFrame] = []
+        var hwActiveStates: [Bool] = []
+        var deinterlaceAcceptedStates: [Bool] = []
+        var decodeErrors: [OSStatus] = []
+        var fatalErrors: [OSStatus] = []
+        var reconfigErrors: [OSStatus] = []
+    }
+
+    // Decoder callbacks may arrive concurrently, even when the test suite is serialized.
+    private let events = OSAllocatedUnfairLock(initialState: Events())
+
+    var emittedFrames: [DecodedVideoFrame] { events.withLock { $0.emittedFrames } }
+    var hwActiveStates: [Bool] { events.withLock { $0.hwActiveStates } }
+    var deinterlaceAcceptedStates: [Bool] { events.withLock { $0.deinterlaceAcceptedStates } }
+    var decodeErrors: [OSStatus] { events.withLock { $0.decodeErrors } }
+    var fatalErrors: [OSStatus] { events.withLock { $0.fatalErrors } }
+    var reconfigErrors: [OSStatus] { events.withLock { $0.reconfigErrors } }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
-        emittedFrames.append(frame)
+        events.withLock { $0.emittedFrames.append(frame) }
     }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool) {
-        hwActiveStates.append(isHWActive)
+        events.withLock { $0.hwActiveStates.append(isHWActive) }
     }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool) {
-        deinterlaceAcceptedStates.append(isAccepted)
+        events.withLock { $0.deinterlaceAcceptedStates.append(isAccepted) }
     }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
-        decodeErrors.append(error)
+        events.withLock { $0.decodeErrors.append(error) }
     }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didInvalidateSessionWithFatalError error: OSStatus) {
-        fatalErrors.append(error)
+        events.withLock { $0.fatalErrors.append(error) }
     }
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didRequestSessionReconfiguration error: OSStatus) {
-        reconfigErrors.append(error)
+        events.withLock { $0.reconfigErrors.append(error) }
     }
 }
 
