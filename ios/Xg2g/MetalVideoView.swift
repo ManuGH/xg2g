@@ -132,6 +132,7 @@ public final class MetalVideoView: UIView {
 
     public weak var systemPresenter: SystemVideoPresenter? {
         didSet {
+            if oldValue !== systemPresenter { presentationEpoch &+= 1 }
             systemPresenter?.scalingMode = scalingMode
             applyPresentationPath()
         }
@@ -309,6 +310,14 @@ public final class MetalVideoView: UIView {
     /// the pipeline watch the clock for it and measure the difference instead of
     /// calling the submit "time to first picture", which is what it was doing.
     public var onFirstFieldSubmitted: (@MainActor (CMTime) -> Void)?
+#if DEBUG
+    /// Test seam before the system-layer GPU pass is encoded or committed.
+    internal var beforeSystemPassEncodeForTesting: ((MTLCommandBuffer) -> Void)?
+    /// Lets tests observe the hold weakly without extending its lifetime.
+    internal var didCreateSurfaceHoldForTesting: ((AnyObject) -> Void)?
+    /// Reports the main-actor admission decision after GPU completion.
+    internal var didHandleSystemPassCompletionForTesting: ((Int, Bool) -> Void)?
+#endif
     private var hasReportedFirstFrame: Bool = false
 
     private var callbackCount: Int = 0
@@ -371,8 +380,12 @@ public final class MetalVideoView: UIView {
     private var jitterAccumulator: Double = 0
 
     public var currentGeneration: Int = 0
+    /// Invalidates GPU completions after a reset or presentation-owner change,
+    /// including path switches that deliberately keep the channel generation.
+    private var presentationEpoch: UInt64 = 0
 
     public func resetForChannelZap(generation: Int) {
+        presentationEpoch &+= 1
         currentGeneration = generation
         reorderBuffer.clear()
         fieldQueue.removeAll(keepingCapacity: true)
@@ -1474,6 +1487,9 @@ public final class MetalVideoView: UIView {
             pixelBuffers: [field.pixelBuffer],
             textures: source.wrappers + [lumaWrap, chromaWrap]
         )
+#if DEBUG
+        didCreateSurfaceHoldForTesting?(hold)
+#endif
         commandBuffer.addCompletedHandler { _ in withExtendedLifetime(hold) {} }
         return true
     }
@@ -1614,23 +1630,42 @@ public final class MetalVideoView: UIView {
         CVBufferPropagateAttachments(field.pixelBuffer, destination)
         VideoGeometry.applyPixelAspectRatio(to: destination, aspectRatioOverride: aspectRatioOverride)
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              encodeDeinterlaceToNV12(field, into: destination, commandBuffer: commandBuffer) else {
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+            telemetry?.mutate { $0.droppedFrames += 1 }
+            return
+        }
+#if DEBUG
+        beforeSystemPassEncodeForTesting?(commandBuffer)
+#endif
+        guard encodeDeinterlaceToNV12(field, into: destination, commandBuffer: commandBuffer) else {
             telemetry?.mutate { $0.droppedFrames += 1 }
             return
         }
 
         let finished = FinishedField(pixelBuffer: destination, pts: pts, duration: duration, generation: field.generation)
+        let submittedEpoch = presentationEpoch
 
         commandBuffer.addCompletedHandler { [weak self] _ in
             DispatchQueue.main.async {
-                guard let self = self, finished.generation == self.currentGeneration else { return }
+                guard let self = self else { return }
+                guard finished.generation == self.currentGeneration,
+                      submittedEpoch == self.presentationEpoch,
+                      self.presentationPath == .systemLayer,
+                      self.systemPresenter === presenter else {
+#if DEBUG
+                    self.didHandleSystemPassCompletionForTesting?(finished.generation, false)
+#endif
+                    return
+                }
                 presenter.enqueue(
                     pixelBuffer: finished.pixelBuffer,
                     pts: finished.pts,
                     duration: finished.duration,
                     generation: finished.generation
                 )
+#if DEBUG
+                self.didHandleSystemPassCompletionForTesting?(finished.generation, true)
+#endif
                 if isFirstField {
                     self.onFirstFrameRendered?()
                     self.onFirstFieldSubmitted?(finished.pts)
