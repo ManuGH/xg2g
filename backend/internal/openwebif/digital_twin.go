@@ -208,6 +208,18 @@ func ParseTransponderKey(serviceRef string) string {
 	return serviceRef
 }
 
+// ParseProgramNumber extracts the 16-bit DVB service/program ID from an Enigma2 service reference.
+// If missing, unparseable, or 0, it returns 1.
+func ParseProgramNumber(serviceRef string) uint16 {
+	parts := strings.Split(serviceRef, ":")
+	if len(parts) >= 4 {
+		if val, err := strconv.ParseUint(parts[3], 16, 16); err == nil && val > 0 {
+			return uint16(val)
+		}
+	}
+	return 1
+}
+
 func (dt *DigitalTwin) populateDefaultData() {
 	dt.bouquets = map[string]string{
 		"1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet": "Favourites (TV)",
@@ -548,7 +560,8 @@ func (dt *DigitalTwin) serveTSStream(w http.ResponseWriter, r *http.Request, sRe
 		flusher.Flush()
 	}
 
-	_ = StreamTSContinuously(r.Context(), w, dt.config.MaxStreamBatches, dt.config.CAMGraceWindow)
+	progNum := ParseProgramNumber(sRef)
+	_ = StreamTSContinuouslyWithProgram(r.Context(), w, dt.config.MaxStreamBatches, dt.config.CAMGraceWindow, progNum)
 }
 
 // Assertions & Forensic Methods for Tests
