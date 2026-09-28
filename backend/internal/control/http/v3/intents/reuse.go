@@ -55,15 +55,15 @@ func isReusableLiveSessionCandidate(intent Intent, session, candidate *model.Ses
 	if candidate == nil || candidate.SessionID == "" {
 		return false
 	}
-	if candidate.SessionID == intent.SessionID {
-		return true
-	}
 	if candidate.State.IsTerminal() {
 		return false
 	}
 	switch candidate.State {
 	case model.SessionDraining, model.SessionStopping:
 		return false
+	}
+	if candidate.SessionID == intent.SessionID {
+		return true
 	}
 	if normalize.ServiceRef(candidate.ServiceRef) != normalize.ServiceRef(intent.ServiceRef) {
 		return false

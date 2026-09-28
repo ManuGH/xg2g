@@ -1178,6 +1178,141 @@ func TestService_ProcessIntent_StartTerminalReplayCreatesFreshSession(t *testing
 	}
 }
 
+func TestService_ProcessIntent_StartStoppingReplayCreatesFreshSession(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.putSequence = []putSessionResult{
+		{existingID: "stopping-sid", exists: true},
+		{exists: false},
+	}
+	deps.store.deleteOk = true
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"stopping-sid": {
+			SessionID:     "stopping-sid",
+			State:         model.SessionStopping,
+			CorrelationID: "corr-stopping",
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "fresh-sid",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-new",
+		Mode:          model.ModeLive,
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if res.SessionID != "fresh-sid" {
+		t.Fatalf("expected fresh session ID, got %q", res.SessionID)
+	}
+	if deps.store.deleteCalls != 1 {
+		t.Fatalf("expected stale idempotency cleanup once, got %d", deps.store.deleteCalls)
+	}
+	if deps.store.deleteSID != "stopping-sid" {
+		t.Fatalf("expected stopping session ID cleanup, got %q", deps.store.deleteSID)
+	}
+	if deps.store.putCalls != 2 {
+		t.Fatalf("expected retry after stale replay, got %d store calls", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 1 {
+		t.Fatalf("expected one publish after stale replay cleanup, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestService_ProcessIntent_StartDrainingReplayCreatesFreshSession(t *testing.T) {
+	deps := newMockDeps()
+	deps.store.putSequence = []putSessionResult{
+		{existingID: "draining-sid", exists: true},
+		{exists: false},
+	}
+	deps.store.deleteOk = true
+	deps.store.sessions = map[string]*model.SessionRecord{
+		"draining-sid": {
+			SessionID:     "draining-sid",
+			State:         model.SessionDraining,
+			CorrelationID: "corr-draining",
+		},
+	}
+	svc := NewService(deps)
+
+	res, err := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStart,
+		SessionID:     "fresh-sid",
+		ServiceRef:    "1:0:1:1337:42:99:0:0:0:0:",
+		Params:        map[string]string{"profile": "high"},
+		CorrelationID: "corr-new",
+		Mode:          model.ModeLive,
+		Logger:        zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %#v", err)
+	}
+	if res == nil || res.Status != "accepted" {
+		t.Fatalf("expected accepted result, got %#v", res)
+	}
+	if res.SessionID != "fresh-sid" {
+		t.Fatalf("expected fresh session ID, got %q", res.SessionID)
+	}
+	if deps.store.deleteCalls != 1 {
+		t.Fatalf("expected stale idempotency cleanup once, got %d", deps.store.deleteCalls)
+	}
+	if deps.store.deleteSID != "draining-sid" {
+		t.Fatalf("expected draining session ID cleanup, got %q", deps.store.deleteSID)
+	}
+	if deps.store.putCalls != 2 {
+		t.Fatalf("expected retry after stale replay, got %d store calls", deps.store.putCalls)
+	}
+	if len(deps.bus.calls) != 1 {
+		t.Fatalf("expected one publish after stale replay cleanup, got %d", len(deps.bus.calls))
+	}
+}
+
+func TestIsReusableLiveSessionCandidate_RejectsStoppingOrTerminalEvenIfSessionIDMatches(t *testing.T) {
+	intent := Intent{
+		SessionID:  "sid-123",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		Mode:       model.ModeLive,
+	}
+	session := &model.SessionRecord{
+		SessionID:  "sid-123",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+	}
+
+	stoppingCandidate := &model.SessionRecord{
+		SessionID:  "sid-123",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		State:      model.SessionStopping,
+	}
+	if isReusableLiveSessionCandidate(intent, session, stoppingCandidate) {
+		t.Fatal("expected stopping session to NOT be reusable candidate even with matching sessionID")
+	}
+
+	drainingCandidate := &model.SessionRecord{
+		SessionID:  "sid-123",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		State:      model.SessionDraining,
+	}
+	if isReusableLiveSessionCandidate(intent, session, drainingCandidate) {
+		t.Fatal("expected draining session to NOT be reusable candidate even with matching sessionID")
+	}
+
+	failedCandidate := &model.SessionRecord{
+		SessionID:  "sid-123",
+		ServiceRef: "1:0:1:1337:42:99:0:0:0:0:",
+		State:      model.SessionFailed,
+	}
+	if isReusableLiveSessionCandidate(intent, session, failedCandidate) {
+		t.Fatal("expected failed session to NOT be reusable candidate even with matching sessionID")
+	}
+}
+
 func TestService_ProcessIntent_StopAcceptedPublishesEvent(t *testing.T) {
 	deps := newMockDeps()
 	svc := NewService(deps)
