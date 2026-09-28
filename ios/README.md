@@ -55,15 +55,31 @@ No project generator and no extra toolchain is required. The app target uses an
 Xcode *synchronized folder group*, so new Swift files under `Xg2g/` are picked up
 without touching `Xg2g.xcodeproj`.
 
+The reference simulator is **iPhone 18 Pro on iOS 27** (Xcode 27):
+
 ```bash
 xcodebuild -project ios/Xg2g.xcodeproj -scheme Xg2g \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
 ```
 
 ```bash
 xcodebuild -project ios/Xg2g.xcodeproj -scheme Xg2g \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 ```
+
+Without `OS=`, `xcodebuild` resolves `name=` only against `OS:latest`, the
+newest iOS version the selected Xcode supports. A simulator that exists only on
+an older runtime is not found, and the command exits 70 with "Unable to find a
+device matching the provided destination specifier" before anything compiles.
+Under Xcode 27 that is `iPhone 17 Pro`, whose simulator exists only on the
+iOS 26.5 runtime. List what is installed:
+
+```bash
+xcrun simctl list devices available
+```
+
+Then either name a device listed under the newest runtime, or select any listed
+device by UDID with `-destination 'platform=iOS Simulator,id=<UDID>'`.
 
 No signing identity is required: the simulator signs ad-hoc ("Sign to Run
 Locally") on its own. Running on a physical device needs an Apple ID configured
