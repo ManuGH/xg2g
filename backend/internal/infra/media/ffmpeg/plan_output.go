@@ -527,7 +527,16 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			// Copied DVB H.264 may start an fMP4 fragment with reordered B-frames.
 			// Version-1 CTTS preserves their negative composition offsets instead of
 			// clamping them to a duplicate PTS at every segment boundary.
-			segmentOptions = append(segmentOptions, "movflags=+negative_cts_offsets")
+			// frag_discont writes each track's real start time into tfdt. Without it,
+			// the gap between the first audio sample and the first copied keyframe
+			// (up to a GOP on tune-in) survives only as a two-entry edit list, which
+			// Media3's fragmented MP4 extractor ignores, so video plays that far ahead.
+			// skip_sidx: the HLS muxer flushes fragments externally, and with a
+			// per-fragment sidx movenc then rewrites each fragment's first PTS to the
+			// previous fragment's end. On open-GOP broadcasts that moves the keyframe
+			// 100-140 ms early onto a B-frame's PTS at every segment boundary. HLS
+			// never reads sidx.
+			segmentOptions = append(segmentOptions, "movflags=+negative_cts_offsets+frag_discont+skip_sidx")
 		}
 		if a.LowLatencyHLS {
 			// Fragment each segment on the part-target grid so the LL-HLS
