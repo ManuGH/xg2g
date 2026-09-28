@@ -686,3 +686,96 @@ func TestManager_AllWaitersCancel_ConnectorIgnoresContext_NoZombie(t *testing.T)
 		t.Fatalf("expected StateActive, got %v", lease.State())
 	}
 }
+
+func TestManager_IngestStateAndStableID(t *testing.T) {
+	connector := &mockConnector{dialDelay: 40 * time.Millisecond}
+	mgr := NewManager(ManagerConfig{
+		WarmHoldDuration: 80 * time.Millisecond,
+		ConnectTimeout:   1 * time.Second,
+	}, connector)
+	defer mgr.Close()
+
+	key := SessionKey{ReceiverHost: "10.10.55.64", ServiceRef: "1:0:19:TEST_STATE"}
+
+	type result struct {
+		lease *Lease
+		err   error
+	}
+	resChan1 := make(chan result, 1)
+	resChan2 := make(chan result, 1)
+
+	ctx := context.Background()
+	// 1. First caller acquires session -> should be IngestStateNew
+	go func() {
+		l, err := mgr.Acquire(ctx, key)
+		resChan1 <- result{lease: l, err: err}
+	}()
+
+	// 2. While starting (connector delay is 40ms), second caller arrives -> should be IngestStateWaiting
+	time.Sleep(10 * time.Millisecond)
+	go func() {
+		l, err := mgr.Acquire(ctx, key)
+		resChan2 <- result{lease: l, err: err}
+	}()
+
+	r1 := <-resChan1
+	if r1.err != nil {
+		t.Fatalf("first acquire failed: %v", r1.err)
+	}
+	defer r1.lease.Release()
+
+	r2 := <-resChan2
+	if r2.err != nil {
+		t.Fatalf("second acquire failed: %v", r2.err)
+	}
+	defer r2.lease.Release()
+
+	if r1.lease.IngestState() != IngestStateNew {
+		t.Errorf("expected lease 1 to have IngestStateNew, got %v", r1.lease.IngestState())
+	}
+	if r2.lease.IngestState() != IngestStateWaiting {
+		t.Errorf("expected lease 2 to have IngestStateWaiting, got %v", r2.lease.IngestState())
+	}
+
+	ingestID := r1.lease.Session().ID()
+	if ingestID == "" {
+		t.Errorf("expected non-empty ingest ID on session")
+	}
+	if r2.lease.Session().ID() != ingestID {
+		t.Errorf("expected identical ingest ID between concurrent callers: %s vs %s", ingestID, r2.lease.Session().ID())
+	}
+
+	// 3. Third caller on active session -> should be IngestStateReused
+	lease3, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("third acquire failed: %v", err)
+	}
+	defer lease3.Release()
+
+	if lease3.IngestState() != IngestStateReused {
+		t.Errorf("expected lease 3 to have IngestStateReused, got %v", lease3.IngestState())
+	}
+	if lease3.Session().ID() != ingestID {
+		t.Errorf("expected lease 3 to share stable ingest ID: %s vs %s", ingestID, lease3.Session().ID())
+	}
+
+	// 4. Release all leases and wait past hold duration -> next acquire must start fresh session
+	r1.lease.Release()
+	r2.lease.Release()
+	lease3.Release()
+
+	time.Sleep(120 * time.Millisecond)
+
+	lease4, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("fourth acquire failed: %v", err)
+	}
+	defer lease4.Release()
+
+	if lease4.IngestState() != IngestStateNew {
+		t.Errorf("expected lease 4 after expiry to have IngestStateNew, got %v", lease4.IngestState())
+	}
+	if lease4.Session().ID() == ingestID {
+		t.Errorf("expected lease 4 to have a new ingest ID, got same: %s", ingestID)
+	}
+}

@@ -7,6 +7,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -40,9 +41,21 @@ type StreamLifecycleWatcher interface {
 	OnDone(callback func(err error))
 }
 
+// IngestState represents how a lease was acquired relative to upstream connection lifecycle.
+type IngestState string
+
+const (
+	IngestStateNew     IngestState = "new"
+	IngestStateWaiting IngestState = "waiting"
+	IngestStateReused  IngestState = "reused"
+)
+
+var sessionSeq atomic.Uint64
+
 // Session manages a single shared upstream broadcast stream.
 // Note: Session owns the upstream io.ReadCloser exclusively.
 type Session struct {
+	id           string
 	key          SessionKey
 	holdDuration time.Duration
 	onTeardown   func(s *Session)
@@ -63,13 +76,20 @@ type Session struct {
 
 // NewSession creates an unstarted session in StateStarting.
 func NewSession(key SessionKey, holdDuration time.Duration, onTeardown func(s *Session)) *Session {
+	id := fmt.Sprintf("ingest-%d-%d", time.Now().Unix(), sessionSeq.Add(1))
 	return &Session{
+		id:           id,
 		key:          key.Canonicalize(),
 		holdDuration: holdDuration,
 		onTeardown:   onTeardown,
 		state:        StateStarting,
 		readyChan:    make(chan struct{}),
 	}
+}
+
+// ID returns the stable identifier for this physical ingest session.
+func (s *Session) ID() string {
+	return s.id
 }
 
 // Key returns the session's canonical key.
@@ -161,12 +181,12 @@ func (s *Session) SetFailed(err error) {
 }
 
 // AwaitStart waits for session startup to complete, handling cancellation cleanly.
-func (s *Session) AwaitStart(ctx context.Context) (*Lease, error) {
+func (s *Session) AwaitStart(ctx context.Context, state IngestState) (*Lease, error) {
 	s.mu.Lock()
 	if s.state == StateActive {
 		s.refCount++
 		s.mu.Unlock()
-		return newLease(s), nil
+		return newLease(s, state), nil
 	}
 	if s.state == StateFailed {
 		err := s.startErr
@@ -210,7 +230,7 @@ func (s *Session) AwaitStart(ctx context.Context) (*Lease, error) {
 
 		if s.state == StateActive {
 			s.refCount++
-			return newLease(s), nil
+			return newLease(s, state), nil
 		}
 		if s.state == StateStopped {
 			return nil, ErrSessionClosed
@@ -238,7 +258,7 @@ func (s *Session) TryAcquireActive() (*Lease, bool) {
 
 	if s.state == StateActive {
 		s.refCount++
-		return newLease(s), true
+		return newLease(s, IngestStateReused), true
 	}
 
 	return nil, false
@@ -321,12 +341,16 @@ func (s *Session) Stop() {
 
 // Lease represents a subscriber's reference to an active Shared Ingest Session.
 type Lease struct {
-	session  *Session
-	released atomic.Bool
+	session     *Session
+	ingestState IngestState
+	released    atomic.Bool
 }
 
-func newLease(s *Session) *Lease {
-	return &Lease{session: s}
+func newLease(s *Session, state IngestState) *Lease {
+	if state == "" {
+		state = IngestStateReused
+	}
+	return &Lease{session: s, ingestState: state}
 }
 
 // Key returns the session key.
@@ -342,6 +366,11 @@ func (l *Lease) Session() *Session {
 // State returns the current session state.
 func (l *Lease) State() State {
 	return l.session.State()
+}
+
+// IngestState returns how the session lease was acquired ("new", "waiting", or "reused").
+func (l *Lease) IngestState() IngestState {
+	return l.ingestState
 }
 
 // Release decrements the subscriber count. It is safe and idempotent to call multiple times.
