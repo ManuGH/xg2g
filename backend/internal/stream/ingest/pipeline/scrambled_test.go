@@ -126,7 +126,7 @@ func TestPipeline_ScrambledUpstream_DoneChPreservesScrambledDiagnosis(t *testing
 	payload := scrambleVideoPID(t, clear, videoPIDOf(t, clear))
 
 	connectorCfg := DefaultConnectorConfig("http://127.0.0.1", 8001)
-	pipe, err := NewSessionPipeline(connectorCfg.NormConfig, 4*1024*1024, 1)
+	pipe, err := NewSessionPipeline(context.Background(), connectorCfg.NormConfig, 4*1024*1024, 1)
 	if err != nil {
 		t.Fatalf("failed to create pipeline: %v", err)
 	}
