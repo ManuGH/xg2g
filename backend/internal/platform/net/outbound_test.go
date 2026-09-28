@@ -144,6 +144,16 @@ func TestValidateOutboundURL(t *testing.T) {
 			rawURL:  "http://127.0.0.1",
 			wantErr: false,
 		},
+		{
+			name: "allow allowlisted private ip in hosts",
+			policy: OutboundPolicy{Enabled: true, Allow: OutboundAllowlist{
+				Hosts:   []string{"10.10.55.64"},
+				Ports:   []int{80},
+				Schemes: []string{"http"},
+			}},
+			rawURL:  "http://10.10.55.64",
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range cases {

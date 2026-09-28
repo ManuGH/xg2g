@@ -144,7 +144,7 @@ func ParseValidatedOutboundURL(ctx context.Context, raw string, policy OutboundP
 		if isBlockedIP(ip) && !ipInCIDRs(ip, allowedCIDRs) {
 			return nil, fmt.Errorf("blocked ip %s", ip.String())
 		}
-		if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP {
+		if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP && !hostAllowed {
 			return nil, fmt.Errorf("blocked private ip %s for host %s", ip.String(), host)
 		}
 		if ipInCIDRs(ip, allowedCIDRs) {
@@ -214,8 +214,8 @@ func SafeDialContext(policy OutboundPolicy, baseDialer *net.Dialer) func(ctx con
 			if isBlockedIP(ip) && !ipInCIDRs(ip, allowedCIDRs) {
 				return nil, fmt.Errorf("blocked ip %s", ip.String())
 			}
-			if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP {
-				return nil, fmt.Errorf("blocked private ip %s for host %s", ip.String(), host)
+			if isPrivateOrInternalIP(ip) && !ipInCIDRs(ip, allowedCIDRs) && !isExplicitIP && !hostAllowed {
+				return nil, fmt.Errorf("blocked private ip %s for host %s", ip.String(), normalizedHost)
 			}
 			if hostAllowed || ipInCIDRs(ip, allowedCIDRs) {
 				dialableIPs = append(dialableIPs, ip)
