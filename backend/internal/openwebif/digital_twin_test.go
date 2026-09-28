@@ -294,3 +294,29 @@ func TestDigitalTwin_OpenWebIFClientCompatibility(t *testing.T) {
 
 	twin.AssertNoAssertionFailure(t)
 }
+
+func TestDigitalTwin_DemuxerExhaustionOnSharedTransponder(t *testing.T) {
+	twin := NewDigitalTwin(
+		WithPhysicalTuners(2),
+		WithDemuxersPerTuner(2), // Max 2 services per tuner
+		WithCrashOnTunerExhaustion(false),
+	)
+	defer twin.Close()
+
+	// Transponder 3FB:1:C00000 has ARD HD and ZDF HD
+	resp1, err := http.Get(twin.StreamURL("1:0:19:283D:3FB:1:C00000:0:0:0:"))
+	require.NoError(t, err)
+	defer resp1.Body.Close()
+	assert.Equal(t, http.StatusOK, resp1.StatusCode)
+
+	resp2, err := http.Get(twin.StreamURL("1:0:19:283E:3FB:1:C00000:0:0:0:"))
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+	assert.Equal(t, http.StatusOK, resp2.StatusCode)
+
+	// A 3rd service on the SAME transponder must exceed DemuxersPerTuner=2
+	resp3, err := http.Get(twin.StreamURL("1:0:19:283F:3FB:1:C00000:0:0:0:"))
+	require.NoError(t, err)
+	defer resp3.Body.Close()
+	assert.Equal(t, http.StatusServiceUnavailable, resp3.StatusCode)
+}

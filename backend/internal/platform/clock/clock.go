@@ -127,6 +127,9 @@ func (vc *VirtualClock) NewTimer(d time.Duration) Timer {
 }
 
 func (vc *VirtualClock) NewTicker(d time.Duration) Ticker {
+	if d <= 0 {
+		panic("non-positive interval for NewTicker")
+	}
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 
@@ -146,7 +149,10 @@ func (vc *VirtualClock) NewTicker(d time.Duration) Ticker {
 func (vc *VirtualClock) Advance(d time.Duration) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
+	vc.advanceLocked(d)
+}
 
+func (vc *VirtualClock) advanceLocked(d time.Duration) {
 	targetTime := vc.current.Add(d)
 	vc.current = targetTime
 
@@ -170,7 +176,8 @@ func (vc *VirtualClock) Advance(d time.Duration) {
 	}
 	vc.timers = remainingTimers
 
-	// Fire due tickers
+	// Fire due tickers and prune stopped ones
+	var remainingTickers []*virtualTicker
 	for _, tk := range vc.tickers {
 		if tk.stopped {
 			continue
@@ -182,37 +189,56 @@ func (vc *VirtualClock) Advance(d time.Duration) {
 			}
 			tk.nextTick = tk.nextTick.Add(tk.interval)
 		}
+		if !tk.stopped {
+			remainingTickers = append(remainingTickers, tk)
+		}
 	}
+	vc.tickers = remainingTickers
 
 	vc.cond.Broadcast()
 }
 
-// Set explicitly sets the current virtual time.
+// Set explicitly sets the current virtual time atomically.
 func (vc *VirtualClock) Set(t time.Time) {
 	vc.mu.Lock()
+	defer vc.mu.Unlock()
+
 	diff := t.Sub(vc.current)
-	vc.mu.Unlock()
 	if diff > 0 {
-		vc.Advance(diff)
+		vc.advanceLocked(diff)
 	} else {
-		vc.mu.Lock()
 		vc.current = t
-		vc.mu.Unlock()
+		vc.cond.Broadcast()
 	}
 }
 
-// ActiveWaiters returns the number of active timers and tickers registered with the clock.
+func (vc *VirtualClock) activeWaitersLocked() int {
+	count := 0
+	for _, t := range vc.timers {
+		if !t.stopped && !t.fired {
+			count++
+		}
+	}
+	for _, tk := range vc.tickers {
+		if !tk.stopped {
+			count++
+		}
+	}
+	return count
+}
+
+// ActiveWaiters returns the number of active (non-stopped, non-fired) timers and tickers registered with the clock.
 func (vc *VirtualClock) ActiveWaiters() int {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-	return len(vc.timers) + len(vc.tickers)
+	return vc.activeWaitersLocked()
 }
 
-// BlockUntilWaiters blocks until at least n timers/tickers are waiting.
+// BlockUntilWaiters blocks until at least n active timers/tickers are waiting.
 func (vc *VirtualClock) BlockUntilWaiters(n int) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-	for (len(vc.timers) + len(vc.tickers)) < n {
+	for vc.activeWaitersLocked() < n {
 		vc.cond.Wait()
 	}
 }
@@ -234,6 +260,7 @@ func (vt *virtualTimer) Stop() bool {
 	defer vt.vc.mu.Unlock()
 	wasActive := !vt.stopped && !vt.fired
 	vt.stopped = true
+	vt.vc.cond.Broadcast()
 	return wasActive
 }
 
@@ -277,12 +304,28 @@ func (vt *virtualTicker) Stop() {
 	vt.vc.mu.Lock()
 	defer vt.vc.mu.Unlock()
 	vt.stopped = true
+	vt.vc.cond.Broadcast()
 }
 
 func (vt *virtualTicker) Reset(d time.Duration) {
+	if d <= 0 {
+		panic("non-positive interval for Ticker.Reset")
+	}
 	vt.vc.mu.Lock()
 	defer vt.vc.mu.Unlock()
 	vt.interval = d
 	vt.nextTick = vt.vc.current.Add(d)
 	vt.stopped = false
+
+	found := false
+	for _, tk := range vt.vc.tickers {
+		if tk == vt {
+			found = true
+			break
+		}
+	}
+	if !found {
+		vt.vc.tickers = append(vt.vc.tickers, vt)
+	}
+	vt.vc.cond.Broadcast()
 }
