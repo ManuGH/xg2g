@@ -1030,9 +1030,21 @@ final class AppModel {
         do {
             _ = try await enrollment.completeEnrollment()
             await session?.resetAfterReenrollment()
-            state = .ready
             lastError = nil
+
+            // Load before announcing `.ready`. The pairing screen's task is
+            // what awaits this call, and SwiftUI cancels that task the moment
+            // the ready screen replaces it. With the flip first, the initial
+            // requests died with -999 and the app came up with no channels —
+            // on tvOS nothing reloads on the way to the home hub, so it stayed
+            // that way. `start()` is not affected: its caller is the root view.
+            let stateBeforeLoad = state
             await loadInitialData()
+
+            // The load can move the state itself — a 401 routes to re-pairing
+            // through `handle`, "Anderen Server wählen" to setup. Those win.
+            guard state == stateBeforeLoad else { return }
+            state = .ready
         } catch {
             lastError = "Pairing could not be completed: \(error.localizedDescription)"
         }
