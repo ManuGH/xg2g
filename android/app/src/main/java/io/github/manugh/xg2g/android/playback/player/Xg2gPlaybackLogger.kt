@@ -9,20 +9,81 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import io.github.manugh.xg2g.android.BuildConfig
+import io.github.manugh.xg2g.android.transport.playback.PlaybackTelemetrySnapshot
 import java.io.IOException
 
 @OptIn(markerClass = [UnstableApi::class])
 internal class Xg2gPlaybackLogger : AnalyticsListener {
+
+    var totalBytesReceived: Long = 0L
+        private set
+    var networkStallsCount: Long = 0L
+        private set
+    var longestNetworkStallMs: Double = 0.0
+        private set
+    var audioUnderrunsCount: Long = 0L
+        private set
+    private var stallStartMs: Long = 0L
+    val pipelineWarnings: MutableList<String> = mutableListOf()
+    var firstFrameRenderedTimeMs: Long = 0L
+        private set
+    var streamStartTimeMs: Long = 0L
+        private set
 
     init {
         if (BuildConfig.DEBUG) {
             androidx.media3.common.util.Log.setLogLevel(androidx.media3.common.util.Log.LOG_LEVEL_ALL)
         }
         logDeviceHardwareSpecs()
+    }
+
+    fun resetSession() {
+        totalBytesReceived = 0L
+        networkStallsCount = 0L
+        longestNetworkStallMs = 0.0
+        audioUnderrunsCount = 0L
+        stallStartMs = 0L
+        pipelineWarnings.clear()
+        firstFrameRenderedTimeMs = 0L
+        streamStartTimeMs = android.os.SystemClock.elapsedRealtime()
+    }
+
+    fun snapshot(player: ExoPlayer, recoveries: Long): PlaybackTelemetrySnapshot {
+        val videoCounters = player.videoDecoderCounters?.apply { ensureUpdated() }
+        val rendered = (videoCounters?.renderedOutputBufferCount ?: 0).toLong()
+        val dropped = (videoCounters?.droppedBufferCount ?: 0).toLong()
+        val ttfp = if (firstFrameRenderedTimeMs > 0L && streamStartTimeMs > 0L) {
+            (firstFrameRenderedTimeMs - streamStartTimeMs).toDouble().coerceAtLeast(0.0)
+        } else null
+
+        return PlaybackTelemetrySnapshot(
+            bytesReceivedTotal = totalBytesReceived,
+            decodedFramesTotal = rendered + dropped,
+            presentedFramesTotal = rendered,
+            audioUnderrunsTotal = audioUnderrunsCount,
+            networkStallsTotal = networkStallsCount,
+            longestNetworkStallMs = longestNetworkStallMs,
+            decodeErrorsTotal = 0L,
+            decoderRecoveriesTotal = recoveries,
+            droppedFramesTotal = dropped,
+            warnings = pipelineWarnings.toList(),
+            ttfpMs = ttfp
+        )
+    }
+
+    override fun onAudioUnderrun(
+        eventTime: AnalyticsListener.EventTime,
+        bufferSize: Int,
+        bufferSizeMs: Long,
+        elapsedSinceLastFeedMs: Long
+    ) {
+        audioUnderrunsCount++
+        Log.w(TAG, "[XG2G_PLAYBACK] AudioUnderrun -> count=$audioUnderrunsCount bufferSizeMs=${bufferSizeMs}ms elapsed=${elapsedSinceLastFeedMs}ms")
     }
 
     override fun onLoadStarted(
@@ -109,6 +170,19 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         eventTime: AnalyticsListener.EventTime,
         state: Int
     ) {
+        if (state == Player.STATE_BUFFERING) {
+            stallStartMs = eventTime.realtimeMs
+        } else if (stallStartMs > 0L) {
+            val duration = (eventTime.realtimeMs - stallStartMs).toDouble()
+            if (duration > 0) {
+                networkStallsCount++
+                if (duration > longestNetworkStallMs) {
+                    longestNetworkStallMs = duration
+                }
+            }
+            stallStartMs = 0L
+        }
+
         val stateName = when (state) {
             Player.STATE_IDLE -> "IDLE"
             Player.STATE_BUFFERING -> "BUFFERING"
@@ -117,6 +191,16 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
             else -> "UNKNOWN($state)"
         }
         Log.i(TAG, "[XG2G_PLAYBACK] PlaybackState -> $stateName (realtime=${eventTime.realtimeMs}ms)")
+    }
+
+    override fun onRenderedFirstFrame(
+        eventTime: AnalyticsListener.EventTime,
+        output: Any,
+        renderTimeMs: Long
+    ) {
+        if (firstFrameRenderedTimeMs == 0L && streamStartTimeMs > 0L) {
+            firstFrameRenderedTimeMs = eventTime.realtimeMs
+        }
     }
 
     override fun onIsPlayingChanged(
@@ -164,6 +248,9 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         droppedFrames: Int,
         elapsedMs: Long
     ) {
+        if (droppedFrames > 25) {
+            pipelineWarnings.add("dropped $droppedFrames frames in ${elapsedMs}ms")
+        }
         Log.w(TAG, "[XG2G_PLAYBACK] DroppedVideoFrames -> dropped $droppedFrames frames in ${elapsedMs}ms")
     }
 
@@ -171,6 +258,7 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         eventTime: AnalyticsListener.EventTime,
         error: PlaybackException
     ) {
+        pipelineWarnings.add("player error: ${error.errorCodeName}")
         Log.e(TAG, "[XG2G_PLAYBACK] PlayerError -> code=${error.errorCodeName}(${error.errorCode}) message=${error.message}", error)
     }
 
@@ -179,6 +267,7 @@ internal class Xg2gPlaybackLogger : AnalyticsListener {
         loadEventInfo: LoadEventInfo,
         mediaLoadData: MediaLoadData
     ) {
+        totalBytesReceived += loadEventInfo.bytesLoaded
         val loadTimeMs = loadEventInfo.loadDurationMs
         val bytes = loadEventInfo.bytesLoaded
         Log.d(TAG, "[XG2G_NETWORK] LoadCompleted -> uri=${loadEventInfo.uri.lastPathSegment} duration=${loadTimeMs}ms bytes=$bytes")

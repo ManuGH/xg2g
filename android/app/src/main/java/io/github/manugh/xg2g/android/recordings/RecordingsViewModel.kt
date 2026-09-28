@@ -155,7 +155,8 @@ internal class RecordingsViewModel(
                 baseUrlProvider = baseUrlProvider,
                 stateStore = stateStore,
                 dpopProvider = dpopProvider,
-                stateMachine = stateMachine
+                stateMachine = stateMachine,
+                fallbackTokenProvider = authTokenProvider
             )
             return RecordingsViewModel(
                 baseUrl = baseUrlProvider(),
