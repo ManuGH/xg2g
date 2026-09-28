@@ -105,15 +105,19 @@ func TestStart_TunerSourceFailsWhenAcquireFails(t *testing.T) {
 
 // stubLiveSource serves canned bytes and records its release.
 type stubLiveSource struct {
-	preamble []byte
-	body     io.ReadCloser
-	facts    ports.LiveSourceFacts
-	released int
-	attached int
+	preamble  []byte
+	body      io.ReadCloser
+	facts     ports.LiveSourceFacts
+	attachErr error
+	released  int
+	attached  int
 }
 
 func (s *stubLiveSource) Attach(context.Context, time.Duration) ([]byte, io.ReadCloser, error) {
 	s.attached++
+	if s.attachErr != nil {
+		return nil, nil, s.attachErr
+	}
 	return s.preamble, s.body, nil
 }
 func (s *stubLiveSource) Facts() ports.LiveSourceFacts { return s.facts }
@@ -123,6 +127,14 @@ type stubLiveSources struct{ src *stubLiveSource }
 
 func (p *stubLiveSources) AcquireLiveSource(context.Context, string) (ports.LiveSource, error) {
 	return p.src, nil
+}
+
+type customLiveSources struct {
+	acquireFn func(context.Context, string) (ports.LiveSource, error)
+}
+
+func (c *customLiveSources) AcquireLiveSource(ctx context.Context, s string) (ports.LiveSource, error) {
+	return c.acquireFn(ctx, s)
 }
 
 // The preamble has to be the head of the byte stream FFmpeg reads. Handing over
@@ -225,5 +237,40 @@ func TestPlanInput_TunerSourceRefusesAnEmptyInput(t *testing.T) {
 	// an empty value that ffmpeg would read as the next argument.
 	if _, err := adapter.planInput(tunerSpec(), ""); err == nil {
 		t.Error("planInput accepted a tuner source with no input at all")
+	}
+}
+
+func TestSharedIngestInput_RetriesOnClosedPipeline(t *testing.T) {
+	src1 := &stubLiveSource{
+		attachErr: errors.New("attach to shared ingest: session pipeline closed"),
+	}
+	src2 := &stubLiveSource{
+		preamble: []byte("PAT-PMT-PREAMBLE"),
+		body:     io.NopCloser(strings.NewReader("ok-payload")),
+	}
+
+	callCount := 0
+	adapter := &LocalAdapter{Logger: zerolog.Nop()}
+	adapter.LiveSources = &customLiveSources{
+		acquireFn: func(_ context.Context, _ string) (ports.LiveSource, error) {
+			callCount++
+			if callCount == 1 {
+				return src1, nil
+			}
+			return src2, nil
+		},
+	}
+
+	in, err := adapter.acquireSharedIngestInput(context.Background(), tunerSpec())
+	if err != nil {
+		t.Fatalf("expected successful retry, got: %v", err)
+	}
+	defer in.Release()
+
+	if callCount != 2 {
+		t.Errorf("expected 2 acquire calls, got %d", callCount)
+	}
+	if src1.released != 1 {
+		t.Errorf("expected stale src1 to be released once, got %d", src1.released)
 	}
 }

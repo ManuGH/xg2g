@@ -275,9 +275,10 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 						inChannels = t.Channels
 					}
 				}
+				filterChain := "aresample=async=1"
 				if inChannels >= 6 && tp.Channels == 2 {
 					hasDownmixFilter = true
-					audioArgs = append(audioArgs, fmt.Sprintf("-filter:a:%d", i), BroadcastDownmixFilter)
+					filterChain = fmt.Sprintf("%s,%s", BroadcastDownmixFilter, filterChain)
 				}
 
 				audioArgs = append(audioArgs,
@@ -285,7 +286,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
 					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", tp.Channels),
 					fmt.Sprintf("-ar:a:%d", i), "48000",
-					fmt.Sprintf("-filter:a:%d", i), "aresample=async=1",
+					fmt.Sprintf("-filter:a:%d", i), filterChain,
 				)
 			}
 
@@ -402,8 +403,9 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 		channels = 2
 	}
 
+	audioFilter := "aresample=async=1"
 	if inChannels >= 6 && channels == 2 {
-		args = append(args, "-filter:a", BroadcastDownmixFilter)
+		audioFilter = fmt.Sprintf("%s,%s", BroadcastDownmixFilter, audioFilter)
 	}
 
 	return append(args,
@@ -411,7 +413,7 @@ func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopo
 		"-b:a", fmt.Sprintf("%dk", bitrateKbps),
 		"-ac", fmt.Sprintf("%d", channels),
 		"-ar", "48000",
-		"-af", "aresample=async=1",
+		"-af", audioFilter,
 		"-sn",
 	)
 }

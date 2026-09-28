@@ -81,7 +81,7 @@ func (p *Provider) AcquireLiveSource(ctx context.Context, serviceRef string) (po
 
 	payload := lease.Session().Payload()
 	pipe, ok := payload.(*pipeline.SessionPipeline)
-	if !ok || pipe == nil {
+	if !ok || pipe == nil || pipe.IsClosed() {
 		lease.Release()
 		return nil, fmt.Errorf("shared ingest session holds no usable pipeline")
 	}
