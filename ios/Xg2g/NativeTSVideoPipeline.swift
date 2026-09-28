@@ -716,11 +716,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         return generated
     }()
 
+    /// - Parameter zapID: the coordinator's request correlation ID; the internal
+    ///   generation counter remains local to this pipeline.
     /// - Parameter requestedAt: when the user asked for this, which is not the
     ///   same as when this function runs. Callers that do work first — resolving
     ///   a URL, dismissing a screen — should stamp their own start so the figure
     ///   covers what the viewer waited through rather than what was left of it.
-    public func startStreaming(url: URL, requestedAt: CFTimeInterval = CACurrentMediaTime()) {
+    public func startStreaming(
+        url: URL,
+        zapID: String? = nil,
+        requestedAt: CFTimeInterval = CACurrentMediaTime()
+    ) {
         zapLock.lock()
         currentZapId += 1
         let zapId = currentZapId
@@ -793,7 +799,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let stream = LiveStreamIngest(delegate: self)
         self.ingest = stream
-        stream.open(url: targetURL, correlationID: Self.zapIdentifier(zapId))
+        stream.open(url: targetURL, correlationID: zapID ?? Self.zapIdentifier(zapId))
 
         let issuedAt = CACurrentMediaTime()
         sessionState.mutate { $0.requestIssuedTime = issuedAt }

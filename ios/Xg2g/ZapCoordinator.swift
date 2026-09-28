@@ -243,7 +243,7 @@ final class ZapCoordinator: ObservableObject {
         inFlight?.session = session
 
         phase = .buffering(serviceRef: serviceRef)
-        session.startStreaming(url: url, requestedAt: started)
+        session.startStreaming(url: url, zapID: zapID, requestedAt: started)
 
         // Presentation readiness is decided here, not by the backend: a picture decoded,
         // audio that covers the instant the clock will start on, and no recovery in
@@ -365,7 +365,7 @@ final class ZapCoordinator: ObservableObject {
         // got through while the audio, which followed the new clock, plays on.
         //
         // This is the order the prepared path has always used, for the same reason.
-        session.startStreaming(url: url, requestedAt: requestedAt)
+        session.startStreaming(url: url, zapID: zapID, requestedAt: requestedAt)
         context.bindWithoutPreparation(session)
 
         let retiring = playing
