@@ -368,16 +368,27 @@ final class ZapCoordinator: ObservableObject {
         session.startStreaming(url: url, zapID: zapID, requestedAt: requestedAt)
         context.bindWithoutPreparation(session)
 
+        let serviceRef = url.lastPathComponent
+        session.onFirstPictureVisible = { [weak self, weak session] in
+            Task { @MainActor [weak self, weak session] in
+                guard let self, let session, self.playing === session, self.isCurrent(zapID) else { return }
+                let firstFrameAt = CACurrentMediaTime()
+                let totalMs = Int((firstFrameAt - requestedAt) * 1000)
+                self.note(zapID, "firstVisibleFrame", serviceRef, extra: "total=\(totalMs)ms")
+                self.displayedServiceRef = serviceRef
+                self.note(zapID, "displayedChannel.changed", serviceRef, extra: "total=\(totalMs)ms")
+            }
+        }
+
         let retiring = playing
         playing = session
-        presentedServiceRef = url.lastPathComponent
-        displayedServiceRef = url.lastPathComponent
+        presentedServiceRef = serviceRef
         requestedServiceRef = nil
-        note(zapID, "presentedChannel.changed", url.lastPathComponent)
+        note(zapID, "presentedChannel.changed", serviceRef)
 
         follow(session)
         phase = .idle
-        installTelemetry(for: session, zapID: zapID, serviceRef: url.lastPathComponent)
+        installTelemetry(for: session, zapID: zapID, serviceRef: serviceRef)
 
         if let retiring, retiring !== session {
             summarize(retiring, zapID: zapID, event: "retire.stats")
