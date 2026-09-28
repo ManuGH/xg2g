@@ -803,9 +803,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // happens at commit; a session that reached in here would black out whatever
         // channel is currently playing, which is exactly what a preparation must not do.
 
+        let effectiveZapID = zapID ?? Self.zapIdentifier(zapId)
         let stream = LiveStreamIngest(delegate: self)
         self.ingest = stream
-        stream.open(url: targetURL, correlationID: zapID ?? Self.zapIdentifier(zapId))
+        stream.open(url: targetURL, correlationID: effectiveZapID)
 
         let issuedAt = CACurrentMediaTime()
         sessionState.mutate { $0.requestIssuedTime = issuedAt }
@@ -820,7 +821,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(setupLog, privacy: .public)")
         TelemetryServer.shared.log(setupLog)
 
-        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | ZapID: \(Self.zapIdentifier(zapId))"
+        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | ZapID: \(effectiveZapID)"
         print(startLog)
         logger.notice("\(startLog, privacy: .public)")
         TelemetryServer.shared.log(startLog)
