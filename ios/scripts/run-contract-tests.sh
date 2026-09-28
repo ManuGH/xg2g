@@ -9,16 +9,21 @@
 # and the missing Apple device types) were of the kind that doubles reproduce
 # faithfully on both sides.
 #
-# Usage: ios/scripts/run-contract-tests.sh [simulator name]
+# Usage: ios/scripts/run-contract-tests.sh [simulator name or UDID]
+#
+# Without an argument, IOS_SIMULATOR or an automatically selected simulator is
+# used; see select-simulator.sh.
 
 set -euo pipefail
 
-SIMULATOR="${1:-iPhone 17 Pro}"
 # Fixed, and matched by the address in Xg2g.xcscheme. A configurable port here
 # would silently point the fixture and the client at different places.
 PORT=18422
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BASE_URL="http://127.0.0.1:${PORT}"
+# Resolved once, before the fixture starts, so the build check and the test run
+# below use the same device.
+SIMULATOR="$("${REPO_ROOT}/ios/scripts/select-simulator.sh" "${1:-}")"
 
 # Kill the whole process group, not the subshell.
 #
