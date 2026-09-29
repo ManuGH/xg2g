@@ -24,11 +24,13 @@ public enum BackgroundPlaybackState: String, Sendable, Equatable {
 }
 
 struct PlayingRecordingItem: Identifiable, Equatable, Sendable {
+    let sessionToken: UUID
     let id: String
     let recording: Recording
     let initialPosition: Double
 
-    init(id: String, recording: Recording, initialPosition: Double) {
+    init(sessionToken: UUID = UUID(), id: String, recording: Recording, initialPosition: Double) {
+        self.sessionToken = sessionToken
         self.id = id
         self.recording = recording
         self.initialPosition = initialPosition
@@ -61,12 +63,36 @@ final class PlaybackManager: ObservableObject {
     @Published private(set) var pipState: PiPState = .inactive
     @Published private(set) var backgroundState: BackgroundPlaybackState = .foreground
     @Published private(set) var recordingPlayer: AVPlayer?
+    @Published private(set) var activeRecordingSessionToken: UUID?
 
-    func setRecordingPlayer(_ player: AVPlayer?) {
+    /// Attaches an active AVPlayer for a specific recording session token.
+    /// Rejects late attachments from superseded or obsolete sessions.
+    func setRecordingPlayer(_ player: AVPlayer?, for sessionToken: UUID? = nil) {
+        if let sessionToken {
+            guard self.activeRecordingSessionToken == sessionToken else {
+                // Late attach from an obsolete/superseded session; discard and pause
+                player?.pause()
+                return
+            }
+        }
         if let current = self.recordingPlayer, current !== player {
             current.pause()
         }
         self.recordingPlayer = player
+    }
+
+    /// Removes the recording player only if it belongs to the given session or matches the current player.
+    /// Rejects late cleanups from superseded sessions that would otherwise erroneously clear a newer active player.
+    func clearRecordingPlayer(for sessionToken: UUID? = nil, ownedBy player: AVPlayer? = nil) {
+        if let sessionToken, self.activeRecordingSessionToken != sessionToken {
+            // Late cleanup from superseded session; do not clear current player
+            return
+        }
+        if let player, self.recordingPlayer !== player {
+            // Late cleanup targeting a player that was already replaced; do not clear current player
+            return
+        }
+        setRecordingPlayer(nil)
     }
 
     let coordinator: ZapCoordinator
@@ -257,6 +283,7 @@ final class PlaybackManager: ObservableObject {
             recordingCleanupHook = nil
             setRecordingPlayer(nil)
         }
+        self.activeRecordingSessionToken = nil
 
         // 2. Commit canonical Live state
         self.state = .live(channel, mode: mode)
@@ -285,6 +312,7 @@ final class PlaybackManager: ObservableObject {
             recordingCleanupHook = nil
             setRecordingPlayer(nil)
         }
+        self.activeRecordingSessionToken = nil
 
         let targetMode = (presentationMode == .hidden) ? .fullscreen : presentationMode
         self.state = .live(channel, mode: targetMode)
@@ -301,6 +329,8 @@ final class PlaybackManager: ObservableObject {
     func play(recording: Recording, startPosition: Double, mode: PlaybackPresentationMode = .fullscreen) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        let sessionToken = UUID()
+        self.activeRecordingSessionToken = sessionToken
 
         // Invalidate any prior recording player immediately so that a seek during transition
         // or targeting recording B cannot reach recording A's player, independent of cleanup hooks.
@@ -321,7 +351,7 @@ final class PlaybackManager: ObservableObject {
         guard self.activeTransitionID == transactionID else { return }
 
         // 4. Set canonical Recording state
-        let item = PlayingRecordingItem(id: recording.id, recording: recording, initialPosition: startPosition)
+        let item = PlayingRecordingItem(sessionToken: sessionToken, id: recording.id, recording: recording, initialPosition: startPosition)
         self.state = .recording(item, mode: mode)
     }
 
@@ -334,6 +364,7 @@ final class PlaybackManager: ObservableObject {
     func play(offline: OfflineRecording) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        self.activeRecordingSessionToken = nil
 
         // 1. Teardown active Live TV session
         if case .live = state {
@@ -385,6 +416,7 @@ final class PlaybackManager: ObservableObject {
     func stop() async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        self.activeRecordingSessionToken = nil
 
         var stoppedLive = false
         if case .live = state {

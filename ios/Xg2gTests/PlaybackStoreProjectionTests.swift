@@ -604,4 +604,58 @@ struct PlaybackStoreProjectionTests {
         manager.seek(to: 60.0)
         #expect(playerB.seekCallCount == 1, "Seek in live state after zap must not reach playerB")
     }
+
+    @Test("Late lifecycle callbacks from superseded sessions are rejected (late attach after B starts, late cleanup after B attaches, and A -> A restart)")
+    func lateLifecycleCallbacksFromSupersededSessionsAreRejected() async {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        let playerA = SpyAVPlayer()
+        let playerB = SpyAVPlayer()
+
+        // --- Scenario 1: Late A attach after B starts ---
+        // 1. Recording A starts: capture sessionTokenA
+        await manager.play(recording: testRecording, startPosition: 0)
+        let sessionTokenA = manager.activeRecordingSessionToken
+        #expect(sessionTokenA != nil)
+
+        // 2. Before playerA can attach (e.g. while resolving media async), user switches to recording B
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let sessionTokenB = manager.activeRecordingSessionToken
+        #expect(sessionTokenB != nil)
+        #expect(sessionTokenB != sessionTokenA)
+
+        // 3. Screen A's async task finishes late and attempts to attach playerA
+        manager.setRecordingPlayer(playerA, for: sessionTokenA)
+        #expect(manager.recordingPlayer == nil, "Late playerA attach for superseded sessionTokenA must be rejected")
+
+        // 4. Screen B's async task attaches playerB for sessionTokenB
+        manager.setRecordingPlayer(playerB, for: sessionTokenB)
+        #expect(manager.recordingPlayer === playerB, "Current sessionTokenB must successfully attach playerB")
+
+        // --- Scenario 2: Late A cleanup after B attaches ---
+        // 5. Screen A unmounts late and calls cleanup for sessionTokenA / playerA
+        manager.clearRecordingPlayer(for: sessionTokenA, ownedBy: playerA)
+        #expect(manager.recordingPlayer === playerB, "Late cleanup for sessionTokenA must NOT clear playerB")
+
+        // --- Scenario 3: A -> A restart generation token isolation ---
+        // 6. User re-triggers / restarts recording B (generates new sessionTokenB2)
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let sessionTokenB2 = manager.activeRecordingSessionToken
+        #expect(sessionTokenB2 != sessionTokenB, "A -> A restart must generate a fresh session token")
+
+        // 7. Old task from first B run attempts late attach with sessionTokenB
+        let latePlayerB1 = SpyAVPlayer()
+        manager.setRecordingPlayer(latePlayerB1, for: sessionTokenB)
+        #expect(manager.recordingPlayer == nil, "Late attach from prior run of same recording must be rejected")
+
+        // 8. Old cleanup from first B run attempts late cleanup with sessionTokenB
+        let playerB2 = SpyAVPlayer()
+        manager.setRecordingPlayer(playerB2, for: sessionTokenB2)
+        #expect(manager.recordingPlayer === playerB2)
+        manager.clearRecordingPlayer(for: sessionTokenB, ownedBy: latePlayerB1)
+        #expect(manager.recordingPlayer === playerB2, "Late cleanup from prior run of same recording must NOT clear new player")
+
+        // 9. Valid cleanup for active session B2 cleanly clears playerB2
+        manager.clearRecordingPlayer(for: sessionTokenB2, ownedBy: playerB2)
+        #expect(manager.recordingPlayer == nil, "Cleanup matching active session token must clear player")
+    }
 }
