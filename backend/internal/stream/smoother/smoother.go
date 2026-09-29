@@ -31,11 +31,11 @@ type Config struct {
 // DefaultConfig returns optimal baseline smoother configuration.
 func DefaultConfig() Config {
 	return Config{
-		StartupReservoirMs: 1000.0,
-		TargetWatermarkMs:  1000.0,
-		DeadbandMs:         100.0,
-		MaxCorrectionTrim:  0.03, // ±3% max trim
-		Kp:                 0.05,
+		StartupReservoirMs: 1500.0,
+		TargetWatermarkMs:  1500.0,
+		DeadbandMs:         500.0,
+		MaxCorrectionTrim:  0.02, // max down-trim on deficit
+		Kp:                 0.03,
 		PacerIntervalMs:    20.0,
 		RingBufferCapacity: 16 * 1024 * 1024, // 16 MiB (~5.3s of 25 Mbps UHD, ~16s of 8 Mbps HD)
 	}
@@ -322,12 +322,11 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 
 				errorMs := bufferedMs - targetMs
 				correctionFactor := 1.0
-
-				if errorMs > deadband {
-					excess := errorMs - deadband
-					trim := math.Min(maxTrim, (excess/targetMs)*kp)
-					correctionFactor = 1.0 + trim
-				} else if errorMs < -deadband {
+				// In broadcast DVB streaming, the egress pacing rate must strictly match
+				// the PCR clock (1.0000x). Never accelerate egress (trim > 0), as overfeeding
+				// the downstream hardware decoder causes presentation timestamp (PTS) judder
+				// on 50Hz displays. Buffer excess is absorbed by TCP backpressure on ingest.
+				if errorMs < -deadband {
 					deficit := (-errorMs) - deadband
 					trim := math.Min(maxTrim, (deficit/targetMs)*kp)
 					correctionFactor = 1.0 - trim
