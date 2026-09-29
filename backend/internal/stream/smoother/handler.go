@@ -159,13 +159,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		targetURL  string
-		isRelay    bool
-		sessionRef string
+		targetURL     string
+		isRelay       bool
+		transcodeMode string
+		sessionRef    string
 	)
 
-	// Check if this is a stream relay request
-	if strings.HasPrefix(targetParam, "relay/") {
+	// Check if this is a transcode or stream relay request
+	if strings.HasPrefix(targetParam, "transcode/") {
+		isRelay = true
+		transcodeMode = "hevc"
+		encodedTarget := strings.TrimPrefix(targetParam, "transcode/")
+		decoded, err := decodeRelayURL(encodedTarget)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid transcode target: %v", err), http.StatusBadRequest)
+			return
+		}
+		validated, err := validateRelayURL(decoded)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid transcode URL: %v", err), http.StatusBadRequest)
+			return
+		}
+		targetURL = validated
+		sessionRef = "transcode:" + targetURL
+	} else if strings.HasPrefix(targetParam, "relay/") {
 		isRelay = true
 		encodedTarget := strings.TrimPrefix(targetParam, "relay/")
 		decoded, err := decodeRelayURL(encodedTarget)
@@ -224,14 +241,64 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sessionRef = serviceRef
 	}
 
+	if qm := r.URL.Query().Get("transcode"); qm != "" {
+		transcodeMode = qm
+	}
+
 	logger := log.L().With().
 		Str("sessionRef", sessionRef).
 		Str("targetURL", targetURL).
 		Bool("isRelay", isRelay).
+		Str("transcodeMode", transcodeMode).
 		Float64("reservoirMs", h.cfg.StartupReservoirMs).
 		Logger()
 
 	logger.Info().Msg("starting smoothed TS stream session")
+
+	// Use streaming-compatible User-Agent for upstream network streams
+	ua := r.UserAgent()
+	if ua == "" || strings.HasPrefix(ua, "Go-http-client") {
+		ua = "IPTVSmartersPro/1.0.0 (Linux; Android)"
+	}
+
+	// Live hardware/software transcoding pipeline
+	if transcodeMode != "" {
+		logger.Info().Str("mode", transcodeMode).Msg("starting live hardware transcoding pipeline")
+
+		transcoderIn, err := StartTranscoder(r.Context(), targetURL, transcodeMode, ua)
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to start live transcoder")
+			http.Error(w, fmt.Sprintf("transcode failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		defer func() { _ = transcoderIn.Close() }()
+
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Connection", "close")
+		w.Header().Set("X-Smoother-Reservoir-Ms", fmt.Sprintf("%.0f", h.cfg.StartupReservoirMs))
+		w.WriteHeader(http.StatusOK)
+
+		var outWriter io.Writer = w
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+			outWriter = &FlusherWriter{w: w, flusher: flusher}
+		}
+
+		report, err := SmoothStream(r.Context(), transcoderIn, outWriter, h.cfg)
+		if err != nil && r.Context().Err() == nil {
+			logger.Warn().Err(err).Msg("transcoded smoothed stream terminated with error")
+		} else if report != nil {
+			logger.Info().
+				Float64("durationSec", report.DurationSeconds).
+				Int64("packetsOut", report.OutputPackets).
+				Int64("repairedCCs", report.CCErrorsRepaired).
+				Float64("firstByteDelayMs", report.FirstByteDelayMs).
+				Float64("steadyStateLagMs", report.SteadyStateDelayMs).
+				Msg("transcoded smoothed TS session finished cleanly")
+		}
+		return
+	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, nil)
 	if err != nil {
@@ -239,11 +306,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use streaming-compatible User-Agent for upstream network streams
-	ua := r.UserAgent()
-	if ua == "" || strings.HasPrefix(ua, "Go-http-client") {
-		ua = "IPTVSmartersPro/1.0.0 (Linux; Android)"
-	}
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "*/*")
 

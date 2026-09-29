@@ -6,6 +6,7 @@ package smoother
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -259,4 +260,55 @@ func javaBase64(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func TestSmootherHandler_TranscodeRoute(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.StartupReservoirMs = 10.0
+	handler := NewHandler("http://127.0.0.1:8001", 8001, cfg)
+
+	// Valid target base64
+	targetURL := "http://127.0.0.1:8080/stream.ts"
+	b64Target := base64.RawURLEncoding.EncodeToString([]byte(targetURL))
+
+	// Invalid target: unsupported scheme
+	badSchemeURL := "ftp://127.0.0.1/stream.ts"
+	b64BadScheme := base64.RawURLEncoding.EncodeToString([]byte(badSchemeURL))
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+	}{
+		{
+			name:       "reject unsupported scheme in transcode",
+			path:       "/api/v3/stream/smooth/transcode/" + b64BadScheme,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "reject corrupt base64 in transcode",
+			path:       "/api/v3/stream/smooth/transcode/???corrupt???",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "valid transcode target initiates pipeline",
+			path:       "/api/v3/stream/smooth/transcode/" + b64Target,
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil).WithContext(ctx)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+		})
+	}
 }
