@@ -277,6 +277,15 @@ final class PlaybackManager: ObservableObject {
     }
 
     func zap(to channel: Channel) async {
+        let transactionID = UUID()
+        self.activeTransitionID = transactionID
+
+        if case .recording = state {
+            recordingCleanupHook?()
+            recordingCleanupHook = nil
+            setRecordingPlayer(nil)
+        }
+
         let targetMode = (presentationMode == .hidden) ? .fullscreen : presentationMode
         self.state = .live(channel, mode: targetMode)
         let serviceRef = channel.serviceRef
@@ -292,6 +301,10 @@ final class PlaybackManager: ObservableObject {
     func play(recording: Recording, startPosition: Double, mode: PlaybackPresentationMode = .fullscreen) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+
+        // Invalidate any prior recording player immediately so that a seek during transition
+        // or targeting recording B cannot reach recording A's player, independent of cleanup hooks.
+        setRecordingPlayer(nil)
 
         // 1. Teardown active Live TV session before switching ownership
         if case .live = state {
@@ -373,7 +386,9 @@ final class PlaybackManager: ObservableObject {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
 
+        var stoppedLive = false
         if case .live = state {
+            stoppedLive = true
             await coordinator.stop()
         } else if case .recording = state {
             recordingCleanupHook?()
@@ -385,6 +400,13 @@ final class PlaybackManager: ObservableObject {
 
         guard self.activeTransitionID == transactionID else { return }
         self.state = .idle
+
+        // The live screen claims the lock screen entry and its controls, and releases
+        // them only when it is closed itself. Stopped from the mini player, that screen
+        // is long gone: the entry stayed up, with controls still wired to it.
+        if stoppedLive {
+            NowPlayingManager.shared.clear()
+        }
     }
 
     func stop() {

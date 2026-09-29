@@ -151,6 +151,18 @@ struct PlaybackStoreProjectionTests {
         serverResumePos: 0
     )
 
+    private let testRecordingB = Recording(
+        id: "rec-test-2",
+        title: "Formula 1 2026 Qualifying",
+        description: "Qualifying Session",
+        beginDate: Date(),
+        durationSeconds: 3600,
+        serviceRef: "1:0:19:1330:3EF:1:C00000:0:0:0:",
+        filename: "f1_quali.ts",
+        status: "completed",
+        serverResumePos: 0
+    )
+
     private let testOffline = OfflineRecording(
         id: "offline-test-1",
         recordingId: "rec-test-1",
@@ -555,5 +567,41 @@ struct PlaybackStoreProjectionTests {
         #expect(observedPlaying.last == false)
 
         cancellable.cancel()
+    }
+
+    @Test("play(recording:) invalidates prior player on recording A -> recording B transition and zap(to:)")
+    func recordingPlayerInvalidationAcrossRecordingSwitchAndZap() async {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        let playerA = SpyAVPlayer()
+        let playerB = SpyAVPlayer()
+
+        // 1. Start recording A and attach playerA
+        await manager.play(recording: testRecording, startPosition: 0)
+        manager.setRecordingPlayer(playerA)
+        manager.seek(to: 30.0)
+        #expect(playerA.seekCallCount == 1)
+
+        // 2. Transition from recording A to recording B WITHOUT any cleanup hook installed
+        await manager.play(recording: testRecordingB, startPosition: 10.0)
+
+        // Assert playerA was invalidated and cleared
+        #expect(manager.recordingPlayer == nil, "Switching to recording B must invalidate playerA")
+
+        // Seek issued before playerB attaches must NOT reach playerA
+        manager.seek(to: 45.0)
+        #expect(playerA.seekCallCount == 1, "Seek on recording B before attach must not dispatch to playerA")
+
+        // Attach playerB: seeks now dispatch to playerB
+        manager.setRecordingPlayer(playerB)
+        manager.seek(to: 45.0)
+        #expect(playerB.seekCallCount == 1)
+        #expect(playerB.lastSeekTargetTime?.seconds == 45.0)
+        #expect(playerA.seekCallCount == 1, "PlayerA must remain untouched")
+
+        // 3. Test zap(to:) when invoked from active recording
+        await manager.zap(to: channelA)
+        #expect(manager.recordingPlayer == nil, "zap(to:) from recording must clear recordingPlayer")
+        manager.seek(to: 60.0)
+        #expect(playerB.seekCallCount == 1, "Seek in live state after zap must not reach playerB")
     }
 }

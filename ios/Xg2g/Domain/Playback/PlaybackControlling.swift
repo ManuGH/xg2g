@@ -43,8 +43,9 @@ protocol PlaybackControlling: AnyObject {
 
     /// Toggles play / pause transport state.
     ///
-    /// - Note: In C1, this exposes the legacy live TV toggle behavior (stopping an active stream or
-    ///   re-tuning the current channel). It does NOT yet provide genuine VOD pause/resume behavior
+    /// - Note: In C1, calling this command while playing stops playback completely (`stop()`) and resets
+    ///   the state to `.idle`. Because stopping clears the channel selection (`currentChannel == nil`),
+    ///   the current bridge cannot retune after stopping. It does NOT provide VOD pause/resume behavior
     ///   for recordings. True VOD pause/resume requires a dedicated paused session state without
     ///   tearing down player resources, which is deferred to subsequent player-session convergence.
     func togglePlayPause()
