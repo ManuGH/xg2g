@@ -16,6 +16,7 @@ struct RecordingPlayerScreen: View {
     let recording: Recording
     let serverAddress: ServerAddress
     var initialPosition: Double? = nil
+    let sessionToken: UUID
     var model: AppModel? = nil
     var onProgressUpdate: @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
 
@@ -118,14 +119,15 @@ struct RecordingPlayerScreen: View {
         )
         #endif
         .onAppear {
-            model?.playbackManager.registerRecordingCleanup {
+            let token = self.sessionToken
+            model?.playbackManager.registerRecordingCleanup(for: token) {
                 self.cleanup()
             }
             setupPlayer()
         }
         .onDisappear {
             if model?.playbackManager.presentationMode != .miniplayer {
-                model?.playbackManager.unregisterRecordingCleanup()
+                model?.playbackManager.unregisterRecordingCleanup(for: sessionToken)
                 cleanup()
             }
         }
@@ -263,7 +265,9 @@ struct RecordingPlayerScreen: View {
 
     private func setupPlayer() {
         AudioSessionManager.shared.configureForPlayback()
-        if let existing = model?.playbackManager.recordingPlayer {
+        let token = self.sessionToken
+        if model?.playbackManager.activeRecordingSessionToken == token,
+           let existing = model?.playbackManager.recordingPlayer {
             self.player = existing
             self.isPreparing = false
             return
@@ -379,7 +383,7 @@ struct RecordingPlayerScreen: View {
                 }
 
                 self.player = p
-                self.model?.playbackManager.setRecordingPlayer(p)
+                self.model?.playbackManager.setRecordingPlayer(p, for: token)
             }
         }
     }
@@ -392,7 +396,7 @@ struct RecordingPlayerScreen: View {
         statusObserver?.invalidate()
         statusObserver = nil
         player?.pause()
-        model?.playbackManager.setRecordingPlayer(nil)
+        model?.playbackManager.clearRecordingPlayer(for: sessionToken, ownedBy: player)
         AudioSessionManager.shared.deactivate()
     }
 }
