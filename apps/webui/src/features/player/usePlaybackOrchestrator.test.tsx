@@ -1,4 +1,4 @@
-import { createRef, useRef, useState } from 'react';
+import { createRef, useRef, useState, StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
@@ -412,6 +412,295 @@ describe('usePlaybackOrchestrator', () => {
         });
         expect(stopCalls.length).toBeGreaterThanOrEqual(1);
       });
+    });
+
+    it('dispatches stop intent with keepalive: true on pagehide event (tab close / unload)', async () => {
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-unload-1',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'token-unload-1' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: 'sess-unload-1' }),
+            text: async () => JSON.stringify({ sessionId: 'sess-unload-1' }),
+          });
+        }
+        if (u.includes('/sessions/sess-unload-1')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-unload-1',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/live.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      function UnloadHarness() {
+        const containerRef = useRef<HTMLDivElement>(null);
+        const videoRef = useRef<VideoElementRef>(null);
+        const hlsRef = useRef<HlsInstanceRef>(null);
+        const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+        const { actions, playbackState } = usePlaybackOrchestrator(
+          { autoStart: false } as unknown as V3PlayerProps,
+          { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+        );
+
+        return (
+          <div>
+            <span data-testid="status">{playbackState.status}</span>
+            <button onClick={() => void actions.startStream('1:0:1:AA')} type="button">
+              start-live
+            </button>
+          </div>
+        );
+      }
+
+      render(<UnloadHarness />);
+
+      // Start Live -> wait until ready
+      fireEvent.click(screen.getByRole('button', { name: 'start-live' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('ready');
+      });
+
+      // Trigger tab close / unload via pagehide
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      // Synchronously initiated during pagehide before any await, microtask flush, or timer advancement
+      const intentCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/intents'));
+      const stopCalls = intentCalls.filter((c: any[]) => {
+        const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+        return body?.type === 'stream.stop' && body?.sessionId === 'sess-unload-1';
+      });
+      expect(stopCalls).toHaveLength(1);
+      const stopCall = stopCalls[0]!;
+      expect(stopCall[1]?.keepalive).toBe(true);
+    });
+  });
+
+  describe('Unload effect lifecycle matrix (Mount, Rerender, Executor change, Unmount, StrictMode)', () => {
+    let addListenerSpy: any;
+    let removeListenerSpy: any;
+    let fetchMock: any;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined as never);
+      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      addListenerSpy = vi.spyOn(window, 'addEventListener');
+      removeListenerSpy = vi.spyOn(window, 'removeEventListener');
+
+      fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/live/stream-info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-lm-1',
+              decision: { mode: 'direct_stream', playbackDecisionToken: 'token-lm-1' },
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        if (u.includes('/intents')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ sessionId: 'sess-lm-1' }),
+            text: async () => JSON.stringify({ sessionId: 'sess-lm-1' }),
+          });
+        }
+        if (u.includes('/sessions/sess-lm-1')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({
+              sessionId: 'sess-lm-1',
+              state: 'READY',
+              mode: 'LIVE',
+              playbackUrl: 'http://test/live.m3u8',
+              heartbeatIntervalSeconds: 5,
+              leaseExpiresAt: '2026-09-09T22:00:00Z',
+            }),
+            text: async () => JSON.stringify({}),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({}),
+          text: async () => JSON.stringify({}),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function LifecycleHarness({ count = 0, onStop }: { count?: number; onStop?: () => void }) {
+      const containerRef = useRef<HTMLDivElement>(null);
+      const videoRef = useRef<VideoElementRef>(null);
+      const hlsRef = useRef<HlsInstanceRef>(null);
+      const resumePrimaryActionRef = useRef<HTMLButtonElement>(null);
+
+      const { actions, playbackState } = usePlaybackOrchestrator(
+        { autoStart: false } as unknown as V3PlayerProps,
+        { containerRef, videoRef, hlsRef, resumePrimaryActionRef },
+      );
+
+      return (
+        <div>
+          <span data-testid="status">{playbackState.status}</span>
+          <span data-testid="count">{count}</span>
+          <button onClick={() => void actions.startStream('1:0:1:AA')} type="button">
+            start
+          </button>
+          <button onClick={() => { onStop?.(); void actions.stopStream(); }} type="button">
+            stop
+          </button>
+        </div>
+      );
+    }
+
+    it('maintains exactly one active listener across prop and callback rerenders', () => {
+      const { rerender } = render(<LifecycleHarness count={0} onStop={() => {}} />);
+
+      const getActivePagehideListeners = () => {
+        const adds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+        const removes = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+        return adds.length - removes.length;
+      };
+
+      const getActiveBeforeunloadListeners = () => {
+        const adds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+        const removes = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+        return adds.length - removes.length;
+      };
+
+      // beforeunload is exclusively registered by the unload stop effect (exactly 1)
+      expect(getActiveBeforeunloadListeners()).toBe(1);
+      // pagehide is registered by useDocumentVisibility (1) and unload stop effect (1) = 2 total
+      expect(getActivePagehideListeners()).toBe(2);
+
+      // Rerender with changed props (count): listener count must remain stable (no leaks / re-registrations)
+      rerender(<LifecycleHarness count={1} onStop={() => {}} />);
+      expect(getActiveBeforeunloadListeners()).toBe(1);
+      expect(getActivePagehideListeners()).toBe(2);
+
+      // Rerender with changed callback: listener count must remain stable
+      rerender(<LifecycleHarness count={2} onStop={() => {}} />);
+      expect(getActiveBeforeunloadListeners()).toBe(1);
+      expect(getActivePagehideListeners()).toBe(2);
+    });
+
+    it('removes listeners on unmount and ignores pagehide after unmount', () => {
+      const { unmount } = render(<LifecycleHarness />);
+
+      const adds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+      expect(adds.length).toBeGreaterThanOrEqual(1);
+
+      unmount();
+
+      const pagehideAdds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+      const pagehideRemoves = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+      expect(pagehideAdds.length).toBe(pagehideRemoves.length);
+
+      const beforeunloadAdds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+      const beforeunloadRemoves = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+      expect(beforeunloadAdds.length).toBe(beforeunloadRemoves.length);
+
+      // Dispatch pagehide after unmount -> no stop intents sent
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      const intentCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/intents'));
+      const stopCalls = intentCalls.filter((c: any[]) => {
+        const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+        return body?.type === 'stream.stop';
+      });
+      expect(stopCalls).toHaveLength(0);
+    });
+
+    it('preserves single listener and dispatches no duplicate stop under StrictMode remount', async () => {
+      render(
+        <StrictMode>
+          <LifecycleHarness />
+        </StrictMode>,
+      );
+
+      // Under StrictMode double-invocation (Setup 1 -> Cleanup 1 -> Setup 2):
+      // beforeunload has 1 active listener (unload effect)
+      const beforeunloadAdds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+      const beforeunloadRemoves = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'beforeunload');
+      expect(beforeunloadAdds.length - beforeunloadRemoves.length).toBe(1);
+
+      // pagehide has 2 active listeners (1 visibility + 1 unload effect)
+      const pagehideAdds = addListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+      const pagehideRemoves = removeListenerSpy.mock.calls.filter((c: any[]) => c[0] === 'pagehide');
+      expect(pagehideAdds.length - pagehideRemoves.length).toBe(2);
+
+      // Start stream and wait until ready
+      fireEvent.click(screen.getByRole('button', { name: 'start' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('ready');
+      });
+
+      // Dispatch pagehide
+      act(() => {
+        window.dispatchEvent(new Event('pagehide'));
+      });
+
+      // Exactly ONE stop intent must be dispatched (no duplicate stop)
+      const intentCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes('/intents'));
+      const stopCalls = intentCalls.filter((c: any[]) => {
+        const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+        return body?.type === 'stream.stop' && body?.sessionId === 'sess-lm-1';
+      });
+      expect(stopCalls).toHaveLength(1);
+      expect(stopCalls[0]![1]?.keepalive).toBe(true);
     });
   });
 });
