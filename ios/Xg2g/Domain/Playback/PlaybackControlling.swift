@@ -20,7 +20,13 @@ protocol PlaybackControlling: AnyObject {
     /// Currently active recording, if any.
     var currentRecording: Recording? { get }
 
-    /// Whether playback is currently active and presenting frames.
+    /// Whether a playback target is actively engaged in presentation mode.
+    ///
+    /// - Note: For live playback, this reflects an active tuner stream session from `ZapCoordinator`.
+    ///   For VOD recordings and offline items in C1, this indicates that the target is actively
+    ///   selected and in a visible presentation mode; it does NOT assert that AVPlayer has buffered,
+    ///   rendered frames, or reached a non-zero playback rate. Rate-based and frame-level presentation
+    ///   authority is deferred to subsequent player-session convergence slices.
     var isPlaying: Bool { get }
 
     /// Tunes and starts playback for the specified channel.
@@ -36,6 +42,11 @@ protocol PlaybackControlling: AnyObject {
     func stop()
 
     /// Toggles play / pause transport state.
+    ///
+    /// - Note: In C1, this exposes the legacy live TV toggle behavior (stopping an active stream or
+    ///   re-tuning the current channel). It does NOT yet provide genuine VOD pause/resume behavior
+    ///   for recordings. True VOD pause/resume requires a dedicated paused session state without
+    ///   tearing down player resources, which is deferred to subsequent player-session convergence.
     func togglePlayPause()
 
     /// Subscribes to canonical state projection updates (channel-focused).

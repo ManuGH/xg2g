@@ -54,6 +54,10 @@ final class LegacyBridgePlaybackController: PlaybackControlling {
         playbackManager?.stop()
     }
 
+    /// Toggles play / pause transport state.
+    ///
+    /// - Note: In C1, this follows the legacy live TV toggle: if playing, it stops playback completely;
+    ///   if stopped with a live channel selected, it retunes. It does not provide VOD pause/resume for recordings.
     func togglePlayPause() {
         if isPlaying {
             stop()

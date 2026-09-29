@@ -5,7 +5,18 @@
 import Foundation
 import Testing
 import Combine
+import AVFoundation
 @testable import Xg2g
+
+private final class SpyAVPlayer: AVPlayer, @unchecked Sendable {
+    nonisolated(unsafe) var seekCallCount = 0
+    nonisolated(unsafe) var lastSeekTargetTime: CMTime?
+
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime) {
+        seekCallCount += 1
+        lastSeekTargetTime = time
+    }
+}
 
 @MainActor
 private final class RejectingPlaybackController: PlaybackControlling {
@@ -117,6 +128,14 @@ struct PlaybackStoreProjectionTests {
         name: "ORF 1 HD",
         number: "1",
         serviceRef: "1:0:19:132F:3EF:1:C00000:0:0:0:",
+        logoURL: nil
+    )
+
+    private let channelB = Channel(
+        id: "orf2",
+        name: "ORF 2 HD",
+        number: "2",
+        serviceRef: "1:0:19:1330:3EF:1:C00000:0:0:0:",
         logoURL: nil
     )
 
@@ -448,5 +467,93 @@ struct PlaybackStoreProjectionTests {
         controllerB.pushUpdate(target: nil, isPlaying: false)
         #expect(store.currentTarget == nil)
         #expect(store.isPlaying == false)
+    }
+
+    @Test("seek(to:) only dispatches when in recording state and clears player on transitions")
+    func seekGuardsAgainstInactiveSessionsAndClearsPlayerOnTransitions() async {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        let player = SpyAVPlayer()
+
+        // 1. In .idle state: seek must NOT dispatch even if a player is somehow attached
+        manager.setRecordingPlayer(player)
+        manager.seek(to: 42.0)
+        #expect(player.seekCallCount == 0, "Must not seek when state is idle")
+
+        // 2. In .recording state: seek DOES dispatch to recordingPlayer
+        await manager.play(recording: testRecording, startPosition: 0)
+        manager.setRecordingPlayer(player)
+        manager.seek(to: 55.0)
+        #expect(player.seekCallCount == 1, "Must seek when state is active recording")
+        #expect(player.lastSeekTargetTime?.seconds == 55.0)
+
+        // 3. Transition to .live: recordingPlayer MUST be cleared to nil
+        await manager.play(channel: channelA)
+        #expect(manager.recordingPlayer == nil, "Transition to live must clear recordingPlayer")
+        manager.seek(to: 60.0)
+        #expect(player.seekCallCount == 1, "Must not seek after transitioning to live")
+
+        // 4. In .live state: seek must NOT dispatch even if player were retained/re-assigned
+        manager.setRecordingPlayer(player)
+        manager.seek(to: 70.0)
+        #expect(player.seekCallCount == 1, "Must not seek when state is live")
+
+        // 5. Transition to .recording then to .offline: recordingPlayer MUST be cleared to nil
+        await manager.play(recording: testRecording, startPosition: 10)
+        manager.setRecordingPlayer(player)
+        await manager.play(offline: testOffline)
+        #expect(manager.recordingPlayer == nil, "Transition to offline must clear recordingPlayer")
+        manager.seek(to: 80.0)
+        #expect(player.seekCallCount == 1, "Must not seek when state is offline")
+
+        // 6. Transition to .recording then stop(): recordingPlayer MUST be cleared to nil
+        await manager.play(recording: testRecording, startPosition: 10)
+        manager.setRecordingPlayer(player)
+        await manager.stop()
+        #expect(manager.recordingPlayer == nil, "Stop must clear recordingPlayer")
+        manager.seek(to: 90.0)
+        #expect(player.seekCallCount == 1, "Must not seek after stop")
+    }
+
+    @Test("observeTargetState captures rapid sequential transitions deterministically")
+    func rapidSequentialTargetTransitions() async {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        var observedTargets: [PlaybackTarget?] = []
+        var observedPlaying: [Bool] = []
+
+        let cancellable = manager.observeTargetState { target, isPlaying in
+            observedTargets.append(target)
+            observedPlaying.append(isPlaying)
+        }
+
+        #expect(observedTargets.count == 1)
+        #expect(observedTargets[0] == nil)
+        #expect(observedPlaying[0] == false)
+
+        // Rapid sequential transitions
+        await manager.play(channel: channelA)
+        await manager.play(recording: testRecording, startPosition: 15.0)
+        await manager.play(channel: channelB)
+        await manager.play(offline: testOffline)
+        await manager.stop()
+
+        // Consecutive updates with same target can occur when isPlaying toggles
+        let distinctTargets = observedTargets.reduce(into: [PlaybackTarget?]()) { acc, next in
+            if acc.isEmpty || acc.last != next {
+                acc.append(next)
+            }
+        }
+
+        #expect(distinctTargets == [
+            nil,
+            .live(channelA),
+            .recording(testRecording, startPosition: 15.0),
+            .live(channelB),
+            .offline(testOffline),
+            nil
+        ])
+
+        #expect(observedPlaying.last == false)
+
+        cancellable.cancel()
     }
 }

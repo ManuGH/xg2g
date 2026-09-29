@@ -146,9 +146,11 @@ final class PlaybackManager: ObservableObject {
     }
 
     /// Seeks the active recording player to a specific timestamp in seconds.
-    /// Safe no-op if no recording player is active or if position is negative / non-finite.
+    /// Safe no-op if no recording player is active, if the active session is not a recording,
+    /// or if position is negative / non-finite.
     func seek(to position: Double) {
         guard position.isFinite, position >= 0 else { return }
+        guard case .recording = state else { return }
         if let player = recordingPlayer {
             let targetTime = CMTime(seconds: position, preferredTimescale: 600)
             player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
@@ -253,6 +255,7 @@ final class PlaybackManager: ObservableObject {
         if case .recording = state {
             recordingCleanupHook?()
             recordingCleanupHook = nil
+            setRecordingPlayer(nil)
         }
 
         // 2. Commit canonical Live state
@@ -328,6 +331,7 @@ final class PlaybackManager: ObservableObject {
         if case .recording = state {
             recordingCleanupHook?()
             recordingCleanupHook = nil
+            setRecordingPlayer(nil)
         }
 
         // 3. Guard against race if a new transition began while awaiting stop()
@@ -374,6 +378,8 @@ final class PlaybackManager: ObservableObject {
         } else if case .recording = state {
             recordingCleanupHook?()
             recordingCleanupHook = nil
+            setRecordingPlayer(nil)
+        } else if case .offline = state {
             setRecordingPlayer(nil)
         }
 
