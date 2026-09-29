@@ -447,4 +447,94 @@ struct LiveToRecordingLifecycleTests {
         await manager.stop()
         #expect(manager.state == .idle)
     }
+
+    // MARK: - Invariant 7: Screen Unmount Teardown Ownership
+
+    @Test("Live A screen unmount after Offline B is committed preserves Offline B as canonical target (ownership-aware screen teardown; SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountPreservesCommittedOfflineTarget() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active in fullscreen
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+        #expect(manager.presentationMode == .fullscreen)
+
+        // 2. User selects Offline Recording B; manager transitions to Offline B
+        await manager.play(offline: testOffline)
+        #expect(manager.state == .offline(testOffline))
+        #expect(manager.presentationMode == .hidden)
+
+        // 3. Live A's TestTSPlayerScreen unmounts late (.onDisappear).
+        // Since manager.presentationMode == .hidden, the unmount hook invokes teardownPlayback().
+        // With ownership check (LiveTeardownDecision), Live A recognizes that manager.state
+        // is no longer .live(channelA), so it does NOT stop the manager.
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == false, "Disappearing Live A screen must NOT stop playback when Offline B is active")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        // 4. Assert Offline B remains the active canonical target
+        #expect(manager.state == .offline(testOffline))
+        #expect(manager.activeOfflineRecording == testOffline)
+        #expect(manager.currentTarget == .offline(testOffline))
+
+        // 5. Teardown
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Live A screen unmount when user dismisses Live A cleanly stops playback (SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountStopsWhenScreenOwnsLiveState() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+
+        // 2. User dismisses Live A while on channelA:
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == true, "Disappearing Live A screen MUST stop playback when it owns the active live state")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        // 3. Assert manager is cleanly idle
+        #expect(manager.state == .idle)
+        #expect(manager.currentChannel == nil)
+    }
+
+    @Test("Live A screen unmount after zapping to Live B does not tear down Live B (SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountDoesNotStopSubsequentLiveChannel() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active
+        await manager.play(channel: channelA, mode: .fullscreen)
+
+        // 2. Zap to Live B
+        await manager.play(channel: channelB, mode: .fullscreen)
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+
+        // 3. Late unmount of Live A screen
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == false, "Disappearing Live A screen must NOT stop subsequent Live B channel")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+        #expect(manager.currentChannel == channelB)
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
 }

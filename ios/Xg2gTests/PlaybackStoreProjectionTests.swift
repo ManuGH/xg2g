@@ -1056,4 +1056,106 @@ struct PlaybackStoreProjectionTests {
         )
         #expect(actionSeekUnfinishedSuperseded == .pauseAndDiscard)
     }
+
+    @Test("LiveTeardownDecision evaluates whether an unmounting live screen owns playback (extracted decision policy; SwiftUI view hierarchy lifecycle unmount is modeled)")
+    func liveTeardownDecisionPolicy() {
+        let channelA = Channel(id: "1", name: "Channel A", number: "1", serviceRef: "1:0:19:A", logoURL: nil)
+        let channelB = Channel(id: "2", name: "Channel B", number: "2", serviceRef: "1:0:19:B", logoURL: nil)
+        let offlineRec = OfflineRecording(
+            id: "off-1",
+            recordingId: "rec-1",
+            title: "Offline",
+            channelName: "Channel A",
+            durationSeconds: 3600,
+            fileSize: 1000,
+            downloadDate: Date(),
+            localRelativePath: "off.mp4",
+            quality: .original
+        )
+        let recItem = PlayingRecordingItem(
+            sessionToken: UUID(),
+            recording: Recording(
+                id: "rec-1",
+                title: "Rec",
+                description: "",
+                beginDate: Date(),
+                durationSeconds: 3600,
+                serviceRef: "1:0:19:A",
+                filename: "rec.ts",
+                status: "completed",
+                serverResumePos: 0
+            ),
+            initialPosition: 0
+        )
+
+        // 1. Same channel matches
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .live(channelA, mode: .fullscreen), screenChannel: channelA) == true)
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .live(channelA, mode: .hidden), screenChannel: channelA) == true)
+
+        // 2. Different channel rejects
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .live(channelB, mode: .fullscreen), screenChannel: channelA) == false)
+
+        // 3. Offline state rejects (Live screen unmount must not kill offline playback)
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .offline(offlineRec), screenChannel: channelA) == false)
+
+        // 4. Recording state rejects (Live screen unmount must not kill recording playback)
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .recording(recItem, mode: .fullscreen), screenChannel: channelA) == false)
+
+        // 5. Idle state rejects
+        #expect(LiveTeardownDecision.shouldStopPlayback(activeState: .idle, screenChannel: channelA) == false)
+    }
+
+    @Test("Offline A screen unmount after Recording B acquires audio lease preserves Recording B audio lease (extracted lease controller; SwiftUI view unmount is modeled)")
+    func offlinePlayerUnmountPreservesSuccessorRecordingAudioLease() async {
+        let spy = SpyAudioSessionController()
+        let manager = PlaybackManager(
+            audioSession: spy,
+            streamURL: { URL(string: "http://example.com/\($0)") }
+        )
+
+        // 1. Offline A screen starts and acquires lease
+        let tokenOfflineA = UUID()
+        let acquiredA = spy.activate(for: tokenOfflineA)
+        #expect(acquiredA == true)
+        #expect(spy.activeLeaseToken == tokenOfflineA)
+        #expect(spy.configureForPlaybackCallCount == 1)
+
+        // 2. User transitions to Recording B
+        let recordingB = Recording(
+            id: "rec-b",
+            title: "Recording B",
+            description: "",
+            beginDate: Date(),
+            durationSeconds: 3600,
+            serviceRef: "1:0:19:B",
+            filename: "recB.ts",
+            status: "completed",
+            serverResumePos: 0
+        )
+        await manager.play(recording: recordingB, startPosition: 0)
+        guard let tokenRecordingB = manager.activeRecordingSessionToken else {
+            Issue.record("Recording B should have an active session token")
+            return
+        }
+        #expect(tokenRecordingB != tokenOfflineA)
+
+        // 3. Recording B mounts and activates its lease
+        let acquiredB = manager.activateRecordingAudioSession(for: tokenRecordingB)
+        #expect(acquiredB == true)
+        #expect(spy.activeLeaseToken == tokenRecordingB)
+        #expect(spy.configureForPlaybackCallCount == 2)
+        #expect(spy.deactivateCallCount == 0)
+
+        // 4. Offline A screen unmounts late (.onDisappear calls audioSession.deactivate(for: tokenOfflineA))
+        // With ownership check, tokenOfflineA is rejected because active token is tokenRecordingB
+        let releasedA = spy.deactivate(for: tokenOfflineA)
+        #expect(releasedA == false, "Offline A lease release must be rejected when Recording B owns the lease")
+        #expect(spy.activeLeaseToken == tokenRecordingB, "Recording B lease must remain intact")
+        #expect(spy.deactivateCallCount == 0, "Underlying audio session must NOT be deactivated by stale offline unmount")
+
+        // 5. Clean teardown of Recording B
+        await manager.stop()
+        #expect(spy.activeLeaseToken == nil)
+        #expect(spy.deactivateCallCount == 1)
+    }
 }
