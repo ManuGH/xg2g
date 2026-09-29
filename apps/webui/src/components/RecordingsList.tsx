@@ -707,7 +707,7 @@ export default function RecordingsList() {
     return seriesGroups.filter(g => g.episodes.length >= 2);
   }, [seriesGroups]);
 
-  let candidateRecordings: RecordingItem[] = [];
+  let candidateRecordings: RecordingItem[];
   if (selectedSeries && activeSeriesGroup) {
     candidateRecordings = activeSeriesGroup.episodes;
   } else if (categoryFilter === 'movies') {

@@ -195,7 +195,7 @@
 }
 
 .categoryButtonActive {
-  color: #fff;
+  color: var(--text-primary);
   border-color: var(--accent-action);
   background: var(--accent-action);
 }

@@ -178,7 +178,7 @@ export function EpgEventDialog({
                 <Button
                   variant="secondary"
                   onClick={() => setView('series')}
-                  data-testid="btn-record-series"
+                  data-testid="series-record-trigger"
                 >
                   🔄 {t('epg.recordSeries', { defaultValue: 'Als Serie aufnehmen' })}
                 </Button>

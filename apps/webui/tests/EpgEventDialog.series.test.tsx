@@ -32,7 +32,7 @@ describe('EpgEventDialog Series Scheduling', () => {
     );
 
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Café PULS mit PULS 4 Aktuell');
-    expect(screen.getByTestId('btn-record-series')).toBeInTheDocument();
+    expect(screen.getByTestId('series-record-trigger')).toBeInTheDocument();
   });
 
   it('switches to series view, pre-fills cleaned title and 7-day retention preset', () => {
@@ -46,7 +46,7 @@ describe('EpgEventDialog Series Scheduling', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('btn-record-series'));
+    fireEvent.click(screen.getByTestId('series-record-trigger'));
 
     // Check title updated to series dialog header
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Schedule Series Recording|Serienaufnahme/i);
@@ -76,7 +76,7 @@ describe('EpgEventDialog Series Scheduling', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('btn-record-series'));
+    fireEvent.click(screen.getByTestId('series-record-trigger'));
 
     // Click Save button
     const saveButton = screen.getByTestId('series-modal-save');
@@ -111,7 +111,7 @@ describe('EpgEventDialog Series Scheduling', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('btn-record-series'));
+    fireEvent.click(screen.getByTestId('series-record-trigger'));
 
     // Verify channel is displayed
     expect(screen.getByText('PULS 24 HD')).toBeInTheDocument();
@@ -150,11 +150,11 @@ describe('EpgEventDialog Series Scheduling', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('btn-record-series'));
+    fireEvent.click(screen.getByTestId('series-record-trigger'));
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Schedule Series Recording|Serienaufnahme/i);
 
     fireEvent.click(screen.getByRole('button', { name: /Back|Zurück/i }));
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Café PULS mit PULS 4 Aktuell');
-    expect(screen.getByTestId('btn-record-series')).toBeInTheDocument();
+    expect(screen.getByTestId('series-record-trigger')).toBeInTheDocument();
   });
 });

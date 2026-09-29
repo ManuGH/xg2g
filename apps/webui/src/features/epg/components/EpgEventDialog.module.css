@@ -148,7 +148,7 @@
 .chipActive {
   background: var(--accent-action);
   border-color: var(--accent-action);
-  color: #fff;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -182,5 +182,5 @@
 .dayButtonActive {
   background: var(--accent-action);
   border-color: var(--accent-action);
-  color: #fff;
+  color: var(--text-primary);
 }
