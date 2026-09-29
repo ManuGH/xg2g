@@ -2212,7 +2212,7 @@ export function usePlaybackOrchestrator(
   }, []);
 
   // Stop stream on browser tab close, reload, or page navigation.
-  // keepalive: true in liveSessionTransport ensures the request survives document teardown.
+  // keepalive: true in liveSessionTransport initiates the request before document teardown (delivery remains best-effort).
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;

@@ -604,7 +604,7 @@ describe('usePlaybackOrchestrator', () => {
       );
     }
 
-    it('maintains exactly one active listener across rerenders and executor changes', () => {
+    it('maintains exactly one active listener across prop and callback rerenders', () => {
       const { rerender } = render(<LifecycleHarness count={0} onStop={() => {}} />);
 
       const getActivePagehideListeners = () => {
@@ -629,7 +629,7 @@ describe('usePlaybackOrchestrator', () => {
       expect(getActiveBeforeunloadListeners()).toBe(1);
       expect(getActivePagehideListeners()).toBe(2);
 
-      // Rerender with changed callback (executor change): listener count must remain stable
+      // Rerender with changed callback: listener count must remain stable
       rerender(<LifecycleHarness count={2} onStop={() => {}} />);
       expect(getActiveBeforeunloadListeners()).toBe(1);
       expect(getActivePagehideListeners()).toBe(2);
