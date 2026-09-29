@@ -275,11 +275,7 @@ func isExplicitStopReason(reason string) bool {
 	}
 }
 
-func (s *Session) releaseSubscriber() {
-	s.releaseSubscriberWithReason("")
-}
-
-func (s *Session) releaseSubscriberWithReason(reason string) {
+func (s *Session) releaseSubscriber(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -410,6 +406,6 @@ func (l *Lease) Release() {
 // upstream is closed immediately rather than entering warm-hold.
 func (l *Lease) ReleaseWithReason(reason string) {
 	if l.released.CompareAndSwap(false, true) {
-		l.session.releaseSubscriberWithReason(reason)
+		l.session.releaseSubscriber(reason)
 	}
 }
