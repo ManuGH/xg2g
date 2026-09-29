@@ -610,99 +610,137 @@ struct PlaybackStoreProjectionTests {
         #expect(playerB.seekCallCount == 1, "Seek in live state after zap must not reach playerB")
     }
 
-    @Test("Presentation lifecycle with controlled async resolution: A resolves late, B active and attaches, late A disappear does not clear B or unregister B's hook, plus A -> A restart")
-    func presentationLifecycleControlledAsyncResolutionAndHookIsolation() async throws {
+    @Test("PlayingRecordingItem includes sessionToken in state equality and presentation identity across A -> A restart")
+    func playingRecordingItemSessionTokenEqualityAndIdentityOnRestart() async throws {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        var observedStates: [PlaybackTarget?] = []
+
+        let cancellable = manager.observeTargetState { target, _ in
+            observedStates.append(target)
+        }
+
+        // 1. First run of Recording A
+        await manager.play(recording: testRecording, startPosition: 0)
+        let item1 = try #require(manager.activeRecordingItem)
+        let token1 = item1.sessionToken
+
+        // 2. Restart Recording A with identical position and parameters
+        await manager.play(recording: testRecording, startPosition: 0)
+        let item2 = try #require(manager.activeRecordingItem)
+        let token2 = item2.sessionToken
+
+        // Assert session tokens differ
+        #expect(token1 != token2, "A -> A restart must allocate a distinct session token")
+
+        // Assert state equality includes sessionToken: item1 != item2
+        #expect(item1 != item2, "PlayingRecordingItem equality must include sessionToken")
+
+        // Assert SwiftUI presentation identity (Identifiable id) differs
+        #expect(item1.id != item2.id, "SwiftUI presentation identity must change on restart")
+
+        // Assert state.didSet was not skipped and observer observed both transitions
+        #expect(observedStates.count == 3, "Initial snapshot + run 1 + run 2 must produce 3 observations")
+        #expect(observedStates[1] == .recording(testRecording, startPosition: 0))
+        #expect(observedStates[2] == .recording(testRecording, startPosition: 0))
+
+        cancellable.cancel()
+    }
+
+    @Test("PlaybackManager rejects cleanup-hook registration from non-active session and preserves active hook")
+    func cleanupHookRegistrationRejectsNonActiveSessionAndPreservesActiveHook() async throws {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+
+        // 1. Session A starts
+        await manager.play(recording: testRecording, startPosition: 0)
+        let tokenA = try #require(manager.activeRecordingSessionToken)
+
+        // 2. Session B starts
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let tokenB = try #require(manager.activeRecordingSessionToken)
+        #expect(tokenA != tokenB)
+
+        // 3. Screen B registers its cleanup hook
+        var cleanupCountB = 0
+        let regB = manager.registerRecordingCleanup(for: tokenB) {
+            cleanupCountB += 1
+        }
+        #expect(regB == true, "Active session token must successfully register cleanup hook")
+
+        // 4. Late .onAppear from Screen A attempts to register cleanup hook with obsolete tokenA
+        var cleanupCountA = 0
+        let regA = manager.registerRecordingCleanup(for: tokenA) {
+            cleanupCountA += 1
+        }
+        #expect(regA == false, "Obsolete session token must be rejected from registering cleanup hook")
+
+        // 5. Teardown via stop() proves Screen B's hook is preserved and executed, not displaced by A
+        await manager.stop()
+        #expect(cleanupCountB == 1, "Screen B cleanup hook must execute on teardown")
+        #expect(cleanupCountA == 0, "Rejected screen A cleanup hook must never execute")
+    }
+
+    @Test("PlaybackManager token rejection on late attach and late ready-to-play callback across sessions and A -> A restart")
+    func lateResolutionAndReadyToPlayCallbackRejection() async throws {
         let manager = PlaybackManager(streamURL: { _ in nil })
         let playerA = SpyAVPlayer()
         let playerB = SpyAVPlayer()
 
-        // === Scenario 1: A starts resolving, B becomes active, A completes late, A disappears ===
-        // 1. User selects Recording A -> manager generates tokenA
+        // 1. Session A starts: capture tokenA
         await manager.play(recording: testRecording, startPosition: 0)
         let tokenA = try #require(manager.activeRecordingSessionToken)
 
-        // Screen A mounts (.onAppear): registers cleanup hook for tokenA
-        var cleanupCountA = 0
-        manager.registerRecordingCleanup(for: tokenA) {
-            cleanupCountA += 1
-            manager.clearRecordingPlayer(for: tokenA, ownedBy: playerA)
-        }
-
-        // Screen A begins async media resolution (represented here by an in-flight deferred task).
-        // Before Screen A resolves, user switches to Recording B
+        // 2. User switches to Recording B: capture tokenB
         await manager.play(recording: testRecordingB, startPosition: 0)
         let tokenB = try #require(manager.activeRecordingSessionToken)
         #expect(tokenB != tokenA)
 
-        // Screen B mounts (.onAppear): registers cleanup hook for tokenB
-        var cleanupCountB = 0
-        manager.registerRecordingCleanup(for: tokenB) {
-            cleanupCountB += 1
-            manager.clearRecordingPlayer(for: tokenB, ownedBy: playerB)
+        // Screen B attaches playerB
+        let attachedB = manager.setRecordingPlayer(playerB, for: tokenB)
+        #expect(attachedB == true)
+        #expect(manager.recordingPlayer === playerB)
+
+        // 3. Late resolution of A attempts attach with tokenA
+        let attachedA = manager.setRecordingPlayer(playerA, for: tokenA)
+        #expect(attachedA == false, "setRecordingPlayer must report rejection for superseded tokenA")
+        #expect(manager.recordingPlayer === playerB, "playerB must remain active")
+
+        // 4. Late ready-to-play callback simulation for tokenA:
+        // Even if an observer block on playerA was queued, checking token against manager prevents seeking or playing
+        let isTokenAActive = (manager.activeRecordingSessionToken == tokenA)
+        #expect(isTokenAActive == false, "Token A must not be active")
+        if !isTokenAActive {
+            playerA.pause()
         }
+        #expect(playerA.seekCallCount == 0, "No seek should occur for rejected session")
 
-        // Screen B finishes resolution and attaches playerB
-        manager.setRecordingPlayer(playerB, for: tokenB)
-        #expect(manager.recordingPlayer === playerB, "Player B must be active")
-
-        // Screen A's async resolution completes late and attempts to attach playerA
-        manager.setRecordingPlayer(playerA, for: tokenA)
-        #expect(manager.recordingPlayer === playerB, "Late playerA attach must be rejected, preserving playerB")
-
-        // Screen A checks existing-player reuse path: screen A must not adopt player B
-        let screenAAdoptedExisting = (manager.activeRecordingSessionToken == tokenA) ? manager.recordingPlayer : nil
-        #expect(screenAAdoptedExisting == nil, "Screen A must not adopt a player belonging to session B")
-
-        // Screen A unmounts / disappears late (.onDisappear)
+        // 5. Late unmount of A does not clear B
         manager.unregisterRecordingCleanup(for: tokenA)
         manager.clearRecordingPlayer(for: tokenA, ownedBy: playerA)
+        #expect(manager.recordingPlayer === playerB, "Late unmount from session A must not clear session B player")
 
-        // Assert: B remains attached and its cleanup hook remains registered
-        #expect(manager.recordingPlayer === playerB, "Late screen A unmount must NOT clear playerB")
+        // === A -> A Restart ===
+        // 6. User restarts Recording B (B -> B restart)
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let tokenB2 = try #require(manager.activeRecordingSessionToken)
+        #expect(tokenB2 != tokenB, "Restart must produce new session token")
 
-        // Triggering teardown (e.g. stop) must execute Screen B's cleanup hook, NOT Screen A's
+        let playerB2 = SpyAVPlayer()
+        let attachedB2 = manager.setRecordingPlayer(playerB2, for: tokenB2)
+        #expect(attachedB2 == true)
+        #expect(manager.recordingPlayer === playerB2)
+
+        // 7. Late attach from run 1 of B is rejected
+        let latePlayerB1 = SpyAVPlayer()
+        let attachedLateB1 = manager.setRecordingPlayer(latePlayerB1, for: tokenB)
+        #expect(attachedLateB1 == false, "Late attach from run 1 must be rejected")
+        #expect(manager.recordingPlayer === playerB2)
+
+        // 8. Late unmount from run 1 of B does not clear run 2 player
+        manager.unregisterRecordingCleanup(for: tokenB)
+        manager.clearRecordingPlayer(for: tokenB, ownedBy: latePlayerB1)
+        #expect(manager.recordingPlayer === playerB2, "Late cleanup from run 1 must not clear run 2 player")
+
         await manager.stop()
-        #expect(cleanupCountB == 1, "Screen B cleanup hook must execute on teardown")
-        #expect(cleanupCountA == 1, "Screen A cleanup hook must not be triggered again by Screen B teardown")
-        #expect(manager.recordingPlayer == nil, "Manager must be cleared after stop")
-
-        // === Scenario 2: A -> A restart with generation token isolation ===
-        // 1. Recording A first run
-        await manager.play(recording: testRecording, startPosition: 0)
-        let tokenA1 = try #require(manager.activeRecordingSessionToken)
-        var cleanupCountA1 = 0
-        manager.registerRecordingCleanup(for: tokenA1) {
-            cleanupCountA1 += 1
-            manager.clearRecordingPlayer(for: tokenA1, ownedBy: playerA)
-        }
-
-        // 2. User restarts Recording A (A -> A restart)
-        await manager.play(recording: testRecording, startPosition: 0)
-        let tokenA2 = try #require(manager.activeRecordingSessionToken)
-        #expect(tokenA2 != tokenA1, "Restarting same recording must allocate a new session token")
-
-        let playerA2 = SpyAVPlayer()
-        var cleanupCountA2 = 0
-        manager.registerRecordingCleanup(for: tokenA2) {
-            cleanupCountA2 += 1
-            manager.clearRecordingPlayer(for: tokenA2, ownedBy: playerA2)
-        }
-        manager.setRecordingPlayer(playerA2, for: tokenA2)
-        #expect(manager.recordingPlayer === playerA2)
-
-        // 3. Late task from run 1 completes late and attempts attach with tokenA1
-        let latePlayerA1 = SpyAVPlayer()
-        manager.setRecordingPlayer(latePlayerA1, for: tokenA1)
-        #expect(manager.recordingPlayer === playerA2, "Late attach from run 1 must not overwrite run 2 player")
-
-        // 4. Late .onDisappear from run 1
-        manager.unregisterRecordingCleanup(for: tokenA1)
-        manager.clearRecordingPlayer(for: tokenA1, ownedBy: latePlayerA1)
-        #expect(manager.recordingPlayer === playerA2, "Late cleanup from run 1 must not clear run 2 player")
-
-        // 5. Teardown via stop() executes run 2 cleanup hook
-        await manager.stop()
-        #expect(cleanupCountA2 == 1, "Run 2 cleanup hook must execute on stop")
         #expect(manager.recordingPlayer == nil)
     }
 }

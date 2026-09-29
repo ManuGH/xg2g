@@ -118,6 +118,7 @@ struct RootContentView: View {
                     )
                 }
             )
+            .id(item.sessionToken)
             .ignoresSafeArea(.all)
             }
         }

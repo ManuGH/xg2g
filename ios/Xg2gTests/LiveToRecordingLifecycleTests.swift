@@ -140,9 +140,15 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(recording: testRecording, startPosition: 120.0)
 
         // 3. Assert exact canonical state
-        let expectedItem = PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 120.0)
-        #expect(manager.state == .recording(expectedItem, mode: .fullscreen))
-        #expect(manager.activeRecordingItem == expectedItem)
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 120.0)
+        #expect(mode == .fullscreen)
+        #expect(manager.activeRecordingItem?.recording == testRecording)
+        #expect(manager.activeRecordingItem?.initialPosition == 120.0)
         #expect(manager.currentChannel == nil, "Live channel must be cleared")
         #expect(manager.presentationMode == .fullscreen, "Recording presentationMode is fullscreen")
         #expect(manager.isStreaming == false, "isStreaming must be false for VOD recordings")
@@ -166,7 +172,8 @@ struct LiveToRecordingLifecycleTests {
 
         // 2. Recording Player registers its cleanup hook (e.g. AVPlayer teardown)
         var cleanupExecutionCount = 0
-        manager.registerRecordingCleanup {
+        let token = try #require(manager.activeRecordingSessionToken)
+        manager.registerRecordingCleanup(for: token) {
             cleanupExecutionCount += 1
         }
 
@@ -222,7 +229,7 @@ struct LiveToRecordingLifecycleTests {
             #expect(manager.activeRecordingItem == nil)
 
             await manager.play(recording: testRecording, startPosition: 50.0)
-            #expect(manager.activeRecordingItem?.id == testRecording.id)
+            #expect(manager.activeRecordingItem?.recording.id == testRecording.id)
             #expect(manager.currentChannel == nil)
 
             await manager.play(channel: channelB, mode: .fullscreen)
@@ -248,9 +255,13 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(recording: testRecording, startPosition: 42.0)
 
         // 3. Verify Live is completely torn down
-        #expect(manager.coordinator.playing == nil)
-        #expect(manager.coordinator.presentedServiceRef == nil)
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 42.0), mode: .fullscreen))
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 42.0)
+        #expect(mode == .fullscreen)
 
         await manager.stop()
         #expect(manager.state == .idle)
@@ -279,7 +290,7 @@ struct LiveToRecordingLifecycleTests {
             #expect(manager.activeRecordingItem == nil)
             #expect(manager.activeOfflineRecording == nil)
         case .recording(let rec, _):
-            #expect(rec.id == self.testRecording.id)
+            #expect(rec.recording.id == self.testRecording.id)
             #expect(manager.currentChannel == nil)
             #expect(manager.activeOfflineRecording == nil)
         case .offline(let off):
@@ -338,7 +349,13 @@ struct LiveToRecordingLifecycleTests {
         await offlineTransition.task.value
 
         // 4. Assert Recording won exclusively and offline was discarded
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0), mode: .fullscreen))
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 55.0)
+        #expect(mode == .fullscreen)
         #expect(manager.activeRecordingItem != nil)
         #expect(manager.activeOfflineRecording == nil)
         #expect(manager.currentChannel == nil)

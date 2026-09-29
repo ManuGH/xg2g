@@ -25,21 +25,14 @@ public enum BackgroundPlaybackState: String, Sendable, Equatable {
 
 struct PlayingRecordingItem: Identifiable, Equatable, Sendable {
     let sessionToken: UUID
-    let id: String
+    var id: UUID { sessionToken }
     let recording: Recording
     let initialPosition: Double
 
-    init(sessionToken: UUID = UUID(), id: String, recording: Recording, initialPosition: Double) {
+    init(sessionToken: UUID = UUID(), recording: Recording, initialPosition: Double) {
         self.sessionToken = sessionToken
-        self.id = id
         self.recording = recording
         self.initialPosition = initialPosition
-    }
-
-    static func == (lhs: PlayingRecordingItem, rhs: PlayingRecordingItem) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.recording == rhs.recording &&
-        lhs.initialPosition == rhs.initialPosition
     }
 }
 
@@ -74,16 +67,18 @@ final class PlaybackManager: ObservableObject {
     /// Attaches an active AVPlayer for a specific recording session token.
     /// Requires a non-optional session token so callers cannot silently bypass validation.
     /// Rejects late attachments from superseded or obsolete sessions.
-    func setRecordingPlayer(_ player: AVPlayer, for sessionToken: UUID) {
+    @discardableResult
+    func setRecordingPlayer(_ player: AVPlayer, for sessionToken: UUID) -> Bool {
         guard self.activeRecordingSessionToken == sessionToken else {
             // Late attach from an obsolete/superseded session; discard and pause
             player.pause()
-            return
+            return false
         }
         if let current = self.recordingPlayer, current !== player {
             current.pause()
         }
         self.recordingPlayer = player
+        return true
     }
 
     /// Internal manager-owned forced teardown of the active recording player.
@@ -276,17 +271,20 @@ final class PlaybackManager: ObservableObject {
     // MARK: - Lifecycle Hooks
 
     /// Registers a deterministic cleanup callback for the active recording player (e.g. AVPlayer teardown),
-    /// scoped strictly to a specific recording session token.
-    func registerRecordingCleanup(for sessionToken: UUID? = nil, _ hook: @escaping @MainActor () -> Void) {
-        let token = sessionToken ?? activeRecordingSessionToken ?? UUID()
-        self.recordingCleanupHook = (token: token, hook: hook)
+    /// strictly scoped to the active recording session token.
+    /// Rejects registrations from obsolete or superseded sessions so a late .onAppear cannot displace an active hook.
+    @discardableResult
+    func registerRecordingCleanup(for sessionToken: UUID, _ hook: @escaping @MainActor () -> Void) -> Bool {
+        guard self.activeRecordingSessionToken == sessionToken else {
+            return false
+        }
+        self.recordingCleanupHook = (token: sessionToken, hook: hook)
+        return true
     }
 
     /// Unregisters the recording cleanup hook only if it belongs to the given session token.
-    func unregisterRecordingCleanup(for sessionToken: UUID? = nil) {
-        if let sessionToken {
-            guard self.recordingCleanupHook?.token == sessionToken else { return }
-        }
+    func unregisterRecordingCleanup(for sessionToken: UUID) {
+        guard self.recordingCleanupHook?.token == sessionToken else { return }
         self.recordingCleanupHook = nil
     }
 
@@ -374,7 +372,7 @@ final class PlaybackManager: ObservableObject {
         guard self.activeTransitionID == transactionID else { return }
 
         // 4. Set canonical Recording state
-        let item = PlayingRecordingItem(sessionToken: sessionToken, id: recording.id, recording: recording, initialPosition: startPosition)
+        let item = PlayingRecordingItem(sessionToken: sessionToken, recording: recording, initialPosition: startPosition)
         self.state = .recording(item, mode: mode)
     }
 

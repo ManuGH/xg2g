@@ -273,6 +273,8 @@ struct RecordingPlayerScreen: View {
             return
         }
         Task {
+            guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+
             var sessionCookie: String? = nil
             var negotiatedPath: String? = nil
             if let model {
@@ -281,11 +283,14 @@ struct RecordingPlayerScreen: View {
                 } catch {
                     print("[RecordingPlayer] ⚠️ Could not acquire media session cookie: \(error)")
                 }
+                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+
                 do {
                     negotiatedPath = try await model.recordingPlaybackUrl(for: recording.id)
                 } catch {
                     print("[RecordingPlayer] ⚠️ Could not negotiate stream-info: \(error)")
                 }
+                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
             }
 
             // One resolution, owned by the transport: what the backend named,
@@ -298,6 +303,7 @@ struct RecordingPlayerScreen: View {
                 sessionCookie: sessionCookie
             ) else {
                 await MainActor.run {
+                    guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
                     errorMessage = "Ungültige Server-Adresse"
                     isPreparing = false
                 }
@@ -320,7 +326,10 @@ struct RecordingPlayerScreen: View {
             // cookie and the retry budget.
             if streamURL.path.hasSuffix(".m3u8") {
                 _ = await MediaFetcher.waitUntilServable(url: streamURL, sessionCookie: sessionCookie)
+                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
             }
+
+            guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
 
             TelemetryServer.shared.log("[RecordingPlayer] ▶️ Loading '\(recording.title)' (\(recording.id)) URL: \(streamURL.absoluteString)")
 
@@ -328,15 +337,20 @@ struct RecordingPlayerScreen: View {
             let p = AVPlayer(playerItem: item)
 
             await MainActor.run {
+                guard self.model?.playbackManager.activeRecordingSessionToken == token else {
+                    p.pause()
+                    return
+                }
+
                 let progressCallback = self.onProgressUpdate
 
                 // Periodic progress tracking (every 1.0s) for server resume state updates
                 self.timeObserver = p.addPeriodicTimeObserver(
                     forInterval: CMTime(seconds: 1.0, preferredTimescale: 600),
                     queue: .main
-                ) { [weak p] time in
-                    Task { @MainActor [weak p] in
-                        guard let p else { return }
+                ) { [weak p, weak model] time in
+                    Task { @MainActor [weak p, weak model] in
+                        guard let p, model?.playbackManager.activeRecordingSessionToken == token else { return }
                         let sec = time.seconds
                         if sec.isFinite && !sec.isNaN {
                             if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
@@ -348,16 +362,25 @@ struct RecordingPlayerScreen: View {
                     }
                 }
 
-                self.statusObserver = item.observe(\.status, options: [.new]) { [weak p] observedItem, _ in
-                    Task { @MainActor [weak p] in
+                self.statusObserver = item.observe(\.status, options: [.new]) { [weak p, weak model] observedItem, _ in
+                    Task { @MainActor [weak p, weak model] in
                         guard let p else { return }
+                        // Guard the queued ready-to-play callback before seek() or play()
+                        guard model?.playbackManager.activeRecordingSessionToken == token else {
+                            p.pause()
+                            return
+                        }
                         if observedItem.status == .readyToPlay {
                             TelemetryServer.shared.log("[RecordingPlayer] ✅ readyToPlay '\(self.recording.title)'")
                             let startPos = self.initialPosition ?? self.recording.serverResumePos
                             if let pos = startPos, pos > 5 {
                                 let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
-                                p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
-                                    Task { @MainActor [weak p] in
+                                p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p, weak model] finished in
+                                    Task { @MainActor [weak p, weak model] in
+                                        guard model?.playbackManager.activeRecordingSessionToken == token else {
+                                            p?.pause()
+                                            return
+                                        }
                                         if finished {
                                             p?.play()
                                         }
@@ -382,8 +405,19 @@ struct RecordingPlayerScreen: View {
                     }
                 }
 
-                self.player = p
-                self.model?.playbackManager.setRecordingPlayer(p, for: token)
+                let attached = self.model?.playbackManager.setRecordingPlayer(p, for: token) ?? false
+                if attached {
+                    self.player = p
+                } else {
+                    // Attachment rejected: remove observers, pause, and discard player
+                    p.pause()
+                    if let timeObserver {
+                        p.removeTimeObserver(timeObserver)
+                        self.timeObserver = nil
+                    }
+                    self.statusObserver?.invalidate()
+                    self.statusObserver = nil
+                }
             }
         }
     }
