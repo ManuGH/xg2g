@@ -45,6 +45,7 @@ export interface LiveSessionTransport {
   postStopIntent(params: {
     sessionId: string;
     signal?: AbortSignal;
+    keepalive?: boolean;
   }): Promise<void>;
 }
 
@@ -325,7 +326,7 @@ export function createDefaultLiveSessionTransport({
       throw new Error(`Timeout waiting for session readiness: ${sessionId}`);
     },
 
-    async postStopIntent({ sessionId, signal }) {
+    async postStopIntent({ sessionId, signal, keepalive = true }) {
       const headers = {
         ...authHeaders(true),
         'Content-Type': 'application/json',
@@ -338,6 +339,7 @@ export function createDefaultLiveSessionTransport({
           sessionId,
         }),
         signal,
+        keepalive,
       });
       if (!res.ok) {
         throw new Error(`Stop intent failed with HTTP ${res.status}`);

@@ -1337,6 +1337,42 @@ func TestService_ProcessIntent_StopAcceptedPublishesEvent(t *testing.T) {
 	}
 }
 
+func TestService_ProcessIntent_DuplicateStopAccepted(t *testing.T) {
+	deps := newMockDeps()
+	svc := NewService(deps)
+
+	// First stop intent
+	res1, err1 := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStop,
+		SessionID:     "sid-1",
+		CorrelationID: "corr-1",
+		Logger:        zerolog.Nop(),
+	})
+	if err1 != nil {
+		t.Fatalf("first stop expected nil error, got %#v", err1)
+	}
+	if res1 == nil || res1.Status != "accepted" {
+		t.Fatalf("first stop expected accepted result, got %#v", res1)
+	}
+
+	// Duplicate stop intent
+	res2, err2 := svc.ProcessIntent(context.Background(), Intent{
+		Type:          model.IntentTypeStreamStop,
+		SessionID:     "sid-1",
+		CorrelationID: "corr-1",
+		Logger:        zerolog.Nop(),
+	})
+	if err2 != nil {
+		t.Fatalf("duplicate stop expected nil error, got %#v", err2)
+	}
+	if res2 == nil || res2.Status != "accepted" {
+		t.Fatalf("duplicate stop expected accepted result, got %#v", res2)
+	}
+	if len(deps.bus.calls) != 2 {
+		t.Fatalf("expected 2 publish calls, got %d", len(deps.bus.calls))
+	}
+}
+
 func TestService_ProcessIntent_StartStoreError(t *testing.T) {
 	deps := newMockDeps()
 	deps.store.putErr = errors.New("boom")

@@ -82,7 +82,7 @@ export interface PlaybackDomainState {
   recovery: PlaybackRecoveryState;
 }
 
-export type PlaybackStopReason = 'user_stop' | 'auto_recovery_restart';
+export type PlaybackStopReason = 'user_stop' | 'auto_recovery_restart' | 'unload';
 
 export type PlaybackNormativeEvent =
   | {

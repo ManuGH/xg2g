@@ -2211,6 +2211,24 @@ export function usePlaybackOrchestrator(
     };
   }, []);
 
+  // Stop stream on browser tab close, reload, or page navigation.
+  // keepalive: true in liveSessionTransport ensures the request survives document teardown.
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleUnload = () => {
+      void controller.stop('unload', false);
+    };
+
+    window.addEventListener('pagehide', handleUnload);
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [controller]);
+
   useEffect(() => {
     if (!hostEnvironment.isTv) {
       return;

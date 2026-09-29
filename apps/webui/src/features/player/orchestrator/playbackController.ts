@@ -895,6 +895,14 @@ export function createPlaybackController(
       }
     }
 
+    // Flush unadopted candidates and synchronously initiate remote session stop
+    // before ANY await / microtask yield, ensuring tab close / pagehide initiates fetch immediately.
+    flushPendingAdoptionCandidates();
+
+    const stopRemotePromise = sessionToStop
+      ? retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport())
+      : null;
+
     const doStop = async () => {
       // 4. Dispatch intent.stop.requested (media teardown commands)
       runtime.dispatch({
@@ -906,11 +914,8 @@ export function createPlaybackController(
 
       await runtime.waitForCommands();
 
-      // 5. Clean up active session and flush unadopted candidates
-      flushPendingAdoptionCandidates();
-
-      if (sessionToStop) {
-        await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
+      if (stopRemotePromise) {
+        await stopRemotePromise;
       }
 
       // 6. Dispatch normative.playback.stopped
