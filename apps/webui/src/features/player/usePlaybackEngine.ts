@@ -54,7 +54,7 @@ const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING = 240;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_STABLE = 241;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_BLACK = 242;
-const PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT = 243;
+export const PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT = 243;
 const PROBE_CONFIRMATION_MS = 10_000;
 const HLSJS_RENDER_PROBE_MS = 2_500;
 const HLSJS_RENDER_HEARTBEAT_MS = 30_000;
@@ -163,6 +163,12 @@ export function usePlaybackEngine({
   const hlsRenderHeartbeatSessionRef = useRef<string | null>(null);
   const lastHlsRenderSnapshotRef = useRef<HlsRenderProbeSnapshot | null>(null);
   const networkRetryTimerRef = useRef<number | null>(null);
+  const isUnmountedRef = useRef<boolean>(false);
+  const minBufferedAheadRef = useRef<number | null>(null);
+  const startGateTimerRef = useRef<number | null>(null);
+  const startGateReadyTimerRef = useRef<number | null>(null);
+  const startGateReadyCleanupRef = useRef<(() => void) | null>(null);
+  const slowBuildTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
     reportPlaybackFailure(error, {
@@ -289,6 +295,25 @@ export function usePlaybackEngine({
     }
   }, []);
 
+  const clearStartGateTimers = useCallback(() => {
+    if (startGateTimerRef.current !== null) {
+      window.clearTimeout(startGateTimerRef.current);
+      startGateTimerRef.current = null;
+    }
+    if (startGateReadyTimerRef.current !== null) {
+      window.clearTimeout(startGateReadyTimerRef.current);
+      startGateReadyTimerRef.current = null;
+    }
+    if (startGateReadyCleanupRef.current !== null) {
+      startGateReadyCleanupRef.current();
+      startGateReadyCleanupRef.current = null;
+    }
+    if (slowBuildTimerRef.current !== null) {
+      window.clearTimeout(slowBuildTimerRef.current);
+      slowBuildTimerRef.current = null;
+    }
+  }, []);
+
   const clearHlsRenderProbe = useCallback((resetCompleted: boolean = false) => {
     if (hlsRenderProbeTimerRef.current !== null) {
       window.clearTimeout(hlsRenderProbeTimerRef.current);
@@ -305,6 +330,7 @@ export function usePlaybackEngine({
       }
       hlsRenderHeartbeatSessionRef.current = null;
       lastHlsRenderSnapshotRef.current = null;
+      minBufferedAheadRef.current = null;
     }
     activeHlsRenderProbeSessionRef.current = null;
     if (resetCompleted) {
@@ -390,6 +416,7 @@ export function usePlaybackEngine({
         window.clearInterval(hlsRenderHeartbeatTimerRef.current);
       }
       hlsRenderHeartbeatSessionRef.current = trackedSessionId;
+      minBufferedAheadRef.current = null;
       lastHlsRenderSnapshotRef.current = captureHlsRenderProbeSnapshot(videoEl);
       hlsRenderHeartbeatTimerRef.current = window.setInterval(() => {
         if (
@@ -403,13 +430,18 @@ export function usePlaybackEngine({
           }
           hlsRenderHeartbeatSessionRef.current = null;
           lastHlsRenderSnapshotRef.current = null;
+          minBufferedAheadRef.current = null;
           return;
         }
         const beat = captureHlsRenderProbeSnapshot(videoEl);
+        const intervalMinBuf = minBufferedAheadRef.current !== null
+          ? Math.min(minBufferedAheadRef.current, beat.bufferedAhead)
+          : beat.bufferedAhead;
+        minBufferedAheadRef.current = null;
         void reportError(
           'info',
           PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT,
-          describeHlsRenderProbe('heartbeat', beat, lastHlsRenderSnapshotRef.current ?? undefined),
+          describeHlsRenderProbe('heartbeat', beat, lastHlsRenderSnapshotRef.current ?? undefined, intervalMinBuf),
           playbackEngineContext('decode', { engine: 'hlsjs' }),
         );
         lastHlsRenderSnapshotRef.current = beat;
@@ -521,6 +553,7 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearNetworkRetry();
+      clearStartGateTimers();
       hlsStallRecoveryAttemptsRef.current = 0;
       lastHlsUrlRef.current = null;
       lastHlsEngineRef.current = 'auto';
@@ -547,7 +580,7 @@ export function usePlaybackEngine({
         isTeardownRef.current = false;
       }, 50);
     }
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, clearStartGateTimers, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, videoRef]);
 
   const beginSessionDecodeRecovery = useCallback((
     code: number,
@@ -824,6 +857,7 @@ export function usePlaybackEngine({
     clearNativeStallRecovery();
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
+    clearStartGateTimers();
     revealHoldRef.current = false;
     if (revealTimerRef.current !== null) {
       window.clearTimeout(revealTimerRef.current);
@@ -865,6 +899,7 @@ export function usePlaybackEngine({
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
+      clearStartGateTimers();
       const linkProfile = linkProfileRef?.current ?? 'stable';
       const hls = new Hls(createHlsRuntimeConfig(linkProfile));
       hlsRef.current = hls;
@@ -874,12 +909,12 @@ export function usePlaybackEngine({
       // is buffered leaves zero headroom — every PDT/encoder jitter then
       // surfaces as an immediate bufferStalledError (visible stall + recovery
       // jolt seconds after start). Live input is realtime-paced, so headroom
-      // can only come from waiting: hold play() until a small buffer target
-      // exists (or a cap elapses). VOD playlists open the gate immediately.
+      // can only come from waiting: hold play() until a buffer cushion
+      // exists (>= 6s for live, >= 1s for VOD, or timeout).
       let slowBuildActive = false;
-      let slowBuildTimer: number | null = null;
       let startGateOpen = false;
-      let startGateTimer: number | null = null;
+      let isLiveStream = true;
+      let startGateWaitingReady = false;
       const bufferedAheadSeconds = (): number => {
         const gateVideo = videoRef.current;
         if (!gateVideo || gateVideo.buffered.length === 0) {
@@ -893,9 +928,9 @@ export function usePlaybackEngine({
           return;
         }
         slowBuildActive = false;
-        if (slowBuildTimer !== null) {
-          window.clearTimeout(slowBuildTimer);
-          slowBuildTimer = null;
+        if (slowBuildTimerRef.current !== null) {
+          window.clearTimeout(slowBuildTimerRef.current);
+          slowBuildTimerRef.current = null;
         }
         const rateVideo = videoRef.current;
         if (rateVideo && hlsRef.current === hls && rateVideo.playbackRate !== 1) {
@@ -907,17 +942,15 @@ export function usePlaybackEngine({
         }
       };
       const openStartGate = (reason: string) => {
+        if (isUnmountedRef.current || isTeardownRef.current || hlsRef.current !== hls) {
+          return;
+        }
         if (startGateOpen) {
           return;
         }
         startGateOpen = true;
-        if (startGateTimer !== null) {
-          window.clearTimeout(startGateTimer);
-          startGateTimer = null;
-        }
-        if (hlsRef.current !== hls) {
-          return;
-        }
+        startGateWaitingReady = false;
+        clearStartGateTimers();
         debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
         const gateVideo = videoRef.current;
         if (
@@ -928,7 +961,7 @@ export function usePlaybackEngine({
         ) {
           slowBuildActive = true;
           gateVideo.playbackRate = HLS_STARTUP_POLICY.slowBuildPlaybackRate;
-          slowBuildTimer = window.setTimeout(
+          slowBuildTimerRef.current = window.setTimeout(
             () => restorePlaybackRate('timeout'),
             HLS_STARTUP_POLICY.slowBuildMaxMs,
           );
@@ -949,6 +982,42 @@ export function usePlaybackEngine({
           setAutoplayBlocked(true);
           setStatus('ready');
         });
+      };
+      const checkStartGateBufferTarget = () => {
+        if (isUnmountedRef.current || isTeardownRef.current || hlsRef.current !== hls) {
+          return;
+        }
+        if (startGateOpen || startGateWaitingReady) {
+          return;
+        }
+        if (bufferedAheadSeconds() >= HLS_STARTUP_POLICY.liveBufferTargetSeconds) {
+          const gateVideo = videoRef.current;
+          if (gateVideo && gateVideo.readyState < 2) {
+            startGateWaitingReady = true;
+            const cleanupReadyListeners = () => {
+              gateVideo.removeEventListener('canplay', onCanPlay);
+              gateVideo.removeEventListener('loadeddata', onCanPlay);
+              if (startGateReadyCleanupRef.current === cleanupReadyListeners) {
+                startGateReadyCleanupRef.current = null;
+              }
+            };
+            startGateReadyCleanupRef.current = cleanupReadyListeners;
+
+            const onCanPlay = () => {
+              cleanupReadyListeners();
+              openStartGate('buffer_target_ready');
+            };
+            gateVideo.addEventListener('canplay', onCanPlay, { once: true });
+            gateVideo.addEventListener('loadeddata', onCanPlay, { once: true });
+            startGateReadyTimerRef.current = window.setTimeout(() => {
+              startGateReadyTimerRef.current = null;
+              cleanupReadyListeners();
+              openStartGate('buffer_target_timeout');
+            }, 200);
+            return;
+          }
+          openStartGate('buffer_target');
+        }
       };
       // The element-level autoplay attribute would bypass the gate (the
       // browser starts playback as soon as it deems readyState sufficient),
@@ -985,27 +1054,18 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        startGateTimer = window.setTimeout(
+        if (startGateTimerRef.current !== null) {
+          window.clearTimeout(startGateTimerRef.current);
+        }
+        startGateTimerRef.current = window.setTimeout(
           () => openStartGate('timeout'),
-          HLS_STARTUP_POLICY.timeoutMs,
+          HLS_STARTUP_POLICY.liveTimeoutMs,
         );
       });
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
-        if (!startGateOpen && bufferedAheadSeconds() >= HLS_STARTUP_POLICY.bufferTargetSeconds) {
-          const gateVideo = videoRef.current;
-          if (gateVideo && gateVideo.readyState < 2) {
-            const onCanPlay = () => {
-              gateVideo.removeEventListener('canplay', onCanPlay);
-              gateVideo.removeEventListener('loadeddata', onCanPlay);
-              openStartGate('buffer_target_ready');
-            };
-            gateVideo.addEventListener('canplay', onCanPlay, { once: true });
-            gateVideo.addEventListener('loadeddata', onCanPlay, { once: true });
-            window.setTimeout(() => openStartGate('buffer_target_timeout'), 200);
-            return;
-          }
-          openStartGate('buffer_target');
+        if (isLiveStream) {
+          checkStartGateBufferTarget();
         }
         if (
           slowBuildActive &&
@@ -1020,11 +1080,14 @@ export function usePlaybackEngine({
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
-        if (data.details.live === false) {
+        isLiveStream = data.details.live !== false;
+        if (!isLiveStream) {
           revealHoldRef.current = false;
           if (!startGateOpen) {
             openStartGate('vod');
           }
+        } else {
+          checkStartGateBufferTarget();
         }
         const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);
         setStatus((prev) => {
@@ -1316,7 +1379,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearStartGateTimers, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -1326,6 +1389,7 @@ export function usePlaybackEngine({
     clearNativeStallRecovery();
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
+    clearStartGateTimers();
     hlsStallRecoveryAttemptsRef.current = 0;
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -1364,7 +1428,7 @@ export function usePlaybackEngine({
       setAutoplayBlocked(true);
       setStatus((prev) => (prev === 'error' ? prev : 'ready'));
     });
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearStartGateTimers, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -1659,6 +1723,12 @@ export function usePlaybackEngine({
       if (isTeardownRef.current || videoEl.paused) {
         return;
       }
+      const ahead = bufferedAheadSeconds(videoEl);
+      if (Number.isFinite(ahead)) {
+        minBufferedAheadRef.current = minBufferedAheadRef.current !== null
+          ? Math.min(minBufferedAheadRef.current, ahead)
+          : ahead;
+      }
       if (revealHoldRef.current) {
         // The video is demonstrably advancing, break the hold immediately
         if (revealTimerRef.current !== null) {
@@ -1769,14 +1839,17 @@ export function usePlaybackEngine({
   // useEffect cleanup above — that effect re-runs when deps change and would
   // clear timers mid-recovery, breaking the hls.js network retry test.
   useEffect(() => {
+    isUnmountedRef.current = false;
     return () => {
+      isUnmountedRef.current = true;
       clearNetworkRetry();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(true);
+      clearStartGateTimers();
     };
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, clearStartGateTimers]);
 
   return {
     resetPlaybackEngine,

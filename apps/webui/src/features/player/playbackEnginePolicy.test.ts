@@ -51,8 +51,8 @@ describe('playbackEnginePolicy', () => {
 
   it('preserves live startup buffering policy', () => {
     expect(HLS_STARTUP_POLICY).toEqual({
-      bufferTargetSeconds: 1,
-      timeoutMs: 6_000,
+      liveBufferTargetSeconds: 6,
+      liveTimeoutMs: 15_000,
       slowBuildPlaybackRate: 1,
       slowBuildTargetSeconds: 8,
       slowBuildMaxMs: 150_000,
