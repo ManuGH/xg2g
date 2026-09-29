@@ -818,23 +818,73 @@ struct PlaybackStoreProjectionTests {
         #expect(spy.activeLeaseToken == nil)
     }
 
-    @Test("Late Screen A mount and disappear while B owns playback preserves B's active AudioSession lease")
-    func lateScreenAMountAndDisappearPreservesActiveAudioSessionLease() async throws {
+    @Test("Switching recording A -> B without mounting B retires prior audio lease exactly once upon switch and stop")
+    func switchRecordingWithoutMountingBRetiresPriorLeaseExactlyOnce() async throws {
+        let spy = SpyAudioSessionController()
+        let manager = PlaybackManager(audioSession: spy, streamURL: { _ in nil })
+
+        // 1. Session A starts and activates audio lease
+        await manager.play(recording: testRecording, startPosition: 0)
+        let tokenA = try #require(manager.activeRecordingSessionToken)
+        let activatedA = manager.activateRecordingAudioSession(for: tokenA)
+        #expect(activatedA == true)
+        #expect(spy.activeLeaseToken == tokenA)
+        #expect(spy.configureForPlaybackCallCount == 1)
+        #expect(spy.deactivateCallCount == 0)
+
+        // 2. User switches to Recording B WITHOUT mounting B's screen
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let tokenB = try #require(manager.activeRecordingSessionToken)
+        #expect(tokenB != tokenA)
+
+        // A's audio lease must have been retired during the transition
+        #expect(spy.deactivateCallCount == 1, "A's audio lease must be retired when transitioning to B")
+        #expect(spy.activeLeaseToken == nil, "Audio lease must be cleared when session A ends")
+
+        // 3. User stops playback from miniplayer or stop button
+        await manager.stop()
+
+        // A's lease must have been released exactly once (no redundant deactivations or leaked lease)
+        #expect(spy.deactivateCallCount == 1, "A's lease must have been released exactly once")
+        #expect(spy.activeLeaseToken == nil)
+    }
+
+    @Test("Late Screen A mount and disappear with active prior lease preserves Screen B's active AudioSession lease")
+    func lateScreenAMountAndDisappearWithActivePriorLeasePreservesBLease() async throws {
         let spy = SpyAudioSessionController()
         let manager = PlaybackManager(audioSession: spy, streamURL: { _ in nil })
         let playerA = SpyAVPlayer()
         let playerB = SpyAVPlayer()
 
-        // 1. Session A starts: capture tokenA
+        // 1. Session A starts and activates its audio lease
         await manager.play(recording: testRecording, startPosition: 0)
         let tokenA = try #require(manager.activeRecordingSessionToken)
+        let activatedA = manager.activateRecordingAudioSession(for: tokenA)
+        #expect(activatedA == true)
+        #expect(spy.activeLeaseToken == tokenA)
+        #expect(spy.configureForPlaybackCallCount == 1)
+        #expect(spy.deactivateCallCount == 0)
 
-        // 2. User switches to Recording B: capture tokenB
+        // Screen A registers cleanup and attaches playerA
+        let registeredA1 = manager.registerRecordingCleanup(for: tokenA) {
+            manager.clearRecordingPlayer(for: tokenA, ownedBy: playerA)
+            manager.deactivateRecordingAudioSession(for: tokenA)
+        }
+        #expect(registeredA1 == true)
+        manager.setRecordingPlayer(playerA, for: tokenA)
+        #expect(manager.recordingPlayer === playerA)
+
+        // 2. User switches to Recording B
         await manager.play(recording: testRecordingB, startPosition: 0)
         let tokenB = try #require(manager.activeRecordingSessionToken)
         #expect(tokenB != tokenA)
 
-        // Screen B mounts: registers cleanup and activates audio session lease
+        // Session A's audio lease must have been retired during the transition
+        #expect(spy.deactivateCallCount == 1, "Session A lease must be retired during transition to B")
+        #expect(spy.activeLeaseToken == nil)
+        #expect(manager.recordingPlayer == nil, "Player A must be invalidated")
+
+        // 3. Screen B mounts: registers cleanup and acquires new audio session lease
         let registeredB = manager.registerRecordingCleanup(for: tokenB) {
             manager.clearRecordingPlayer(for: tokenB, ownedBy: playerB)
             manager.deactivateRecordingAudioSession(for: tokenB)
@@ -842,31 +892,75 @@ struct PlaybackStoreProjectionTests {
         #expect(registeredB == true)
         let activatedB = manager.activateRecordingAudioSession(for: tokenB)
         #expect(activatedB == true)
-        #expect(spy.activeLeaseToken == tokenB)
-        #expect(spy.configureForPlaybackCallCount == 1)
+        #expect(spy.activeLeaseToken == tokenB, "Audio session lease must now belong to Session B")
+        #expect(spy.configureForPlaybackCallCount == 2)
+        #expect(spy.deactivateCallCount == 1)
         manager.setRecordingPlayer(playerB, for: tokenB)
+        #expect(manager.recordingPlayer === playerB)
 
-        // 3. Late Mount of Screen A (.onAppear) while B is actively playing:
+        // 4. Late Mount of Screen A (.onAppear) while B is actively playing:
         // registerRecordingCleanup rejects tokenA -> screen guards and aborts setupPlayer / audio activation
-        let registeredA = manager.registerRecordingCleanup(for: tokenA) {}
-        #expect(registeredA == false, "Late mount of Screen A must be rejected from registering cleanup")
-        let activatedA = manager.activateRecordingAudioSession(for: tokenA)
-        #expect(activatedA == false, "Late mount of Screen A must be rejected from activating audio session")
+        let lateRegisteredA = manager.registerRecordingCleanup(for: tokenA) {}
+        #expect(lateRegisteredA == false, "Late mount of Screen A must be rejected from registering cleanup")
+        let lateActivatedA = manager.activateRecordingAudioSession(for: tokenA)
+        #expect(lateActivatedA == false, "Late mount of Screen A must be rejected from activating audio session")
         #expect(spy.activeLeaseToken == tokenB, "Audio session lease must remain with Session B")
-        #expect(spy.configureForPlaybackCallCount == 1, "Audio session must not be reconfigured by Screen A")
+        #expect(spy.configureForPlaybackCallCount == 2, "Audio session must not be reconfigured by Screen A")
 
-        // 4. Late Disappear of Screen A (.onDisappear -> cleanup()) while B is actively playing:
+        // 5. Late Disappear of Screen A (.onDisappear -> cleanup()) while B is actively playing:
         manager.unregisterRecordingCleanup(for: tokenA)
         manager.clearRecordingPlayer(for: tokenA, ownedBy: playerA)
-        let deactivatedA = manager.deactivateRecordingAudioSession(for: tokenA)
-        #expect(deactivatedA == false, "Late disappear of Screen A must be rejected from deactivating audio session")
-        #expect(spy.deactivateCallCount == 0, "Audio session must NOT be deactivated by late Screen A cleanup")
+        let lateDeactivatedA = manager.deactivateRecordingAudioSession(for: tokenA)
+        #expect(lateDeactivatedA == false, "Late disappear of Screen A must be rejected from deactivating audio session")
+        #expect(spy.deactivateCallCount == 1, "Audio session must NOT be deactivated by late Screen A cleanup")
         #expect(spy.activeLeaseToken == tokenB, "Audio session lease must still belong to Session B")
         #expect(manager.recordingPlayer === playerB, "Player B must remain active and unaffected")
 
-        // 5. Legitimate Screen B teardown deactivates audio session cleanly
+        // 6. Legitimate Screen B teardown deactivates audio session cleanly
         await manager.stop()
-        #expect(spy.deactivateCallCount == 1, "Audio session must be deactivated when Session B stops")
+        #expect(spy.deactivateCallCount == 2, "Audio session must be deactivated when Session B stops")
+        #expect(spy.activeLeaseToken == nil)
+    }
+
+    @Test("Recording A -> A restart retires prior lease and allows new session to acquire and maintain lease")
+    func recordingRestartRetiresPriorLeaseAndMaintainsNewLease() async throws {
+        let spy = SpyAudioSessionController()
+        let manager = PlaybackManager(audioSession: spy, streamURL: { _ in nil })
+
+        // 1. Run 1 of Recording A starts and activates lease
+        await manager.play(recording: testRecording, startPosition: 0)
+        let tokenA1 = try #require(manager.activeRecordingSessionToken)
+        let activatedA1 = manager.activateRecordingAudioSession(for: tokenA1)
+        #expect(activatedA1 == true)
+        #expect(spy.activeLeaseToken == tokenA1)
+        #expect(spy.configureForPlaybackCallCount == 1)
+        #expect(spy.deactivateCallCount == 0)
+
+        // 2. Restart Recording A (A -> A restart)
+        await manager.play(recording: testRecording, startPosition: 0)
+        let tokenA2 = try #require(manager.activeRecordingSessionToken)
+        #expect(tokenA2 != tokenA1)
+
+        // Run 1 lease must be retired
+        #expect(spy.deactivateCallCount == 1, "Run 1 lease retired on restart")
+        #expect(spy.activeLeaseToken == nil)
+
+        // 3. Screen for Run 2 mounts and acquires lease
+        let activatedA2 = manager.activateRecordingAudioSession(for: tokenA2)
+        #expect(activatedA2 == true)
+        #expect(spy.activeLeaseToken == tokenA2)
+        #expect(spy.configureForPlaybackCallCount == 2)
+        #expect(spy.deactivateCallCount == 1)
+
+        // 4. Late cleanup from Run 1 does not affect Run 2 lease
+        let lateDeactivatedA1 = manager.deactivateRecordingAudioSession(for: tokenA1)
+        #expect(lateDeactivatedA1 == false)
+        #expect(spy.deactivateCallCount == 1)
+        #expect(spy.activeLeaseToken == tokenA2)
+
+        // 5. Teardown via stop() deactivates Run 2 lease cleanly
+        await manager.stop()
+        #expect(spy.deactivateCallCount == 2)
         #expect(spy.activeLeaseToken == nil)
     }
 

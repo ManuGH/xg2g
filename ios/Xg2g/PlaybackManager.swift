@@ -385,8 +385,7 @@ final class PlaybackManager: ObservableObject {
     func play(recording: Recording, startPosition: Double, mode: PlaybackPresentationMode = .fullscreen) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
-        let sessionToken = UUID()
-        self.activeRecordingSessionToken = sessionToken
+        let priorSessionToken = self.activeRecordingSessionToken
 
         // Invalidate any prior recording player immediately so that a seek during transition
         // or targeting recording B cannot reach recording A's player, independent of cleanup hooks.
@@ -397,15 +396,20 @@ final class PlaybackManager: ObservableObject {
             await coordinator.stop()
         }
 
-        // 2. Teardown existing recording cleanup if switching between recordings
+        // 2. Teardown existing recording cleanup and retire prior audio session lease before publishing new token
         if case .recording = state {
             triggerRecordingCleanupHook()
+            if let priorSessionToken {
+                audioSession.deactivate(for: priorSessionToken)
+            }
         }
 
         // 3. Guard against race if a new transition began while awaiting stop()
         guard self.activeTransitionID == transactionID else { return }
 
-        // 4. Set canonical Recording state
+        // 4. Generate and publish canonical Recording state with new session token
+        let sessionToken = UUID()
+        self.activeRecordingSessionToken = sessionToken
         let item = PlayingRecordingItem(sessionToken: sessionToken, recording: recording, initialPosition: startPosition)
         self.state = .recording(item, mode: mode)
     }
