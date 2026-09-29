@@ -147,9 +147,57 @@
   color: var(--text-primary);
 }
 
+.crumbActive {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.crumbActive:hover {
+  background: transparent;
+}
+
 .separator {
   color: var(--text-tertiary);
   opacity: 0.55;
+}
+
+.categoryControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px 0;
+}
+
+.categoryButton {
+  appearance: none;
+  border: 1px solid var(--border-base);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.categoryButton:hover {
+  color: var(--text-primary);
+  border-color: var(--border-elevated);
+  transform: translateY(-1px);
+}
+
+.categoryButtonActive {
+  color: #fff;
+  border-color: var(--accent-action);
+  background: var(--accent-action);
 }
 
 .segmentedControls {
@@ -261,6 +309,122 @@
 .directoryCardMeta {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
+}
+
+.seriesRail {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.seriesFolderCard {
+  overflow: hidden;
+  transition: transform var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard);
+}
+
+.seriesFolderCard:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-elevated);
+}
+
+.seriesFolderCardBody {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 76px;
+  padding: 12px 14px;
+}
+
+.seriesFolderIcon {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-action) 16%, var(--bg-hover) 84%);
+  color: var(--accent-action);
+}
+
+.seriesFolderCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+}
+
+.seriesFolderTitle {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seriesFolderMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.seriesFolderBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent-action) 18%, var(--surface-highlight) 82%);
+  color: var(--accent-action);
+}
+
+.subfolderHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-base);
+  background: var(--surface-panel);
+  margin-bottom: 8px;
+}
+
+.subfolderInfo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.subfolderIcon {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-action) 16%, var(--bg-hover) 84%);
+  color: var(--accent-action);
+}
+
+.subfolderTitle {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.subfolderMeta {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 .resumeShelf,
