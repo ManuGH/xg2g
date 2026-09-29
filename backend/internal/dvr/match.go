@@ -125,4 +125,3 @@ func NormalizeForMatch(s string) string {
 	)
 	return replacer.Replace(s)
 }
-

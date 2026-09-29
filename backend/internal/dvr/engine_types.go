@@ -32,12 +32,12 @@ type SeriesRuleRunReport struct {
 // RuleSnapshot captures the state of the rule at the time of the run.
 // This provides context for the decisions made without needing to look up the current rule state.
 type RuleSnapshot struct {
-	ID          string `json:"id"`
-	Enabled     bool   `json:"enabled"`
-	Keyword     string `json:"keyword"`
-	ChannelRef  string `json:"channelRef,omitempty"`
-	Days        []int  `json:"days,omitempty"`        // 0=Sunday
-	StartWindow string `json:"startWindow,omitempty"` // HH:MM-HH:MM
+	ID            string `json:"id"`
+	Enabled       bool   `json:"enabled"`
+	Keyword       string `json:"keyword"`
+	ChannelRef    string `json:"channelRef,omitempty"`
+	Days          []int  `json:"days,omitempty"`        // 0=Sunday
+	StartWindow   string `json:"startWindow,omitempty"` // HH:MM-HH:MM
 	Priority      int    `json:"priority"`
 	RetentionDays int    `json:"retentionDays,omitempty"`
 }

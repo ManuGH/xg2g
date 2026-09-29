@@ -452,4 +452,3 @@ func (e *SeriesEngine) pruneRecordingsForRule(ctx context.Context, client OWICli
 
 	return prunedCount, decisions
 }
-
