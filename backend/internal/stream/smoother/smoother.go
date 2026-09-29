@@ -272,117 +272,89 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 		}
 	}()
 
-	// EGRESS PACING GOROUTINE
+	// EGRESS JITTER BUFFER GOROUTINE
 	go func() {
-		ticker := time.NewTicker(time.Duration(cfg.PacerIntervalMs * float64(time.Millisecond)))
-		defer ticker.Stop()
+		// Wait for startup reservoir to fill before releasing any data
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			currentBitrate := pacer.Bitrate()
+			bufferedMs := rb.BufferedMediaMs(currentBitrate)
+
+			if bufferedMs >= cfg.StartupReservoirMs || rb.BufferedBytes() >= 1024*1024 {
+				reservoirReleased.Store(true)
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		// Stream chunks as fast as the consumer's TCP socket reads them (hardware decoder flow control).
+		// This ensures video keyframes (I-frames, often 300-800 KB) are never artificially throttled
+		// across multiple 20ms intervals, which prevents VBV buffer underflow and decoder freezes.
+		chunkSize := 64 * 1024
+		chunkSize = (chunkSize / TSPacketSize) * TSPacketSize
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case now := <-ticker.C:
+			default:
+			}
+
+			chunk, ok := rb.PopWait(chunkSize)
+			if !ok {
+				errChan <- io.EOF
+				return
+			}
+			if len(chunk) == 0 {
+				continue
+			}
+
+			now := time.Now()
+			if firstByteOut.IsZero() {
+				firstByteOut = now
+			}
+
+			// Validate egress packet integrity
+			for i := 0; i < len(chunk); i += TSPacketSize {
+				_ = outValidator.ValidatePacket(chunk[i : i+TSPacketSize])
+			}
+
+			gapsMu.Lock()
+			if !lastOutputArrival.IsZero() {
+				outGap := now.Sub(lastOutputArrival).Seconds() * 1000.0
+				outputGaps = append(outputGaps, outGap)
+			}
+			lastOutputArrival = now
+			atomic.AddInt64(&outputBytes, int64(len(chunk)))
+			atomic.AddInt64(&outputPackets, int64(len(chunk)/TSPacketSize))
+			gapsMu.Unlock()
+
+			if _, wErr := out.Write(chunk); wErr != nil {
+				errChan <- wErr
+				return
+			}
+
+			if time.Since(lastTelemetryLog) >= 5*time.Second {
+				lastTelemetryLog = now
 				currentBitrate := pacer.Bitrate()
 				bufferedMs := rb.BufferedMediaMs(currentBitrate)
+				underruns, _ := rb.Stats()
 
 				gapsMu.Lock()
 				bufferMedias = append(bufferMedias, bufferedMs)
 				gapsMu.Unlock()
 
-				// Check startup reservoir
-				if !reservoirReleased.Load() {
-					if bufferedMs >= cfg.StartupReservoirMs {
-						reservoirReleased.Store(true)
-					} else {
-						continue
-					}
-				}
-
-				// Closed-Loop Watermark Regulation:
-				// Proportional correction anchored around TargetWatermarkMs with DeadbandMs.
-				targetMs := cfg.TargetWatermarkMs
-				if targetMs <= 0 {
-					targetMs = cfg.StartupReservoirMs
-				}
-				if targetMs <= 0 {
-					targetMs = 650.0
-				}
-				deadband := cfg.DeadbandMs
-				if deadband <= 0 {
-					deadband = 75.0
-				}
-				maxTrim := cfg.MaxCorrectionTrim
-				if maxTrim <= 0 {
-					maxTrim = 0.02 // ±2% max trim
-				}
-				kp := cfg.Kp
-				if kp <= 0 {
-					kp = 0.04
-				}
-
-				errorMs := bufferedMs - targetMs
-				correctionFactor := 1.0
-				// In broadcast DVB streaming, the egress pacing rate must strictly match
-				// the PCR clock (1.0000x). Never accelerate egress (trim > 0), as overfeeding
-				// the downstream hardware decoder causes presentation timestamp (PTS) judder
-				// on 50Hz displays. Buffer excess is absorbed by TCP backpressure on ingest.
-				if errorMs < -deadband {
-					deficit := (-errorMs) - deadband
-					trim := math.Min(maxTrim, (deficit/targetMs)*kp)
-					correctionFactor = 1.0 - trim
-				}
-
-				sliceFraction := cfg.PacerIntervalMs / 1000.0
-				targetBytes := int((currentBitrate * sliceFraction * correctionFactor) / 8.0)
-
-				if targetBytes < TSPacketSize {
-					targetBytes = TSPacketSize
-				}
-
-				if time.Since(lastTelemetryLog) >= 5*time.Second {
-					lastTelemetryLog = now
-					underruns, _ := rb.Stats()
-					log.L().Info().
-						Float64("bufferedMediaMs", math.Round(bufferedMs*10)/10).
-						Float64("targetWatermarkMs", targetMs).
-						Float64("estimatedBitrateKbps", math.Round((currentBitrate/1000.0)*10)/10).
-						Float64("correctionFactor", math.Round(correctionFactor*10000)/10000).
-						Int64("packetsOut", atomic.LoadInt64(&outputPackets)).
-						Int64("underruns", underruns).
-						Msg("smoother watermark telemetry")
-				}
-
-				chunk, ok := rb.Pop(targetBytes)
-				if !ok {
-					errChan <- io.EOF
-					return
-				}
-
-				if len(chunk) > 0 {
-					if firstByteOut.IsZero() {
-						firstByteOut = now
-					}
-
-					// Validate egress packet integrity
-					for i := 0; i < len(chunk); i += TSPacketSize {
-						_ = outValidator.ValidatePacket(chunk[i : i+TSPacketSize])
-					}
-
-					gapsMu.Lock()
-					if !lastOutputArrival.IsZero() {
-						outGap := now.Sub(lastOutputArrival).Seconds() * 1000.0
-						outputGaps = append(outputGaps, outGap)
-					}
-					lastOutputArrival = now
-					atomic.AddInt64(&outputBytes, int64(len(chunk)))
-					atomic.AddInt64(&outputPackets, int64(len(chunk)/TSPacketSize))
-					gapsMu.Unlock()
-
-					if _, wErr := out.Write(chunk); wErr != nil {
-						errChan <- wErr
-						return
-					}
-				}
+				log.L().Info().
+					Float64("bufferedMediaMs", math.Round(bufferedMs*10)/10).
+					Float64("estimatedBitrateKbps", math.Round((currentBitrate/1000.0)*10)/10).
+					Int64("packetsOut", atomic.LoadInt64(&outputPackets)).
+					Int64("underruns", underruns).
+					Msg("smoother jitter buffer telemetry")
 			}
 		}
 	}()

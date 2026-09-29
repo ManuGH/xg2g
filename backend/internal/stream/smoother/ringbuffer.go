@@ -133,6 +133,48 @@ func (rb *TSRingBuffer) Pop(maxBytes int) ([]byte, bool) {
 	return out, true
 }
 
+// PopWait extracts up to maxBytes (aligned to 188 bytes), blocking until data is available or the buffer is closed.
+func (rb *TSRingBuffer) PopWait(maxBytes int) ([]byte, bool) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	for rb.count == 0 {
+		if rb.isClosed {
+			return nil, false
+		}
+		rb.underruns++
+		rb.notEmpty.Wait()
+	}
+
+	// Align to 188 bytes
+	toRead := (maxBytes / TSPacketSize) * TSPacketSize
+	if toRead == 0 {
+		toRead = TSPacketSize
+	}
+	if toRead > rb.count {
+		toRead = (rb.count / TSPacketSize) * TSPacketSize
+	}
+	if toRead == 0 {
+		return nil, true
+	}
+
+	out := make([]byte, toRead)
+	if rb.head+toRead <= rb.capacity {
+		copy(out, rb.buf[rb.head:rb.head+toRead])
+		rb.head = (rb.head + toRead) % rb.capacity
+	} else {
+		firstChunk := rb.capacity - rb.head
+		copy(out[:firstChunk], rb.buf[rb.head:])
+		secondChunk := toRead - firstChunk
+		copy(out[firstChunk:], rb.buf[:secondChunk])
+		rb.head = secondChunk
+	}
+
+	rb.count -= toRead
+	rb.notFull.Signal()
+	return out, true
+}
+
 // BufferedBytes returns the number of unconsumed bytes currently in the buffer.
 func (rb *TSRingBuffer) BufferedBytes() int {
 	rb.mu.Lock()
