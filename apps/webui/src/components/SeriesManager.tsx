@@ -162,7 +162,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
     if (!currentRule) return;
 
     try {
-      if (!currentRule.keyword) {
+      if (!currentRule.keyword?.trim()) {
         toast({ kind: 'warning', message: 'Keyword is required' });
         return;
       }
@@ -371,13 +371,14 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
                   className={styles.inputField}
                 >
-                  <option value="">-- All Channels (Slower) --</option>
+                  <option value="">-- Select Channel --</option>
                   {channels.map(c => (
                     <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
+                <small className={styles.helpText}>Required. The channel monitored for this series.</small>
               </div>
 
               <div className={styles.formGroup}>

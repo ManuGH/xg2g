@@ -207,5 +207,60 @@ describe('recordings classification & grouping', () => {
       expect(classifiedMap.get('show1')).toBe('series');
       expect(classifiedMap.get('show2')).toBe('series');
     });
+
+    it('does NOT upgrade repeated movie broadcasts to series without positive series evidence', () => {
+      const recordings: RecordingItem[] = [
+        {
+          recordingId: 'm1',
+          title: 'Inception',
+          description: 'Spielfilm von Christopher Nolan',
+          beginUnixSeconds: 1000,
+          durationSeconds: 8800,
+          status: 'completed',
+        },
+        {
+          recordingId: 'm2',
+          title: 'Inception',
+          description: 'Spielfilm von Christopher Nolan (Wdh.)',
+          beginUnixSeconds: 5000,
+          durationSeconds: 8800,
+          status: 'completed',
+        },
+      ];
+
+      const { seriesGroups, classifiedMap } = groupRecordings(recordings);
+
+      expect(seriesGroups).toHaveLength(0);
+      expect(classifiedMap.get('m1')).toBe('movies');
+      expect(classifiedMap.get('m2')).toBe('movies');
+    });
+
+    it('upgrades movies to series if an explicit series rule keyword is configured', () => {
+      const recordings: RecordingItem[] = [
+        {
+          recordingId: 'm1',
+          title: 'James Bond 007 - Skyfall',
+          description: 'Actionfilm',
+          beginUnixSeconds: 1000,
+          durationSeconds: 8400,
+          status: 'completed',
+        },
+        {
+          recordingId: 'm2',
+          title: 'James Bond 007 - Spectre',
+          description: 'Actionfilm',
+          beginUnixSeconds: 5000,
+          durationSeconds: 8600,
+          status: 'completed',
+        },
+      ];
+
+      const { seriesGroups, classifiedMap } = groupRecordings(recordings, ['James Bond 007']);
+
+      expect(seriesGroups).toHaveLength(1);
+      expect(seriesGroups[0].seriesTitle).toBe('James Bond 007');
+      expect(classifiedMap.get('m1')).toBe('series');
+      expect(classifiedMap.get('m2')).toBe('series');
+    });
   });
 });

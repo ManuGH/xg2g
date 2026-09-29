@@ -20,3 +20,13 @@ type SeriesRule struct {
 	LastRunStatus  string     `json:"last_run_status,omitempty"`
 	LastRunSummary RunSummary `json:"last_run_summary,omitempty"`
 }
+
+// RuleRecordingOwnership tracks scheduled timers created by a series rule to establish verified ownership.
+type RuleRecordingOwnership struct {
+	RuleID     string    `json:"rule_id"`
+	ChannelRef string    `json:"channel_ref"`
+	Begin      int64     `json:"begin"`
+	End        int64     `json:"end"`
+	Title      string    `json:"title"`
+	CreatedAt  time.Time `json:"created_at"`
+}

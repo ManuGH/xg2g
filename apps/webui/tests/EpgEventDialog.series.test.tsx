@@ -98,7 +98,7 @@ describe('EpgEventDialog Series Scheduling', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('supports selecting all channels and weekdays filter', async () => {
+  it('supports weekdays filter and 14-day retention preset', async () => {
     const onScheduleSeries = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -113,8 +113,8 @@ describe('EpgEventDialog Series Scheduling', () => {
 
     fireEvent.click(screen.getByTestId('btn-record-series'));
 
-    // Select "All Channels" / "Alle Sender"
-    fireEvent.click(screen.getByRole('button', { name: /All Channels|Alle Sender/i }));
+    // Verify channel is displayed
+    expect(screen.getByText('PULS 24 HD')).toBeInTheDocument();
 
     // Select "Werktags (Mo-Fr)"
     fireEvent.click(screen.getByRole('button', { name: /Werktags/i }));
@@ -132,7 +132,7 @@ describe('EpgEventDialog Series Scheduling', () => {
     const [, calledConfig] = onScheduleSeries.mock.calls[0];
     expect(calledConfig).toEqual({
       keyword: 'Café PULS',
-      channelRef: undefined,
+      channelRef: '1:0:19:14B8:407:1:C00000:0:0:0:',
       days: [1, 2, 3, 4, 5],
       startWindow: undefined,
       retentionDays: 14,

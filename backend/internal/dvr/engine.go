@@ -57,8 +57,12 @@ func NewSeriesEngine(cfg config.AppConfig, rules *Manager, clientFactory func() 
 // trigger: "manual" or "auto"
 // ruleID: optional, if set only runs this specific rule
 func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID string) ([]SeriesRuleRunReport, error) {
-	// 1. Singleflight to prevent concurrent runs
-	res, err, _ := e.sfg.Do("run", func() (any, error) {
+	// 1. Singleflight to prevent concurrent duplicate runs for the same execution scope
+	flightKey := "all"
+	if ruleID != "" {
+		flightKey = "rule:" + ruleID
+	}
+	res, err, _ := e.sfg.Do(flightKey, func() (any, error) {
 		jobStart := time.Now()
 		e.logger.Info().Str("trigger", trigger).Str("rule_id", ruleID).Msg("starting series engine run")
 
@@ -171,7 +175,9 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 						e.logger.Info().Str("title", d.Title).Str("rule", rule.Keyword).Msg("scheduling timer")
 
 						// Real Create Call
-						err := client.AddTimer(ctx, d.ServiceRef, d.Begin, d.End, d.Title, "Auto: "+rule.Keyword)
+						ruleTag := fmt.Sprintf("[xg2g-rule:%s]", rule.ID)
+						timerDesc := fmt.Sprintf("%s Auto: %s", ruleTag, rule.Keyword)
+						err := client.AddTimer(ctx, d.ServiceRef, d.Begin, d.End, d.Title, timerDesc)
 						if err != nil {
 							e.logger.Error().Err(err).Msg("failed to add timer")
 							report.Summary.TimersErrored++
@@ -186,6 +192,18 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 							// Update local dedup cache to prevent double booking in same run
 							key := fmt.Sprintf("%s|%d", d.ServiceRef, d.Begin)
 							existingTimers[key] = true
+
+							// Record verified ownership in manager
+							if e.ruleManager != nil {
+								_ = e.ruleManager.RecordOwnership(RuleRecordingOwnership{
+									RuleID:     rule.ID,
+									ChannelRef: d.ServiceRef,
+									Begin:      d.Begin,
+									End:        d.End,
+									Title:      d.Title,
+									CreatedAt:  time.Now(),
+								})
+							}
 						}
 					} else if d.Action == ActionSkipped {
 						report.Summary.TimersSkipped++
@@ -245,7 +263,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 		}
 		candidates = events
 	} else {
-		return nil, nil
+		return nil, fmt.Errorf("series rule %q has no channelRef: scanning all channels is not supported, channelRef is required", rule.ID)
 	}
 
 	var decisions []RunDecision
@@ -371,7 +389,21 @@ func parseHHMM(s string) (int, error) {
 	return val, nil
 }
 
-// pruneRecordingsForRule checks existing recordings against rule.RetentionDays and deletes any that are expired.
+// isRecordingOwnedByRule verifies if a recording belongs to ruleID either via
+// embedded description tag [xg2g-rule:<ruleID>] or via persistent scheduled ownership record.
+func (e *SeriesEngine) isRecordingOwnedByRule(ruleID string, ruleChannelRef string, movie openwebif.Movie) bool {
+	ruleTag := fmt.Sprintf("[xg2g-rule:%s]", ruleID)
+	if strings.Contains(movie.Description, ruleTag) || strings.Contains(movie.ExtendedDescription, ruleTag) {
+		return true
+	}
+	if e.ruleManager != nil && e.ruleManager.HasOwnership(ruleID, movie.Title, int64(movie.Begin), ruleChannelRef) {
+		return true
+	}
+	return false
+}
+
+// pruneRecordingsForRule checks existing recordings against rule.RetentionDays and deletes any that are expired
+// and verified to be owned by this rule.
 func (e *SeriesEngine) pruneRecordingsForRule(ctx context.Context, client OWIClient, rule SeriesRule, now time.Time, movies []openwebif.Movie) (int, []RunDecision) {
 	if rule.RetentionDays <= 0 || len(movies) == 0 {
 		return 0, nil
@@ -401,7 +433,7 @@ func (e *SeriesEngine) pruneRecordingsForRule(ctx context.Context, client OWICli
 					matchesChannel = true
 				}
 			}
-			// If sRef is generic file path (1:0:0:0:...), allow match since title matched
+			// If sRef is generic file path (1:0:0:0:...), allow title match to continue to ownership verification
 			if !matchesChannel && !strings.HasPrefix(movie.ServiceRef, "1:0:0:0:") {
 				continue
 			}
@@ -414,6 +446,25 @@ func (e *SeriesEngine) pruneRecordingsForRule(ctx context.Context, client OWICli
 		}
 		recordedAt := time.Unix(movieBegin, 0)
 		if recordedAt.Before(cutoff) {
+			// 4. Strict Ownership Check: Must have verified ownership by this rule
+			if !e.isRecordingOwnedByRule(rule.ID, rule.ChannelRef, movie) {
+				e.logger.Warn().
+					Str("title", movie.Title).
+					Str("serviceref", movie.ServiceRef).
+					Time("recorded_at", recordedAt).
+					Str("rule_id", rule.ID).
+					Msg("skipping retention prune: recording lacks verified rule ownership")
+				decisions = append(decisions, RunDecision{
+					ServiceRef: movie.ServiceRef,
+					Begin:      movieBegin,
+					Title:      movie.Title,
+					Action:     ActionSkipped,
+					Reason:     "unverified_ownership",
+					Details:    fmt.Sprintf("Recording %q matches rule title but lacks verified ownership for rule %q; skipped retention deletion for safety", movie.Title, rule.ID),
+				})
+				continue
+			}
+
 			e.logger.Info().
 				Str("title", movie.Title).
 				Str("serviceref", movie.ServiceRef).

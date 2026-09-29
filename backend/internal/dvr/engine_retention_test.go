@@ -71,10 +71,12 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 	}, nil)
 
 	// Mock Recordings list with:
-	// 1. Cafe Puls from 10 days ago (expired -> should be pruned)
-	// 2. Cafe Puls from 2 days ago (active -> kept)
-	// 3. Different show from 10 days ago (different show -> kept)
-	expiredSRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/20260919 0600 - PULS 24 HD - Cafe Puls.ts"
+	// 1. Cafe Puls from 10 days ago with verified rule ownership (expired -> should be pruned)
+	// 2. Cafe Puls from 10 days ago without rule ownership (manual recording with same title -> MUST BE KEPT)
+	// 3. Cafe Puls from 2 days ago with verified rule ownership (active -> kept)
+	// 4. Different show from 10 days ago (different show -> kept)
+	expiredOwnedSRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/20260919 0600 - PULS 24 HD - Cafe Puls.ts"
+	expiredUnownedSRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/20260919 0600 - PULS 24 HD - Cafe Puls Manual.ts"
 	activeSRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/20260927 0600 - PULS 24 HD - Cafe Puls.ts"
 	otherSRef := "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/20260919 2015 - PULS 24 HD - Nachrichten.ts"
 
@@ -82,15 +84,24 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 		Result: true,
 		Movies: []openwebif.Movie{
 			{
-				ServiceRef:  expiredSRef,
+				ServiceRef:  expiredOwnedSRef,
 				Title:       "Café PULS mit PULS 4 Aktuell",
 				ServiceName: "PULS 24 HD",
+				Description: "[xg2g-rule:" + ruleID + "] Auto: Cafe Puls",
+				Begin:       openwebif.IntOrStringInt64(tenDaysAgo),
+			},
+			{
+				ServiceRef:  expiredUnownedSRef,
+				Title:       "Café PULS mit PULS 4 Aktuell",
+				ServiceName: "PULS 24 HD",
+				Description: "Manuelle Aufnahme vom Nutzer", // Unverified ownership!
 				Begin:       openwebif.IntOrStringInt64(tenDaysAgo),
 			},
 			{
 				ServiceRef:  activeSRef,
 				Title:       "Café PULS mit PULS 4 Aktuell",
 				ServiceName: "PULS 24 HD",
+				Description: "[xg2g-rule:" + ruleID + "] Auto: Cafe Puls",
 				Begin:       openwebif.IntOrStringInt64(twoDaysAgo),
 			},
 			{
@@ -102,11 +113,12 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 		},
 	}, nil)
 
-	// Expect DeleteMovie called ONLY for the expired recording
-	mockClient.On("DeleteMovie", mock.Anything, expiredSRef).Return(nil).Once()
+	// Expect DeleteMovie called ONLY for the expired owned recording
+	mockClient.On("DeleteMovie", mock.Anything, expiredOwnedSRef).Return(nil).Once()
 
-	// Expect AddTimer called for upcoming Cafe Puls episode
-	mockClient.On("AddTimer", mock.Anything, puls24Ref, tomorrowStart, tomorrowEnd, "Café PULS mit PULS 4 Aktuell", "Auto: Cafe Puls").Return(nil).Once()
+	// Expect AddTimer called for upcoming Cafe Puls episode with rule tag in description
+	expectedTag := "[xg2g-rule:" + ruleID + "] Auto: Cafe Puls"
+	mockClient.On("AddTimer", mock.Anything, puls24Ref, tomorrowStart, tomorrowEnd, "Café PULS mit PULS 4 Aktuell", expectedTag).Return(nil).Once()
 
 	engine := NewSeriesEngine(config.AppConfig{}, rm, func() OWIClient { return mockClient })
 
@@ -119,6 +131,20 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 	assert.Equal(t, 1, rep.Summary.TimersCreated)
 	assert.Equal(t, 1, rep.Summary.RecordingsPruned)
 
+	// Verify unowned recording was skipped and reported with unverified_ownership
+	foundSkippedUnowned := false
+	for _, d := range rep.Decisions {
+		if d.ServiceRef == expiredUnownedSRef {
+			assert.Equal(t, ActionSkipped, d.Action)
+			assert.Equal(t, "unverified_ownership", d.Reason)
+			foundSkippedUnowned = true
+		}
+	}
+	assert.True(t, foundSkippedUnowned, "expired unowned recording must be skipped and reported")
+
+	// Verify timer ownership was persisted in manager for upcoming scheduled timer
+	assert.True(t, rm.HasOwnership(ruleID, "Café PULS mit PULS 4 Aktuell", tomorrowStart, puls24Ref))
+
 	// Check persisted rule in manager
 	savedRule, ok := rm.GetRule(ruleID)
 	assert.True(t, ok)
@@ -126,4 +152,52 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 	assert.Equal(t, 1, savedRule.LastRunSummary.RecordingsPruned)
 
 	mockClient.AssertExpectations(t)
+}
+
+func TestSeriesEngine_RuleWithoutChannelRef_FailsRunAndSkipsPruning(t *testing.T) {
+	tmpDir := t.TempDir()
+	rm := NewManager(tmpDir)
+
+	ruleID, err := rm.AddRule(SeriesRule{
+		Enabled:       true,
+		Keyword:       "Cafe Puls",
+		ChannelRef:    "", // Empty channelRef
+		RetentionDays: 7,
+		Priority:      10,
+	})
+	assert.NoError(t, err)
+
+	mockClient := new(MockClient)
+	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
+
+	tenDaysAgo := time.Now().Add(-10 * 24 * time.Hour).Unix()
+	mockClient.On("GetRecordings", mock.Anything, "").Return(&openwebif.MovieList{
+		Result: true,
+		Movies: []openwebif.Movie{
+			{
+				ServiceRef:  "1:0:0:0:0:0:0:0:0:0:/media/hdd/movie/old.ts",
+				Title:       "Café PULS mit PULS 4 Aktuell",
+				ServiceName: "PULS 24 HD",
+				Description: "[xg2g-rule:" + ruleID + "] Auto: Cafe Puls",
+				Begin:       openwebif.IntOrStringInt64(tenDaysAgo),
+			},
+		},
+	}, nil)
+
+	// Note: DeleteMovie must NOT be called because processRule fails before pruning!
+
+	engine := NewSeriesEngine(config.AppConfig{}, rm, func() OWIClient { return mockClient })
+
+	reports, err := engine.RunOnce(context.Background(), "manual", ruleID)
+	assert.NoError(t, err)
+	assert.Len(t, reports, 1)
+
+	rep := reports[0]
+	assert.Equal(t, "failed", rep.Status)
+	assert.Equal(t, 1, rep.Summary.TimersErrored)
+	assert.Equal(t, 0, rep.Summary.RecordingsPruned)
+	assert.NotEmpty(t, rep.Errors)
+	assert.Contains(t, rep.Errors[0].Message, "channelRef is required")
+
+	mockClient.AssertNotCalled(t, "DeleteMovie", mock.Anything, mock.Anything)
 }

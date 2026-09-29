@@ -196,6 +196,51 @@ export function classifyRecording(
   return 'other';
 }
 
+export function hasPositiveSeriesEvidence(
+  rec: RecordingItem,
+  knownSeriesKeywords: string[] = []
+): boolean {
+  const title = rec.title || '';
+  const desc = rec.description || '';
+  const combined = `${title} ${desc}`;
+  const normTitle = normalizeTitle(title);
+
+  // 1. Explicit series rule keywords
+  if (knownSeriesKeywords && knownSeriesKeywords.length > 0) {
+    for (const kw of knownSeriesKeywords) {
+      const normKw = normalizeTitle(kw);
+      if (normKw && (normTitle === normKw || normTitle.includes(normKw))) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Known series prefixes
+  if (
+    KNOWN_SERIES_PREFIXES.some(
+      (prefix) =>
+        normTitle === prefix ||
+        normTitle.startsWith(prefix + ' ') ||
+        normTitle.startsWith(prefix + ':') ||
+        normTitle.startsWith(prefix + '-')
+    )
+  ) {
+    return true;
+  }
+
+  // 3. Episodic markers
+  if (EPISODE_PATTERNS.some((p) => p.test(combined))) {
+    return true;
+  }
+
+  // 4. Series genre patterns
+  if (SERIES_GENRE_PATTERNS.some((p) => p.test(combined))) {
+    return true;
+  }
+
+  return false;
+}
+
 export function groupRecordings(
   recordings: RecordingItem[],
   knownSeriesKeywords: string[] = []
@@ -236,9 +281,24 @@ export function groupRecordings(
     }
   }
 
-  // Pass 2: If a group has >= 2 episodes, ensure all member episodes are classified as 'series'
+  // Pass 2: Upgrade group members to 'series' if positive series evidence is present
+  // Repeated movie broadcasts (e.g. 2x "Inception") MUST remain movies unless positive series evidence exists.
   for (const group of seriesGroupsByKey.values()) {
-    if (group.episodes.length >= 2) {
+    const groupHasSeriesEvidence = group.episodes.some((rec) => {
+      const recId = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+      return classifiedMap.get(recId) === 'series' || hasPositiveSeriesEvidence(rec, knownSeriesKeywords);
+    });
+
+    const anyIsMovie = group.episodes.some((rec) => {
+      const recId = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+      return classifiedMap.get(recId) === 'movies';
+    });
+
+    // If movies are present, we strictly require positive series evidence before treating as a series.
+    // If not movies (e.g. episodic TV broadcasts), >= 2 episodes or series evidence marks as series.
+    const shouldUpgrade = groupHasSeriesEvidence || (!anyIsMovie && group.episodes.length >= 2);
+
+    if (shouldUpgrade && group.episodes.length >= 2) {
       for (const rec of group.episodes) {
         const recId = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
         const currentClass = classifiedMap.get(recId);
@@ -249,10 +309,10 @@ export function groupRecordings(
     }
   }
 
-  // Pass 3: Filter seriesGroups for actual series (either classified as series, or >= 2 episodes)
+  // Pass 3: Filter seriesGroups for actual series (episodes must be classified as 'series')
   const validSeriesGroups: SeriesGroup[] = [];
   for (const group of seriesGroupsByKey.values()) {
-    const isSeries = group.episodes.length >= 2 || group.episodes.some((rec) => {
+    const isSeries = group.episodes.some((rec) => {
       const recId = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
       return classifiedMap.get(recId) === 'series';
     });

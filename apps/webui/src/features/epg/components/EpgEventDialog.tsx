@@ -73,7 +73,6 @@ export function EpgEventDialog({
   // Series scheduling state
   const cleanedTitle = useMemo(() => extractCleanTitle(event.title || ''), [event.title]);
   const [keyword, setKeyword] = useState<string>(cleanedTitle || event.title || '');
-  const [channelScope, setChannelScope] = useState<'this' | 'all'>('this');
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [startWindow, setStartWindow] = useState<string>('');
   const [retentionDays, setRetentionDays] = useState<number>(7); // Default 7 days retention
@@ -106,9 +105,10 @@ export function EpgEventDialog({
 
   const handleSeriesSubmit = async () => {
     if (!keyword.trim() || !onScheduleSeries) return;
+    const channelRef = event.serviceRef || channel?.serviceRef;
+    if (!channelRef) return;
     setIsSubmitting(true);
     try {
-      const channelRef = channelScope === 'this' ? (event.serviceRef || channel?.serviceRef) : undefined;
       const days = selectedDays.length === 7 || selectedDays.length === 0 ? undefined : selectedDays;
       await onScheduleSeries(event, {
         keyword: keyword.trim(),
@@ -223,26 +223,15 @@ export function EpgEventDialog({
                 <span className={styles.helpText}>{t('epg.seriesKeywordHelp', { defaultValue: 'Übereinstimmung beim Sendungstitel (ohne Berücksichtigung von Akzenten oder Groß-/Kleinschreibung).' })}</span>
               </div>
 
-              {/* Channel Selector */}
+              {/* Channel Display */}
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>{t('epg.seriesChannelLabel', { defaultValue: 'Sender' })}</label>
                 <div className={styles.chipRow}>
-                  <button
-                    type="button"
-                    className={[styles.chip, channelScope === 'this' ? styles.chipActive : ''].filter(Boolean).join(' ')}
-                    onClick={() => setChannelScope('this')}
-                  >
-                    {channel?.name ? t('epg.seriesChannelThis', { name: channel.name, defaultValue: `Nur ${channel.name}` }) : 'Nur dieser Sender'}
-                  </button>
-                  <button
-                    type="button"
-                    className={[styles.chip, channelScope === 'all' ? styles.chipActive : ''].filter(Boolean).join(' ')}
-                    onClick={() => setChannelScope('all')}
-                  >
-                    {t('epg.seriesChannelAll', { defaultValue: 'Alle Sender' })}
-                  </button>
+                  <span className={[styles.chip, styles.chipActive].join(' ')}>
+                    {channel?.name || event.serviceRef || t('epg.seriesChannelThis', { defaultValue: 'Dieser Sender' })}
+                  </span>
                 </div>
-                <span className={styles.helpText}>{t('epg.seriesChannelHelp', { defaultValue: 'Wähle einen bestimmten Sender oder alle Sender.' })}</span>
+                <span className={styles.helpText}>{t('epg.seriesChannelHelp', { defaultValue: 'Die Serie wird auf diesem Sender überwacht und programmiert.' })}</span>
               </div>
 
               {/* Days of week */}
@@ -353,4 +342,3 @@ export function EpgEventDialog({
     document.body
   );
 }
-
