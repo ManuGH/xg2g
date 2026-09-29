@@ -69,6 +69,7 @@ interface RuleFormState {
   days: number[];
   startWindow: string;
   priority: number | string; // Handle input string temporarily
+  retentionDays: number | string;
   enabled: boolean;
 }
 
@@ -119,6 +120,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         days: rule.days || [],
         startWindow: rule.startWindow || '',
         priority: rule.priority || 0,
+        retentionDays: rule.retentionDays || 0,
         enabled: rule.enabled !== false
       });
     } else {
@@ -128,6 +130,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         days: [],
         startWindow: '',
         priority: 0,
+        retentionDays: 0,
         enabled: true
       });
     }
@@ -159,16 +162,18 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
     if (!currentRule) return;
 
     try {
-      if (!currentRule.keyword) {
+      if (!currentRule.keyword?.trim()) {
         toast({ kind: 'warning', message: 'Keyword is required' });
         return;
       }
 
       if (currentRule.id) {
+        const retentionVal = Number(currentRule.retentionDays) || 0;
         const updatePayload: SeriesRuleUpdate = {
           enabled: currentRule.enabled,
           keyword: currentRule.keyword,
           priority: Number(currentRule.priority) || 0,
+          ...(retentionVal > 0 ? { retentionDays: retentionVal } : {}),
           ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
           ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {}),
           ...(currentRule.days?.length ? { days: currentRule.days } : {})
@@ -180,11 +185,13 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         });
         throwOnClientResultError(result, { source: 'SeriesManager.updateSeriesRule' });
       } else {
+        const retentionVal = Number(currentRule.retentionDays) || 0;
         // UI-INV-SERIES-001: Omit empty filters to avoid unnecessary state synthesis.
         const createPayload: SeriesRuleWritable = {
           keyword: currentRule.keyword,
           priority: Number(currentRule.priority) || 0,
           enabled: currentRule.enabled,
+          ...(retentionVal > 0 ? { retentionDays: retentionVal } : {}),
           ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
           ...(currentRule.days?.length ? { days: currentRule.days } : {}),
           ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {})
@@ -273,6 +280,12 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                 <span className={styles.metaLabel}>Time:</span>
                 <span className={styles.metaValue}>{rule.startWindow || 'Anytime'}</span>
               </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>Retention:</span>
+                <span className={styles.metaValue}>
+                  {rule.retentionDays ? `${rule.retentionDays} days (auto-delete)` : 'Keep forever'}
+                </span>
+              </div>
             </div>
 
             <div className={styles.ruleStats}>
@@ -286,7 +299,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                       rule.lastRunStatus === 'failed' ? styles.runStatusFailed : '',
                     ].filter(Boolean).join(' ')}
                   >
-                    {rule.lastRunStatus || 'Unknown'} ({(rule.lastRunSummary?.timersCreated || 0)} Created)
+                    {rule.lastRunStatus || 'Unknown'} ({(rule.lastRunSummary?.timersCreated || 0)} Created{rule.lastRunSummary?.recordingsPruned ? `, ${rule.lastRunSummary.recordingsPruned} Pruned` : ''})
                   </span>
                 </div>
               ) : (
@@ -358,13 +371,14 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
                   className={styles.inputField}
                 >
-                  <option value="">-- All Channels (Slower) --</option>
+                  <option value="">-- Select Channel --</option>
                   {channels.map(c => (
                     <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
+                <small className={styles.helpText}>Required. The channel monitored for this series.</small>
               </div>
 
               <div className={styles.formGroup}>
@@ -386,6 +400,40 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   className={styles.inputField}
                 />
                 <small className={styles.helpText}>Only match start times within this range.</small>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label>Retention / Aufbewahrung (Tage)</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Unbegrenzt', val: 0 },
+                    { label: '7 Tage (z.B. Cafe Puls)', val: 7 },
+                    { label: '14 Tage', val: 14 },
+                    { label: '30 Tage', val: 30 },
+                  ].map(preset => (
+                    <button
+                      key={preset.val}
+                      type="button"
+                      className={[
+                        styles.dayButton,
+                        Number(currentRule.retentionDays) === preset.val ? styles.dayButtonActive : '',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => setCurrentRule({ ...currentRule, retentionDays: preset.val })}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={currentRule.retentionDays}
+                  onChange={e => setCurrentRule({ ...currentRule, retentionDays: e.target.value })}
+                  placeholder="0 = dauerhaft behalten"
+                  className={styles.inputField}
+                  data-testid="series-edit-retention"
+                />
+                <small className={styles.helpText}>Aufnahmen, die älter als diese Anzahl an Tagen sind, werden automatisch gelöscht.</small>
               </div>
 
               <div className={styles.formGroup}>

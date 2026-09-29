@@ -15,7 +15,18 @@ type SeriesRule struct {
 	Days           []int      `json:"days,omitempty"`         // 0=Sunday
 	StartWindow    string     `json:"start_window,omitempty"` // HHMM-HHMM
 	Priority       int        `json:"priority"`
+	RetentionDays  int        `json:"retention_days,omitempty"` // Days to keep recordings before auto-deleting (0 = keep forever)
 	LastRunAt      time.Time  `json:"last_run_at,omitempty"`
 	LastRunStatus  string     `json:"last_run_status,omitempty"`
 	LastRunSummary RunSummary `json:"last_run_summary,omitempty"`
+}
+
+// RuleRecordingOwnership tracks scheduled timers created by a series rule to establish verified ownership.
+type RuleRecordingOwnership struct {
+	RuleID     string    `json:"rule_id"`
+	ChannelRef string    `json:"channel_ref"`
+	Begin      int64     `json:"begin"`
+	End        int64     `json:"end"`
+	Title      string    `json:"title"`
+	CreatedAt  time.Time `json:"created_at"`
 }

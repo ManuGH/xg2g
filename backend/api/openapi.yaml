@@ -1297,6 +1297,7 @@ components:
         timersSkipped: { type: integer }
         timersConflicted: { type: integer }
         timersErrored: { type: integer }
+        recordingsPruned: { type: integer }
         maxTimersGlobalPerRunHit: { type: boolean }
         maxMatchesScannedPerRuleHit: { type: boolean }
         receiverUnreachable: { type: boolean }
@@ -1348,6 +1349,7 @@ components:
           items: { type: integer }
         startWindow: { type: string }
         priority: { type: integer }
+        retentionDays: { type: integer }
     SeriesRule:
       type: object
       properties:
@@ -1376,6 +1378,11 @@ components:
         priority:
           type: integer
           default: 0
+        retentionDays:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of days to keep recordings before auto-deleting (0 = keep forever)
         lastRunAt:
           type: string
           format: date-time
@@ -1409,6 +1416,10 @@ components:
           description: Time window HHMM-HHMM
         priority:
           type: integer
+        retentionDays:
+          type: integer
+          minimum: 0
+          description: Number of days to keep recordings before auto-deleting (0 = keep forever)
 
     ConfigUpdate:
       type: object

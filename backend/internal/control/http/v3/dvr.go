@@ -154,6 +154,7 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 	days := r.Days
 	window := r.StartWindow
 	priority := r.Priority
+	retentionDays := r.RetentionDays
 
 	// Map LastRunSummary if present
 	var summary *RunSummary
@@ -167,6 +168,7 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 			TimersSkipped:               &r.LastRunSummary.TimersSkipped,
 			TimersConflicted:            &r.LastRunSummary.TimersConflicted,
 			TimersErrored:               &r.LastRunSummary.TimersErrored,
+			RecordingsPruned:            &r.LastRunSummary.RecordingsPruned,
 			MaxTimersGlobalPerRunHit:    &r.LastRunSummary.MaxTimersGlobalPerRunHit,
 			MaxMatchesScannedPerRuleHit: &r.LastRunSummary.MaxMatchesScannedPerRuleHit,
 			ReceiverUnreachable:         &r.LastRunSummary.ReceiverUnreachable,
@@ -182,6 +184,7 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 		Days:           &days,
 		StartWindow:    &window,
 		Priority:       &priority,
+		RetentionDays:  &retentionDays,
 		LastRunAt:      &r.LastRunAt,
 		LastRunStatus:  &r.LastRunStatus,
 		LastRunSummary: summary,
@@ -211,6 +214,9 @@ func mapAPIToRule(req SeriesRule) dvr.SeriesRule {
 	if req.Priority != nil {
 		r.Priority = *req.Priority
 	}
+	if req.RetentionDays != nil {
+		r.RetentionDays = *req.RetentionDays
+	}
 	return r
 }
 
@@ -230,6 +236,9 @@ func mapAPIUpdateToRule(req SeriesRuleUpdate) dvr.SeriesRule {
 	}
 	if req.StartWindow != nil {
 		r.StartWindow = *req.StartWindow
+	}
+	if req.RetentionDays != nil {
+		r.RetentionDays = *req.RetentionDays
 	}
 	return r
 }

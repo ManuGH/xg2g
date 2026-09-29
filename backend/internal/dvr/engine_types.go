@@ -32,13 +32,14 @@ type SeriesRuleRunReport struct {
 // RuleSnapshot captures the state of the rule at the time of the run.
 // This provides context for the decisions made without needing to look up the current rule state.
 type RuleSnapshot struct {
-	ID          string `json:"id"`
-	Enabled     bool   `json:"enabled"`
-	Keyword     string `json:"keyword"`
-	ChannelRef  string `json:"channelRef,omitempty"`
-	Days        []int  `json:"days,omitempty"`        // 0=Sunday
-	StartWindow string `json:"startWindow,omitempty"` // HH:MM-HH:MM
-	Priority    int    `json:"priority"`
+	ID            string `json:"id"`
+	Enabled       bool   `json:"enabled"`
+	Keyword       string `json:"keyword"`
+	ChannelRef    string `json:"channelRef,omitempty"`
+	Days          []int  `json:"days,omitempty"`        // 0=Sunday
+	StartWindow   string `json:"startWindow,omitempty"` // HH:MM-HH:MM
+	Priority      int    `json:"priority"`
+	RetentionDays int    `json:"retentionDays,omitempty"`
 }
 
 // RunSummary provides high-level counters and guardrail flags.
@@ -50,6 +51,7 @@ type RunSummary struct {
 	TimersSkipped    int `json:"timersSkipped"` // duplicates/filtered/limit
 	TimersConflicted int `json:"timersConflicted"`
 	TimersErrored    int `json:"timersErrored"`
+	RecordingsPruned int `json:"recordingsPruned,omitempty"`
 
 	// Guardrail telemetry
 	MaxTimersGlobalPerRunHit    bool `json:"maxTimersGlobalPerRunHit"`

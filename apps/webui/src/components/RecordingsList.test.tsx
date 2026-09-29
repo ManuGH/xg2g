@@ -6,11 +6,13 @@ import { setClientAuthToken } from '../services/clientWrapper';
 
 const {
   getRecordings,
+  getSeriesRules,
   confirm,
   toast,
   v3Player,
 } = vi.hoisted(() => ({
   getRecordings: vi.fn(),
+  getSeriesRules: vi.fn().mockResolvedValue({ data: [] }),
   confirm: vi.fn(),
   toast: vi.fn(),
   v3Player: vi.fn(({
@@ -34,6 +36,7 @@ const {
 
 vi.mock('../client-ts', () => ({
   getRecordings,
+  getSeriesRules,
 }));
 
 vi.mock('../context/AppContext', () => ({
@@ -183,9 +186,11 @@ describe('RecordingsList', () => {
 
     renderWithQueryClient();
 
-    expect(await screen.findByText('Series')).toBeInTheDocument();
+    const seriesElements = await screen.findAllByText('Series');
+    const directoryCard = seriesElements.find((el) => el.closest('[data-ui="card"]'));
+    expect(directoryCard).toBeDefined();
 
-    fireEvent.click(screen.getByText('Series'));
+    fireEvent.click(directoryCard!);
 
     await waitFor(() => {
       expect(getRecordings).toHaveBeenLastCalledWith({ query: { root: 'root-a', path: 'series' } });

@@ -145,6 +145,7 @@ func (bl *BookmarkList) UnmarshalJSON(b []byte) error {
 type Movie struct {
 	ServiceRef          string               `json:"serviceref"`
 	Title               string               `json:"eventname"`
+	ServiceName         string               `json:"servicename"`
 	Description         string               `json:"description"`
 	ExtendedDescription string               `json:"extended_description"` // Full plot summary
 	Length              string               `json:"length"`               // OWI typically returns string like "90 min"

@@ -60,6 +60,19 @@ func (m *MockClient) DeleteTimer(ctx context.Context, sRef string, begin, end in
 	return args.Error(0)
 }
 
+func (m *MockClient) GetRecordings(ctx context.Context, dirname string) (*openwebif.MovieList, error) {
+	args := m.Called(ctx, dirname)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*openwebif.MovieList), args.Error(1)
+}
+
+func (m *MockClient) DeleteMovie(ctx context.Context, sRef string) error {
+	args := m.Called(ctx, sRef)
+	return args.Error(0)
+}
+
 func TestSeriesEngine_RunOnce(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()

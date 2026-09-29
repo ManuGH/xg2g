@@ -8,7 +8,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState, channelMatchesQuery } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
-import { addTimer } from '../../client-ts';
+import { addTimer, createSeriesRule, runSeriesRule, type SeriesRuleWritable } from '../../client-ts';
 import { throwOnClientResultError } from '../../services/clientWrapper';
 import { useHouseholdProfiles } from '../../context/HouseholdProfilesContext';
 import type { EpgChannel, EpgBouquet, Timer, EpgEvent, EpgFilters } from './types';
@@ -16,7 +16,7 @@ import { EPG_MAX_HORIZON_HOURS } from './types';
 import { EpgToolbar } from './components/EpgToolbar';
 import { EpgChannelList } from './components/EpgChannelList';
 import { EpgTimelineGrid } from './components/EpgTimelineGrid';
-import { EpgEventDialog } from './components/EpgEventDialog';
+import { EpgEventDialog, type ScheduleSeriesConfig } from './components/EpgEventDialog';
 import ErrorPanel from '../../components/ErrorPanel';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import SectionContextBar from '../../components/SectionContextBar';
@@ -223,6 +223,56 @@ export default function EPG({
       }
     },
     [confirm, loadTimers, t, toast]
+  );
+
+  const handleScheduleSeries = useCallback(
+    async (_event: EpgEvent, config: ScheduleSeriesConfig) => {
+      try {
+        const payload: SeriesRuleWritable = {
+          keyword: config.keyword.trim(),
+          enabled: true,
+          priority: 0,
+          ...(config.channelRef?.trim() ? { channelRef: config.channelRef.trim() } : {}),
+          ...(config.days && config.days.length > 0 && config.days.length < 7 ? { days: config.days } : {}),
+          ...(config.startWindow?.trim() ? { startWindow: config.startWindow.trim() } : {}),
+          ...(config.retentionDays && config.retentionDays > 0 ? { retentionDays: config.retentionDays } : {}),
+        };
+
+        const result = await createSeriesRule({ body: payload });
+        throwOnClientResultError(result, { source: 'EPG.handleScheduleSeries' });
+
+        const createdRule = result.data;
+        if (createdRule?.id) {
+          try {
+            const runRes = await runSeriesRule({
+              path: { id: createdRule.id },
+              query: { trigger: 'manual' },
+            });
+            throwOnClientResultError(runRes, { source: 'EPG.handleScheduleSeries.run' });
+          } catch (runErr) {
+            debugError('Failed to run series rule immediately:', formatError(runErr));
+          }
+        }
+
+        const retentionDetail = config.retentionDays && config.retentionDays > 0
+          ? t('epg.seriesRetentionNotice', { count: config.retentionDays })
+          : undefined;
+
+        toast({
+          kind: 'success',
+          message: t('epg.seriesRecordSuccess', { title: config.keyword }),
+          details: retentionDetail,
+        });
+
+        // Refresh timers immediately so planned recordings appear in EPG
+        loadTimers();
+      } catch (err) {
+        debugError('Failed to schedule series rule:', formatError(err));
+        const msg = formatTimerCreateError(err);
+        toast({ kind: 'error', message: t('epg.seriesRecordError', { error: msg }) });
+      }
+    },
+    [loadTimers, t, toast]
   );
 
   const isRecorded = useCallback(
@@ -707,6 +757,7 @@ export default function EPG({
           currentTime={state.currentTime}
           onClose={() => setSelectedEvent(null)}
           onRecord={canManageDvr ? handleRecord : undefined}
+          onScheduleSeries={canManageDvr ? handleScheduleSeries : undefined}
           isRecorded={selectedEvent ? isRecorded(selectedEvent) : false}
           onPlay={onPlay}
         />

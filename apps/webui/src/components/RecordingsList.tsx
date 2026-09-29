@@ -5,10 +5,15 @@
 // Phase 2E: Recordings View refactored to primitives (Card + StatusChip)
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
-import React, { useState, useEffect, Suspense, useRef, type CSSProperties } from 'react';
-import { useSearchParams } from 'react-router';
+import React, { useState, useEffect, useMemo, Suspense, useRef, type CSSProperties } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
-import { type RecordingItem } from '../client-ts';
+import { type RecordingItem, getSeriesRules } from '../client-ts';
+import {
+  groupRecordings,
+  normalizeTitle,
+  type RecordingCategory,
+} from '../features/recordings/classification';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { filterRecordingsForProfile } from '../features/household/model';
@@ -18,10 +23,14 @@ import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridg
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useRecordings } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
+import { buildRecordingsRoute, type RecordingsSection } from '../routes';
 import { Button, Card, CardBody, EmptyState, StatusChip, type ChipState } from './ui';
+import SectionContextBar from './SectionContextBar';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
+
+const SeriesManager = lazyWithRetry(() => import('./SeriesManager'));
 
 const importV3Player = () => import('../features/player/components/V3Player');
 let v3PlayerModulePromise: ReturnType<typeof importV3Player> | null = null;
@@ -303,7 +312,16 @@ export default function RecordingsList() {
   const { auth } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { selectedProfile, canAccessDvrPlayback, canManageDvr } = useHouseholdProfiles();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const activeSection: RecordingsSection = requestedSection === 'series' && canManageDvr
+    ? 'series'
+    : 'library';
+
+  const handleSectionChange = (section: RecordingsSection) => {
+    navigate(buildRecordingsRoute({ section }));
+  };
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -320,6 +338,55 @@ export default function RecordingsList() {
   const handlePlayerClose = usePlayerHistoryBridge(playing !== null, closePlayerOverlay);
   const [filterMode, setFilterMode] = useState<RecordingsFilter>('all');
   const [sortMode, setSortMode] = useState<RecordingsSort>('newest');
+  const [categoryFilter, setCategoryFilter] = useState<RecordingCategory>(() => {
+    const cat = searchParams.get('category');
+    if (cat === 'movies' || cat === 'series' || cat === 'sport') {
+      return cat;
+    }
+    return 'all';
+  });
+  const [selectedSeries, setSelectedSeries] = useState<string | null>(() => {
+    return searchParams.get('series') || null;
+  });
+  const [seriesRuleKeywords, setSeriesRuleKeywords] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof getSeriesRules === 'function') {
+      getSeriesRules()
+        .then((res: any) => {
+          const rules = res?.data || [];
+          const keywords = rules.map((r: any) => r.keyword).filter(Boolean);
+          if (keywords.length > 0) {
+            setSeriesRuleKeywords(keywords);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, []);
+
+  const handleCategoryChange = (newCategory: RecordingCategory) => {
+    setCategoryFilter(newCategory);
+    setSelectedSeries(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('series');
+    if (newCategory !== 'all') {
+      next.set('category', newCategory);
+    } else {
+      next.delete('category');
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const handleSelectSeries = (seriesTitle: string | null) => {
+    setSelectedSeries(seriesTitle);
+    const next = new URLSearchParams(searchParams);
+    if (seriesTitle) {
+      next.set('series', seriesTitle);
+    } else {
+      next.delete('series');
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   // Bulk Delete State
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
@@ -346,6 +413,7 @@ export default function RecordingsList() {
 
   useEffect(() => {
     setSelectedIds(new Set());
+    setSelectedSeries(null);
   }, [root, path]);
 
   useEffect(() => {
@@ -625,7 +693,43 @@ export default function RecordingsList() {
     return new Date(ts * 1000).toLocaleString();
   };
 
-  const visibleRecordings = profileRecordings
+  const { seriesGroups, classifiedMap } = useMemo(() => {
+    return groupRecordings(profileRecordings, seriesRuleKeywords);
+  }, [profileRecordings, seriesRuleKeywords]);
+
+  const activeSeriesGroup = useMemo(() => {
+    if (!selectedSeries) return null;
+    const norm = normalizeTitle(selectedSeries);
+    return seriesGroups.find(g => normalizeTitle(g.seriesTitle) === norm) || null;
+  }, [selectedSeries, seriesGroups]);
+
+  const multiEpisodeSeries = useMemo(() => {
+    return seriesGroups.filter(g => g.episodes.length >= 2);
+  }, [seriesGroups]);
+
+  let candidateRecordings: RecordingItem[];
+  if (selectedSeries && activeSeriesGroup) {
+    candidateRecordings = activeSeriesGroup.episodes;
+  } else if (categoryFilter === 'movies') {
+    candidateRecordings = profileRecordings.filter((rec) => {
+      const id = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+      return classifiedMap.get(id) === 'movies';
+    });
+  } else if (categoryFilter === 'sport') {
+    candidateRecordings = profileRecordings.filter((rec) => {
+      const id = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+      return classifiedMap.get(id) === 'sport';
+    });
+  } else if (categoryFilter === 'series') {
+    candidateRecordings = profileRecordings.filter((rec) => {
+      const id = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+      return classifiedMap.get(id) === 'series';
+    });
+  } else {
+    candidateRecordings = profileRecordings;
+  }
+
+  const visibleRecordings = candidateRecordings
     .filter((recording) => matchesRecordingsFilter(recording as RecordingItem, filterMode))
     .sort((left, right) => {
       const leftBegin = left.beginUnixSeconds || 0;
@@ -655,6 +759,12 @@ export default function RecordingsList() {
   const librarySummary = currentPathLabel
     ? t('recordings.browsingPath', { root: currentRootLabel, path: currentPathLabel })
     : t('recordings.browsingRoot', { root: currentRootLabel });
+  const categoryOptions: Array<{ value: RecordingCategory; label: string }> = [
+    { value: 'all', label: t('recordings.categoryAll') },
+    { value: 'movies', label: t('recordings.categoryMovies') },
+    { value: 'series', label: t('recordings.categorySeries') },
+    { value: 'sport', label: t('recordings.categorySport') },
+  ];
   const filterOptions: Array<{ value: RecordingsFilter; label: string }> = [
     { value: 'all', label: t('recordings.viewAll') },
     { value: 'active', label: t('recordings.viewActive') },
@@ -665,7 +775,7 @@ export default function RecordingsList() {
     { value: 'newest', label: t('recordings.sortNewest') },
     { value: 'oldest', label: t('recordings.sortOldest') },
   ];
-  const continueWatching = !selectionMode && filterMode === 'all'
+  const continueWatching = !selectionMode && filterMode === 'all' && !selectedSeries
     ? visibleRecordings.filter((recording) => Boolean(resolveEligibleResume(recording))).slice(0, 4)
     : [];
   const continueWatchingIds = new Set(
@@ -818,6 +928,29 @@ export default function RecordingsList() {
     );
   }
 
+  if (activeSection === 'series') {
+    return (
+      <div className={[styles.container, 'animate-enter'].join(' ')}>
+        <SectionContextBar
+          segments={[
+            {
+              label: t('nav.recordings'),
+              onClick: () => handleSectionChange('library'),
+            },
+            {
+              label: t('recordings.seriesTitle', { defaultValue: 'Serienregeln' }),
+            },
+          ]}
+          actionLabel={t('recordings.backToLibrary', { defaultValue: 'Zurück zu Aufnahmen' })}
+          onAction={() => handleSectionChange('library')}
+        />
+        <Suspense fallback={<LoadingSkeleton variant="page" label={t('recordings.loading')} />}>
+          <SeriesManager showLegacyNotice={false} />
+        </Suspense>
+      </div>
+    );
+  }
+
   if (loading && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
@@ -962,6 +1095,15 @@ export default function RecordingsList() {
             >
               {t('common.refresh')}
             </Button>
+            {canManageDvr && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleSectionChange('series')}
+              >
+                {t('recordings.seriesRulesAction', { defaultValue: 'Serienregeln' })}
+              </Button>
+            )}
             {canManageDvr && selectionMode ? (
               <>
                 <Button
@@ -988,12 +1130,37 @@ export default function RecordingsList() {
         </div>
 
         <div className={styles.breadcrumbs}>
-          <span className={styles.crumb} onClick={() => handleNavigate('')}>{t('common.home')}</span>
+          <span className={styles.crumb} onClick={() => { handleNavigate(''); handleSelectSeries(null); }}>{t('common.home')}</span>
           {data?.breadcrumbs?.map((crumb, i) => (
             <React.Fragment key={i}>
               <span className={styles.separator}>/</span>
-              <span className={styles.crumb} onClick={() => handleNavigate(crumb.path || '')}>{crumb.name}</span>
+              <span className={styles.crumb} onClick={() => { handleNavigate(crumb.path || ''); handleSelectSeries(null); }}>{crumb.name}</span>
             </React.Fragment>
+          ))}
+          {selectedSeries && (
+            <React.Fragment>
+              <span className={styles.separator}>/</span>
+              <span className={[styles.crumb, styles.crumbActive].join(' ')}>{selectedSeries}</span>
+            </React.Fragment>
+          )}
+        </div>
+
+        <div className={styles.categoryControls} role="tablist" aria-label={t('recordings.categoryLabel')}>
+          {categoryOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={categoryFilter === option.value}
+              className={[
+                styles.categoryButton,
+                categoryFilter === option.value ? styles.categoryButtonActive : null,
+              ].filter(Boolean).join(' ')}
+              onClick={() => handleCategoryChange(option.value)}
+              disabled={deleteLoading}
+            >
+              {option.label}
+            </button>
           ))}
         </div>
 
@@ -1038,6 +1205,31 @@ export default function RecordingsList() {
         </div>
       </div>
 
+      {selectedSeries && (
+        <div className={styles.subfolderHeader}>
+          <div className={styles.subfolderInfo}>
+            <div className={styles.subfolderIcon}>
+              <FolderIcon className={styles.iconSm} />
+            </div>
+            <div>
+              <h2 className={styles.subfolderTitle}>{selectedSeries}</h2>
+              <span className={styles.subfolderMeta}>
+                {visibleRecordings.length === 1
+                  ? t('recordings.episodesCountSingle')
+                  : t('recordings.episodesCount', { count: visibleRecordings.length })}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleSelectSeries(null)}
+          >
+            {categoryFilter === 'series' ? t('recordings.backToAllSeries') : t('recordings.backToRecordings')}
+          </Button>
+        </div>
+      )}
+
       {data?.directories?.length ? (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -1049,7 +1241,7 @@ export default function RecordingsList() {
                 key={`dir-${i}`}
                 interactive
                 className={styles.directoryCard}
-                onClick={() => handleNavigate(dir.path || '')}
+                onClick={() => { handleNavigate(dir.path || ''); handleSelectSeries(null); }}
               >
                 <CardBody className={styles.directoryCardBody}>
                   <div className={styles.directoryCardIcon}>
@@ -1066,6 +1258,74 @@ export default function RecordingsList() {
         </section>
       ) : null}
 
+      {!selectedSeries && categoryFilter === 'series' && seriesGroups.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>{t('recordings.seriesFolders')}</h2>
+          </div>
+          <div className={styles.seriesRail}>
+            {seriesGroups.map((group) => (
+              <Card
+                key={group.normalizedKey}
+                interactive
+                className={styles.seriesFolderCard}
+                onClick={() => handleSelectSeries(group.seriesTitle)}
+              >
+                <CardBody className={styles.seriesFolderCardBody}>
+                  <div className={styles.seriesFolderIcon}>
+                    <FolderIcon className={styles.iconSm} />
+                  </div>
+                  <div className={styles.seriesFolderCopy}>
+                    <span className={styles.seriesFolderTitle}>{group.seriesTitle}</span>
+                    <div className={styles.seriesFolderMeta}>
+                      <span className={styles.seriesFolderBadge}>
+                        {group.episodes.length === 1
+                          ? t('recordings.episodesCountSingle')
+                          : t('recordings.episodesCount', { count: group.episodes.length })}
+                      </span>
+                      <span>{formatTime(group.latestBeginUnixSeconds)}</span>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!selectedSeries && categoryFilter === 'all' && multiEpisodeSeries.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>{t('recordings.seriesFolders')}</h2>
+          </div>
+          <div className={styles.seriesRail}>
+            {multiEpisodeSeries.map((group) => (
+              <Card
+                key={group.normalizedKey}
+                interactive
+                className={styles.seriesFolderCard}
+                onClick={() => handleSelectSeries(group.seriesTitle)}
+              >
+                <CardBody className={styles.seriesFolderCardBody}>
+                  <div className={styles.seriesFolderIcon}>
+                    <FolderIcon className={styles.iconSm} />
+                  </div>
+                  <div className={styles.seriesFolderCopy}>
+                    <span className={styles.seriesFolderTitle}>{group.seriesTitle}</span>
+                    <div className={styles.seriesFolderMeta}>
+                      <span className={styles.seriesFolderBadge}>
+                        {t('recordings.episodesCount', { count: group.episodes.length })}
+                      </span>
+                      <span>{formatTime(group.latestBeginUnixSeconds)}</span>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
       {continueWatching.length > 0 && (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -1081,7 +1341,17 @@ export default function RecordingsList() {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              {continueWatching.length > 0 ? t('recordings.latestTitle') : t('recordings.title')}
+              {selectedSeries
+                ? selectedSeries
+                : continueWatching.length > 0
+                ? t('recordings.latestTitle')
+                : categoryFilter === 'movies'
+                ? t('recordings.categoryMovies')
+                : categoryFilter === 'sport'
+                ? t('recordings.categorySport')
+                : categoryFilter === 'series'
+                ? t('recordings.categorySeries')
+                : t('recordings.title')}
             </h2>
           </div>
           <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
@@ -1090,11 +1360,17 @@ export default function RecordingsList() {
         </section>
       )}
 
-      {(!data?.directories?.length && !visibleRecordings.length) && (
+      {(!data?.directories?.length && !visibleRecordings.length && !(!selectedSeries && categoryFilter === 'series' && seriesGroups.length > 0)) && (
         <EmptyState
           icon="○"
           title={
-            filterMode === 'all'
+            categoryFilter === 'series'
+              ? t('recordings.emptySeries')
+              : categoryFilter === 'movies'
+              ? t('recordings.emptyMovies')
+              : categoryFilter === 'sport'
+              ? t('recordings.emptySport')
+              : filterMode === 'all'
               ? t('recordings.emptyLocation')
               : t('recordings.emptyFilter')
           }

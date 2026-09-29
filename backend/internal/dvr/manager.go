@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -18,15 +19,19 @@ import (
 var ErrRuleNotFound = errors.New("rule not found")
 
 type Manager struct {
-	mu       sync.RWMutex
-	rules    map[string]SeriesRule
-	dataPath string
+	mu            sync.RWMutex
+	rules         map[string]SeriesRule
+	dataPath      string
+	ownershipPath string
+	ownerships    []RuleRecordingOwnership
 }
 
 func NewManager(dataDir string) *Manager {
 	return &Manager{
-		rules:    make(map[string]SeriesRule),
-		dataPath: filepath.Join(dataDir, "series_rules.json"),
+		rules:         make(map[string]SeriesRule),
+		dataPath:      filepath.Join(dataDir, "series_rules.json"),
+		ownershipPath: filepath.Join(dataDir, "series_ownership.json"),
+		ownerships:    make([]RuleRecordingOwnership, 0),
 	}
 }
 
@@ -51,6 +56,16 @@ func (m *Manager) Load() error {
 	for _, r := range stored {
 		m.rules[r.ID] = r
 	}
+
+	// Load timer/recording ownership if present
+	ownData, ownErr := os.ReadFile(m.ownershipPath)
+	if ownErr == nil {
+		var storedOwnerships []RuleRecordingOwnership
+		if err := json.Unmarshal(ownData, &storedOwnerships); err == nil {
+			m.ownerships = storedOwnerships
+		}
+	}
+
 	return nil
 }
 
@@ -186,4 +201,59 @@ func (m *Manager) DeleteRule(id string) error {
 	}
 
 	return nil
+}
+
+func (m *Manager) saveOwnershipToFile(ownerships []RuleRecordingOwnership) error {
+	data, err := json.MarshalIndent(ownerships, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(m.ownershipPath, data, 0600)
+}
+
+// RecordOwnership persists that a timer/recording was created by a specific rule.
+func (m *Manager) RecordOwnership(o RuleRecordingOwnership) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, existing := range m.ownerships {
+		if existing.RuleID == o.RuleID && existing.ChannelRef == o.ChannelRef && existing.Begin == o.Begin {
+			return nil
+		}
+	}
+
+	m.ownerships = append(m.ownerships, o)
+	if len(m.ownerships) > 5000 {
+		m.ownerships = m.ownerships[len(m.ownerships)-5000:]
+	}
+
+	return m.saveOwnershipToFile(m.ownerships)
+}
+
+// HasOwnership checks whether a recording is verified to have been scheduled by ruleID.
+func (m *Manager) HasOwnership(ruleID string, title string, begin int64, channelRef string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	normTitle := NormalizeForMatch(title)
+	for _, o := range m.ownerships {
+		if o.RuleID != ruleID {
+			continue
+		}
+		if channelRef != "" && o.ChannelRef != "" && !strings.EqualFold(channelRef, o.ChannelRef) {
+			continue
+		}
+		diff := begin - o.Begin
+		if diff < 0 {
+			diff = -diff
+		}
+		// Allow +/- 10 minutes (600s) difference for receiver recording start margin/padding
+		if diff <= 600 {
+			normO := NormalizeForMatch(o.Title)
+			if normO == normTitle || (normO != "" && strings.Contains(normTitle, normO)) || (normTitle != "" && strings.Contains(normO, normTitle)) {
+				return true
+			}
+		}
+	}
+	return false
 }
