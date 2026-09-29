@@ -137,3 +137,126 @@ func TestSmootherHandler_ServiceRefValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSmootherHandler_Relay(t *testing.T) {
+	relayCalled := false
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relayCalled = true
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		pkt := createDummyTSPacket(100, 0, false, 0)
+		_, _ = w.Write(pkt)
+	}))
+	defer relayServer.Close()
+
+	cfg := DefaultConfig()
+	cfg.StartupReservoirMs = 10.0
+	cfg.PacerIntervalMs = 5.0
+	handler := NewHandler("", 8001, cfg)
+
+	b64Target := strings.TrimRight(strings.ReplaceAll(strings.ReplaceAll(
+		relayServer.URL+"/stream.ts", "+", "-"), "/", "_"), "=")
+	// Base64url encode
+	b64Encoded := strings.TrimRight(
+		strings.NewReplacer("+", "-", "/", "_").Replace(
+			javaBase64(relayServer.URL+"/stream.ts"),
+		),
+		"=",
+	)
+	_ = b64Target
+
+	tests := []struct {
+		name       string
+		path       string
+		query      string
+		wantStatus int
+		wantUpcall bool
+	}{
+		{
+			name:       "valid relay with base64url path",
+			path:       "/api/v3/stream/smooth/relay/" + b64Encoded,
+			wantStatus: http.StatusOK,
+			wantUpcall: true,
+		},
+		{
+			name:       "valid relay with url query param",
+			path:       "/api/v3/stream/smooth/",
+			query:      "url=" + url.QueryEscape(relayServer.URL+"/stream.ts"),
+			wantStatus: http.StatusOK,
+			wantUpcall: true,
+		},
+		{
+			name:       "valid relay with b64 query param",
+			path:       "/api/v3/stream/smooth/",
+			query:      "b64=" + b64Encoded,
+			wantStatus: http.StatusOK,
+			wantUpcall: true,
+		},
+		{
+			name:       "reject relay with unsupported scheme",
+			path:       "/api/v3/stream/smooth/",
+			query:      "url=ftp://evil.com/stream.ts",
+			wantStatus: http.StatusBadRequest,
+			wantUpcall: false,
+		},
+		{
+			name:       "reject corrupt base64",
+			path:       "/api/v3/stream/smooth/relay/???notbase64???",
+			wantStatus: http.StatusBadRequest,
+			wantUpcall: false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			relayCalled = false
+			reqURL := tc.path
+			if tc.query != "" {
+				reqURL += "?" + tc.query
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			req := httptest.NewRequest(http.MethodGet, reqURL, nil).WithContext(ctx)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d. Body: %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if tc.wantUpcall != relayCalled {
+				t.Errorf("relayCalled = %v, want %v", relayCalled, tc.wantUpcall)
+			}
+		})
+	}
+}
+
+func javaBase64(s string) string {
+	var b strings.Builder
+	enc := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+	data := []byte(s)
+	for i := 0; i < len(data); i += 3 {
+		v := uint32(data[i]) << 16
+		if i+1 < len(data) {
+			v |= uint32(data[i+1]) << 8
+		}
+		if i+2 < len(data) {
+			v |= uint32(data[i+2])
+		}
+		b.WriteByte(enc[(v>>18)&0x3F])
+		b.WriteByte(enc[(v>>12)&0x3F])
+		if i+1 < len(data) {
+			b.WriteByte(enc[(v>>6)&0x3F])
+		} else {
+			b.WriteByte('=')
+		}
+		if i+2 < len(data) {
+			b.WriteByte(enc[v&0x3F])
+		} else {
+			b.WriteByte('=')
+		}
+	}
+	return b.String()
+}

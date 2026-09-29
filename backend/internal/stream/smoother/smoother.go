@@ -31,13 +31,13 @@ type Config struct {
 // DefaultConfig returns optimal baseline smoother configuration.
 func DefaultConfig() Config {
 	return Config{
-		StartupReservoirMs: 650.0,
-		TargetWatermarkMs:  650.0,
-		DeadbandMs:         75.0,
-		MaxCorrectionTrim:  0.02, // ±2% max trim
-		Kp:                 0.04,
+		StartupReservoirMs: 1000.0,
+		TargetWatermarkMs:  1000.0,
+		DeadbandMs:         100.0,
+		MaxCorrectionTrim:  0.03, // ±3% max trim
+		Kp:                 0.05,
 		PacerIntervalMs:    20.0,
-		RingBufferCapacity: 4 * 1024 * 1024, // 4 MiB (~6.5s of 4.8 Mbps)
+		RingBufferCapacity: 16 * 1024 * 1024, // 16 MiB (~5.3s of 25 Mbps UHD, ~16s of 8 Mbps HD)
 	}
 }
 

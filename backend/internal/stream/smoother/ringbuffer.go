@@ -60,11 +60,17 @@ func (rb *TSRingBuffer) Push(data []byte) (int, error) {
 		return 0, nil
 	}
 
-	// If data exceeds available space:
-	available := rb.capacity - rb.count
-	if n > available {
-		rb.overflows++
+	if n > rb.capacity {
 		return 0, ErrBufferOverflow
+	}
+
+	// Wait until sufficient capacity is available (TCP backpressure):
+	for rb.capacity-rb.count < n {
+		if rb.isClosed {
+			return 0, ErrBufferClosed
+		}
+		rb.overflows++
+		rb.notFull.Wait()
 	}
 
 	// Copy data in 1 or 2 chunks (wrapping around tail)

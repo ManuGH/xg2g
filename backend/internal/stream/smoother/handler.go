@@ -5,6 +5,8 @@
 package smoother
 
 import (
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -31,7 +33,7 @@ func (fw *FlusherWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// Handler serves paced, smoothed TS streams from the upstream Enigma2 receiver.
+// Handler serves paced, smoothed TS streams from upstream sources (local Enigma2 tuners or network relays).
 type Handler struct {
 	receiverHost string
 	streamPort   int
@@ -55,6 +57,53 @@ func isValidServiceRef(ref string) bool {
 		return false
 	}
 	return true
+}
+
+// decodeRelayURL parses a relay target from base64, base64url, or plain URL.
+func decodeRelayURL(encoded string) (string, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return "", errors.New("empty relay target")
+	}
+
+	// Try base64url (unpadded or padded)
+	if b, err := base64.RawURLEncoding.DecodeString(encoded); err == nil && len(b) > 0 {
+		return string(b), nil
+	}
+	if b, err := base64.URLEncoding.DecodeString(encoded); err == nil && len(b) > 0 {
+		return string(b), nil
+	}
+	if b, err := base64.StdEncoding.DecodeString(encoded); err == nil && len(b) > 0 {
+		return string(b), nil
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(encoded); err == nil && len(b) > 0 {
+		return string(b), nil
+	}
+
+	// Direct URL fallback if unencoded
+	if strings.HasPrefix(encoded, "http://") || strings.HasPrefix(encoded, "https://") {
+		return encoded, nil
+	}
+
+	return "", errors.New("invalid relay target encoding: expected base64url or http(s) URL")
+}
+
+// validateRelayURL checks that the target URL has a valid scheme and host.
+func validateRelayURL(raw string) (string, error) {
+	if len(raw) > 2048 {
+		return "", errors.New("relay target URL exceeds maximum length (2048 bytes)")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("malformed relay URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported relay scheme %q (only http and https supported)", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return "", errors.New("missing hostname in relay URL")
+	}
+	return u.String(), nil
 }
 
 // NewHandler creates a new TS smoothing HTTP handler.
@@ -85,39 +134,100 @@ func NewHandler(receiverBaseURL string, streamPort int, cfg Config) *Handler {
 		client: &http.Client{
 			Transport: transport,
 			Timeout:   0, // continuous streaming
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return errors.New("stopped after 10 redirects")
+				}
+				if len(via) > 0 {
+					if ua := via[0].Header.Get("User-Agent"); ua != "" {
+						req.Header.Set("User-Agent", ua)
+					}
+				}
+				return nil
+			},
 		},
 	}
 }
 
 // ServeHTTP handles GET /api/v3/stream/smooth/* requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Extract service reference from wildcard or query param
 	path := r.URL.Path
 	const prefix = "/api/v3/stream/smooth/"
-	serviceRef := strings.TrimPrefix(path, prefix)
-	if serviceRef == "" || serviceRef == path {
-		serviceRef = r.URL.Query().Get("sref")
+	targetParam := strings.TrimPrefix(path, prefix)
+	if targetParam == "" || targetParam == path {
+		targetParam = r.URL.Query().Get("sref")
 	}
 
-	if serviceRef == "" {
-		http.Error(w, "missing serviceRef in stream path", http.StatusBadRequest)
-		return
+	var (
+		targetURL  string
+		isRelay    bool
+		sessionRef string
+	)
+
+	// Check if this is a stream relay request
+	if strings.HasPrefix(targetParam, "relay/") {
+		isRelay = true
+		encodedTarget := strings.TrimPrefix(targetParam, "relay/")
+		decoded, err := decodeRelayURL(encodedTarget)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid relay target: %v", err), http.StatusBadRequest)
+			return
+		}
+		validated, err := validateRelayURL(decoded)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid relay URL: %v", err), http.StatusBadRequest)
+			return
+		}
+		targetURL = validated
+		sessionRef = "relay:" + targetURL
+	} else if b64 := r.URL.Query().Get("b64"); b64 != "" {
+		isRelay = true
+		decoded, err := decodeRelayURL(b64)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid b64 relay target: %v", err), http.StatusBadRequest)
+			return
+		}
+		validated, err := validateRelayURL(decoded)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid relay URL: %v", err), http.StatusBadRequest)
+			return
+		}
+		targetURL = validated
+		sessionRef = "relay:" + targetURL
+	} else if rawURL := r.URL.Query().Get("url"); rawURL != "" {
+		isRelay = true
+		validated, err := validateRelayURL(rawURL)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid relay URL: %v", err), http.StatusBadRequest)
+			return
+		}
+		targetURL = validated
+		sessionRef = "relay:" + targetURL
+	} else {
+		// Standard Enigma2 DVB service reference
+		serviceRef := targetParam
+		if serviceRef == "" {
+			http.Error(w, "missing serviceRef in stream path", http.StatusBadRequest)
+			return
+		}
+
+		if unescaped, err := url.PathUnescape(serviceRef); err == nil {
+			serviceRef = unescaped
+		}
+
+		if !isValidServiceRef(serviceRef) {
+			http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
+			return
+		}
+
+		targetURL = fmt.Sprintf("http://%s:%d/%s", h.receiverHost, h.streamPort, serviceRef)
+		sessionRef = serviceRef
 	}
 
-	// Clean/unescape serviceRef
-	if unescaped, err := url.PathUnescape(serviceRef); err == nil {
-		serviceRef = unescaped
-	}
-
-	if !isValidServiceRef(serviceRef) {
-		http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
-		return
-	}
-
-	targetURL := fmt.Sprintf("http://%s:%d/%s", h.receiverHost, h.streamPort, serviceRef)
 	logger := log.L().With().
-		Str("serviceRef", serviceRef).
+		Str("sessionRef", sessionRef).
 		Str("targetURL", targetURL).
+		Bool("isRelay", isRelay).
 		Float64("reservoirMs", h.cfg.StartupReservoirMs).
 		Logger()
 
@@ -128,6 +238,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to create upstream request: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Use streaming-compatible User-Agent for upstream network streams
+	ua := r.UserAgent()
+	if ua == "" || strings.HasPrefix(ua, "Go-http-client") {
+		ua = "IPTVSmartersPro/1.0.0 (Linux; Android)"
+	}
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "*/*")
 
 	client := h.client
 	if client == nil {
@@ -141,14 +259,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to connect to upstream receiver")
-		http.Error(w, fmt.Sprintf("upstream receiver unavailable: %v", err), http.StatusBadGateway)
+		logger.Warn().Err(err).Msg("failed to connect to upstream source")
+		http.Error(w, fmt.Sprintf("upstream source unavailable: %v", err), http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Warn().Int("status", resp.StatusCode).Msg("upstream receiver returned non-200")
+		logger.Warn().Int("status", resp.StatusCode).Msg("upstream source returned non-200")
 		http.Error(w, fmt.Sprintf("upstream error: %d %s", resp.StatusCode, resp.Status), resp.StatusCode)
 		return
 	}

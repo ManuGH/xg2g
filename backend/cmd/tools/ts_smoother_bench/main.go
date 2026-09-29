@@ -252,6 +252,7 @@ func runLive(url string, duration time.Duration, reservoirMs, pacerMs float64) {
 		fmt.Fprintf(os.Stderr, "Failed to create request: %v\n", err)
 		os.Exit(1)
 	}
+	req.Header.Set("User-Agent", "IPTVSmartersPro")
 
 	client := &http.Client{Timeout: 0}
 	resp, err := client.Do(req)
