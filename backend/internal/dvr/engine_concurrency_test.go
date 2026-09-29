@@ -38,7 +38,7 @@ func TestSeriesEngine_Singleflight_CoalescesSameRule(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}).Return([]openwebif.Timer{}, nil)
 
-	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST", 0).Return([]openwebif.EPGEvent{
+	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST", 7).Return([]openwebif.EPGEvent{
 		{
 			SRef:     "1:0:1:TEST",
 			Title:    "News at Six",
@@ -112,11 +112,11 @@ func TestSeriesEngine_Singleflight_DistinctKeysForDifferentRules(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}).Return([]openwebif.Timer{}, nil)
 
-	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST1", 0).Return([]openwebif.EPGEvent{
+	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST1", 7).Return([]openwebif.EPGEvent{
 		{SRef: "1:0:1:TEST1", Title: "News at Six", Begin: time.Now().Add(1 * time.Hour).Unix(), Duration: 1800},
 	}, nil)
 
-	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST2", 0).Return([]openwebif.EPGEvent{
+	mockClient.On("GetEPG", mock.Anything, "1:0:1:TEST2", 7).Return([]openwebif.EPGEvent{
 		{SRef: "1:0:1:TEST2", Title: "Sports Center", Begin: time.Now().Add(2 * time.Hour).Unix(), Duration: 3600},
 	}, nil)
 

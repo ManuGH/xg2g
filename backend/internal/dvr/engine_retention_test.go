@@ -61,7 +61,7 @@ func TestSeriesEngine_RetentionPruning(t *testing.T) {
 	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
 
 	// Mock EPG on PULS 24 HD (upcoming Cafe Puls)
-	mockClient.On("GetEPG", mock.Anything, puls24Ref, 0).Return([]openwebif.EPGEvent{
+	mockClient.On("GetEPG", mock.Anything, puls24Ref, 7).Return([]openwebif.EPGEvent{
 		{
 			SRef:     puls24Ref,
 			Title:    "Café PULS mit PULS 4 Aktuell",

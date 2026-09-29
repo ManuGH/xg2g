@@ -257,7 +257,11 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 
 	if rule.ChannelRef != "" {
 		// Focused Scan
-		events, err := client.GetEPG(ctx, rule.ChannelRef, 0) // 0 = all/default limit?
+		days := 7
+		if rule.RetentionDays > 0 && rule.RetentionDays <= 14 {
+			days = rule.RetentionDays
+		}
+		events, err := client.GetEPG(ctx, rule.ChannelRef, days)
 		if err != nil {
 			return nil, err
 		}
