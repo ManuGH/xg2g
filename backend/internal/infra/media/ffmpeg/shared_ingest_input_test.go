@@ -111,6 +111,7 @@ type stubLiveSource struct {
 	attachErr error
 	released  int
 	attached  int
+	reason    string
 }
 
 func (s *stubLiveSource) Attach(context.Context, time.Duration) ([]byte, io.ReadCloser, error) {
@@ -122,6 +123,10 @@ func (s *stubLiveSource) Attach(context.Context, time.Duration) ([]byte, io.Read
 }
 func (s *stubLiveSource) Facts() ports.LiveSourceFacts { return s.facts }
 func (s *stubLiveSource) Release()                     { s.released++ }
+func (s *stubLiveSource) ReleaseWithReason(reason string) {
+	s.released++
+	s.reason = reason
+}
 
 type stubLiveSources struct{ src *stubLiveSource }
 
@@ -272,5 +277,28 @@ func TestSharedIngestInput_RetriesOnClosedPipeline(t *testing.T) {
 	}
 	if src1.released != 1 {
 		t.Errorf("expected stale src1 to be released once, got %d", src1.released)
+	}
+}
+
+func TestSharedIngestInput_ReleaseWithReason_ForwardsReasonToLiveSource(t *testing.T) {
+	stub := &stubLiveSource{
+		preamble: []byte("TEST-PREAMBLE"),
+		body:     io.NopCloser(strings.NewReader("payload")),
+	}
+	adapter := &LocalAdapter{Logger: zerolog.Nop()}
+	adapter.LiveSources = &stubLiveSources{src: stub}
+
+	in, err := adapter.acquireSharedIngestInput(context.Background(), tunerSpec())
+	if err != nil {
+		t.Fatalf("acquireSharedIngestInput failed: %v", err)
+	}
+
+	in.ReleaseWithReason("R_CLIENT_STOP")
+
+	if stub.released != 1 {
+		t.Errorf("expected 1 release, got %d", stub.released)
+	}
+	if stub.reason != "R_CLIENT_STOP" {
+		t.Errorf("expected reason 'R_CLIENT_STOP', got %q", stub.reason)
 	}
 }

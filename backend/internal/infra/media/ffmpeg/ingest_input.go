@@ -186,13 +186,21 @@ func (in *sharedIngestInput) Stdin() io.Reader {
 // stays alive only while a holder is attached, and releasing early would pull the
 // stream out from under a process still reading it.
 func (in *sharedIngestInput) Release() {
+	in.ReleaseWithReason("")
+}
+
+// ReleaseWithReason ends this transcode's claim and forwards the stop reason
+// to the shared ingest source.
+func (in *sharedIngestInput) ReleaseWithReason(reason string) {
 	if in == nil {
 		return
 	}
-	in.releaseOnce.Do(in.release)
+	in.releaseOnce.Do(func() {
+		in.release(reason)
+	})
 }
 
-func (in *sharedIngestInput) release() {
+func (in *sharedIngestInput) release(reason string) {
 	if in.spool != nil {
 		in.spool.close()
 	}
@@ -204,7 +212,7 @@ func (in *sharedIngestInput) release() {
 		in.snapshotPath = ""
 	}
 	if in.source != nil {
-		in.source.Release()
+		in.source.ReleaseWithReason(reason)
 	}
 }
 

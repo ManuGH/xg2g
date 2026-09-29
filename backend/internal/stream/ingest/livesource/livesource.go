@@ -134,8 +134,12 @@ func (s *liveSource) Facts() ports.LiveSourceFacts {
 }
 
 func (s *liveSource) Release() {
+	s.ReleaseWithReason("")
+}
+
+func (s *liveSource) ReleaseWithReason(reason string) {
 	s.releaseOnce.Do(func() {
-		s.lease.Release()
+		s.lease.ReleaseWithReason(reason)
 	})
 }
 
