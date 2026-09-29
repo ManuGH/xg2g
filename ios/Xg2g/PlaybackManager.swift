@@ -105,6 +105,7 @@ final class PlaybackManager: ObservableObject {
 
     let coordinator: ZapCoordinator
     private let streamURLProvider: @MainActor (String) -> URL?
+    private let audioSession: any AudioSessionControlling
     private var cancellables = Set<AnyCancellable>()
     private var recordingCleanupHook: (token: UUID, hook: @MainActor () -> Void)?
     private var activeTransitionID: UUID = UUID()
@@ -114,8 +115,10 @@ final class PlaybackManager: ObservableObject {
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
          telemetryProvider: (@MainActor () -> (any PlaybackTelemetrySink)?)? = nil,
+         audioSession: any AudioSessionControlling = AudioSessionManager.shared,
          streamURL: @escaping @MainActor (String) -> URL?) {
         self.streamURLProvider = streamURL
+        self.audioSession = audioSession
         self.coordinator = ZapCoordinator(
             preparations: preparations,
             preparationsProvider: preparationsProvider,
@@ -295,16 +298,43 @@ final class PlaybackManager: ObservableObject {
         hook?()
     }
 
+    // MARK: - Audio Session Lease Management
+
+    /// Activates the audio session for playback under the specified recording session lease.
+    /// Rejects activation if the session token does not match the active recording session.
+    @discardableResult
+    func activateRecordingAudioSession(for sessionToken: UUID) -> Bool {
+        guard self.activeRecordingSessionToken == sessionToken else {
+            return false
+        }
+        return audioSession.activate(for: sessionToken)
+    }
+
+    /// Deactivates the audio session for the specified recording session lease.
+    /// Rejects deactivation if the session token is superseded or another recording session is active.
+    @discardableResult
+    func deactivateRecordingAudioSession(for sessionToken: UUID) -> Bool {
+        guard self.activeRecordingSessionToken == sessionToken ||
+              (self.activeRecordingSessionToken == nil && self.state == .idle) else {
+            return false
+        }
+        return audioSession.deactivate(for: sessionToken)
+    }
+
     // MARK: - Handover & Transitions
 
     func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        let activeTokenBeforeLive = self.activeRecordingSessionToken
 
         // 1. Teardown active recording if transitioning away from recording
         if case .recording = state {
             triggerRecordingCleanupHook()
             forceClearRecordingPlayer()
+            if let activeTokenBeforeLive {
+                audioSession.deactivate(for: activeTokenBeforeLive)
+            }
         }
         self.activeRecordingSessionToken = nil
 
@@ -329,10 +359,14 @@ final class PlaybackManager: ObservableObject {
     func zap(to channel: Channel) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        let activeTokenBeforeLive = self.activeRecordingSessionToken
 
         if case .recording = state {
             triggerRecordingCleanupHook()
             forceClearRecordingPlayer()
+            if let activeTokenBeforeLive {
+                audioSession.deactivate(for: activeTokenBeforeLive)
+            }
         }
         self.activeRecordingSessionToken = nil
 
@@ -385,6 +419,7 @@ final class PlaybackManager: ObservableObject {
     func play(offline: OfflineRecording) async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        let activeTokenBeforeOffline = self.activeRecordingSessionToken
         self.activeRecordingSessionToken = nil
 
         // 1. Teardown active Live TV session
@@ -396,6 +431,9 @@ final class PlaybackManager: ObservableObject {
         if case .recording = state {
             triggerRecordingCleanupHook()
             forceClearRecordingPlayer()
+            if let activeTokenBeforeOffline {
+                audioSession.deactivate(for: activeTokenBeforeOffline)
+            }
         }
 
         // 3. Guard against race if a new transition began while awaiting stop()
@@ -436,6 +474,7 @@ final class PlaybackManager: ObservableObject {
     func stop() async {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
+        let activeTokenBeforeStop = self.activeRecordingSessionToken
         self.activeRecordingSessionToken = nil
 
         var stoppedLive = false
@@ -445,6 +484,9 @@ final class PlaybackManager: ObservableObject {
         } else if case .recording = state {
             triggerRecordingCleanupHook()
             forceClearRecordingPlayer()
+            if let activeTokenBeforeStop {
+                audioSession.deactivate(for: activeTokenBeforeStop)
+            }
         } else if case .offline = state {
             forceClearRecordingPlayer()
         }

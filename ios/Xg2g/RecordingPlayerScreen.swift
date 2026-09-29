@@ -7,6 +7,54 @@ import AVKit
 import SwiftUI
 import UIKit
 
+/// Pure decision policy for recording player item status and seek completion transitions.
+/// Extracted to enable deterministic unit testing without requiring live AVPlayerItem KVO observer execution.
+enum RecordingPlaybackAction: Equatable {
+    case pauseAndDiscard
+    case seek(Double)
+    case play
+    case handleFailure(String)
+    case ignore
+}
+
+struct RecordingPlaybackDecision {
+    static func decideStatusAction(
+        status: AVPlayerItem.Status,
+        error: Error?,
+        sessionToken: UUID,
+        activeToken: UUID?,
+        startPosition: Double?
+    ) -> RecordingPlaybackAction {
+        guard activeToken == sessionToken else {
+            return .pauseAndDiscard
+        }
+        switch status {
+        case .readyToPlay:
+            if let pos = startPosition, pos > 5 {
+                return .seek(pos)
+            } else {
+                return .play
+            }
+        case .failed:
+            let msg = error?.localizedDescription ?? "Wiedergabefehler"
+            return .handleFailure(msg)
+        default:
+            return .ignore
+        }
+    }
+
+    static func decideSeekCompletionAction(
+        sessionToken: UUID,
+        activeToken: UUID?,
+        finished: Bool
+    ) -> RecordingPlaybackAction {
+        guard activeToken == sessionToken else {
+            return .pauseAndDiscard
+        }
+        return finished ? .play : .ignore
+    }
+}
+
 /// 100% Native Apple iOS Video Player for remote DVR recordings.
 /// Uses Apple's system `AVPlayerViewController` for pixel-perfect edge-to-edge
 /// scaling, native pinch-to-zoom, AirPlay, Picture-in-Picture, scrubbing,
@@ -18,7 +66,12 @@ struct RecordingPlayerScreen: View {
     var initialPosition: Double? = nil
     let sessionToken: UUID
     var model: AppModel? = nil
+    var playbackManager: PlaybackManager? = nil
     var onProgressUpdate: @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
+
+    private var activeManager: PlaybackManager? {
+        playbackManager ?? model?.playbackManager
+    }
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
@@ -120,14 +173,20 @@ struct RecordingPlayerScreen: View {
         #endif
         .onAppear {
             let token = self.sessionToken
-            model?.playbackManager.registerRecordingCleanup(for: token) {
+            guard let manager = activeManager else { return }
+            let registered = manager.registerRecordingCleanup(for: token) {
                 self.cleanup()
+            }
+            guard registered else {
+                // Token rejected: late mount from superseded session.
+                // Do NOT call setupPlayer() and do NOT activate audio session.
+                return
             }
             setupPlayer()
         }
         .onDisappear {
-            if model?.playbackManager.presentationMode != .miniplayer {
-                model?.playbackManager.unregisterRecordingCleanup(for: sessionToken)
+            if activeManager?.presentationMode != .miniplayer {
+                activeManager?.unregisterRecordingCleanup(for: sessionToken)
                 cleanup()
             }
         }
@@ -264,16 +323,20 @@ struct RecordingPlayerScreen: View {
     // MARK: - Player Setup
 
     private func setupPlayer() {
-        AudioSessionManager.shared.configureForPlayback()
         let token = self.sessionToken
-        if model?.playbackManager.activeRecordingSessionToken == token,
-           let existing = model?.playbackManager.recordingPlayer {
+        guard let manager = activeManager,
+              manager.activateRecordingAudioSession(for: token) else {
+            return
+        }
+
+        if manager.activeRecordingSessionToken == token,
+           let existing = manager.recordingPlayer {
             self.player = existing
             self.isPreparing = false
             return
         }
         Task {
-            guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+            guard self.activeManager?.activeRecordingSessionToken == token else { return }
 
             var sessionCookie: String? = nil
             var negotiatedPath: String? = nil
@@ -283,14 +346,14 @@ struct RecordingPlayerScreen: View {
                 } catch {
                     print("[RecordingPlayer] ⚠️ Could not acquire media session cookie: \(error)")
                 }
-                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+                guard self.activeManager?.activeRecordingSessionToken == token else { return }
 
                 do {
                     negotiatedPath = try await model.recordingPlaybackUrl(for: recording.id)
                 } catch {
                     print("[RecordingPlayer] ⚠️ Could not negotiate stream-info: \(error)")
                 }
-                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+                guard self.activeManager?.activeRecordingSessionToken == token else { return }
             }
 
             // One resolution, owned by the transport: what the backend named,
@@ -303,7 +366,7 @@ struct RecordingPlayerScreen: View {
                 sessionCookie: sessionCookie
             ) else {
                 await MainActor.run {
-                    guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+                    guard self.activeManager?.activeRecordingSessionToken == token else { return }
                     errorMessage = "Ungültige Server-Adresse"
                     isPreparing = false
                 }
@@ -326,10 +389,10 @@ struct RecordingPlayerScreen: View {
             // cookie and the retry budget.
             if streamURL.path.hasSuffix(".m3u8") {
                 _ = await MediaFetcher.waitUntilServable(url: streamURL, sessionCookie: sessionCookie)
-                guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+                guard self.activeManager?.activeRecordingSessionToken == token else { return }
             }
 
-            guard self.model?.playbackManager.activeRecordingSessionToken == token else { return }
+            guard self.activeManager?.activeRecordingSessionToken == token else { return }
 
             TelemetryServer.shared.log("[RecordingPlayer] ▶️ Loading '\(recording.title)' (\(recording.id)) URL: \(streamURL.absoluteString)")
 
@@ -337,7 +400,7 @@ struct RecordingPlayerScreen: View {
             let p = AVPlayer(playerItem: item)
 
             await MainActor.run {
-                guard self.model?.playbackManager.activeRecordingSessionToken == token else {
+                guard self.activeManager?.activeRecordingSessionToken == token else {
                     p.pause()
                     return
                 }
@@ -348,9 +411,9 @@ struct RecordingPlayerScreen: View {
                 self.timeObserver = p.addPeriodicTimeObserver(
                     forInterval: CMTime(seconds: 1.0, preferredTimescale: 600),
                     queue: .main
-                ) { [weak p, weak model] time in
-                    Task { @MainActor [weak p, weak model] in
-                        guard let p, model?.playbackManager.activeRecordingSessionToken == token else { return }
+                ) { [weak p, weak manager = self.activeManager] time in
+                    Task { @MainActor [weak p, weak manager] in
+                        guard let p, manager?.activeRecordingSessionToken == token else { return }
                         let sec = time.seconds
                         if sec.isFinite && !sec.isNaN {
                             if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
@@ -362,50 +425,64 @@ struct RecordingPlayerScreen: View {
                     }
                 }
 
-                self.statusObserver = item.observe(\.status, options: [.new]) { [weak p, weak model] observedItem, _ in
-                    Task { @MainActor [weak p, weak model] in
+                self.statusObserver = item.observe(\.status, options: [.new]) { [weak p, weak manager = self.activeManager] observedItem, _ in
+                    Task { @MainActor [weak p, weak manager] in
                         guard let p else { return }
-                        // Guard the queued ready-to-play callback before seek() or play()
-                        guard model?.playbackManager.activeRecordingSessionToken == token else {
+                        let startPos = self.initialPosition ?? self.recording.serverResumePos
+                        let action = RecordingPlaybackDecision.decideStatusAction(
+                            status: observedItem.status,
+                            error: observedItem.error,
+                            sessionToken: token,
+                            activeToken: manager?.activeRecordingSessionToken,
+                            startPosition: startPos
+                        )
+
+                        switch action {
+                        case .pauseAndDiscard:
                             p.pause()
-                            return
-                        }
-                        if observedItem.status == .readyToPlay {
+                        case .seek(let pos):
                             TelemetryServer.shared.log("[RecordingPlayer] ✅ readyToPlay '\(self.recording.title)'")
-                            let startPos = self.initialPosition ?? self.recording.serverResumePos
-                            if let pos = startPos, pos > 5 {
-                                let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
-                                p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p, weak model] finished in
-                                    Task { @MainActor [weak p, weak model] in
-                                        guard model?.playbackManager.activeRecordingSessionToken == token else {
-                                            p?.pause()
-                                            return
-                                        }
-                                        if finished {
-                                            p?.play()
-                                        }
+                            let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
+                            p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p, weak manager] finished in
+                                Task { @MainActor [weak p, weak manager] in
+                                    let completionAction = RecordingPlaybackDecision.decideSeekCompletionAction(
+                                        sessionToken: token,
+                                        activeToken: manager?.activeRecordingSessionToken,
+                                        finished: finished
+                                    )
+                                    switch completionAction {
+                                    case .pauseAndDiscard:
+                                        p?.pause()
+                                    case .play:
+                                        p?.play()
+                                    default:
+                                        break
                                     }
                                 }
-                            } else {
-                                p.play()
                             }
-
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 self.isPreparing = false
                             }
-                        } else if observedItem.status == .failed {
-                            let errStr = observedItem.error?.localizedDescription ?? "Wiedergabefehler"
+                        case .play:
+                            TelemetryServer.shared.log("[RecordingPlayer] ✅ readyToPlay '\(self.recording.title)'")
+                            p.play()
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                self.isPreparing = false
+                            }
+                        case .handleFailure(let errStr):
                             TelemetryServer.shared.log("[RecordingPlayer] ❌ AVPlayerItem failed: \(errStr)")
                             print("[RecordingPlayer] ❌ AVPlayerItem failed: \(String(describing: observedItem.error))")
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 self.errorMessage = errStr
                                 self.isPreparing = false
                             }
+                        case .ignore:
+                            break
                         }
                     }
                 }
 
-                let attached = self.model?.playbackManager.setRecordingPlayer(p, for: token) ?? false
+                let attached = self.activeManager?.setRecordingPlayer(p, for: token) ?? false
                 if attached {
                     self.player = p
                 } else {
@@ -430,7 +507,7 @@ struct RecordingPlayerScreen: View {
         statusObserver?.invalidate()
         statusObserver = nil
         player?.pause()
-        model?.playbackManager.clearRecordingPlayer(for: sessionToken, ownedBy: player)
-        AudioSessionManager.shared.deactivate()
+        activeManager?.clearRecordingPlayer(for: sessionToken, ownedBy: player)
+        activeManager?.deactivateRecordingAudioSession(for: sessionToken)
     }
 }

@@ -18,6 +18,50 @@ private final class SpyAVPlayer: AVPlayer, @unchecked Sendable {
     }
 }
 
+private final class SpyAudioSessionController: AudioSessionControlling, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var activeLeaseToken: UUID?
+    private(set) var configureForPlaybackCallCount = 0
+    private(set) var deactivateCallCount = 0
+    private(set) var activatedTokens: [UUID] = []
+    private(set) var deactivatedTokens: [UUID] = []
+
+    func configureForPlayback() {
+        lock.lock()
+        defer { lock.unlock() }
+        configureForPlaybackCallCount += 1
+    }
+
+    func deactivate() {
+        lock.lock()
+        defer { lock.unlock() }
+        deactivateCallCount += 1
+    }
+
+    @discardableResult
+    func activate(for token: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        activeLeaseToken = token
+        activatedTokens.append(token)
+        configureForPlaybackCallCount += 1
+        return true
+    }
+
+    @discardableResult
+    func deactivate(for token: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeLeaseToken == token else {
+            return false
+        }
+        activeLeaseToken = nil
+        deactivatedTokens.append(token)
+        deactivateCallCount += 1
+        return true
+    }
+}
+
 @MainActor
 private final class RejectingPlaybackController: PlaybackControlling {
     var currentTarget: PlaybackTarget? = nil
@@ -704,11 +748,19 @@ struct PlaybackStoreProjectionTests {
         #expect(attachedA == false, "setRecordingPlayer must report rejection for superseded tokenA")
         #expect(manager.recordingPlayer === playerB, "playerB must remain active")
 
-        // 4. Late ready-to-play callback simulation for tokenA:
-        // Even if an observer block on playerA was queued, checking token against manager prevents seeking or playing
-        let isTokenAActive = (manager.activeRecordingSessionToken == tokenA)
-        #expect(isTokenAActive == false, "Token A must not be active")
-        if !isTokenAActive {
+        // 4. Late ready-to-play callback decision evaluation for tokenA:
+        // (Note: Actual KVO observer dispatch in UI runtime is not directly executed here;
+        // this exercises the extracted RecordingPlaybackDecision policy and verifies that a superseded
+        // session token produces .pauseAndDiscard, preventing seeking or playing).
+        let decisionA = RecordingPlaybackDecision.decideStatusAction(
+            status: .readyToPlay,
+            error: nil,
+            sessionToken: tokenA,
+            activeToken: manager.activeRecordingSessionToken,
+            startPosition: 42.0
+        )
+        #expect(decisionA == .pauseAndDiscard, "Queued callback for superseded session must be discarded")
+        if case .pauseAndDiscard = decisionA {
             playerA.pause()
         }
         #expect(playerA.seekCallCount == 0, "No seek should occur for rejected session")
@@ -742,5 +794,172 @@ struct PlaybackStoreProjectionTests {
 
         await manager.stop()
         #expect(manager.recordingPlayer == nil)
+    }
+
+    @Test("AudioSession lease acquisition and legitimate deactivation via PlaybackManager")
+    func audioSessionLeaseAcquisitionAndDeactivation() async throws {
+        let spy = SpyAudioSessionController()
+        let manager = PlaybackManager(audioSession: spy, streamURL: { _ in nil })
+
+        // 1. Start recording session
+        await manager.play(recording: testRecording, startPosition: 0)
+        let token = try #require(manager.activeRecordingSessionToken)
+
+        // 2. Activate audio session under lease
+        let activated = manager.activateRecordingAudioSession(for: token)
+        #expect(activated == true)
+        #expect(spy.configureForPlaybackCallCount == 1)
+        #expect(spy.activeLeaseToken == token)
+
+        // 3. Legitimate deactivation
+        let deactivated = manager.deactivateRecordingAudioSession(for: token)
+        #expect(deactivated == true)
+        #expect(spy.deactivateCallCount == 1)
+        #expect(spy.activeLeaseToken == nil)
+    }
+
+    @Test("Late Screen A mount and disappear while B owns playback preserves B's active AudioSession lease")
+    func lateScreenAMountAndDisappearPreservesActiveAudioSessionLease() async throws {
+        let spy = SpyAudioSessionController()
+        let manager = PlaybackManager(audioSession: spy, streamURL: { _ in nil })
+        let playerA = SpyAVPlayer()
+        let playerB = SpyAVPlayer()
+
+        // 1. Session A starts: capture tokenA
+        await manager.play(recording: testRecording, startPosition: 0)
+        let tokenA = try #require(manager.activeRecordingSessionToken)
+
+        // 2. User switches to Recording B: capture tokenB
+        await manager.play(recording: testRecordingB, startPosition: 0)
+        let tokenB = try #require(manager.activeRecordingSessionToken)
+        #expect(tokenB != tokenA)
+
+        // Screen B mounts: registers cleanup and activates audio session lease
+        let registeredB = manager.registerRecordingCleanup(for: tokenB) {
+            manager.clearRecordingPlayer(for: tokenB, ownedBy: playerB)
+            manager.deactivateRecordingAudioSession(for: tokenB)
+        }
+        #expect(registeredB == true)
+        let activatedB = manager.activateRecordingAudioSession(for: tokenB)
+        #expect(activatedB == true)
+        #expect(spy.activeLeaseToken == tokenB)
+        #expect(spy.configureForPlaybackCallCount == 1)
+        manager.setRecordingPlayer(playerB, for: tokenB)
+
+        // 3. Late Mount of Screen A (.onAppear) while B is actively playing:
+        // registerRecordingCleanup rejects tokenA -> screen guards and aborts setupPlayer / audio activation
+        let registeredA = manager.registerRecordingCleanup(for: tokenA) {}
+        #expect(registeredA == false, "Late mount of Screen A must be rejected from registering cleanup")
+        let activatedA = manager.activateRecordingAudioSession(for: tokenA)
+        #expect(activatedA == false, "Late mount of Screen A must be rejected from activating audio session")
+        #expect(spy.activeLeaseToken == tokenB, "Audio session lease must remain with Session B")
+        #expect(spy.configureForPlaybackCallCount == 1, "Audio session must not be reconfigured by Screen A")
+
+        // 4. Late Disappear of Screen A (.onDisappear -> cleanup()) while B is actively playing:
+        manager.unregisterRecordingCleanup(for: tokenA)
+        manager.clearRecordingPlayer(for: tokenA, ownedBy: playerA)
+        let deactivatedA = manager.deactivateRecordingAudioSession(for: tokenA)
+        #expect(deactivatedA == false, "Late disappear of Screen A must be rejected from deactivating audio session")
+        #expect(spy.deactivateCallCount == 0, "Audio session must NOT be deactivated by late Screen A cleanup")
+        #expect(spy.activeLeaseToken == tokenB, "Audio session lease must still belong to Session B")
+        #expect(manager.recordingPlayer === playerB, "Player B must remain active and unaffected")
+
+        // 5. Legitimate Screen B teardown deactivates audio session cleanly
+        await manager.stop()
+        #expect(spy.deactivateCallCount == 1, "Audio session must be deactivated when Session B stops")
+        #expect(spy.activeLeaseToken == nil)
+    }
+
+    @Test("RecordingPlaybackDecision evaluates ready-to-play, seek completion, and failure policies with controlled session tokens (extracted decision policy; actual KVO observer firing in UI runtime is not directly executed in headless unit tests)")
+    func recordingPlaybackDecisionPolicy() {
+        let tokenA = UUID()
+        let tokenB = UUID()
+
+        // 1. Matching token + readyToPlay + resume position > 5s -> seek
+        let actionSeek = RecordingPlaybackDecision.decideStatusAction(
+            status: .readyToPlay,
+            error: nil,
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            startPosition: 42.0
+        )
+        #expect(actionSeek == .seek(42.0))
+
+        // 2. Matching token + readyToPlay + start position <= 5s -> play
+        let actionPlay = RecordingPlaybackDecision.decideStatusAction(
+            status: .readyToPlay,
+            error: nil,
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            startPosition: 3.0
+        )
+        #expect(actionPlay == .play)
+
+        // 3. Matching token + readyToPlay + nil start position -> play
+        let actionPlayNil = RecordingPlaybackDecision.decideStatusAction(
+            status: .readyToPlay,
+            error: nil,
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            startPosition: nil
+        )
+        #expect(actionPlayNil == .play)
+
+        // 4. Superseded token (tokenA when active is tokenB) + readyToPlay -> pauseAndDiscard
+        let actionSuperseded = RecordingPlaybackDecision.decideStatusAction(
+            status: .readyToPlay,
+            error: nil,
+            sessionToken: tokenA,
+            activeToken: tokenB,
+            startPosition: 42.0
+        )
+        #expect(actionSuperseded == .pauseAndDiscard, "Queued readyToPlay for superseded session must be discarded")
+
+        // 5. Matching token + failed -> handleFailure
+        struct DummyError: LocalizedError {
+            var errorDescription: String? { "Disk read error" }
+        }
+        let actionFailed = RecordingPlaybackDecision.decideStatusAction(
+            status: .failed,
+            error: DummyError(),
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            startPosition: nil
+        )
+        #expect(actionFailed == .handleFailure("Disk read error"))
+
+        // 6. Superseded token + failed -> pauseAndDiscard
+        let actionFailedSuperseded = RecordingPlaybackDecision.decideStatusAction(
+            status: .failed,
+            error: DummyError(),
+            sessionToken: tokenA,
+            activeToken: tokenB,
+            startPosition: nil
+        )
+        #expect(actionFailedSuperseded == .pauseAndDiscard)
+
+        // 7. Seek completion: matching token + finished -> play
+        let actionSeekDone = RecordingPlaybackDecision.decideSeekCompletionAction(
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            finished: true
+        )
+        #expect(actionSeekDone == .play)
+
+        // 8. Seek completion: superseded token + finished -> pauseAndDiscard
+        let actionSeekDoneSuperseded = RecordingPlaybackDecision.decideSeekCompletionAction(
+            sessionToken: tokenA,
+            activeToken: tokenB,
+            finished: true
+        )
+        #expect(actionSeekDoneSuperseded == .pauseAndDiscard)
+
+        // 9. Seek completion: superseded token + unfinished -> pauseAndDiscard
+        let actionSeekUnfinishedSuperseded = RecordingPlaybackDecision.decideSeekCompletionAction(
+            sessionToken: tokenA,
+            activeToken: tokenB,
+            finished: false
+        )
+        #expect(actionSeekUnfinishedSuperseded == .pauseAndDiscard)
     }
 }
