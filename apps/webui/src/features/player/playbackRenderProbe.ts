@@ -54,7 +54,8 @@ function formatProbeInt(value: number | null | undefined): string {
 export function describeHlsRenderProbe(
   stage: 'playing' | 'stable' | 'black_suspect' | 'heartbeat',
   snapshot: HlsRenderProbeSnapshot,
-  baseline?: HlsRenderProbeSnapshot
+  baseline?: HlsRenderProbeSnapshot,
+  minBuf?: number | null,
 ): string {
   const deltaTime = baseline ? snapshot.currentTime - baseline.currentTime : null;
   const deltaFrames = baseline && baseline.totalFrames !== null && snapshot.totalFrames !== null
@@ -69,6 +70,9 @@ export function describeHlsRenderProbe(
     `paused=${snapshot.paused ? 1 : 0}`,
     `dims=${snapshot.videoWidth}x${snapshot.videoHeight}`,
     `buf=${formatProbeFloat(snapshot.bufferedAhead)}`,
+    stage === 'heartbeat' && minBuf !== undefined && minBuf !== null
+      ? `minBuf=${formatProbeFloat(minBuf)}`
+      : null,
     `rate=${formatProbeFloat(snapshot.playbackRate)}`,
     `frames=${formatProbeInt(snapshot.totalFrames)}`,
     `drop=${formatProbeInt(snapshot.droppedFrames)}`,

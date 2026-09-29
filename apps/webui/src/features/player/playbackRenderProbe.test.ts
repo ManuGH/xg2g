@@ -42,4 +42,22 @@ describe('playbackRenderProbe', () => {
     expect(isBlackRenderSuspect(started, settled)).toBe(false);
     expect(describeHlsRenderProbe('stable', settled, started)).toContain('frames=96');
   });
+
+  it('formats minBuf in heartbeat when provided and omits it on non-heartbeat stages', () => {
+    const baseline = snapshot({ currentTime: 30, bufferedAhead: 4.5 });
+    const current = snapshot({ currentTime: 60, bufferedAhead: 5.2 });
+
+    const heartbeatWithMin = describeHlsRenderProbe('heartbeat', current, baseline, 2.15);
+    expect(heartbeatWithMin).toContain('buf=5.20');
+    expect(heartbeatWithMin).toContain('minBuf=2.15');
+
+    const heartbeatZeroMin = describeHlsRenderProbe('heartbeat', current, baseline, 0);
+    expect(heartbeatZeroMin).toContain('minBuf=0.00');
+
+    const heartbeatWithoutMin = describeHlsRenderProbe('heartbeat', current, baseline);
+    expect(heartbeatWithoutMin).not.toContain('minBuf=');
+
+    const playingWithMin = describeHlsRenderProbe('playing', current, undefined, 2.15);
+    expect(playingWithMin).not.toContain('minBuf=');
+  });
 });

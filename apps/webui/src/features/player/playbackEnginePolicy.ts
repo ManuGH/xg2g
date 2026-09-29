@@ -29,9 +29,10 @@ export function createHlsRuntimeConfig(link: PlaybackLinkProfile = 'stable'): Pa
 }
 
 export const HLS_STARTUP_POLICY = Object.freeze({
-  // Lowered to 1s so readySegments=1 immediately starts playback without holding a freeze frame.
-  bufferTargetSeconds: 1,
-  timeoutMs: 6_000,
+  // Live sessions start with a 6s cushion to prevent buffer stalls on fresh sessions.
+  liveBufferTargetSeconds: 6,
+  // Counted from MANIFEST_PARSED: 15s covers 3x2s segments growing at ~1s/s in 2s steps.
+  liveTimeoutMs: 15_000,
   // Rate-based slow-build caused visible judder and audio micro-skips when restoring to 1.
   slowBuildPlaybackRate: 1,
   slowBuildTargetSeconds: 8,
