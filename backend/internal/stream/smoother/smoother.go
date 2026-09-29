@@ -74,6 +74,7 @@ type SessionReport struct {
 	InputCCErrors       int
 	OutputCCErrors      int
 	CCErrorsIntroduced  int
+	CCErrorsRepaired    int64
 	InputPCRErrors      int
 	OutputPCRErrors     int
 	PCRErrorsIntroduced int
@@ -124,6 +125,7 @@ OUTPUT (to Downstream / Client):
 INTEGRITY:
   Packet Balance:    In (%d) == Out (%d) + In-Buffer (%d)
   Input CC Errors:   %d
+  Repaired CC Errors: %d
   Output CC Errors:  %d
   CC Errors Added:   %d
   PCR Errors Added:  %d
@@ -147,7 +149,7 @@ LATENCY:
 		r.OutputBitrateKbps,
 		r.RateRatio,
 		r.InputPackets, r.OutputPackets, r.InputPackets-r.OutputPackets,
-		r.InputCCErrors, r.OutputCCErrors,
+		r.InputCCErrors, r.CCErrorsRepaired, r.OutputCCErrors,
 		r.CCErrorsIntroduced, r.PCRErrorsIntroduced,
 		r.SyncErrors,
 		r.FirstByteDelayMs, r.SteadyStateDelayMs,
@@ -165,6 +167,7 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 
 	rb := NewTSRingBuffer(cfg.RingBufferCapacity)
 	pacer := NewPCRPacer()
+	sanitizer := NewTSCCSanitizer()
 	inValidator := NewTSIntegrityValidator()
 	outValidator := NewTSIntegrityValidator()
 
@@ -319,9 +322,11 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 				firstByteOut = now
 			}
 
-			// Validate egress packet integrity
+			// Sanitize continuity counters to eliminate hardware decoder drops
 			for i := 0; i < len(chunk); i += TSPacketSize {
-				_ = outValidator.ValidatePacket(chunk[i : i+TSPacketSize])
+				pkt := chunk[i : i+TSPacketSize]
+				sanitizer.SanitizePacket(pkt)
+				_ = outValidator.ValidatePacket(pkt)
 			}
 
 			gapsMu.Lock()
@@ -354,6 +359,7 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 					Float64("estimatedBitrateKbps", math.Round((currentBitrate/1000.0)*10)/10).
 					Int64("packetsOut", atomic.LoadInt64(&outputPackets)).
 					Int64("underruns", underruns).
+					Int64("repairedCCs", sanitizer.RepairedCCs).
 					Msg("smoother jitter buffer telemetry")
 			}
 		}
@@ -431,6 +437,7 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 		InputCCErrors:       inValidator.CCErrors,
 		OutputCCErrors:      outValidator.CCErrors,
 		CCErrorsIntroduced:  ccIntroduced,
+		CCErrorsRepaired:    sanitizer.RepairedCCs,
 		InputPCRErrors:      inValidator.PCRErrors,
 		OutputPCRErrors:     outValidator.PCRErrors,
 		PCRErrorsIntroduced: pcrIntroduced,

@@ -263,9 +263,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("upstream source unavailable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		logger.Warn().Int("status", resp.StatusCode).Msg("upstream source returned non-200")
 		http.Error(w, fmt.Sprintf("upstream error: %d %s", resp.StatusCode, resp.Status), resp.StatusCode)
 		return
@@ -284,7 +284,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		outWriter = &FlusherWriter{w: w, flusher: flusher}
 	}
 
-	report, err := SmoothStream(r.Context(), resp.Body, outWriter, h.cfg)
+	resilientIn := NewResilientUpstreamReader(
+		r.Context(),
+		client,
+		targetURL,
+		req.Header,
+		resp.Body,
+		DefaultResilientConfig(),
+	)
+	defer resilientIn.Close()
+
+	report, err := SmoothStream(r.Context(), resilientIn, outWriter, h.cfg)
 	if err != nil && r.Context().Err() == nil {
 		logger.Warn().Err(err).Msg("smoothed stream terminated with error")
 	} else if report != nil {
@@ -292,6 +302,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Float64("durationSec", report.DurationSeconds).
 			Int64("packetsOut", report.OutputPackets).
 			Int64("underruns", report.Underruns).
+			Int64("repairedCCs", report.CCErrorsRepaired).
+			Int64("upstreamReconnects", resilientIn.ReconnectCount).
 			Float64("firstByteDelayMs", report.FirstByteDelayMs).
 			Float64("steadyStateLagMs", report.SteadyStateDelayMs).
 			Msg("smoothed TS session finished cleanly")
