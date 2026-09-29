@@ -9,19 +9,102 @@ import Combine
 
 @MainActor
 private final class RejectingPlaybackController: PlaybackControlling {
+    var currentTarget: PlaybackTarget? = nil
     var currentChannel: Channel? = nil
+    var currentRecording: Recording? = nil
     var isPlaying: Bool = false
 
     func play(channel: Channel) {
         // Intentionally no-op to simulate a rejected, permission-denied, or delayed command
     }
 
+    var lastSeekPosition: Double? = nil
+
+    func play(recording: Recording, startPosition: Double?) {
+        // Intentionally no-op
+    }
+
+    func seek(to position: Double) {
+        lastSeekPosition = position
+    }
     func stop() {}
     func togglePlayPause() {}
 
     func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
         handler(currentChannel, isPlaying)
         return AnyCancellable {}
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (PlaybackTarget?, Bool) -> Void) -> AnyCancellable {
+        handler(currentTarget, isPlaying)
+        return AnyCancellable {}
+    }
+}
+
+@MainActor
+private final class DynamicMockPlaybackController: PlaybackControlling {
+    var currentTarget: PlaybackTarget? = nil
+    var currentChannel: Channel? = nil
+    var currentRecording: Recording? = nil
+    var isPlaying: Bool = false
+    var lastSeekPosition: Double? = nil
+
+    private var targetObservers: [UUID: @MainActor (PlaybackTarget?, Bool) -> Void] = [:]
+
+    func play(channel: Channel) {
+        currentTarget = .live(channel)
+        isPlaying = true
+        notify()
+    }
+
+    func play(recording: Recording, startPosition: Double?) {
+        currentTarget = .recording(recording, startPosition: startPosition)
+        isPlaying = true
+        notify()
+    }
+
+    func seek(to position: Double) {
+        lastSeekPosition = position
+    }
+
+    func stop() {
+        currentTarget = nil
+        isPlaying = false
+        notify()
+    }
+
+    func togglePlayPause() {
+        isPlaying.toggle()
+        notify()
+    }
+
+    func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
+        observeTargetState { target, isPlaying in
+            let channel: Channel?
+            if case .live(let ch) = target { channel = ch } else { channel = nil }
+            handler(channel, isPlaying)
+        }
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (PlaybackTarget?, Bool) -> Void) -> AnyCancellable {
+        let id = UUID()
+        targetObservers[id] = handler
+        handler(currentTarget, isPlaying)
+        return AnyCancellable { [weak self] in
+            self?.targetObservers.removeValue(forKey: id)
+        }
+    }
+
+    func pushUpdate(target: PlaybackTarget?, isPlaying: Bool) {
+        self.currentTarget = target
+        self.isPlaying = isPlaying
+        notify()
+    }
+
+    private func notify() {
+        for observer in targetObservers.values {
+            observer(currentTarget, isPlaying)
+        }
     }
 }
 
@@ -73,7 +156,9 @@ struct PlaybackStoreProjectionTests {
     @Test("PlaybackStore reflects initial PlaybackManager snapshot")
     func initialSnapshotReflection() {
         let (_, store) = makeHarness()
+        #expect(store.currentTarget == nil)
         #expect(store.currentChannel == nil)
+        #expect(store.currentRecording == nil)
         #expect(store.isPlaying == false)
         #expect(store.errorMessage == nil)
     }
@@ -84,7 +169,9 @@ struct PlaybackStoreProjectionTests {
 
         await manager.play(channel: channelA, mode: .fullscreen)
 
+        #expect(store.currentTarget == .live(channelA))
         #expect(store.currentChannel == channelA)
+        #expect(store.currentRecording == nil)
         #expect(manager.currentChannel == channelA)
     }
 
@@ -96,7 +183,9 @@ struct PlaybackStoreProjectionTests {
         #expect(store.currentChannel == channelA)
 
         await manager.play(recording: testRecording, startPosition: 0)
+        #expect(store.currentTarget == .recording(testRecording, startPosition: 0))
         #expect(store.currentChannel == nil, "Live channel must clear when playing recording")
+        #expect(store.currentRecording == testRecording, "currentRecording must reflect active recording")
         #expect(store.isPlaying == true, "isPlaying must reflect active recording playback")
     }
 
@@ -106,10 +195,13 @@ struct PlaybackStoreProjectionTests {
 
         await manager.play(recording: testRecording, startPosition: 0)
         #expect(store.currentChannel == nil)
+        #expect(store.currentRecording == testRecording)
         #expect(store.isPlaying == true)
 
         await manager.play(offline: testOffline)
+        #expect(store.currentTarget == .offline(testOffline))
         #expect(store.currentChannel == nil)
+        #expect(store.currentRecording == nil)
         #expect(store.isPlaying == true)
     }
 
@@ -139,6 +231,22 @@ struct PlaybackStoreProjectionTests {
         // Under Apple B canonical projection, store remains unchanged because controller rejected/delayed:
         #expect(store.currentChannel == nil, "Store must not mutate optimistically on uncommitted commands")
         #expect(store.isPlaying == false, "Store isPlaying must not become true optimistically")
+    }
+
+    @Test("delayed or rejected recording command does NOT mutate PlaybackStore optimistically")
+    func delayedOrRejectedRecordingCommandDoesNotMutateOptimistically() {
+        let rejectingController = RejectingPlaybackController()
+        let store = PlaybackStore(controller: rejectingController)
+
+        #expect(store.currentTarget == nil)
+        #expect(store.currentRecording == nil)
+        #expect(store.isPlaying == false)
+
+        store.play(recording: testRecording, startPosition: 0)
+
+        #expect(store.currentTarget == nil, "Store must not mutate optimistically on uncommitted VOD commands")
+        #expect(store.currentRecording == nil)
+        #expect(store.isPlaying == false)
     }
 
     @Test("projection lifetime survives AppComposition factory return")
@@ -267,5 +375,78 @@ struct PlaybackStoreProjectionTests {
 
         store.clearError()
         #expect(store.errorMessage == nil)
+    }
+
+    @Test("PlaybackStore forwards seek(to:) command to attached controller")
+    func seekForwardingToController() {
+        let controller = RejectingPlaybackController()
+        let store = PlaybackStore(controller: controller)
+        #expect(controller.lastSeekPosition == nil)
+
+        store.seek(to: 42.5)
+        #expect(controller.lastSeekPosition == 42.5)
+    }
+
+    @Test("LegacyBridgePlaybackController seek(to:) is a safe no-op when inactive or deallocated")
+    func legacyBridgeSeekSafeNoOpWhenInactiveOrDeallocated() {
+        var manager: PlaybackManager? = PlaybackManager(streamURL: { _ in nil })
+        let bridge = LegacyBridgePlaybackController(playbackManager: manager!)
+        // With no player active, seek is a safe no-op
+        bridge.seek(to: 120.0)
+
+        // Non-finite and negative positions are safely rejected
+        bridge.seek(to: -5.0)
+        bridge.seek(to: .nan)
+        bridge.seek(to: .infinity)
+
+        // When playbackManager is deallocated, seek is a safe no-op
+        manager = nil
+        bridge.seek(to: 120.0)
+    }
+
+    @Test("PlaybackManager observeTargetState cancellation immediately removes observer so subsequent transitions are ignored")
+    func targetSubscriptionCancellationRemovesObserverImmediately() async {
+        let manager = PlaybackManager(streamURL: { _ in nil })
+        var targetUpdates: [PlaybackTarget?] = []
+
+        var subscription: AnyCancellable? = manager.observeTargetState { target, _ in
+            targetUpdates.append(target)
+        }
+        #expect(targetUpdates.count == 1, "Initial snapshot delivered")
+        #expect(targetUpdates == [nil])
+
+        // Cancel subscription
+        subscription?.cancel()
+        subscription = nil
+
+        // Trigger transition
+        await manager.play(channel: channelA, mode: .fullscreen)
+
+        #expect(targetUpdates.count == 1, "Cancelled target observer must not be called after cancellation")
+    }
+
+    @Test("PlaybackStore reattachment cancels previous controller subscription and attaches to new controller")
+    func reattachmentCancelsPreviousSubscription() {
+        let controllerA = DynamicMockPlaybackController()
+        let controllerB = DynamicMockPlaybackController()
+
+        let store = PlaybackStore(controller: controllerA)
+        #expect(store.currentTarget == nil)
+
+        // Reattach to controller B
+        controllerB.pushUpdate(target: .live(channelA), isPlaying: true)
+        store.attach(controller: controllerB)
+        #expect(store.currentTarget == .live(channelA))
+        #expect(store.isPlaying == true)
+
+        // Updates from old controllerA must be ignored
+        controllerA.pushUpdate(target: .recording(testRecording, startPosition: 10), isPlaying: false)
+        #expect(store.currentTarget == .live(channelA), "Store must ignore updates from detached controller A")
+        #expect(store.isPlaying == true)
+
+        // Updates from new controllerB are projected
+        controllerB.pushUpdate(target: nil, isPlaying: false)
+        #expect(store.currentTarget == nil)
+        #expect(store.isPlaying == false)
     }
 }

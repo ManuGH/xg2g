@@ -4,6 +4,7 @@
 
 import Foundation
 import Combine
+import CoreMedia
 
 /// Adapter bridging the Greenfield `PlaybackControlling` protocol to canonical `PlaybackManager`.
 @MainActor
@@ -20,8 +21,16 @@ final class LegacyBridgePlaybackController: PlaybackControlling {
         self.init(playbackManager: appModel.playbackManager, appModel: appModel)
     }
 
+    var currentTarget: PlaybackTarget? {
+        playbackManager?.currentTarget
+    }
+
     var currentChannel: Channel? {
         playbackManager?.currentChannel
+    }
+
+    var currentRecording: Recording? {
+        playbackManager?.activeRecordingItem?.recording
     }
 
     var isPlaying: Bool {
@@ -31,6 +40,14 @@ final class LegacyBridgePlaybackController: PlaybackControlling {
     func play(channel: Channel) {
         appModel?.recordChannelPlayback(channel)
         playbackManager?.play(channel: channel, mode: .fullscreen)
+    }
+
+    func play(recording: Recording, startPosition: Double? = nil) {
+        playbackManager?.play(recording: recording, startPosition: startPosition ?? 0, mode: .fullscreen)
+    }
+
+    func seek(to position: Double) {
+        playbackManager?.seek(to: position)
     }
 
     func stop() {
@@ -51,5 +68,13 @@ final class LegacyBridgePlaybackController: PlaybackControlling {
             return AnyCancellable {}
         }
         return playbackManager.observeState(handler)
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (_ target: PlaybackTarget?, _ isPlaying: Bool) -> Void) -> AnyCancellable {
+        guard let playbackManager else {
+            handler(nil, false)
+            return AnyCancellable {}
+        }
+        return playbackManager.observeTargetState(handler)
     }
 }

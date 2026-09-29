@@ -75,6 +75,7 @@ final class PlaybackManager: ObservableObject {
     private var recordingCleanupHook: (@MainActor () -> Void)?
     private var activeTransitionID: UUID = UUID()
     private var stateObservers: [UUID: @MainActor (Channel?, Bool) -> Void] = [:]
+    private var targetStateObservers: [UUID: @MainActor (PlaybackTarget?, Bool) -> Void] = [:]
 
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
@@ -123,12 +124,47 @@ final class PlaybackManager: ObservableObject {
         }
     }
 
+    /// Registers an observer for canonical target projection updates.
+    ///
+    /// The handler is invoked immediately with the initial snapshot, and subsequently
+    /// whenever the canonical `PlaybackManager` state transitions.
+    func observeTargetState(_ handler: @escaping @MainActor (_ target: PlaybackTarget?, _ isPlaying: Bool) -> Void) -> AnyCancellable {
+        let id = UUID()
+        targetStateObservers[id] = handler
+        handler(self.currentTarget, self.isPlaying)
+        return AnyCancellable { [weak self] in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    _ = self?.targetStateObservers.removeValue(forKey: id)
+                }
+            } else {
+                Task { @MainActor in
+                    _ = self?.targetStateObservers.removeValue(forKey: id)
+                }
+            }
+        }
+    }
+
+    /// Seeks the active recording player to a specific timestamp in seconds.
+    /// Safe no-op if no recording player is active or if position is negative / non-finite.
+    func seek(to position: Double) {
+        guard position.isFinite, position >= 0 else { return }
+        if let player = recordingPlayer {
+            let targetTime = CMTime(seconds: position, preferredTimescale: 600)
+            player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+    }
+
     private func notifyStateObservers(overrideLivePlaying: Bool? = nil) {
         let channel = self.currentChannel
+        let target = self.currentTarget
         let livePlaying = overrideLivePlaying ?? (coordinator.playing != nil)
         let playing = isCurrentlyPlaying(livePlaying: livePlaying)
         for observer in stateObservers.values {
             observer(channel, playing)
+        }
+        for observer in targetStateObservers.values {
+            observer(target, playing)
         }
     }
 
@@ -142,6 +178,19 @@ final class PlaybackManager: ObservableObject {
     }
 
     // MARK: - Derived Canonical Properties (No Duplicate Published States)
+
+    var currentTarget: PlaybackTarget? {
+        switch state {
+        case .idle:
+            return nil
+        case .live(let channel, _):
+            return .live(channel)
+        case .recording(let item, _):
+            return .recording(item.recording, startPosition: item.initialPosition)
+        case .offline(let offline):
+            return .offline(offline)
+        }
+    }
 
     var currentChannel: Channel? {
         if case .live(let channel, _) = state { return channel }
@@ -320,9 +369,7 @@ final class PlaybackManager: ObservableObject {
         let transactionID = UUID()
         self.activeTransitionID = transactionID
 
-        var stoppedLive = false
         if case .live = state {
-            stoppedLive = true
             await coordinator.stop()
         } else if case .recording = state {
             recordingCleanupHook?()
@@ -332,13 +379,6 @@ final class PlaybackManager: ObservableObject {
 
         guard self.activeTransitionID == transactionID else { return }
         self.state = .idle
-
-        // The live screen claims the lock screen entry and its controls, and releases
-        // them only when it is closed itself. Stopped from the mini player, that screen
-        // is long gone: the entry stayed up, with controls still wired to it.
-        if stoppedLive {
-            NowPlayingManager.shared.clear()
-        }
     }
 
     func stop() {
