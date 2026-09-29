@@ -88,3 +88,100 @@
   flex-shrink: 0;
   background: var(--surface-shell-safe);
 }
+
+.seriesContent {
+  padding: 20px 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.inputField {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-base);
+  background: var(--surface-input, var(--surface-muted));
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.helpText {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chipRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-base);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chip:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
+}
+
+.chipActive {
+  background: var(--accent-action);
+  border-color: var(--accent-action);
+  color: #fff;
+  font-weight: 600;
+}
+
+.daySelector {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.dayButton {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-base);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dayButton:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
+}
+
+.dayButtonActive {
+  background: var(--accent-action);
+  border-color: var(--accent-action);
+  color: #fff;
+}
+

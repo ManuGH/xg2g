@@ -26,6 +26,8 @@ type OWIClient interface {
 	AddTimer(ctx context.Context, sRef string, begin, end int64, name, description string) error
 	DeleteTimer(ctx context.Context, sRef string, begin, end int64) error
 	GetEPG(ctx context.Context, ref string, limit int) ([]openwebif.EPGEvent, error)
+	GetRecordings(ctx context.Context, dirname string) (*openwebif.MovieList, error)
+	DeleteMovie(ctx context.Context, sRef string) error
 }
 
 // SeriesEngine handles automated rule-based recording.
@@ -97,6 +99,24 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 			existingTimers[key] = true
 		}
 
+		// 3b. Fetch Recordings if any rule has retention configured
+		var movies []openwebif.Movie
+		hasRetentionRules := false
+		for _, r := range rules {
+			if r.Enabled && r.RetentionDays > 0 {
+				hasRetentionRules = true
+				break
+			}
+		}
+		if hasRetentionRules {
+			movieList, err := client.GetRecordings(ctx, "")
+			if err != nil {
+				e.logger.Warn().Err(err).Msg("failed to fetch recordings from receiver for retention enforcement")
+			} else if movieList != nil {
+				movies = movieList.Movies
+			}
+		}
+
 		// 4. Processing Loop
 		globalLimit := 100
 		createdCount := 0
@@ -115,13 +135,14 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 				StartedAt: ruleStart,
 				Status:    "success",
 				Snapshot: RuleSnapshot{
-					ID:          rule.ID,
-					Enabled:     rule.Enabled,
-					Keyword:     rule.Keyword,
-					ChannelRef:  rule.ChannelRef,
-					Days:        rule.Days,
-					StartWindow: rule.StartWindow,
-					Priority:    rule.Priority,
+					ID:            rule.ID,
+					Enabled:       rule.Enabled,
+					Keyword:       rule.Keyword,
+					ChannelRef:    rule.ChannelRef,
+					Days:          rule.Days,
+					StartWindow:   rule.StartWindow,
+					Priority:      rule.Priority,
+					RetentionDays: rule.RetentionDays,
 				},
 			}
 
@@ -172,10 +193,21 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 						report.Summary.TimersConflicted++
 					}
 				}
+
+				// Apply Retention Policy (Prune expired recordings)
+				if rule.RetentionDays > 0 && len(movies) > 0 {
+					pruned, pruneDecisions := e.pruneRecordingsForRule(ctx, client, rule, jobStart, movies)
+					report.Summary.RecordingsPruned = pruned
+					report.Decisions = append(report.Decisions, pruneDecisions...)
+				}
 			}
 
 			report.FinishedAt = time.Now()
 			report.DurationMs = report.FinishedAt.Sub(ruleStart).Milliseconds()
+			rule.LastRunAt = report.FinishedAt
+			rule.LastRunStatus = report.Status
+			rule.LastRunSummary = report.Summary
+			_ = e.ruleManager.UpdateRule(rule.ID, rule)
 			reports = append(reports, report)
 		}
 
@@ -217,7 +249,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 	}
 
 	var decisions []RunDecision
-	kw := strings.ToLower(rule.Keyword)
+	kw := NormalizeForMatch(rule.Keyword)
 
 	// Parse the optional StartWindow ONCE (it is constant for the rule). A malformed window
 	// fails the rule run loudly — RunOnce records a per-rule "failed" — instead of silently
@@ -242,7 +274,7 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 
 	for _, ev := range candidates {
 		// 1. Keyword Match
-		if kw != "" && !strings.Contains(strings.ToLower(ev.Title), kw) {
+		if kw != "" && !strings.Contains(NormalizeForMatch(ev.Title), kw) {
 			continue // No match
 		}
 
@@ -338,3 +370,86 @@ func parseHHMM(s string) (int, error) {
 	}
 	return val, nil
 }
+
+// pruneRecordingsForRule checks existing recordings against rule.RetentionDays and deletes any that are expired.
+func (e *SeriesEngine) pruneRecordingsForRule(ctx context.Context, client OWIClient, rule SeriesRule, now time.Time, movies []openwebif.Movie) (int, []RunDecision) {
+	if rule.RetentionDays <= 0 || len(movies) == 0 {
+		return 0, nil
+	}
+
+	cutoff := now.Add(-time.Duration(rule.RetentionDays) * 24 * time.Hour)
+	normKw := NormalizeForMatch(rule.Keyword)
+	prunedCount := 0
+	var decisions []RunDecision
+
+	for _, movie := range movies {
+		// 1. Keyword match on recording title
+		if normKw != "" && !strings.Contains(NormalizeForMatch(movie.Title), normKw) {
+			continue
+		}
+
+		// 2. Channel match if rule restricts to a channel
+		if rule.ChannelRef != "" {
+			matchesChannel := false
+			if strings.EqualFold(movie.ServiceRef, rule.ChannelRef) ||
+				strings.Contains(strings.ToLower(movie.ServiceRef), strings.ToLower(rule.ChannelRef)) {
+				matchesChannel = true
+			}
+			if !matchesChannel && movie.ServiceName != "" {
+				if strings.Contains(strings.ToLower(rule.ChannelRef), strings.ToLower(movie.ServiceName)) ||
+					strings.Contains(strings.ToLower(movie.ServiceName), strings.ToLower(rule.ChannelRef)) {
+					matchesChannel = true
+				}
+			}
+			// If sRef is generic file path (1:0:0:0:...), allow match since title matched
+			if !matchesChannel && !strings.HasPrefix(movie.ServiceRef, "1:0:0:0:") {
+				continue
+			}
+		}
+
+		// 3. Time check
+		movieBegin := int64(movie.Begin)
+		if movieBegin <= 0 {
+			continue
+		}
+		recordedAt := time.Unix(movieBegin, 0)
+		if recordedAt.Before(cutoff) {
+			e.logger.Info().
+				Str("title", movie.Title).
+				Str("serviceref", movie.ServiceRef).
+				Time("recorded_at", recordedAt).
+				Int("retention_days", rule.RetentionDays).
+				Str("rule_id", rule.ID).
+				Msg("deleting expired recording under retention policy")
+
+			err := client.DeleteMovie(ctx, movie.ServiceRef)
+			if err != nil {
+				e.logger.Error().Err(err).
+					Str("title", movie.Title).
+					Str("serviceref", movie.ServiceRef).
+					Msg("failed to delete expired recording")
+				decisions = append(decisions, RunDecision{
+					ServiceRef: movie.ServiceRef,
+					Begin:      movieBegin,
+					Title:      movie.Title,
+					Action:     ActionError,
+					Reason:     "retention_delete_failed",
+					Details:    err.Error(),
+				})
+			} else {
+				prunedCount++
+				decisions = append(decisions, RunDecision{
+					ServiceRef: movie.ServiceRef,
+					Begin:      movieBegin,
+					Title:      movie.Title,
+					Action:     "pruned",
+					Reason:     "retention_expired",
+					Details:    fmt.Sprintf("Recording older than %d days (recorded %s)", rule.RetentionDays, recordedAt.Format("2006-01-02")),
+				})
+			}
+		}
+	}
+
+	return prunedCount, decisions
+}
+

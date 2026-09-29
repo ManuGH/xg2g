@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
@@ -6,10 +6,19 @@ import { normalizeEpgText } from '../../../utils/text';
 import { Button } from '../../../components/ui';
 import styles from './EpgEventDialog.module.css';
 
+export interface ScheduleSeriesConfig {
+  keyword: string;
+  channelRef?: string;
+  days?: number[];
+  startWindow?: string;
+  retentionDays?: number;
+}
+
 interface EpgEventDialogProps {
   event: EpgEvent;
   onClose: () => void;
   onRecord?: (event: EpgEvent) => void;
+  onScheduleSeries?: (event: EpgEvent, config: ScheduleSeriesConfig) => Promise<void> | void;
   isRecorded?: boolean;
   onPlay?: (channel: EpgChannel) => void;
   channel?: EpgChannel;
@@ -28,8 +37,48 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, channel, currentTime }: EpgEventDialogProps) {
+function extractCleanTitle(raw: string): string {
+  if (!raw) return '';
+  const match = raw.split(/\s+(?:mit|–|-)\s+|:\s+/i);
+  const first = match[0];
+  if (match.length > 1 && first && first.trim().length >= 3) {
+    return first.trim();
+  }
+  return raw.trim();
+}
+
+const DAY_OPTIONS = [
+  { label: 'Mo', day: 1 },
+  { label: 'Di', day: 2 },
+  { label: 'Mi', day: 3 },
+  { label: 'Do', day: 4 },
+  { label: 'Fr', day: 5 },
+  { label: 'Sa', day: 6 },
+  { label: 'So', day: 0 },
+];
+
+export function EpgEventDialog({
+  event,
+  onClose,
+  onRecord,
+  onScheduleSeries,
+  isRecorded,
+  onPlay,
+  channel,
+  currentTime,
+}: EpgEventDialogProps) {
   const { t } = useTranslation();
+  const [view, setView] = useState<'details' | 'series'>('details');
+
+  // Series scheduling state
+  const cleanedTitle = useMemo(() => extractCleanTitle(event.title || ''), [event.title]);
+  const [keyword, setKeyword] = useState<string>(cleanedTitle || event.title || '');
+  const [channelScope, setChannelScope] = useState<'this' | 'all'>('this');
+  const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [startWindow, setStartWindow] = useState<string>('');
+  const [retentionDays, setRetentionDays] = useState<number>(7); // Default 7 days retention
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
   useEffect(() => {
     // Lock body scroll
     const originalOverflow = document.body.style.overflow;
@@ -49,6 +98,33 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, c
   const now = currentTime || Math.floor(Date.now() / 1000);
   const inProgress = now >= event.start && now < event.end;
 
+  const toggleDay = (day: number) => {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)
+    );
+  };
+
+  const handleSeriesSubmit = async () => {
+    if (!keyword.trim() || !onScheduleSeries) return;
+    setIsSubmitting(true);
+    try {
+      const channelRef = channelScope === 'this' ? (event.serviceRef || channel?.serviceRef) : undefined;
+      const days = selectedDays.length === 7 || selectedDays.length === 0 ? undefined : selectedDays;
+      await onScheduleSeries(event, {
+        keyword: keyword.trim(),
+        channelRef,
+        days,
+        startWindow: startWindow.trim() || undefined,
+        retentionDays: retentionDays > 0 ? retentionDays : undefined,
+      });
+      onClose();
+    } catch {
+      // Error handled by parent onScheduleSeries
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return createPortal(
     <div
       className={styles.overlay}
@@ -60,46 +136,221 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, c
       <div className={styles.card} role="dialog" aria-modal="true" aria-labelledby="epg-event-title">
         <div className={styles.header}>
           <h2 id="epg-event-title" className={styles.title}>
-            {event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' })}
+            {view === 'series'
+              ? t('epg.seriesDialogTitle', { defaultValue: 'Serienaufnahme / Scheduler einrichten' })
+              : (event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' }))}
           </h2>
           <div className={styles.time}>
             {channel?.name ? `${channel.name} · ` : ''}{formatDateTime(event.start)} – {formatTime(event.end)}
           </div>
         </div>
 
-        <div className={styles.content}>
-          {desc}
-        </div>
+        {view === 'details' ? (
+          <>
+            <div className={styles.content}>
+              {desc}
+            </div>
 
-        <div className={styles.footer}>
-          {inProgress && channel && onPlay && (
-            <Button
-              variant="primary"
-              onClick={() => {
-                onPlay(channel);
-                onClose();
-              }}
-            >
-              ▶ {t('epg.playChannel', { defaultValue: 'Sendung schauen' })}
-            </Button>
-          )}
-          {onRecord && (
-            <Button
-              variant={inProgress && channel && onPlay ? 'secondary' : (isRecorded ? 'secondary' : 'primary')}
-              onClick={() => {
-                onRecord(event);
-                onClose();
-              }}
-            >
-              {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' }) : t('epg.record', { defaultValue: 'Aufnehmen' })}
-            </Button>
-          )}
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.close', { defaultValue: 'Schließen' })}
-          </Button>
-        </div>
+            <div className={styles.footer}>
+              {inProgress && channel && onPlay && (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    onPlay(channel);
+                    onClose();
+                  }}
+                >
+                  ▶ {t('epg.playChannel', { defaultValue: 'Sendung schauen' })}
+                </Button>
+              )}
+              {onRecord && (
+                <Button
+                  variant={inProgress && channel && onPlay ? 'secondary' : (isRecorded ? 'secondary' : 'primary')}
+                  onClick={() => {
+                    onRecord(event);
+                    onClose();
+                  }}
+                >
+                  {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' }) : t('epg.recordSingle', { defaultValue: 'Einmalig aufnehmen' })}
+                </Button>
+              )}
+              {onScheduleSeries && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setView('series')}
+                  data-testid="btn-record-series"
+                >
+                  🔄 {t('epg.recordSeries', { defaultValue: 'Als Serie aufnehmen' })}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={onClose}>
+                {t('common.close', { defaultValue: 'Schließen' })}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={styles.seriesContent}>
+              {/* Keyword / Title */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesKeywordLabel', { defaultValue: 'Suchbegriff (Titel)' })}</label>
+                <input
+                  type="text"
+                  className={styles.inputField}
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder="z.B. Café PULS"
+                  data-testid="series-modal-keyword"
+                />
+                {cleanedTitle && cleanedTitle !== event.title && (
+                  <div className={styles.chipRow} style={{ marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      className={[styles.chip, keyword === cleanedTitle ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                      onClick={() => setKeyword(cleanedTitle)}
+                    >
+                      {cleanedTitle}
+                    </button>
+                    <button
+                      type="button"
+                      className={[styles.chip, keyword === event.title ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                      onClick={() => setKeyword(event.title)}
+                    >
+                      {event.title}
+                    </button>
+                  </div>
+                )}
+                <span className={styles.helpText}>{t('epg.seriesKeywordHelp', { defaultValue: 'Übereinstimmung beim Sendungstitel (ohne Berücksichtigung von Akzenten oder Groß-/Kleinschreibung).' })}</span>
+              </div>
+
+              {/* Channel Selector */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesChannelLabel', { defaultValue: 'Sender' })}</label>
+                <div className={styles.chipRow}>
+                  <button
+                    type="button"
+                    className={[styles.chip, channelScope === 'this' ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setChannelScope('this')}
+                  >
+                    {channel?.name ? t('epg.seriesChannelThis', { name: channel.name, defaultValue: `Nur ${channel.name}` }) : 'Nur dieser Sender'}
+                  </button>
+                  <button
+                    type="button"
+                    className={[styles.chip, channelScope === 'all' ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setChannelScope('all')}
+                  >
+                    {t('epg.seriesChannelAll', { defaultValue: 'Alle Sender' })}
+                  </button>
+                </div>
+                <span className={styles.helpText}>{t('epg.seriesChannelHelp', { defaultValue: 'Wähle einen bestimmten Sender oder alle Sender.' })}</span>
+              </div>
+
+              {/* Days of week */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesDaysLabel', { defaultValue: 'Wochentage' })}</label>
+                <div className={styles.chipRow}>
+                  <button
+                    type="button"
+                    className={[styles.chip, selectedDays.length === 7 ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setSelectedDays([0, 1, 2, 3, 4, 5, 6])}
+                  >
+                    {t('series.daysDaily', { defaultValue: 'Täglich' })}
+                  </button>
+                  <button
+                    type="button"
+                    className={[styles.chip, selectedDays.length === 5 && [1, 2, 3, 4, 5].every((d) => selectedDays.includes(d)) ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
+                  >
+                    {t('series.daysWeekdays', { defaultValue: 'Werktags (Mo-Fr)' })}
+                  </button>
+                  <button
+                    type="button"
+                    className={[styles.chip, selectedDays.length === 2 && [0, 6].every((d) => selectedDays.includes(d)) ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setSelectedDays([0, 6])}
+                  >
+                    {t('series.daysWeekend', { defaultValue: 'Wochenende (Sa-So)' })}
+                  </button>
+                </div>
+                <div className={styles.daySelector}>
+                  {DAY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.day}
+                      type="button"
+                      className={[styles.dayButton, selectedDays.includes(opt.day) ? styles.dayButtonActive : ''].filter(Boolean).join(' ')}
+                      onClick={() => toggleDay(opt.day)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Time Window */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesTimeWindowLabel', { defaultValue: 'Startzeit-Fenster (HHMM-HHMM)' })}</label>
+                <input
+                  type="text"
+                  className={styles.inputField}
+                  value={startWindow}
+                  onChange={(e) => setStartWindow(e.target.value)}
+                  placeholder="z.B. 0530-0930"
+                />
+                <span className={styles.helpText}>{t('epg.seriesTimeWindowHelp', { defaultValue: 'Optional. z.B. 0530-0930 für morgendliche Sendungen.' })}</span>
+              </div>
+
+              {/* Retention Policy */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesRetentionLabel', { defaultValue: 'Vorhaltezeit / Aufbewahrung' })}</label>
+                <div className={styles.chipRow}>
+                  {[
+                    { days: 7, label: t('series.retentionDays', { count: 7, defaultValue: '7 Tage' }) + ' (Empfohlen)' },
+                    { days: 14, label: t('series.retentionDays', { count: 14, defaultValue: '14 Tage' }) },
+                    { days: 30, label: t('series.retentionDays', { count: 30, defaultValue: '30 Tage' }) },
+                    { days: 0, label: t('epg.seriesRetentionForever', { defaultValue: 'Dauerhaft behalten' }) },
+                  ].map((preset) => (
+                    <button
+                      key={preset.days}
+                      type="button"
+                      className={[styles.chip, retentionDays === preset.days ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                      onClick={() => setRetentionDays(preset.days)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <span className={styles.helpText}>
+                  {retentionDays > 0
+                    ? t('epg.seriesRetentionDays', { count: retentionDays, defaultValue: `${retentionDays} Tage (Auto-Löschen)` })
+                    : t('epg.seriesRetentionForever', { defaultValue: 'Dauerhaft behalten' })}
+                  {' — '}{t('epg.seriesRetentionHelp', { defaultValue: 'Aufnahmen, die älter als diese Tage sind, werden automatisch gelöscht.' })}
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.footer}>
+              <Button
+                variant="secondary"
+                onClick={() => setView('details')}
+                disabled={isSubmitting}
+              >
+                {t('epg.seriesBack', { defaultValue: 'Zurück' })}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSeriesSubmit}
+                disabled={!keyword.trim() || isSubmitting}
+                data-testid="series-modal-save"
+              >
+                {isSubmitting
+                  ? t('epg.seriesSaving', { defaultValue: 'Wird eingerichtet...' })
+                  : `✓ ${t('epg.seriesSave', { defaultValue: 'Serie einrichten' })}`}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body
   );
 }
+

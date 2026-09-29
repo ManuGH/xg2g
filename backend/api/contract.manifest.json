@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "746eb9e1172215ccc9cb7efab6b5667bd4c55f2cfd37ced54926433116161741"
+    "sha256": "d3432f9e090aa1de1311c039b2d38eb2149c94ebc9968a04e4f0263d00e062e3"
   },
   "paths": [
     "/auth/device/refresh",
@@ -2866,7 +2866,7 @@
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "0294d075aa9f004264c87f86f1370206dd25a67cb342387075c8177fda999a3a"
+      "sha256": "c5d23ea3ba890d63fb898f2204e552bdd58d5b5d5425874ea1893d73ff170b19"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2878,7 +2878,7 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "43ffe9a9011df80182b6e176a203fa5d963a73dd403e0be15b4bdd9cbb9ec234"
+      "sha256": "d8a54318fc64b2ac9c245c32d88530821bfbf79b6a643a9aad22c45e7b261256"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
@@ -2896,7 +2896,7 @@
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "9f483f77c0d5082e56e93d720a05de3039926c1cc429a22bc071b61403caaddd"
+      "sha256": "ca58c5795a59ff2c7adaafe23564d8ca56cb96de9d6efd49ec978132e0c52e5e"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
@@ -2908,7 +2908,7 @@
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "09222e491b9b5a5cc3058b026187ff7c670eeed98eb0063f66703f0f9de4efec"
+      "sha256": "f47c49e0f3e18a05f689c101256515157901e31b872ba402cce2e9bf6e2a7691"
     }
   ]
 }

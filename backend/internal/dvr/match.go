@@ -38,7 +38,7 @@ func (r *SeriesRule) Matches(epgTitle string, epgChannelRef string, epgStart tim
 
 	// 2. Title Match (Keyword)
 	if r.Keyword != "" {
-		if !strings.Contains(strings.ToLower(epgTitle), strings.ToLower(r.Keyword)) {
+		if !strings.Contains(NormalizeForMatch(epgTitle), NormalizeForMatch(r.Keyword)) {
 			return MatchResult{Matched: false, Reasons: []string{"keyword mismatch"}}
 		}
 		res.Reasons = append(res.Reasons, "keyword match")
@@ -110,3 +110,19 @@ func IsTimeInWindow(t time.Time, windowStr string) (bool, error) {
 		return false, nil
 	}
 }
+
+// NormalizeForMatch normalizes a string for title/keyword comparison by lowercasing,
+// trimming whitespace, and stripping common diacritics/accents (e.g. Café -> cafe).
+func NormalizeForMatch(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	replacer := strings.NewReplacer(
+		"é", "e", "è", "e", "ê", "e", "ë", "e",
+		"á", "a", "à", "a", "â", "a",
+		"ó", "o", "ò", "o", "ô", "o",
+		"ú", "u", "ù", "u", "û", "u",
+		"í", "i", "ì", "i", "î", "i", "ï", "i",
+		"ß", "ss",
+	)
+	return replacer.Replace(s)
+}
+

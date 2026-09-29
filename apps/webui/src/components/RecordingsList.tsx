@@ -6,7 +6,7 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, Suspense, useRef, type CSSProperties } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';
@@ -18,10 +18,14 @@ import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridg
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { useRecordings } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
+import { buildRecordingsRoute, type RecordingsSection } from '../routes';
 import { Button, Card, CardBody, EmptyState, StatusChip, type ChipState } from './ui';
+import SectionContextBar from './SectionContextBar';
 import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import styles from './Recordings.module.css';
+
+const SeriesManager = lazyWithRetry(() => import('./SeriesManager'));
 
 const importV3Player = () => import('../features/player/components/V3Player');
 let v3PlayerModulePromise: ReturnType<typeof importV3Player> | null = null;
@@ -303,7 +307,16 @@ export default function RecordingsList() {
   const { auth } = useAppContext();
   const { confirm, toast } = useUiOverlay();
   const { selectedProfile, canAccessDvrPlayback, canManageDvr } = useHouseholdProfiles();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const activeSection: RecordingsSection = requestedSection === 'series' && canManageDvr
+    ? 'series'
+    : 'library';
+
+  const handleSectionChange = (section: RecordingsSection) => {
+    navigate(buildRecordingsRoute({ section }));
+  };
 
   // State
   const [root, setRoot] = useState<string>(''); // Selected Root ID
@@ -818,6 +831,29 @@ export default function RecordingsList() {
     );
   }
 
+  if (activeSection === 'series') {
+    return (
+      <div className={[styles.container, 'animate-enter'].join(' ')}>
+        <SectionContextBar
+          segments={[
+            {
+              label: t('nav.recordings'),
+              onClick: () => handleSectionChange('library'),
+            },
+            {
+              label: t('recordings.seriesTitle', { defaultValue: 'Serienregeln' }),
+            },
+          ]}
+          actionLabel={t('recordings.backToLibrary', { defaultValue: 'Zurück zu Aufnahmen' })}
+          onAction={() => handleSectionChange('library')}
+        />
+        <Suspense fallback={<LoadingSkeleton variant="page" label={t('recordings.loading')} />}>
+          <SeriesManager showLegacyNotice={false} />
+        </Suspense>
+      </div>
+    );
+  }
+
   if (loading && !data) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
@@ -962,6 +998,15 @@ export default function RecordingsList() {
             >
               {t('common.refresh')}
             </Button>
+            {canManageDvr && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleSectionChange('series')}
+              >
+                {t('recordings.seriesRulesAction', { defaultValue: 'Serienregeln' })}
+              </Button>
+            )}
             {canManageDvr && selectionMode ? (
               <>
                 <Button

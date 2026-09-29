@@ -767,6 +767,7 @@ export type RunSummary = {
     timersSkipped?: number;
     timersConflicted?: number;
     timersErrored?: number;
+    recordingsPruned?: number;
     maxTimersGlobalPerRunHit?: boolean;
     maxMatchesScannedPerRuleHit?: boolean;
     receiverUnreachable?: boolean;
@@ -809,6 +810,7 @@ export type RuleSnapshot = {
     days?: Array<number>;
     startWindow?: string;
     priority?: number;
+    retentionDays?: number;
 };
 
 export type SeriesRule = {
@@ -831,6 +833,10 @@ export type SeriesRule = {
      */
     startWindow?: string;
     priority?: number;
+    /**
+     * Number of days to keep recordings before auto-deleting (0 = keep forever)
+     */
+    retentionDays?: number;
     lastRunAt?: string;
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;
@@ -855,6 +861,10 @@ export type SeriesRuleUpdate = {
      */
     startWindow?: string;
     priority: number;
+    /**
+     * Number of days to keep recordings before auto-deleting (0 = keep forever)
+     */
+    retentionDays?: number;
 };
 
 export type ConfigUpdate = {
@@ -2243,6 +2253,10 @@ export type SeriesRuleWritable = {
      */
     startWindow?: string;
     priority?: number;
+    /**
+     * Number of days to keep recordings before auto-deleting (0 = keep forever)
+     */
+    retentionDays?: number;
     lastRunAt?: string;
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;

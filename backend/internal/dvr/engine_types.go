@@ -38,7 +38,8 @@ type RuleSnapshot struct {
 	ChannelRef  string `json:"channelRef,omitempty"`
 	Days        []int  `json:"days,omitempty"`        // 0=Sunday
 	StartWindow string `json:"startWindow,omitempty"` // HH:MM-HH:MM
-	Priority    int    `json:"priority"`
+	Priority      int    `json:"priority"`
+	RetentionDays int    `json:"retentionDays,omitempty"`
 }
 
 // RunSummary provides high-level counters and guardrail flags.
@@ -50,6 +51,7 @@ type RunSummary struct {
 	TimersSkipped    int `json:"timersSkipped"` // duplicates/filtered/limit
 	TimersConflicted int `json:"timersConflicted"`
 	TimersErrored    int `json:"timersErrored"`
+	RecordingsPruned int `json:"recordingsPruned,omitempty"`
 
 	// Guardrail telemetry
 	MaxTimersGlobalPerRunHit    bool `json:"maxTimersGlobalPerRunHit"`
