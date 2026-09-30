@@ -30,7 +30,9 @@ var _ admission.SlotLease = (*mockLease)(nil)
 func (m *mockLease) AccountID() string { return m.accountID }
 func (m *mockLease) SourceID() string  { return m.sourceID }
 func (m *mockLease) ClientID() string  { return m.clientID }
+func (m *mockLease) LeaseID() uint64   { return 1 }
 func (m *mockLease) IsShared() bool    { return m.isShared }
+func (m *mockLease) IsActive() bool    { return !m.released.Load() }
 func (m *mockLease) Release() error {
 	m.released.Store(true)
 	return nil
@@ -62,11 +64,11 @@ func TestRelayClient_FetchSuccess(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewClient(ClientConfig{
-		RelayBaseURL:   server.URL,
-		AuthToken:      expectedToken,
-		SelfAddresses:  []string{"10.10.55.14:8089", "xg2g.home.matrixcentral.de"},
-		ConnectTimeout: time.Second,
-		RequestTimeout: time.Second,
+		RelayBaseURL:          server.URL,
+		AuthToken:             expectedToken,
+		SelfAddresses:         []string{"10.10.55.14:8089", "xg2g.home.matrixcentral.de"},
+		ConnectTimeout:        time.Second,
+		ResponseHeaderTimeout: time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
@@ -123,11 +125,93 @@ func TestRelayClient_MissingLeaseRejection(t *testing.T) {
 	}
 }
 
+func TestRelayClient_RejectsReleasedLeaseBeforeNetwork(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(ClientConfig{RelayBaseURL: server.URL, AuthToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := &mockLease{sourceID: "src-1"}
+	_ = lease.Release()
+	if _, err := client.Fetch(context.Background(), lease, "src-1", "https://provider.test/live"); !errors.Is(err, ErrMissingSlotLease) {
+		t.Fatalf("expected released lease rejection, got %v", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("released lease must not reach relay, got %d requests", got)
+	}
+}
+
+func TestRelayClient_StreamMayOutliveResponseHeaderTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "first-")
+		w.(http.Flusher).Flush()
+		time.Sleep(80 * time.Millisecond)
+		_, _ = io.WriteString(w, "second")
+	}))
+	defer server.Close()
+
+	client, err := NewClient(ClientConfig{
+		RelayBaseURL:          server.URL,
+		AuthToken:             "token",
+		ResponseHeaderTimeout: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := &mockLease{sourceID: "src-1"}
+	reader, err := client.Fetch(context.Background(), lease, "src-1", "https://provider.test/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	payload, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("live response ended at the header timeout: %v", err)
+	}
+	if string(payload) != "first-second" {
+		t.Fatalf("unexpected stream payload %q", payload)
+	}
+}
+
+func TestRelayClient_DoesNotForwardTokenAcrossRedirect(t *testing.T) {
+	var redirectedRequests atomic.Int32
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirectedRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", redirectTarget.URL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer relay.Close()
+
+	client, err := NewClient(ClientConfig{RelayBaseURL: relay.URL, AuthToken: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Fetch(context.Background(), &mockLease{sourceID: "src-1"}, "src-1", "https://provider.test/live")
+	if !errors.Is(err, ErrRelayUnavailable) {
+		t.Fatalf("expected redirect rejection, got %v", err)
+	}
+	if got := redirectedRequests.Load(); got != 0 {
+		t.Fatalf("relay token must not be forwarded to a redirect target; got %d requests", got)
+	}
+}
+
 func TestRelayClient_LoopbackRecursionRejection(t *testing.T) {
 	client, err := NewClient(ClientConfig{
 		RelayBaseURL:  "http://10.10.55.64:8085",
 		AuthToken:     "token",
-		SelfAddresses: []string{"10.10.55.14:8089", "xg2g.home.matrixcentral.de", "localhost"},
+		SelfAddresses: []string{"10.10.55.14:8089", "xg2g.home.matrixcentral.de.", "localhost"},
 	})
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
@@ -141,6 +225,9 @@ func TestRelayClient_LoopbackRecursionRejection(t *testing.T) {
 		"http://10.10.55.14/api/v3/stream",
 		"https://xg2g.home.matrixcentral.de/stream",
 		"http://localhost:8089/stream",
+		"http://xg2g.home.matrixcentral.de.:8089/stream",
+		"http://127.0.0.1:8089/stream",
+		"http://[::1]:8089/stream",
 	}
 
 	for _, target := range loopTargets {

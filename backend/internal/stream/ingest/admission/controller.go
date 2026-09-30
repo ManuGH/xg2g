@@ -6,27 +6,36 @@ package admission
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // Controller implements the SlotBudget interface with atomic per-account slot allocation,
 // shared stream attachment, channel-switch coordination, and warm-hold eviction.
 type Controller struct {
-	mu       sync.Mutex
-	accounts map[string]*accountState
-	isClosed bool
+	mu          sync.Mutex
+	teardownWG  sync.WaitGroup
+	accounts    map[string]*accountState
+	isClosed    bool
+	closeErr    error
+	closeDone   chan struct{}
+	nextLeaseID uint64
 }
 
 type slotState struct {
-	sourceID    string
-	allocatedAt time.Time
-	clients     map[string]struct{}
-	isHolding   bool
-	holdTimer   *time.Timer
-	isFenced    bool
-	teardownFn  func() error
+	sourceID        string
+	allocatedAt     time.Time
+	clients         map[string]map[uint64]struct{}
+	isHolding       bool
+	holdTimer       *time.Timer
+	isFenced        bool
+	teardownRunning bool
+	teardownErr     error
+	teardownFn      func() error
 }
 
 type accountState struct {
@@ -39,7 +48,8 @@ type accountState struct {
 // NewController creates an admission controller with optional initial account configurations.
 func NewController(configs ...AccountConfig) *Controller {
 	c := &Controller{
-		accounts: make(map[string]*accountState),
+		accounts:  make(map[string]*accountState),
+		closeDone: make(chan struct{}),
 	}
 	for _, cfg := range configs {
 		_ = c.ConfigureAccount(cfg)
@@ -86,21 +96,55 @@ type leaseImpl struct {
 	sourceID   string
 	clientID   string
 	isShared   bool
-
-	once sync.Once
+	leaseID    uint64
+	released   atomic.Bool
+	once       sync.Once
+	releaseErr error
 }
 
 func (l *leaseImpl) AccountID() string { return l.accountID }
 func (l *leaseImpl) SourceID() string  { return l.sourceID }
 func (l *leaseImpl) ClientID() string  { return l.clientID }
+func (l *leaseImpl) LeaseID() uint64   { return l.leaseID }
 func (l *leaseImpl) IsShared() bool    { return l.isShared }
+func (l *leaseImpl) IsActive() bool {
+	return l != nil && l.controller != nil && !l.released.Load() && l.controller.leaseActive(l)
+}
 
 func (l *leaseImpl) Release() error {
-	var err error
 	l.once.Do(func() {
-		err = l.controller.releaseLease(l.accountID, l.sourceID, l.clientID)
+		l.released.Store(true)
+		l.releaseErr = l.controller.releaseLease(l.accountID, l.sourceID, l.clientID, l.leaseID)
 	})
-	return err
+	return l.releaseErr
+}
+
+func (c *Controller) newLeaseLocked(accountID string, slot *slotState, clientID string, shared bool) SlotLease {
+	c.nextLeaseID++
+	leaseID := c.nextLeaseID
+	if slot.clients[clientID] == nil {
+		slot.clients[clientID] = make(map[uint64]struct{})
+	}
+	slot.clients[clientID][leaseID] = struct{}{}
+	return &leaseImpl{controller: c, accountID: accountID, sourceID: slot.sourceID, clientID: clientID, isShared: shared, leaseID: leaseID}
+}
+
+func (c *Controller) leaseActive(lease *leaseImpl) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.isClosed {
+		return false
+	}
+	acc := c.accounts[lease.accountID]
+	if acc == nil {
+		return false
+	}
+	slot := acc.slots[lease.sourceID]
+	if slot == nil || slot.isFenced {
+		return false
+	}
+	_, ok := slot.clients[lease.clientID][lease.leaseID]
+	return ok
 }
 
 // Acquire requests an upstream stream slot.
@@ -130,7 +174,10 @@ func (c *Controller) Acquire(ctx context.Context, req AcquireRequest) (SlotLease
 	}
 
 	// 1. Check if sourceID is already streaming and not fenced
-	if slot, ok := acc.slots[sourceID]; ok && !slot.isFenced {
+	if slot, ok := acc.slots[sourceID]; ok {
+		if slot.isFenced {
+			return nil, ErrSlotFenced
+		}
 		if slot.isHolding {
 			if slot.holdTimer != nil {
 				slot.holdTimer.Stop()
@@ -138,21 +185,17 @@ func (c *Controller) Acquire(ctx context.Context, req AcquireRequest) (SlotLease
 			}
 			slot.isHolding = false
 		}
-		slot.clients[clientID] = struct{}{}
-		return &leaseImpl{
-			controller: c,
-			accountID:  accountID,
-			sourceID:   sourceID,
-			clientID:   clientID,
-			isShared:   len(slot.clients) > 1,
-		}, nil
+		shared := len(slot.clients) > 0 && slot.clients[clientID] == nil
+		return c.newLeaseLocked(accountID, slot, clientID, shared), nil
 	}
 
 	// 2. Count active non-fenced slots
 	activeCount := acc.activeSlotCountLocked()
 	if activeCount >= acc.maxSlots {
 		// Attempt warm-hold eviction
-		if evicted := acc.evictHoldingSlotLocked(); evicted {
+		if evicted, err := c.evictHoldingSlotLocked(acc); err != nil {
+			return nil, err
+		} else if evicted {
 			activeCount--
 		}
 	}
@@ -165,17 +208,11 @@ func (c *Controller) Acquire(ctx context.Context, req AcquireRequest) (SlotLease
 	slot := &slotState{
 		sourceID:    sourceID,
 		allocatedAt: time.Now(),
-		clients:     map[string]struct{}{clientID: {}},
+		clients:     make(map[string]map[uint64]struct{}),
 	}
 	acc.slots[sourceID] = slot
 
-	return &leaseImpl{
-		controller: c,
-		accountID:  accountID,
-		sourceID:   sourceID,
-		clientID:   clientID,
-		isShared:   false,
-	}, nil
+	return c.newLeaseLocked(accountID, slot, clientID, false), nil
 }
 
 // Switch coordinates an atomic channel switch for a client.
@@ -188,243 +225,265 @@ func (c *Controller) Switch(ctx context.Context, req SwitchRequest) (SlotLease, 
 	oldSourceID := strings.TrimSpace(req.OldSourceID)
 	newSourceID := strings.TrimSpace(req.NewSourceID)
 	clientID := strings.TrimSpace(req.ClientID)
-
 	if accountID == "" || oldSourceID == "" || newSourceID == "" || clientID == "" {
 		return nil, ErrInvalidRequest
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	if c.isClosed {
 		return nil, ErrControllerClosed
 	}
-
 	acc, exists := c.accounts[accountID]
 	if !exists {
 		return nil, ErrAccountNotFound
 	}
 
+	oldSlot := acc.slots[oldSourceID]
+	if oldSlot == nil || oldSlot.isFenced {
+		return nil, ErrInvalidRequest
+	}
+	leases := oldSlot.clients[clientID]
+	if len(leases) == 0 {
+		return nil, ErrInvalidRequest
+	}
+	leaseID := req.LeaseID
+	if leaseID == 0 {
+		if len(leases) != 1 {
+			return nil, ErrInvalidRequest
+		}
+		for id := range leases {
+			leaseID = id
+		}
+	}
+	if _, exists := leases[leaseID]; !exists {
+		return nil, ErrInvalidRequest
+	}
 	if oldSourceID == newSourceID {
-		if slot, ok := acc.slots[oldSourceID]; ok && !slot.isFenced {
-			if _, hasClient := slot.clients[clientID]; hasClient {
-				return &leaseImpl{
-					controller: c,
-					accountID:  accountID,
-					sourceID:   oldSourceID,
-					clientID:   clientID,
-					isShared:   len(slot.clients) > 1,
-				}, nil
-			}
-		}
+		shared := len(oldSlot.clients) > 1
+		return c.newLeaseLocked(accountID, oldSlot, clientID, shared), nil
+	}
+	if target := acc.slots[newSourceID]; target != nil && target.isFenced {
+		return nil, ErrSlotFenced
 	}
 
-	oldSlot, hasOld := acc.slots[oldSourceID]
-	if !hasOld || oldSlot.isFenced {
-		return nil, ErrInvalidRequest
-	}
-	if _, clientOnOld := oldSlot.clients[clientID]; !clientOnOld {
-		return nil, ErrInvalidRequest
-	}
-
-	isSoleSubscriber := len(oldSlot.clients) == 1
-
-	if isSoleSubscriber {
-		// Client is sole subscriber on old slot: we can directly close oldSlot to release the slot
-		oldSlot.isFenced = true
-		delete(oldSlot.clients, clientID)
-		if oldSlot.holdTimer != nil {
-			oldSlot.holdTimer.Stop()
-			oldSlot.holdTimer = nil
-		}
-		if oldSlot.teardownFn != nil {
-			_ = oldSlot.teardownFn()
-		}
-		delete(acc.slots, oldSourceID)
-
-		// Now acquire new source
-		if newSlot, ok := acc.slots[newSourceID]; ok && !newSlot.isFenced {
-			if newSlot.isHolding {
-				if newSlot.holdTimer != nil {
-					newSlot.holdTimer.Stop()
-					newSlot.holdTimer = nil
+	// A source stays active while any viewer or additional lease remains.
+	// Reserve destination capacity before detaching the selected lease so a
+	// rejected zap is lossless.
+	sharedOldSlot := len(oldSlot.clients) > 1 || len(leases) > 1
+	if sharedOldSlot {
+		target := acc.slots[newSourceID]
+		if target == nil {
+			activeCount := acc.activeSlotCountLocked()
+			if activeCount >= acc.maxSlots {
+				evicted, err := c.evictHoldingSlotLocked(acc)
+				if err != nil {
+					return nil, err
 				}
-				newSlot.isHolding = false
+				if evicted {
+					activeCount--
+				}
 			}
-			newSlot.clients[clientID] = struct{}{}
-			return &leaseImpl{
-				controller: c,
-				accountID:  accountID,
-				sourceID:   newSourceID,
-				clientID:   clientID,
-				isShared:   len(newSlot.clients) > 1,
-			}, nil
-		}
-
-		// Allocate new slot
-		newSlot := &slotState{
-			sourceID:    newSourceID,
-			allocatedAt: time.Now(),
-			clients:     map[string]struct{}{clientID: {}},
-		}
-		acc.slots[newSourceID] = newSlot
-		return &leaseImpl{
-			controller: c,
-			accountID:  accountID,
-			sourceID:   newSourceID,
-			clientID:   clientID,
-			isShared:   false,
-		}, nil
-	}
-
-	// Client is NOT sole subscriber: oldSlot must continue running uninterrupted for others
-	// Check if newSourceID is already active
-	if newSlot, ok := acc.slots[newSourceID]; ok && !newSlot.isFenced {
-		delete(oldSlot.clients, clientID)
-		if newSlot.isHolding {
-			if newSlot.holdTimer != nil {
-				newSlot.holdTimer.Stop()
-				newSlot.holdTimer = nil
+			if activeCount >= acc.maxSlots {
+				return nil, ErrCapacityExceeded
 			}
-			newSlot.isHolding = false
 		}
-		newSlot.clients[clientID] = struct{}{}
-		return &leaseImpl{
-			controller: c,
-			accountID:  accountID,
-			sourceID:   newSourceID,
-			clientID:   clientID,
-			isShared:   len(newSlot.clients) > 1,
-		}, nil
+		// Teardown may have temporarily released the mutex while evicting a
+		// warm slot. Revalidate the source and viewer before committing the zap.
+		if acc.slots[oldSourceID] != oldSlot || oldSlot.isFenced {
+			return nil, ErrSlotFenced
+		}
+		if _, stillAttached := oldSlot.clients[clientID][leaseID]; !stillAttached {
+			return nil, ErrInvalidRequest
+		}
+		target = acc.slots[newSourceID]
+		if target != nil && target.isFenced {
+			return nil, ErrSlotFenced
+		}
+		if target == nil && acc.activeSlotCountLocked() >= acc.maxSlots {
+			return nil, ErrCapacityExceeded
+		}
+		delete(oldSlot.clients[clientID], leaseID)
+		if len(oldSlot.clients[clientID]) == 0 {
+			delete(oldSlot.clients, clientID)
+		}
+		if target != nil {
+			if target.isHolding {
+				if target.holdTimer != nil {
+					target.holdTimer.Stop()
+					target.holdTimer = nil
+				}
+				target.isHolding = false
+			}
+			return c.newLeaseLocked(accountID, target, clientID, len(target.clients) > 0), nil
+		}
+		target = &slotState{sourceID: newSourceID, allocatedAt: time.Now(), clients: make(map[string]map[uint64]struct{})}
+		acc.slots[newSourceID] = target
+		return c.newLeaseLocked(accountID, target, clientID, false), nil
 	}
 
-	// Need a new slot; check capacity
-	activeCount := acc.activeSlotCountLocked()
-	if activeCount >= acc.maxSlots {
-		if evicted := acc.evictHoldingSlotLocked(); evicted {
-			activeCount--
-		}
+	// A sole viewer can free its old upstream first. The fenced old slot remains
+	// counted until teardown succeeds, so a failed close cannot admit a third
+	// provider connection.
+	delete(oldSlot.clients[clientID], leaseID)
+	delete(oldSlot.clients, clientID)
+	if err := c.stopSlotLocked(acc, oldSourceID, oldSlot); err != nil {
+		return nil, err
 	}
 
-	if activeCount >= acc.maxSlots {
-		// Rollback: client stays on oldSlot
+	if target := acc.slots[newSourceID]; target != nil {
+		if target.isFenced {
+			return nil, ErrSlotFenced
+		}
+		if target.isHolding {
+			if target.holdTimer != nil {
+				target.holdTimer.Stop()
+				target.holdTimer = nil
+			}
+			target.isHolding = false
+		}
+		return c.newLeaseLocked(accountID, target, clientID, len(target.clients) > 0), nil
+	}
+	if acc.activeSlotCountLocked() >= acc.maxSlots {
 		return nil, ErrCapacityExceeded
 	}
-
-	delete(oldSlot.clients, clientID)
-	newSlot := &slotState{
-		sourceID:    newSourceID,
-		allocatedAt: time.Now(),
-		clients:     map[string]struct{}{clientID: {}},
-	}
-	acc.slots[newSourceID] = newSlot
-	return &leaseImpl{
-		controller: c,
-		accountID:  accountID,
-		sourceID:   newSourceID,
-		clientID:   clientID,
-		isShared:   false,
-	}, nil
+	target := &slotState{sourceID: newSourceID, allocatedAt: time.Now(), clients: make(map[string]map[uint64]struct{})}
+	acc.slots[newSourceID] = target
+	return c.newLeaseLocked(accountID, target, clientID, false), nil
 }
 
-func (c *Controller) releaseLease(accountID, sourceID, clientID string) error {
+func (c *Controller) releaseLease(accountID, sourceID, clientID string, leaseID uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.isClosed {
 		return nil
 	}
-
-	acc, exists := c.accounts[accountID]
-	if !exists {
+	acc := c.accounts[accountID]
+	if acc == nil {
 		return nil
 	}
-
-	slot, ok := acc.slots[sourceID]
-	if !ok || slot.isFenced {
+	slot := acc.slots[sourceID]
+	if slot == nil || slot.isFenced {
 		return nil
 	}
-
+	leases := slot.clients[clientID]
+	if _, exists := leases[leaseID]; !exists {
+		return nil
+	}
+	delete(leases, leaseID)
+	if len(leases) > 0 {
+		return nil
+	}
 	delete(slot.clients, clientID)
 	if len(slot.clients) > 0 {
 		return nil
 	}
 
-	// 0 active subscribers remaining
 	if acc.warmHoldDuration > 0 {
 		slot.isHolding = true
 		slot.holdTimer = time.AfterFunc(acc.warmHoldDuration, func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
-
-			if c.isClosed {
+			if c.isClosed || c.accounts[accountID] != acc || acc.slots[sourceID] != slot {
 				return
 			}
-			curAcc, ok := c.accounts[accountID]
-			if !ok {
-				return
-			}
-			curSlot, ok := curAcc.slots[sourceID]
-			if !ok || curSlot != slot {
-				return
-			}
-			if curSlot.isHolding && len(curSlot.clients) == 0 {
-				curSlot.isFenced = true
-				if curSlot.teardownFn != nil {
-					_ = curSlot.teardownFn()
+			if slot.isHolding && len(slot.clients) == 0 {
+				if err := c.stopSlotLocked(acc, sourceID, slot); err != nil {
+					slot.teardownErr = err
 				}
-				delete(curAcc.slots, sourceID)
 			}
 		})
 		return nil
 	}
+	return c.stopSlotLocked(acc, sourceID, slot)
+}
 
+// stopSlotLocked fences a slot before running external teardown without holding
+// the controller mutex. The caller must hold c.mu on entry and return.
+func (c *Controller) stopSlotLocked(acc *accountState, sourceID string, slot *slotState) error {
 	slot.isFenced = true
-	if slot.teardownFn != nil {
-		_ = slot.teardownFn()
+	slot.isHolding = false
+	if slot.holdTimer != nil {
+		slot.holdTimer.Stop()
+		slot.holdTimer = nil
 	}
-	delete(acc.slots, sourceID)
+	if slot.teardownRunning {
+		return ErrSlotFenced
+	}
+	if slot.teardownFn == nil {
+		if acc.slots[sourceID] == slot {
+			delete(acc.slots, sourceID)
+		}
+		return nil
+	}
+
+	slot.teardownRunning = true
+	c.teardownWG.Add(1)
+	c.mu.Unlock()
+	err := invokeTeardown(slot.teardownFn)
+	c.mu.Lock()
+	slot.teardownRunning = false
+	slot.teardownErr = err
+	c.teardownWG.Done()
+
+	if err != nil {
+		return errors.Join(ErrTeardownFailed, err)
+	}
+	if acc.slots[sourceID] == slot {
+		delete(acc.slots, sourceID)
+	}
 	return nil
 }
 
+func invokeTeardown(fn func() error) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("teardown panicked: %v", recovered)
+		}
+	}()
+	return fn()
+}
+
 // RegisterTeardown attaches an upstream termination hook to an active slot.
-func (c *Controller) RegisterTeardown(accountID, sourceID string, fn func() error) {
+func (c *Controller) RegisterTeardown(accountID, sourceID string, fn func() error) error {
+	accountID = strings.TrimSpace(accountID)
+	sourceID = strings.TrimSpace(sourceID)
+	if accountID == "" || sourceID == "" || fn == nil {
+		return ErrInvalidRequest
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.isClosed {
+		return ErrControllerClosed
+	}
+	acc := c.accounts[accountID]
+	if acc == nil {
+		return ErrAccountNotFound
+	}
+	slot := acc.slots[sourceID]
+	if slot == nil || slot.isFenced {
+		return ErrSlotFenced
+	}
+	slot.teardownFn = fn
+	return nil
+}
 
-	if acc, ok := c.accounts[accountID]; ok {
-		if slot, ok := acc.slots[sourceID]; ok && !slot.isFenced {
-			slot.teardownFn = fn
+func (c *Controller) evictHoldingSlotLocked(acc *accountState) (bool, error) {
+	for id, slot := range acc.slots {
+		if slot.isHolding && len(slot.clients) == 0 && !slot.isFenced {
+			if err := c.stopSlotLocked(acc, id, slot); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 	}
+	return false, nil
 }
 
 func (acc *accountState) activeSlotCountLocked() int {
-	count := 0
-	for _, s := range acc.slots {
-		if !s.isFenced {
-			count++
-		}
-	}
-	return count
-}
-
-func (acc *accountState) evictHoldingSlotLocked() bool {
-	for id, s := range acc.slots {
-		if s.isHolding && len(s.clients) == 0 && !s.isFenced {
-			s.isFenced = true
-			if s.holdTimer != nil {
-				s.holdTimer.Stop()
-				s.holdTimer = nil
-			}
-			if s.teardownFn != nil {
-				_ = s.teardownFn()
-			}
-			delete(acc.slots, id)
-			return true
-		}
-	}
-	return false
+	// Fenced slots continue consuming capacity until teardown succeeds.
+	return len(acc.slots)
 }
 
 // Usage returns sanitized capacity metrics for an account.
@@ -436,29 +495,24 @@ func (c *Controller) Usage(accountID string) (AccountUsage, error) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	acc, exists := c.accounts[accountID]
 	if !exists {
 		return AccountUsage{}, ErrAccountNotFound
 	}
 
-	var sources []SourceUsage
+	sources := make([]SourceUsage, 0, len(acc.slots))
 	totalViewers := 0
-
-	for _, s := range acc.slots {
-		if s.isFenced {
-			continue
-		}
-		subCount := len(s.clients)
+	for _, slot := range acc.slots {
+		subCount := len(slot.clients)
 		totalViewers += subCount
 		sources = append(sources, SourceUsage{
-			SourceID:    s.sourceID,
+			SourceID:    slot.sourceID,
 			Subscribers: subCount,
-			IsHolding:   s.isHolding,
-			AllocatedAt: s.allocatedAt,
+			IsHolding:   slot.isHolding,
+			IsFenced:    slot.isFenced,
+			AllocatedAt: slot.allocatedAt,
 		})
 	}
-
 	return AccountUsage{
 		AccountID:     acc.accountID,
 		ActiveSlots:   len(sources),
@@ -468,33 +522,74 @@ func (c *Controller) Usage(accountID string) (AccountUsage, error) {
 	}, nil
 }
 
-// Close gracefully releases all slots and stops background timers.
+type teardownTask struct {
+	sourceID string
+	account  *accountState
+	slot     *slotState
+	fn       func() error
+}
+
+// Close fences all slots and runs upstream teardown hooks. A failed teardown is
+// returned to the caller rather than being silently treated as a released slot.
 func (c *Controller) Close() error {
 	c.mu.Lock()
 	if c.isClosed {
+		done := c.closeDone
 		c.mu.Unlock()
-		return nil
+		<-done
+		c.mu.Lock()
+		err := c.closeErr
+		c.mu.Unlock()
+		return err
 	}
 	c.isClosed = true
 
-	var teardowns []func() error
+	var tasks []teardownTask
 	for _, acc := range c.accounts {
-		for _, s := range acc.slots {
-			if s.holdTimer != nil {
-				s.holdTimer.Stop()
-				s.holdTimer = nil
+		for sourceID, slot := range acc.slots {
+			slot.isFenced = true
+			slot.isHolding = false
+			if slot.holdTimer != nil {
+				slot.holdTimer.Stop()
+				slot.holdTimer = nil
 			}
-			s.isFenced = true
-			if s.teardownFn != nil {
-				teardowns = append(teardowns, s.teardownFn)
+			if slot.teardownFn == nil || slot.teardownRunning {
+				continue
 			}
+			slot.teardownRunning = true
+			c.teardownWG.Add(1)
+			tasks = append(tasks, teardownTask{sourceID: sourceID, account: acc, slot: slot, fn: slot.teardownFn})
 		}
-		acc.slots = make(map[string]*slotState)
 	}
 	c.mu.Unlock()
 
-	for _, fn := range teardowns {
-		_ = fn()
+	for _, task := range tasks {
+		err := invokeTeardown(task.fn)
+		c.mu.Lock()
+		task.slot.teardownRunning = false
+		task.slot.teardownErr = err
+		if err == nil && task.account.slots[task.sourceID] == task.slot {
+			delete(task.account.slots, task.sourceID)
+		}
+		c.mu.Unlock()
+		c.teardownWG.Done()
 	}
-	return nil
+	c.teardownWG.Wait()
+
+	c.mu.Lock()
+	var closeErrors []error
+	for accountID, acc := range c.accounts {
+		for sourceID, slot := range acc.slots {
+			if slot.teardownErr != nil {
+				closeErrors = append(closeErrors, fmt.Errorf("teardown %s/%s: %w", accountID, sourceID, slot.teardownErr))
+			} else if slot.teardownFn == nil {
+				delete(acc.slots, sourceID)
+			}
+		}
+	}
+	c.closeErr = errors.Join(closeErrors...)
+	close(c.closeDone)
+	err := c.closeErr
+	c.mu.Unlock()
+	return err
 }

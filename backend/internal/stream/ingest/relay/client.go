@@ -6,6 +6,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -34,7 +35,8 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 
 	parsedRelay, err := url.Parse(baseURL)
-	if err != nil || parsedRelay.Host == "" {
+	if err != nil || parsedRelay.Host == "" || parsedRelay.User != nil || parsedRelay.Fragment != "" ||
+		(strings.ToLower(parsedRelay.Scheme) != "http" && strings.ToLower(parsedRelay.Scheme) != "https") {
 		return nil, fmt.Errorf("%w: invalid relay base URL", ErrInvalidRelayConfig)
 	}
 
@@ -42,9 +44,9 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if connectTimeout <= 0 {
 		connectTimeout = 5 * time.Second
 	}
-	requestTimeout := cfg.RequestTimeout
-	if requestTimeout <= 0 {
-		requestTimeout = 30 * time.Second
+	responseHeaderTimeout := cfg.ResponseHeaderTimeout
+	if responseHeaderTimeout <= 0 {
+		responseHeaderTimeout = 15 * time.Second
 	}
 
 	transport := &http.Transport{
@@ -52,21 +54,22 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 			Timeout:   connectTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true, // MPEG-TS is already compressed
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		DisableCompression:    true, // MPEG-TS is already compressed
 	}
 
 	selfHosts := make(map[string]struct{})
 	for _, addr := range cfg.SelfAddresses {
-		cleaned := strings.ToLower(strings.TrimSpace(addr))
+		cleaned := normalizeHost(strings.TrimSpace(addr))
 		if cleaned == "" {
 			continue
 		}
 		selfHosts[cleaned] = struct{}{}
 		if host, _, err := net.SplitHostPort(cleaned); err == nil {
-			selfHosts[host] = struct{}{}
+			selfHosts[normalizeHost(host)] = struct{}{}
 		}
 	}
 
@@ -74,7 +77,13 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		cfg: cfg,
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   requestTimeout,
+			// Live media bodies are intentionally unbounded in duration. The
+			// caller's context and response-header timeout bound startup.
+			Timeout: 0,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				// Never forward the relay token to another origin.
+				return http.ErrUseLastResponse
+			},
 		},
 		selfHosts: selfHosts,
 		relayURL:  parsedRelay,
@@ -88,40 +97,54 @@ func (c *Client) IsLoopbackTarget(rawTarget string) bool {
 		return false
 	}
 
-	hostname := strings.ToLower(parsed.Hostname())
+	hostname := normalizeHost(parsed.Hostname())
 	if hostname == "" {
 		return false
+	}
+	if hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(strings.Trim(hostname, "[]")); ip != nil && ip.IsLoopback() {
+		return true
 	}
 
 	if _, match := c.selfHosts[hostname]; match {
 		return true
 	}
-	if _, match := c.selfHosts[strings.ToLower(parsed.Host)]; match {
+	if _, match := c.selfHosts[normalizeHost(parsed.Host)]; match {
 		return true
 	}
 	return false
+}
+
+func normalizeHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
 }
 
 type leasedStreamReader struct {
 	io.ReadCloser
 	lease admission.SlotLease
 	once  sync.Once
+	err   error
 }
 
 func (r *leasedStreamReader) Close() error {
-	var closeErr error
 	r.once.Do(func() {
-		closeErr = r.ReadCloser.Close()
-		if r.lease != nil {
-			_ = r.lease.Release()
+		var closeErr error
+		if r.ReadCloser != nil {
+			closeErr = r.ReadCloser.Close()
 		}
+		if r.lease != nil {
+			closeErr = errors.Join(closeErr, r.lease.Release())
+		}
+		r.err = closeErr
 	})
-	return closeErr
+	return r.err
 }
 
 // Fetch opens an authenticated stream through the private relay, requiring a valid SlotLease.
 func (c *Client) Fetch(ctx context.Context, lease admission.SlotLease, opaqueSourceID, targetURL string) (io.ReadCloser, error) {
-	if lease == nil || lease.SourceID() != opaqueSourceID {
+	if lease == nil || lease.SourceID() != opaqueSourceID || !lease.IsActive() {
 		return nil, ErrMissingSlotLease
 	}
 
@@ -130,7 +153,12 @@ func (c *Client) Fetch(ctx context.Context, lease admission.SlotLease, opaqueSou
 	}
 
 	targetParsed, err := url.Parse(targetURL)
-	if err != nil || targetParsed.Scheme == "" || targetParsed.Host == "" {
+	targetScheme := ""
+	if targetParsed != nil {
+		targetScheme = strings.ToLower(targetParsed.Scheme)
+	}
+	if err != nil || targetParsed.Host == "" || targetParsed.User != nil || targetParsed.Fragment != "" ||
+		(targetScheme != "http" && targetScheme != "https") {
 		return nil, fmt.Errorf("%w: invalid target upstream URL", ErrInvalidRelayConfig)
 	}
 

@@ -24,9 +24,9 @@ var (
 
 // ClientConfig holds configuration for communicating with the private box relay.
 type ClientConfig struct {
-	RelayBaseURL   string        // Base URL of the private relay (e.g. http://10.10.55.64:8085)
-	AuthToken      string        // Secret authentication token for relay authorization
-	SelfAddresses  []string      // Hostnames/IPs belonging to xg2g (used to detect and prevent loops)
-	ConnectTimeout time.Duration // Connection establishment timeout
-	RequestTimeout time.Duration // Overall request timeout
+	RelayBaseURL          string        // Base URL of the private relay (e.g. http://10.10.55.64:8085)
+	AuthToken             string        // Secret authentication token for relay authorization
+	SelfAddresses         []string      // Hostnames/IPs belonging to xg2g (used to detect and prevent loops)
+	ConnectTimeout        time.Duration // Connection establishment timeout
+	ResponseHeaderTimeout time.Duration // Maximum wait for the relay to begin the stream; does not cap stream duration
 }

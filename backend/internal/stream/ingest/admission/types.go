@@ -21,6 +21,8 @@ var (
 	ErrLeaseClosed = errors.New("slot lease has already been released")
 	// ErrSlotFenced is returned when attempting to acquire or operate on a fenced slot undergoing teardown.
 	ErrSlotFenced = errors.New("upstream slot is fenced and undergoing teardown")
+	// ErrTeardownFailed is returned when an upstream could not be confirmed stopped.
+	ErrTeardownFailed = errors.New("upstream teardown failed; slot remains reserved")
 	// ErrControllerClosed is returned when the admission controller is closed.
 	ErrControllerClosed = errors.New("admission controller is closed")
 )
@@ -46,6 +48,7 @@ type SwitchRequest struct {
 	OldSourceID string // Current source identifier
 	NewSourceID string // Target source identifier
 	ClientID    string // Downstream client session/viewer ID
+	LeaseID     uint64 // Specific lease to move; zero is accepted only when the client has one lease on the old source
 }
 
 // SourceUsage provides sanitized status for an active upstream stream.
@@ -53,6 +56,7 @@ type SourceUsage struct {
 	SourceID    string    // Opaque source identifier
 	Subscribers int       // Number of active downstream subscribers
 	IsHolding   bool      // True if idle in warm-hold duration with 0 subscribers
+	IsFenced    bool      // True while teardown is running or failed
 	AllocatedAt time.Time // Timestamp when slot was first allocated
 }
 
@@ -70,7 +74,9 @@ type SlotLease interface {
 	AccountID() string
 	SourceID() string
 	ClientID() string
+	LeaseID() uint64
 	IsShared() bool
+	IsActive() bool
 	Release() error
 }
 

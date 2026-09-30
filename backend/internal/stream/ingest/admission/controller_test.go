@@ -7,6 +7,7 @@ package admission
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -187,6 +188,7 @@ func TestController_ConcurrentRaceForLastSlot(t *testing.T) {
 	const numGoroutines = 50
 	var successCount atomic.Int32
 	var rejectedCount atomic.Int32
+	leases := make(chan SlotLease, numGoroutines)
 
 	var wg sync.WaitGroup
 	startBarrier := make(chan struct{})
@@ -204,7 +206,7 @@ func TestController_ConcurrentRaceForLastSlot(t *testing.T) {
 			})
 			if err == nil {
 				successCount.Add(1)
-				_ = lease.Release()
+				leases <- lease
 			} else if errors.Is(err, ErrCapacityExceeded) {
 				rejectedCount.Add(1)
 			}
@@ -214,8 +216,11 @@ func TestController_ConcurrentRaceForLastSlot(t *testing.T) {
 	close(startBarrier)
 	wg.Wait()
 
-	if successCount.Load() == 0 {
-		t.Fatalf("expected at least one racer to acquire the last slot")
+	if got := successCount.Load(); got != 1 {
+		t.Fatalf("exactly one racer must hold the last slot, got %d", got)
+	}
+	if got := rejectedCount.Load(); got != numGoroutines-1 {
+		t.Fatalf("expected %d capacity rejections, got %d", numGoroutines-1, got)
 	}
 
 	usage, err := c.Usage("acc-race")
@@ -224,6 +229,129 @@ func TestController_ConcurrentRaceForLastSlot(t *testing.T) {
 	}
 	if usage.ActiveSlots > 2 {
 		t.Fatalf("capacity exceeded! active slots: %d", usage.ActiveSlots)
+	}
+	for len(leases) > 0 {
+		if err := (<-leases).Release(); err != nil {
+			t.Fatalf("release raced lease: %v", err)
+		}
+	}
+}
+
+func TestController_RepeatedLeaseForClientHasIndependentRelease(t *testing.T) {
+	c := NewController(AccountConfig{AccountID: "acc-refs", MaxSlots: 1})
+	defer c.Close()
+
+	first, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-refs", SourceID: "same", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-refs", SourceID: "same", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if !second.IsActive() {
+		t.Fatal("releasing one lease must leave the second lease active")
+	}
+	usage, err := c.Usage("acc-refs")
+	if err != nil || usage.ActiveSlots != 1 || usage.TotalViewers != 1 {
+		t.Fatalf("unexpected usage after one release: usage=%+v err=%v", usage, err)
+	}
+	if err := second.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if second.IsActive() {
+		t.Fatal("released lease must no longer be active")
+	}
+}
+
+func TestController_TeardownFailureKeepsSlotReserved(t *testing.T) {
+	c := NewController(AccountConfig{AccountID: "acc-stop", MaxSlots: 1})
+	defer c.Close()
+
+	lease, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-stop", SourceID: "source-a", ClientID: "viewer-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	teardownErr := errors.New("upstream did not stop")
+	if err := c.RegisterTeardown("acc-stop", "source-a", func() error {
+		// Teardown hooks may inspect the controller; they must not run under mu.
+		if _, err := c.Usage("acc-stop"); err != nil {
+			return err
+		}
+		return teardownErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Release(); !errors.Is(err, ErrTeardownFailed) || !errors.Is(err, teardownErr) {
+		t.Fatalf("expected teardown failure to be returned, got %v", err)
+	}
+	usage, err := c.Usage("acc-stop")
+	if err != nil || usage.ActiveSlots != 1 || !usage.ActiveSources[0].IsFenced {
+		t.Fatalf("failed teardown must keep the slot fenced and reserved: usage=%+v err=%v", usage, err)
+	}
+	if _, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-stop", SourceID: "source-b", ClientID: "viewer-b"}); !errors.Is(err, ErrCapacityExceeded) {
+		t.Fatalf("failed teardown must not free capacity, got %v", err)
+	}
+	closeErr := c.Close()
+	if !errors.Is(closeErr, teardownErr) || strings.Count(closeErr.Error(), "teardown acc-stop/source-a") != 1 {
+		t.Fatalf("Close must report the failed teardown once, got %v", closeErr)
+	}
+}
+
+func TestController_CloseWaitsForInFlightTeardownAndConcurrentClose(t *testing.T) {
+	c := NewController(AccountConfig{AccountID: "acc-close", MaxSlots: 1})
+	lease, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-close", SourceID: "source-a", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	teardownStarted := make(chan struct{})
+	allowTeardownFinish := make(chan struct{})
+	if err := c.RegisterTeardown("acc-close", "source-a", func() error {
+		close(teardownStarted)
+		<-allowTeardownFinish
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	releaseDone := make(chan error, 1)
+	go func() { releaseDone <- lease.Release() }()
+	<-teardownStarted
+
+	firstCloseDone := make(chan error, 1)
+	go func() { firstCloseDone <- c.Close() }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := c.ConfigureAccount(AccountConfig{AccountID: "acc-close", MaxSlots: 1})
+		if errors.Is(err, ErrControllerClosed) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Close did not fence the controller")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	secondCloseDone := make(chan error, 1)
+	go func() { secondCloseDone <- c.Close() }()
+	select {
+	case err := <-secondCloseDone:
+		t.Fatalf("concurrent Close returned before teardown finished: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	close(allowTeardownFinish)
+	if err := <-releaseDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-firstCloseDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondCloseDone; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -256,6 +384,7 @@ func TestController_ChannelSwitch_Exclusive(t *testing.T) {
 		OldSourceID: "ch-2",
 		NewSourceID: "ch-3",
 		ClientID:    "viewer-2",
+		LeaseID:     lease2.LeaseID(),
 	})
 	if err != nil {
 		t.Fatalf("Switch failed: %v", err)
@@ -299,6 +428,7 @@ func TestController_ChannelSwitch_Shared_RejectedWhenCapacityFull(t *testing.T) 
 		OldSourceID: "ch-1",
 		NewSourceID: "ch-3",
 		ClientID:    "viewer-phone",
+		LeaseID:     leasePhone.LeaseID(),
 	})
 	if !errors.Is(err, ErrCapacityExceeded) {
 		t.Fatalf("expected ErrCapacityExceeded on switch, got: %v", err)
@@ -311,6 +441,62 @@ func TestController_ChannelSwitch_Shared_RejectedWhenCapacityFull(t *testing.T) 
 	}
 	if usage.TotalViewers != 3 {
 		t.Fatalf("expected 3 total viewers preserved, got %d", usage.TotalViewers)
+	}
+}
+
+func TestController_SwitchMovesOnlySelectedLeaseForRepeatedClient(t *testing.T) {
+	c := NewController(AccountConfig{AccountID: "acc-switch-refs", MaxSlots: 2})
+	defer c.Close()
+
+	first, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-switch-refs", SourceID: "source-a", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-switch-refs", SourceID: "source-a", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := c.Switch(context.Background(), SwitchRequest{
+		AccountID: "acc-switch-refs", OldSourceID: "source-a", NewSourceID: "source-b", ClientID: "viewer", LeaseID: first.LeaseID(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.IsActive() || !second.IsActive() || !moved.IsActive() {
+		t.Fatal("switch must move only the selected lease and preserve the other lease")
+	}
+	usage, err := c.Usage("acc-switch-refs")
+	if err != nil || usage.ActiveSlots != 2 || usage.TotalViewers != 2 {
+		t.Fatalf("unexpected usage after switch: usage=%+v err=%v", usage, err)
+	}
+
+	if err := second.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := moved.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestController_SwitchRequiresLeaseIDWhenClientHasMultipleLeases(t *testing.T) {
+	c := NewController(AccountConfig{AccountID: "acc-switch-ambiguous", MaxSlots: 2})
+	defer c.Close()
+
+	_, err := c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-switch-ambiguous", SourceID: "source-a", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Acquire(context.Background(), AcquireRequest{AccountID: "acc-switch-ambiguous", SourceID: "source-a", ClientID: "viewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Switch(context.Background(), SwitchRequest{AccountID: "acc-switch-ambiguous", OldSourceID: "source-a", NewSourceID: "source-b", ClientID: "viewer"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ambiguous switch without lease ID must be rejected, got %v", err)
+	}
+	usage, err := c.Usage("acc-switch-ambiguous")
+	if err != nil || usage.ActiveSlots != 1 || usage.TotalViewers != 1 {
+		t.Fatalf("rejected switch must preserve the source, usage=%+v err=%v", usage, err)
 	}
 }
 
