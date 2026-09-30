@@ -194,6 +194,8 @@ func resolvePlaybackIntent(mode Mode, pred Predicates, input DecisionInput) (pla
 
 func resolveTranscodeIntent(requested playbackprofile.PlaybackIntent) (playbackprofile.PlaybackIntent, playbackprofile.PlaybackIntent) {
 	switch requested {
+	case playbackprofile.IntentCinema:
+		return playbackprofile.IntentCinema, playbackprofile.IntentUnknown
 	case playbackprofile.IntentQuality:
 		return playbackprofile.IntentQuality, playbackprofile.IntentUnknown
 	case playbackprofile.IntentRepair:

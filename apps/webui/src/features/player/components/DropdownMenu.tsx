@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import styles from './DropdownMenu.module.css';
 
-interface DropdownOption {
+export interface DropdownOption {
   id: string | number;
   label: string;
+  description?: string;
+  badge?: string;
 }
 
 interface DropdownMenuProps {
@@ -62,7 +64,13 @@ export function DropdownMenu({ icon, options, activeId, onSelect, title, disable
                     </svg>
                   )}
                 </div>
-                <span className={styles.optionLabel}>{option.label}</span>
+                <div className={styles.optionContent}>
+                  <div className={styles.optionHeader}>
+                    <span className={styles.optionLabel}>{option.label}</span>
+                    {option.badge && <span className={styles.optionBadge}>{option.badge}</span>}
+                  </div>
+                  {option.description && <span className={styles.optionDescription}>{option.description}</span>}
+                </div>
               </button>
             ))}
           </div>

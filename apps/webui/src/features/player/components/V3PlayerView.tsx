@@ -386,16 +386,10 @@ export function V3PlayerView({
 
               <DropdownMenu
                 icon={<SettingsGlyph />}
-                title="Profil"
+                title={viewState.profileMenuTitle}
                 activeId={viewState.explicitProfile}
                 onSelect={(id) => actions.changeProfile(id as string)}
-                options={[
-                  { id: 'auto', label: 'Auto (Smart)' },
-                  { id: 'cinema', label: 'Cinema (Referenz • ~25–35 Mbps)' },
-                  { id: 'quality', label: 'Quality (High • ~10–12 Mbps)' },
-                  { id: 'compatible', label: 'Standard (Eco • ~5–6 Mbps)' },
-                  { id: 'direct', label: 'Direct Play (Passthrough)' },
-                ]}
+                options={viewState.profileOptions}
               />
 
               <DropdownMenu

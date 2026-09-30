@@ -255,8 +255,8 @@ describe('V3Player ServiceRef Input', () => {
       kind: 'attempt_started',
     });
 
-    fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: /Cinema/ }));
+    fireEvent.click(screen.getByTitle(/Profil|Profile/i));
+    fireEvent.click(screen.getByRole('button', { name: /Cinema|AV1/i }));
     resolveFirstPreflight(response('1'));
 
     await waitFor(() => {
@@ -335,8 +335,8 @@ describe('V3Player ServiceRef Input', () => {
     });
 
     // Queue a latest-wins restart while the first preflight is unresolved.
-    fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: /Cinema/ }));
+    fireEvent.click(screen.getByTitle(/Profil|Profile/i));
+    fireEvent.click(screen.getByRole('button', { name: /Cinema|AV1/i }));
     unmount();
 
     resolveFirstPreflight({
