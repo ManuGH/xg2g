@@ -664,6 +664,15 @@
       },
       "type": "object"
     },
+    "iptv": {
+      "properties": {
+        "source_secret": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "library": {
       "properties": {
         "db_path": {

@@ -299,6 +299,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "recordings.strict_target_required", Env: "XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", FieldPath: "RecordingStrictTargetRequired", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "recordings.target_signing_key", Env: "XG2G_RECORDINGS_TARGET_SIGNING_KEY", FieldPath: "RecordingTargetSigningKey", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "recordings.target_signing_key_previous", Env: "XG2G_RECORDINGS_TARGET_SIGNING_KEY_PREVIOUS", FieldPath: "RecordingTargetSigningKeyPrevious", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
+		{Path: "iptv.source_secret", Env: "XG2G_IPTV_SOURCE_SECRET", FieldPath: "IPTVSourceSecret", Profile: ProfileAdvanced, Status: StatusActive, Default: "", Secret: true, Description: "HMAC key (min. 32 characters) for opaque IPTV source IDs; unset disables opaque IPTV resolution"},
 
 		// --- VOD (Typed Config) ---
 		{Path: "vod.probeSize", Env: "", FieldPath: "VOD.ProbeSize", Profile: ProfileAdvanced, Status: StatusActive, Default: "50M"},
