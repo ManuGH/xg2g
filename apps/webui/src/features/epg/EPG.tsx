@@ -236,6 +236,7 @@ export default function EPG({
           ...(config.days && config.days.length > 0 && config.days.length < 7 ? { days: config.days } : {}),
           ...(config.startWindow?.trim() ? { startWindow: config.startWindow.trim() } : {}),
           ...(config.retentionDays && config.retentionDays > 0 ? { retentionDays: config.retentionDays } : {}),
+          ...(config.expiresAt ? { expiresAt: config.expiresAt } : {}),
         };
 
         const result = await createSeriesRule({ body: payload });

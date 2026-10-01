@@ -811,6 +811,10 @@ export type RuleSnapshot = {
     startWindow?: string;
     priority?: number;
     retentionDays?: number;
+    /**
+     * Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
+     */
+    expiresAt?: string;
 };
 
 export type SeriesRule = {
@@ -837,6 +841,10 @@ export type SeriesRule = {
      * Number of days to keep recordings before auto-deleting (0 = keep forever)
      */
     retentionDays?: number;
+    /**
+     * Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
+     */
+    expiresAt?: string;
     lastRunAt?: string;
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;
@@ -865,6 +873,10 @@ export type SeriesRuleUpdate = {
      * Number of days to keep recordings before auto-deleting (0 = keep forever)
      */
     retentionDays?: number;
+    /**
+     * Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
+     */
+    expiresAt?: string;
 };
 
 export type ConfigUpdate = {
@@ -2257,6 +2269,10 @@ export type SeriesRuleWritable = {
      * Number of days to keep recordings before auto-deleting (0 = keep forever)
      */
     retentionDays?: number;
+    /**
+     * Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
+     */
+    expiresAt?: string;
     lastRunAt?: string;
     lastRunStatus?: string;
     lastRunSummary?: RunSummary;

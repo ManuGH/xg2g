@@ -147,6 +147,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 					StartWindow:   rule.StartWindow,
 					Priority:      rule.Priority,
 					RetentionDays: rule.RetentionDays,
+					ExpiresAt:     rule.ExpiresAt,
 				},
 			}
 
@@ -306,6 +307,23 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 		// We need to compare in the configured location or Local.
 		// For simplicity, assume server timezone matches user timezone for now (Local).
 		localStart := start.Local()
+
+		// 1b. Expiration / EOL Check
+		if rule.ExpiresAt != nil && !rule.ExpiresAt.IsZero() {
+			if start.After(*rule.ExpiresAt) {
+				decisions = append(decisions, RunDecision{
+					ServiceRef:  ev.SRef,
+					Begin:       ev.Begin,
+					End:         ev.Begin + ev.Duration,
+					Title:       ev.Title,
+					Action:      ActionSkipped,
+					Reason:      "rule_expired",
+					MatchReason: []string{"rule expired"},
+					Details:     fmt.Sprintf("event start %s is after rule expiration %s", start.Format(time.RFC3339), rule.ExpiresAt.Format(time.RFC3339)),
+				})
+				continue
+			}
+		}
 
 		// 2. Day Filter
 		if len(rule.Days) > 0 {

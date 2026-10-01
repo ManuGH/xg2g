@@ -16,6 +16,7 @@ type SeriesRule struct {
 	StartWindow    string     `json:"start_window,omitempty"` // HHMM-HHMM
 	Priority       int        `json:"priority"`
 	RetentionDays  int        `json:"retention_days,omitempty"` // Days to keep recordings before auto-deleting (0 = keep forever)
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`     // Optional expiration timestamp; rule will not schedule recordings after this time
 	LastRunAt      time.Time  `json:"last_run_at,omitempty"`
 	LastRunStatus  string     `json:"last_run_status,omitempty"`
 	LastRunSummary RunSummary `json:"last_run_summary,omitempty"`
