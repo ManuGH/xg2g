@@ -124,4 +124,5 @@ func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {
 	cfg.RecordingStrictTargetRequired = l.envBool("XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", cfg.RecordingStrictTargetRequired)
 	cfg.RecordingTargetSigningKey = l.envString("XG2G_RECORDINGS_TARGET_SIGNING_KEY", cfg.RecordingTargetSigningKey)
 	cfg.RecordingTargetSigningKeyPrevious = l.envString("XG2G_RECORDINGS_TARGET_SIGNING_KEY_PREVIOUS", cfg.RecordingTargetSigningKeyPrevious)
+	cfg.IPTVSourceSecret = l.envString("XG2G_IPTV_SOURCE_SECRET", cfg.IPTVSourceSecret)
 }

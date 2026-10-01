@@ -74,6 +74,13 @@ func (l *Loader) mergeFileConfigGenerated(dst *AppConfig, src *FileConfig) {
 		}
 	}
 
+	// IPTV
+	if src.IPTV != nil {
+		if src.IPTV.SourceSecret != nil {
+			dst.IPTVSourceSecret = *src.IPTV.SourceSecret
+		}
+	}
+
 	// Planner
 	if src.PlannerShadow != nil {
 		if src.PlannerShadow.Enabled != nil {

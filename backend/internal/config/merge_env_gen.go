@@ -65,6 +65,7 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 	cfg.HLS.ReadySegments = l.envInt("XG2G_HLS_READY_SEGMENTS", cfg.HLS.ReadySegments)
 	cfg.HLS.Root = l.envString("XG2G_HLS_ROOT", cfg.HLS.Root)
 	cfg.HLS.SegmentSeconds = l.envInt("XG2G_HLS_SEGMENT_SECONDS", cfg.HLS.SegmentSeconds)
+	cfg.IPTVSourceSecret = l.envString("XG2G_IPTV_SOURCE_SECRET", cfg.IPTVSourceSecret)
 	cfg.Network.LAN.Allow.CIDRs = parseCommaSeparated(l.envString("XG2G_LAN_ALLOW_CIDRS", ""), cfg.Network.LAN.Allow.CIDRs)
 	cfg.APIListenAddr = l.envString("XG2G_LISTEN", cfg.APIListenAddr)
 	cfg.LogLevel = l.envString("XG2G_LOG_LEVEL", cfg.LogLevel)
