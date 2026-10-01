@@ -503,7 +503,15 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 		return
 	}
 
-	profileID := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, clientAV1Disabled, iosNativeHEVCHWMode)
+	var profileID string
+	switch strings.ToLower(strings.TrimSpace(req.RequestedProfile)) {
+	case "cinema", "av1", "av1_hw":
+		profileID = profiles.ProfileAV1HW
+	case "quality", "hevc", "hevc_hw":
+		profileID = autocodec.PreferredNativeHLSHEVCProfile(profiles.HWAccelAuto)
+	default:
+		profileID = pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, clientAV1Disabled, iosNativeHEVCHWMode)
+	}
 	if profileID == "" {
 		return
 	}

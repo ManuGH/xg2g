@@ -208,13 +208,13 @@ func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, c
 		return pickBestCandidate(candidates, hostRuntime)
 	}
 
-	if profileID := preferredNativeHLSHEVCProfile(hwaccelMode); profileID != "" {
+	if profileID := PreferredNativeHLSHEVCProfile(hwaccelMode); profileID != "" {
 		candidates = append(candidates, newCandidate(profileID, "hevc", measuredProbeElapsedForCodec("hevc"), 1))
 	}
 	return pickBestCandidate(candidates, hostRuntime)
 }
 
-func preferredNativeHLSHEVCProfile(hwaccelMode profiles.HWAccelMode) string {
+func PreferredNativeHLSHEVCProfile(hwaccelMode profiles.HWAccelMode) string {
 	if hwaccelMode == profiles.HWAccelOff {
 		return profiles.ProfileSafariHEVC
 	}

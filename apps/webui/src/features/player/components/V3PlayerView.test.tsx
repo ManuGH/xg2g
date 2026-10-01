@@ -43,6 +43,14 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     showCloseButton: false,
     closeButtonLabel: 'Close player',
     explicitProfile: 'auto',
+    profileMenuTitle: 'Profil / Codec',
+    profileOptions: [
+      { id: 'auto', label: 'Auto (Dynamisch)', description: 'Passt sich Gerät & Verbindung an' },
+      { id: 'cinema', label: 'AV1 (Hardware VAAPI)', description: '10-Bit Farbtiefe (P010)' },
+      { id: 'quality', label: 'HEVC / H.265', description: 'High Quality' },
+      { id: 'compatible', label: 'H.264 / AVC', description: 'Universeller Webstandard' },
+      { id: 'direct', label: 'Original / Direct Play', description: '1:1 Passthrough' },
+    ],
     audioTracks: [],
     activeAudioTrack: -1,
     showStatsOverlay: false,
@@ -293,5 +301,41 @@ describe('V3PlayerView', () => {
 
     expect(video.className).toContain('pictureModeVivid');
     expect(localStorage.getItem('xg2g.player.pictureMode')).toBe('vivid');
+  });
+
+  it('renders profile dropdown with options and triggers changeProfile on selection', () => {
+    const actions = createActions();
+    const viewState = createViewState({
+      showPlaybackChrome: true,
+      explicitProfile: 'auto',
+      profileMenuTitle: 'Profil / Codec',
+      profileOptions: [
+        { id: 'auto', label: 'Auto (Dynamisch)', description: 'Passt sich an' },
+        { id: 'cinema', label: 'AV1 (Hardware VAAPI)', description: '10-Bit' },
+        { id: 'quality', label: 'HEVC / H.265', description: 'High Quality' },
+        { id: 'compatible', label: 'H.264 / AVC', description: 'Universal' },
+        { id: 'direct', label: 'Original / Direct Play', description: 'Passthrough' },
+      ],
+    });
+
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    const button = screen.getByTitle('Profil / Codec');
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+
+    const av1Option = screen.getByText('AV1 (Hardware VAAPI)');
+    expect(av1Option).toBeInTheDocument();
+    fireEvent.click(av1Option);
+
+    expect(actions.changeProfile).toHaveBeenCalledWith('cinema');
   });
 });

@@ -11,6 +11,15 @@ import {
   formatTargetProfileSummary,
 } from '../orchestrator/observabilityFormatters';
 
+import type { CapabilitySnapshot } from '../utils/playbackCapabilities';
+
+export interface PlayerProfileOption {
+  id: string;
+  label: string;
+  description?: string;
+  badge?: string;
+}
+
 export interface V3PlayerLabeledValue {
   label: string;
   value: string;
@@ -116,6 +125,8 @@ export interface V3PlayerViewState {
   startOverLabel: string;
   resumePositionSeconds: number | null;
   explicitProfile: string;
+  profileMenuTitle: string;
+  profileOptions: PlayerProfileOption[];
   audioTracks: PlayerAudioTrack[];
   activeAudioTrack: number;
   playback: {
@@ -223,12 +234,78 @@ export interface BuildViewStateInput {
   isPip: boolean;
   showResumeOverlay: boolean;
   resumeState: { posSeconds: number } | null;
+  capabilitySnapshot?: CapabilitySnapshot | null;
   explicitProfile: string;
   audioTracks: PlayerAudioTrack[];
   activeAudioTrack: number;
   durationSeconds: number | null;
   formatClock: (seconds: number) => string;
   t: TFunction;
+}
+
+export function buildProfileOptions(
+  t: TFunction,
+  capabilitySnapshot?: CapabilitySnapshot | null,
+  effectiveTargetProfile?: { video?: { codec?: string; mode?: string } } | null,
+): PlayerProfileOption[] {
+  const clientVideoCodecs = capabilitySnapshot?.videoCodecs ?? [];
+  const supportsAv1 = clientVideoCodecs.includes('av1');
+  const supportsHevc = clientVideoCodecs.includes('hevc');
+
+  const activeVideoCodec = effectiveTargetProfile?.video?.codec?.toLowerCase();
+  const isVideoCopy = effectiveTargetProfile?.video?.mode === 'copy';
+
+  let activeStreamDetail: string | undefined;
+  if (isVideoCopy) {
+    activeStreamDetail = t('player.profileDirect', { defaultValue: 'Original / Direct Play' });
+  } else if (activeVideoCodec === 'av1') {
+    activeStreamDetail = 'AV1 (Hardware VAAPI)';
+  } else if (activeVideoCodec === 'hevc') {
+    activeStreamDetail = 'HEVC / H.265';
+  } else if (activeVideoCodec === 'h264') {
+    activeStreamDetail = 'H.264 / AVC';
+  }
+
+  const autoDesc = activeStreamDetail
+    ? `${t('player.profileAutoActivePrefix', { defaultValue: 'Aktiv:' })} ${activeStreamDetail} • ${t('player.profileAutoDesc', { defaultValue: 'Passt sich Gerät & Verbindung automatisch an' })}`
+    : t('player.profileAutoDesc', { defaultValue: 'Passt sich Gerät, Hardware & Verbindung automatisch an' });
+
+  return [
+    {
+      id: 'auto',
+      label: t('player.profileAuto', { defaultValue: 'Auto (Dynamisch)' }),
+      description: autoDesc,
+      badge: t('player.badgeSmart', { defaultValue: 'Smart' }),
+    },
+    {
+      id: 'cinema',
+      label: t('player.profileAv1', { defaultValue: 'AV1 (Hardware VAAPI)' }),
+      description: t('player.profileAv1Desc', { defaultValue: '10-Bit Farbtiefe (P010) • Maximale Effizienz & Qualität' }),
+      badge: supportsAv1
+        ? t('player.badgeSupported', { defaultValue: 'Unterstützt' })
+        : t('player.badgeAv1Hw', { defaultValue: '10-Bit VAAPI' }),
+    },
+    {
+      id: 'quality',
+      label: t('player.profileHevc', { defaultValue: 'HEVC / H.265' }),
+      description: t('player.profileHevcDesc', { defaultValue: 'High Quality • ~50% Bandbreitenersparnis ggü. H.264' }),
+      badge: supportsHevc
+        ? t('player.badgeSupported', { defaultValue: 'Unterstützt' })
+        : undefined,
+    },
+    {
+      id: 'compatible',
+      label: t('player.profileH264', { defaultValue: 'H.264 / AVC' }),
+      description: t('player.profileH264Desc', { defaultValue: 'Universeller Webstandard • Höchste Gerätekompatibilität' }),
+      badge: t('player.badgeUniversal', { defaultValue: 'Universal' }),
+    },
+    {
+      id: 'direct',
+      label: t('player.profileDirect', { defaultValue: 'Original / Direct Play' }),
+      description: t('player.profileDirectDesc', { defaultValue: '1:1 Passthrough • Unverändertes Signal ohne Re-Encoding' }),
+      badge: t('player.badgeDirect', { defaultValue: 'Passthrough' }),
+    },
+  ];
 }
 
 export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewState {
@@ -416,6 +493,8 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     startOverLabel: t('player.startOver'),
     resumePositionSeconds: input.resumeState?.posSeconds ?? null,
     explicitProfile: input.explicitProfile,
+    profileMenuTitle: t('player.profileMenuTitle', { defaultValue: 'Profil / Codec' }),
+    profileOptions: buildProfileOptions(t, input.capabilitySnapshot, input.effectiveTargetProfile),
     audioTracks: input.audioTracks,
     activeAudioTrack: input.activeAudioTrack,
     playback: {

@@ -2520,6 +2520,7 @@ export function usePlaybackOrchestrator(
     isPip,
     showResumeOverlay,
     resumeState,
+    capabilitySnapshot,
     explicitProfile,
     audioTracks,
     activeAudioTrack,
