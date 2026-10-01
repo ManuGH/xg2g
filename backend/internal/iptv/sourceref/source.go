@@ -11,6 +11,7 @@ type sourceData struct {
 	serviceType  string // "4097", "5001", "5002"
 	serviceName  string
 	rawURL       func() string // Unredacted stream URL protected from reflection
+	rawRef       func() string // Complete original Enigma2 service reference, protected from reflection
 	canonicalURL func() string // Canonical URL protected from reflection
 }
 
@@ -60,6 +61,18 @@ func (s Source) RevealURL() string {
 		return ""
 	}
 	return s.d.rawURL()
+}
+
+// RawRef returns the complete original Enigma2 service reference
+// (e.g. "4097:0:1:...:<encoded url>:<name>"), as needed for OpenWebIF calls
+// and internal lookups that require the wire format.
+// This method is for in-process use only. Callers must NEVER log, serialize,
+// or expose this value to clients: it embeds the provider URL.
+func (s Source) RawRef() string {
+	if s.d == nil || s.d.rawRef == nil {
+		return ""
+	}
+	return s.d.rawRef()
 }
 
 // canonicalURL returns the internal canonical URL used for ID generation.
