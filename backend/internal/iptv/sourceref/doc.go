@@ -35,8 +35,8 @@
 // default port numbers (e.g. http://h.invalid:80 vs http://h.invalid), empty path vs root slash
 // (e.g. http://h.invalid vs http://h.invalid/), and URL fragments (e.g. http://h.invalid/x vs http://h.invalid/x#frag).
 // The fragment is not part of the canonical URL used for ID generation; RevealURL() of the winning
-// (first) entry may still contain it. For equivalent sources, the first occurrence's raw URL is kept
-// and subsequent occurrences are safely deduplicated without error.
+// (first) entry may still contain it. For equivalent sources, the first occurrence's raw URL and
+// raw reference (RawRef) are kept and subsequent occurrences are safely deduplicated without error.
 //
 // Outbound Policy Boundary:
 // This package is strictly a pure domain parser and registry. Outbound network

@@ -1,7 +1,7 @@
 package sourceref
 
-// NewSourceForTest creates a Source with arbitrary ID, rawURL, and canonicalURL for testing.
-func NewSourceForTest(id ID, rawURL, canonicalURL string) Source {
+// NewSourceForTest creates a Source with arbitrary ID, rawURL, canonicalURL and rawRef for testing.
+func NewSourceForTest(id ID, rawURL, canonicalURL, rawRef string) Source {
 	return Source{
 		d: &sourceData{
 			id:           id,
