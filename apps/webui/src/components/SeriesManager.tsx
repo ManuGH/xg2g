@@ -207,6 +207,40 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
     }
   };
 
+  const handleToggleRule = async (rule: SeriesRule) => {
+    if (!rule.id) return;
+    try {
+      const nextEnabled = !rule.enabled;
+      const updatePayload: SeriesRuleUpdate = {
+        enabled: nextEnabled,
+        keyword: rule.keyword || '',
+        priority: rule.priority || 0,
+        ...(rule.retentionDays ? { retentionDays: rule.retentionDays } : {}),
+        ...(rule.channelRef ? { channelRef: rule.channelRef } : {}),
+        ...(rule.days?.length ? { days: rule.days } : {}),
+        ...(rule.startWindow ? { startWindow: rule.startWindow } : {}),
+      };
+      const result = await updateSeriesRule({
+        path: { id: rule.id },
+        body: updatePayload,
+      });
+      throwOnClientResultError(result, { source: 'SeriesManager.toggleRule' });
+      toast({
+        kind: 'success',
+        message: nextEnabled
+          ? t('series.ruleActivated', { defaultValue: 'Regel aktiviert' })
+          : t('series.rulePaused', { defaultValue: 'Regel pausiert' }),
+      });
+      await loadRules();
+    } catch (err: any) {
+      toast({
+        kind: 'error',
+        message: t('series.toggleFailed', { defaultValue: 'Status konnte nicht geändert werden' }),
+        details: err.message || 'Unknown error',
+      });
+    }
+  };
+
   const handleRunNow = async (id: string) => {
     setReportLoading(id);
     try {
@@ -256,10 +290,18 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
           <Card key={rule.id} className={styles.ruleCard}>
             <div className={styles.ruleHeader}>
               <h2>{rule.keyword}</h2>
-              <StatusChip
-                state={rule.enabled ? 'success' : 'idle'}
-                label={rule.enabled ? 'ACTIVE' : 'DISABLED'}
-              />
+              <button
+                type="button"
+                className={styles.statusToggle}
+                onClick={() => handleToggleRule(rule)}
+                title={rule.enabled ? 'Klicken zum Pausieren' : 'Klicken zum Aktivieren'}
+                aria-label={rule.enabled ? 'Pausieren' : 'Aktivieren'}
+              >
+                <StatusChip
+                  state={rule.enabled ? 'success' : 'idle'}
+                  label={rule.enabled ? 'ACTIVE' : 'DISABLED'}
+                />
+              </button>
             </div>
 
             <div className={`${styles.ruleMeta} ${styles.textSecondary}`.trim()}>
@@ -309,6 +351,14 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
 
             <div className={styles.ruleActions}>
               <Button
+                variant={rule.enabled ? 'secondary' : 'primary'}
+                onClick={() => handleToggleRule(rule)}
+                className={styles.ruleAction}
+                data-testid={`series-toggle-${rule.id}`}
+              >
+                {rule.enabled ? 'Pause' : 'Activate'}
+              </Button>
+              <Button
                 variant="secondary"
                 onClick={() => rule.id && handleRunNow(rule.id)}
                 disabled={reportLoading === rule.id}
@@ -351,6 +401,19 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
             </div>
 
             <div className={styles.modalBody}>
+              <div className={styles.formGroup}>
+                <label className={styles.checkboxRow}>
+                  <input
+                    type="checkbox"
+                    checked={currentRule.enabled}
+                    onChange={e => setCurrentRule({ ...currentRule, enabled: e.target.checked })}
+                    data-testid="series-edit-enabled"
+                  />
+                  <span>Regel aktiv</span>
+                </label>
+                <small className={styles.helpText}>Wenn pausiert, ignoriert der automatische Scheduler diese Regel.</small>
+              </div>
+
               <div className={styles.formGroup}>
                 <label>Keyword (Title Match)</label>
                 <input

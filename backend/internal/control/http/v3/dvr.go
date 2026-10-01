@@ -192,7 +192,9 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 }
 
 func mapAPIToRule(req SeriesRule) dvr.SeriesRule {
-	r := dvr.SeriesRule{}
+	r := dvr.SeriesRule{
+		Enabled: true,
+	}
 	if req.Id != nil {
 		r.ID = *req.Id
 	}

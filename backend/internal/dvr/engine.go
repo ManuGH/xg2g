@@ -127,7 +127,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 
 		for _, rule := range rules {
 			ruleStart := time.Now()
-			if !rule.Enabled {
+			if !rule.Enabled && ruleID == "" {
 				continue
 			}
 
