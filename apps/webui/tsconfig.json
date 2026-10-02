@@ -34,7 +34,8 @@
   },
   "include": [
     "src/**/*",
-    "tests/helpers/**/*"
+    "tests/helpers/**/*",
+    "tests/contracts/i18n.type-contract.test.ts"
   ],
   "exclude": [
     "node_modules",

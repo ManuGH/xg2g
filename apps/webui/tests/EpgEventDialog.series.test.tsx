@@ -59,7 +59,7 @@ describe('EpgEventDialog Series Scheduling', () => {
     expect(screen.getByRole('button', { name: 'Café PULS mit PULS 4 Aktuell' })).toBeInTheDocument();
 
     // Check 7-day retention preset is active
-    expect(screen.getByText(/7 Tage \(Empfohlen\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/7 (Tage|days) \(Empfohlen\)/i)).toBeInTheDocument();
   });
 
   it('submits series rule with 7-day retention and channel reference', async () => {
@@ -116,11 +116,11 @@ describe('EpgEventDialog Series Scheduling', () => {
     // Verify channel is displayed
     expect(screen.getByText('PULS 24 HD')).toBeInTheDocument();
 
-    // Select "Werktags (Mo-Fr)"
-    fireEvent.click(screen.getByRole('button', { name: /Werktags/i }));
+    // Select "Werktags (Mo-Fr)" / "Weekdays (Mon-Fri)"
+    fireEvent.click(screen.getByRole('button', { name: /Werktags|Weekdays/i }));
 
     // Select 14 days retention
-    fireEvent.click(screen.getByRole('button', { name: /^14 Tage/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^(14 Tage|14 days)/i }));
 
     // Submit
     fireEvent.click(screen.getByTestId('series-modal-save'));

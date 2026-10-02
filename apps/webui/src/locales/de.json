@@ -44,10 +44,23 @@
         "outputLabel": "Verbundene Geräte"
       }
     },
-    "brandSubtitle": "Steuerzentrale"
+    "brandSubtitle": "Steuerzentrale",
+    "profileAccess": {
+      "playback": "Live + Aufnahmen ansehen",
+      "live": "Nur Live-TV"
+    },
+    "profile": "Profil",
+    "profileChild": "Kind",
+    "expand": "Erweitern",
+    "collapse": "Einklappen",
+    "mainNavigationLabel": "Hauptnavigation",
+    "mobileNavigationLabel": "Mobile Navigation",
+    "closeNavigationLabel": "Navigation schließen"
   },
   "app": {
-    "initializing": "Initialisierung..."
+    "initializing": "Initialisierung...",
+    "bootstrapErrorEyebrow": "Wiederherstellung",
+    "bootstrapErrorTitle": "xg2g konnte nicht gestartet werden"
   },
   "auth": {
     "title": "Authentifizierung erforderlich",
@@ -104,7 +117,12 @@
     "loading": "Laden...",
     "receiverStandby": "Receiver im Standby",
     "receiverUnavailable": "Receiver ist im Standby (Leerlauf)",
-    "noCurrentProgram": "Keine aktuellen Programminformationen"
+    "noCurrentProgram": "Keine aktuellen Programminformationen",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "appName": "xg2g",
+    "requestId": "Request-ID",
+    "yes": "Ja",
+    "no": "Nein"
   },
   "legacyRoute": {
     "eyebrow": "Expertenweg",
@@ -123,7 +141,15 @@
     "emptyHint": "Erstelle einen Timer über das Fernsehen oder Aufnahmen, um eine Aufnahme zu planen.",
     "dvrBlocked": "Dieses Profil darf den DVR nicht bedienen.",
     "scheduledRecordings": "Geplante Aufnahmen",
-    "loadError": "Timer konnten nicht geladen werden. Stelle sicher, dass das Backend läuft und authentifiziert ist."
+    "loadError": "Timer konnten nicht geladen werden. Stelle sicher, dass das Backend läuft und authentifiziert ist.",
+    "createTitle": "Neuer Timer",
+    "editTitle": "Timer bearbeiten",
+    "readOnly": "Timer-Änderungen werden nicht unterstützt.",
+    "validation": {
+      "serviceRequired": "Bitte einen Kanal auswählen.",
+      "nameRequired": "Name ist erforderlich.",
+      "timeRangeInvalid": "Endzeit muss nach der Startzeit liegen."
+    }
   },
   "player": {
     "status": "Status",
@@ -190,7 +216,10 @@
       "paused": "Pausiert",
       "error": "Fehler",
       "recovering": "Wiederherstellung…",
-      "stopped": "Gestoppt"
+      "stopped": "Gestoppt",
+      "active": "Aktiv",
+      "stalled": "Stockt",
+      "ending": "Wird beendet"
     },
     "startupHints": {
       "safariCompatTranscode": "Safari-kompatibler Stream wird vorbereitet…",
@@ -336,7 +365,42 @@
     "badgeSupported": "Unterstützt",
     "badgeAv1Hw": "10-Bit VAAPI",
     "badgeUniversal": "Universal",
-    "badgeDirect": "Passthrough"
+    "badgeDirect": "Passthrough",
+    "measuring": "Messen…",
+    "ttff": "Startzeit (TTFF)",
+    "av1Mms": "AV1/MMS",
+    "clientPath": "Client-Pfad",
+    "requestProfile": "Anforderungsprofil",
+    "requestedIntent": "Angefordertes Intent",
+    "resolvedIntent": "Ermitteltes Intent",
+    "qualityRung": "Qualitätsstufe",
+    "audioQualityRung": "Audio-Qualitätsstufe",
+    "videoQualityRung": "Video-Qualitätsstufe",
+    "degradedFrom": "Herabgestuft von",
+    "hostPressure": "Host-Auslastung",
+    "hostOverrideApplied": "Host-Override aktiv",
+    "forcedIntent": "Erzwungenes Intent",
+    "operatorMaxQualityRung": "Operator Max-Qualität",
+    "operatorRuleName": "Operator-Regel",
+    "operatorRuleScope": "Operator-Regelbereich",
+    "clientFallbackDisabled": "Client-Fallback deaktiviert",
+    "operatorOverrideApplied": "Operator-Override aktiv",
+    "sourceProfile": "Quellprofil",
+    "outputProfile": "Ausgabeprofil",
+    "profileHash": "Profil-Hash",
+    "execution": "Ausführung",
+    "ffmpegPlan": "FFmpeg-Plan",
+    "firstFrame": "Erster Frame",
+    "fallbacks": "Fallbacks",
+    "stopReason": "Stopp",
+    "outputKind": "Ausgabeart",
+    "seekableRange": "Spulbereich",
+    "playhead": "Wiedergabeposition",
+    "seekWindow": "Spulfenster",
+    "fullscreenPath": "Vollbild-Pfad",
+    "sessionExpiredTitle": "Wiedergabe-Sitzung beendet",
+    "sessionExpiredDetail": "Die Streaming-Sitzung wurde beendet. Bitte starte den Stream neu.",
+    "streamFailed": "Wiedergabe fehlgeschlagen"
   },
   "dashboard": {
     "controlSummary": "Kontrollübersicht",
@@ -423,7 +487,13 @@
     "timeMinutesAgo": "vor {{count}} Min.",
     "timeHoursAgo": "vor {{count}} Std.",
     "heroAside": {
-      "standbyDetail": "Die Box ist im Ruhezustand. Status und Programm werden bei Aktivität wieder gespiegelt."
+      "eyebrow": "Nächster Schritt",
+      "standbyTitle": "Receiver im Standby",
+      "streamingTitle": "Streaming aktiv",
+      "streamingDetail": "{{count}} aktive(r) Stream(s)",
+      "readyTitle": "Bereit für Wiedergabe",
+      "readyDetail": "Alle Tuner verfügbar",
+      "standbyDetail": "Der Receiver befindet sich im Standby. Bitte zuerst Live-TV öffnen, damit EPG und Senderstatus sauber synchronisiert werden."
     },
     "start": {
       "eyebrow": "Hier anfangen",
@@ -476,7 +546,9 @@
     },
     "startLive": {
       "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist."
-    }
+    },
+    "loadErrorTitle": "Systemstatus konnte nicht geladen werden",
+    "loadErrorDetail": "Erneut versuchen, um Receiver- und Guide-Status zu aktualisieren."
   },
   "epg": {
     "backToGuide": "Zurück zu Fernsehen",
@@ -544,7 +616,22 @@
     "planRecording": "Aufnahme planen",
     "filterChannels": "Sender filtern (Name oder Nummer)",
     "clearChannelFilter": "Senderfilter leeren",
-    "noChannelsMatchFilter": "Kein Sender passt zu „{{query}}“"
+    "noChannelsMatchFilter": "Kein Sender passt zu „{{query}}“",
+    "pageTitleEyebrow": "Live-Programm",
+    "playCta": "Schauen",
+    "playChannel": "Sendung schauen",
+    "addFavorite": "Zu Favoriten",
+    "removeFavorite": "Favorit entfernen",
+    "favoriteOn": "Favorit",
+    "favoriteOff": "Merken",
+    "favorites": "Favoriten",
+    "favoritesOn": "Favoriten aktiv",
+    "favoritesOff": "Favoritenfilter",
+    "noFavorites": "Dieses Profil hat noch keine Senderfavoriten.",
+    "rangeNow": "Jetzt",
+    "rangeDay": "24h",
+    "rangeWeek": "7d",
+    "rangeAll": "Alle"
   },
   "recordings": {
     "seriesRulesAction": "Serienregeln",
@@ -661,7 +748,8 @@
         "scan": "Der Senderscan ist jetzt als direkter Unterbereich der Einstellungen erreichbar.",
         "streaming": "Streaming-Vorgaben liegen jetzt in einem klaren Unterbereich der Einstellungen.",
         "advanced": "Expertenwerkzeuge liegen gesammelt unter dem erweiterten Einstellungsbereich.",
-        "about": "Versionsinformationen, Systemstatus und Verwaltung des lokalen Browser-Caches."
+        "about": "Versionsinformationen, Systemstatus und Verwaltung des lokalen Browser-Caches.",
+        "security": "Passkeys und API-Token-Zugriff befinden sich jetzt in einem eigenen Sicherheitsbereich."
       },
       "tool": {
         "files": "Playlist-, Guide- und Kompatibilitätsfeeds liegen jetzt unter dem Expertenbereich der Einstellungen.",
@@ -1077,5 +1165,46 @@
       "unknown": "Unbekannt",
       "skipped": "Übersprungen"
     }
+  },
+  "unlock": {
+    "pageTitle": "Freischalt-Status",
+    "pageSubtitle": "Diese Seite zeigt, welche kommerziellen Berechtigungen noch fehlen, bevor die Wiedergabe freigegeben wird.",
+    "eyebrow": "Freischaltung erforderlich",
+    "title": "{{productName}} erforderlich",
+    "active": "{{productName}} aktiv",
+    "pending": "{{productName}} noch gesperrt",
+    "requiredEyebrow": "Erforderliche Berechtigungen",
+    "noneRequired": "Keine Freischalt-Berechtigungen konfiguriert.",
+    "grantedEyebrow": "Aktuell gewährt",
+    "grantedTitle": "Aktiver Zugriff",
+    "noneGranted": "Noch keine aktiven Freischaltungen.",
+    "missingEyebrow": "Noch fehlend",
+    "missingTitle": "Was die Wiedergabe blockiert",
+    "noneMissing": "Alles vorhanden. Wiedergabe kann starten.",
+    "grantsEyebrow": "Erfasste Freischaltungen",
+    "grantsTitle": "Berechtigungsquellen",
+    "expiresAt": "läuft ab am",
+    "grantActive": "aktiv",
+    "grantExpired": "abgelaufen",
+    "noGrants": "Noch keine Freischaltungen erfasst.",
+    "openInfo": "Freischalt-Info öffnen",
+    "viewStatus": "Freischalt-Status anzeigen",
+    "openSettings": "Einstellungen öffnen",
+    "copyWithUrl": "Freischalt-Details kopieren (mit Kauflink)",
+    "copyNoUrl": "Freischalt-Details kopieren"
+  },
+  "errors": {
+    "sectionLoadTitle": "Dieser Bereich konnte nicht geladen werden",
+    "sectionLoadDetail": "Erneut versuchen oder zum Dashboard zurückkehren.",
+    "devDetails": "Entwickler-Details"
+  },
+  "series": {
+    "ruleActivated": "Regel aktiviert",
+    "rulePaused": "Regel pausiert",
+    "toggleFailed": "Status konnte nicht geändert werden",
+    "daysDaily": "Täglich",
+    "daysWeekdays": "Werktags (Mo-Fr)",
+    "daysWeekend": "Wochenende (Sa-So)",
+    "retentionDays": "{{count}} Tage"
   }
 }

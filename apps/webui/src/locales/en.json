@@ -44,10 +44,23 @@
         "outputLabel": "Connected Devices"
       }
     },
-    "brandSubtitle": "Control Surface"
+    "brandSubtitle": "Control Surface",
+    "profileAccess": {
+      "playback": "Live + recordings",
+      "live": "Live TV only"
+    },
+    "profile": "Profile",
+    "profileChild": "Child",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "mainNavigationLabel": "Main navigation",
+    "mobileNavigationLabel": "Mobile navigation",
+    "closeNavigationLabel": "Close navigation"
   },
   "app": {
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "bootstrapErrorEyebrow": "Recovery",
+    "bootstrapErrorTitle": "Unable to start xg2g"
   },
   "auth": {
     "title": "Authentication Required",
@@ -104,7 +117,12 @@
     "loading": "Loading...",
     "receiverStandby": "Receiver in Standby",
     "receiverUnavailable": "Receiver is in standby (idle)",
-    "noCurrentProgram": "No current program information"
+    "noCurrentProgram": "No current program information",
+    "saveFailed": "Save failed",
+    "appName": "xg2g",
+    "requestId": "Request ID",
+    "yes": "Yes",
+    "no": "No"
   },
   "legacyRoute": {
     "eyebrow": "Expert path",
@@ -123,7 +141,15 @@
     "emptyHint": "Create a timer from the EPG or recordings to schedule a recording.",
     "dvrBlocked": "This profile does not have permission to use the DVR.",
     "scheduledRecordings": "Scheduled Recordings",
-    "loadError": "Failed to load timers. Ensure backend is running and authenticated."
+    "loadError": "Failed to load timers. Ensure backend is running and authenticated.",
+    "createTitle": "New Timer",
+    "editTitle": "Edit Timer",
+    "readOnly": "Timer changes are not supported.",
+    "validation": {
+      "serviceRequired": "Please select a channel.",
+      "nameRequired": "Name is required.",
+      "timeRangeInvalid": "End time must be after start time."
+    }
   },
   "player": {
     "status": "Status",
@@ -190,7 +216,10 @@
       "paused": "Paused",
       "error": "Error",
       "recovering": "Recovering…",
-      "stopped": "Stopped"
+      "stopped": "Stopped",
+      "active": "Active",
+      "stalled": "Stalled",
+      "ending": "Ending"
     },
     "startupHints": {
       "safariCompatTranscode": "Preparing Safari-compatible stream…",
@@ -336,7 +365,42 @@
     "badgeSupported": "Supported",
     "badgeAv1Hw": "10-Bit VAAPI",
     "badgeUniversal": "Universal",
-    "badgeDirect": "Passthrough"
+    "badgeDirect": "Passthrough",
+    "measuring": "Measuring…",
+    "ttff": "Time to first frame (TTFF)",
+    "av1Mms": "AV1/MMS",
+    "clientPath": "Client Path",
+    "requestProfile": "Request Profile",
+    "requestedIntent": "Requested Intent",
+    "resolvedIntent": "Resolved Intent",
+    "qualityRung": "Quality Rung",
+    "audioQualityRung": "Audio Quality Rung",
+    "videoQualityRung": "Video Quality Rung",
+    "degradedFrom": "Degraded From",
+    "hostPressure": "Host Pressure",
+    "hostOverrideApplied": "Host Override Applied",
+    "forcedIntent": "Forced Intent",
+    "operatorMaxQualityRung": "Operator Max Quality",
+    "operatorRuleName": "Operator Rule",
+    "operatorRuleScope": "Operator Rule Scope",
+    "clientFallbackDisabled": "Client Fallback Disabled",
+    "operatorOverrideApplied": "Operator Override Applied",
+    "sourceProfile": "Source Profile",
+    "outputProfile": "Output Profile",
+    "profileHash": "Profile Hash",
+    "execution": "Execution",
+    "ffmpegPlan": "FFmpeg Plan",
+    "firstFrame": "First Frame",
+    "fallbacks": "Fallbacks",
+    "stopReason": "Stop",
+    "outputKind": "Output Kind",
+    "seekableRange": "Seekable",
+    "playhead": "Playhead",
+    "seekWindow": "Seek Window",
+    "fullscreenPath": "Fullscreen Path",
+    "sessionExpiredTitle": "Playback session ended",
+    "sessionExpiredDetail": "The streaming session was terminated. Please restart the stream.",
+    "streamFailed": "Playback failed"
   },
   "dashboard": {
     "controlSummary": "Control summary",
@@ -423,7 +487,13 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "heroAside": {
-      "standbyDetail": "The box is sleeping. Status and programme data will mirror once activity resumes."
+      "eyebrow": "Next best move",
+      "standbyTitle": "Receiver is in standby",
+      "streamingTitle": "Streaming active",
+      "streamingDetail": "{{count}} active stream(s)",
+      "readyTitle": "Ready for playback",
+      "readyDetail": "All tuners available",
+      "standbyDetail": "The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly."
     },
     "start": {
       "eyebrow": "Start here",
@@ -476,7 +546,9 @@
     },
     "startLive": {
       "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."
-    }
+    },
+    "loadErrorTitle": "Unable to load system health",
+    "loadErrorDetail": "Try again to refresh the current receiver and guide status."
   },
   "epg": {
     "backToGuide": "Back to Live TV",
@@ -544,7 +616,22 @@
     "planRecording": "Schedule recording",
     "filterChannels": "Filter channels (name or number)",
     "clearChannelFilter": "Clear channel filter",
-    "noChannelsMatchFilter": "No channel matches “{{query}}”"
+    "noChannelsMatchFilter": "No channel matches “{{query}}”",
+    "pageTitleEyebrow": "Live Guide",
+    "playCta": "Watch",
+    "playChannel": "Watch programme",
+    "addFavorite": "Add to favourites",
+    "removeFavorite": "Remove favourite",
+    "favoriteOn": "Favourite",
+    "favoriteOff": "Mark",
+    "favorites": "Favourites",
+    "favoritesOn": "Favourites active",
+    "favoritesOff": "Filter favourites",
+    "noFavorites": "This profile does not have favourite channels yet.",
+    "rangeNow": "Now",
+    "rangeDay": "24h",
+    "rangeWeek": "7d",
+    "rangeAll": "All"
   },
   "recordings": {
     "seriesRulesAction": "Series Rules",
@@ -661,7 +748,8 @@
         "scan": "Channel scan is now reachable as a direct subsection of Settings.",
         "streaming": "Streaming defaults now live in a clearly scoped Settings subsection.",
         "advanced": "Expert tools are now grouped inside the advanced settings area.",
-        "about": "Version details, system status and local browser cache management."
+        "about": "Version details, system status and local browser cache management.",
+        "security": "Passkeys and API token access now live in a dedicated security area."
       },
       "tool": {
         "files": "Playlist, guide and compatibility feeds now live under the advanced settings area.",
@@ -1077,5 +1165,46 @@
       "unknown": "Unknown",
       "skipped": "Skipped"
     }
+  },
+  "unlock": {
+    "pageTitle": "Unlock Status",
+    "pageSubtitle": "This page shows which commercial scopes are still missing before the playback surface opens.",
+    "eyebrow": "Unlock Required",
+    "title": "{{productName}} required",
+    "active": "{{productName}} active",
+    "pending": "{{productName}} still locked",
+    "requiredEyebrow": "Required Scopes",
+    "noneRequired": "No unlock scopes configured.",
+    "grantedEyebrow": "Granted Now",
+    "grantedTitle": "Active Access",
+    "noneGranted": "No active unlock scopes yet.",
+    "missingEyebrow": "Still Missing",
+    "missingTitle": "What Blocks Playback",
+    "noneMissing": "Nothing missing. Playback can open.",
+    "grantsEyebrow": "Recorded Grants",
+    "grantsTitle": "Entitlement Sources",
+    "expiresAt": "expires",
+    "grantActive": "active",
+    "grantExpired": "expired",
+    "noGrants": "No entitlement grants recorded yet.",
+    "openInfo": "Open Unlock Info",
+    "viewStatus": "View Unlock Status",
+    "openSettings": "Open Settings",
+    "copyWithUrl": "Copy unlock details (with purchase link)",
+    "copyNoUrl": "Copy unlock details"
+  },
+  "errors": {
+    "sectionLoadTitle": "This area could not be loaded",
+    "sectionLoadDetail": "Try again or return to the dashboard.",
+    "devDetails": "Developer details"
+  },
+  "series": {
+    "ruleActivated": "Rule activated",
+    "rulePaused": "Rule paused",
+    "toggleFailed": "Failed to update rule status",
+    "daysDaily": "Daily",
+    "daysWeekdays": "Weekdays (Mon-Fri)",
+    "daysWeekend": "Weekend (Sat-Sun)",
+    "retentionDays": "{{count}} days"
   }
 }
