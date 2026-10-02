@@ -165,6 +165,14 @@ func TestPostServicesNowNext_FallsBackToEpgSourceWhenCacheMissing(t *testing.T) 
 	mockSource.AssertExpectations(t)
 }
 
+func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
+	lookups := make([]serviceLookup, 0, len(serviceRefs))
+	for _, ref := range serviceRefs {
+		lookups = append(lookups, serviceLookup{original: ref, resolved: ref})
+	}
+	return buildNowNextItemsWithLookups(lookups, programs, now)
+}
+
 func TestBuildNowNextItems_CanonicalizesServiceRefs(t *testing.T) {
 	now := time.Now()
 	items := buildNowNextItems(

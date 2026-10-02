@@ -92,14 +92,6 @@ func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
 	writeJSON(w, http.StatusOK, NowNextResponse{Items: items})
 }
 
-func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
-	lookups := make([]serviceLookup, 0, len(serviceRefs))
-	for _, ref := range serviceRefs {
-		lookups = append(lookups, serviceLookup{original: ref, resolved: ref})
-	}
-	return buildNowNextItemsWithLookups(lookups, programs, now)
-}
-
 func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Programme, now time.Time) []NowNextItem {
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {

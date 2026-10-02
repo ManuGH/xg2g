@@ -18,11 +18,11 @@ import (
 // using the Server's IPTVResolver.
 //
 // Semantics:
-//  - KindPassThrough / KindLegacyRaw: returns the raw ref and ok=true (legacy raw also increments legacy metric).
-//  - KindOpaque: returns the resolved internal raw ref and ok=true.
-//  - edge.ErrNotFound: writes HTTP 404 ProblemDetails (CodeNotFound) without echoing input, returns ok=false.
-//  - edge.ErrInvalidID: writes HTTP 400 ProblemDetails (CodeInvalidInput) without echoing input, returns ok=false.
-//  - Nil resolver: behaves as disabled (opaque -> 404, pass-through/legacy -> ok).
+//   - KindPassThrough / KindLegacyRaw: returns the raw ref and ok=true (legacy raw also increments legacy metric).
+//   - KindOpaque: returns the resolved internal raw ref and ok=true.
+//   - edge.ErrNotFound: writes HTTP 404 ProblemDetails (CodeNotFound) without echoing input, returns ok=false.
+//   - edge.ErrInvalidID: writes HTTP 400 ProblemDetails (CodeInvalidInput) without echoing input, returns ok=false.
+//   - Nil resolver: behaves as disabled (opaque -> 404, pass-through/legacy -> ok).
 func (s *Server) resolveClientServiceRef(w http.ResponseWriter, r *http.Request, endpoint, ref string) (string, bool) {
 	normEndpoint := metrics.NormalizeIPTVEndpoint(endpoint)
 	var resolver *edge.Resolver
