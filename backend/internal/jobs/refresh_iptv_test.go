@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -290,17 +291,27 @@ func TestRefresh_Golden_ByteIdenticalOutput(t *testing.T) {
 		assert.True(t, bytes.Equal(playlistBytes1, playlistBytes2), "playlist.m3u must be byte-identical")
 	}
 
-	assert.True(t, bytes.Equal(xmltvBytes1, xmltvBytes2), "xmltv.xml must be byte-identical")
+	// The XMLTV carries the same "?v=<unix>" logo timestamp in its icon URLs, so it
+	// needs the same tolerance for a second boundary between the two runs.
+	if !bytes.Equal(xmltvBytes1, xmltvBytes2) {
+		assert.Equal(t, stripTimestampParams(string(xmltvBytes1)), stripTimestampParams(string(xmltvBytes2)),
+			"xmltv.xml content must be identical between option on and off")
+	}
 }
 
+func TestStripTimestampParams_NormalisesEveryOccurrence(t *testing.T) {
+	a := `<icon src="/logos/x.png?v=1790916904"/><icon src="/logos/y.png?v=1790916904"/>` + "\n" + `tvg-logo="/logos/z.png?v=1790916904"`
+	b := `<icon src="/logos/x.png?v=1790916905"/><icon src="/logos/y.png?v=1790916905"/>` + "\n" + `tvg-logo="/logos/z.png?v=1790916905"`
+	assert.NotEqual(t, a, b)
+	assert.Equal(t, stripTimestampParams(a), stripTimestampParams(b), "all timestamps on a line, and at line end, must be normalised")
+	assert.NotEqual(t, stripTimestampParams(a), stripTimestampParams(`<icon src="/logos/other.png?v=1"/>`), "must not erase real differences")
+}
+
+// logoTimestampRE matches the cache-busting "?v=<unix seconds>" the refresh job
+// appends to logo URLs. It changes whenever two refreshes straddle a second
+// boundary, in the playlist AND in the XMLTV icon URLs.
+var logoTimestampRE = regexp.MustCompile(`\?v=\d+`)
+
 func stripTimestampParams(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		if idx := strings.Index(line, "?v="); idx != -1 {
-			if endIdx := strings.IndexAny(line[idx:], " \"\r\n"); endIdx != -1 {
-				lines[i] = line[:idx] + line[idx+endIdx:]
-			}
-		}
-	}
-	return strings.Join(lines, "\n")
+	return logoTimestampRE.ReplaceAllString(s, "?v=")
 }
