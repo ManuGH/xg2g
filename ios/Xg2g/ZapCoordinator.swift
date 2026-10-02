@@ -189,6 +189,11 @@ final class ZapCoordinator: ObservableObject {
             preparation = try await preparations.start(serviceRef: serviceRef, zapID: zapID)
         } catch {
             guard isCurrent(zapID) else { return }
+            if error is CancellationError || (error as? APIError) == .transport(.cancelled) {
+                requestedServiceRef = nil
+                phase = .idle
+                return
+            }
             return await failOrStartOutright(zapID, serviceRef, "the receiver could not be asked to prepare: \(describe(error))")
         }
         guard isCurrent(zapID) else {
@@ -210,6 +215,11 @@ final class ZapCoordinator: ObservableObject {
             settled = try await awaitSettled(preparation, using: preparations, zapID: zapID)
         } catch {
             guard isCurrent(zapID) else { return }
+            if error is CancellationError || (error as? APIError) == .transport(.cancelled) {
+                requestedServiceRef = nil
+                phase = .idle
+                return
+            }
             await abandonInFlight(reason: "lost track of the preparation")
             return await failOrStartOutright(zapID, serviceRef, "lost track of the preparation: \(describe(error))")
         }

@@ -464,7 +464,7 @@ struct ServerSetupView: View {
                     Button {
                         connect()
                     } label: {
-                        Text("Verbinden")
+                        Text(String(localized: "Connect"))
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -588,7 +588,7 @@ struct PairingView: View {
                         Button {
                             startPairing()
                         } label: {
-                            Text("Kopplung starten")
+                            Text(String(localized: "Start Pairing"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -612,11 +612,11 @@ struct PairingView: View {
                             // Only once a pairing was issued: before that the
                             // "Kopplung starten" button above is the same action.
                             if invitation != nil {
-                                Button("Neuen Code anfordern") {
+                                Button(String(localized: "Request New Code")) {
                                     startPairing()
                                 }
                             }
-                            Button("Anderen Server wählen") {
+                            Button(String(localized: "Choose Another Server")) {
                                 model.changeServer()
                             }
                         }

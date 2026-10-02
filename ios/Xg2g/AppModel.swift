@@ -126,7 +126,17 @@ final class AppModel {
     private(set) var timers: [DVRTimer] = []
     private(set) var isLoadingTimers = false
 
+    private(set) var currentError: UserFacingError?
     private(set) var lastError: String?
+
+    func clearError() {
+        setError(nil)
+    }
+
+    private func setError(_ error: UserFacingError?) {
+        currentError = error
+        lastError = error?.localizedMessage
+    }
 
     /// The stream currently handed to the player, if any.
     private(set) var liveStream: LiveStream?
@@ -886,7 +896,12 @@ final class AppModel {
         do {
             try await credentials.prepareForLaunch()
         } catch {
-            lastError = "Stored credentials could not be opened."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Authentication Required"),
+                detail: LocalizedStringResource("Stored credentials could not be opened."),
+                isRetryable: false,
+                severity: .warning
+            ))
             return
         }
 
@@ -913,10 +928,15 @@ final class AppModel {
     /// allowed; everything downstream deals in a parsed address.
     func useServer(_ typed: String) async {
         guard let parsed = try? ServerAddressParser.parseUserEntered(typed) else {
-            lastError = "That does not look like a server address."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Request Failed"),
+                detail: LocalizedStringResource("That does not look like a server address."),
+                isRetryable: false,
+                severity: .warning
+            ))
             return
         }
-        lastError = nil
+        setError(nil)
         addressStore.save(parsed)
         configure(with: parsed)
         state = .needsPairing
@@ -962,35 +982,10 @@ final class AppModel {
     func beginPairing() async -> EnrollmentCoordinator.Invitation? {
         guard let enrollment else { return nil }
         do {
-            lastError = nil
+            setError(nil)
             return try await enrollment.startPairing(deviceName: Self.deviceName, deviceType: Self.deviceType)
-        } catch let apiErr as APIError {
-            switch apiErr {
-            case .problem(let prob):
-                lastError = prob.detail ?? prob.title
-            case .http(let status, _, let body):
-                lastError = "Server antwortete mit HTTP \(status): \(body)"
-            case .transport(let tr):
-                switch tr {
-                case .offline:
-                    lastError = "Keine Netzwerkverbindung oder Server nicht erreichbar."
-                case .timedOut:
-                    lastError = "Zeitüberschreitung beim Verbinden mit \(serverURLString)."
-                case .cannotConnect:
-                    lastError = "Verbindung zu \(serverURLString) fehlgeschlagen. Bitte Server-Adresse prüfen."
-                case .tls:
-                    lastError = "Sichere TLS/HTTPS-Verbindung fehlgeschlagen."
-                default:
-                    lastError = "Netzwerkfehler: \(tr)"
-                }
-            case .unexpectedPayload(let payload):
-                lastError = "Unerwartete Serverantwort (Status \(payload.status)): \(payload.bodyPreview)"
-            case .invalidEndpoint(let path):
-                lastError = "Ungültiger API-Pfad: \(path)"
-            }
-            return nil
         } catch {
-            lastError = "Fehler bei der Kopplung: \(error.localizedDescription)"
+            handle(error)
             return nil
         }
     }
@@ -1031,13 +1026,31 @@ final class AppModel {
         // "request a new code", and the text has to make that the obvious
         // next step rather than "choose another server".
         case .expired:
-            lastError = "Der Kopplungscode ist abgelaufen. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Pairing Code Expired"),
+                detail: LocalizedStringResource("Please request a new pairing code."),
+                isRetryable: false,
+                severity: .info,
+                code: "PAIRING_EXPIRED"
+            ))
             return .ended
         case .consumed:
-            lastError = "Dieser Kopplungscode wurde bereits verwendet. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Code Already Used"),
+                detail: LocalizedStringResource("This code has already been claimed. Please request a new code."),
+                isRetryable: false,
+                severity: .info,
+                code: "PAIRING_CONSUMED"
+            ))
             return .ended
         case .revoked:
-            lastError = "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Pairing Denied"),
+                detail: LocalizedStringResource("Pairing was denied in the admin console. Please request a new code."),
+                isRetryable: false,
+                severity: .warning,
+                code: "PAIRING_REVOKED"
+            ))
             return .ended
         }
     }
@@ -1047,7 +1060,7 @@ final class AppModel {
         do {
             _ = try await enrollment.completeEnrollment()
             await session?.resetAfterReenrollment()
-            lastError = nil
+            setError(nil)
 
             // Load before announcing `.ready`. The pairing screen's task is
             // what awaits this call, and SwiftUI cancels that task the moment
@@ -1063,7 +1076,7 @@ final class AppModel {
             guard state == stateBeforeLoad else { return }
             state = .ready
         } catch {
-            lastError = "Pairing could not be completed: \(error.localizedDescription)"
+            handle(error)
         }
     }
 
@@ -1073,7 +1086,7 @@ final class AppModel {
         identity = nil
         enrollment = nil
         session = nil
-        lastError = nil
+        setError(nil)
         state = .needsServer
     }
 
@@ -1194,7 +1207,7 @@ final class AppModel {
                 bouquetChannelsCache["all"] = loaded
             }
             channels = loaded
-            lastError = nil
+            setError(nil)
 
             async let nowNextTask = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
             async let epgTask = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
@@ -1309,7 +1322,7 @@ final class AppModel {
                 }
             }
             UserDefaults.standard.set(recordingProgress, forKey: "xg2g.recordingProgress")
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1323,7 +1336,7 @@ final class AppModel {
         do {
             _ = try? await session?.validSession()
             timers = try await timersRepository.timers()
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1438,7 +1451,7 @@ final class AppModel {
                 serviceRef: channel.serviceRef,
                 qualityPreference: qualityPreference.rawValue
             )
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1494,7 +1507,7 @@ final class AppModel {
         bouquets = []
         recordings = []
         timers = []
-        lastError = nil
+        setError(nil)
     }
 
     // MARK: - Errors
@@ -1502,53 +1515,21 @@ final class AppModel {
     private func handle(_ error: any Error) {
         if let apiError = error as? APIError {
             Task { await session?.noteRequestFailure(apiError) }
-            switch apiError {
-            case .problem(let problem):
-                if problem.code == SessionCoordinator.deviceReauthRequiredCode {
-                    state = .needsRePairing
-                    lastError = "Dieses Gerät muss erneut gekoppelt werden."
-                    return
-                }
-                lastError = problem.detail ?? problem.title
-                return
-            case .http(let status, _, let preview):
-                if status == 401 {
-                    state = .needsRePairing
-                    lastError = "Authentifizierung abgelaufen. Bitte neu koppeln."
-                    return
-                }
-                lastError = "Server-Fehler (HTTP \(status)): \(preview)"
-                return
-            case .transport(let transport):
-                switch transport {
-                case .cancelled:
-                    return // Ignore cancelled SwiftUI task transitions
-                case .offline:
-                    lastError = "Keine Internetverbindung."
-                case .timedOut:
-                    lastError = "Zeitüberschreitung bei der Serververbindung."
-                case .cannotConnect:
-                    lastError = "Verbindung zum Server fehlgeschlagen."
-                case .tls:
-                    lastError = "TLS / Zertifikatsfehler bei Verbindung."
-                case .other(let code):
-                    lastError = "Netzwerkfehler (Code \(code))."
-                }
-                return
-            case .invalidEndpoint(let path):
-                lastError = "Endpunkt nicht verfügbar (\(path))"
-                return
-            case .unexpectedPayload(let payload):
-                lastError = "Unerwartete Server-Antwort (Status \(payload.status))"
-                return
-            }
         }
-        if case SessionCoordinator.Failure.reauthenticationRequired = error {
-            state = .needsRePairing
-            lastError = "Dieses Gerät muss erneut gekoppelt werden."
+        guard let classified = ErrorClassifier.classify(error) else {
+            // Cancellation suppressed: normal user transitions do not flash error states
+            setError(nil)
             return
         }
-        lastError = error.localizedDescription
+
+        if classified.code == SessionCoordinator.deviceReauthRequiredCode ||
+           classified.code == "DEVICE_REAUTH_REQUIRED" {
+            state = .needsRePairing
+        } else if let apiError = error as? APIError, case .http(let status, _, _) = apiError, status == 401 {
+            state = .needsRePairing
+        }
+
+        setError(classified)
     }
 
     // MARK: - Device description

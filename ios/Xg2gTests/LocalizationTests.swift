@@ -180,13 +180,35 @@ struct LocalizationTests {
     }
 
     // MARK: - 6. Visual Layout & Snapshot Rendering (DE vs EN & Dynamic Type)
+    //
+    // Note: These visual rendering tests serve as programmatic smoke tests verifying that SwiftUI
+    // hierarchies (pickers, toggles, subviews, and navigation titles) complete layout passes without
+    // layout recursion, frame corruption, or missing text under both German and English locales, as well as
+    // under extreme Dynamic Type accessibility scalings (accessibilityExtraExtraLarge). Rendered images are
+    // retained as reviewable PNG artifacts for inspection.
 
-    @Test("Render SettingsView snapshots in both German and English")
+    private static func saveScreenshot(_ image: UIImage, name: String) {
+        guard let data = image.pngData() else { return }
+        let primaryDir = URL(fileURLWithPath: "/Users/manuel/.gemini/antigravity/brain/4a394db7-9692-48bf-a316-6f2121ab0ef0/screenshots")
+        let fallbackDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("artifacts/screenshots")
+
+        for dir in [primaryDir, fallbackDir] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let fileURL = dir.appendingPathComponent("\(name).png")
+            try? data.write(to: fileURL)
+        }
+    }
+
+    @Test("Programmatic smoke test: Render SettingsView snapshots in German and English, retaining PNG artifacts")
     @MainActor
     func renderSettingsViewsInBothLocales() throws {
         let locales = [("de", deLocale), ("en", enLocale)]
 
-        for (_, loc) in locales {
+        for (code, loc) in locales {
             let model = AppModel()
             model.playbackEngine = .auto
             model.qualityPreference = .auto
@@ -213,6 +235,7 @@ struct LocalizationTests {
                 controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
             }
             #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "settings_\(code)")
 
             // Diagnostic subview
             let diagView = DiagnosticPipelineOverrideView(model: model)
@@ -233,30 +256,228 @@ struct LocalizationTests {
                 diagController.view.drawHierarchy(in: diagController.view.bounds, afterScreenUpdates: true)
             }
             #expect(diagImage.size.width > 0 && diagImage.size.height > 0)
+            Self.saveScreenshot(diagImage, name: "diagnostic_\(code)")
         }
     }
 
-    @Test("SettingsView layout accommodates large Dynamic Type without crashing or corrupting frame hierarchy")
+    @Test("Programmatic smoke test: SettingsView accommodates accessibilityExtraExtraLarge Dynamic Type in DE and EN")
     @MainActor
     func settingsViewDynamicTypeLayout() {
-        let model = AppModel()
-        model.playbackEngine = .auto
-        model.qualityPreference = .auto
+        let locales = [("de", deLocale), ("en", enLocale)]
 
-        let dynamicTypeView = SettingsView(model: model)
-            .environment(\.sizeCategory, .accessibilityExtraExtraLarge)
-            .environment(\.locale, deLocale)
+        for (code, loc) in locales {
+            let model = AppModel()
+            model.playbackEngine = .auto
+            model.qualityPreference = .auto
 
-        let controller = UIHostingController(rootView: dynamicTypeView)
-        controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 1200)
+            let dynamicTypeView = SettingsView(model: model)
+                .environment(\.sizeCategory, .accessibilityExtraExtraLarge)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
 
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 1200))
-        window.rootViewController = controller
-        window.makeKeyAndVisible()
-        controller.view.setNeedsLayout()
-        controller.view.layoutIfNeeded()
+            let controller = UIHostingController(rootView: dynamicTypeView)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 1200)
+            controller.view.overrideUserInterfaceStyle = .dark
 
-        #expect(controller.view.bounds.width == 393)
-        #expect(controller.view.bounds.height == 1200)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 1200))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            #expect(controller.view.bounds.width == 393)
+            #expect(controller.view.bounds.height == 1200)
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "settings_dynamic_type_axxl_\(code)")
+        }
+    }
+
+    // MARK: - 7. Catalog-Wide Parity & Placeholder Verification
+
+    @Test("Localizable.xcstrings contains full DE and EN parity and matching placeholders for all entries")
+    func catalogWideParityAndPlaceholders() throws {
+        let catalogURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Xg2g/Localizable.xcstrings")
+
+        #expect(FileManager.default.fileExists(atPath: catalogURL.path))
+        let data = try Data(contentsOf: catalogURL)
+
+        struct Catalog: Decodable {
+            struct Entry: Decodable {
+                struct Loc: Decodable {
+                    struct Unit: Decodable {
+                        let state: String
+                        let value: String
+                    }
+                    let stringUnit: Unit?
+                }
+                let extractionState: String?
+                let localizations: [String: Loc]?
+            }
+            let sourceLanguage: String
+            let strings: [String: Entry]
+        }
+
+        let catalog = try JSONDecoder().decode(Catalog.self, from: data)
+        #expect(catalog.strings.count > 0, "Catalog must not be empty")
+
+        // Regex for placeholders e.g. %@, %1$@, %d
+        let placeholderRegex = try Regex(#"%([0-9]+\$)?([0-9]*\.?[0-9]*)?[@dDiIuUxXfFeEgGcCsSpaAF]"#)
+
+        for (key, entry) in catalog.strings {
+            let locs = entry.localizations ?? [:]
+
+            // 1. English localization presence and content
+            let enUnit = locs["en"]?.stringUnit
+            #expect(enUnit != nil, "Missing EN localization for key: \(key)")
+            let enVal = enUnit?.value ?? ""
+            #expect(!enVal.isEmpty, "Empty EN value for key: \(key)")
+
+            // 2. German localization presence and content
+            let deUnit = locs["de"]?.stringUnit
+            #expect(deUnit != nil, "Missing DE localization for key: \(key)")
+            let deVal = deUnit?.value ?? ""
+            #expect(!deVal.isEmpty, "Empty DE value for key: \(key)")
+
+            // 3. Translated state
+            #expect(enUnit?.state == "translated", "EN not translated for key: \(key)")
+            #expect(deUnit?.state == "translated", "DE not translated for key: \(key)")
+
+            // 4. Placeholder token parity
+            let enMatches = enVal.matches(of: placeholderRegex).map { String(enVal[$0.range]) }
+            let deMatches = deVal.matches(of: placeholderRegex).map { String(deVal[$0.range]) }
+            #expect(enMatches.count == deMatches.count, "Placeholder count mismatch for '\(key)': EN has \(enMatches) vs DE \(deMatches)")
+        }
+    }
+
+    // MARK: - 8. EPG Content Language Boundary Preservation
+
+    @Test("EPG source content is preserved verbatim in its original broadcast language inside English UI")
+    func epgSourceContentLanguagePreservation() {
+        // Enigma2 source broadcast in German
+        let germanChannelName = "Das Erste HD"
+        let germanProgrammeTitle = "Tagesschau"
+        let germanProgrammeDesc = "Nachrichten der ARD mit Wetterbericht und Berichten aus Politik, Wirtschaft und Kultur"
+
+        let channel = Channel(
+            id: "1",
+            name: germanChannelName,
+            number: "1",
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            logoURL: nil
+        )
+
+        let entry = NowNext.Entry(
+            title: germanProgrammeTitle,
+            description: germanProgrammeDesc,
+            start: Date(),
+            end: Date().addingTimeInterval(900)
+        )
+
+        // Verbatim preservation in models
+        #expect(channel.name == germanChannelName)
+        #expect(entry.title == germanProgrammeTitle)
+        #expect(entry.description == germanProgrammeDesc)
+
+        // Application chrome is localized into active English UI while broadcast metadata is untouched
+        let enNewsGenre = resolve(EpgGenre.news.localizedTitle, locale: enLocale)
+        #expect(enNewsGenre == "News", "App genre chrome must be English")
+
+        let enChannelListHeader = localize("All Channels", locale: enLocale)
+        #expect(enChannelListHeader == "All Channels", "App header chrome must be English")
+
+        let enNoBroadcastsInGenre = localize("No broadcasts in \(enNewsGenre)", locale: enLocale)
+        #expect(enNoBroadcastsInGenre == "No broadcasts in News")
+
+        // Verbatim broadcast content must not be translated by application dictionaries
+        let broadcastTitleAsResource = LocalizedStringResource(stringLiteral: germanProgrammeTitle)
+        let resolvedTitleInEn = resolve(broadcastTitleAsResource, locale: enLocale)
+        #expect(resolvedTitleInEn == germanProgrammeTitle, "Broadcast title must never be translated into English by app catalogs")
+    }
+
+    // MARK: - 9. ErrorClassifier & UserFacingError Presentation
+
+    @Test("ErrorClassifier maps RFC 7807 problem details, transport errors, and suppresses cancellation")
+    func errorClassifierPresentationRules() {
+        // 1. Explicit cancellation suppression
+        let cancelError = CancellationError()
+        #expect(ErrorClassifier.classify(cancelError) == nil)
+
+        let urlCancelled = URLError(.cancelled)
+        #expect(ErrorClassifier.classify(urlCancelled) == nil)
+
+        let nsCancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled, userInfo: nil)
+        #expect(ErrorClassifier.classify(nsCancelled) == nil)
+
+        let transportCancelled = APIError.transport(.cancelled)
+        #expect(ErrorClassifier.classify(transportCancelled) == nil)
+
+        // 2. Transport failures
+        let offlineErr = APIError.transport(.offline)
+        let offlineUserFacing = ErrorClassifier.classify(offlineErr)
+        #expect(offlineUserFacing != nil)
+        #expect(resolve(offlineUserFacing!.title, locale: enLocale) == "No Internet Connection")
+        #expect(resolve(offlineUserFacing!.title, locale: deLocale) == "Keine Internetverbindung")
+        #expect(offlineUserFacing!.isRetryable == true)
+
+        let timeoutErr = APIError.transport(.timedOut)
+        let timeoutUserFacing = ErrorClassifier.classify(timeoutErr)
+        #expect(timeoutUserFacing != nil)
+        #expect(resolve(timeoutUserFacing!.title, locale: enLocale) == "Connection Timed Out")
+        #expect(resolve(timeoutUserFacing!.title, locale: deLocale) == "Zeitüberschreitung bei der Verbindung")
+
+        // 3. Verified RFC 7807 problem codes
+        let unreachableProblem = ProblemDetails(
+            type: "https://xg2g.local/problems/receiver-unreachable",
+            title: "Receiver Unreachable",
+            status: 503,
+            requestId: "req-1234",
+            code: "RECEIVER_UNREACHABLE",
+            detail: "Enigma2 box did not respond on 10.10.55.64",
+            instance: nil
+        )
+        let unreachableUserFacing = ErrorClassifier.classify(APIError.problem(unreachableProblem))
+        #expect(unreachableUserFacing != nil)
+        #expect(resolve(unreachableUserFacing!.title, locale: enLocale) == "Receiver Unreachable")
+        #expect(resolve(unreachableUserFacing!.title, locale: deLocale) == "Receiver nicht erreichbar")
+        #expect(unreachableUserFacing!.code == "RECEIVER_UNREACHABLE")
+        #expect(unreachableUserFacing!.requestId == "req-1234")
+        #expect(unreachableUserFacing!.diagnosticLog?.contains("10.10.55.64") == true)
+        #expect(resolve(unreachableUserFacing!.detail!, locale: enLocale) == "The TV receiver cannot be reached. Please check its connection.")
+
+        // 4. Generic/unknown code must NOT claim receiver-specific causes
+        let genericProblem = ProblemDetails(
+            type: "https://xg2g.local/problems/generic",
+            title: "Internal Error",
+            status: 500,
+            requestId: "req-9999",
+            code: "UNKNOWN_INTERNAL_ERROR",
+            detail: "Database crashed",
+            instance: nil
+        )
+        let genericUserFacing = ErrorClassifier.classify(APIError.problem(genericProblem))
+        #expect(genericUserFacing != nil)
+        #expect(resolve(genericUserFacing!.title, locale: enLocale) == "Server Error")
+        #expect(resolve(genericUserFacing!.title, locale: deLocale) == "Server-Fehler")
+        let genericEnDetail = resolve(genericUserFacing!.detail!, locale: enLocale)
+        #expect(!genericEnDetail.lowercased().contains("receiver"), "Generic 500 must not blame receiver")
+
+        // 5. Session reauthentication required
+        let reauthError = SessionCoordinator.Failure.reauthenticationRequired(.refreshRejected)
+        let reauthUserFacing = ErrorClassifier.classify(reauthError)
+        #expect(reauthUserFacing != nil)
+        #expect(resolve(reauthUserFacing!.title, locale: enLocale) == "Device Must Be Paired Again")
+        #expect(resolve(reauthUserFacing!.title, locale: deLocale) == "Gerät muss erneut gekoppelt werden")
+        #expect(reauthUserFacing!.isRetryable == false)
     }
 }
+

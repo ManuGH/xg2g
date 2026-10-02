@@ -1,2012 +1,3117 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "1:1 bitstream without video transcoding" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1:1 Bitstream ohne Video-Transkodierung"
+  "sourceLanguage": "en",
+  "strings": {
+    "1:1 bitstream without video transcoding": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 Bitstream ohne Video-Transkodierung"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1:1 bitstream without video transcoding"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1:1 bitstream without video transcoding"
           }
         }
       }
     },
-    "720p HD (Balanced)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "720p HD (Ausgewogen)"
+    "720p HD (Balanced)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "720p HD (Ausgewogen)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "720p HD (Balanced)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "720p HD (Balanced)"
           }
         }
       }
     },
-    "About xg2g" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Über xg2g"
+    "About xg2g": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über xg2g"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "About xg2g"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About xg2g"
           }
         }
       }
     },
-    "Active Intent" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktiver Intent"
+    "Active Intent": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktiver Intent"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active Intent"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active Intent"
           }
         }
       }
     },
-    "Active Playback Plan" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktiver Wiedergabeplan"
+    "Active Playback Plan": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktiver Wiedergabeplan"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active Playback Plan"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active Playback Plan"
           }
         }
       }
     },
-    "Adaptive quality on fluctuating bandwidth" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adaptive Qualität bei schwankender Bandbreite"
+    "Adaptive quality on fluctuating bandwidth": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adaptive Qualität bei schwankender Bandbreite"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adaptive quality on fluctuating bandwidth"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adaptive quality on fluctuating bandwidth"
           }
         }
       }
     },
-    "Advanced & Diagnostics" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erweitert & Diagnose"
+    "Advanced & Diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erweitert & Diagnose"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Advanced & Diagnostics"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced & Diagnostics"
           }
         }
       }
     },
-    "Advanced Aspect Ratios" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erweiterte Seitenverhältnisse"
+    "Advanced Aspect Ratios": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erweiterte Seitenverhältnisse"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Advanced Aspect Ratios"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced Aspect Ratios"
           }
         }
       }
     },
-    "Airplane / Compact (HEVC)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Flugzeug / Kompakt (HEVC)"
+    "Airplane / Compact (HEVC)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flugzeug / Kompakt (HEVC)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Airplane / Compact (HEVC)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Airplane / Compact (HEVC)"
           }
         }
       }
     },
-    "AirPlay and system screen sharing" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AirPlay und System-Bildschirmübertragung"
+    "AirPlay and system screen sharing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay und System-Bildschirmübertragung"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AirPlay and system screen sharing"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay and system screen sharing"
           }
         }
       }
     },
-    "All" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle"
+    "All": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
           }
         }
       }
     },
-    "All Channels" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle Sender"
+    "All Channels": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Sender"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All Channels"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Channels"
           }
         }
       }
     },
-    "Are you sure you want to clear the cache?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Möchtest du den Cache wirklich leeren?"
+    "Are you sure you want to clear the cache?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Möchtest du den Cache wirklich leeren?"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Are you sure you want to clear the cache?"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Are you sure you want to clear the cache?"
           }
         }
       }
     },
-    "Are you sure you want to disconnect this device?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Möchtest du dieses Gerät wirklich trennen?"
+    "Are you sure you want to disconnect this device?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Möchtest du dieses Gerät wirklich trennen?"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Are you sure you want to disconnect this device?"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Are you sure you want to disconnect this device?"
           }
         }
       }
     },
-    "Auto" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch"
+    "Auto": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
           }
         }
       }
     },
-    "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bandbreitenoptimiertes Streaming (HEVC/AV1) für unterwegs"
+    "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bandbreitenoptimiertes Streaming (HEVC/AV1) für unterwegs"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go"
           }
         }
       }
     },
-    "Best bitrate (~3.5 GB / 90m)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beste Bitrate (~3,5 GB / 90m)"
+    "Best bitrate (~3.5 GB / 90m)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beste Bitrate (~3,5 GB / 90m)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Best bitrate (~3.5 GB / 90m)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Best bitrate (~3.5 GB / 90m)"
           }
         }
       }
     },
-    "Cancel" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abbrechen"
+    "Cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
           }
         }
       }
     },
-    "Channel list: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Senderliste: %@"
+    "Channel list: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Senderliste: %@"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Channel list: %@"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel list: %@"
           }
         }
       }
     },
-    "Clear Cache & Reload Data" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cache leeren & Daten neu laden"
+    "Clear Cache & Reload Data": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache leeren & Daten neu laden"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Cache & Reload Data"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Cache & Reload Data"
           }
         }
       }
     },
-    "Clear EPG & Media Cache" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EPG- & Medien-Cache leeren"
+    "Clear EPG & Media Cache": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EPG- & Medien-Cache leeren"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear EPG & Media Cache"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear EPG & Media Cache"
           }
         }
       }
     },
-    "Clears temporary channel and EPG caches and reloads data." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Löscht temporäre Sender- und EPG-Caches und lädt die Daten neu."
+    "Clears temporary channel and EPG caches and reloads data.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löscht temporäre Sender- und EPG-Caches und lädt die Daten neu."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clears temporary channel and EPG caches and reloads data."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clears temporary channel and EPG caches and reloads data."
           }
         }
       }
     },
-    "Closer to the live broadcast" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Näher am Live-Signal"
+    "Closer to the live broadcast": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näher am Live-Signal"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Closer to the live broadcast"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Closer to the live broadcast"
           }
         }
       }
     },
-    "Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kompakt (HEVC) spart bis zu 75% Speicherplatz auf deinem Gerät und ist ideal für Flugreisen und lange Serien-Staffeln."
+    "Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompakt (HEVC) spart bis zu 75% Speicherplatz auf deinem Gerät und ist ideal für Flugreisen und lange Serien-Staffeln."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons."
           }
         }
       }
     },
-    "Compatibility" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kompatibilität"
+    "Compatibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibilität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compatibility"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatibility"
           }
         }
       }
     },
-    "Connected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verbunden"
+    "Connected": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connected"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
           }
         }
       }
     },
-    "Connection & Infrastructure" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verbindung & Infrastruktur"
+    "Connection & Infrastructure": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung & Infrastruktur"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection & Infrastructure"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection & Infrastructure"
           }
         }
       }
     },
-    "Data Saver" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datensparen"
+    "Data Saver": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datensparen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Data Saver"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Data Saver"
           }
         }
       }
     },
-    "Default Download Quality" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standard-Download"
+    "Default Download Quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard-Download"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Default Download Quality"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Download Quality"
           }
         }
       }
     },
-    "Deletes saved EPG data and channel lists and reloads them fresh from the server." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Löscht gespeicherte EPG-Daten und Senderlisten und lädt diese frisch vom Server."
+    "Deletes saved EPG data and channel lists and reloads them fresh from the server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löscht gespeicherte EPG-Daten und Senderlisten und lädt diese frisch vom Server."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletes saved EPG data and channel lists and reloads them fresh from the server."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deletes saved EPG data and channel lists and reloads them fresh from the server."
           }
         }
       }
     },
-    "Device Identity" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geräteidentität"
+    "Device Identity": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geräteidentität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Device Identity"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device Identity"
           }
         }
       }
     },
-    "Device Name" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gerätename"
+    "Device Name": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerätename"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Device Name"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device Name"
           }
         }
       }
     },
-    "Device Type" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gerätetyp"
+    "Device Type": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerätetyp"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Device Type"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device Type"
           }
         }
       }
     },
-    "Direct video and audio with minimal latency" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bild und Ton möglichst unverändert mit minimaler Latenz"
+    "Direct video and audio with minimal latency": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild und Ton möglichst unverändert mit minimaler Latenz"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Direct video and audio with minimal latency"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct video and audio with minimal latency"
           }
         }
       }
     },
-    "Disconnect & Sign Out Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gerät trennen & abmelden"
+    "Disconnect & Sign Out Device": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät trennen & abmelden"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect & Sign Out Device"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect & Sign Out Device"
           }
         }
       }
     },
-    "Disconnect Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gerät trennen"
+    "Disconnect Device": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät trennen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect Device"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect Device"
           }
         }
       }
     },
-    "Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trennt die DPoP-Verbindung zum Server und entfernt den kryptographischen Geräteschlüssel sicher aus der Secure Enclave."
+    "Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trennt die DPoP-Verbindung zum Server und entfernt den kryptographischen Geräteschlüssel sicher aus der Secure Enclave."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave."
           }
         }
       }
     },
-    "Documentary & Knowledge" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Doku & Wissen"
+    "Documentary & Knowledge": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doku & Wissen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Documentary & Knowledge"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Documentary & Knowledge"
           }
         }
       }
     },
-    "Download Over Wi-Fi Only" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur über WLAN laden"
+    "Download Over Wi-Fi Only": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur über WLAN laden"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download Over Wi-Fi Only"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Over Wi-Fi Only"
           }
         }
       }
     },
-    "Enables manual aspect ratio overrides (16:9, 4:3, Cinemascope) in the player." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player."
+    "Enables manual aspect ratio overrides (16:9, 4:3, Cinemascope) in the player.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enables manual aspect ratio overrides (16:9, 4:3, Cinemascope) in the player."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enables manual aspect ratio overrides (16:9, 4:3, Cinemascope) in the player."
           }
         }
       }
     },
-    "Enables timeshift/pause, remote streaming, and adaptive bitrate" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
+    "Enables timeshift/pause, remote streaming, and adaptive bitrate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enables timeshift/pause, remote streaming, and adaptive bitrate"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enables timeshift/pause, remote streaming, and adaptive bitrate"
           }
         }
       }
     },
-    "Entertainment" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unterhaltung"
+    "Entertainment": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unterhaltung"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entertainment"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entertainment"
           }
         }
       }
     },
-    "Genre: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Genre: %@"
+    "Genre: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre: %@"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Genre: %@"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre: %@"
           }
         }
       }
     },
-    "High image quality (~1.5 GB / 90m)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hohe Bildqualität (~1,5 GB / 90m)"
+    "High image quality (~1.5 GB / 90m)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hohe Bildqualität (~1,5 GB / 90m)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "High image quality (~1.5 GB / 90m)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High image quality (~1.5 GB / 90m)"
           }
         }
       }
     },
-    "Higher latency than Native Live TV" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Höhere Latenz als bei Native Live-TV"
+    "Higher latency than Native Live TV": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Höhere Latenz als bei Native Live-TV"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Higher latency than Native Live TV"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Higher latency than Native Live TV"
           }
         }
       }
     },
-    "In 'Auto' mode, xg2g Planner dynamically decides the optimal pipeline based on network, device capabilities, and server resources." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Im Modus 'Automatisch' entscheidet der xg2g Planner dynamisch über die optimale Pipeline basierend auf Netzwerk, Gerätefähigkeiten und Serverressourcen."
+    "In 'Auto' mode, xg2g Planner dynamically decides the optimal pipeline based on network, device capabilities, and server resources.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Modus 'Automatisch' entscheidet der xg2g Planner dynamisch über die optimale Pipeline basierend auf Netzwerk, Gerätefähigkeiten und Serverressourcen."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In 'Auto' mode, xg2g Planner dynamically decides the optimal pipeline based on network, device capabilities, and server resources."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In 'Auto' mode, xg2g Planner dynamically decides the optimal pipeline based on network, device capabilities, and server resources."
           }
         }
       }
     },
-    "Key Storage" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schlüsselspeicher"
+    "Key Storage": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schlüsselspeicher"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key Storage"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key Storage"
           }
         }
       }
     },
-    "Kids" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kinder"
+    "Kids": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kinder"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kids"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kids"
           }
         }
       }
     },
-    "License" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lizenz"
+    "License": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lizenz"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "License"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "License"
           }
         }
       }
     },
-    "Lossless streaming and lowest latency on local network" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verlustfreies Streaming und niedrigste Latenz im Heimnetz"
+    "Lossless streaming and lowest latency on local network": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlustfreies Streaming und niedrigste Latenz im Heimnetz"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lossless streaming and lowest latency on local network"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lossless streaming and lowest latency on local network"
           }
         }
       }
     },
-    "Manual overrides bypass the automatic pipeline selection of the xg2g Planner and are intended for development and diagnostic purposes." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuelle Overrides umgehen die automatische Pipeline-Auswahl des xg2g Planners und dienen zu Entwicklungs- und Diagnosezwecken."
+    "Manual overrides bypass the automatic pipeline selection of the xg2g Planner and are intended for development and diagnostic purposes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuelle Overrides umgehen die automatische Pipeline-Auswahl des xg2g Planners und dienen zu Entwicklungs- und Diagnosezwecken."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manual overrides bypass the automatic pipeline selection of the xg2g Planner and are intended for development and diagnostic purposes."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual overrides bypass the automatic pipeline selection of the xg2g Planner and are intended for development and diagnostic purposes."
           }
         }
       }
     },
-    "Minimal server load (no video transcoding)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Minimale Serverlast (keine Video-Transkodierung)"
+    "Minimal server load (no video transcoding)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimale Serverlast (keine Video-Transkodierung)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Minimal server load (no video transcoding)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimal server load (no video transcoding)"
           }
         }
       }
     },
-    "Movies" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spielfilme"
+    "Movies": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spielfilme"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Movies"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Movies"
           }
         }
       }
     },
-    "Native Live TV" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Native Live-TV"
+    "Native Live TV": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Live-TV"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Native Live TV"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Live TV"
           }
         }
       }
     },
-    "Native Live TV delivers the signal unmodified to the VideoToolbox hardware pipeline with minimal latency." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Native Live-TV liefert das Signal unverändert an die VideoToolbox-Hardware-Pipeline mit minimaler Latenz."
+    "Native Live TV delivers the signal unmodified to the VideoToolbox hardware pipeline with minimal latency.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Live-TV liefert das Signal unverändert an die VideoToolbox-Hardware-Pipeline mit minimaler Latenz."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Native Live TV delivers the signal unmodified to the VideoToolbox hardware pipeline with minimal latency."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Live TV delivers the signal unmodified to the VideoToolbox hardware pipeline with minimal latency."
           }
         }
       }
     },
-    "Network Status" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Netzwerkzustand"
+    "Network Status": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkzustand"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Network Status"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network Status"
           }
         }
       }
     },
-    "News" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nachrichten"
+    "News": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nachrichten"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "News"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "News"
           }
         }
       }
     },
-    "Next-gen AV1 efficiency (~550 MB / 90m)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next-Gen AV1 Effizienz (~550 MB / 90m)"
+    "Next-gen AV1 efficiency (~550 MB / 90m)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next-Gen AV1 Effizienz (~550 MB / 90m)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next-gen AV1 efficiency (~550 MB / 90m)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next-gen AV1 efficiency (~550 MB / 90m)"
           }
         }
       }
     },
-    "No %@ broadcasts" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine %@-Sendungen"
+    "No %@ broadcasts": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine %@-Sendungen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No %@ broadcasts"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No %@ broadcasts"
           }
         }
       }
     },
-    "No broadcasts found for the selected filter." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Sendungen für den gewählten Filter gefunden."
+    "No broadcasts found for the selected filter.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Sendungen für den gewählten Filter gefunden."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No broadcasts found for the selected filter."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No broadcasts found for the selected filter."
           }
         }
       }
     },
-    "No broadcasts in %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nichts in %@"
+    "No broadcasts in %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts in %@"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No broadcasts in %@"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No broadcasts in %@"
           }
         }
       }
     },
-    "No channel matches your search." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kein Sender entspricht deiner Suche."
+    "No channel matches your search.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Sender entspricht deiner Suche."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No channel matches your search."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No channel matches your search."
           }
         }
       }
     },
-    "No Channels" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Sender"
+    "No Channels": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Sender"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Channels"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Channels"
           }
         }
       }
     },
-    "No pausing or rewinding (timeshift)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kein Pausieren oder Zurückspulen (Timeshift)"
+    "No pausing or rewinding (timeshift)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Pausieren oder Zurückspulen (Timeshift)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No pausing or rewinding (timeshift)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No pausing or rewinding (timeshift)"
           }
         }
       }
     },
-    "No programs in this time range" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Sendungen im Zeitraum"
+    "No programs in this time range": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Sendungen im Zeitraum"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No programs in this time range"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No programs in this time range"
           }
         }
       }
     },
-    "No Results" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Treffer"
+    "No Results": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Treffer"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Results"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Results"
           }
         }
       }
     },
-    "No results for “%@”" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Treffer für „%@“"
+    "No results for “%@”": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Treffer für „%@“"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No results for “%@”"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No results for “%@”"
           }
         }
       }
     },
-    "Notice" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hinweis"
+    "Notice": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hinweis"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notice"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notice"
           }
         }
       }
     },
-    "Offline & Downloads" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Offline & Downloads"
+    "Offline & Downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline & Downloads"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Offline & Downloads"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline & Downloads"
           }
         }
       }
     },
-    "Only available on the same network as the ingest receiver" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur im selben Netzwerk wie der Ingest verfügbar"
+    "Only available on the same network as the ingest receiver": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur im selben Netzwerk wie der Ingest verfügbar"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only available on the same network as the ingest receiver"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only available on the same network as the ingest receiver"
           }
         }
       }
     },
-    "Original" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original"
+    "Original": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original"
           }
         }
       }
     },
-    "Original · No video transcoding · Minimal server load" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original · Keine Video-Transkodierung · Minimale Serverlast"
+    "Original · No video transcoding · Minimal server load": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original · Keine Video-Transkodierung · Minimale Serverlast"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original · No video transcoding · Minimal server load"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original · No video transcoding · Minimal server load"
           }
         }
       }
     },
-    "Original HD (1:1)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original HD (1:1)"
+    "Original HD (1:1)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original HD (1:1)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original HD (1:1)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original HD (1:1)"
           }
         }
       }
     },
-    "Original Quality" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Originalqualität"
+    "Original Quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originalqualität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original Quality"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original Quality"
           }
         }
       }
     },
-    "Pause live TV, rewind, and watch from the beginning (timeshift)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)"
+    "Pause live TV, rewind, and watch from the beginning (timeshift)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pause live TV, rewind, and watch from the beginning (timeshift)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause live TV, rewind, and watch from the beginning (timeshift)"
           }
         }
       }
     },
-    "Pipeline Override" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pipeline-Override"
+    "Pipeline Override": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pipeline-Override"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pipeline Override"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pipeline Override"
           }
         }
       }
     },
-    "Pipeline profiles, test overrides & diagnostic status" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pipeline-Profile, Test-Overrides & Diagnose-Status"
+    "Pipeline profiles, test overrides & diagnostic status": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pipeline-Profile, Test-Overrides & Diagnose-Status"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pipeline profiles, test overrides & diagnostic status"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pipeline profiles, test overrides & diagnostic status"
           }
         }
       }
     },
-    "Playback" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiedergabe"
+    "Playback": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playback"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback"
           }
         }
       }
     },
-    "Playback Mode" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiedergabemodus"
+    "Playback Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabemodus"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Playback Mode"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Mode"
           }
         }
       }
     },
-    "Protocol" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Protokoll"
+    "Protocol": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protokoll"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Protocol"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protocol"
           }
         }
       }
     },
-    "Quality" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Qualität"
+    "Quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quality"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
           }
         }
       }
     },
-    "Receiver Address (Expert Fallback)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Receiver-Adresse (Experten-Fallback)"
+    "Receiver Address (Expert Fallback)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver-Adresse (Experten-Fallback)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Receiver Address (Expert Fallback)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver Address (Expert Fallback)"
           }
         }
       }
     },
-    "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aufnahmen und programmierte Timer sind von diesen Einstellungen nicht betroffen — sie laufen immer über den Server und funktionieren in allen Konfigurationen."
+    "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahmen und programmierte Timer sind von diesen Einstellungen nicht betroffen — sie laufen immer über den Server und funktionieren in allen Konfigurationen."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations."
           }
         }
       }
     },
-    "Requires the full broadcast bitrate continuously" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Benötigt durchgehend die volle Bitrate des Senders"
+    "Requires the full broadcast bitrate continuously": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benötigt durchgehend die volle Bitrate des Senders"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requires the full broadcast bitrate continuously"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires the full broadcast bitrate continuously"
           }
         }
       }
     },
-    "Reset the genre filter or select another time range." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Genre zurücksetzen oder Zeitraum wechseln."
+    "Reset the genre filter or select another time range.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre zurücksetzen oder Zeitraum wechseln."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reset the genre filter or select another time range."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset the genre filter or select another time range."
           }
         }
       }
     },
-    "Save up to 75% storage (~800 MB / 90m)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bis zu 75% Speicher sparen (~800 MB / 90m)"
+    "Save up to 75% storage (~800 MB / 90m)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bis zu 75% Speicher sparen (~800 MB / 90m)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save up to 75% storage (~800 MB / 90m)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save up to 75% storage (~800 MB / 90m)"
           }
         }
       }
     },
-    "Seamless switch to adaptive streaming when away from home" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
+    "Seamless switch to adaptive streaming when away from home": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seamless switch to adaptive streaming when away from home"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seamless switch to adaptive streaming when away from home"
           }
         }
       }
     },
-    "Select another day or start time." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wähle einen anderen Tag oder eine andere Startzeit."
+    "Select another day or start time.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle einen anderen Tag oder eine andere Startzeit."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select another day or start time."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select another day or start time."
           }
         }
       }
     },
-    "Series" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Serien"
+    "Series": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serien"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Series"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Series"
           }
         }
       }
     },
-    "Server Address" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Adresse"
+    "Server Address": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Adresse"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Address"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Address"
           }
         }
       }
     },
-    "Server Status" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Status"
+    "Server Status": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Status"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Status"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Status"
           }
         }
       }
     },
-    "Server Streaming (HLS)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Streaming (HLS)"
+    "Server Streaming (HLS)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Streaming (HLS)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Streaming (HLS)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Streaming (HLS)"
           }
         }
       }
     },
-    "Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Streaming (HLS) ermöglicht Pause/Timeshift, externe Nutzung und adaptive Bitrate; xg2g entscheidet, ob Copy, Remux oder Transcode nötig ist."
+    "Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Streaming (HLS) ermöglicht Pause/Timeshift, externe Nutzung und adaptive Bitrate; xg2g entscheidet, ob Copy, Remux oder Transcode nötig ist."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required."
           }
         }
       }
     },
-    "Session" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sitzung"
+    "Session": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sitzung"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Session"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session"
           }
         }
       }
     },
-    "Settings" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einstellungen"
+    "Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Settings"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
           }
         }
       }
     },
-    "Significantly faster channel zapping (hardware decoding)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deutlich schnelleres Umschalten (Hardware-Decoding)"
+    "Significantly faster channel zapping (hardware decoding)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deutlich schnelleres Umschalten (Hardware-Decoding)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Significantly faster channel zapping (hardware decoding)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Significantly faster channel zapping (hardware decoding)"
           }
         }
       }
     },
-    "Specifies the backend technical pipeline: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP normalization, or transcoding." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Legt die technische Backend-Pipeline fest: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP Normalisierung oder Transcoding."
+    "Specifies the backend technical pipeline: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP normalization, or transcoding.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legt die technische Backend-Pipeline fest: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP Normalisierung oder Transcoding."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Specifies the backend technical pipeline: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP normalization, or transcoding."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Specifies the backend technical pipeline: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP normalization, or transcoding."
           }
         }
       }
     },
-    "Sports" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sport"
+    "Sports": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sport"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sports"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sports"
           }
         }
       }
     },
-    "Standardized HLS with maximum device compatibility" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standardisiertes HLS mit maximaler Gerätekompatibilität"
+    "Standardized HLS with maximum device compatibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardisiertes HLS mit maximaler Gerätekompatibilität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standardized HLS with maximum device compatibility"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardized HLS with maximum device compatibility"
           }
         }
       }
     },
-    "Storage & Cache" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speicher & Cache"
+    "Storage & Cache": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicher & Cache"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Storage & Cache"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage & Cache"
           }
         }
       }
     },
-    "Streaming Quality" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming-Qualität"
+    "Streaming Quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Qualität"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming Quality"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Quality"
           }
         }
       }
     },
-    "Streaming Technology" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming-Technik"
+    "Streaming Technology": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Technik"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming Technology"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Technology"
           }
         }
       }
     },
-    "Streaming Technology & Diagnostics" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming-Technik & Diagnose"
+    "Streaming Technology & Diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Technik & Diagnose"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Streaming Technology & Diagnostics"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Technology & Diagnostics"
           }
         }
       }
     },
-    "Technical Pipeline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Technische Pipeline"
+    "Technical Pipeline": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technische Pipeline"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Technical Pipeline"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical Pipeline"
           }
         }
       }
     },
-    "Telemetry Details" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Telemetrie-Details"
+    "Telemetry Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telemetrie-Details"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Telemetry Details"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telemetry Details"
           }
         }
       }
     },
-    "Test Override" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Test-Override"
+    "Test Override": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test-Override"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Test Override"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test Override"
           }
         }
       }
     },
-    "The device will be signed out on the server. To regain access, the pairing code must be approved again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das Gerät wird serverseitig abgemeldet. Für erneuten Zugriff muss der Pairing-Code wieder genehmigt werden."
+    "The device will be signed out on the server. To regain access, the pairing code must be approved again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Gerät wird serverseitig abgemeldet. Für erneuten Zugriff muss der Pairing-Code wieder genehmigt werden."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The device will be signed out on the server. To regain access, the pairing code must be approved again."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device will be signed out on the server. To regain access, the pairing code must be approved again."
           }
         }
       }
     },
-    "The receiver address serves solely as an optional local fallback for unmanaged direct ingest in the home network. By default, xg2g coordinates all streams." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Receiver-Adresse dient ausschließlich als optionaler lokaler Fallback für unmanaged Direct-Ingest im Heimnetz. Standardmäßig koordiniert xg2g alle Streams."
+    "The receiver address serves solely as an optional local fallback for unmanaged direct ingest in the home network. By default, xg2g coordinates all streams.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Receiver-Adresse dient ausschließlich als optionaler lokaler Fallback für unmanaged Direct-Ingest im Heimnetz. Standardmäßig koordiniert xg2g alle Streams."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The receiver address serves solely as an optional local fallback for unmanaged direct ingest in the home network. By default, xg2g coordinates all streams."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The receiver address serves solely as an optional local fallback for unmanaged direct ingest in the home network. By default, xg2g coordinates all streams."
           }
         }
       }
     },
-    "The xg2g Planner automatically selects the optimal pipeline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der xg2g Planner wählt automatisch die optimale Pipeline"
+    "The xg2g Planner automatically selects the optimal pipeline": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der xg2g Planner wählt automatisch die optimale Pipeline"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The xg2g Planner automatically selects the optimal pipeline"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The xg2g Planner automatically selects the optimal pipeline"
           }
         }
       }
     },
-    "Timeshift/pause is only available when HLS is active" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
+    "Timeshift/pause is only available when HLS is active": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Timeshift/pause is only available when HLS is active"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift/pause is only available when HLS is active"
           }
         }
       }
     },
-    "Try a different spelling or day." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Andere Schreibweise oder anderer Tag."
+    "Try a different spelling or day.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Andere Schreibweise oder anderer Tag."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Try a different spelling or day."
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try a different spelling or day."
           }
         }
       }
     },
-    "Ultra Compact (AV1)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ultra-Kompakt (AV1)"
+    "Ultra Compact (AV1)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ultra-Kompakt (AV1)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ultra Compact (AV1)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ultra Compact (AV1)"
           }
         }
       }
     },
-    "Version" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Version"
+    "Version": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Version"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
           }
         }
       }
     },
-    "Works reliably outside the home network" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Funktioniert auch zuverlässig außerhalb des Heimnetzes"
+    "Works reliably outside the home network": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Funktioniert auch zuverlässig außerhalb des Heimnetzes"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Works reliably outside the home network"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works reliably outside the home network"
           }
         }
       }
     },
-    "xg2g delivers the channel as directly as possible to the native player" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g liefert den Sender möglichst unverändert an den nativen Player"
+    "xg2g delivers the channel as directly as possible to the native player": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g liefert den Sender möglichst unverändert an den nativen Player"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g delivers the channel as directly as possible to the native player"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g delivers the channel as directly as possible to the native player"
           }
         }
       }
     },
-    "xg2g dynamically chooses the best route for your device and network (Recommended)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
+    "xg2g dynamically chooses the best route for your device and network (Recommended)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g dynamically chooses the best route for your device and network (Recommended)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g dynamically chooses the best route for your device and network (Recommended)"
           }
         }
       }
     },
-    "xg2g finds the best balance of quality and latency (Recommended)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g ermittelt die beste Balance aus Qualität und Latenz (Empfohlen)"
+    "xg2g finds the best balance of quality and latency (Recommended)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g ermittelt die beste Balance aus Qualität und Latenz (Empfohlen)"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "xg2g finds the best balance of quality and latency (Recommended)"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xg2g finds the best balance of quality and latency (Recommended)"
           }
         }
       }
     },
-    "Zapping times depend on GOP segment boundaries" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Umschaltzeiten hängen von GOP-Segmenten ab"
+    "Zapping times depend on GOP segment boundaries": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Umschaltzeiten hängen von GOP-Segmenten ab"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zapping times depend on GOP segment boundaries"
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zapping times depend on GOP segment boundaries"
+          }
+        }
+      }
+    },
+    "Device Must Be Paired Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät muss erneut gekoppelt werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device Must Be Paired Again"
+          }
+        }
+      }
+    },
+    "This device holds expired credentials. Please pair again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät besitzt abgelaufene Zugangsdaten. Bitte neu koppeln."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device holds expired credentials. Please pair again."
+          }
+        }
+      }
+    },
+    "Authentication Required": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentifizierung erforderlich"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication Required"
+          }
+        }
+      }
+    },
+    "Please sign in or pair again to continue.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte erneut anmelden oder koppeln."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please sign in or pair again to continue."
+          }
+        }
+      }
+    },
+    "Access Denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff verweigert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access Denied"
+          }
+        }
+      }
+    },
+    "You do not have permission for this action.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Berechtigung für diese Aktion."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You do not have permission for this action."
+          }
+        }
+      }
+    },
+    "Pairing Code Expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplungscode abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Code Expired"
+          }
+        }
+      }
+    },
+    "Please request a new pairing code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please request a new pairing code."
+          }
+        }
+      }
+    },
+    "Code Already Used": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code bereits verwendet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code Already Used"
+          }
+        }
+      }
+    },
+    "This code has already been claimed. Please request a new code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Code wurde bereits verwendet. Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This code has already been claimed. Please request a new code."
+          }
+        }
+      }
+    },
+    "Pairing Denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung abgelehnt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Denied"
+          }
+        }
+      }
+    },
+    "Pairing was denied in the admin console. Please request a new code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing was denied in the admin console. Please request a new code."
+          }
+        }
+      }
+    },
+    "All Tuners Occupied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Tuner belegt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Tuners Occupied"
+          }
+        }
+      }
+    },
+    "No free receiver tuners available right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuell sind keine freien Receiver-Tuner verfügbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No free receiver tuners available right now."
+          }
+        }
+      }
+    },
+    "Stream Stalled": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream stockt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Stalled"
+          }
+        }
+      }
+    },
+    "Video processing stopped emitting data.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Videoverarbeitung liefert keine Daten mehr."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video processing stopped emitting data."
+          }
+        }
+      }
+    },
+    "Stream Start Timed Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Start abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Start Timed Out"
+          }
+        }
+      }
+    },
+    "The stream did not start in time. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Stream konnte nicht rechtzeitig gestartet werden. Bitte erneut versuchen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stream did not start in time. Please try again."
+          }
+        }
+      }
+    },
+    "Receiver Unreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver nicht erreichbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver Unreachable"
+          }
+        }
+      }
+    },
+    "The TV receiver cannot be reached. Please check its connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der TV-Receiver ist nicht erreichbar. Bitte die Verbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV receiver cannot be reached. Please check its connection."
+          }
+        }
+      }
+    },
+    "Receiver Unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver Unavailable"
+          }
+        }
+      }
+    },
+    "The TV receiver did not return stream data.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der TV-Receiver lieferte keine Daten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV receiver did not return stream data."
+          }
+        }
+      }
+    },
+    "Stream Being Verified": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream wird geprüft"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Being Verified"
+          }
+        }
+      }
+    },
+    "Checking channel availability.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanalverfügbarkeit wird geprüft."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking channel availability."
+          }
+        }
+      }
+    },
+    "No Internet Connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Internetverbindung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Internet Connection"
+          }
+        }
+      }
+    },
+    "Please check your network connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte die Netzwerkverbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please check your network connection."
+          }
+        }
+      }
+    },
+    "Connection Timed Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeitüberschreitung bei der Verbindung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Timed Out"
+          }
+        }
+      }
+    },
+    "The server took too long to respond.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat nicht rechtzeitig geantwortet."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server took too long to respond."
+          }
+        }
+      }
+    },
+    "Cannot Reach Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server nicht erreichbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot Reach Server"
+          }
+        }
+      }
+    },
+    "Please check the server address and connectivity.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte Server-Adresse und Verbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please check the server address and connectivity."
+          }
+        }
+      }
+    },
+    "Secure Connection Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichere TLS-Verbindung fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secure Connection Failed"
+          }
+        }
+      }
+    },
+    "A secure TLS connection could not be established.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine sichere TLS-Verbindung konnte nicht aufgebaut werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A secure TLS connection could not be established."
+          }
+        }
+      }
+    },
+    "Network Error": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkfehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network Error"
+          }
+        }
+      }
+    },
+    "A network error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein Netzwerkfehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A network error occurred."
+          }
+        }
+      }
+    },
+    "Playback Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Failed"
+          }
+        }
+      }
+    },
+    "No playback session could be created.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es konnte keine Wiedergabesitzung erstellt werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No playback session could be created."
+          }
+        }
+      }
+    },
+    "Invalid stream URL.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige Stream-URL."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid stream URL."
+          }
+        }
+      }
+    },
+    "Playback Ticket Refused": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe-Ticket abgelehnt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Ticket Refused"
+          }
+        }
+      }
+    },
+    "The server refused playback authorization.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat die Wiedergabeberechtigung abgelehnt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server refused playback authorization."
+          }
+        }
+      }
+    },
+    "Not Found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Found"
+          }
+        }
+      }
+    },
+    "The requested resource was not found.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die angeforderte Ressource wurde nicht gefunden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The requested resource was not found."
+          }
+        }
+      }
+    },
+    "Too Many Requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu viele Anfragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too Many Requests"
+          }
+        }
+      }
+    },
+    "Please wait a moment before trying again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte kurz warten und erneut versuchen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please wait a moment before trying again."
+          }
+        }
+      }
+    },
+    "Service Unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dienst nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "The server is temporarily unavailable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server ist vorübergehend nicht erreichbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server is temporarily unavailable."
+          }
+        }
+      }
+    },
+    "Server Error": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Fehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Error"
+          }
+        }
+      }
+    },
+    "An internal server error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein interner Serverfehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An internal server error occurred."
+          }
+        }
+      }
+    },
+    "Request Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request Failed"
+          }
+        }
+      }
+    },
+    "The request could not be completed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anfrage konnte nicht abgeschlossen werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request could not be completed."
+          }
+        }
+      }
+    },
+    "An unexpected error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein unerwarteter Fehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An unexpected error occurred."
+          }
+        }
+      }
+    },
+    "Unexpected Server Response": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unerwartete Server-Antwort"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unexpected Server Response"
+          }
+        }
+      }
+    },
+    "The server response was unexpected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Server-Antwort entsprach nicht dem erwarteten Format."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server response was unexpected."
+          }
+        }
+      }
+    },
+    "Invalid API Endpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültiger API-Endpunkt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid API Endpoint"
+          }
+        }
+      }
+    },
+    "The requested endpoint is not available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der angeforderte Endpunkt ist nicht verfügbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The requested endpoint is not available."
+          }
+        }
+      }
+    },
+    "The stream could not be started.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Stream konnte nicht gestartet werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stream could not be started."
+          }
+        }
+      }
+    },
+    "Playback Error: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabefehler: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Error: %@"
+          }
+        }
+      }
+    },
+    "Could not load %@ (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ konnte nicht geladen werden (%@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load %@ (%@)"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
+    "Request New Code": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuen Code anfordern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request New Code"
+          }
+        }
+      }
+    },
+    "Choose Another Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anderen Server wählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Another Server"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        }
+      }
+    },
+    "Start Pairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung starten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pairing"
+          }
+        }
+      }
+    },
+    "Stored credentials could not be opened.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherte Zugangsdaten konnten nicht geöffnet werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored credentials could not be opened."
+          }
+        }
+      }
+    },
+    "That does not look like a server address.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das sieht nicht nach einer gültigen Server-Adresse aus."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That does not look like a server address."
+          }
+        }
+      }
+    },
+    "Pairing could not be completed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung konnte nicht abgeschlossen werden: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing could not be completed: %@"
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

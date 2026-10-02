@@ -496,7 +496,7 @@ public struct TestTSPlayerScreen: View {
             switch newPhase {
             case .failed(let serviceRef, let reason):
                 let name = presets.first(where: { $0.serviceRef == serviceRef })?.name ?? serviceRef
-                displayZapToast("\(name) konnte nicht geladen werden (\(reason))")
+                displayZapToast(String(localized: "Could not load \(name) (\(reason))"))
             case .warming, .buffering, .idle:
                 break
             }

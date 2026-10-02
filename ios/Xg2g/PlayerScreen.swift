@@ -78,7 +78,7 @@ struct PlayerScreen: View {
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .multilineTextAlignment(.center)
 
-                                    Button("Erneut versuchen") {
+                                    Button(String(localized: "Retry")) {
                                         Task { await startStreaming(channel: currentChannel) }
                                     }
                                     .buttonStyle(.borderedProminent)
@@ -365,7 +365,8 @@ struct PlayerScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime)) { notif in
             if let currentItem = player?.currentItem, notif.object as? AVPlayerItem == currentItem {
                 if let err = notif.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                    self.failure = "Wiedergabefehler: \(err.localizedDescription)"
+                    let classified = ErrorClassifier.classify(err)
+                    self.failure = classified?.localizedMessage ?? String(localized: "Playback Error: \(err.localizedDescription)")
                 }
             }
         }
@@ -465,7 +466,7 @@ struct PlayerScreen: View {
         await model.play(channel)
 
         guard let stream = model.liveStream else {
-            failure = model.lastError ?? "Der Stream konnte nicht gestartet werden."
+            failure = model.lastError ?? String(localized: "The stream could not be started.")
             return
         }
         let p = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
