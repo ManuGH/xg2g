@@ -333,12 +333,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	ingestHandedOff = true
 	releaseIngest := ingestInput
 	go func() {
-		defer func() {
-			if releaseIngest != nil {
-				dc := a.GetDiagnosticContext(spec.SessionID)
-				releaseIngest.ReleaseWithReason(dc.Reason)
-			}
-		}()
+		defer a.releaseIngestAfterProcess(releaseIngest, spec.SessionID)
 		a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP, procIdent) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	}()
 	if sourceKey != "" {

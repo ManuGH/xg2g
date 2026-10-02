@@ -20,7 +20,11 @@ const (
 	SessionUnknown SessionState = "UNKNOWN"
 
 	// Context Keys
-	CtxKeyTunerSlot             = "tuner_slot"
+	CtxKeyTunerSlot = "tuner_slot"
+	// CtxKeyRestartPending marks a session whose stop is part of an internal
+	// restart (client-feedback fallback, runtime policy transition). It is set
+	// by lifecycle.ApplyFallbackRestart and cleared by ResetForFallbackRestart.
+	CtxKeyRestartPending        = "restart_pending"
 	CtxKeyMode                  = "mode"
 	CtxKeyDurationSeconds       = "duration_seconds"
 	CtxKeyRecordingID           = "recording_id"
@@ -274,4 +278,15 @@ func (c ReasonDetailCode) Text() string {
 	default:
 		return ""
 	}
+}
+
+// RestartPending reports whether the session is being stopped only to be
+// restarted right away (see CtxKeyRestartPending). Such a stop must not be
+// treated as an explicit client stop: the restart re-attaches to the same
+// service and benefits from the shared ingest's warm hold.
+func (r *SessionRecord) RestartPending() bool {
+	if r == nil || r.ContextData == nil {
+		return false
+	}
+	return r.ContextData[CtxKeyRestartPending] == "1"
 }

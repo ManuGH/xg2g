@@ -327,6 +327,7 @@ func (s *SqliteStore) GetDiagnosticMetadata(ctx context.Context, id string) (por
 		CorrelationID:         rec.CorrelationID,
 		Reason:                string(rec.Reason),
 		StopRequestedAtUnixMs: rec.StopRequestedAtUnixMs,
+		RestartPending:        rec.RestartPending(),
 	}, true
 }
 

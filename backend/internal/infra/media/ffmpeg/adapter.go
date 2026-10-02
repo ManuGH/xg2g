@@ -293,6 +293,7 @@ type DiagnosticContext struct {
 	GenerationID       string
 	Reason             string
 	ElapsedSinceStopMs int64
+	RestartPending     bool
 }
 
 // GetDiagnosticContext queries DiagnosticLookup for diagnostic session metadata.
@@ -312,6 +313,7 @@ func (a *LocalAdapter) GetDiagnosticContext(sessionID string) DiagnosticContext 
 			if meta.Reason != "" {
 				dc.Reason = meta.Reason
 			}
+			dc.RestartPending = meta.RestartPending
 			if meta.StopRequestedAtUnixMs > 0 {
 				dc.ElapsedSinceStopMs = time.Now().UnixMilli() - meta.StopRequestedAtUnixMs
 			}
@@ -398,4 +400,25 @@ func (a *LocalAdapter) getProcessIdentity(handle ports.RunHandle) (TranscodeProc
 
 func (a *LocalAdapter) GetProcessIdentity(handle ports.RunHandle) (TranscodeProcessIdentity, bool) {
 	return a.getProcessIdentity(handle)
+}
+
+// ingestReleaseReason is the stop reason handed to the shared ingest when the
+// transcode ends. A stop that is only the first half of an internal restart
+// (client-feedback fallback, runtime policy transition) is reported without a
+// reason so the shared ingest keeps its warm hold for the restart that follows,
+// instead of tearing the upstream down and re-tuning the same service.
+func ingestReleaseReason(dc DiagnosticContext) string {
+	if dc.RestartPending {
+		return ""
+	}
+	return dc.Reason
+}
+
+// releaseIngestAfterProcess ends the transcode's claim on its shared ingest
+// attachment once nothing reads from it any more.
+func (a *LocalAdapter) releaseIngestAfterProcess(in *sharedIngestInput, sessionID string) {
+	if in == nil {
+		return
+	}
+	in.ReleaseWithReason(ingestReleaseReason(a.GetDiagnosticContext(sessionID)))
 }

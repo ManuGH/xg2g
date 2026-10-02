@@ -50,6 +50,9 @@ type DiagnosticMetadata struct {
 	CorrelationID         string
 	Reason                string
 	StopRequestedAtUnixMs int64
+	// RestartPending is true while the stop belongs to an internal restart and
+	// is not an explicit client stop.
+	RestartPending bool
 }
 
 // DiagnosticLookup exposes session metadata needed for diagnostic contexts without coupling to store models.
