@@ -67,6 +67,9 @@ func (s *Server) PostPlaybackTelemetry(w http.ResponseWriter, r *http.Request) {
 		deviceID = principal.DeviceID
 	}
 	for _, ev := range batch.Events {
+		if ev.ServiceRef != nil && *ev.ServiceRef != "" {
+			_, _, _ = s.resolveServiceRefElement(metrics.EndpointTelemetry, *ev.ServiceRef)
+		}
 		logPlaybackTelemetryEvent(logger, batch.Client, deviceID, ev)
 		metrics.RecordClientPlaybackEvent(string(batch.Client.Platform), string(ev.Kind))
 	}

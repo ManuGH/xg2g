@@ -18,12 +18,18 @@ import (
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // Responsibility: Handles EPG data retrieval and serving.
 // Non-goals: EPG Parsing logic (see internal/epg).
+
+type serviceLookup struct {
+	original string
+	resolved string
+}
 
 // handleNowNextEPG returns now/next EPG for a list of service references.
 func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +39,17 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lookups := make([]serviceLookup, 0, len(req.Services))
+	for _, raw := range req.Services {
+		resolved, _, err := s.resolveServiceRefElement(metrics.EndpointNowNext, raw)
+		if err != nil {
+			// Per existing unknown-ref semantics: include original, empty programmes
+			lookups = append(lookups, serviceLookup{original: raw, resolved: raw})
+			continue
+		}
+		lookups = append(lookups, serviceLookup{original: raw, resolved: resolved})
+	}
+
 	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
 	if household.HasServiceRestrictionsNormalized(profile) {
 		visibleRefs, err := s.householdVisibleServiceRefSet(profile, s.systemModuleDeps())
@@ -40,13 +57,13 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 			writeRegisteredProblem(w, r, http.StatusInternalServerError, "epg/read_failed", "Failed to Read EPG", problemcode.CodeReadFailed, "Failed to resolve visible household services", nil)
 			return
 		}
-		filtered := make([]string, 0, len(req.Services))
-		for _, serviceRef := range req.Services {
-			if _, ok := visibleRefs[read.CanonicalServiceRef(serviceRef)]; ok {
-				filtered = append(filtered, serviceRef)
+		filtered := make([]serviceLookup, 0, len(lookups))
+		for _, l := range lookups {
+			if _, ok := visibleRefs[read.CanonicalServiceRef(l.resolved)]; ok {
+				filtered = append(filtered, l)
 			}
 		}
-		req.Services = filtered
+		lookups = filtered
 	}
 
 	s.mu.RLock()
@@ -65,7 +82,7 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeNowNextResponse(w, buildNowNextItems(req.Services, programs, time.Now()))
+	writeNowNextResponse(w, buildNowNextItemsWithLookups(lookups, programs, time.Now()))
 }
 
 func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
@@ -76,17 +93,25 @@ func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
 }
 
 func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
+	lookups := make([]serviceLookup, 0, len(serviceRefs))
+	for _, ref := range serviceRefs {
+		lookups = append(lookups, serviceLookup{original: ref, resolved: ref})
+	}
+	return buildNowNextItemsWithLookups(lookups, programs, now)
+}
+
+func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Programme, now time.Time) []NowNextItem {
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {
 		canonicalRef := read.CanonicalServiceRef(program.Channel)
 		progMap[canonicalRef] = append(progMap[canonicalRef], program)
 	}
 
-	items := make([]NowNextItem, 0, len(serviceRefs))
-	for _, serviceRef := range serviceRefs {
-		progs := progMap[read.CanonicalServiceRef(serviceRef)]
+	items := make([]NowNextItem, 0, len(lookups))
+	for _, lookup := range lookups {
+		progs := progMap[read.CanonicalServiceRef(lookup.resolved)]
 		if len(progs) == 0 {
-			items = append(items, NowNextItem{ServiceRef: serviceRef})
+			items = append(items, NowNextItem{ServiceRef: lookup.original})
 			continue
 		}
 
@@ -134,7 +159,7 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 		}
 
 		items = append(items, NowNextItem{
-			ServiceRef: serviceRef,
+			ServiceRef: lookup.original,
 			Now:        current,
 			Next:       next,
 		})

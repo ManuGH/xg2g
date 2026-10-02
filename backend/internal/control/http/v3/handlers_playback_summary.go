@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/household"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -86,8 +87,13 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 	jobs := make([]refJob, 0, len(req.ServiceRefs))
 	seen := make(map[string]struct{}, len(req.ServiceRefs))
 	for _, raw := range req.ServiceRefs {
-		serviceRef := normalize.ServiceRef(raw)
-		if serviceRef == "" || recordings.ValidateLiveRef(serviceRef) != nil {
+		resolved, _, err := s.resolveServiceRefElement(metrics.EndpointPlaybackInfo, raw)
+		if err != nil {
+			// Unresolvable opaque reference: omitted from the batch by design
+			continue
+		}
+		serviceRef := normalize.ServiceRef(resolved)
+		if serviceRef == "" || (!isIPTVRef(serviceRef) && recordings.ValidateLiveRef(serviceRef) != nil) {
 			continue
 		}
 		if _, dup := seen[serviceRef]; dup {

@@ -7,6 +7,7 @@ package v3
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -54,4 +55,19 @@ func (s *Server) resolveServiceRefElement(endpoint, ref string) (string, edge.Ki
 		resolver = s.IPTVResolver()
 	}
 	return resolver.ResolveInbound(normEndpoint, ref)
+}
+
+// SetIPTVResolver sets or updates the injected IPTV edge resolver in a concurrency-safe manner.
+func (s *Server) SetIPTVResolver(r *edge.Resolver) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.iptvResolver = r
+}
+
+// isIPTVRef reports whether the normalized ref has an Enigma2 IPTV service type.
+func isIPTVRef(ref string) bool {
+	return strings.HasPrefix(ref, "4097:") || strings.HasPrefix(ref, "5001:") || strings.HasPrefix(ref, "5002:")
 }

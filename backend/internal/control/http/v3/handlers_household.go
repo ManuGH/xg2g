@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/go-chi/chi/v5"
 )
@@ -170,6 +171,7 @@ func (s *Server) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "Failed to parse JSON body", nil)
 		return
 	}
+	req.BlockedChannels = s.resolveHouseholdRefs(req.BlockedChannels)
 
 	prof, pol, err := svc.CreateProfile(r.Context(), principal.ID, req.Name, req.AvatarURL, req.IsChild, req.AllowedBouquets, req.BlockedChannels, req.MaturityLevel, req.ExitPIN)
 	if err != nil {
@@ -270,6 +272,9 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			ProfileID: profID,
 		}
 	}
+	if req.BlockedChannels != nil {
+		pol.BlockedChannels = s.resolveHouseholdRefs(req.BlockedChannels)
+	}
 	if req.MaturityLevel > 0 {
 		pol.MaturityLevel = req.MaturityLevel
 	}
@@ -354,6 +359,8 @@ func (s *Server) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, p
 			writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid profile payload", nil)
 			return
 		}
+		prof.AllowedServiceRefs = s.resolveHouseholdRefs(prof.AllowedServiceRefs)
+		prof.FavoriteServiceRefs = s.resolveHouseholdRefs(prof.FavoriteServiceRefs)
 		created, err := s.householdService.Save(r.Context(), prof)
 		if err != nil {
 			writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to create profile", nil)
@@ -387,6 +394,8 @@ func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, pro
 			return
 		}
 		prof.ID = profileId
+		prof.AllowedServiceRefs = s.resolveHouseholdRefs(prof.AllowedServiceRefs)
+		prof.FavoriteServiceRefs = s.resolveHouseholdRefs(prof.FavoriteServiceRefs)
 		updated, err := s.householdService.Save(r.Context(), prof)
 		if err != nil {
 			writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to update profile", nil)
@@ -398,6 +407,21 @@ func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 	s.CreateProfile(w, r)
+}
+
+func (s *Server) resolveHouseholdRefs(refs []string) []string {
+	if len(refs) == 0 {
+		return refs
+	}
+	out := make([]string, 0, len(refs))
+	for _, raw := range refs {
+		resolved, _, err := s.resolveServiceRefElement(metrics.EndpointHousehold, raw)
+		if err != nil {
+			continue // omit unresolvable opaque ID
+		}
+		out = append(out, resolved)
+	}
+	return out
 }
 
 func (s *Server) GetAccessPolicy(w http.ResponseWriter, r *http.Request) {

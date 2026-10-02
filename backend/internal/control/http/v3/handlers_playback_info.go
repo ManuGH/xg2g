@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -54,6 +55,13 @@ func (s *Server) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request, pa
 		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, problem)
 		return
 	}
+
+	resolvedRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointPlaybackInfo, input.ServiceRef)
+	if !ok {
+		return
+	}
+	input.ServiceRef = resolvedRef
+
 	profile := household.NormalizeProfile(s.currentHouseholdProfile(r.Context()))
 	if household.HasServiceRestrictionsNormalized(profile) {
 		visibleRefs, err := s.householdVisibleServiceRefSet(profile, s.systemModuleDeps())
