@@ -34,6 +34,7 @@ struct PlayerScreen: View {
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var timeObserverToken: Any?
     @State private var stallObserverToken: (any NSObjectProtocol)?
+    @State private var sessionToken = UUID()
 
     init(model: AppModel, channel: Channel) {
         self.model = model
@@ -423,7 +424,7 @@ struct PlayerScreen: View {
 
         UIApplication.shared.isIdleTimerDisabled = true
 
-        AudioSessionManager.shared.configureForPlayback()
+        AudioSessionManager.shared.activate(for: sessionToken)
         NowPlayingManager.shared.takeOver(.init(
             play: {
                 if player?.timeControlStatus != .playing && player?.error == nil {
@@ -640,7 +641,7 @@ struct PlayerScreen: View {
         LiveActivityManager.shared.endActivity()
         HandoffCoordinator.shared.clearPlaybackActivity()
         NowPlayingManager.shared.clear()
-        AudioSessionManager.shared.deactivate()
+        AudioSessionManager.shared.deactivate(for: sessionToken)
         player?.pause()
         player = nil
         Task { await model.stopPlayback() }

@@ -15,7 +15,9 @@ import Combine
 @MainActor
 @Observable
 final class PlaybackStore {
+    private(set) var currentTarget: PlaybackTarget?
     private(set) var currentChannel: Channel?
+    private(set) var currentRecording: Recording?
     private(set) var isPlaying: Bool = false
     /// Transient local UI command error message (e.g. tuning network/validation error).
     ///
@@ -42,8 +44,8 @@ final class PlaybackStore {
         self.projectionCancellable = nil
 
         // Take initial snapshot and subscribe to one-way canonical updates
-        self.projectionCancellable = controller.observeState { [weak self] channel, isPlaying in
-            self?.applySnapshot(channel: channel, isPlaying: isPlaying)
+        self.projectionCancellable = controller.observeTargetState { [weak self] target, isPlaying in
+            self?.applySnapshot(target: target, isPlaying: isPlaying)
         }
     }
 
@@ -54,6 +56,20 @@ final class PlaybackStore {
     func play(channel: Channel) {
         errorMessage = nil
         controller?.play(channel: channel)
+    }
+
+    /// Starts VOD playback for a recording by forwarding command to canonical authority.
+    ///
+    /// NOTE: Does NOT mutate state optimistically. State updates occur strictly when
+    /// the canonical `PlaybackManager` commits the state transition.
+    func play(recording: Recording, startPosition: Double? = nil) {
+        errorMessage = nil
+        controller?.play(recording: recording, startPosition: startPosition)
+    }
+
+    /// Seeks to a specific timestamp in seconds (VOD / DVR recordings).
+    func seek(to seconds: Double) {
+        controller?.seek(to: seconds)
     }
 
     /// Stops playback and releases presentation resources by forwarding command.
@@ -78,8 +94,19 @@ final class PlaybackStore {
 
     // MARK: - Private Projection Sink
 
-    private func applySnapshot(channel: Channel?, isPlaying: Bool) {
-        self.currentChannel = channel
+    private func applySnapshot(target: PlaybackTarget?, isPlaying: Bool) {
+        self.currentTarget = target
+        switch target {
+        case .live(let channel):
+            self.currentChannel = channel
+            self.currentRecording = nil
+        case .recording(let rec, _):
+            self.currentChannel = nil
+            self.currentRecording = rec
+        case .offline, .none:
+            self.currentChannel = nil
+            self.currentRecording = nil
+        }
         self.isPlaying = isPlaying
     }
 }
