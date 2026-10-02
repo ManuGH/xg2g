@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
+import { formatLocalDateOnly } from '../../../utils/date';
 import { Button } from '../../../components/ui';
 import styles from './EpgEventDialog.module.css';
 
@@ -345,7 +346,7 @@ export function EpgEventDialog({
                     onClick={() => {
                       const d = new Date();
                       d.setMonth(d.getMonth() + 3);
-                      setExpiresAt(d.toISOString().substring(0, 10));
+                      setExpiresAt(formatLocalDateOnly(d));
                     }}
                   >
                     {t('epg.seriesExpires3Months', { defaultValue: '+3 Monate' })}

@@ -17,6 +17,7 @@ import {
   type SeriesRuleUpdate
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
+import { formatLocalDateOnly } from '../utils/date';
 import { throwOnClientResultError } from '../services/clientWrapper';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { ROUTE_MAP } from '../routes';
@@ -179,7 +180,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         startWindow: rule.startWindow || '',
         priority: rule.priority || 0,
         retentionDays: rule.retentionDays || 0,
-        expiresAt: rule.expiresAt ? rule.expiresAt.substring(0, 10) : '',
+        expiresAt: rule.expiresAt ? formatLocalDateOnly(new Date(rule.expiresAt)) : '',
         enabled: rule.enabled !== false
       });
     } else {
@@ -603,8 +604,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                     onClick={() => {
                       const d = new Date();
                       d.setMonth(d.getMonth() + 3);
-                      const iso = d.toISOString().substring(0, 10);
-                      setCurrentRule({ ...currentRule, expiresAt: iso });
+                      setCurrentRule({ ...currentRule, expiresAt: formatLocalDateOnly(d) });
                     }}
                   >
                     +3 Monate
