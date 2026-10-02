@@ -477,6 +477,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
 	app.SetEPGEnrichment(epgStore, epgQueue)
+	app.SetIPTVSources(iptvParser, iptvRegistry)
 
 	wireSuccess = true
 	return &Container{

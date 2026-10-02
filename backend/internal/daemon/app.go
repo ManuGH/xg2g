@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/epg/store"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/rs/zerolog"
 )
@@ -35,6 +36,8 @@ type App struct {
 	piconPool    *jobs.PiconPool
 	epgStore     store.EnrichmentStore
 	epgQueue     *epg.EnrichmentQueue
+	iptvParser   *sourceref.Parser
+	iptvRegistry *sourceref.Registry
 	proxyOnly    bool
 	reloadSignal os.Signal
 }
@@ -53,6 +56,13 @@ func NewApp(logger zerolog.Logger, manager Manager, cfgHolder *config.ConfigHold
 
 func (a *App) SetPiconPool(pool *jobs.PiconPool) {
 	a.piconPool = pool
+}
+
+// SetIPTVSources provides the IPTV parser and registry that every scheduled
+// refresh must keep up to date (nil parser or registry disables population).
+func (a *App) SetIPTVSources(parser *sourceref.Parser, reg *sourceref.Registry) {
+	a.iptvParser = parser
+	a.iptvRegistry = reg
 }
 
 func (a *App) SetEPGEnrichment(store store.EnrichmentStore, queue *epg.EnrichmentQueue) {
@@ -168,7 +178,7 @@ func (a *App) Run(ctx context.Context) error {
 						}
 
 						a.logger.Info().Msg("Starting scheduled EPG refresh")
-						if st, err := jobs.RefreshWithOptions(ctx, *snap, jobs.WithPiconPool(a.piconPool), jobs.WithEnrichment(a.epgStore, a.epgQueue)); err != nil {
+						if st, err := jobs.RefreshWithOptions(ctx, *snap, jobs.WithPiconPool(a.piconPool), jobs.WithEnrichment(a.epgStore, a.epgQueue), jobs.WithIPTVSources(a.iptvParser, a.iptvRegistry)); err != nil {
 							a.logger.Error().Err(err).Msg("Scheduled EPG refresh failed")
 						} else {
 							a.logger.Info().Msg("Scheduled EPG refresh completed")
