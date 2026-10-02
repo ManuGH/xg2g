@@ -35,8 +35,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	xglog "github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
@@ -71,12 +74,16 @@ type Container struct {
 	IntentStore pipelinelease.IntentStore
 	Deps        daemon.Deps
 
+	IPTVResolver *edge.Resolver
+
 	snapshot         config.Snapshot
 	piconPool        *jobs.PiconPool
 	scanManager      *scan.Manager
 	verificationWork *verification.Worker
 	epgStore         store.EnrichmentStore
 	epgQueue         *epg.EnrichmentQueue
+	iptvParser       *sourceref.Parser
+	iptvRegistry     *sourceref.Registry
 
 	startOnce        sync.Once
 	runtimeHooksOnce sync.Once
@@ -240,8 +247,24 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	tvmazeClient := provider.NewTVMazeClient(provider.DefaultTVMazeConfig())
 	epgQueue = epg.NewEnrichmentQueue(epg.DefaultQueueConfig(), epgStore, tvmazeClient)
 
+	var (
+		iptvParser   *sourceref.Parser
+		iptvRegistry *sourceref.Registry
+		iptvResolver *edge.Resolver
+	)
+	if secret := strings.TrimSpace(cfg.IPTVSourceSecret); secret != "" {
+		p, err := sourceref.NewParser([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("invalid configuration for IPTVSourceSecret: %w", err)
+		}
+		reg := sourceref.NewRegistry()
+		iptvParser = p
+		iptvRegistry = reg
+		iptvResolver = edge.NewResolver(reg, p, metrics.IncIPTVLegacyIngress)
+	}
+
 	s.SetRefreshFunc(func(jobCtx context.Context, snap config.Snapshot) (*jobs.Status, error) {
-		return jobs.RefreshWithOptions(jobCtx, snap, jobs.WithEnrichment(epgStore, epgQueue))
+		return jobs.RefreshWithOptions(jobCtx, snap, jobs.WithEnrichment(epgStore, epgQueue), jobs.WithIPTVSources(iptvParser, iptvRegistry))
 	})
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
@@ -280,6 +303,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Entitlements:       entitlementService,
 		Households:         householdService,
 		Receipts:           receiptService,
+		IPTVResolver:       iptvResolver,
 	}, nil)
 
 	driftStatePath, err := paths.ResolveDataFilePath(cfg.DataDir, "drift_state.json", true)
@@ -453,6 +477,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
 	app.SetEPGEnrichment(epgStore, epgQueue)
+	app.SetIPTVSources(iptvParser, iptvRegistry)
 
 	wireSuccess = true
 	return &Container{
@@ -470,6 +495,9 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		verificationWork: verifyWorker,
 		epgStore:         epgStore,
 		epgQueue:         epgQueue,
+		IPTVResolver:     iptvResolver,
+		iptvParser:       iptvParser,
+		iptvRegistry:     iptvRegistry,
 	}, nil
 }
 
@@ -952,7 +980,7 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 	case <-timer.C:
 	}
 	c.Logger.Info().Msg("performing initial data refresh (background)")
-	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool), jobs.WithEnrichment(c.epgStore, c.epgQueue))
+	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool), jobs.WithEnrichment(c.epgStore, c.epgQueue), jobs.WithIPTVSources(c.iptvParser, c.iptvRegistry))
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("initial data refresh failed")
 		c.Logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")
