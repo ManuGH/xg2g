@@ -90,6 +90,8 @@ hls:
 household:
   pinHash: ""
   unlockTTL: 4h
+iptv:
+  source_secret: ""
 library:
   db_path: ""
   enabled: false

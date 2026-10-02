@@ -72,6 +72,7 @@ type FileConfig struct {
 	Sessions       *SessionsConfig           `yaml:"sessions,omitempty"`
 	Store          *StoreConfig              `yaml:"store,omitempty"`
 	Recordings     *RecordingsFileConfig     `yaml:"recordings,omitempty"`
+	IPTV           *IPTVFileConfig           `yaml:"iptv,omitempty"`
 	Streaming      *StreamingConfig          `yaml:"streaming,omitempty"`
 	Playback       *PlaybackFileConfig       `yaml:"playback,omitempty"`
 	PlannerShadow  *PlannerShadowFileConfig  `yaml:"plannerShadow,omitempty"`
@@ -162,6 +163,15 @@ type RecordingsFileConfig struct {
 	StrictTargetRequired     *bool   `yaml:"strict_target_required,omitempty"`
 	TargetSigningKey         *string `yaml:"target_signing_key,omitempty"`
 	TargetSigningKeyPrevious *string `yaml:"target_signing_key_previous,omitempty"`
+}
+
+// IPTVFileConfig holds IPTV source-masking settings.
+type IPTVFileConfig struct {
+	// SourceSecret keys the HMAC that derives opaque IPTV source IDs. Optional;
+	// unset disables opaque IPTV resolution (fail closed). Must be at least 32
+	// characters when set. It is deliberately separate from the playback
+	// decision secret (different purpose, independent rotation).
+	SourceSecret *string `yaml:"source_secret,omitempty"`
 }
 
 // RecordingPathMapping defines Receiver→Local path mapping
@@ -614,6 +624,9 @@ type AppConfig struct {
 	RecordingStrictTargetRequired     bool                   // Phase 2 target rollout guard
 	RecordingTargetSigningKey         string
 	RecordingTargetSigningKeyPrevious string
+
+	// IPTVSourceSecret keys the opaque IPTV source ID HMAC (empty = disabled).
+	IPTVSourceSecret string
 
 	// VOD Optimization (Legacy flat fields - kept for backwards compatibility)
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")

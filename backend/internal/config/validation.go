@@ -317,6 +317,12 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 	if secret := strings.TrimSpace(cfg.RecordingTargetSigningKey); secret == "" || len(secret) < 32 {
 		v.AddError("RecordingTargetSigningKey", "must be configured and at least 32 characters", "")
 	}
+	// IPTV source secret is optional (unset = opaque IPTV resolution disabled,
+	// fail closed). When set it must be long enough to key an HMAC. The error
+	// names the field only and never echoes the value.
+	if secret := strings.TrimSpace(cfg.IPTVSourceSecret); secret != "" && len(secret) < 32 {
+		v.AddError("IPTVSourceSecret", "must be at least 32 characters when configured", "")
+	}
 	if prev := strings.TrimSpace(cfg.RecordingTargetSigningKeyPrevious); prev != "" && len(prev) < 32 {
 		v.AddError("RecordingTargetSigningKeyPrevious", "must be at least 32 characters", "")
 	}

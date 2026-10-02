@@ -309,7 +309,7 @@ func TestSource_A2_Redaction(t *testing.T) {
 
 	assertNotContains := func(t *testing.T, label, val string) {
 		t.Helper()
-		for _, forbidden := range []string{markerToken, secretUser, secretPass, secretHost} {
+		for _, forbidden := range []string{markerToken, secretUser, secretPass, secretHost, ref, "4097:0:1:0:0:0:0:0:0:0:http", "http%3a//"} {
 			if strings.Contains(val, forbidden) {
 				t.Fatalf("%s leaked sensitive data %q in output: %s", label, forbidden, val)
 			}
@@ -728,8 +728,8 @@ func TestRegistry_A4_ConcurrentAndAtomic(t *testing.T) {
 	// E1: Forced real collision (same ID, different canonical URL) must fail
 	t.Run("E1: forced true HMAC collision returns ErrCollision", func(t *testing.T) {
 		r := sourceref.NewRegistry()
-		s1 := sourceref.NewSourceForTest(srcA.ID(), "http://h.invalid/real1", "http://h.invalid/canonical1")
-		s2 := sourceref.NewSourceForTest(srcA.ID(), "http://h.invalid/real2", "http://h.invalid/canonical2")
+		s1 := sourceref.NewSourceForTest(srcA.ID(), "http://h.invalid/real1", "http://h.invalid/canonical1", "ref1")
+		s2 := sourceref.NewSourceForTest(srcA.ID(), "http://h.invalid/real2", "http://h.invalid/canonical2", "ref2")
 		err := r.Replace([]sourceref.Source{s1, s2})
 		if !errors.Is(err, sourceref.ErrCollision) {
 			t.Fatalf("expected ErrCollision, got %v", err)
@@ -814,4 +814,64 @@ func TestRegistry_A4_ConcurrentAndAtomic(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestSource_RawRef(t *testing.T) {
+	parser, err := sourceref.NewParser(testHMACKey1)
+	if err != nil {
+		t.Fatalf("failed to create parser: %v", err)
+	}
+	const body = "4097:0:1:0:0:0:0:0:0:0:http%3a//h.invalid/live/x.ts:Chan Name"
+
+	t.Run("returns the complete original reference, trimmed", func(t *testing.T) {
+		src, err := parser.Parse("  " + body + "\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := src.RawRef(); got != body {
+			t.Errorf("RawRef() = %q, want %q", got, body)
+		}
+		if got := src.RevealURL(); got != "http://h.invalid/live/x.ts" {
+			t.Errorf("RevealURL() = %q", got)
+		}
+	})
+
+	t.Run("NewSourceForTest honours its rawRef argument", func(t *testing.T) {
+		src := sourceref.NewSourceForTest("iptv_aaaaaaaaaaaaaaaaaaaaaaaaaa", "http://h.invalid/x", "http://h.invalid/x", "the-raw-ref")
+		if got := src.RawRef(); got != "the-raw-ref" {
+			t.Errorf("RawRef() = %q, want %q", got, "the-raw-ref")
+		}
+	})
+
+	t.Run("zero value returns empty string", func(t *testing.T) {
+		var zero sourceref.Source
+		if got := zero.RawRef(); got != "" {
+			t.Errorf("zero RawRef() = %q, want empty", got)
+		}
+	})
+
+	t.Run("dedupe keeps the first entry's raw reference", func(t *testing.T) {
+		a, err := parser.Parse("4097:0:1:0:0:0:0:0:0:0:http%3a//h.invalid/x:First")
+		if err != nil {
+			t.Fatalf("parse a: %v", err)
+		}
+		b, err := parser.Parse("4097:0:1:0:0:0:0:0:0:0:http%3a//H.INVALID%3a80/x:Second")
+		if err != nil {
+			t.Fatalf("parse b: %v", err)
+		}
+		if a.ID() != b.ID() {
+			t.Fatalf("test premise broken: IDs differ (%s vs %s)", a.ID(), b.ID())
+		}
+		reg := sourceref.NewRegistry()
+		if err := reg.Replace([]sourceref.Source{a, b}); err != nil {
+			t.Fatalf("Replace: %v", err)
+		}
+		got, err := reg.Lookup(a.ID())
+		if err != nil {
+			t.Fatalf("Lookup: %v", err)
+		}
+		if got.RawRef() != a.RawRef() {
+			t.Errorf("RawRef() of winner = %q, want first entry %q", got.RawRef(), a.RawRef())
+		}
+	})
 }

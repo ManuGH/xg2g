@@ -211,6 +211,12 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `household.pinHash` | - | `""` | Active | Advanced |
 | `household.unlockTTL` | - | `4h` | Active | Advanced |
 
+### iptv
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `iptv.source_secret` | `XG2G_IPTV_SOURCE_SECRET` | `""` | Active | Advanced |
+
 ### library
 
 | Path | Env | Default | Status | Profile |

@@ -146,6 +146,7 @@ func (p *Parser) Parse(ref string) (Source, error) {
 			serviceType:  serviceType,
 			serviceName:  serviceName,
 			rawURL:       func() string { return decodedURL },
+			rawRef:       func() string { return trimmed },
 			canonicalURL: func() string { return canonical },
 		},
 	}, nil
