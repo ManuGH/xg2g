@@ -1351,6 +1351,10 @@ components:
         startWindow: { type: string }
         priority: { type: integer }
         retentionDays: { type: integer }
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
     SeriesRule:
       type: object
       properties:
@@ -1384,6 +1388,10 @@ components:
           minimum: 0
           default: 0
           description: Number of days to keep recordings before auto-deleting (0 = keep forever)
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
         lastRunAt:
           type: string
           format: date-time
@@ -1421,6 +1429,10 @@ components:
           type: integer
           minimum: 0
           description: Number of days to keep recordings before auto-deleting (0 = keep forever)
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration timestamp (RFC3339). Rule will not schedule recordings after this time.
 
     ConfigUpdate:
       type: object

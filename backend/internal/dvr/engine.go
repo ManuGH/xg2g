@@ -147,6 +147,7 @@ func (e *SeriesEngine) RunOnce(ctx context.Context, trigger string, ruleID strin
 					StartWindow:   rule.StartWindow,
 					Priority:      rule.Priority,
 					RetentionDays: rule.RetentionDays,
+					ExpiresAt:     rule.ExpiresAt,
 				},
 			}
 
@@ -337,6 +338,23 @@ func (e *SeriesEngine) processRule(ctx context.Context, client OWIClient, rule S
 			}
 
 			if !inWindow {
+				continue
+			}
+		}
+
+		// 3b. Expiration / EOL Check (evaluated after day/time filters so excluded days/times are not misreported as expired skips)
+		if rule.ExpiresAt != nil && !rule.ExpiresAt.IsZero() {
+			if start.After(*rule.ExpiresAt) {
+				decisions = append(decisions, RunDecision{
+					ServiceRef:  ev.SRef,
+					Begin:       ev.Begin,
+					End:         ev.Begin + ev.Duration,
+					Title:       ev.Title,
+					Action:      ActionSkipped,
+					Reason:      "rule_expired",
+					MatchReason: []string{"rule expired"},
+					Details:     fmt.Sprintf("event start %s is after rule expiration %s", start.Format(time.RFC3339), rule.ExpiresAt.Format(time.RFC3339)),
+				})
 				continue
 			}
 		}

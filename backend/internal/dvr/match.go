@@ -68,6 +68,14 @@ func (r *SeriesRule) Matches(epgTitle string, epgChannelRef string, epgStart tim
 		res.Reasons = append(res.Reasons, "startWindow match")
 	}
 
+	// 5. Expiration / EOL Check
+	if r.ExpiresAt != nil && !r.ExpiresAt.IsZero() {
+		if epgStart.After(*r.ExpiresAt) {
+			return MatchResult{Matched: false, Reasons: []string{"rule expired"}}
+		}
+		res.Reasons = append(res.Reasons, "within expiration window")
+	}
+
 	return res
 }
 

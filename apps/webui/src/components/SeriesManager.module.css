@@ -276,3 +276,53 @@
   font-weight: 500;
 }
 
+.chipRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.chip {
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition:
+    background var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.chip:hover:not(.chipActive) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chipActive {
+  background: var(--accent-primary);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.expiredBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-hover);
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger);
+}
+
+

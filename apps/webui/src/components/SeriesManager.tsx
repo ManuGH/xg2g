@@ -17,6 +17,7 @@ import {
   type SeriesRuleUpdate
 } from '../client-ts';
 import { debugError, formatError } from '../utils/logging';
+import { formatLocalDateOnly } from '../utils/date';
 import { throwOnClientResultError } from '../services/clientWrapper';
 import { useUiOverlay } from '../context/UiOverlayContext';
 import { ROUTE_MAP } from '../routes';
@@ -28,38 +29,95 @@ interface SeriesManagerProps {
   showLegacyNotice?: boolean;
 }
 
+const DAY_OPTIONS = [
+  { day: 1, label: 'Mo' },
+  { day: 2, label: 'Di' },
+  { day: 3, label: 'Mi' },
+  { day: 4, label: 'Do' },
+  { day: 5, label: 'Fr' },
+  { day: 6, label: 'Sa' },
+  { day: 0, label: 'So' },
+];
+
+const DAY_PRESETS = [
+  { label: 'Täglich', days: [0, 1, 2, 3, 4, 5, 6] },
+  { label: 'Werktags (Mo-Fr)', days: [1, 2, 3, 4, 5] },
+  { label: 'Wochenende (Sa-So)', days: [0, 6] },
+  { label: 'Alle Tage (Kein Filter)', days: [] },
+];
+
 interface DaySelectorProps {
   value: number[];
   onChange: (value: number[]) => void;
 }
 
-// Helper component for Day Selection
+// Helper component for Day Selection with quick presets and day buttons
 const DaySelector = ({ value, onChange }: DaySelectorProps) => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const toggleDay = (dayIndex: number) => {
     const newValue = value.includes(dayIndex)
       ? value.filter(d => d !== dayIndex)
-      : [...value, dayIndex].sort();
+      : [...value, dayIndex].sort((a, b) => a - b);
     onChange(newValue);
   };
 
+  const isPresetActive = (presetDays: number[]) => {
+    if (presetDays.length === 0) return value.length === 0;
+    if (value.length !== presetDays.length) return false;
+    return presetDays.every(d => value.includes(d));
+  };
+
   return (
-    <div className={styles.daySelector}>
-      {days.map((d, i) => (
-        <button
-          key={i}
-          className={[
-            styles.dayButton,
-            value.includes(i) ? styles.dayButtonActive : '',
-          ].filter(Boolean).join(' ')}
-          onClick={() => toggleDay(i)}
-          type="button"
-        >
-          {d}
-        </button>
-      ))}
+    <div>
+      <div className={styles.chipRow}>
+        {DAY_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            className={[styles.chip, isPresetActive(preset.days) ? styles.chipActive : ''].filter(Boolean).join(' ')}
+            onClick={() => onChange(preset.days)}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      <div className={styles.daySelector}>
+        {DAY_OPTIONS.map((opt) => (
+          <button
+            key={opt.day}
+            className={[
+              styles.dayButton,
+              value.includes(opt.day) ? styles.dayButtonActive : '',
+            ].filter(Boolean).join(' ')}
+            onClick={() => toggleDay(opt.day)}
+            type="button"
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
+};
+
+const formatRuleDays = (days?: number[]) => {
+  if (!days || days.length === 0 || days.length === 7) return 'Täglich (Alle Tage)';
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'Werktags (Mo–Fr)';
+  if (days.length === 2 && [0, 6].every(d => days.includes(d))) return 'Wochenende (Sa–So)';
+  const dayNames: Record<number, string> = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr', 6: 'Sa', 0: 'So' };
+  return [...days]
+    .sort((a, b) => ((a === 0 ? 7 : a) - (b === 0 ? 7 : b)))
+    .map(d => dayNames[d] || String(d))
+    .join(', ');
+};
+
+const formatRuleExpiry = (expiresAt?: string) => {
+  if (!expiresAt) return null;
+  const expDate = new Date(expiresAt);
+  const isExpired = expDate.getTime() < Date.now();
+  return {
+    dateStr: expDate.toLocaleDateString(),
+    isExpired,
+  };
 };
 
 interface RuleFormState {
@@ -70,6 +128,7 @@ interface RuleFormState {
   startWindow: string;
   priority: number | string; // Handle input string temporarily
   retentionDays: number | string;
+  expiresAt: string; // YYYY-MM-DD
   enabled: boolean;
 }
 
@@ -121,6 +180,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         startWindow: rule.startWindow || '',
         priority: rule.priority || 0,
         retentionDays: rule.retentionDays || 0,
+        expiresAt: rule.expiresAt ? formatLocalDateOnly(new Date(rule.expiresAt)) : '',
         enabled: rule.enabled !== false
       });
     } else {
@@ -131,6 +191,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         startWindow: '',
         priority: 0,
         retentionDays: 0,
+        expiresAt: '',
         enabled: true
       });
     }
@@ -167,6 +228,10 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         return;
       }
 
+      const expiresAtPayload = currentRule.expiresAt?.trim()
+        ? new Date(`${currentRule.expiresAt.trim()}T23:59:59`).toISOString()
+        : undefined;
+
       if (currentRule.id) {
         const retentionVal = Number(currentRule.retentionDays) || 0;
         const updatePayload: SeriesRuleUpdate = {
@@ -176,7 +241,8 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
           ...(retentionVal > 0 ? { retentionDays: retentionVal } : {}),
           ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
           ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {}),
-          ...(currentRule.days?.length ? { days: currentRule.days } : {})
+          ...(currentRule.days?.length ? { days: currentRule.days } : {}),
+          ...(expiresAtPayload ? { expiresAt: expiresAtPayload } : {})
         };
 
         const result = await updateSeriesRule({
@@ -194,7 +260,8 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
           ...(retentionVal > 0 ? { retentionDays: retentionVal } : {}),
           ...(currentRule.channelRef?.trim() ? { channelRef: currentRule.channelRef.trim() } : {}),
           ...(currentRule.days?.length ? { days: currentRule.days } : {}),
-          ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {})
+          ...(currentRule.startWindow?.trim() ? { startWindow: currentRule.startWindow.trim() } : {}),
+          ...(expiresAtPayload ? { expiresAt: expiresAtPayload } : {})
         };
 
         const result = await createSeriesRule({ body: createPayload });
@@ -219,6 +286,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         ...(rule.channelRef ? { channelRef: rule.channelRef } : {}),
         ...(rule.days?.length ? { days: rule.days } : {}),
         ...(rule.startWindow ? { startWindow: rule.startWindow } : {}),
+        ...(rule.expiresAt ? { expiresAt: rule.expiresAt } : {}),
       };
       const result = await updateSeriesRule({
         path: { id: rule.id },
@@ -313,9 +381,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
               <div className={styles.metaRow}>
                 <span className={styles.metaLabel}>Days:</span>
                 <span className={styles.metaValue}>
-                  {rule.days?.length
-                    ? rule.days.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
-                    : 'Everyday'}
+                  {formatRuleDays(rule.days)}
                 </span>
               </div>
               <div className={styles.metaRow}>
@@ -326,6 +392,19 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                 <span className={styles.metaLabel}>Retention:</span>
                 <span className={styles.metaValue}>
                   {rule.retentionDays ? `${rule.retentionDays} days (auto-delete)` : 'Keep forever'}
+                </span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>Valid Until:</span>
+                <span className={styles.metaValue}>
+                  {(() => {
+                    const exp = formatRuleExpiry(rule.expiresAt);
+                    if (!exp) return 'No expiration (runs forever)';
+                    if (exp.isExpired) {
+                      return <span className={styles.expiredBadge}>Expired ({exp.dateStr})</span>;
+                    }
+                    return `Until ${exp.dateStr}`;
+                  })()}
                 </span>
               </div>
             </div>
@@ -467,7 +546,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
 
               <div className={styles.formGroup}>
                 <label>Retention / Aufbewahrung (Tage)</label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <div className={styles.chipRow}>
                   {[
                     { label: 'Unbegrenzt', val: 0 },
                     { label: '7 Tage (z.B. Cafe Puls)', val: 7 },
@@ -478,8 +557,8 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                       key={preset.val}
                       type="button"
                       className={[
-                        styles.dayButton,
-                        Number(currentRule.retentionDays) === preset.val ? styles.dayButtonActive : '',
+                        styles.chip,
+                        Number(currentRule.retentionDays) === preset.val ? styles.chipActive : '',
                       ].filter(Boolean).join(' ')}
                       onClick={() => setCurrentRule({ ...currentRule, retentionDays: preset.val })}
                     >
@@ -497,6 +576,48 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   data-testid="series-edit-retention"
                 />
                 <small className={styles.helpText}>Aufnahmen, die älter als diese Anzahl an Tagen sind, werden automatisch gelöscht.</small>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label>Gültig bis (Ablaufdatum / EOL)</label>
+                <div className={styles.chipRow}>
+                  <button
+                    type="button"
+                    className={[styles.chip, !currentRule.expiresAt ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setCurrentRule({ ...currentRule, expiresAt: '' })}
+                  >
+                    Dauerhaft (Kein Ablauf)
+                  </button>
+                  <button
+                    type="button"
+                    className={[styles.chip, currentRule.expiresAt === `${new Date().getFullYear()}-12-31` ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => {
+                      const year = new Date().getFullYear();
+                      setCurrentRule({ ...currentRule, expiresAt: `${year}-12-31` });
+                    }}
+                  >
+                    Bis Jahresende ({new Date().getFullYear()})
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.chip}
+                    onClick={() => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() + 3);
+                      setCurrentRule({ ...currentRule, expiresAt: formatLocalDateOnly(d) });
+                    }}
+                  >
+                    +3 Monate
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  value={currentRule.expiresAt || ''}
+                  onChange={e => setCurrentRule({ ...currentRule, expiresAt: e.target.value })}
+                  className={styles.inputField}
+                  data-testid="series-edit-expires-at"
+                />
+                <small className={styles.helpText}>Optional. Nach diesem Datum werden keine neuen Sendungen mehr programmiert.</small>
               </div>
 
               <div className={styles.formGroup}>

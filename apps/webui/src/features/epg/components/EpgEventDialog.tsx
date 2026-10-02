@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
+import { formatLocalDateOnly } from '../../../utils/date';
 import { Button } from '../../../components/ui';
 import styles from './EpgEventDialog.module.css';
 
@@ -12,6 +13,7 @@ export interface ScheduleSeriesConfig {
   days?: number[];
   startWindow?: string;
   retentionDays?: number;
+  expiresAt?: string;
 }
 
 interface EpgEventDialogProps {
@@ -76,6 +78,7 @@ export function EpgEventDialog({
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [startWindow, setStartWindow] = useState<string>('');
   const [retentionDays, setRetentionDays] = useState<number>(7); // Default 7 days retention
+  const [expiresAt, setExpiresAt] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
@@ -110,12 +113,16 @@ export function EpgEventDialog({
     setIsSubmitting(true);
     try {
       const days = selectedDays.length === 7 || selectedDays.length === 0 ? undefined : selectedDays;
+      const expiresAtIso = expiresAt.trim()
+        ? new Date(`${expiresAt.trim()}T23:59:59`).toISOString()
+        : undefined;
       await onScheduleSeries(event, {
         keyword: keyword.trim(),
         channelRef,
         days,
         startWindow: startWindow.trim() || undefined,
         retentionDays: retentionDays > 0 ? retentionDays : undefined,
+        expiresAt: expiresAtIso,
       });
       onClose();
     } catch {
@@ -313,6 +320,45 @@ export function EpgEventDialog({
                     : t('epg.seriesRetentionForever', { defaultValue: 'Dauerhaft behalten' })}
                   {' — '}{t('epg.seriesRetentionHelp', { defaultValue: 'Aufnahmen, die älter als diese Tage sind, werden automatisch gelöscht.' })}
                 </span>
+              </div>
+
+              {/* Expiration Policy */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>{t('epg.seriesExpiresAtLabel', { defaultValue: 'Gültig bis (Ablaufdatum / EOL)' })}</label>
+                <div className={styles.chipRow}>
+                  <button
+                    type="button"
+                    className={[styles.chip, !expiresAt ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setExpiresAt('')}
+                  >
+                    {t('epg.seriesExpiresNever', { defaultValue: 'Dauerhaft behalten' })}
+                  </button>
+                  <button
+                    type="button"
+                    className={[styles.chip, expiresAt === `${new Date().getFullYear()}-12-31` ? styles.chipActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => setExpiresAt(`${new Date().getFullYear()}-12-31`)}
+                  >
+                    {t('epg.seriesExpiresEndOfYear', { defaultValue: 'Bis Jahresende' })} ({new Date().getFullYear()})
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.chip}
+                    onClick={() => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() + 3);
+                      setExpiresAt(formatLocalDateOnly(d));
+                    }}
+                  >
+                    {t('epg.seriesExpires3Months', { defaultValue: '+3 Monate' })}
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  className={styles.inputField}
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                />
+                <span className={styles.helpText}>{t('epg.seriesExpiresAtHelp', { defaultValue: 'Optional. Nach diesem Datum werden keine neuen Sendungen mehr programmiert.' })}</span>
               </div>
             </div>
 

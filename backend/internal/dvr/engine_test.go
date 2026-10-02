@@ -185,3 +185,90 @@ func TestSeriesEngine_RunOnce_RuleNotFound(t *testing.T) {
 		t.Fatalf("expected ErrRuleNotFound, got: %v", err)
 	}
 }
+
+func TestSeriesEngine_RunOnce_RuleExpired(t *testing.T) {
+	tmpDir := t.TempDir()
+	rm := NewManager(tmpDir)
+
+	now := time.Now()
+	expiredTime := now.Add(-1 * time.Hour)
+
+	ruleID, err := rm.AddRule(SeriesRule{
+		Enabled:    true,
+		Keyword:    "Cafe Puls",
+		ChannelRef: "1:0:19:14B8:407:1:C00000:0:0:0:",
+		ExpiresAt:  &expiredTime,
+	})
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	mockClient := new(MockClient)
+	engine := NewSeriesEngine(config.AppConfig{}, rm, func() OWIClient { return mockClient })
+
+	events := []openwebif.EPGEvent{
+		{Title: "Café PULS mit PULS 4 Aktuell", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: now.Add(2 * time.Hour).Unix(), Duration: 3600},
+	}
+	mockClient.On("GetEPG", mock.Anything, "1:0:19:14B8:407:1:C00000:0:0:0:", 7).Return(events, nil)
+	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
+
+	reports, err := engine.RunOnce(context.Background(), "manual", ruleID)
+	assert.NoError(t, err)
+	assert.Len(t, reports, 1)
+	assert.Equal(t, 0, reports[0].Summary.TimersCreated)
+	assert.Equal(t, 1, reports[0].Summary.TimersSkipped)
+	assert.Len(t, reports[0].Decisions, 1)
+	assert.Equal(t, ActionSkipped, reports[0].Decisions[0].Action)
+	assert.Equal(t, "rule_expired", reports[0].Decisions[0].Reason)
+
+	mockClient.AssertExpectations(t)
+	mockClient.AssertNotCalled(t, "AddTimer", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestSeriesEngine_RunOnce_RuleExpired_DayFilterTakesPrecedence(t *testing.T) {
+	tmpDir := t.TempDir()
+	rm := NewManager(tmpDir)
+
+	now := time.Now()
+	expiredTime := now.Add(-1 * time.Hour)
+
+	// Rule is configured only for tomorrow's weekday
+	tomorrowWeekday := int(now.Add(24 * time.Hour).Weekday())
+
+	ruleID, err := rm.AddRule(SeriesRule{
+		Enabled:    true,
+		Keyword:    "Cafe Puls",
+		ChannelRef: "1:0:19:14B8:407:1:C00000:0:0:0:",
+		Days:       []int{tomorrowWeekday},
+		ExpiresAt:  &expiredTime,
+	})
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	mockClient := new(MockClient)
+	engine := NewSeriesEngine(config.AppConfig{}, rm, func() OWIClient { return mockClient })
+
+	events := []openwebif.EPGEvent{
+		// Event today: wrong weekday, must be dropped silently by DayFilter without counting as rule_expired
+		{Title: "Café PULS heute", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: now.Add(2 * time.Hour).Unix(), Duration: 3600},
+		// Event tomorrow: matching weekday, but rule is expired -> recorded as rule_expired
+		{Title: "Café PULS morgen", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: now.Add(26 * time.Hour).Unix(), Duration: 3600},
+	}
+	mockClient.On("GetEPG", mock.Anything, "1:0:19:14B8:407:1:C00000:0:0:0:", 7).Return(events, nil)
+	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
+
+	reports, err := engine.RunOnce(context.Background(), "manual", ruleID)
+	assert.NoError(t, err)
+	assert.Len(t, reports, 1)
+	assert.Equal(t, 0, reports[0].Summary.TimersCreated)
+	// Only 1 item matched filters and was skipped due to expiration
+	assert.Equal(t, 1, reports[0].Summary.TimersSkipped)
+	assert.Len(t, reports[0].Decisions, 1)
+	assert.Equal(t, "Café PULS morgen", reports[0].Decisions[0].Title)
+	assert.Equal(t, ActionSkipped, reports[0].Decisions[0].Action)
+	assert.Equal(t, "rule_expired", reports[0].Decisions[0].Reason)
+
+	mockClient.AssertExpectations(t)
+	mockClient.AssertNotCalled(t, "AddTimer", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}

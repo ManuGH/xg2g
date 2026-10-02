@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -176,6 +177,11 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 		summary = &s
 	}
 
+	var expiresAt *time.Time
+	if r.ExpiresAt != nil && !r.ExpiresAt.IsZero() {
+		expiresAt = r.ExpiresAt
+	}
+
 	return SeriesRule{
 		Id:             &id,
 		Enabled:        &enabled,
@@ -185,6 +191,7 @@ func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 		StartWindow:    &window,
 		Priority:       &priority,
 		RetentionDays:  &retentionDays,
+		ExpiresAt:      expiresAt,
 		LastRunAt:      &r.LastRunAt,
 		LastRunStatus:  &r.LastRunStatus,
 		LastRunSummary: summary,
@@ -219,6 +226,9 @@ func mapAPIToRule(req SeriesRule) dvr.SeriesRule {
 	if req.RetentionDays != nil {
 		r.RetentionDays = *req.RetentionDays
 	}
+	if req.ExpiresAt != nil && !req.ExpiresAt.IsZero() {
+		r.ExpiresAt = req.ExpiresAt
+	}
 	return r
 }
 
@@ -241,6 +251,9 @@ func mapAPIUpdateToRule(req SeriesRuleUpdate) dvr.SeriesRule {
 	}
 	if req.RetentionDays != nil {
 		r.RetentionDays = *req.RetentionDays
+	}
+	if req.ExpiresAt != nil && !req.ExpiresAt.IsZero() {
+		r.ExpiresAt = req.ExpiresAt
 	}
 	return r
 }
@@ -324,13 +337,15 @@ func mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
 
 	// Map Snapshot
 	snap := RuleSnapshot{
-		Id:          &r.Snapshot.ID,
-		Enabled:     &r.Snapshot.Enabled,
-		Keyword:     &r.Snapshot.Keyword,
-		ChannelRef:  &r.Snapshot.ChannelRef,
-		Days:        &r.Snapshot.Days,
-		StartWindow: &r.Snapshot.StartWindow,
-		Priority:    &r.Snapshot.Priority,
+		Id:            &r.Snapshot.ID,
+		Enabled:       &r.Snapshot.Enabled,
+		Keyword:       &r.Snapshot.Keyword,
+		ChannelRef:    &r.Snapshot.ChannelRef,
+		Days:          &r.Snapshot.Days,
+		StartWindow:   &r.Snapshot.StartWindow,
+		Priority:      &r.Snapshot.Priority,
+		RetentionDays: &r.Snapshot.RetentionDays,
+		ExpiresAt:     r.Snapshot.ExpiresAt,
 	}
 
 	// Map Decisions
