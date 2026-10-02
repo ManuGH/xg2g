@@ -132,6 +132,11 @@ type LiveSource interface {
 	// Release drops this holder's claim on the shared session. It is safe to call
 	// more than once.
 	Release()
+
+	// ReleaseWithReason drops this holder's claim with a specific stop reason.
+	// When an explicit client stop is given (e.g. R_CLIENT_STOP) and this was the
+	// last subscriber, the shared session tears down upstream immediately.
+	ReleaseWithReason(reason string)
 }
 
 // LiveSourceProvider hands out attachments to the shared ingest of a service.

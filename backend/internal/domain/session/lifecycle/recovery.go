@@ -17,6 +17,14 @@ func ApplyFallbackRestart(rec *model.SessionRecord, now time.Time) {
 		To:    model.SessionStarting,
 		Event: EvRecoveryReset,
 	}, now)
+	// Both internal restart paths (client-feedback fallback and runtime policy
+	// transition) go through here right before they publish a stop. That stop
+	// carries R_CLIENT_STOP, but it is not a user stop: record it so the
+	// shared ingest keeps its warm hold for the restart that follows.
+	if rec.ContextData == nil {
+		rec.ContextData = map[string]string{}
+	}
+	rec.ContextData[model.CtxKeyRestartPending] = "1"
 }
 
 // ApplyRepeatedStopRequest enriches an already-stopping session without
@@ -52,6 +60,7 @@ func ResetForFallbackRestart(rec *model.SessionRecord, now time.Time) {
 	rec.LastAccessUnix = 0
 	rec.LastHeartbeatUnix = 0
 	rec.StopReason = ""
+	delete(rec.ContextData, model.CtxKeyRestartPending)
 	rec.LatestSegmentAt = time.Time{}
 	rec.LastPlaylistAccessAt = time.Time{}
 	rec.PlaylistPublishedAt = time.Time{}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -264,7 +265,17 @@ func (s *Session) TryAcquireActive() (*Lease, bool) {
 	return nil, false
 }
 
-func (s *Session) releaseSubscriber() {
+// isExplicitStopReason reports whether reason indicates an explicit client or operator stop.
+func isExplicitStopReason(reason string) bool {
+	switch strings.ToUpper(strings.TrimSpace(reason)) {
+	case "R_CLIENT_STOP", "CLIENT_STOP", "USER_STOPPED", "STOP_REQUESTED", "EXPLICIT_STOP":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Session) releaseSubscriber(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -272,14 +283,26 @@ func (s *Session) releaseSubscriber() {
 		s.refCount--
 	}
 
-	if s.refCount == 0 && s.state == StateActive {
-		if s.holdDuration > 0 {
-			s.state = StateHolding
+	if s.refCount == 0 {
+		if s.state == StateActive {
+			if !isExplicitStopReason(reason) && s.holdDuration > 0 {
+				s.state = StateHolding
+				if s.holdTimer != nil {
+					s.holdTimer.Stop()
+				}
+				s.holdTimer = time.AfterFunc(s.holdDuration, s.onHoldExpired)
+			} else {
+				s.state = StateStopped
+				s.closeUpstreamLocked()
+				if s.onTeardown != nil {
+					go s.onTeardown(s)
+				}
+			}
+		} else if s.state == StateHolding && isExplicitStopReason(reason) {
 			if s.holdTimer != nil {
 				s.holdTimer.Stop()
+				s.holdTimer = nil
 			}
-			s.holdTimer = time.AfterFunc(s.holdDuration, s.onHoldExpired)
-		} else {
 			s.state = StateStopped
 			s.closeUpstreamLocked()
 			if s.onTeardown != nil {
@@ -375,7 +398,14 @@ func (l *Lease) IngestState() IngestState {
 
 // Release decrements the subscriber count. It is safe and idempotent to call multiple times.
 func (l *Lease) Release() {
+	l.ReleaseWithReason("")
+}
+
+// ReleaseWithReason decrements the subscriber count with a specific stop reason.
+// If this was the last subscriber and the reason is an explicit stop (e.g. R_CLIENT_STOP),
+// upstream is closed immediately rather than entering warm-hold.
+func (l *Lease) ReleaseWithReason(reason string) {
 	if l.released.CompareAndSwap(false, true) {
-		l.session.releaseSubscriber()
+		l.session.releaseSubscriber(reason)
 	}
 }

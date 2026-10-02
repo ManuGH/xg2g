@@ -387,6 +387,7 @@ func (m *MemoryStore) GetDiagnosticMetadata(ctx context.Context, sessionID strin
 		CorrelationID:         rec.CorrelationID,
 		Reason:                string(rec.Reason),
 		StopRequestedAtUnixMs: rec.StopRequestedAtUnixMs,
+		RestartPending:        rec.RestartPending(),
 	}, true
 }
 
