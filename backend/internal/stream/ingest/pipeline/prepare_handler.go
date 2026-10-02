@@ -12,7 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 )
 
@@ -40,6 +44,7 @@ type PrepareHandler struct {
 	preparations *PreparationManager
 	receiverHost string
 	streamPort   int
+	resolver     *edge.Resolver
 }
 
 // NewPrepareHandler creates the handler.
@@ -55,6 +60,11 @@ func NewPrepareHandler(preparations *PreparationManager, receiverHost string, st
 		receiverHost: receiverHost,
 		streamPort:   streamPort,
 	}
+}
+
+// SetIPTVResolver sets or updates the injected IPTV edge resolver.
+func (h *PrepareHandler) SetIPTVResolver(resolver *edge.Resolver) {
+	h.resolver = resolver
 }
 
 // prepareResponse is what every endpoint answers with, so a client parses one shape
@@ -143,6 +153,22 @@ func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID 
 		return
 	}
 
+	clientServiceRef := serviceRef
+	rawRef, _, err := h.resolver.ResolveInbound(metrics.EndpointStreamPrepare, serviceRef)
+	if err != nil {
+		if errors.Is(err, edge.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "prepare/not_found", "Resource Not Found", problemcode.CodeNotFound, "iptv source not found", nil)
+			return
+		}
+		if errors.Is(err, edge.ErrInvalidID) {
+			problem.Write(w, r, http.StatusBadRequest, "prepare/invalid_id", "Invalid Request", problemcode.CodeInvalidInput, "invalid iptv source id", nil)
+			return
+		}
+		problem.Write(w, r, http.StatusBadRequest, "prepare/invalid_ref", "Invalid Request", problemcode.CodeInvalidInput, "invalid service reference", nil)
+		return
+	}
+	serviceRef = rawRef
+
 	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
 	key.TargetProgram = targetProgramFromServiceRef(serviceRef)
 	if err := key.Validate(); err != nil {
@@ -152,9 +178,10 @@ func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID 
 
 	zapID := sanitizeZapID(r.Header.Get(zapIDHeader))
 	prep, err := h.preparations.Prepare(PrepareRequest{
-		ClientID: clientID,
-		ZapID:    zapID,
-		Key:      key,
+		ClientID:         clientID,
+		ZapID:            zapID,
+		Key:              key,
+		ClientServiceRef: clientServiceRef,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

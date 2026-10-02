@@ -15,7 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ingeststats"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -110,6 +114,7 @@ type Handler struct {
 	manager      *session.Manager
 	receiverHost string
 	streamPort   int
+	resolver     *edge.Resolver
 }
 
 // NewHandler creates an HTTP handler bound to the session.Manager.
@@ -132,6 +137,11 @@ func NewHandlerWithReceiver(manager *session.Manager, receiverHost string, strea
 	}
 }
 
+// SetIPTVResolver sets or updates the injected IPTV edge resolver.
+func (h *Handler) SetIPTVResolver(resolver *edge.Resolver) {
+	h.resolver = resolver
+}
+
 // ServeHTTP handles GET /api/v3/stream/live/* requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
@@ -149,6 +159,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if unescaped, err := url.PathUnescape(serviceRef); err == nil {
 		serviceRef = unescaped
 	}
+
+	rawRef, _, err := h.resolver.ResolveInbound(metrics.EndpointStreamLive, serviceRef)
+	if err != nil {
+		reqForProblem := r.Clone(r.Context())
+		reqForProblem.URL.Path = "/api/v3/stream/live"
+		if errors.Is(err, edge.ErrNotFound) {
+			problem.Write(w, reqForProblem, http.StatusNotFound, "live/not_found", "Resource Not Found", problemcode.CodeNotFound, "iptv source not found", nil)
+			return
+		}
+		if errors.Is(err, edge.ErrInvalidID) {
+			problem.Write(w, reqForProblem, http.StatusBadRequest, "live/invalid_id", "Invalid Request", problemcode.CodeInvalidInput, "invalid iptv source id", nil)
+			return
+		}
+		problem.Write(w, reqForProblem, http.StatusBadRequest, "live/invalid_ref", "Invalid Request", problemcode.CodeInvalidInput, "invalid service reference", nil)
+		return
+	}
+	serviceRef = rawRef
 
 	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
 	parts := strings.Split(serviceRef, ":")

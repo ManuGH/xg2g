@@ -96,6 +96,18 @@ func (s *Server) syncV3HandlerDependencies() {
 		RequestShutdown:    deps.requestShutdown,
 		PreflightProvider:  deps.preflightProvider,
 	})
+
+	s.mu.Lock()
+	if s.liveStreamHandler != nil {
+		s.liveStreamHandler.SetIPTVResolver(deps.runtimeDeps.IPTVResolver)
+	}
+	if s.prepareHandler != nil {
+		s.prepareHandler.SetIPTVResolver(deps.runtimeDeps.IPTVResolver)
+	}
+	if s.smootherHandler != nil {
+		s.smootherHandler.SetIPTVResolver(deps.runtimeDeps.IPTVResolver)
+	}
+	s.mu.Unlock()
 }
 
 // WireV3Runtime applies runtime-provided v3 dependencies in one DI call.

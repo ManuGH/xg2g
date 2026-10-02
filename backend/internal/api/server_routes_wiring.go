@@ -157,6 +157,8 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 
 	// Experimental TS Burst-Smoothing Proxy route for lab & client A/B testing
 	smootherHandler := smoother.NewHandler(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())
+	smootherHandler.SetIPTVResolver(s.IPTVResolver())
+	s.smootherHandler = smootherHandler
 	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register smooth stream route: %w", err)
 	}
@@ -174,6 +176,8 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
 	s.liveSessionMgr = liveSessionMgr
 	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	liveStreamHandler.SetIPTVResolver(s.IPTVResolver())
+	s.liveStreamHandler = liveStreamHandler
 	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)
 	}
@@ -184,6 +188,8 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	// tuner - the client simply starts reading a stream that is already running.
 	preparations := pipeline.NewPreparationManager(liveSessionMgr, pipeline.DefaultPreparationConfig(), *log.L())
 	prepareHandler := pipeline.NewPrepareHandler(preparations, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	prepareHandler.SetIPTVResolver(s.IPTVResolver())
+	s.prepareHandler = prepareHandler
 	// Authenticated and scoped, unlike the media routes above.
 	//
 	// A preparation is not media delivery: it occupies a tuner, it can supersede

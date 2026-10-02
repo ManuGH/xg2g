@@ -5,6 +5,7 @@
 package smoother
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // FlusherWriter wraps an http.ResponseWriter and http.Flusher.
@@ -37,6 +42,7 @@ type Handler struct {
 	streamPort   int
 	cfg          Config
 	client       *http.Client
+	resolver     *edge.Resolver
 }
 
 // isValidServiceRef validates that serviceRef conforms strictly to DVB/Enigma2
@@ -89,6 +95,15 @@ func NewHandler(receiverBaseURL string, streamPort int, cfg Config) *Handler {
 	}
 }
 
+// SetIPTVResolver sets or updates the injected IPTV edge resolver.
+func (h *Handler) SetIPTVResolver(resolver *edge.Resolver) {
+	h.resolver = resolver
+}
+
+func isIPTVRef(ref string) bool {
+	return strings.HasPrefix(ref, "4097:") || strings.HasPrefix(ref, "5001:") || strings.HasPrefix(ref, "5002:")
+}
+
 // ServeHTTP handles GET /api/v3/stream/smooth/* requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract service reference from wildcard or query param
@@ -109,7 +124,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serviceRef = unescaped
 	}
 
-	if !isValidServiceRef(serviceRef) {
+	rawRef, _, err := h.resolver.ResolveInbound(metrics.EndpointStreamSmooth, serviceRef)
+	if err != nil {
+		reqForProblem := r.Clone(r.Context())
+		reqForProblem.URL.Path = "/api/v3/stream/smooth"
+		if errors.Is(err, edge.ErrNotFound) {
+			problem.Write(w, reqForProblem, http.StatusNotFound, "smooth/not_found", "Resource Not Found", problemcode.CodeNotFound, "iptv source not found", nil)
+			return
+		}
+		if errors.Is(err, edge.ErrInvalidID) {
+			problem.Write(w, reqForProblem, http.StatusBadRequest, "smooth/invalid_id", "Invalid Request", problemcode.CodeInvalidInput, "invalid iptv source id", nil)
+			return
+		}
+		problem.Write(w, reqForProblem, http.StatusBadRequest, "smooth/invalid_ref", "Invalid Request", problemcode.CodeInvalidInput, "invalid service reference", nil)
+		return
+	}
+	serviceRef = rawRef
+
+	if isIPTVRef(serviceRef) {
+		if strings.ContainsAny(serviceRef, "\r\n\x00") || strings.Contains(serviceRef, "..") {
+			http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
+			return
+		}
+	} else if !isValidServiceRef(serviceRef) {
 		http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
 		return
 	}

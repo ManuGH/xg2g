@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
 	ingestsession "github.com/ManuGH/xg2g/internal/stream/ingest/session"
+	"github.com/ManuGH/xg2g/internal/stream/smoother"
 	"github.com/ManuGH/xg2g/internal/verification"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -83,7 +84,10 @@ type Server struct {
 	// the media path can be given the same manager: a second one would mean a
 	// second connection to the receiver for the same service, which is the whole
 	// thing shared ingest exists to prevent.
-	liveSessionMgr *ingestsession.Manager
+	liveSessionMgr    *ingestsession.Manager
+	liveStreamHandler *pipeline.Handler
+	prepareHandler    *pipeline.PrepareHandler
+	smootherHandler   *smoother.Handler
 
 	// Dependency Injection (Internal)
 	v3Factory             func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
