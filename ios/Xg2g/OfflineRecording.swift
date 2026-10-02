@@ -24,19 +24,28 @@ enum DownloadQuality: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .original: return "Original HD (1:1)"
-        case .av1: return "Ultra-Kompakt (AV1)"
-        case .compact: return "Flugzeug / Kompakt (HEVC)"
-        case .high: return "720p HD (Ausgewogen)"
+        case .original: return String(localized: "Original HD (1:1)")
+        case .av1: return String(localized: "Ultra Compact (AV1)")
+        case .compact: return String(localized: "Airplane / Compact (HEVC)")
+        case .high: return String(localized: "720p HD (Balanced)")
+        }
+    }
+
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .original: return LocalizedStringResource("Original HD (1:1)")
+        case .av1: return LocalizedStringResource("Ultra Compact (AV1)")
+        case .compact: return LocalizedStringResource("Airplane / Compact (HEVC)")
+        case .high: return LocalizedStringResource("720p HD (Balanced)")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .original: return "Beste Bitrate (~3,5 GB / 90m)"
-        case .av1: return "Next-Gen AV1 Effizienz (~550 MB / 90m)"
-        case .compact: return "Bis zu 75% Speicher sparen (~800 MB / 90m)"
-        case .high: return "Hohe Bildqualität (~1,5 GB / 90m)"
+        case .original: return String(localized: "Best bitrate (~3.5 GB / 90m)")
+        case .av1: return String(localized: "Next-gen AV1 efficiency (~550 MB / 90m)")
+        case .compact: return String(localized: "Save up to 75% storage (~800 MB / 90m)")
+        case .high: return String(localized: "High image quality (~1.5 GB / 90m)")
         }
     }
 

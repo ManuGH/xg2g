@@ -20,7 +20,7 @@ struct SettingsView: View {
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
-                            Picker("Wiedergabemodus", selection: $model.playbackEngine) {
+                            Picker("Playback Mode", selection: $model.playbackEngine) {
                                 ForEach(AppModel.PlaybackEngine.allCases) { engine in
                                     Text(engine.displayName).tag(engine)
                                 }
@@ -35,9 +35,9 @@ struct SettingsView: View {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "sparkles", backgroundColor: Theme.Colors.accentLive)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Qualität")
+                                    Text("Quality")
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Original · Keine Video-Transkodierung · Minimale Serverlast")
+                                    Text("Original · No video transcoding · Minimal server load")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -49,7 +49,7 @@ struct SettingsView: View {
                         } else {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
-                                Picker("Streaming-Qualität", selection: $model.qualityPreference) {
+                                Picker("Streaming Quality", selection: $model.qualityPreference) {
                                     ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
                                         Text(pref.displayName).tag(pref)
                                     }
@@ -60,7 +60,7 @@ struct SettingsView: View {
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "wifi", backgroundColor: Color.teal)
-                            Text("Netzwerkzustand")
+                            Text("Network Status")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             HStack(spacing: 6) {
@@ -72,19 +72,19 @@ struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Wiedergabe")
+                        Text("Playback")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
                         if model.playbackEngine == .auto {
-                            Text("Im Modus 'Automatisch' entscheidet der xg2g Planner dynamisch über die optimale Pipeline basierend auf Netzwerk, Gerätefähigkeiten und Serverressourcen.")
+                            Text("In 'Auto' mode, xg2g Planner dynamically decides the optimal pipeline based on network, device capabilities, and server resources.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         } else if model.playbackEngine == .native {
-                            Text("Native Live-TV liefert das Signal unverändert an die VideoToolbox-Hardware-Pipeline mit minimaler Latenz.")
+                            Text("Native Live TV delivers the signal unmodified to the VideoToolbox hardware pipeline with minimal latency.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         } else {
-                            Text("Server-Streaming (HLS) ermöglicht Pause/Timeshift, externe Nutzung und adaptive Bitrate; xg2g entscheidet, ob Copy, Remux oder Transcode nötig ist.")
+                            Text("Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required.")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
@@ -95,7 +95,7 @@ struct SettingsView: View {
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
-                            Picker("Standard-Download", selection: Binding(
+                            Picker("Default Download Quality", selection: Binding(
                                 get: { DownloadManager.shared.defaultQuality },
                                 set: { DownloadManager.shared.defaultQuality = $0 }
                             )) {
@@ -112,7 +112,7 @@ struct SettingsView: View {
                         )) {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "wifi", backgroundColor: Color.blue)
-                                Text("Nur über WLAN laden")
+                                Text("Download Over Wi-Fi Only")
                                     .foregroundStyle(Theme.Colors.textPrimary)
                             }
                         }
@@ -121,7 +121,7 @@ struct SettingsView: View {
                         Text("Offline & Downloads")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Kompakt (HEVC) spart bis zu 75% Speicherplatz auf deinem Gerät und ist ideal für Flugreisen und lange Serien-Staffeln.")
+                        Text("Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -133,9 +133,9 @@ struct SettingsView: View {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "aspectratio", backgroundColor: Color.purple)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Erweiterte Seitenverhältnisse")
+                                    Text("Advanced Aspect Ratios")
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player.")
+                                    Text("Enables manual aspect ratio overrides (16:9, 4:3, Cinemascope) in the player.")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -146,7 +146,7 @@ struct SettingsView: View {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "gauge.with.dots.needle.bottom.50percent", backgroundColor: Color.cyan)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Aktiver Wiedergabeplan")
+                                    Text("Active Playback Plan")
                                     .foregroundStyle(Theme.Colors.textPrimary)
                                 Text(model.activePlaybackPlanDescription)
                                     .font(.caption.monospaced())
@@ -160,19 +160,19 @@ struct SettingsView: View {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "wrench.and.screwdriver", backgroundColor: Color.gray)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Streaming-Technik & Diagnose")
+                                    Text("Streaming Technology & Diagnostics")
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Pipeline-Profile, Test-Overrides & Diagnose-Status")
+                                    Text("Pipeline profiles, test overrides & diagnostic status")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
                             }
                         }
                     } header: {
-                        Text("Erweitert & Diagnose")
+                        Text("Advanced & Diagnostics")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Aufnahmen und programmierte Timer sind von diesen Einstellungen nicht betroffen — sie laufen immer über den Server und funktionieren in allen Konfigurationen.")
+                        Text("Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -182,7 +182,7 @@ struct SettingsView: View {
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "server.rack", backgroundColor: Theme.Colors.accentAction)
-                            Text("Server-Adresse")
+                            Text("Server Address")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             Text(model.serverURLString)
@@ -192,14 +192,14 @@ struct SettingsView: View {
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "checkmark.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
-                            Text("Server-Status")
+                            Text("Server Status")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             HStack(spacing: 6) {
                                 Circle()
                                     .fill(Theme.Colors.statusSuccess)
                                     .frame(width: 8, height: 8)
-                                Text("Verbunden")
+                                Text("Connected")
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.Colors.statusSuccess)
                             }
@@ -208,7 +208,7 @@ struct SettingsView: View {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Receiver-Adresse (Experten-Fallback)")
+                                Text("Receiver Address (Expert Fallback)")
                                     .foregroundStyle(Theme.Colors.textPrimary)
                                 TextField(ServerAddress.receiverPlaceholder, text: $model.receiverStreamBaseURL)
                                     .textInputAutocapitalization(.never)
@@ -219,10 +219,10 @@ struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Verbindung & Infrastruktur")
+                        Text("Connection & Infrastructure")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Die Receiver-Adresse dient ausschließlich als optionaler lokaler Fallback für unmanaged Direct-Ingest im Heimnetz. Standardmäßig koordiniert xg2g alle Streams.")
+                        Text("The receiver address serves solely as an optional local fallback for unmanaged direct ingest in the home network. By default, xg2g coordinates all streams.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -232,7 +232,7 @@ struct SettingsView: View {
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "iphone.gen3", backgroundColor: Color.blue.opacity(0.85))
-                            Text("Gerätename")
+                            Text("Device Name")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             Text(model.currentDeviceName)
@@ -241,7 +241,7 @@ struct SettingsView: View {
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "cpu", backgroundColor: Color(white: 0.35))
-                            Text("Gerätetyp")
+                            Text("Device Type")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             Text(model.currentDeviceType)
@@ -250,7 +250,7 @@ struct SettingsView: View {
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "lock.shield.fill", backgroundColor: Color.purple)
-                            Text("Schlüsselspeicher")
+                            Text("Key Storage")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             HStack(spacing: 4) {
@@ -262,7 +262,7 @@ struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Geräteidentität")
+                        Text("Device Identity")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
@@ -276,9 +276,9 @@ struct SettingsView: View {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "trash.circle", backgroundColor: Color.orange)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("EPG- & Medien-Cache leeren")
+                                    Text("Clear EPG & Media Cache")
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Löscht temporäre Sender- und EPG-Caches und lädt die Daten neu.")
+                                    Text("Clears temporary channel and EPG caches and reloads data.")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -286,7 +286,7 @@ struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Speicher & Cache")
+                        Text("Storage & Cache")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
@@ -305,7 +305,7 @@ struct SettingsView: View {
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "network.badge.shield.half.filled", backgroundColor: Color.teal)
-                            Text("Protokoll")
+                            Text("Protocol")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             Text("v3 Normative")
@@ -316,7 +316,7 @@ struct SettingsView: View {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "doc.text.fill", backgroundColor: Color.gray)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Lizenz")
+                                Text("License")
                                     .foregroundStyle(Theme.Colors.textPrimary)
                                 Text("PolyForm Noncommercial License 1.0.0")
                                     .font(.caption)
@@ -324,7 +324,7 @@ struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Über xg2g")
+                        Text("About xg2g")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
@@ -336,17 +336,17 @@ struct SettingsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "rectangle.portrait.and.arrow.right", backgroundColor: Theme.Colors.statusError)
-                                Text("Gerät trennen & abmelden")
+                                Text("Disconnect & Sign Out Device")
                                     .foregroundStyle(Theme.Colors.statusError)
                                     .fontWeight(.medium)
                                 Spacer()
                             }
                         }
                     } header: {
-                        Text("Sitzung")
+                        Text("Session")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Trennt die DPoP-Verbindung zum Server und entfernt den kryptographischen Geräteschlüssel sicher aus der Secure Enclave.")
+                        Text("Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -357,31 +357,31 @@ struct SettingsView: View {
                 .scrollContentBackground(.hidden)
                 #endif
                 .confirmationDialog(
-                    "Möchtest du dieses Gerät wirklich trennen?",
+                    "Are you sure you want to disconnect this device?",
                     isPresented: $showingRevokeConfirmation,
                     titleVisibility: .visible
                 ) {
-                    Button("Gerät trennen", role: .destructive) {
+                    Button("Disconnect Device", role: .destructive) {
                         Task { await model.disconnectServer() }
                     }
-                    Button("Abbrechen", role: .cancel) {}
+                    Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Das Gerät wird serverseitig abgemeldet. Für erneuten Zugriff muss der Pairing-Code wieder genehmigt werden.")
+                    Text("The device will be signed out on the server. To regain access, the pairing code must be approved again.")
                 }
                 .confirmationDialog(
-                    "Möchtest du den Cache wirklich leeren?",
+                    "Are you sure you want to clear the cache?",
                     isPresented: $showingClearCacheConfirmation,
                     titleVisibility: .visible
                 ) {
-                    Button("Cache leeren & Daten neu laden", role: .destructive) {
+                    Button("Clear Cache & Reload Data", role: .destructive) {
                         Task { await model.clearCaches() }
                     }
-                    Button("Abbrechen", role: .cancel) {}
+                    Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Löscht gespeicherte EPG-Daten und Senderlisten und lädt diese frisch vom Server.")
+                    Text("Deletes saved EPG data and channel lists and reloads them fresh from the server.")
                 }
             }
-            .navigationTitle("Einstellungen")
+            .navigationTitle("Settings")
         }
     }
 }
@@ -395,19 +395,19 @@ struct DiagnosticPipelineOverrideView: View {
         List {
             Section {
                 Label(
-                    "Manuelle Overrides umgehen die automatische Pipeline-Auswahl des xg2g Planners und dienen zu Entwicklungs- und Diagnosezwecken.",
+                    "Manual overrides bypass the automatic pipeline selection of the xg2g Planner and are intended for development and diagnostic purposes.",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.statusWarning)
             } header: {
-                Text("Hinweis")
+                Text("Notice")
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .listRowBackground(Theme.Colors.surfaceElevated)
 
             Section {
-                Picker("Pipeline-Override", selection: $model.qualityPreference) {
+                Picker("Pipeline Override", selection: $model.qualityPreference) {
                     ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
                         VStack(alignment: .leading) {
                             Text(pref.displayName)
@@ -420,10 +420,10 @@ struct DiagnosticPipelineOverrideView: View {
                 }
                 .pickerStyle(.inline)
             } header: {
-                Text("Test-Override")
+                Text("Test Override")
                     .foregroundStyle(Theme.Colors.textTertiary)
             } footer: {
-                Text("Legt die technische Backend-Pipeline fest: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP Normalisierung oder Transcoding.")
+                Text("Specifies the backend technical pipeline: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP normalization, or transcoding.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -431,7 +431,7 @@ struct DiagnosticPipelineOverrideView: View {
 
             Section {
                 HStack {
-                    Text("Aktiver Intent")
+                    Text("Active Intent")
                         .foregroundStyle(Theme.Colors.textPrimary)
                     Spacer()
                     Text(model.qualityPreference.rawValue)
@@ -440,7 +440,7 @@ struct DiagnosticPipelineOverrideView: View {
                 }
 
                 HStack {
-                    Text("Technische Pipeline")
+                    Text("Technical Pipeline")
                         .foregroundStyle(Theme.Colors.textPrimary)
                     Spacer()
                     Text(model.qualityPreference.technicalDetails)
@@ -448,7 +448,7 @@ struct DiagnosticPipelineOverrideView: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
             } header: {
-                Text("Telemetrie-Details")
+                Text("Telemetry Details")
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             .listRowBackground(Theme.Colors.surfaceElevated)
@@ -457,7 +457,7 @@ struct DiagnosticPipelineOverrideView: View {
         .scrollContentBackground(.hidden)
         #endif
         .background(Theme.Colors.bgBase.ignoresSafeArea())
-        .navigationTitle("Streaming-Technik")
+        .navigationTitle("Streaming Technology")
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

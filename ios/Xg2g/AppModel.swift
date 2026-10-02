@@ -193,20 +193,29 @@ final class AppModel {
         /// User-friendly label for standard settings UI
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch"
-            case .passthrough: return "Originalqualität"
-            case .qsvNormalize: return "Kompatibilität"
-            case .dataSaver: return "Datensparen"
+            case .auto: return String(localized: "Auto")
+            case .passthrough: return String(localized: "Original Quality")
+            case .qsvNormalize: return String(localized: "Compatibility")
+            case .dataSaver: return String(localized: "Data Saver")
+            }
+        }
+
+        var localizedTitle: LocalizedStringResource {
+            switch self {
+            case .auto: return LocalizedStringResource("Auto")
+            case .passthrough: return LocalizedStringResource("Original Quality")
+            case .qsvNormalize: return LocalizedStringResource("Compatibility")
+            case .dataSaver: return LocalizedStringResource("Data Saver")
             }
         }
 
         /// Subtitle / explanation
         var summary: String {
             switch self {
-            case .auto: return "xg2g ermittelt die beste Balance aus Qualität und Latenz (Empfohlen)"
-            case .passthrough: return "1:1 Bitstream ohne Video-Transkodierung"
-            case .qsvNormalize: return "Standardisiertes HLS mit maximaler Gerätekompatibilität"
-            case .dataSaver: return "Bandbreitenoptimiertes Streaming (HEVC/AV1) für unterwegs"
+            case .auto: return String(localized: "xg2g finds the best balance of quality and latency (Recommended)")
+            case .passthrough: return String(localized: "1:1 bitstream without video transcoding")
+            case .qsvNormalize: return String(localized: "Standardized HLS with maximum device compatibility")
+            case .dataSaver: return String(localized: "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go")
             }
         }
 
@@ -248,18 +257,26 @@ final class AppModel {
 
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch"
-            case .native: return "Native Live-TV"
-            case .hls: return "Server-Streaming (HLS)"
+            case .auto: return String(localized: "Auto")
+            case .native: return String(localized: "Native Live TV")
+            case .hls: return String(localized: "Server Streaming (HLS)")
+            }
+        }
+
+        var localizedTitle: LocalizedStringResource {
+            switch self {
+            case .auto: return LocalizedStringResource("Auto")
+            case .native: return LocalizedStringResource("Native Live TV")
+            case .hls: return LocalizedStringResource("Server Streaming (HLS)")
             }
         }
 
         /// One line for the settings row.
         var summary: String {
             switch self {
-            case .auto: return "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
-            case .native: return "xg2g liefert den Sender möglichst unverändert an den nativen Player"
-            case .hls: return "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
+            case .auto: return String(localized: "xg2g dynamically chooses the best route for your device and network (Recommended)")
+            case .native: return String(localized: "xg2g delivers the channel as directly as possible to the native player")
+            case .hls: return String(localized: "Enables timeshift/pause, remote streaming, and adaptive bitrate")
             }
         }
 
@@ -269,39 +286,39 @@ final class AppModel {
             case .auto:
                 return (
                     gains: [
-                        "Der xg2g Planner wählt automatisch die optimale Pipeline",
-                        "Verlustfreies Streaming und niedrigste Latenz im Heimnetz",
-                        "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
+                        String(localized: "The xg2g Planner automatically selects the optimal pipeline"),
+                        String(localized: "Lossless streaming and lowest latency on local network"),
+                        String(localized: "Seamless switch to adaptive streaming when away from home")
                     ],
                     costs: [
-                        "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
+                        String(localized: "Timeshift/pause is only available when HLS is active")
                     ]
                 )
             case .native:
                 return (
                     gains: [
-                        "Bild und Ton möglichst unverändert mit minimaler Latenz",
-                        "Deutlich schnelleres Umschalten (Hardware-Decoding)",
-                        "Minimale Serverlast (keine Video-Transkodierung)",
-                        "Näher am Live-Signal"
+                        String(localized: "Direct video and audio with minimal latency"),
+                        String(localized: "Significantly faster channel zapping (hardware decoding)"),
+                        String(localized: "Minimal server load (no video transcoding)"),
+                        String(localized: "Closer to the live broadcast")
                     ],
                     costs: [
-                        "Kein Pausieren oder Zurückspulen (Timeshift)",
-                        "Nur im selben Netzwerk wie der Ingest verfügbar",
-                        "Benötigt durchgehend die volle Bitrate des Senders"
+                        String(localized: "No pausing or rewinding (timeshift)"),
+                        String(localized: "Only available on the same network as the ingest receiver"),
+                        String(localized: "Requires the full broadcast bitrate continuously")
                     ]
                 )
             case .hls:
                 return (
                     gains: [
-                        "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)",
-                        "Funktioniert auch zuverlässig außerhalb des Heimnetzes",
-                        "Adaptive Qualität bei schwankender Bandbreite",
-                        "AirPlay und System-Bildschirmübertragung"
+                        String(localized: "Pause live TV, rewind, and watch from the beginning (timeshift)"),
+                        String(localized: "Works reliably outside the home network"),
+                        String(localized: "Adaptive quality on fluctuating bandwidth"),
+                        String(localized: "AirPlay and system screen sharing")
                     ],
                     costs: [
-                        "Höhere Latenz als bei Native Live-TV",
-                        "Umschaltzeiten hängen von GOP-Segmenten ab"
+                        String(localized: "Higher latency than Native Live TV"),
+                        String(localized: "Zapping times depend on GOP segment boundaries")
                     ]
                 )
             }

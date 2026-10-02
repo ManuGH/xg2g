@@ -164,7 +164,7 @@ struct ChannelListView: View {
                                     HStack(spacing: 4) {
                                         Image(systemName: genre.icon)
                                             .font(.system(size: 11))
-                                        Text(genre.rawValue)
+                                        Text(genre.localizedTitle)
                                             .font(.system(size: 13, weight: isGenreSelected ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
@@ -172,6 +172,7 @@ struct ChannelListView: View {
                                     .background(isGenreSelected ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
                                     .foregroundStyle(isGenreSelected ? Theme.Colors.bgBase : Theme.Colors.textPrimary)
                                     .overlay { if !isGenreSelected { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
+                                    .accessibilityLabel(String(localized: "Genre: \(String(localized: genre.localizedTitle))"))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -193,10 +194,19 @@ struct ChannelListView: View {
                             Spacer()
                         } else if currentChannels.isEmpty {
                             Spacer()
+                            let emptyTitle: String = {
+                                if !model.searchQuery.isEmpty {
+                                    return String(localized: "No Results")
+                                }
+                                if model.selectedGenre != .all {
+                                    return String(localized: "No \(String(localized: model.selectedGenre.localizedTitle)) broadcasts")
+                                }
+                                return String(localized: "No Channels")
+                            }()
                             ContentUnavailableView(
-                                model.searchQuery.isEmpty ? (model.selectedGenre != .all ? "Keine \(model.selectedGenre.rawValue)" : "Keine Sender") : "Keine Treffer",
+                                emptyTitle,
                                 systemImage: model.selectedGenre != .all ? model.selectedGenre.icon : "tv.slash",
-                                description: Text(model.searchQuery.isEmpty ? "Keine Sendungen für den gewählten Filter gefunden." : "Kein Sender entspricht deiner Suche.")
+                                description: Text(model.searchQuery.isEmpty ? String(localized: "No broadcasts found for the selected filter.") : String(localized: "No channel matches your search."))
                             )
                             .foregroundStyle(Theme.Colors.textSecondary)
                             Spacer()
@@ -260,7 +270,7 @@ struct ChannelListView: View {
 
                                     // 3. Station Grid Header
                                     HStack {
-                                        Text(model.selectedBouquet?.name ?? "Alle Sender")
+                                        Text(model.selectedBouquet?.name ?? String(localized: "All Channels"))
                                             .font(.headline.weight(.bold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -386,7 +396,7 @@ struct ChannelListView: View {
                     }
                 }
             }
-            .navigationTitle(model.selectedBouquet?.name ?? "Alle Sender")
+            .navigationTitle(model.selectedBouquet?.name ?? String(localized: "All Channels"))
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -398,7 +408,7 @@ struct ChannelListView: View {
                             Task { await model.selectBouquet(nil) }
                         } label: {
                             HStack {
-                                Text("Alle Sender (\(model.channels.count))")
+                                Text("\(String(localized: "All Channels")) (\(model.channels.count))")
                                 if model.selectedBouquet == nil {
                                     Image(systemName: "checkmark")
                                 }
@@ -437,7 +447,7 @@ struct ChannelListView: View {
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            Text(model.selectedBouquet?.name ?? "Alle Sender")
+                            Text(model.selectedBouquet?.name ?? String(localized: "All Channels"))
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Image(systemName: "chevron.down.circle.fill")
@@ -456,7 +466,7 @@ struct ChannelListView: View {
                     Menu {
                         Picker("Genre", selection: $model.selectedGenre) {
                             ForEach(EpgGenre.allCases) { genre in
-                                Label(genre.rawValue, systemImage: genre.icon).tag(genre)
+                                Label(String(localized: genre.localizedTitle), systemImage: genre.icon).tag(genre)
                             }
                         }
                     } label: {
@@ -464,6 +474,7 @@ struct ChannelListView: View {
                             .font(.system(size: 19))
                             .foregroundStyle(model.selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
                     }
+                    .accessibilityLabel(String(localized: "Genre: \(String(localized: model.selectedGenre.localizedTitle))"))
                 }
             }
             .searchable(text: $model.searchQuery, prompt: "Sender oder Sendungen suchen…")

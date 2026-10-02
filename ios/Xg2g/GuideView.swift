@@ -224,7 +224,7 @@ struct GuideView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Colors.accentAction)
         }
-        .accessibilityLabel("Senderliste: \(model.selectedBouquet?.name ?? "Alle Sender")")
+        .accessibilityLabel(String(localized: "Channel list: \(model.selectedBouquet?.name ?? String(localized: "All Channels"))"))
     }
 
     /// Genres moved out of the chip row. They refine a result set rather than
@@ -238,7 +238,7 @@ struct GuideView: View {
                     selectedGenre = genre
                 } label: {
                     HStack {
-                        Label(genre.rawValue, systemImage: genre.icon)
+                        Label(String(localized: genre.localizedTitle), systemImage: genre.icon)
                         if selectedGenre == genre { Image(systemName: "checkmark") }
                     }
                 }
@@ -248,7 +248,7 @@ struct GuideView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
         }
-        .accessibilityLabel("Genre: \(selectedGenre.rawValue)")
+        .accessibilityLabel(String(localized: "Genre: \(String(localized: selectedGenre.localizedTitle))"))
     }
 
     // MARK: - Content
@@ -511,15 +511,23 @@ struct GuideView: View {
     }
 
     private var emptyTitle: String {
-        if !guideSearchText.isEmpty { return "Keine Treffer für „\(guideSearchText)“" }
-        if selectedGenre != .all { return "Nichts in \(selectedGenre.rawValue)" }
-        return "Keine Sendungen im Zeitraum"
+        if !guideSearchText.isEmpty {
+            return String(localized: "No results for “\(guideSearchText)”")
+        }
+        if selectedGenre != .all {
+            return String(localized: "No broadcasts in \(String(localized: selectedGenre.localizedTitle))")
+        }
+        return String(localized: "No programs in this time range")
     }
 
     private var emptyDescription: String {
-        if !guideSearchText.isEmpty { return "Andere Schreibweise oder anderer Tag." }
-        if selectedGenre != .all { return "Genre zurücksetzen oder Zeitraum wechseln." }
-        return "Wähle einen anderen Tag oder eine andere Startzeit."
+        if !guideSearchText.isEmpty {
+            return String(localized: "Try a different spelling or day.")
+        }
+        if selectedGenre != .all {
+            return String(localized: "Reset the genre filter or select another time range.")
+        }
+        return String(localized: "Select another day or start time.")
     }
 
     private func dayTitle(for offset: Int) -> String {

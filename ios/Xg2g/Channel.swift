@@ -522,6 +522,23 @@ enum EpgGenre: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .all: return LocalizedStringResource("All")
+        case .movie: return LocalizedStringResource("Movies")
+        case .series: return LocalizedStringResource("Series")
+        case .sport: return LocalizedStringResource("Sports")
+        case .docu: return LocalizedStringResource("Documentary & Knowledge")
+        case .show: return LocalizedStringResource("Entertainment")
+        case .news: return LocalizedStringResource("News")
+        case .kids: return LocalizedStringResource("Kids")
+        }
+    }
+
+    var localizedName: String {
+        String(localized: localizedTitle)
+    }
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"
