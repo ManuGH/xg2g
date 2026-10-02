@@ -836,6 +836,13 @@ func TestSource_RawRef(t *testing.T) {
 		}
 	})
 
+	t.Run("NewSourceForTest honours its rawRef argument", func(t *testing.T) {
+		src := sourceref.NewSourceForTest("iptv_aaaaaaaaaaaaaaaaaaaaaaaaaa", "http://h.invalid/x", "http://h.invalid/x", "the-raw-ref")
+		if got := src.RawRef(); got != "the-raw-ref" {
+			t.Errorf("RawRef() = %q, want %q", got, "the-raw-ref")
+		}
+	})
+
 	t.Run("zero value returns empty string", func(t *testing.T) {
 		var zero sourceref.Source
 		if got := zero.RawRef(); got != "" {

@@ -7,6 +7,7 @@ func NewSourceForTest(id ID, rawURL, canonicalURL, rawRef string) Source {
 			id:           id,
 			rawURL:       func() string { return rawURL },
 			canonicalURL: func() string { return canonicalURL },
+			rawRef:       func() string { return rawRef },
 		},
 	}
 }
