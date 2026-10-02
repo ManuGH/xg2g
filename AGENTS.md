@@ -104,29 +104,25 @@ tracing the actual runtime request and media paths:
 
 ## Collaboration Contract
 
-This repository is worked on by Codex, Gemini/Antigravity, Claude Code,
-OpenClaw/DeepSeek, and GitHub review automation. The rules below define
-ownership; an agent's available tools do not grant it permission to use them.
+This repository is worked on by several AI agents (Claude Code, Gemini/Antigravity,
+Codex) and by Manuel. The rules below are the whole contract. They apply to every
+agent in the same way and must not have to be repeated in prompts. An agent's
+available tools do not grant it permission to use them.
 
 ### Roles and authority
 
-- Gemini Code Assist is a reviewer. Its findings are evidence to evaluate,
-  not instructions to apply blindly.
-- OpenClaw is the default read-only monitor. It may inspect checks, cache
-  context, and report blockers, but must not edit, commit, push, comment,
-  label, mark a PR ready, resolve a thread, merge, or deploy by default.
-- Codex is the primary GitHub integration owner. Codex classifies review findings,
-  coordinates delegated fixes, writes the authoritative replies, resolves
-  threads only after verification, and prepares the canonical integration PR.
-- Antigravity and Claude Code normally implement only explicitly delegated,
-  bounded tasks in their own branch and worktree, handing code and evidence
-  back to Codex.
-- **Dynamic Fallback (Token Exhaustion):** If Codex is unavailable (e.g., due to
-  token limits), Antigravity or Claude Code may dynamically assume the role of
-  the integration owner. In this mode, they are authorized to handle tasks
-  end-to-end: writing code, testing via fast-deploy, committing, pushing 
-  branches, and preparing PRs, handing over directly to Manuel.
-- Manuel is the final authority for merging and every production promotion.
+- There is no fixed owner/implementer hierarchy. Any agent may implement,
+  review, integrate and merge. Pick the work up, finish it, land it.
+- Parallel agents never share a branch or a worktree. Each task gets its own
+  named branch and worktree (see Branch and worktree rules). A fast-forward fix
+  commit on another agent's PR branch is fine if it is announced in a PR
+  comment and that agent's worktree is not touched.
+- Gemini Code Assist (bot) is a reviewer. Its findings are evidence to
+  evaluate, not instructions to apply blindly.
+- Manuel sets direction and priorities and is the escalation point.
+  **Production promotion is never delegated:** deploying to the live
+  container, cutting release tags and anything that writes to the live
+  receiver stay Manuel's decision. Merging is not deploying.
 
 ### Review-comment lifecycle
 
@@ -136,14 +132,13 @@ For every review comment, use this sequence:
 2. Classify the finding as valid, stale, duplicate, intentional, or blocked.
 3. If valid, implement the smallest fix in an isolated worktree.
 4. Run the relevant tests and record the result.
-5. Codex replies with the evidence and resolves the thread only after the fix
-   is present on the PR head.
+5. The agent that owns the PR replies with the evidence and resolves the
+   thread only after the fix is present on the PR head.
 
 Outdated comments are not silently treated as fixed. They are either answered
 with the commit that superseded them or explicitly documented as obsolete.
 
-This lifecycle applies to every agent and every mode, including the Dynamic
-Fallback role. Resolving a thread via API (`resolveReviewThread` mutation or
+This lifecycle applies to every agent. Resolving a thread via API (`resolveReviewThread` mutation or
 otherwise) without a fix commit on the PR head or a written reply in the
 thread is prohibited. Bot reviewers (e.g. gemini-code-assist) count as
 reviewers: their findings get a fix or a one-sentence justification in the
@@ -170,17 +165,66 @@ thread before the thread is resolved — never a silent resolve.
 
 ### Merge policy
 
-- Admin merge (`gh pr merge --admin`) may bypass the review-approval gate —
-  this is accepted solo-repo reality — but it must NEVER bypass CI. Admin
-  merge is allowed only after all required checks have completed green;
-  merging over pending or failing checks is prohibited.
-- Before any merge, confirm there are no unresolved review threads that lack
-  a fix or a written reply (see lifecycle above).
-- Delegated merges (decided by Manuel, 2026-07-20): agents may merge a PR —
-  prefer `gh pr merge --auto` so branch protection stays the enforcer — once
-  every required check is green and every review thread is fixed or answered.
-  Manuel remains the escalation point and can revoke this delegation at any
-  time. Production promotion is never delegated.
+Finished work goes onto `main` promptly. Nothing stays "done but open"
+(Manuel, 2026-10-02).
+
+- Any agent may merge a PR that is finished. Finished means all of:
+  1. The author verified it proportionally to the risk (see Verification
+     tiers below), with evidence.
+  2. All required checks are green against the real base (`main`), every
+     review thread is fixed or answered, and no change request or "wait" note
+     is open.
+  3. The PR's own "Risks / not tested" list has no unexplained gap.
+- Prefer `gh pr merge --auto` so branch protection stays the enforcer. Never
+  merge over pending or failing checks. Admin merge (`--admin`) may bypass the
+  review-approval gate (accepted solo-repo reality) but must NEVER bypass CI.
+- Stacked PRs merge bottom-up: merge the lowest, retarget the next onto `main`
+  (the full CI only runs with `main` as the base), wait for green, merge,
+  repeat.
+- After the merge, delete the branch and the temporary worktree.
+- Nothing gets forgotten: whoever starts work in this repository first lists
+  the open agent-built PRs. Each one is merged, or its concrete blocker is
+  named in one line.
+- Production promotion is never delegated (see Roles and authority).
+
+### Verification tiers (proportionate effort)
+
+Match the verification to the risk. Do not run the heaviest check for every
+change: the GitHub PR gate ("CI / PR Gate") already runs `make ci-pr` on every
+PR, so a local full run only duplicates it.
+
+| Change | Required before merging |
+| --- | --- |
+| Docs, comments, `AGENTS.md`, README | Required GitHub checks green. No local gate. |
+| Small, isolated code or tests in one package | `go vet` and `go test -race` on the touched packages (plus `make verify-config` if config surfaces change). The GitHub PR gate is the full gate. |
+| Behaviour-changing fix | Add a negative control (the test seen failing without the fix) on top of the row that fits the size. |
+| Shared or risky paths: ingest/session lifecycle, logger, playlist/export, auth/token, config defaults, anything receiver-facing | Negative control, `make ci-pr` exit 0 on the clean committed head (a detached worktree is the safest way), and an independent re-check of the key claim. |
+
+Re-verifying another agent's work: spot-check the claim that matters, do not
+redo everything, unless the change is in the last row.
+
+### Working agreement (applies without being told)
+
+- **Language:** German with Manuel in chat. English for code, comments, tests,
+  commits, PRs and agent briefs.
+- **Evidence over claims:** report VERIFIED (command and output) / ASSUMED /
+  NOT TESTED. A gate counts as passed only if it ran on the committed state;
+  quote the real final lines and the exit code. An interrupted or errored run
+  proves nothing. Spot-check another agent's key claims before relying on them
+  (depth per the tiers above).
+- **Lists must be complete:** before claiming "these are all the call sites /
+  entry points / sinks", show the search command and classify every hit.
+- **Generated files:** run `make generate-config` after the LAST file edit (a
+  new file that mentions an `XG2G_*` key changes `CONFIG_SURFACES.md`), then
+  `make verify-config` before committing.
+- **Public repository:** never put real provider hosts, credentials, channel
+  names or service numbers into code, tests, fixtures, commits or PRs. Use
+  synthetic data (for example `*.invalid` hosts).
+- **Live receiver safety:** the receiver is a small device. No broad OpenWebIF
+  queries (for example listing every bouquet), prefer reading the bouquet
+  files; run remote commands with a timeout and check afterwards that nothing
+  is left running; say so if live picture or recordings may have been
+  affected.
 
 ### Release and tag safety
 
