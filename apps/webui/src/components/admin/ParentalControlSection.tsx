@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface ApprovalRequest {
   id: string;
@@ -35,7 +35,7 @@ export const ParentalControlSection: React.FC = () => {
         setApprovals(Array.isArray(data) ? data : []);
       }
     } catch (e: any) {
-      debugError('Failed to load parental approvals:', formatError(e));
+      debugDiagnosticError('admin.parental.load', e);
       setError(t('admin.parental.loadError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -62,7 +62,7 @@ export const ParentalControlSection: React.FC = () => {
       setSuccess(scope === 'always' ? t('admin.parental.approvedAlways') : t('admin.parental.approvedOnce'));
       void fetchApprovals();
     } catch (e: any) {
-      debugError('Failed to approve request:', formatError(e));
+      debugDiagnosticError('admin.parental.approve', e);
       setError(t('admin.parental.approveError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -83,7 +83,7 @@ export const ParentalControlSection: React.FC = () => {
       setSuccess(t('admin.parental.denied'));
       void fetchApprovals();
     } catch (e: any) {
-      debugError('Failed to deny request:', formatError(e));
+      debugDiagnosticError('admin.parental.deny', e);
       setError(t('admin.parental.denyError'));
       setCorrelationId(e?.requestId || null);
     } finally {

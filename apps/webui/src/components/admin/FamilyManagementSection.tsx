@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface FamilyMember {
   id: string;
@@ -36,7 +36,7 @@ export const FamilyManagementSection: React.FC = () => {
       const data = await request<FamilyMember[]>('/api/v3/household/members');
       setMembers(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      debugError('Failed to load family members:', formatError(e));
+      debugDiagnosticError('admin.family.load', e);
       setError(t('admin.family.loadError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -67,7 +67,7 @@ export const FamilyManagementSection: React.FC = () => {
       setGeneratedInvite({ code, url });
       setSuccess(t('admin.family.inviteSuccess'));
     } catch (e: any) {
-      debugError('Failed to create invite:', formatError(e));
+      debugDiagnosticError('admin.family.createInvite', e);
       setError(t('admin.family.inviteError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -92,7 +92,7 @@ export const FamilyManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchMembers();
     } catch (e: any) {
-      debugError('Failed to remove member:', formatError(e));
+      debugDiagnosticError('admin.family.removeMember', e);
       setError(t('admin.family.removeError'));
       setCorrelationId(e?.requestId || null);
     } finally {

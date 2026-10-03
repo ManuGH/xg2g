@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface AccessPolicyData {
   accountId: string;
@@ -52,7 +52,7 @@ export const AccessTimesSection: React.FC = () => {
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
     } catch (e: any) {
-      debugError('Failed to load access policy:', formatError(e));
+      debugDiagnosticError('admin.accessTimes.load', e);
       setError(t('admin.accessTimes.loadError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -86,7 +86,7 @@ export const AccessTimesSection: React.FC = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSuccess(t('admin.accessTimes.saveSuccess'));
     } catch (e: any) {
-      debugError('Failed to save access policy:', formatError(e));
+      debugDiagnosticError('admin.accessTimes.save', e);
       setError(t('admin.accessTimes.saveError'));
       setCorrelationId(e?.requestId || null);
     } finally {

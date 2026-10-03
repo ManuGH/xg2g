@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface ResourcePolicyData {
   householdId: string;
@@ -41,7 +41,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
     } catch (e: any) {
-      debugError('Failed to load resource policy:', formatError(e));
+      debugDiagnosticError('admin.concurrency.load', e);
       setError(t('admin.concurrency.loadError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -70,7 +70,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSuccess(t('admin.concurrency.saveSuccess'));
     } catch (e: any) {
-      debugError('Failed to save resource policy:', formatError(e));
+      debugDiagnosticError('admin.concurrency.save', e);
       setError(t('admin.concurrency.saveError'));
       setCorrelationId(e?.requestId || null);
     } finally {

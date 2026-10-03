@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface ProfileData {
   id: string;
@@ -45,7 +45,7 @@ export const ProfileManagementSection: React.FC = () => {
       const data = await request<ProfileData[]>('/api/v3/household/profiles');
       setProfiles(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      debugError('Failed to load profiles:', formatError(e));
+      debugDiagnosticError('admin.profiles.load', e);
       setError(t('admin.profiles.loadError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -116,7 +116,7 @@ export const ProfileManagementSection: React.FC = () => {
       setIsModalOpen(false);
       void fetchProfiles();
     } catch (e: any) {
-      debugError('Failed to save profile:', formatError(e));
+      debugDiagnosticError('admin.profiles.save', e);
       setError(t('admin.profiles.saveError'));
       setCorrelationId(e?.requestId || null);
     } finally {
@@ -135,7 +135,7 @@ export const ProfileManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchProfiles();
     } catch (e: any) {
-      debugError('Failed to delete profile:', formatError(e));
+      debugDiagnosticError('admin.profiles.delete', e);
       setError(t('admin.profiles.deleteError'));
       setCorrelationId(e?.requestId || null);
     } finally {

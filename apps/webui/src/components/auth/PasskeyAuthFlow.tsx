@@ -18,7 +18,7 @@ import {
   acknowledgeRecovery,
   loginWithRecoveryCode,
 } from '../../services/passkeyApi';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 interface PasskeyAuthFlowProps {
   mode: 'bootstrap' | 'login' | 'expired';
@@ -125,7 +125,7 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyFailed'));
       }
     } catch (err: any) {
-      debugError('Failed to create passkey:', formatError(err));
+      debugDiagnosticError('auth.passkey.create', err);
       setErrorMsg(t('auth.bootstrap.passkeyCouldNotBeCreated'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -143,7 +143,7 @@ export default function PasskeyAuthFlow({
       await acknowledgeRecovery();
       onSuccess();
     } catch (err: any) {
-      debugError('Failed to acknowledge recovery codes:', formatError(err));
+      debugDiagnosticError('auth.passkey.commitBootstrap', err);
       setErrorMsg(t('auth.bootstrap.setupCouldNotBeCompleted'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -167,7 +167,7 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyLoginFailed'));
       }
     } catch (err: any) {
-      debugError('Failed to login with passkey:', formatError(err));
+      debugDiagnosticError('auth.passkey.login', err);
       setErrorMsg(t('auth.bootstrap.passkeyLoginFailed'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -193,7 +193,7 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.invalidRecoveryCode'));
       }
     } catch (err: any) {
-      debugError('Failed to login with recovery code:', formatError(err));
+      debugDiagnosticError('auth.passkey.recoveryLogin', err);
       setErrorMsg(t('auth.bootstrap.recoveryCodeRejected'));
       setCorrelationId(err?.requestId || null);
     } finally {

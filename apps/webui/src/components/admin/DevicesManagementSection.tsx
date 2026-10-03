@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface DeviceData {
   id: string;
@@ -30,7 +30,7 @@ export const DevicesManagementSection: React.FC = () => {
       const data = await request<DeviceData[]>('/api/v3/household/devices');
       setDevices(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      debugError('Failed to load devices:', formatError(err));
+      debugDiagnosticError('admin.devices.load', err);
       setError(t('admin.devices.loadError'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -52,7 +52,7 @@ export const DevicesManagementSection: React.FC = () => {
       setRevokingId(null);
       void fetchDevices();
     } catch (e: any) {
-      debugError('Failed to revoke device:', formatError(e));
+      debugDiagnosticError('admin.devices.revoke', e);
       setError(t('admin.devices.revokeError'));
       setCorrelationId(e?.requestId || null);
     }

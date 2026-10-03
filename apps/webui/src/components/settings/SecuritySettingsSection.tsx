@@ -15,7 +15,7 @@ import {
 import { createPasskeyCredential } from '../../lib/webauthn';
 import { getStoredToken, setStoredToken, clearStoredToken } from '../../utils/tokenStorage';
 import { useAppContext } from '../../context/AppContext';
-import { debugError, formatError } from '../../utils/logging';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export default function SecuritySettingsSection() {
   const { t, i18n } = useTranslation();
@@ -47,7 +47,7 @@ export default function SecuritySettingsSection() {
         setCorrelationId(null);
         setHasActiveToken(false);
       } else {
-        debugError('Failed to load passkeys:', formatError(err));
+        debugDiagnosticError('admin.security.loadPasskeys', err);
         setErrorMsg(t('admin.security.loadError'));
         setCorrelationId(err?.requestId || null);
       }
@@ -105,7 +105,7 @@ export default function SecuritySettingsSection() {
         throw new Error(t('admin.security.passkeySaveError'));
       }
     } catch (err: any) {
-      debugError('Failed to add passkey:', formatError(err));
+      debugDiagnosticError('admin.security.addPasskey', err);
       setErrorMsg(t('admin.security.registrationCancelled'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -124,7 +124,7 @@ export default function SecuritySettingsSection() {
       setDeletingId(null);
       void fetchPasskeys();
     } catch (err: any) {
-      debugError('Failed to delete passkey:', formatError(err));
+      debugDiagnosticError('admin.security.deletePasskey', err);
       setErrorMsg(t('admin.security.passkeyDeleteError'));
       setCorrelationId(err?.requestId || null);
     } finally {
@@ -142,7 +142,7 @@ export default function SecuritySettingsSection() {
       setSuccessMsg(t('admin.security.otherSessionsRevoked'));
       setConfirmRevokeOthers(false);
     } catch (err: any) {
-      debugError('Failed to revoke other sessions:', formatError(err));
+      debugDiagnosticError('admin.security.revokeOthers', err);
       setErrorMsg(t('admin.security.revokeError'));
       setCorrelationId(err?.requestId || null);
     } finally {
