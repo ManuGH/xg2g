@@ -151,3 +151,67 @@ Examples:
 
 HLS artifacts are transient and are not migrated as durable state. Active live
 sessions end during a storage-path migration and must be started again.
+
+## Recordings Storage & NFS Mount Invariants (`/media/nfs-recordings`)
+
+When source recordings are written by a receiver to an NFS share mounted on the host:
+
+### 1. Deployment Policy: `hard` vs. `soft`
+- **`soft` is prohibited for our recording targets**: With a `soft` mount, once client RPC
+  retransmissions are exhausted, the kernel returns an I/O error (`EIO`) to the writing
+  process. In recording backends (such as Enigma2 `RecordTimer`), any write error immediately
+  terminates the active recording session (`stop recording!`).
+- **`hard` is the required operational baseline**: Under `hard`, the NFS client retries requests
+  indefinitely until the server responds, preventing premature session termination from exhausted
+  soft retries.
+- **No uninterrupted recording guarantee**: `hard` does not guarantee uninterrupted or gap-free
+  recordings; extended server outages or storage stalls will still block write I/O (placing
+  processes into uninterruptible sleep `D`), which can lead to upstream buffer overflows, packet loss,
+  or partial stream corruption if the stall exceeds device buffers.
+
+### 2. Transport Protocol & Timeout Parameters
+- **Protocol**: NFS over TCP (`proto=tcp`). In our receiver environment, NFSv3 is currently the
+  negotiated active state (`vers=3` in `/proc/mounts`), though the fstab configuration does not
+  explicitly pin the version.
+- **Timeout (`timeo=600`)**: Under NFS over TCP, the Linux client performs **linear backoff**
+  (each retransmission increases the timeout by `timeo` up to a maximum of 600 s; see
+  [nfs(5)](https://man7.org/linux/man-pages/man5/nfs.5.html)). The standard TCP default is
+  `timeo=600` (60.0 seconds). Artificially low timeouts (e.g., `timeo=14` = 1.4 s) trigger rapid
+  timeout cascades during brief storage stalls.
+- **Obsolete options**: The `intr` option is ignored on Linux kernels 2.6.25+ and modern 3.14+
+  kernels.
+
+### 3. Current Receiver Configuration Example
+The current receiver `/etc/fstab` configuration:
+
+```fstab
+<nfs-server-ip>:<export-path> /media/nfs-recordings nfs _netdev,rw,nolock,tcp,hard,timeo=600 0 0
+```
+
+> **Note on `nolock`**: `nolock` is an inherited setting from our existing receiver configuration
+> to avoid RPC lock manager dependencies on single-client shares; it is not a general operational
+> recommendation for all NFS deployments.
+
+### 4. Operational Maintenance & Test Protocol
+When modifying storage mount options or performing validation tests on recording filesystems:
+1. **Pre-flight check**: Verify no recordings are active or imminent (`/web/timerlist`).
+2. **Mount handles**: Confirm no processes hold open file handles (`fuser -m <path>`, `lsof`)
+   before unmounting. Never use force (`-f`) or lazy (`-l`) unmount on an active recording filesystem.
+3. **Backup configuration**: Always create a backup of `/etc/fstab` prior to modification.
+4. **Active verification**: Inspect effective active options in `/proc/mounts`.
+5. **Targeted testing & cleanup**: When performing test recordings, stop and remove only the
+   exact test recording by its specific timer tuple (`sRef`, `begin`, `end`) and exact absolute
+   filepath. Never perform wildcard deletions (`rm -f *pattern*`) on shared production storage.
+
+### 5. Incident Evidence & Validation Status
+- **Incident (2026-10-02)**: An active recording aborted at 06:21:13 after 21 minutes due to a write
+  error, correlated with multiple kernel NFS client timeouts to the storage host while configured
+  with `soft,timeo=14`. The primary cause of the server/network response latency remains unproven
+  (server-side daemon and kernel logs reported no crashes or service restarts).
+- **Remediation & Activation (2026-10-03)**: The receiver mount was updated to `hard,timeo=600`.
+  A short-duration test recording confirmed container readability, stream parsing, and metadata
+  extraction with `ffprobe`.
+- **Validation Status**: **Pending long-duration validation**. Real-world resilience over an
+  extended multi-hour recording window (e.g. 180-minute broadcast) remains to be verified under
+  active production scheduling.
+
