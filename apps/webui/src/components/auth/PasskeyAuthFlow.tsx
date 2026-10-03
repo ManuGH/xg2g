@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import AuthSurface from '../AuthSurface';
 import { Button } from '../ui';
 import { resolveHostEnvironment } from '../../lib/hostBridge';
@@ -35,6 +36,7 @@ export default function PasskeyAuthFlow({
   onSuccess,
   onSetToken,
 }: PasskeyAuthFlowProps) {
+  const { t } = useTranslation();
   const hostEnv = resolveHostEnvironment();
   const isTvHost = hostEnv.isTv;
 
@@ -117,10 +119,10 @@ export default function PasskeyAuthFlow({
       } else if (finishRes.status === 'registered' || finishRes.credential || finishRes.id) {
         onSuccess();
       } else {
-        throw new Error('Passkey-Erstellung fehlgeschlagen.');
+        throw new Error(t('auth.bootstrap.passkeyFailed'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Passkey konnte nicht erstellt werden.');
+      setErrorMsg(err.message || t('auth.bootstrap.passkeyCouldNotBeCreated'));
     } finally {
       setLoading(false);
     }
@@ -135,7 +137,7 @@ export default function PasskeyAuthFlow({
       await acknowledgeRecovery();
       onSuccess();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Einrichtung konnte nicht abgeschlossen werden.');
+      setErrorMsg(err.message || t('auth.bootstrap.setupCouldNotBeCompleted'));
     } finally {
       setLoading(false);
     }
@@ -153,10 +155,10 @@ export default function PasskeyAuthFlow({
       if (finishRes && finishRes.user) {
         onSuccess();
       } else {
-        throw new Error('Anmeldung fehlgeschlagen.');
+        throw new Error(t('auth.bootstrap.passkeyLoginFailed'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Passkey-Anmeldung abgebrochen oder fehlgeschlagen.');
+      setErrorMsg(err.message || t('auth.bootstrap.passkeyLoginFailed'));
     } finally {
       setLoading(false);
     }
@@ -176,10 +178,10 @@ export default function PasskeyAuthFlow({
       if (res && res.user) {
         onSuccess();
       } else {
-        throw new Error('Ungültiger Wiederherstellungscode.');
+        throw new Error(t('auth.bootstrap.invalidRecoveryCode'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Wiederherstellungscode wurde nicht akzeptiert.');
+      setErrorMsg(err.message || t('auth.bootstrap.recoveryCodeRejected'));
     } finally {
       setLoading(false);
     }
@@ -214,22 +216,22 @@ export default function PasskeyAuthFlow({
   const getSurfaceTitles = () => {
     if (mode === 'expired') {
       return {
-        eyebrow: 'Re-authenticate',
-        title: 'Session Expired',
-        copy: 'Your saved API token was rejected. Enter a valid token to continue.',
+        eyebrow: t('auth.expiredEyebrow'),
+        title: t('auth.expiredTitle'),
+        copy: t('auth.expiredCopy'),
       };
     }
     if (mode === 'bootstrap') {
       return {
-        eyebrow: 'Ersteinrichtung',
-        title: 'xg2g einrichten',
-        copy: 'Sichere deinen Zugang mit einem Passkey. Touch ID, Face ID oder dein Passwortmanager funktionieren automatisch.',
+        eyebrow: t('auth.bootstrap.eyebrow'),
+        title: t('auth.bootstrap.title'),
+        copy: t('auth.bootstrap.copy'),
       };
     }
     return {
-      eyebrow: 'Sign in',
-      title: 'Authentication Required',
-      copy: 'Enter your API token to open the xg2g control surface.',
+      eyebrow: t('auth.requiredEyebrow'),
+      title: t('auth.requiredTitle'),
+      copy: t('auth.requiredCopy'),
     };
   };
 
@@ -246,12 +248,12 @@ export default function PasskeyAuthFlow({
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Setup-Token (falls erforderlich)</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{t('auth.bootstrap.setupTokenLabel')}</label>
               <input
                 type="text"
                 value={setupTokenInput}
                 onChange={(e) => setSetupTokenInput(e.target.value)}
-                placeholder="z.B. xg2g_setup_..."
+                placeholder={t('auth.bootstrap.setupTokenPlaceholder')}
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.1)',
@@ -270,7 +272,7 @@ export default function PasskeyAuthFlow({
               style={{ width: '100%', padding: '0.75rem', fontSize: '1rem', fontWeight: 600 }}
               data-testid="create-passkey-button"
             >
-              {loading ? 'Erstelle Passkey...' : 'Passkey erstellen'}
+              {loading ? t('auth.bootstrap.creatingPasskey') : t('auth.bootstrap.createPasskey')}
             </Button>
           </div>
         }
@@ -282,9 +284,9 @@ export default function PasskeyAuthFlow({
   if (mode === 'bootstrap' && step === 'recovery-backup') {
     return (
       <AuthSurface
-        eyebrow="Sicherheitssicherung"
-        title="Wiederherstellungscodes sichern"
-        copy="Falls du deinen Passkey verlierst, kannst du diese Einmal-Codes nutzen. Bewahre sie an einem sicheren Ort auf."
+        eyebrow={t('auth.bootstrap.backupEyebrow')}
+        title={t('auth.bootstrap.backupTitle')}
+        copy={t('auth.bootstrap.backupCopy')}
         testId="bootstrap-recovery-surface"
       >
         <div style={{ margin: '1rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -310,10 +312,10 @@ export default function PasskeyAuthFlow({
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <Button variant="secondary" onClick={handleDownloadCodes} style={{ flex: 1, fontSize: '0.85rem' }}>
-              Herunterladen
+              {t('auth.bootstrap.downloadCodes')}
             </Button>
             <Button variant="secondary" onClick={handleCopyCodes} style={{ flex: 1, fontSize: '0.85rem' }}>
-              Kopieren
+              {t('auth.bootstrap.copyCodes')}
             </Button>
           </div>
 
@@ -324,7 +326,7 @@ export default function PasskeyAuthFlow({
               onChange={(e) => setCodesConfirmed(e.target.checked)}
               data-testid="confirm-recovery-codes-checkbox"
             />
-            <span>Ich habe meine Wiederherstellungscodes sicher gespeichert</span>
+            <span>{t('auth.bootstrap.codesSavedConfirm')}</span>
           </label>
 
           {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
@@ -335,7 +337,7 @@ export default function PasskeyAuthFlow({
             style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem' }}
             data-testid="finish-bootstrap-button"
           >
-            {loading ? 'Schließe Einrichtung ab...' : 'Einrichtung abschließen'}
+            {loading ? t('auth.bootstrap.finishingSetup') : t('auth.bootstrap.finishSetup')}
           </Button>
         </div>
       </AuthSurface>
@@ -346,19 +348,19 @@ export default function PasskeyAuthFlow({
   if (step === 'recovery-login') {
     return (
       <AuthSurface
-        eyebrow="Wiederherstellung"
-        title="Mit Wiederherstellungscode anmelden"
-        copy="Gib deinen Benutzernamen und einen deiner 10-Zeichen Einmal-Codes ein."
+        eyebrow={t('auth.bootstrap.recoveryEyebrow')}
+        title={t('auth.bootstrap.recoveryTitle')}
+        copy={t('auth.bootstrap.recoveryCopy')}
         testId="recovery-login-surface"
         form={{
-          label: 'Wiederherstellungscode',
+          label: t('auth.bootstrap.recoveryCodeLabel'),
           name: 'recoveryCode',
           value: recoveryCodeInput,
           onValueChange: setRecoveryCodeInput,
           onSubmit: (e) => { void handleRecoveryLogin(e); },
-          submitLabel: loading ? 'Prüfe Code...' : 'Anmelden',
+          submitLabel: loading ? t('auth.bootstrap.checkingCode') : t('auth.bootstrap.signIn'),
           submitDisabled: loading || recoveryCodeInput.trim().length === 0,
-          placeholder: 'z.B. AB12-CD34-EF',
+          placeholder: t('auth.bootstrap.recoveryCodePlaceholder'),
           inputType: 'text',
           inputTestId: 'recovery-code-input',
           submitTestId: 'recovery-submit-button',
@@ -367,7 +369,7 @@ export default function PasskeyAuthFlow({
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.5rem' }}>
-              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Benutzername</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{t('auth.bootstrap.usernameLabel')}</label>
               <input
                 type="text"
                 value={recoveryUsernameInput}
@@ -385,7 +387,7 @@ export default function PasskeyAuthFlow({
             </div>
             {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
             <Button variant="ghost" onClick={() => setStep('passkey')} style={{ fontSize: '0.85rem' }}>
-              Zurück zur Passkey-Anmeldung
+              {t('auth.bootstrap.backToPasskey')}
             </Button>
           </div>
         }
@@ -401,14 +403,14 @@ export default function PasskeyAuthFlow({
       title={titles.title}
       copy={titles.copy}
       form={{
-        label: 'API Token',
+        label: t('auth.tokenLabel'),
         name: 'token',
         value: apiTokenInput,
         onValueChange: setApiTokenInput,
         onSubmit: handleTokenLogin,
-        submitLabel: 'Authenticate',
+        submitLabel: t('auth.authenticate'),
         submitDisabled: apiTokenInput.trim().length === 0,
-        placeholder: 'Enter API Token',
+        placeholder: t('auth.tokenPlaceholder'),
         inputType: isTokenVisible ? 'text' : 'password',
         inputTestId: 'auth-token-input',
         submitTestId: 'auth-submit',
@@ -421,11 +423,11 @@ export default function PasskeyAuthFlow({
               aria-pressed={isTokenVisible}
               onClick={() => setIsTokenVisible((current) => !current)}
             >
-              {isTokenVisible ? 'Hide token' : 'Show token'}
+              {isTokenVisible ? t('auth.hideToken') : t('auth.showToken')}
             </Button>
             {apiTokenInput ? (
               <Button variant="ghost" size="sm" onClick={() => setApiTokenInput('')}>
-                Clear
+                {t('auth.clearToken')}
               </Button>
             ) : null}
           </>
@@ -441,7 +443,7 @@ export default function PasskeyAuthFlow({
             style={{ width: '100%', padding: '0.75rem', fontSize: '1rem', fontWeight: 600 }}
             data-testid="passkey-login-button"
           >
-            {loading ? 'Anmeldung läuft...' : 'Mit Passkey anmelden'}
+            {loading ? t('auth.bootstrap.loggingIn') : t('auth.bootstrap.loginWithPasskey')}
           </Button>
 
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem', fontSize: '0.85rem' }}>
@@ -451,7 +453,7 @@ export default function PasskeyAuthFlow({
               style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: 'var(--text-tertiary)' }}
               data-testid="recovery-login-link"
             >
-              Wiederherstellungscode nutzen
+              {t('auth.bootstrap.useRecoveryCode')}
             </Button>
           </div>
         </div>

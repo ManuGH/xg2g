@@ -6,23 +6,23 @@ describe('AdminLayout Component', () => {
   it('renders all 10 Material 3 management sections', () => {
     render(<AdminLayout />);
 
-    expect(screen.getByText('Haushalt & Administration')).toBeInTheDocument();
-    expect(screen.getAllByText('Konto').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Familie').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Profile').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Geräte').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Sicherheit').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Zugriffszeiten').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Jugendschutz').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Aufnahmen').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Gleichzeitige Nutzung').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Benachrichtigungen & Audit').length).toBeGreaterThan(0);
+    expect(screen.getByText('Household & Administration')).toBeInTheDocument();
+    expect(screen.getAllByText('Account').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Family').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Profiles').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Devices').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Security').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Access Times').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Parental Control').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Recordings').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Concurrency').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Notifications & Audit').length).toBeGreaterThan(0);
   });
 
   it('switches active section when clicked', async () => {
     render(<AdminLayout initialSection="account" />);
 
-    const familyButton = screen.getByText('Familie');
+    const familyButton = screen.getByText('Family');
     await act(async () => {
       fireEvent.click(familyButton);
     });

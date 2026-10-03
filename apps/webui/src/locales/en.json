@@ -80,7 +80,42 @@
     "showToken": "Show token",
     "hideToken": "Hide token",
     "clearToken": "Clear",
-    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately."
+    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately.",
+    "bootstrap": {
+      "eyebrow": "Initial Setup",
+      "title": "Set up xg2g",
+      "copy": "Secure your access with a passkey. Touch ID, Face ID, or your password manager work automatically.",
+      "setupTokenLabel": "Setup Token (if required)",
+      "setupTokenPlaceholder": "e.g. xg2g_setup_...",
+      "createPasskey": "Create Passkey",
+      "creatingPasskey": "Creating passkey…",
+      "passkeyFailed": "Passkey creation failed.",
+      "passkeyCouldNotBeCreated": "Could not create passkey.",
+      "backupEyebrow": "Security Backup",
+      "backupTitle": "Save Recovery Codes",
+      "backupCopy": "If you lose your passkey, you can use these one-time codes. Store them in a safe place.",
+      "downloadCodes": "Download",
+      "copyCodes": "Copy",
+      "codesSavedConfirm": "I have safely stored my recovery codes",
+      "finishSetup": "Complete Setup",
+      "finishingSetup": "Completing setup…",
+      "setupCouldNotBeCompleted": "Setup could not be completed.",
+      "recoveryEyebrow": "Account Recovery",
+      "recoveryTitle": "Sign In with Recovery Code",
+      "recoveryCopy": "Enter your username and one of your 10-character single-use recovery codes.",
+      "recoveryCodeLabel": "Recovery Code",
+      "recoveryCodePlaceholder": "e.g. AB12-CD34-EF",
+      "checkingCode": "Checking code…",
+      "signIn": "Sign In",
+      "usernameLabel": "Username",
+      "backToPasskey": "Back to passkey sign in",
+      "loginWithPasskey": "Sign in with Passkey",
+      "loggingIn": "Signing in…",
+      "useRecoveryCode": "Use recovery code",
+      "passkeyLoginFailed": "Passkey sign-in cancelled or failed.",
+      "invalidRecoveryCode": "Invalid recovery code.",
+      "recoveryCodeRejected": "Recovery code was not accepted."
+    }
   },
   "common": {
     "language": "Language",
@@ -1206,5 +1241,114 @@
     "daysWeekdays": "Weekdays (Mon-Fri)",
     "daysWeekend": "Weekend (Sat-Sun)",
     "retentionDays": "{{count}} days"
+  },
+  "admin": {
+    "header": {
+      "title": "Household & Administration",
+      "subtitle": "Material 3 Management Center"
+    },
+    "sections": {
+      "account": {
+        "label": "Account",
+        "description": "Personal account details & primary role"
+      },
+      "family": {
+        "label": "Family",
+        "description": "Household members & invitations"
+      },
+      "profiles": {
+        "label": "Profiles",
+        "description": "Viewing profiles, age limits & PINs"
+      },
+      "devices": {
+        "label": "Devices",
+        "description": "Connected devices & 30-day trust"
+      },
+      "security": {
+        "label": "Security",
+        "description": "Web sessions, passkeys & revocation"
+      },
+      "access_times": {
+        "label": "Access Times",
+        "description": "Daily viewing schedules & expirations"
+      },
+      "parental": {
+        "label": "Parental Control",
+        "description": "Age ratings & EPG approvals"
+      },
+      "recordings": {
+        "label": "Recordings",
+        "description": "Storage quotas & libraries"
+      },
+      "concurrency": {
+        "label": "Concurrency",
+        "description": "Tuner allocation & priorities"
+      },
+      "audit": {
+        "label": "Notifications & Audit",
+        "description": "Change log & push rules"
+      }
+    },
+    "devices": {
+      "title": "Connected Devices & 30-Day Trust",
+      "subtitle": "Overview of all registered TVs, mobile devices, and browsers with DPoP key binding.",
+      "loadError": "Could not load devices.",
+      "revokeSuccess": "Device access was revoked successfully.",
+      "revokeError": "Error revoking device access.",
+      "loading": "Loading devices…",
+      "trustBadge": "✓ 30-day trust",
+      "typePrefix": "Type: {{type}}",
+      "cancel": "Cancel",
+      "revoke": "Revoke",
+      "revokeAccess": "Revoke access",
+      "empty": "No registered Android TV or mobile devices are currently active."
+    },
+    "profiles": {
+      "title": "Viewing Profiles & Age Ratings",
+      "subtitle": "Manage profiles for household members, age ratings, and PIN codes.",
+      "loadError": "Error loading viewing profiles.",
+      "nameRequired": "Please enter a name for the profile.",
+      "createProfile": "Create Profile",
+      "editProfile": "Edit Profile",
+      "name": "Name",
+      "avatar": "Avatar",
+      "childProfile": "Child profile (enhanced protection)",
+      "maxRating": "Maximum Age Rating (FSK)",
+      "unknownPolicy": "Handling unknown ratings",
+      "pin": "PIN code (optional for profile switching)",
+      "save": "Save",
+      "saving": "Saving…",
+      "delete": "Delete",
+      "deleteConfirm": "Permanently delete this profile?",
+      "policyBlock": "Block",
+      "policyApproval": "Request Approval",
+      "policyAllow": "Allow"
+    },
+    "parental": {
+      "title": "Parental Control & Approvals",
+      "subtitle": "Pending and granted approval requests for age-restricted broadcasts.",
+      "loadError": "Could not load approval requests.",
+      "approveOnce": "Approve Once",
+      "approveAlways": "Approve Always",
+      "deny": "Deny",
+      "approvedOnce": "Broadcast approved for single viewing.",
+      "approvedAlways": "Broadcast approved permanently.",
+      "denied": "Broadcast request denied.",
+      "empty": "No pending approval requests."
+    },
+    "concurrency": {
+      "title": "Concurrency & Tuner Priorities",
+      "subtitle": "Control maximum concurrent live streams, recordings, and transcodes in the household.",
+      "loadError": "Could not load resource limits.",
+      "saveSuccess": "Resource limits saved successfully.",
+      "saveError": "Could not save resource limits.",
+      "maxLive": "Maximum live channels",
+      "maxViewers": "Maximum concurrent viewers",
+      "maxRecordings": "Maximum parallel recordings",
+      "maxTranscodes": "Maximum parallel transcodes",
+      "preemption": "Enable priority preemption",
+      "save": "Save Limits",
+      "saving": "Saving…"
+    }
   }
 }

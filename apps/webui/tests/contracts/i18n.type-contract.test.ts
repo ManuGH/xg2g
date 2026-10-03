@@ -9,6 +9,9 @@ describe('i18next type augmentation & strict key checks contract', () => {
     const saveLabel = t('common.save');
     const navDashboard = t('nav.dashboard');
     const unlockTitle = t('unlock.pageTitle');
+    const adminHeader = t('admin.header.title');
+    const adminDevices = t('admin.devices.title');
+    const authBootstrap = t('auth.bootstrap.title');
 
     expect(typeof saveLabel).toBe('string');
     expect(saveLabel.length).toBeGreaterThan(0);
@@ -16,6 +19,12 @@ describe('i18next type augmentation & strict key checks contract', () => {
     expect(navDashboard.length).toBeGreaterThan(0);
     expect(typeof unlockTitle).toBe('string');
     expect(unlockTitle.length).toBeGreaterThan(0);
+    expect(typeof adminHeader).toBe('string');
+    expect(adminHeader.length).toBeGreaterThan(0);
+    expect(typeof adminDevices).toBe('string');
+    expect(adminDevices.length).toBeGreaterThan(0);
+    expect(typeof authBootstrap).toBe('string');
+    expect(authBootstrap.length).toBeGreaterThan(0);
   });
 
   it('verifies compiler regression checks at type-check time', () => {

@@ -80,7 +80,42 @@
     "showToken": "Token zeigen",
     "hideToken": "Token verbergen",
     "clearToken": "Leeren",
-    "tvHint": "Auf dem TV kann das Token beim Tippen sichtbar bleiben, damit Tippfehler sofort auffallen."
+    "tvHint": "Auf dem TV kann das Token beim Tippen sichtbar bleiben, damit Tippfehler sofort auffallen.",
+    "bootstrap": {
+      "eyebrow": "Ersteinrichtung",
+      "title": "xg2g einrichten",
+      "copy": "Sichere deinen Zugang mit einem Passkey. Touch ID, Face ID oder dein Passwortmanager funktionieren automatisch.",
+      "setupTokenLabel": "Setup-Token (falls erforderlich)",
+      "setupTokenPlaceholder": "z.B. xg2g_setup_...",
+      "createPasskey": "Passkey erstellen",
+      "creatingPasskey": "Erstelle Passkey...",
+      "passkeyFailed": "Passkey-Erstellung fehlgeschlagen.",
+      "passkeyCouldNotBeCreated": "Passkey konnte nicht erstellt werden.",
+      "backupEyebrow": "Sicherheitssicherung",
+      "backupTitle": "Wiederherstellungscodes sichern",
+      "backupCopy": "Falls du deinen Passkey verlierst, kannst du diese Einmal-Codes nutzen. Bewahre sie an einem sicheren Ort auf.",
+      "downloadCodes": "Herunterladen",
+      "copyCodes": "Kopieren",
+      "codesSavedConfirm": "Ich habe meine Wiederherstellungscodes sicher gespeichert",
+      "finishSetup": "Einrichtung abschließen",
+      "finishingSetup": "Schließe Einrichtung ab...",
+      "setupCouldNotBeCompleted": "Einrichtung konnte nicht abgeschlossen werden.",
+      "recoveryEyebrow": "Wiederherstellung",
+      "recoveryTitle": "Mit Wiederherstellungscode anmelden",
+      "recoveryCopy": "Gib deinen Benutzernamen und einen deiner 10-Zeichen Einmal-Codes ein.",
+      "recoveryCodeLabel": "Wiederherstellungscode",
+      "recoveryCodePlaceholder": "z.B. AB12-CD34-EF",
+      "checkingCode": "Prüfe Code...",
+      "signIn": "Anmelden",
+      "usernameLabel": "Benutzername",
+      "backToPasskey": "Zurück zur Passkey-Anmeldung",
+      "loginWithPasskey": "Mit Passkey anmelden",
+      "loggingIn": "Anmeldung läuft...",
+      "useRecoveryCode": "Wiederherstellungscode nutzen",
+      "passkeyLoginFailed": "Passkey-Anmeldung abgebrochen oder fehlgeschlagen.",
+      "invalidRecoveryCode": "Ungültiger Wiederherstellungscode.",
+      "recoveryCodeRejected": "Wiederherstellungscode wurde nicht akzeptiert."
+    }
   },
   "common": {
     "language": "Sprache",
@@ -1206,5 +1241,114 @@
     "daysWeekdays": "Werktags (Mo-Fr)",
     "daysWeekend": "Wochenende (Sa-So)",
     "retentionDays": "{{count}} Tage"
+  },
+  "admin": {
+    "header": {
+      "title": "Haushalt & Administration",
+      "subtitle": "Material 3 Management Center"
+    },
+    "sections": {
+      "account": {
+        "label": "Konto",
+        "description": "Persönliche Kontodaten & Hauptrolle"
+      },
+      "family": {
+        "label": "Familie",
+        "description": "Haushaltsmitglieder & Einladungen"
+      },
+      "profiles": {
+        "label": "Profile",
+        "description": "Sehprofile, Altersgrenzen & PINs"
+      },
+      "devices": {
+        "label": "Geräte",
+        "description": "Verbundene Geräte & 30-Tage-Vertrauen"
+      },
+      "security": {
+        "label": "Sicherheit",
+        "description": "Web-Sitzungen, Passkeys & Widerruf"
+      },
+      "access_times": {
+        "label": "Zugriffszeiten",
+        "description": "Tägliche Sehzeiten & Ablaufdaten"
+      },
+      "parental": {
+        "label": "Jugendschutz",
+        "description": "FSK-Freigaben & EPG-Korrekturen"
+      },
+      "recordings": {
+        "label": "Aufnahmen",
+        "description": "Speicherkontingente & Bibliotheken"
+      },
+      "concurrency": {
+        "label": "Gleichzeitige Nutzung",
+        "description": "Tuner-Auslastung & Prioritäten"
+      },
+      "audit": {
+        "label": "Benachrichtigungen & Audit",
+        "description": "Änderungsprotokoll & Push-Regeln"
+      }
+    },
+    "devices": {
+      "title": "Verbundene Geräte & 30-Tage-Vertrauen",
+      "subtitle": "Übersicht aller registrierten Fernseher, Mobilgeräte und Browser mit DPoP-Schlüsselbindung.",
+      "loadError": "Geräte konnten nicht geladen werden.",
+      "revokeSuccess": "Gerätezugriff wurde erfolgreich widerrufen.",
+      "revokeError": "Fehler beim Widerrufen.",
+      "loading": "Geräte werden geladen...",
+      "trustBadge": "✓ 30-Tage Vertrauen",
+      "typePrefix": "Typ: {{type}}",
+      "cancel": "Abbrechen",
+      "revoke": "Widerrufen",
+      "revokeAccess": "Zugriff widerrufen",
+      "empty": "Aktuell sind keine registrierten Android TV oder Mobilgeräte aktiv."
+    },
+    "profiles": {
+      "title": "Sehprofile & Altersgrenzen",
+      "subtitle": "Verwalte Profile für Haushaltsmitglieder, Jugendschutz-Einstufungen und PIN-Codes.",
+      "loadError": "Fehler beim Laden der Sehprofile.",
+      "nameRequired": "Bitte einen Namen für das Profil eingeben.",
+      "createProfile": "Profil erstellen",
+      "editProfile": "Profil bearbeiten",
+      "name": "Name",
+      "avatar": "Avatar",
+      "childProfile": "Kinderprofil (erhöhte Schutzstufe)",
+      "maxRating": "Maximales Alter (FSK)",
+      "unknownPolicy": "Umgang mit unbekannter Einstufung",
+      "pin": "PIN-Code (optional für Profilwechsel)",
+      "save": "Speichern",
+      "saving": "Wird gespeichert...",
+      "delete": "Löschen",
+      "deleteConfirm": "Profil wirklich löschen?",
+      "policyBlock": "Blockieren",
+      "policyApproval": "Freigabe anfragen",
+      "policyAllow": "Erlauben"
+    },
+    "parental": {
+      "title": "Jugendschutz & Freigaben",
+      "subtitle": "Ausstehende und erteilte Freigabe-Anfragen für altersbeschränkte Sendungen.",
+      "loadError": "Freigabe-Anfragen konnten nicht geladen werden.",
+      "approveOnce": "Einmalig freigeben",
+      "approveAlways": "Dauerhaft freigeben",
+      "deny": "Ablehnen",
+      "approvedOnce": "Sendung 1-malig freigegeben.",
+      "approvedAlways": "Sendung dauerhaft freigegeben.",
+      "denied": "Sendung abgelehnt.",
+      "empty": "Keine ausstehenden Freigabe-Anfragen."
+    },
+    "concurrency": {
+      "title": "Gleichzeitige Nutzung & Tuner-Prioritäten",
+      "subtitle": "Steuere maximale gleichzeitige Live-Streams, Aufnahmen und Transcodes im Haushalt.",
+      "loadError": "Ressourcen-Limits konnten nicht geladen werden.",
+      "saveSuccess": "Ressourcen-Limits erfolgreich gespeichert.",
+      "saveError": "Fehler beim Speichern der Ressourcen-Limits.",
+      "maxLive": "Maximale Live-Sender",
+      "maxViewers": "Maximale gleichzeitige Zuschauer",
+      "maxRecordings": "Maximale parallele Aufnahmen",
+      "maxTranscodes": "Maximale parallele Transcodes",
+      "preemption": "Prioritätsverdrängung (Preemption) aktivieren",
+      "save": "Limits speichern",
+      "saving": "Wird gespeichert..."
+    }
   }
 }
