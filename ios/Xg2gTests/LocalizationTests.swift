@@ -120,6 +120,60 @@ struct LocalizationTests {
         }
     }
 
+    // MARK: - 3b. Tab Enum Localization Audit
+
+    @Test("Tab preserves rawValues and localizes titles for DE and EN")
+    func tabLocalizationAndStability() {
+        let expectedTabs: [(tab: Xg2g.Tab, raw: String, de: String, en: String)] = [
+            (.home, "Für dich", "Für dich", "For You"),
+            (.liveTV, "Live TV", "Live TV", "Live TV"),
+            (.guide, "Programm", "Programm", "Guide"),
+            (.recordings, "Aufnahmen", "Aufnahmen", "Recordings"),
+            (.timers, "Timer", "Timer", "Timers"),
+            (.settings, "Einstellungen", "Einstellungen", "Settings")
+        ]
+
+        for item in expectedTabs {
+            #expect(item.tab.rawValue == item.raw)
+            #expect(item.tab.id == item.raw)
+
+            let deTitle = resolve(item.tab.title, locale: deLocale)
+            let enTitle = resolve(item.tab.title, locale: enLocale)
+            #expect(deTitle == item.de)
+            #expect(enTitle == item.en)
+        }
+    }
+
+    // MARK: - 3c. Shell & Pairing Strings Audit
+
+    @Test("Shell and Pairing strings localize accurately in DE and EN")
+    func shellAndPairingStringsLocalization() {
+        let shellKeys: [(key: String, de: String, en: String)] = [
+            ("Library", "Mediathek", "Library"),
+            ("Bouquets & Channel Groups", "Bouquets & Sendergruppen", "Bouquets & Channel Groups"),
+            ("All Channels", "Alle Sender", "All Channels"),
+            ("Favorites", "Favoriten", "Favorites"),
+            ("Connect to xg2g", "Mit xg2g verbinden", "Connect to xg2g"),
+            ("Enter the address of your xg2g server.", "Gib die Adresse deines xg2g-Servers ein.", "Enter the address of your xg2g server."),
+            ("Device Pairing", "Geräte-Kopplung", "Device Pairing"),
+            ("Enter this code in your Web Admin console under Devices:", "Gib diesen Code in deiner Web-Admin-Konsole unter Geräte ein:", "Enter this code in your Web Admin console under Devices:"),
+            ("Waiting for approval in admin console…", "Warte auf Bestätigung in der Admin-Konsole…", "Waiting for approval in admin console…"),
+            ("Code valid for", "Code gültig noch", "Code valid for"),
+            ("Generating P-256 hardware key & starting pairing…", "Generiere P-256 Hardwareschlüssel & starte Kopplung…", "Generating P-256 hardware key & starting pairing…"),
+            ("This device requires one-time approval before streams can be played.", "Dieses Gerät benötigt eine einmalige Genehmigung, bevor Streams gestartet werden können.", "This device requires one-time approval before streams can be played."),
+            ("REC", "AUFNAHME", "REC"),
+            ("Open current playback", "Aktuelle Wiedergabe öffnen", "Open current playback"),
+            ("Stop playback", "Wiedergabe beenden", "Stop playback")
+        ]
+
+        for item in shellKeys {
+            let de = localize(String.LocalizationValue(item.key), locale: deLocale)
+            let en = localize(String.LocalizationValue(item.key), locale: enLocale)
+            #expect(de == item.de, "DE mismatch for \(item.key): expected '\(item.de)', got '\(de)'")
+            #expect(en == item.en, "EN mismatch for \(item.key): expected '\(item.en)', got '\(en)'")
+        }
+    }
+
     // MARK: - 4. DownloadQuality Localization & Persistence Audit
 
     @Test("DownloadQuality preserves Codable rawValues and localizes titles and subtitles")
@@ -278,6 +332,73 @@ struct LocalizationTests {
             }
             #expect(diagImage.size.width > 0 && diagImage.size.height > 0)
             Self.saveScreenshot(diagImage, name: "diagnostic_\(code)")
+        }
+    }
+
+    @Test("Programmatic smoke test: Render ServerSetupView and PairingView snapshots in German and English, retaining PNG artifacts")
+    @MainActor
+    func renderShellAndPairingInBothLocales() throws {
+        let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let model = AppModel()
+
+            // 1. ServerSetupView snapshot
+            let setupView = ServerSetupView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let setupController = UIHostingController(rootView: setupView)
+            setupController.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            setupController.view.overrideUserInterfaceStyle = .dark
+
+            let setupWindow = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            setupWindow.rootViewController = setupController
+            setupWindow.makeKeyAndVisible()
+            setupController.view.setNeedsLayout()
+            setupController.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: setupController.view.bounds, format: format)
+            let setupImage = renderer.image { _ in
+                setupController.view.drawHierarchy(in: setupController.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(setupImage.size.width > 0 && setupImage.size.height > 0)
+            Self.saveScreenshot(setupImage, name: "server_setup_\(code)")
+
+            // 2. PairingView snapshot
+            let pairingView = PairingView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let pairingController = UIHostingController(rootView: pairingView)
+            pairingController.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            pairingController.view.overrideUserInterfaceStyle = .dark
+
+            let pairingWindow = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            pairingWindow.rootViewController = pairingController
+            pairingWindow.makeKeyAndVisible()
+            pairingController.view.setNeedsLayout()
+            pairingController.view.layoutIfNeeded()
+
+            let pairingImage = renderer.image { _ in
+                pairingController.view.drawHierarchy(in: pairingController.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(pairingImage.size.width > 0 && pairingImage.size.height > 0)
+            Self.saveScreenshot(pairingImage, name: "pairing_\(code)")
         }
     }
 

@@ -14,7 +14,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **iOS: Settings & Infrastructure** | `SettingsView.swift`, `Theme.swift`, `DeviceCapabilities.swift` | 65 | 65 | 0 | **Verified** | Package 2 |
 | **iOS: Error Presentation & Diagnostics** | `UserFacingError.swift`, `APIError.swift`, `ProblemDetails.swift` | 42 | 42 | 0 | **Verified** | Package 3 |
-| **iOS: Shell, Navigation & Pairing** | `RootView.swift`, `MiniPlayerBar.swift`, `PadRootView.swift`, `TVRootView.swift` | 22 | 0 | 22 | **Batch 1 (Next)** | Batch 1 |
+| **iOS: Shell, Navigation & Pairing** | `RootView.swift`, `MiniPlayerBar.swift`, `PadRootView.swift`, `TVRootView.swift` | 22 | 22 | 0 | **Verified** | Batch 1 |
 | **iOS: Channel Discovery & Home Hub** | `ChannelListView.swift`, `ChannelRow.swift`, `HomeHubView.swift`, `QuickRailsView.swift`, `SmartSearchResultsView.swift` | 38 | 0 | 38 | **Pending** | Batch 2 |
 | **iOS: Guide & EPG Grid** | `GuideView.swift`, `GuideGrid.swift`, `GuideComponents.swift`, `TimeFilterPill.swift` | 16 | 0 | 16 | **Pending** | Batch 3 |
 | **iOS: Recordings, Timers & Details** | `RecordingsView.swift`, `TimersView.swift`, `ProgramDetailSheet.swift` | 44 | 0 | 44 | **Pending** | Batch 4 |
@@ -23,8 +23,8 @@
 | **WebUI: Admin & Security Console** | `DevicesManagementSection.tsx`, `PasskeyAuthFlow.tsx`, `AdminLayout.tsx`, `ProfileManagementSection.tsx` | 32 | 0 | 32 | **Pending** | Batch 6 |
 
 **Total Application Strings:** ~432 strings  
-**Currently Migrated & Tested:** 256 strings (59.3%)  
-**Remaining Across All Batches:** 176 strings (40.7%)
+**Currently Migrated & Tested:** 278 strings (64.4%)  
+**Remaining Across All Batches:** 154 strings (35.6%)
 
 ---
 
@@ -32,8 +32,8 @@
 
 ### Surface 1: iOS Shell, Navigation & Pairing (`RootView.swift`, `MiniPlayerBar.swift`) — Batch 1
 - **Estimated Effort:** 1.5 hours
-- **Verification Status:** Ready for implementation
-- **Key Strings to Migrate:**
+- **Verification Status:** **Verified (Pass)**: 23 regression/localization tests passing; tvOS build passing; `server_setup_en.png`, `server_setup_de.png`, `pairing_en.png`, `pairing_de.png` visual rendering confirmed.
+- **Key Strings Migrated:**
   1. Tab item: Channels (`Sender` / `Channels`)
   2. Tab item: Guide (`Programm` / `Guide`)
   3. Tab item: Recordings (`Aufnahmen` / `Recordings`)

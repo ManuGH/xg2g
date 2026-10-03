@@ -64,6 +64,23 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var title: LocalizedStringResource {
+        switch self {
+        case .home:
+            return LocalizedStringResource("For You", comment: "Home tab title")
+        case .liveTV:
+            return LocalizedStringResource("Live TV", comment: "Live TV tab title")
+        case .guide:
+            return LocalizedStringResource("Guide", comment: "Guide tab title")
+        case .recordings:
+            return LocalizedStringResource("Recordings", comment: "Recordings tab title")
+        case .timers:
+            return LocalizedStringResource("Timers", comment: "Timers tab title")
+        case .settings:
+            return LocalizedStringResource("Settings", comment: "Settings tab title")
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .home: return "sparkles.tv"

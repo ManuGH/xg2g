@@ -20,37 +20,37 @@ struct TVRootView: View {
         TabView(selection: $model.selectedTab) {
             HomeHubView(model: model)
                 .tabItem {
-                    Label(Tab.home.rawValue, systemImage: Tab.home.systemImage)
+                    Label(Tab.home.title, systemImage: Tab.home.systemImage)
                 }
                 .tag(Tab.home)
 
             ChannelListView(model: model)
                 .tabItem {
-                    Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
+                    Label(Tab.liveTV.title, systemImage: Tab.liveTV.systemImage)
                 }
                 .tag(Tab.liveTV)
 
             GuideView(model: model)
                 .tabItem {
-                    Label(Tab.guide.rawValue, systemImage: Tab.guide.systemImage)
+                    Label(Tab.guide.title, systemImage: Tab.guide.systemImage)
                 }
                 .tag(Tab.guide)
 
             RecordingsView(model: model)
                 .tabItem {
-                    Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
+                    Label(Tab.recordings.title, systemImage: Tab.recordings.systemImage)
                 }
                 .tag(Tab.recordings)
 
             TimersView(model: model)
                 .tabItem {
-                    Label(Tab.timers.rawValue, systemImage: Tab.timers.systemImage)
+                    Label(Tab.timers.title, systemImage: Tab.timers.systemImage)
                 }
                 .tag(Tab.timers)
 
             SettingsView(model: model)
                 .tabItem {
-                    Label(Tab.settings.rawValue, systemImage: Tab.settings.systemImage)
+                    Label(Tab.settings.title, systemImage: Tab.settings.systemImage)
                 }
                 .tag(Tab.settings)
         }

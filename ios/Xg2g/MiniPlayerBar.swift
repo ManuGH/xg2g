@@ -31,7 +31,7 @@ struct MiniPlayerBar: View {
     }
 
     private var currentProgramTitle: String {
-        guard let channel else { return "Live TV" }
+        guard let channel else { return String(localized: "Live TV") }
         return model?.schedule[channel.serviceRef]?.now?.title ?? channel.name
     }
 
@@ -76,7 +76,7 @@ struct MiniPlayerBar: View {
                 ),
                 eyebrow: AnyView(
                     HStack(spacing: 6) {
-                        Text("AUFNAHME")
+                        Text(String(localized: "REC", comment: "MiniPlayer recording badge"))
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentAction)
                             .padding(.horizontal, 5)
@@ -134,6 +134,7 @@ struct MiniPlayerBar: View {
                             .background(Theme.Colors.statusError.opacity(0.8), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "Stop playback", comment: "MiniPlayer stop accessibility label"))
                 }
             }
             .padding(.horizontal, 14)
@@ -149,5 +150,6 @@ struct MiniPlayerBar: View {
             .padding(.bottom, 6)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "Open current playback", comment: "MiniPlayer expand accessibility label"))
     }
 }
