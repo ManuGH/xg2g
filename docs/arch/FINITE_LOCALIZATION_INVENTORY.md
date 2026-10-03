@@ -1,8 +1,8 @@
 # Finite Localization Inventory: iOS, tvOS & WebUI Surfaces
 
-- **Status:** All Batches (1–6) Completed & Deterministically Verified
+- **Status:** Batches 1–5 Completed & Verified on iOS/tvOS; Batch 6 In Progress on WebUI
 - **Branches:** `feat/ios-string-catalog-foundation` (iOS/tvOS) & `feat/webui-translation-key-safety` (WebUI)
-- **Base Verification:** 26/26 iOS Playback & Localization Tests Passing; tvOS Scheme Build Succeeded; WebUI strict key checks & contract tests passing.
+- **Base Verification:** 26/26 iOS Playback & Localization Tests Passing; tvOS Scheme Build Succeeded; WebUI strict key checks contract passing.
 - **Locale Scope:** English (EN, Development Region) & German (DE, Target Locale)
 - **Preservation Contract:** Enigma2 / OpenWebIF external media broadcast data (EPG programme titles, event summaries, channel broadcast names, stream genres, and receiver bouquet names) are strictly preserved **verbatim** in their broadcast language using `Text(verbatim:)`. Only application-owned chrome, navigation, buttons, accessibility labels, statuses, and format strings are localized.
 
@@ -20,11 +20,11 @@
 | **iOS: Recordings, Timers & Details** | `RecordingsView.swift`, `TimersView.swift`, `ProgramDetailSheet.swift` | 44 | 44 | 0 | **Verified** | Batch 4 |
 | **iOS: Player Overlays & Debug HUD** | `PlayerScreen.swift`, `RecordingPlayerScreen.swift`, `TestTSPlayerScreen.swift`, `OfflinePlayerScreen.swift` | 28 | 28 | 0 | **Verified** | Batch 5 |
 | **WebUI: Core Player & Shell** | `AppShell.tsx`, `Dashboard.tsx`, `Settings.tsx`, `EPG.tsx`, `PlayerControls.tsx` | 145 | 145 | 0 | **Verified** | Package 1 |
-| **WebUI: Admin & Security Console** | `DevicesManagementSection.tsx`, `PasskeyAuthFlow.tsx`, `AdminLayout.tsx`, `ProfileManagementSection.tsx`, `ConcurrencySettingsSection.tsx`, `ParentalControlSection.tsx` | 32 | 32 | 0 | **Verified** | Batch 6 |
+| **WebUI: Admin & Security Console** | `DevicesManagementSection.tsx`, `PasskeyAuthFlow.tsx`, `AdminLayout.tsx`, `ProfileManagementSection.tsx`, `ConcurrencySettingsSection.tsx`, `ParentalControlSection.tsx`, `FamilyManagementSection.tsx`, `AccessTimesSection.tsx`, `AuditNotificationsSection.tsx` | 80 | 32 | 48 | **In Progress** | Batch 6 |
 
-**Total Application Strings:** ~432 strings (estimated)  
-**Currently Migrated & Tested:** 432 strings (100%)  
-**Remaining Across All Batches:** 0 strings (0%)
+**Total Estimated Application Strings:** ~480 strings  
+**Currently Migrated & Tested:** ~432 strings (~90%)  
+**Outstanding (Batch 6 in progress):** ~48 strings (~10%)
 
 ---
 
