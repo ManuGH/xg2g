@@ -677,7 +677,7 @@ func TestConnector_IPTV_CredentialCanary_NoSecretsInLogsOrErrors(t *testing.T) {
 	parser, err := sourceref.NewParser([]byte(secret))
 	require.NoError(t, err)
 
-	canaryURL := fmt.Sprintf("%s/live/stream.ts?token=%s", providerSrv.URL, canarySecret)
+	canaryURL := fmt.Sprintf("%s/live/stream.ts?secret=%s", providerSrv.URL, canarySecret)
 	encodedURL := encodeIPTVURL(canaryURL)
 	rawRef := fmt.Sprintf("4097:0:1:0:0:0:0:0:0:0:%s:CanaryChannel", encodedURL)
 
@@ -725,7 +725,7 @@ func TestConnector_IPTV_CredentialCanary_NoSecretsInLogsOrErrors(t *testing.T) {
 	}
 
 	// Test 2: Request causing bad gateway error (provider closed)
-	badURL := fmt.Sprintf("http://127.0.0.1:1/live/stream.ts?token=%s", canarySecret)
+	badURL := fmt.Sprintf("http://127.0.0.1:1/live/stream.ts?secret=%s", canarySecret)
 	badRawRef := fmt.Sprintf("4097:0:1:0:0:0:0:0:0:0:%s:BadChannel", encodeIPTVURL(badURL))
 	badSrc, err := parser.Parse(badRawRef)
 	require.NoError(t, err)
