@@ -18,7 +18,8 @@ enum RecordingArtworkTheme {
         let gradient: LinearGradient
         let accent: Color
         let icon: String
-        let label: String
+        let labelResource: LocalizedStringResource
+        var label: String { String(localized: labelResource) }
     }
 
     static func palette(for recording: Recording) -> Palette {
@@ -32,7 +33,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 0.95, green: 0.35, blue: 0.45),
                 icon: "film.stack",
-                label: "Spielfilm"
+                labelResource: LocalizedStringResource("Movie")
             )
         case .series:
             return Palette(
@@ -43,7 +44,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 0.35, green: 0.65, blue: 1.0),
                 icon: "tv",
-                label: "Serie"
+                labelResource: LocalizedStringResource("Series")
             )
         case .sport:
             return Palette(
@@ -54,7 +55,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 0.25, green: 0.85, blue: 0.55),
                 icon: "sportscourt",
-                label: "Sport"
+                labelResource: LocalizedStringResource("Sports")
             )
         case .docu:
             return Palette(
@@ -65,7 +66,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 0.20, green: 0.80, blue: 0.90),
                 icon: "globe.europe.africa",
-                label: "Doku"
+                labelResource: LocalizedStringResource("Documentary")
             )
         case .news:
             return Palette(
@@ -76,7 +77,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 1.0, green: 0.70, blue: 0.25),
                 icon: "newspaper",
-                label: "Nachrichten"
+                labelResource: LocalizedStringResource("News")
             )
         case .kids:
             return Palette(
@@ -87,7 +88,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Color(red: 0.90, green: 0.50, blue: 0.95),
                 icon: "sparkles",
-                label: "Kinder"
+                labelResource: LocalizedStringResource("Kids")
             )
         case .all, .show:
             return Palette(
@@ -98,7 +99,7 @@ enum RecordingArtworkTheme {
                 ),
                 accent: Theme.Colors.accentAction,
                 icon: "play.rectangle.on.rectangle",
-                label: "Aufnahme"
+                labelResource: LocalizedStringResource("Recording")
             )
         }
     }
@@ -111,14 +112,25 @@ struct RecordingsView: View {
     let model: AppModel
 
     enum CategoryFilter: String, CaseIterable, Identifiable {
-        case all = "Alle"
-        case offline = "Downloads"
-        case movies = "🎬 Spielfilme"
-        case series = "📺 Serien"
-        case sport = "⚽️ Sport"
-        case docus = "🌍 Dokus"
+        case all = "all"
+        case offline = "offline"
+        case movies = "movies"
+        case series = "series"
+        case sport = "sport"
+        case docus = "docus"
 
         var id: String { rawValue }
+
+        var localizedTitle: LocalizedStringResource {
+            switch self {
+            case .all: return LocalizedStringResource("All")
+            case .offline: return LocalizedStringResource("Downloads")
+            case .movies: return LocalizedStringResource("🎬 Movies")
+            case .series: return LocalizedStringResource("📺 Series")
+            case .sport: return LocalizedStringResource("⚽️ Sports")
+            case .docus: return LocalizedStringResource("🌍 Documentaries")
+            }
+        }
     }
 
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -169,7 +181,7 @@ struct RecordingsView: View {
                                             Image(systemName: "arrow.down.circle.fill")
                                                 .font(.caption2)
                                         }
-                                        Text(filter.rawValue)
+                                        Text(filter.localizedTitle)
                                             .font(.system(size: 13, weight: isSelected ? .bold : .medium))
 
                                         // Badge count for all or downloads
@@ -218,7 +230,7 @@ struct RecordingsView: View {
                     }
                 }
             }
-            .navigationTitle("Aufnahmen")
+            .navigationTitle("Recordings")
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -227,14 +239,14 @@ struct RecordingsView: View {
                     Button {
                         showTimersSheet = true
                     } label: {
-                        Label("Timer", systemImage: "clock.badge")
+                        Label("Timers", systemImage: "clock.badge")
                     }
                 }
             }
             .sheet(isPresented: $showTimersSheet) {
                 TimersView(model: model)
             }
-            .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
+            .searchable(text: $searchText, prompt: Text("Search recordings by title or genre…"))
             .sheet(item: $selectedDetailRecording) { rec in
                 RecordingDetailSheet(
                     recording: rec,
@@ -251,7 +263,7 @@ struct RecordingsView: View {
                 )
             }
             .confirmationDialog(
-                "„\(promptResumeRecording?.title ?? "Aufnahme")“ abspielen",
+                Text("Play “\(promptResumeRecording?.title ?? String(localized: "Recording"))”"),
                 isPresented: Binding(
                     get: { promptResumeRecording != nil },
                     set: { if !$0 { promptResumeRecording = nil } }
@@ -260,13 +272,13 @@ struct RecordingsView: View {
             ) {
                 if let rec = promptResumeRecording {
                     let resumePos = model.resumePosition(for: rec.id) ?? 0
-                    Button("Fortsetzen bei \(formatRecordingTime(resumePos))") {
+                    Button("Resume at \(formatRecordingTime(resumePos))") {
                         let target = rec
                         promptResumeRecording = nil
                         play(recording: target, startPosition: resumePos)
                     }
 
-                    Button("Von Beginn an abspielen") {
+                    Button("Play from Start") {
                         let target = rec
                         promptResumeRecording = nil
                         model.updateRecordingProgress(
@@ -278,7 +290,7 @@ struct RecordingsView: View {
                         play(recording: target, startPosition: 0)
                     }
 
-                    Button("Abbrechen", role: .cancel) {
+                    Button("Cancel", role: .cancel) {
                         promptResumeRecording = nil
                     }
                 }
@@ -286,28 +298,28 @@ struct RecordingsView: View {
                 if let rec = promptResumeRecording {
                     let resumePos = model.resumePosition(for: rec.id) ?? 0
                     let remainingMin = max(1, Int((Double(rec.durationSeconds) - resumePos) / 60))
-                    Text("Zuletzt gesehen bis \(formatRecordingTime(resumePos)) (noch ca. \(remainingMin) Min.).")
+                    Text("Last watched to \(formatRecordingTime(resumePos)) (approx. \(remainingMin) min remaining).")
                 }
             }
             .confirmationDialog(
-                "Aufnahme wirklich vom Server löschen?",
+                Text("Delete recording from server?"),
                 isPresented: Binding(
                     get: { recordingToDelete != nil },
                     set: { if !$0 { recordingToDelete = nil } }
                 ),
                 titleVisibility: .visible
             ) {
-                Button("Vom Server löschen", role: .destructive) {
+                Button("Delete from Server", role: .destructive) {
                     if let target = recordingToDelete {
                         Task { await model.deleteRecording(target) }
                     }
                 }
-                Button("Abbrechen", role: .cancel) {
+                Button("Cancel", role: .cancel) {
                     recordingToDelete = nil
                 }
             } message: {
                 if let target = recordingToDelete {
-                    Text("„\(target.title)“ wird unwiderruflich von der Festplatte gelöscht.")
+                    Text("“\(target.title)” will be permanently deleted from the disk.")
                 }
             }
         }
@@ -327,18 +339,27 @@ struct RecordingsView: View {
 
         if model.recordings.isEmpty && model.isLoadingRecordings {
             Spacer()
-            ProgressView("Lade DVR-Aufnahmen…")
+            ProgressView("Loading DVR recordings…")
                 .tint(Theme.Colors.accentAction)
                 .foregroundStyle(Theme.Colors.textSecondary)
             Spacer()
         } else if filtered.isEmpty {
             Spacer()
-            ContentUnavailableView(
-                searchText.isEmpty ? "Keine Aufnahmen" : "Keine Treffer für „\(searchText)“",
-                systemImage: "play.rectangle.on.rectangle",
-                description: Text(searchText.isEmpty ? "Es wurden keine DVR-Aufnahmen auf dem Server gefunden." : "Passe deine Suchanfrage oder den Filter an.")
-            )
-            .foregroundStyle(Theme.Colors.textSecondary)
+            if searchText.isEmpty {
+                ContentUnavailableView(
+                    "No Recordings",
+                    systemImage: "play.rectangle.on.rectangle",
+                    description: Text("No DVR recordings were found on the server.")
+                )
+                .foregroundStyle(Theme.Colors.textSecondary)
+            } else {
+                ContentUnavailableView(
+                    "No results for “\(searchText)”",
+                    systemImage: "play.rectangle.on.rectangle",
+                    description: Text("Try adjusting your search query or filter.")
+                )
+                .foregroundStyle(Theme.Colors.textSecondary)
+            }
             Spacer()
         } else {
             ScrollView {
@@ -357,13 +378,13 @@ struct RecordingsView: View {
 
                     // 2. Section Header
                     HStack {
-                        Text(selectedFilter == .all ? "Alle Aufnahmen" : selectedFilter.rawValue)
+                        Text(selectedFilter == .all ? LocalizedStringResource("All Recordings") : selectedFilter.localizedTitle)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
 
                         Spacer()
 
-                        Text("\(filtered.count) Videos")
+                        Text("\(filtered.count) videos")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -388,19 +409,19 @@ struct RecordingsView: View {
                                 Button {
                                     handlePlayAction(for: recording)
                                 } label: {
-                                    Label("Abspielen", systemImage: "play.fill")
+                                    Label("Play", systemImage: "play.fill")
                                 }
 
                                 Button {
                                     selectedDetailRecording = recording
                                 } label: {
-                                    Label("Details ansehen", systemImage: "info.circle")
+                                    Label("View Details", systemImage: "info.circle")
                                 }
 
                                 Button(role: .destructive) {
                                     recordingToDelete = recording
                                 } label: {
-                                    Label("Vom Server löschen", systemImage: "trash")
+                                    Label("Delete from Server", systemImage: "trash")
                                 }
                             }
                         }
@@ -423,9 +444,9 @@ struct RecordingsView: View {
         if downloadManager.offlineRecordings.isEmpty {
             Spacer()
             ContentUnavailableView(
-                "Keine Downloads",
+                "No Downloads",
                 systemImage: "arrow.down.circle",
-                description: Text("Tippe bei einer beliebigen Aufnahme auf das Download-Symbol, um sie offline im Flugzeug oder unterwegs ohne Internet anzusehen.")
+                description: Text("Tap the download icon on any recording to watch it offline while traveling or without internet.")
             )
             .foregroundStyle(Theme.Colors.textSecondary)
             Spacer()
@@ -435,13 +456,13 @@ struct RecordingsView: View {
                     // Storage Breakdown Card (Apple TV+ / Netflix Style)
                     VStack(spacing: 10) {
                         HStack {
-                            Label("Offline-Speicher", systemImage: "internaldrive.fill")
+                            Label("Offline Storage", systemImage: "internaldrive.fill")
                                 .font(.caption.bold())
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             Spacer()
 
-                            Text("\(downloadManager.formattedTotalStorage) belegt")
+                            Text("\(downloadManager.formattedTotalStorage) used")
                                 .font(.caption.monospacedDigit().bold())
                                 .foregroundStyle(Theme.Colors.statusSuccess)
                         }
@@ -488,7 +509,7 @@ struct RecordingsView: View {
                                 Button(role: .destructive) {
                                     downloadManager.deleteOfflineRecording(id: offline.id)
                                 } label: {
-                                    Label("Download löschen", systemImage: "trash")
+                                    Label("Delete Download", systemImage: "trash")
                                 }
                             }
                         }
@@ -598,7 +619,7 @@ struct RecordingSpotlightHero: View {
                         HStack(spacing: 5) {
                             Image(systemName: hasResume ? "play.circle.fill" : "sparkles.tv")
                                 .font(.system(size: 10, weight: .bold))
-                            Text(hasResume ? "WEITERSCHAUEN" : "NEUESTE AUFNAHME")
+                            Text(hasResume ? LocalizedStringResource("CONTINUE WATCHING") : LocalizedStringResource("LATEST RECORDING"))
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(hasResume ? Theme.Colors.accentAction : palette.accent)
@@ -611,11 +632,11 @@ struct RecordingSpotlightHero: View {
 
                         // Tech Specs: 1080i HD • 5.1 Dolby
                         HStack(spacing: 4) {
-                            Text("1080i")
+                            Text(verbatim: "1080i")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                             Text("•")
                                 .foregroundStyle(Theme.Colors.textDisabled)
-                            Text("5.1")
+                            Text(verbatim: "5.1")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -632,14 +653,14 @@ struct RecordingSpotlightHero: View {
                 // Bottom Content Inside the Stage
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(recording.title)
+                        Text(verbatim: recording.title)
                             .font(.system(size: 22, weight: .heavy))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(2)
                             .shadow(color: .black.opacity(0.8), radius: 4, y: 2)
 
                         if let desc = recording.description, !desc.isEmpty {
-                            Text(desc)
+                            Text(verbatim: desc)
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .lineLimit(2)
@@ -663,7 +684,7 @@ struct RecordingSpotlightHero: View {
                                 Text("•")
                                     .foregroundStyle(Theme.Colors.textDisabled)
                                 let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
-                                Text("Noch \(remainingMin)m verbleibend")
+                                Text("\(remainingMin) min remaining")
                                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                             }
@@ -702,7 +723,7 @@ struct RecordingSpotlightHero: View {
                             HStack(spacing: 8) {
                                 Image(systemName: hasResume ? "play.fill" : "play.circle.fill")
                                     .font(.system(size: 15, weight: .bold))
-                                Text(hasResume ? "Fortsetzen bei \(formatRecordingTime(resumePos))" : "Jetzt abspielen")
+                                Text(hasResume ? "Resume at \(formatRecordingTime(resumePos))" : "Play Now")
                                     .font(.system(size: 14, weight: .bold))
                             }
                             .padding(.horizontal, 20)
@@ -802,7 +823,7 @@ struct RecordingMediaCard: View {
                     VStack {
                         HStack(spacing: 6) {
                             // Genre Badge
-                            Text(palette.label)
+                            Text(palette.labelResource)
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(palette.accent)
                                 .padding(.horizontal, 7)
@@ -813,7 +834,7 @@ struct RecordingMediaCard: View {
                             Spacer()
 
                             // Format Badge
-                            Text("1080i")
+                            Text(verbatim: "1080i")
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .padding(.horizontal, 6)
@@ -843,7 +864,7 @@ struct RecordingMediaCard: View {
 
                     // Bottom Content Overlay
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(recording.title)
+                        Text(verbatim: recording.title)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
@@ -865,7 +886,7 @@ struct RecordingMediaCard: View {
                                 Text("•")
                                     .foregroundStyle(Theme.Colors.textDisabled)
                                 let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
-                                Text("Noch \(remainingMin)m")
+                                Text("\(remainingMin) min left")
                                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
                             }
@@ -900,12 +921,12 @@ struct RecordingMediaCard: View {
                 // Bottom Action Strip (Details & Download)
                 HStack(spacing: 8) {
                     if let desc = recording.description, !desc.isEmpty {
-                        Text(desc)
+                        Text(verbatim: desc)
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)
                     } else {
-                        Text("Aufnahme bereit")
+                        Text("Recording ready")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -993,7 +1014,7 @@ struct RecordingDetailSheet: View {
                                 )
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(recording.title)
+                                Text(verbatim: recording.title)
                                     .font(.title2.weight(.heavy))
                                     .foregroundStyle(Theme.Colors.textPrimary)
                                     .lineLimit(2)
@@ -1022,24 +1043,24 @@ struct RecordingDetailSheet: View {
 
                         // Quick Tech Specs Grid (Infuse Style)
                         HStack(spacing: 8) {
-                            specPill(label: "AUFLÖSUNG", value: "1080i50 HD")
-                            specPill(label: "AUDIO", value: "5.1 AC3 / Stereo")
-                            specPill(label: "CONTAINER", value: "MP4 / TS")
+                            specPill(label: LocalizedStringResource("RESOLUTION"), value: "1080i50 HD")
+                            specPill(label: LocalizedStringResource("AUDIO"), value: "5.1 AC3 / Stereo")
+                            specPill(label: LocalizedStringResource("CONTAINER"), value: "MP4 / TS")
                         }
 
                         // Synopsis
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("INHALTSANGABE")
+                            Text("SYNOPSIS")
                                 .font(.caption.weight(.bold).monospaced())
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             if let desc = recording.description, !desc.isEmpty {
-                                Text(desc)
+                                Text(verbatim: desc)
                                     .font(.body)
                                     .foregroundStyle(Theme.Colors.textSecondary)
                                     .lineSpacing(4)
                             } else {
-                                Text("Keine detaillierte Beschreibung für diese Aufnahme verfügbar.")
+                                Text("No detailed description available for this recording.")
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.Colors.textTertiary)
                             }
@@ -1047,18 +1068,18 @@ struct RecordingDetailSheet: View {
 
                         // Technical Metadata Cards
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("METADATEN")
+                            Text("METADATA")
                                 .font(.caption.weight(.bold).monospaced())
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             VStack(spacing: 8) {
                                 if let filename = recording.filename {
                                     HStack {
-                                        Text("Dateiname")
+                                        Text("File Name")
                                             .font(.caption)
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                         Spacer()
-                                        Text(filename)
+                                        Text(verbatim: filename)
                                             .font(.caption.monospaced())
                                             .foregroundStyle(Theme.Colors.textSecondary)
                                             .lineLimit(1)
@@ -1067,11 +1088,11 @@ struct RecordingDetailSheet: View {
 
                                 if let sref = recording.serviceRef {
                                     HStack {
-                                        Text("Service-Ref")
+                                        Text("Service Ref")
                                             .font(.caption)
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                         Spacer()
-                                        Text(sref)
+                                        Text(verbatim: sref)
                                             .font(.caption.monospaced())
                                             .foregroundStyle(Theme.Colors.textSecondary)
                                             .lineLimit(1)
@@ -1094,7 +1115,7 @@ struct RecordingDetailSheet: View {
                                     HStack {
                                         Spacer()
                                         Image(systemName: "play.fill")
-                                        Text("Fortsetzen bei \(formatRecordingTime(resumePos))")
+                                        Text("Resume at \(formatRecordingTime(resumePos))")
                                             .font(.headline)
                                         Spacer()
                                     }
@@ -1116,7 +1137,7 @@ struct RecordingDetailSheet: View {
                                     HStack {
                                         Spacer()
                                         Image(systemName: "arrow.counterclockwise")
-                                        Text("Von Beginn an abspielen")
+                                        Text("Play from Start")
                                             .font(.headline)
                                         Spacer()
                                     }
@@ -1132,7 +1153,7 @@ struct RecordingDetailSheet: View {
                                     HStack {
                                         Spacer()
                                         Image(systemName: "play.fill")
-                                        Text("Aufnahme abspielen")
+                                        Text("Play Recording")
                                             .font(.headline)
                                         Spacer()
                                     }
@@ -1149,7 +1170,7 @@ struct RecordingDetailSheet: View {
                                 HStack {
                                     Spacer()
                                     Image(systemName: "trash")
-                                    Text("Vom Server löschen")
+                                    Text("Delete from Server")
                                         .font(.subheadline.bold())
                                     Spacer()
                                 }
@@ -1162,25 +1183,25 @@ struct RecordingDetailSheet: View {
                     .padding(20)
                 }
             }
-            .navigationTitle("Aufnahmedetails")
+            .navigationTitle("Recording Details")
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Schließen") { dismiss() }
+                    Button("Close") { dismiss() }
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
             }
         }
     }
 
-    private func specPill(label: String, value: String) -> some View {
+    private func specPill(label: LocalizedStringResource, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textTertiary)
-            Text(value)
+            Text(verbatim: value)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
         }
@@ -1211,7 +1232,7 @@ struct OfflineRecordingRow: View {
             .frame(width: 46, height: 46)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(offline.title)
+                Text(verbatim: offline.title)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(1)
@@ -1274,7 +1295,7 @@ struct DownloadButton: View {
         switch status {
         case .notDownloaded, .failed:
             Menu {
-                Section("Download-Qualität für Offline:") {
+                Section("Offline Download Quality") {
                     ForEach(DownloadQuality.supportedQualities) { q in
                         Button {
                             triggerHaptic(.medium)

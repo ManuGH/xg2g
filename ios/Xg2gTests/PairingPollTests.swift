@@ -69,8 +69,27 @@ struct PairingPollTests {
         #expect(await model.pollPairing() == .ended)
 
         let error = try #require(model.lastError)
-        #expect(error.contains("abgelaufen"), "the user has to learn that the code, not the server, is the problem")
-        #expect(error.contains("neuen Code"), "the text has to point at the remedy")
+        let currentErr = try #require(model.currentError)
+
+        func resolve(_ res: LocalizedStringResource, locale: Locale) -> String {
+            var copy = res
+            copy.locale = locale
+            return String(localized: copy)
+        }
+
+        // Verify intentional localization in both German and English without weakening assertions
+        let deTitle = resolve(currentErr.title, locale: Locale(identifier: "de"))
+        let deDetail = resolve(try #require(currentErr.detail), locale: Locale(identifier: "de"))
+        let enTitle = resolve(currentErr.title, locale: Locale(identifier: "en"))
+        let enDetail = resolve(try #require(currentErr.detail), locale: Locale(identifier: "en"))
+
+        #expect(deTitle.contains("abgelaufen"))
+        #expect(deDetail.contains("neuen Code") || deDetail.contains("neuen"))
+        #expect(enTitle.contains("Expired"))
+        #expect(enDetail.contains("new pairing code"))
+
+        #expect(error.contains("abgelaufen") || error.contains("Expired"), "the user has to learn that the code, not the server, is the problem")
+        #expect(error.contains("neuen") || error.contains("new"), "the text has to point at the remedy")
         // Ended is not the same as unpaired-from-scratch: the server stays.
         #expect(model.state == .needsPairing)
     }

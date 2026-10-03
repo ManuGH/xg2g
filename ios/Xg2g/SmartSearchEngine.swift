@@ -102,7 +102,7 @@ enum SmartSearchEngine {
                             isLive: true,
                             progress: prog,
                             remainingMinutes: rem,
-                            formattedBadge: "JETZT LIVE"
+                            formattedBadge: String(localized: "LIVE NOW")
                         )
                     )
                 } else if show.start > now {
@@ -154,19 +154,15 @@ enum SmartSearchEngine {
 
     private static func formatUpcomingTime(_ date: Date) -> String {
         let calendar = Calendar.current
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm"
-        let timeStr = timeFormatter.string(from: date)
+        let timeStr = date.formatted(date: .omitted, time: .shortened)
 
         if calendar.isDateInToday(date) {
-            return "Heute, \(timeStr) Uhr"
+            return String(localized: "Today, \(timeStr)")
         } else if calendar.isDateInTomorrow(date) {
-            return "Morgen, \(timeStr) Uhr"
+            return String(localized: "Tomorrow, \(timeStr)")
         } else {
-            let df = DateFormatter()
-            df.locale = Locale(identifier: "de_DE")
-            df.dateFormat = "E, d. MMM • HH:mm"
-            return "\(df.string(from: date)) Uhr"
+            let dayStr = date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+            return "\(dayStr) • \(timeStr)"
         }
     }
 }

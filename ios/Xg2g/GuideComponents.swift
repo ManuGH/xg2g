@@ -111,19 +111,19 @@ struct GuideShowRow: View {
                     ChannelLogo(url: channel.logoURL, name: channel.name, size: GuideMetrics.logoSize)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(channel.name) abspielen")
+                .accessibilityLabel(String(localized: "Play \(channel.name)"))
             }
 
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 4) {
                     if showsChannel {
-                        Text(channel.name)
+                        Text(verbatim: channel.name)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(1)
                     }
 
-                    Text(show.title)
+                    Text(verbatim: show.title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(2)
@@ -134,12 +134,12 @@ struct GuideShowRow: View {
                         HStack(spacing: 8) {
                             GuideProgressBar(progress: progress)
                                 .frame(maxWidth: 120)
-                            Text("noch \(remaining) Min")
+                            Text(String(localized: "\(remaining) min left"))
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
                     } else {
-                        Text("\(show.durationMinutes) Min")
+                        Text(String(localized: "\(show.durationMinutes) min"))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -155,7 +155,7 @@ struct GuideShowRow: View {
                     .foregroundStyle(Theme.Colors.statusError)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("„\(show.title)“ aufnehmen")
+            .accessibilityLabel(String(localized: "Record “\(show.title)”"))
         }
         .padding(.vertical, GuideMetrics.rowVerticalPadding)
     }
@@ -182,7 +182,7 @@ struct GuideSlotHeader: View {
                 PulsingLiveDot(size: 7)
             }
 
-            Text("\(count) \(count == 1 ? "Sendung" : "Sendungen")")
+            Text(count == 1 ? String(localized: "1 broadcast") : String(localized: "\(count) broadcasts"))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textTertiary)
 

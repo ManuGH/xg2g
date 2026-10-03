@@ -107,10 +107,29 @@ struct PlaybackEngineTests {
             #expect(!pref.summary.isEmpty)
             #expect(!pref.technicalDetails.isEmpty)
         }
-        #expect(AppModel.StreamingQualityPreference.auto.displayName == "Automatisch")
-        #expect(AppModel.StreamingQualityPreference.passthrough.displayName == "Originalqualität")
-        #expect(AppModel.StreamingQualityPreference.qsvNormalize.displayName == "Kompatibilität")
-        #expect(AppModel.StreamingQualityPreference.dataSaver.displayName == "Datensparen")
+
+        func resolve(_ res: LocalizedStringResource, locale: Locale) -> String {
+            var copy = res
+            copy.locale = locale
+            return String(localized: copy)
+        }
+
+        // Verify intentional localized display names in both German and English
+        #expect(resolve(AppModel.StreamingQualityPreference.auto.localizedTitle, locale: Locale(identifier: "de")) == "Automatisch")
+        #expect(resolve(AppModel.StreamingQualityPreference.passthrough.localizedTitle, locale: Locale(identifier: "de")) == "Originalqualität")
+        #expect(resolve(AppModel.StreamingQualityPreference.qsvNormalize.localizedTitle, locale: Locale(identifier: "de")) == "Kompatibilität")
+        #expect(resolve(AppModel.StreamingQualityPreference.dataSaver.localizedTitle, locale: Locale(identifier: "de")) == "Datensparen")
+
+        #expect(resolve(AppModel.StreamingQualityPreference.auto.localizedTitle, locale: Locale(identifier: "en")) == "Auto")
+        #expect(resolve(AppModel.StreamingQualityPreference.passthrough.localizedTitle, locale: Locale(identifier: "en")) == "Original Quality")
+        #expect(resolve(AppModel.StreamingQualityPreference.qsvNormalize.localizedTitle, locale: Locale(identifier: "en")) == "Compatibility")
+        #expect(resolve(AppModel.StreamingQualityPreference.dataSaver.localizedTitle, locale: Locale(identifier: "en")) == "Data Saver")
+
+        // Active runtime environment resolution matches one of the canonical supported locales
+        #expect(["Auto", "Automatisch"].contains(AppModel.StreamingQualityPreference.auto.displayName))
+        #expect(["Original Quality", "Originalqualität"].contains(AppModel.StreamingQualityPreference.passthrough.displayName))
+        #expect(["Compatibility", "Kompatibilität"].contains(AppModel.StreamingQualityPreference.qsvNormalize.displayName))
+        #expect(["Data Saver", "Datensparen"].contains(AppModel.StreamingQualityPreference.dataSaver.displayName))
     }
 
     @Test("Active playback plan description reflects baseline configuration")

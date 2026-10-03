@@ -16,13 +16,7 @@ struct DVRTimer: Identifiable, Equatable, Sendable {
     let state: String
 
     var formattedTimeRange: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        let endFormatter = DateFormatter()
-        endFormatter.dateStyle = .none
-        endFormatter.timeStyle = .short
-        return "\(formatter.string(from: beginDate)) – \(endFormatter.string(from: endDate))"
+        "\(beginDate.formatted(date: .abbreviated, time: .shortened)) – \(endDate.formatted(date: .omitted, time: .shortened))"
     }
 
     var isRunning: Bool {

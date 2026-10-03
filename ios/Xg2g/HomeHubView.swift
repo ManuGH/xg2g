@@ -66,7 +66,7 @@ struct HomeHubView: View {
                     }
                 }
             }
-            .navigationTitle("Für dich")
+            .navigationTitle("For You")
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -103,7 +103,7 @@ struct HomeHubView: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Sendung, Film oder Sender suchen…")
+            .searchable(text: $searchText, prompt: Text("Search programme, movie or channel…"))
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
@@ -197,7 +197,7 @@ struct HomeHubView: View {
                 Image(systemName: "moon.stars.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
-                Text("HEUTE 20:15 UHR")
+                Text(String(localized: "TONIGHT \(AppModel.TimeFilter.formatPresetTime(hour: 20, minute: 15).uppercased())"))
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -210,7 +210,7 @@ struct HomeHubView: View {
 
             let primeItems = primeTimePicks
             if primeItems.isEmpty {
-                Text("Lade Prime-Time-Programm…")
+                Text("Loading prime time schedule…")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.vertical, 8)
@@ -239,7 +239,7 @@ struct HomeHubView: View {
                 Image(systemName: "play.rectangle.on.rectangle.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
-                Text("AUFNAHMEN")
+                Text("RECORDINGS")
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -248,7 +248,7 @@ struct HomeHubView: View {
                 Button {
                     model.selectedTab = .recordings
                 } label: {
-                    Text("Alle anzeigen")
+                    Text("Show All")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
@@ -297,7 +297,7 @@ struct HomeHubView: View {
             if ok {
                 Haptics.shared.impact(.medium)
                 withAnimation {
-                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                    recordConfirmationMessage = String(localized: "“\(entry.title)” scheduled")
                 }
                 try? await Task.sleep(for: .seconds(3))
                 withAnimation {
@@ -320,25 +320,25 @@ private struct HomePrimeTimeCard: View {
             HStack(spacing: 8) {
                 ChannelLogo(url: pick.channel.logoURL, name: pick.channel.name, size: 30)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(pick.channel.name)
+                    Text(verbatim: pick.channel.name)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(1)
-                    Text("20:15 Uhr")
+                    Text(AppModel.TimeFilter.formatPresetTime(hour: 20, minute: 15))
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
                 Spacer()
             }
 
-            Text(pick.entry.title)
+            Text(verbatim: pick.entry.title)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
                 .frame(height: 34, alignment: .topLeading)
 
             if let desc = pick.entry.description, !desc.isEmpty {
-                Text(desc)
+                Text(verbatim: desc)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(2)
@@ -351,7 +351,7 @@ private struct HomePrimeTimeCard: View {
                 HStack(spacing: 5) {
                     Image(systemName: "record.circle")
                         .font(.system(size: 11, weight: .bold))
-                    Text("Aufnehmen")
+                    Text("Record")
                         .font(.system(size: 11, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -398,7 +398,7 @@ private struct HomeRecordingCard: View {
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
 
-                Text(recording.title)
+                Text(verbatim: recording.title)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)

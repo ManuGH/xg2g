@@ -34,14 +34,6 @@ struct NowNext: Equatable, Sendable {
         let description: String?
         let start: Date
         let end: Date
-
-        private static let timeFormatter: DateFormatter = {
-            let f = DateFormatter()
-            f.dateFormat = "HH:mm"
-            f.timeZone = .current
-            return f
-        }()
-
         /// How far through the programme we are, 0…1. `nil` before it starts or
         /// after it ends, so a caller cannot mistake "not on" for "just began".
         func progress(at now: Date) -> Double? {
@@ -58,28 +50,25 @@ struct NowNext: Equatable, Sendable {
         }
 
         var formattedStartTime: String {
-            Self.timeFormatter.string(from: start)
+            start.formatted(date: .omitted, time: .shortened)
         }
 
         var formattedEndTime: String {
-            Self.timeFormatter.string(from: end)
+            end.formatted(date: .omitted, time: .shortened)
         }
 
         var formattedTimeRange: String {
-            "\(Self.timeFormatter.string(from: start)) – \(Self.timeFormatter.string(from: end))"
+            "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
         }
 
         var formattedDayHeader: String {
             let calendar = Calendar.current
             if calendar.isDateInToday(start) {
-                return "HEUTE"
+                return String(localized: "TODAY")
             } else if calendar.isDateInTomorrow(start) {
-                return "MORGEN"
+                return String(localized: "TOMORROW")
             } else {
-                let f = DateFormatter()
-                f.locale = Locale(identifier: "de_DE")
-                f.dateFormat = "EEEE, d. MMMM"
-                return f.string(from: start).uppercased()
+                return start.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased()
             }
         }
 
@@ -522,6 +511,23 @@ enum EpgGenre: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .all: return LocalizedStringResource("All")
+        case .movie: return LocalizedStringResource("Movies")
+        case .series: return LocalizedStringResource("Series")
+        case .sport: return LocalizedStringResource("Sports")
+        case .docu: return LocalizedStringResource("Documentary & Knowledge")
+        case .show: return LocalizedStringResource("Entertainment")
+        case .news: return LocalizedStringResource("News")
+        case .kids: return LocalizedStringResource("Kids")
+        }
+    }
+
+    var localizedName: String {
+        String(localized: localizedTitle)
+    }
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"
@@ -561,6 +567,19 @@ struct ChannelBouquet: Identifiable, Hashable, Equatable, Sendable {
         self.id = id ?? name
         self.name = name
         self.servicesCount = servicesCount
+    }
+
+    /// Application-owned synthetic favorites bouquet is localized by ID;
+    /// receiver-originated bouquets are presented verbatim.
+    var displayNameResource: LocalizedStringResource {
+        if id == AppModel.favoritesBouquetID {
+            return LocalizedStringResource("Favorites")
+        }
+        return LocalizedStringResource(stringLiteral: name)
+    }
+
+    var displayName: String {
+        String(localized: displayNameResource)
     }
 }
 

@@ -4,8 +4,11 @@
 
 import AVFoundation
 import CoreMedia
+import os
 import SwiftUI
 import UIKit
+
+private let zapPlayerLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "test-ts-player")
 
 /// SwiftUI screen to test and benchmark the Phase 1 1080i50 $\rightarrow$ 1080p50 VideoToolbox + Metal Vertical Slice.
 public struct TestTSPlayerScreen: View {
@@ -264,7 +267,7 @@ public struct TestTSPlayerScreen: View {
                                     ProgressView()
                                         .tint(Theme.Colors.accentLive)
                                         .scaleEffect(0.9)
-                                    Text("Timeshift wird vorbereitet…")
+                                    Text("Preparing timeshift…")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(.white)
                                 }
@@ -361,10 +364,10 @@ public struct TestTSPlayerScreen: View {
                                     .frame(width: 14, height: 14)
 
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(requested.name)
+                                    Text(verbatim: requested.name)
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
-                                    Text("Wird vorbereitet…")
+                                    Text("Preparing…")
                                         .font(.system(size: 10, weight: .regular))
                                         .foregroundStyle(.white.opacity(0.8))
                                 }
@@ -494,9 +497,13 @@ public struct TestTSPlayerScreen: View {
         }
         .onChange(of: coordinator.phase) { _, newPhase in
             switch newPhase {
-            case .failed(let serviceRef, let reason):
+            case .failed(let serviceRef, let error):
                 let name = presets.first(where: { $0.serviceRef == serviceRef })?.name ?? serviceRef
-                displayZapToast("\(name) konnte nicht geladen werden (\(reason))")
+                let localizedTitle = String(localized: error.title)
+                displayZapToast("\(name): \(localizedTitle)")
+                if let diag = error.diagnosticLog {
+                    zapPlayerLogger.error("[Zap] Failed to load \(name) (\(serviceRef)): \(diag, privacy: .public)")
+                }
             case .warming, .buffering, .idle:
                 break
             }
@@ -556,7 +563,7 @@ public struct TestTSPlayerScreen: View {
                                     .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
                             }
 
-                            Text(currentChannelName)
+                            Text(verbatim: currentChannelName)
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
@@ -589,7 +596,7 @@ public struct TestTSPlayerScreen: View {
                         }
 
                         if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
-                            Text(preset.epgNow)
+                            Text(verbatim: preset.epgNow)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.8))
                                 .lineLimit(1)
@@ -605,7 +612,7 @@ public struct TestTSPlayerScreen: View {
                         } label: {
                             HStack(spacing: 4) {
                                 PulsingLiveDot(size: 5)
-                                Text("Zur Live-Kante")
+                                Text("To Live")
                                     .font(.system(size: 11, weight: .bold))
                             }
                             .padding(.horizontal, 9)
@@ -626,7 +633,7 @@ public struct TestTSPlayerScreen: View {
                         HStack(spacing: 4) {
                             Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
                                 .font(.system(size: 11, weight: .bold))
-                            Text(viewPreset.shortLabel)
+                            Text(viewPreset.localizedShortLabel)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }
                         .fixedSize()
@@ -674,7 +681,7 @@ public struct TestTSPlayerScreen: View {
                                 Haptics.shared.impact(.light)
                                 coordinator.surface.startPictureInPicture()
                             } label: {
-                                Label("Bild-in-Bild starten", systemImage: "pip.enter")
+                                Label(String(localized: "Start Picture in Picture"), systemImage: "pip.enter")
                             }
                             .disabled(presentationPath != .systemLayer)
                         }
@@ -688,7 +695,7 @@ public struct TestTSPlayerScreen: View {
                                         playing.selectAudioTrack(pid: track.pid)
                                     } label: {
                                         HStack {
-                                            Text(track.displayName)
+                                            Text(verbatim: track.displayName)
                                             if playing.selectedAudioPID == track.pid {
                                                 Image(systemName: "checkmark")
                                             }
@@ -696,7 +703,7 @@ public struct TestTSPlayerScreen: View {
                                     }
                                 }
                             } label: {
-                                Label("Tonspuren (\(playing.availableAudioTracks.count))", systemImage: "waveform")
+                                Label(String.localizedStringWithFormat(NSLocalizedString("Audio Tracks (%lld)", comment: "Audio tracks count"), Int64(playing.availableAudioTracks.count)), systemImage: "waveform")
                             }
                         }
 
@@ -707,7 +714,7 @@ public struct TestTSPlayerScreen: View {
                                     playing.selectSubtitleTrack(nil)
                                 } label: {
                                     HStack {
-                                        Text("Aus")
+                                        Text("Off")
                                         if playing.selectedSubtitleTrack == nil {
                                             Image(systemName: "checkmark")
                                         }
@@ -718,7 +725,7 @@ public struct TestTSPlayerScreen: View {
                                         playing.selectSubtitleTrack(track)
                                     } label: {
                                         HStack {
-                                            Text(track.displayName)
+                                            Text(verbatim: track.displayName)
                                             if playing.selectedSubtitleTrack?.id == track.id {
                                                 Image(systemName: "checkmark")
                                             }
@@ -726,7 +733,7 @@ public struct TestTSPlayerScreen: View {
                                     }
                                 }
                             } label: {
-                                Label("Untertitel (\(playing.availableSubtitleTracks.count))", systemImage: "captions.bubble")
+                                Label(String.localizedStringWithFormat(NSLocalizedString("Subtitles (%lld)", comment: "Subtitles tracks count"), Int64(playing.availableSubtitleTracks.count)), systemImage: "captions.bubble")
                             }
                         }
 
@@ -737,7 +744,7 @@ public struct TestTSPlayerScreen: View {
                             }
                         } label: {
                             Label(
-                                showHUD ? "Stream-Info ausblenden" : "Stream-Info (Inspector)",
+                                showHUD ? String(localized: "Hide stream info") : String(localized: "Stream info (inspector)"),
                                 systemImage: showHUD ? "chart.bar.fill" : "chart.bar"
                             )
                         }
@@ -748,13 +755,13 @@ public struct TestTSPlayerScreen: View {
                             presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
                         } label: {
                             Label(
-                                presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
+                                presentationPath == .systemLayer ? String(localized: "Render path: System Layer") : String(localized: "Render path: Metal Direct"),
                                 systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
                             )
                         }
 
                         // Stream-Routing (Labor / Bench A/B Test)
-                        Menu("Stream-Routing (Labor)") {
+                        Menu(String(localized: "Stream routing (lab)")) {
                             ForEach(StreamRouteMode.allCases, id: \.self) { mode in
                                 Button {
                                     streamRouteMode = mode
@@ -833,7 +840,7 @@ public struct TestTSPlayerScreen: View {
                         if engineMode == .timeshiftHLS {
                             seekTimeshiftRelative(30)
                         } else {
-                            displayZapToast("Bereits an der Live-Kante")
+                            displayZapToast(String(localized: "Already at live edge"))
                         }
                     } label: {
                         Image(systemName: "goforward.30")
@@ -927,7 +934,7 @@ public struct TestTSPlayerScreen: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "list.bullet")
                                     .font(.system(size: 12, weight: .bold))
-                                Text("Sender")
+                                Text("Channels")
                                     .font(.system(size: 12, weight: .bold))
                             }
                             .foregroundStyle(.white)
@@ -949,7 +956,7 @@ public struct TestTSPlayerScreen: View {
                                     Image(systemName: "tv")
                                         .font(.system(size: 11, weight: .bold))
                                         .foregroundStyle(Theme.Colors.accentLive)
-                                    Text(preset.epgNow)
+                                    Text(verbatim: preset.epgNow)
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(.white.opacity(0.9))
                                         .lineLimit(1)
@@ -969,7 +976,7 @@ public struct TestTSPlayerScreen: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: "list.bullet")
                                         .font(.system(size: 14, weight: .bold))
-                                    Text("Senderliste")
+                                    Text("Channel list")
                                         .font(.system(size: 14, weight: .bold))
                                 }
                                 .foregroundStyle(.white)
@@ -999,7 +1006,7 @@ public struct TestTSPlayerScreen: View {
                     Circle()
                         .fill(Theme.Colors.accentLive)
                         .frame(width: 6, height: 6)
-                    Text("SENDERLISTE")
+                    Text("CHANNEL LIST")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
@@ -1031,12 +1038,12 @@ public struct TestTSPlayerScreen: View {
                         ChannelLogo(url: currentLogoURL, name: activeName, size: 44)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(activeName)
+                            Text(verbatim: activeName)
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(.white)
 
                             if let preset = presentedPreset {
-                                Text(preset.epgNow)
+                                Text(verbatim: preset.epgNow)
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.Colors.textSecondary)
                             }
@@ -1044,7 +1051,7 @@ public struct TestTSPlayerScreen: View {
 
                         Spacer()
 
-                        Button(isStreaming ? "Stoppen" : "Starten") {
+                        Button(isStreaming ? String(localized: "Stop") : String(localized: "Start")) {
                             if isStreaming {
                                 Task { await coordinator.stop() }
                                 isStreaming = false
@@ -1066,7 +1073,7 @@ public struct TestTSPlayerScreen: View {
                         let audioBadge = plan != nil ? plan!.audioBadge : (tele.audioChannels > 0 ? "\(tele.audioCodec) \(tele.audioChannels == 6 ? "5.1" : "\(tele.audioChannels)ch")" : tele.audioCodec)
                         badgeItem(icon: "speaker.wave.3.fill", label: audioBadge, color: .blue)
 
-                        let modeBadge = plan?.userSummary ?? "Direkt"
+                        let modeBadge = plan?.userSummary ?? String(localized: "Direct")
                         badgeItem(icon: "bolt.fill", label: modeBadge, color: .purple)
 
                         badgeItem(icon: "thermometer.medium", label: tele.thermalState, color: .orange)
@@ -1079,7 +1086,7 @@ public struct TestTSPlayerScreen: View {
 
                 // Quick Zap Channel Presets
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("SENDER")
+                    Text("CHANNELS")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -1094,11 +1101,11 @@ public struct TestTSPlayerScreen: View {
                                 ChannelLogo(url: logoURL(forPreset: preset), name: preset.name, size: 36)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(preset.name)
+                                    Text(verbatim: preset.name)
                                         .font(.subheadline.weight(isPresented ? .bold : .medium))
                                         .foregroundStyle(isPresented ? .white : Theme.Colors.textPrimary)
 
-                                    Text(preset.epgNow)
+                                    Text(verbatim: preset.epgNow)
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textTertiary)
                                         .lineLimit(1)
@@ -1111,7 +1118,7 @@ public struct TestTSPlayerScreen: View {
                                         ProgressView()
                                             .controlSize(.mini)
                                             .tint(Theme.Colors.accentLive)
-                                        Text("WÄRMT…")
+                                        Text("WARMING…")
                                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.accentLive)
                                     }
@@ -1119,7 +1126,7 @@ public struct TestTSPlayerScreen: View {
                                     .padding(.vertical, 2)
                                     .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                                 } else if isPresented {
-                                    Text("AKTIV")
+                                    Text("ACTIVE")
                                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                         .padding(.horizontal, 6)
@@ -1142,7 +1149,7 @@ public struct TestTSPlayerScreen: View {
 
                 // Custom Stream URL Bar
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("BENUTZERDEFINIERTE STREAM-URL")
+                    Text("CUSTOM STREAM URL")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -1155,7 +1162,7 @@ public struct TestTSPlayerScreen: View {
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
 
-                        Button("Laden") {
+                        Button("Load") {
                             startCurrentPreset()
                         }
                         .buttonStyle(.borderedProminent)
@@ -1206,46 +1213,46 @@ public struct TestTSPlayerScreen: View {
 
                 Group {
                     // 1. VIDEO (SOURCE & BITSTREAM)
-                    hudSection(title: "VIDEO (QUELL-STREAM)") {
+                    hudSection(title: "VIDEO (SOURCE STREAM)") {
                         let w = tele.videoWidth
                         let h = tele.videoHeight
-                        let resStr = (w > 0 && h > 0) ? "\(w) × \(h)" : "Erkenne…"
-                        hudRow("Auflösung", resStr)
-                        hudRow("Signal", tele.videoScanSummary)
-                        hudRow("Halbbild-Ordnung", tele.fieldOrder)
+                        let resStr = (w > 0 && h > 0) ? "\(w) × \(h)" : String(localized: "Detecting…")
+                        hudRow(String(localized: "Resolution"), resStr)
+                        hudRow(String(localized: "Signal"), tele.videoScanSummary)
+                        hudRow(String(localized: "Field Order"), tele.fieldOrder)
                         hudRow("Codec", tele.codec)
                         hudRow("TS-Bitrate", tele.tsBitrateKbps > 0 ? String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0) : "—")
-                        let hwStatus = tele.hwDecodeActive ? "VideoToolbox 🚀" : (tele.vtSessionActive ? "Init…" : "Noch nicht bestätigt")
+                        let hwStatus = tele.hwDecodeActive ? "VideoToolbox 🚀" : (tele.vtSessionActive ? "Init…" : String(localized: "Not confirmed yet"))
                         hudRow("HW Decode", hwStatus, highlight: tele.hwDecodeActive)
                     }
 
                     // 2. FARBRAUM & SIGNAL (COLORIMETRY)
-                    hudSection(title: "FARBRAUM & DYNAMIK (SIGNAL)") {
-                        hudRow("Farbraum", tele.colorPrimaries, highlight: tele.colorPrimaries != "—")
-                        hudRow("Dynamikumfang", tele.transferFunction, highlight: tele.isHDR)
+                    hudSection(title: "COLOR SPACE & DYNAMICS (SIGNAL)") {
+                        hudRow(String(localized: "Color Space"), tele.colorPrimaries, highlight: tele.colorPrimaries != "—")
+                        hudRow(String(localized: "Dynamic Range"), tele.transferFunction, highlight: tele.isHDR)
                         hudRow("YCbCr Matrix", tele.colorMatrix)
-                        hudRow("Wertebereich", tele.colorRange)
+                        hudRow(String(localized: "Value Range"), tele.colorRange)
                     }
 
                     // 3. BILDFORMAT & GEOMETRIE (QUELLE)
-                    hudSection(title: "QUELL-GEOMETRIE (BITSTREAM)") {
-                        let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (signalisiert)" : "Nicht signalisiert (1:1)"
+                    hudSection(title: "SOURCE GEOMETRY (BITSTREAM)") {
+                        let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (signalisiert)" : String(localized: "Not signaled (1:1)")
                         hudRow("SAR", sarStr, highlight: tele.sarSignaled)
-                        hudRow("Quell-DAR", tele.sourceDARDescription)
+                        hudRow(String(localized: "Source DAR"), tele.sourceDARDescription)
                         hudRow("AFD (Active Area)", tele.afdDescription, highlight: tele.afdDescription != "—")
                     }
 
                     // 4. DARSTELLUNG & AUSGABE
-                    hudSection(title: "DARSTELLUNG & AUSGABE") {
-                        hudRow("Modus", viewPreset.rawValue, highlight: viewPreset != .standard)
-                        hudRow("Ausgabe-DAR", tele.outputDARDescription)
-                        hudRow("Skalierung", viewPreset.scalingMode == .fill ? "Aspect Fill (Center Crop)" : "Aspect Fit (Letterbox)")
-                        hudRow("Renderpfad", presentationPath == .systemLayer ? "System Layer (AVSampleBuffer)" : "Metal Direct (CAMetalLayer)")
+                    hudSection(title: "PRESENTATION & OUTPUT") {
+                        hudRow(String(localized: "Mode"), viewPreset.localizedShortLabel, highlight: viewPreset != .standard)
+                        hudRow(String(localized: "Output DAR"), tele.outputDARDescription)
+                        hudRow(String(localized: "Scaling"), viewPreset.scalingMode == .fill ? "Aspect Fill (Center Crop)" : "Aspect Fit (Letterbox)")
+                        hudRow(String(localized: "Render Path"), presentationPath == .systemLayer ? "System Layer (AVSampleBuffer)" : "Metal Direct (CAMetalLayer)")
                         hudRow("Display Pacing", tele.fieldsSubmittedPerSec > 0 ? String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec) : "—", highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
                     }
 
                     // 5. AUDIO & STREAM-HEALTH
-                    hudSection(title: "AUDIO & STREAM-HEALTH") {
+                    hudSection(title: "AUDIO & STREAM HEALTH") {
                         let langStr = tele.audioLanguage.isEmpty || tele.audioLanguage == "und" ? "" : " [\(tele.audioLanguage.uppercased())]"
                         hudRow("Audio Format", "\(tele.audioCodec)\(langStr) \(tele.audioChannels)ch")
                         hudRow("Master Clock", tele.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: tele.isAudioMasterClockActive)
@@ -1256,7 +1263,7 @@ public struct TestTSPlayerScreen: View {
 
                     // 6. STARTUP & PERFORMANCE
                     hudSection(title: "PERFORMANCE & TTFP") {
-                        hudRow("TTFP (Erstes Bild)", tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀", highlight: true)
+                        hudRow(String(localized: "TTFP (First Frame)"), tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀", highlight: true)
                         hudRow("Process CPU", String(format: "%.1f %%", tele.processCpuUsagePercent), highlight: tele.processCpuUsagePercent < 25.0)
                         hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", tele.memoryUsageMB, tele.peakMemoryFootprintMB))
                     }
@@ -1428,7 +1435,7 @@ public struct TestTSPlayerScreen: View {
 
     private func enterTimeshift(seekBackSeconds: Double = 0) {
         guard let model, let ch = model.channels.first(where: { $0.serviceRef == activePresentedServiceRef || $0.name == currentChannelName }) else {
-            displayZapToast("Timeshift nicht verfügbar")
+            displayZapToast(String(localized: "Timeshift unavailable"))
             return
         }
 
@@ -1458,15 +1465,15 @@ public struct TestTSPlayerScreen: View {
                         self.isPlaying = false
                     }
                     self.isTimeshiftLoading = false
-                    displayZapToast(seekBackSeconds > 0 ? "◀◀ Timeshift -\(Int(seekBackSeconds))s" : "❚❚ Timeshift Pausiert")
+                    displayZapToast(seekBackSeconds > 0 ? "◀◀ Timeshift -\(Int(seekBackSeconds))s" : String(localized: "❚❚ Timeshift paused"))
                 } else {
                     isTimeshiftLoading = false
-                    displayZapToast("Timeshift konnte nicht gestartet werden")
+                    displayZapToast(String(localized: "Timeshift could not be started"))
                     jumpToLiveEdge()
                 }
             } catch {
                 isTimeshiftLoading = false
-                displayZapToast("Fehler bei Timeshift: \(error.localizedDescription)")
+                displayZapToast(String.localizedStringWithFormat(NSLocalizedString("Timeshift error: %@", comment: "Timeshift error toast"), error.localizedDescription))
                 jumpToLiveEdge()
             }
         }
@@ -1477,7 +1484,7 @@ public struct TestTSPlayerScreen: View {
         teardownTimeshift()
         engineMode = .nativeDirectLive
         startCurrentPreset()
-        displayZapToast("▶ Live-Kante (Native TS)")
+        displayZapToast(String(localized: "▶ Live edge (Native TS)"))
     }
 
     private func teardownTimeshift() {
@@ -1534,11 +1541,11 @@ public struct TestTSPlayerScreen: View {
         if isPlaying {
             player.pause()
             isPlaying = false
-            displayZapToast("❚❚ Pausiert")
+            displayZapToast(String(localized: "❚❚ Paused"))
         } else {
             player.play()
             isPlaying = true
-            displayZapToast("▶ Fortsetzen")
+            displayZapToast(String(localized: "▶ Resume"))
         }
     }
 
@@ -1614,7 +1621,7 @@ public struct TestTSPlayerScreen: View {
     private func cycleViewPreset() {
         Haptics.shared.impact(.light)
         viewPreset = viewPreset.next(includeAdvanced: model?.enableAdvancedAspectRatios ?? false)
-        displayZapToast("Bildformat: \(viewPreset.rawValue)")
+        displayZapToast(String.localizedStringWithFormat(NSLocalizedString("Aspect ratio: %@", comment: "Aspect ratio toast"), viewPreset.localizedShortLabel))
     }
 
     private func displayZapToast(_ message: String) {
@@ -1709,17 +1716,17 @@ struct UnplayableFormatNotice: View {
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
-                Text("\(channelName) sendet in einem Format, das die Direktwiedergabe nicht darstellen kann")
+                Text(String.localizedStringWithFormat(NSLocalizedString("%@ broadcasts in a format that direct playback cannot render", comment: "Unplayable format title"), channelName))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
 
-                Text("Der Sender überträgt \(formatDescription). Dieses Gerät kann das bei Direktwiedergabe nicht dekodieren.")
+                Text(String.localizedStringWithFormat(NSLocalizedString("The channel broadcasts %@. This device cannot decode this with direct playback.", comment: "Unplayable format description"), formatDescription))
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
 
-                Text("Stelle unter Einstellungen → Wiedergabe-Art auf „Über den Server“ um, dann läuft dieser Sender.")
+                Text(String(localized: "Switch to \"Via Server\" in Settings → Playback Mode to watch this channel."))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.accentAction)
                     .multilineTextAlignment(.center)
@@ -1769,7 +1776,7 @@ struct TimeshiftTimelineBar: View {
                 Button(action: onJumpLive) {
                     HStack(spacing: 4) {
                         PulsingLiveDot(size: 5)
-                        Text("Zur Live-Kante")
+                        Text("To Live")
                             .font(.system(size: 10, weight: .bold))
                     }
                     .padding(.horizontal, 9)
