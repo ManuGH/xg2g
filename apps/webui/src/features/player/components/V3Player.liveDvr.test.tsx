@@ -255,7 +255,7 @@ describe('V3Player live DVR semantics', () => {
     });
   });
 
-  it('reports the completed timeline before releasing the live session', async () => {
+  it('reports the completed timeline concurrently with releasing the live session', async () => {
     const defaultFetch = globalThis.fetch;
     let feedbackStarted = false;
     let stopIntentStarted = false;
@@ -292,8 +292,7 @@ describe('V3Player live DVR semantics', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Stop/i }));
 
     await waitFor(() => expect(feedbackStarted).toBe(true));
-    expect(stopIntentStarted).toBe(false);
-    await waitFor(() => expect(stopIntentStarted).toBe(true), { timeout: 1500 });
+    expect(stopIntentStarted).toBe(true);
   });
 
 });

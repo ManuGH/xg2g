@@ -1634,6 +1634,40 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       }
     });
 
+    it('dispatches stop intent with reason unload during tab close or page teardown with keepalive: true', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        await c.startLive({ serviceRef: 'A' });
+        expect(c.getActiveSessionId()).toBe('session-default-1');
+
+        await c.stop('unload');
+        expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-default-1', keepalive: true }));
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+        expect(c.getActiveSessionId()).toBeNull();
+        expect(c.getState().status).toBe('stopped');
+      } finally {
+        c.dispose();
+      }
+    });
+
+    it('dispatches stop intent with keepalive: false on normal user stop', async () => {
+      const t = createMockTransport();
+      const c = createPlaybackController({ transport: t, createInitialState: createMockDomainState });
+      try {
+        await c.startLive({ serviceRef: 'A' });
+        expect(c.getActiveSessionId()).toBe('session-default-1');
+
+        await c.stop('user_stop');
+        expect(t.postStopIntent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-default-1', keepalive: false }));
+        expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+        expect(c.getActiveSessionId()).toBeNull();
+        expect(c.getState().status).toBe('stopped');
+      } finally {
+        c.dispose();
+      }
+    });
+
     it('handles independent sessions when stopping pending A, starting B, and stopping B without overwrite', async () => {
       const dA = defer<SessionReadyResult>();
       const t = createMockTransport({
