@@ -22,7 +22,7 @@ struct TimeFilterPill: View {
                         .foregroundStyle(isSelected ? Theme.Colors.bgBase : Theme.Colors.accentAction)
                 }
 
-                Text(filter.label)
+                Text(filter.localizedLabel)
                     .font(.system(size: 13, weight: isSelected ? .bold : .medium))
             }
             .padding(.horizontal, 14)

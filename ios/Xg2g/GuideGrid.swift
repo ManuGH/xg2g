@@ -286,7 +286,7 @@ struct GuideGrid: View {
             VStack(spacing: 3) {
                 ChannelLogo(url: schedule.channel.logoURL, name: schedule.channel.name, size: 28)
 
-                Text(schedule.channel.name)
+                Text(verbatim: schedule.channel.name)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(1)
@@ -388,7 +388,7 @@ private struct GuideGridBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(show.title)
+            Text(verbatim: show.title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)

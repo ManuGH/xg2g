@@ -60,7 +60,7 @@ struct GuideView: View {
                 ToolbarItem(placement: .principal) { modePicker }
                 ToolbarItem(placement: .topBarTrailing) { genreMenu }
             }
-            .searchable(text: $guideSearchText, prompt: "Sendung oder Sender suchen…")
+            .searchable(text: $guideSearchText, prompt: Text("Search shows or channels…"))
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
@@ -87,9 +87,9 @@ struct GuideView: View {
     /// a reader makes here, so it takes the most prominent slot rather than
     /// sitting in a third row of chips.
     private var modePicker: some View {
-        Picker("Darstellung", selection: $mode.animation(.easeInOut(duration: 0.2))) {
+        Picker(String(localized: "Layout"), selection: $mode.animation(.easeInOut(duration: 0.2))) {
             ForEach(GuideMode.allCases) { mode in
-                Label(mode.rawValue, systemImage: mode.symbol).tag(mode)
+                Label(String(localized: mode.localizedTitle), systemImage: mode.symbol).tag(mode)
             }
         }
         .pickerStyle(.segmented)
@@ -150,7 +150,7 @@ struct GuideView: View {
                                 anchor = option
                             }
                         } label: {
-                            Text(option.rawValue)
+                            Text(String(localized: option.localizedTitle))
                                 .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 6)
@@ -180,7 +180,7 @@ struct GuideView: View {
                 Task { await model.selectBouquet(nil) }
             } label: {
                 HStack {
-                    Text("Alle Sender")
+                    Text("All Channels")
                     if model.selectedBouquet == nil { Image(systemName: "checkmark") }
                 }
             }
@@ -189,13 +189,11 @@ struct GuideView: View {
                 Button {
                     triggerHaptic(.light)
                     Task {
-                        await model.selectBouquet(
-                            ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")
-                        )
+                        await model.selectBouquet(AppModel.favoritesBouquet)
                     }
                 } label: {
                     HStack {
-                        Text("Favoriten (\(model.favoriteChannelIDs.count))")
+                        Text("\(String(localized: "Favorites")) (\(model.favoriteChannelIDs.count))")
                         if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
                             Image(systemName: "checkmark")
                         }
@@ -211,7 +209,7 @@ struct GuideView: View {
                         Task { await model.selectBouquet(bouquet) }
                     } label: {
                         HStack {
-                            Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
+                            Text(verbatim: "\(bouquet.displayName)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
                             if model.selectedBouquet?.id == bouquet.id {
                                 Image(systemName: "checkmark")
                             }
@@ -224,7 +222,7 @@ struct GuideView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.Colors.accentAction)
         }
-        .accessibilityLabel(String(localized: "Channel list: \(model.selectedBouquet?.name ?? String(localized: "All Channels"))"))
+        .accessibilityLabel(String(localized: "Channel list: \(model.selectedBouquet?.displayName ?? String(localized: "All Channels"))"))
     }
 
     /// Genres moved out of the chip row. They refine a result set rather than
@@ -278,7 +276,7 @@ struct GuideView: View {
             )
         } else if !hasBuiltProjection {
             centeredState {
-                ProgressView("Programm wird geladen…")
+                ProgressView(String(localized: "Loading guide…"))
                     .tint(Theme.Colors.accentAction)
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
@@ -425,7 +423,7 @@ struct GuideView: View {
             if ok {
                 triggerHaptic(.medium)
                 withAnimation {
-                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                    recordConfirmationMessage = String(localized: "“\(entry.title)” scheduled")
                 }
             }
         }
@@ -532,29 +530,15 @@ struct GuideView: View {
 
     private func dayTitle(for offset: Int) -> String {
         let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
-        if offset == 0 { return "Heute" }
-        if offset == 1 { return "Morgen" }
-        return Self.weekdayFormatter.string(from: date)
+        if offset == 0 { return String(localized: "Today") }
+        if offset == 1 { return String(localized: "Tomorrow") }
+        return date.formatted(.dateTime.weekday(.wide))
     }
 
     private func dayDateString(for offset: Int) -> String {
         let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
-        return Self.dayMonthFormatter.string(from: date)
+        return date.formatted(.dateTime.day().month(.defaultDigits))
     }
-
-    private static let weekdayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "de_DE")
-        f.dateFormat = "EEEE"
-        return f
-    }()
-
-    private static let dayMonthFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "de_DE")
-        f.dateFormat = "d.M."
-        return f
-    }()
 }
 
 @MainActor

@@ -923,4 +923,134 @@ struct LocalizationTests {
             Self.saveScreenshot(homeImage, name: "home_hub_\(code)")
         }
     }
+
+    // MARK: - 12. Batch 3: Guide & EPG Grid Localization Tests
+
+    @Test("GuideMode and GuideAnchor preserve rawValues and localize titles accurately in DE and EN")
+    func guideModeAndAnchorLocalization() {
+        let expectedModes: [(mode: GuideMode, raw: String, de: String, en: String)] = [
+            (.onAir, "Jetzt", "Jetzt", "On Air"),
+            (.timeline, "Zeitschiene", "Zeitschiene", "Timeline"),
+            (.grid, "Raster", "Raster", "Grid")
+        ]
+        for item in expectedModes {
+            #expect(item.mode.rawValue == item.raw)
+            #expect(item.mode.id == item.raw)
+            #expect(resolve(item.mode.localizedTitle, locale: deLocale) == item.de)
+            #expect(resolve(item.mode.localizedTitle, locale: enLocale) == item.en)
+        }
+
+        let expectedAnchors: [(anchor: GuideAnchor, raw: String, de: String, en: String)] = [
+            (.now, "Jetzt", "Jetzt Live", "Live Now"),
+            (.primeTime, "20:15", "20:15", "20:15"),
+            (.lateNight, "22:00", "22:00", "22:00"),
+            (.allDay, "Ganztägig", "Ganztägig", "All Day")
+        ]
+        for item in expectedAnchors {
+            #expect(item.anchor.rawValue == item.raw)
+            #expect(item.anchor.id == item.raw)
+            #expect(resolve(item.anchor.localizedTitle, locale: deLocale) == item.de)
+            #expect(resolve(item.anchor.localizedTitle, locale: enLocale) == item.en)
+        }
+    }
+
+    @Test("Guide components formatting matches DE and EN rules")
+    func guideComponentsFormatting() {
+        // Broadcast pluralization
+        let deOne = localize("1 broadcast", locale: deLocale)
+        let enOne = localize("1 broadcast", locale: enLocale)
+        #expect(deOne == "1 Sendung")
+        #expect(enOne == "1 broadcast")
+
+        let count: Int64 = 5
+        let deMany = localize("\(count) broadcasts", locale: deLocale)
+        let enMany = localize("\(count) broadcasts", locale: enLocale)
+        #expect(deMany == "5 Sendungen")
+        #expect(enMany == "5 broadcasts")
+
+        // Relative remaining minutes
+        let mins: Int64 = 15
+        let deLeft = localize("\(mins) min left", locale: deLocale)
+        let enLeft = localize("\(mins) min left", locale: enLocale)
+        #expect(deLeft == "noch 15 Min.")
+        #expect(enLeft == "15 min left")
+
+        // Play accessibility label
+        let channelName = "ZDF HD"
+        let dePlay = localize("Play \(channelName)", locale: deLocale)
+        let enPlay = localize("Play \(channelName)", locale: enLocale)
+        #expect(dePlay == "ZDF HD abspielen")
+        #expect(enPlay == "Play ZDF HD")
+    }
+
+    @Test("Programmatic smoke test: Render GuideView in German and English, retaining PNG artifacts")
+    @MainActor
+    func renderGuideViewInBothLocales() throws {
+        let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        let channel1 = Channel(
+            id: "c1",
+            name: "Das Erste HD",
+            number: "1",
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            logoURL: nil
+        )
+        let now = Date.now
+        let entry1 = NowNext.Entry(
+            title: "Tagesschau",
+            description: "Nachrichten der ARD",
+            start: now.addingTimeInterval(-600),
+            end: now.addingTimeInterval(600)
+        )
+        let next1 = NowNext.Entry(
+            title: "Tatort",
+            description: "Krimi aus München",
+            start: now.addingTimeInterval(600),
+            end: now.addingTimeInterval(6000)
+        )
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let model = AppModel()
+            model.setChannelsForTesting(
+                [channel1],
+                schedule: [channel1.serviceRef: NowNext(serviceRef: channel1.serviceRef, now: entry1, next: next1)],
+                fullEpg: [channel1.serviceRef: [entry1, next1]]
+            )
+
+            let guideView = GuideView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let controller = UIHostingController(rootView: guideView)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            controller.view.overrideUserInterfaceStyle = .dark
+
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "guide_\(code)")
+        }
+    }
 }

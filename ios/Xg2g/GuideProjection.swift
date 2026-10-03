@@ -17,6 +17,15 @@ enum GuideAnchor: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .now: return LocalizedStringResource("Live Now")
+        case .primeTime: return LocalizedStringResource("20:15")
+        case .lateNight: return LocalizedStringResource("22:00")
+        case .allDay: return LocalizedStringResource("All Day")
+        }
+    }
+
     /// Hours covered from the anchor. `allDay` spans whatever is left of the day.
     var span: TimeInterval? {
         switch self {
@@ -37,6 +46,14 @@ enum GuideMode: String, CaseIterable, Identifiable, Sendable {
     case grid = "Raster"
 
     var id: String { rawValue }
+
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .onAir: return LocalizedStringResource("On Air")
+        case .timeline: return LocalizedStringResource("Timeline")
+        case .grid: return LocalizedStringResource("Grid")
+        }
+    }
 
     var symbol: String {
         switch self {
