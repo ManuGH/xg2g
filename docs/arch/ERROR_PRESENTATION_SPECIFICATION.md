@@ -146,6 +146,27 @@ The `ZapCoordinator` enforces five explicit invariants:
   - `coordinator.stop()` tears down in-flight preparation, stops video/audio pipelines, and resets state.
   - Any caught cancellation errors are completely suppressed; no error is published to `lastError` or toasts.
 
+### 4.6 Invariant 6: Cancellation During Buffering
+- **Condition:** Task cancellation occurs while `awaitPresentable` is polling the session's readiness.
+- **Behavior:**
+  - `awaitPresentable` returns `.cancelled`.
+  - The coordinator silently abandons in-flight backend preparation and sets `phase = .idle` without publishing a `NOT_PRESENTABLE` failure or showing an error toast.
+
+### 4.7 Invariant 7: Delayed Cleanup Isolation
+- **Condition:** An earlier cancelled zap undergoes asynchronous cleanup (e.g. DELETE preparation over network) that finishes after a newer zap has already become active.
+- **Behavior:**
+  - `abandonInFlight` re-checks that `requestedServiceRef` matches the departing preparation before resetting it.
+  - The completion handler revalidates `isCurrent(zapID)` after awaiting cleanup before modifying `phase` or clearing state.
+  - Newer zap ownership (`phase` and `requestedServiceRef`) remains strictly intact.
+
+### 4.8 `awaitPresentable` Polling & Lifecycle Contract
+- **No Timer Timeout:** `awaitPresentable` does **not** implement an internal timer-based timeout.
+- It loops cooperatively while `isCurrent(zapID)`, checking `Task.isCancelled` and `session.isPresentable` on each iteration of `Task.sleep(for: pollInterval)`.
+- Outcomes:
+  - `.ready`: session reported `isPresentable == true`.
+  - `.cancelled`: task was cancelled or sleep threw `CancellationError`.
+  - `.notPresentable`: loop terminated while still current (e.g. if the condition fails without cancellation).
+
 ---
 
 ## 5. EPG Language Boundary
