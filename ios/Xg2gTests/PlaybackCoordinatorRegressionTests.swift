@@ -17,16 +17,13 @@ final class ControlledBarrier: @unchecked Sendable {
     private var hasArrived = false
     private var arrivalContinuation: CheckedContinuation<Void, Never>?
 
-    func waitForArrival() async {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if hasArrived {
-                lock.unlock()
-                continuation.resume()
-            } else {
-                arrivalContinuation = continuation
-                lock.unlock()
-            }
+    func waitForArrival(timeoutSeconds: Double = 5.0) async -> Bool {
+        let deadline = CACurrentMediaTime() + timeoutSeconds
+        while true {
+            let arrived = lock.withLock { hasArrived }
+            if arrived { return true }
+            if CACurrentMediaTime() > deadline { return false }
+            try? await Task.sleep(for: .milliseconds(5))
         }
     }
 
@@ -475,13 +472,19 @@ struct PlaybackCoordinatorRegressionTests {
             """.utf8))
         }
 
-        // 3. Start zap to Channel B and wait until coordinator enters buffering phase
+        // 3. Start zap to Channel B and wait until coordinator enters buffering phase (bounded)
         let zapTask = Task { await coordinator.zap(to: self.srefB) }
 
-        while true {
-            if case .buffering(let sref) = coordinator.phase, sref == self.srefB { break }
+        let bufferingDeadline = CACurrentMediaTime() + 5.0
+        var enteredBuffering = false
+        while CACurrentMediaTime() < bufferingDeadline {
+            if case .buffering(let sref) = coordinator.phase, sref == self.srefB {
+                enteredBuffering = true
+                break
+            }
             try await Task.sleep(for: .milliseconds(5))
         }
+        #expect(enteredBuffering, "Coordinator must enter buffering phase for Channel B within timeout")
         #expect(coordinator.requestedServiceRef == self.srefB)
         #expect(coordinator.presentedServiceRef == self.srefA)
 
@@ -506,6 +509,7 @@ struct PlaybackCoordinatorRegressionTests {
     func delayedCleanupDoesNotCorruptNewerZap() async throws {
         let (coordinator, _) = try makeCoordinator()
 
+        let barrierStatusB = ControlledBarrier()
         let barrierDeleteB = ControlledBarrier()
         let barrierPrepC = ControlledBarrier()
 
@@ -517,6 +521,21 @@ struct PlaybackCoordinatorRegressionTests {
                 return (200, Data(#"{"status":"ok"}"#.utf8))
             }
 
+            // Status poll endpoint for Channel B confirms preparation was registered and inFlight is active
+            if path.contains("prep-b") {
+                barrierStatusB.markArrived()
+                barrierStatusB.blockUntilReleased()
+                return (200, Data("""
+                {
+                    "preparationId": "prep-b",
+                    "state": "pending",
+                    "generation": 1,
+                    "serviceRef": "\(self.srefB)"
+                }
+                """.utf8))
+            }
+
+            // Start preparation endpoint for Channel B
             if req.url?.query?.contains(self.srefB) == true {
                 return (200, Data("""
                 {
@@ -528,6 +547,7 @@ struct PlaybackCoordinatorRegressionTests {
                 """.utf8))
             }
 
+            // Start preparation endpoint for Channel C
             if req.url?.query?.contains(self.srefC) == true {
                 barrierPrepC.markArrived()
                 barrierPrepC.blockUntilReleased()
@@ -544,22 +564,22 @@ struct PlaybackCoordinatorRegressionTests {
             return (200, Data(#"{"status":"ok"}"#.utf8))
         }
 
-        // 1. Start zap to Channel B
+        // 1. Start zap to Channel B and wait for proven status poll (confirming inFlight is established)
         let taskB = Task { await coordinator.zap(to: self.srefB) }
+        let statusBArrived = await barrierStatusB.waitForArrival(timeoutSeconds: 5.0)
+        #expect(statusBArrived, "Status poll for Channel B must arrive before cancellation")
 
-        // Wait until coordinator has requested B
-        while true {
-            if coordinator.requestedServiceRef == self.srefB { break }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-
-        // 2. Cancel zap B while in flight; this triggers abandonInFlight which hits barrierDeleteB
+        // 2. Cancel zap B while polling status; unblock barrierStatusB so task proceeds to abandonInFlight
         taskB.cancel()
-        await barrierDeleteB.waitForArrival()
+        barrierStatusB.release()
+
+        let deleteBArrived = await barrierDeleteB.waitForArrival(timeoutSeconds: 5.0)
+        #expect(deleteBArrived, "DELETE for preparation B must arrive at barrier")
 
         // 3. While old cleanup for B is suspended on the DELETE response barrier, start a newer zap to Channel C
         let taskC = Task { await coordinator.zap(to: self.srefC) }
-        await barrierPrepC.waitForArrival()
+        let prepCArrived = await barrierPrepC.waitForArrival(timeoutSeconds: 5.0)
+        #expect(prepCArrived, "Preparation start for Channel C must arrive")
 
         #expect(coordinator.requestedServiceRef == self.srefC, "Channel C is now the active requested service")
         if case .warming(let sref) = coordinator.phase {
