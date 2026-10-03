@@ -213,7 +213,7 @@ describe('createDefaultLiveSessionTransport', () => {
     });
   });
 
-  it('postStopIntent succeeds on 200 response', async () => {
+  it('postStopIntent succeeds on 200 response and sets keepalive: false by default', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 200,
       ok: true,
@@ -229,6 +229,32 @@ describe('createDefaultLiveSessionTransport', () => {
     await expect(
       transport.postStopIntent({ sessionId: 'sess-stop' }),
     ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init.keepalive).toBe(false);
+  });
+
+  it('postStopIntent respects explicit keepalive parameter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => ({}),
+    });
+
+    const transport = createDefaultLiveSessionTransport({
+      apiBase,
+      authHeaders,
+      fetchFn: fetchMock as unknown as typeof fetch,
+    });
+
+    await expect(
+      transport.postStopIntent({ sessionId: 'sess-stop', keepalive: true }),
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init.keepalive).toBe(true);
   });
 
   it('bounds readiness response-body reading and preserves cancellation', async () => {

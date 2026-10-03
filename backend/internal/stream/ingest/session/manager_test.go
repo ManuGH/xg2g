@@ -39,6 +39,7 @@ type mockConnector struct {
 	dialDelay    time.Duration
 	failFirst    int
 	failErr      error
+	streams      []*mockUpstream
 }
 
 func (c *mockConnector) Connect(ctx context.Context, key SessionKey) (io.ReadCloser, error) {
@@ -67,13 +68,24 @@ func (c *mockConnector) Connect(ctx context.Context, key SessionKey) (io.ReadClo
 		return nil, err
 	}
 
-	return newMockUpstream(), nil
+	st := newMockUpstream()
+	c.streams = append(c.streams, st)
+	return st, nil
 }
 
 func (c *mockConnector) Count() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.connectCount
+}
+
+func (c *mockConnector) LastStream() *mockUpstream {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.streams) == 0 {
+		return nil
+	}
+	return c.streams[len(c.streams)-1]
 }
 
 func TestSessionKey_Canonicalize(t *testing.T) {
@@ -777,5 +789,103 @@ func TestManager_IngestStateAndStableID(t *testing.T) {
 	}
 	if lease4.Session().ID() == ingestID {
 		t.Errorf("expected lease 4 to have a new ingest ID, got same: %s", ingestID)
+	}
+}
+
+func TestManager_SharedSubscribers_OneReleasesOtherStaysActive(t *testing.T) {
+	connector := &mockConnector{dialDelay: 10 * time.Millisecond}
+	mgr := NewManager(ManagerConfig{
+		WarmHoldDuration: 80 * time.Millisecond,
+		ConnectTimeout:   1 * time.Second,
+	}, connector)
+	defer mgr.Close()
+
+	key := SessionKey{ReceiverHost: "10.10.55.64", ServiceRef: "1:0:19:SHARED_SUB"}
+
+	ctx := context.Background()
+
+	// 1. Two subscribers acquire the same channel
+	lease1, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("acquire lease 1 failed: %v", err)
+	}
+	defer lease1.Release()
+
+	lease2, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("acquire lease 2 failed: %v", err)
+	}
+	defer lease2.Release()
+
+	upstream1 := connector.LastStream()
+	if upstream1 == nil {
+		t.Fatal("expected mock upstream stream to be created")
+	}
+	if upstream1.isClosed.Load() {
+		t.Fatal("upstream stream must be open initially")
+	}
+	if connector.Count() != 1 {
+		t.Fatalf("expected exactly 1 upstream connect for shared subscribers, got %d", connector.Count())
+	}
+	if lease1.State() != StateActive || lease2.State() != StateActive {
+		t.Fatalf("both leases must be StateActive, got lease1=%v lease2=%v", lease1.State(), lease2.State())
+	}
+
+	// 2. Subscriber 1 stops / releases
+	lease1.Release()
+
+	// Upstream session MUST remain active and upstream stream MUST stay open because Subscriber 2 is still active
+	if upstream1.isClosed.Load() {
+		t.Fatal("upstream stream must stay open after subscriber A releases because subscriber B is active")
+	}
+	if lease2.State() != StateActive {
+		t.Fatalf("lease 2 must remain StateActive after lease 1 released, got %v", lease2.State())
+	}
+	if mgr.ActiveCount() != 1 {
+		t.Fatalf("expected exactly 1 active session in registry, got %d", mgr.ActiveCount())
+	}
+	if connector.Count() != 1 {
+		t.Fatalf("connector count should still be 1, got %d", connector.Count())
+	}
+
+	// 3. Subscriber 2 stops / releases
+	lease2.Release()
+
+	// Now that both subscribers have released (refCount == 0), session transitions to StateHolding
+	if lease2.State() != StateHolding {
+		t.Fatalf("expected StateHolding after both released, got %v", lease2.State())
+	}
+	// Upstream stream must remain open during warm hold
+	if upstream1.isClosed.Load() {
+		t.Fatal("upstream stream must remain open during warm hold immediately after last subscriber releases")
+	}
+
+	// 4. Wait past hold duration (80ms + margin)
+	time.Sleep(120 * time.Millisecond)
+
+	// Registry must be clean and upstream stream MUST be closed after hold expires
+	if mgr.ActiveCount() != 0 {
+		t.Fatalf("expected 0 active sessions after hold expired, got %d", mgr.ActiveCount())
+	}
+	if !upstream1.isClosed.Load() {
+		t.Fatal("upstream stream must be closed after warm hold expires for last subscriber")
+	}
+
+	// 5. Subsequent acquire starts a fresh upstream connection
+	lease3, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("acquire lease 3 failed: %v", err)
+	}
+	defer lease3.Release()
+
+	upstream2 := connector.LastStream()
+	if upstream2 == nil || upstream2 == upstream1 {
+		t.Fatal("expected new distinct mock upstream stream for fresh acquire")
+	}
+	if upstream2.isClosed.Load() {
+		t.Fatal("new upstream stream must be open")
+	}
+	if connector.Count() != 2 {
+		t.Fatalf("expected 2 connects after hold expiration, got %d", connector.Count())
 	}
 }
