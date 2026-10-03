@@ -252,9 +252,9 @@ export default function Navigation({ onLogout }: NavigationProps) {
 
     if (pinConfigured && selectedProfile.kind === 'child' && !isUnlocked) {
       const unlocked = await ensureUnlocked({
-        title: 'Logout geschützt',
-        message: 'Abmelden aus dem Kinderprofil erfordert den Haushalt-PIN.',
-        confirmLabel: 'Abmelden',
+        title: t('nav.logoutProtectedTitle'),
+        message: t('nav.logoutProtectedMessage'),
+        confirmLabel: t('nav.logoutConfirmLabel'),
       });
       if (!unlocked) {
         return;

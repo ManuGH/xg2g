@@ -141,7 +141,7 @@ describe('Passkey Public Auth Journey', () => {
     await waitFor(() => {
       expect(screen.getByTestId('bootstrap-passkey-surface')).toBeInTheDocument();
     });
-    expect(screen.getByText('xg2g einrichten')).toBeInTheDocument();
+    expect(screen.getByText(/^(xg2g einrichten|Set up xg2g)$/i)).toBeInTheDocument();
 
     // 2. Click Passkey erstellen
     const createBtn = screen.getByTestId('create-passkey-button');
@@ -202,7 +202,7 @@ describe('Passkey Public Auth Journey', () => {
     await waitFor(() => {
       expect(screen.getByTestId('auth-surface')).toBeInTheDocument();
     });
-    expect(screen.getByText('Mit Passkey anmelden')).toBeInTheDocument();
+    expect(screen.getByText(/^(Mit Passkey anmelden|Sign in with Passkey)$/i)).toBeInTheDocument();
 
     // 2. Click Passkey login button
     const loginBtn = screen.getByTestId('passkey-login-button');
@@ -237,7 +237,7 @@ describe('Passkey Public Auth Journey', () => {
       fireEvent.click(deleteBtn);
     });
 
-    const confirmBtn = screen.getByRole('button', { name: 'Ja' });
+    const confirmBtn = screen.getByRole('button', { name: /^(Ja|Yes)$/i });
     await act(async () => {
       fireEvent.click(confirmBtn);
     });

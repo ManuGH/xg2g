@@ -146,18 +146,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
 
         {activeSection === 'account' && (
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Hauptkontodaten</h3>
-            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von Benutzername, Passwort und Notfall-Wiederherstellungsschlüsseln.</p>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{t('admin.account.title')}</h3>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>{t('admin.account.description')}</p>
             <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
-              Konto-Status: Aktiv (Admin)
+              {t('admin.account.statusActive')}
             </div>
           </div>
         )}
 
         {activeSection === 'recordings' && (
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Aufnahmen & Speicherkontingente</h3>
-            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von DVR-Aufnahmepfad und automatischem Quota-Management.</p>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{t('admin.recordingsQuotas.title')}</h3>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>{t('admin.recordingsQuotas.description')}</p>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
 
 export interface ProfileData {
@@ -14,6 +15,7 @@ export interface ProfileData {
 const AVATAR_OPTIONS = ['👤', '👦', '👧', '👨', '👩', '🧑', '🎭', '🎬', '🍿'];
 
 export const ProfileManagementSection: React.FC = () => {
+  const { t } = useTranslation();
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export const ProfileManagementSection: React.FC = () => {
       const data = await request<ProfileData[]>('/api/v3/household/profiles');
       setProfiles(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Laden der Sehprofile.');
+      setError(e.message || t('admin.profiles.loadError'));
     } finally {
       setLoading(false);
     }
@@ -75,7 +77,7 @@ export const ProfileManagementSection: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
-      setError('Bitte einen Namen für das Profil eingeben.');
+      setError(t('admin.profiles.nameRequired'));
       return;
     }
 
@@ -103,11 +105,11 @@ export const ProfileManagementSection: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      setSuccess(editingProfile ? 'Profil wurde aktualisiert.' : 'Neues Sehprofil wurde angelegt.');
+      setSuccess(editingProfile ? t('admin.profiles.updateSuccess') : t('admin.profiles.createSuccess'));
       setIsModalOpen(false);
       void fetchProfiles();
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Speichern.');
+      setError(e.message || t('admin.profiles.saveError'));
     } finally {
       setSaving(false);
     }
@@ -119,24 +121,30 @@ export const ProfileManagementSection: React.FC = () => {
     setSuccess(null);
     try {
       await request(`/api/v3/household/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setSuccess('Profil wurde gelöscht.');
+      setSuccess(t('admin.profiles.deleteSuccess'));
       setDeletingId(null);
       void fetchProfiles();
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Löschen.');
+      setError(e.message || t('admin.profiles.deleteError'));
     } finally {
       setSaving(false);
     }
   };
+
+  const unknownPolicyLabels = {
+    block: t('admin.profiles.policyBlock'),
+    request_approval: t('admin.profiles.policyApproval'),
+    allow: t('admin.profiles.policyAllow'),
+  } as const;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header & Create Action */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Verwaltete Sehprofile</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.profiles.title')}</h3>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-            Erstellen Sie individuelle Bildschirmoberflächen mit Altersgrenzen und Jugendschutz-PINs.
+            {t('admin.profiles.subtitle')}
           </p>
         </div>
         <button
@@ -156,7 +164,7 @@ export const ProfileManagementSection: React.FC = () => {
             transition: 'transform 0.1s ease',
           }}
         >
-          <span>✨</span> Neues Profil
+          <span>✨</span> {t('admin.profiles.createProfile')}
         </button>
       </div>
 
@@ -174,7 +182,7 @@ export const ProfileManagementSection: React.FC = () => {
 
       {/* Profiles Grid */}
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Sehprofile werden geladen...</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>{t('admin.profiles.loading')}</div>
       ) : profiles.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
           {profiles.map((p) => (
@@ -206,20 +214,20 @@ export const ProfileManagementSection: React.FC = () => {
                       color: p.isChild ? 'var(--status-warning)' : 'var(--accent-action)',
                     }}
                   >
-                    {p.isChild ? 'Kinderprofil' : 'Hauptprofil'}
+                    {p.isChild ? t('admin.profiles.childBadge') : t('admin.profiles.mainBadge')}
                   </span>
                 </div>
 
                 <h4 style={{ margin: '14px 0 4px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{p.name}</h4>
                 <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
-                  <span>FSK max: <strong>{p.maxParentalRating ? `FSK ${p.maxParentalRating}` : 'Unbegrenzt'}</strong></span>
-                  {p.pinCode && <span style={{ color: 'var(--status-success)' }}>🔒 PIN aktiv</span>}
+                  <span>{t('admin.profiles.fskMax', { rating: p.maxParentalRating ? t('admin.profiles.fskRatingLabel', { rating: p.maxParentalRating }) : t('admin.profiles.fskUnlimited') })}</span>
+                  {p.pinCode && <span style={{ color: 'var(--status-success)' }}>{t('admin.profiles.pinActive')}</span>}
                 </div>
 
                 <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-disabled)' }}>
-                  Ohne EPG-Rating:{' '}
+                  {t('admin.profiles.withoutEpgRating')}{' '}
                   <span style={{ color: p.unknownRatingPolicy === 'block' ? 'var(--status-error)' : p.unknownRatingPolicy === 'request_approval' ? 'var(--status-warning)' : 'var(--status-success)', fontWeight: 600 }}>
-                    {p.unknownRatingPolicy === 'block' ? 'Sperren' : p.unknownRatingPolicy === 'request_approval' ? 'Freigabe erfordern' : 'Erlauben'}
+                    {unknownPolicyLabels[p.unknownRatingPolicy]}
                   </span>
                 </div>
               </div>
@@ -228,13 +236,13 @@ export const ProfileManagementSection: React.FC = () => {
               <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 {deletingId === p.id ? (
                   <>
-                    <button onClick={() => setDeletingId(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>Abbrechen</button>
-                    <button onClick={() => handleDelete(p.id)} disabled={saving} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Ja, löschen</button>
+                    <button onClick={() => setDeletingId(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>{t('admin.profiles.cancel')}</button>
+                    <button onClick={() => handleDelete(p.id)} disabled={saving} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>{t('admin.profiles.deleteConfirmBtn')}</button>
                   </>
                 ) : (
                   <>
-                    <button onClick={() => openEditModal(p)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: 'var(--accent-action)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Bearbeiten</button>
-                    <button onClick={() => setDeletingId(p.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Löschen</button>
+                    <button onClick={() => openEditModal(p)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: 'var(--accent-action)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>{t('admin.profiles.edit')}</button>
+                    <button onClick={() => setDeletingId(p.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>{t('admin.profiles.delete')}</button>
                   </>
                 )}
               </div>
@@ -243,7 +251,7 @@ export const ProfileManagementSection: React.FC = () => {
         </div>
       ) : (
         <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '32px', borderRadius: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-          Keine zusätzlichen Sehprofile vorhanden. Erstellen Sie ein Profil für Kinder oder Haushaltsmitglieder.
+          {t('admin.profiles.empty')}
         </div>
       )}
 
@@ -252,18 +260,18 @@ export const ProfileManagementSection: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '520px', border: '1px solid rgba(255,255,255,0.12)', padding: '28px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
             <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {editingProfile ? 'Sehprofil bearbeiten' : 'Neues Sehprofil anlegen'}
+              {editingProfile ? t('admin.profiles.editProfile') : t('admin.profiles.createProfileTitle')}
             </h3>
 
             <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Profile Name */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Profilname</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.profiles.name')}</label>
                 <input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="z. B. Kinderzimmer, Wohnzimmer TV, Max"
+                  placeholder={t('admin.profiles.namePlaceholder')}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   required
                 />
@@ -271,7 +279,7 @@ export const ProfileManagementSection: React.FC = () => {
 
               {/* Avatar Selector */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Avatar Symbol</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.profiles.avatar')}</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {AVATAR_OPTIONS.map((emoji) => (
                     <button
@@ -298,8 +306,8 @@ export const ProfileManagementSection: React.FC = () => {
               {/* Child Profile Toggle */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Kinderprofil (Kinder-UI)</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Aktiviert vereinfachte Navigation und strenge FSK-Filter</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.profiles.childProfile')}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('admin.profiles.childProfileDesc')}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -312,8 +320,8 @@ export const ProfileManagementSection: React.FC = () => {
               {/* FSK Rating Limit */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Maximale FSK-Altersfreigabe</label>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-action)' }}>FSK {formMaxRating}</span>
+                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>{t('admin.profiles.maxRating')}</label>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-action)' }}>{t('admin.profiles.fskRatingLabel', { rating: formMaxRating })}</span>
                 </div>
                 <input
                   type="range"
@@ -325,36 +333,36 @@ export const ProfileManagementSection: React.FC = () => {
                   style={{ width: '100%', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
                 />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px' }}>
-                  <span>FSK 0</span>
-                  <span>FSK 6</span>
-                  <span>FSK 12</span>
-                  <span>FSK 18</span>
+                  <span>{t('admin.profiles.fskRatingLabel', { rating: 0 })}</span>
+                  <span>{t('admin.profiles.fskRatingLabel', { rating: 6 })}</span>
+                  <span>{t('admin.profiles.fskRatingLabel', { rating: 12 })}</span>
+                  <span>{t('admin.profiles.fskRatingLabel', { rating: 18 })}</span>
                 </div>
               </div>
 
               {/* Unknown Rating Strategy */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Verhalten bei unbekannter EPG-Altersfreigabe (UNKNOWN = -1)</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.profiles.unknownPolicyLabel')}</label>
                 <select
                   value={formUnknownPolicy}
                   onChange={(e) => setFormUnknownPolicy(e.target.value as any)}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                 >
-                  <option value="request_approval">Freigabe-Anfrage an Admin senden (Empfohlen)</option>
-                  <option value="block">Strikte Sperre (Fail-Closed)</option>
-                  <option value="allow">Immer erlauben</option>
+                  <option value="request_approval">{t('admin.profiles.unknownPolicyOptionApproval')}</option>
+                  <option value="block">{t('admin.profiles.unknownPolicyOptionBlock')}</option>
+                  <option value="allow">{t('admin.profiles.unknownPolicyOptionAllow')}</option>
                 </select>
               </div>
 
               {/* Jugendschutz PIN */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Jugendschutz-PIN (optional)</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.profiles.pinLabel')}</label>
                 <input
                   type="password"
                   maxLength={4}
                   value={formPin}
                   onChange={(e) => setFormPin(e.target.value.replace(/\D/g, ''))}
-                  placeholder="4-stelliger PIN z. B. 1234"
+                  placeholder={t('admin.profiles.pinPlaceholder')}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', letterSpacing: '4px' }}
                 />
               </div>
@@ -366,14 +374,14 @@ export const ProfileManagementSection: React.FC = () => {
                   onClick={() => setIsModalOpen(false)}
                   style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
                 >
-                  Abbrechen
+                  {t('admin.profiles.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
                   style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--accent-action)', color: 'var(--bg-base)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  {saving ? 'Speichern...' : 'Profil speichern'}
+                  {saving ? t('admin.profiles.saving') : t('admin.profiles.saveProfile')}
                 </button>
               </div>
             </form>

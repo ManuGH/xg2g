@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../ui';
 import {
   listPasskeys,
@@ -16,6 +17,7 @@ import { getStoredToken, setStoredToken, clearStoredToken } from '../../utils/to
 import { useAppContext } from '../../context/AppContext';
 
 export default function SecuritySettingsSection() {
+  const { t, i18n } = useTranslation();
   const { auth, setToken } = useAppContext();
   const [passkeys, setPasskeys] = useState<PasskeyCredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,10 +40,10 @@ export default function SecuritySettingsSection() {
       setHasActiveToken(true);
     } catch (err: any) {
       if (err?.message?.includes('Authentication required') || err?.status === 401) {
-        setErrorMsg('Admin-Authentifizierung erforderlich. Bitte melde dich unten mit deinem Admin-Token an.');
+        setErrorMsg(t('admin.security.authRequired'));
         setHasActiveToken(false);
       } else {
-        setErrorMsg(err.message || 'Passkeys konnten nicht geladen werden.');
+        setErrorMsg(err.message || t('admin.security.loadError'));
       }
     } finally {
       setLoading(false);
@@ -62,7 +64,7 @@ export default function SecuritySettingsSection() {
     setToken(token);
     setHasActiveToken(true);
     setTokenInput('');
-    setSuccessMsg('✅ Admin-Token erfolgreich gespeichert!');
+    setSuccessMsg(t('admin.security.tokenSaved'));
     void fetchPasskeys();
   };
 
@@ -71,7 +73,7 @@ export default function SecuritySettingsSection() {
     setToken('');
     setHasActiveToken(false);
     setPasskeys([]);
-    setSuccessMsg('Admin-Sitzung abgemeldet.');
+    setSuccessMsg(t('admin.security.sessionLoggedOut'));
   };
 
   const [passkeyNickname, setPasskeyNickname] = useState('');
@@ -84,19 +86,19 @@ export default function SecuritySettingsSection() {
     try {
       const startRes = await startPasskeyRegistration('admin', '');
       const attestation = await createPasskeyCredential(startRes.options);
-      const nickname = nicknameToUse.trim() || 'Admin Passkey';
+      const nickname = nicknameToUse.trim() || t('admin.security.defaultNickname');
       const finishRes = await finishPasskeyRegistration(attestation, nickname);
 
       if (finishRes.status === 'registered' || finishRes.id || finishRes.credential) {
-        setSuccessMsg(`Passkey "${nickname}" wurde erfolgreich hinzugefügt.`);
+        setSuccessMsg(t('admin.security.passkeyAdded', { nickname }));
         setShowNicknameModal(false);
         setPasskeyNickname('');
         void fetchPasskeys();
       } else {
-        throw new Error('Passkey konnte nicht gespeichert werden.');
+        throw new Error(t('admin.security.passkeySaveError'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Passkey-Registrierung abgebrochen.');
+      setErrorMsg(err.message || t('admin.security.registrationCancelled'));
     } finally {
       setActionLoading(false);
     }
@@ -108,11 +110,11 @@ export default function SecuritySettingsSection() {
     setSuccessMsg(null);
     try {
       await deletePasskey(id);
-      setSuccessMsg('Passkey wurde entfernt.');
+      setSuccessMsg(t('admin.security.passkeyDeleted'));
       setDeletingId(null);
       void fetchPasskeys();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Passkey konnte nicht gelöscht werden.');
+      setErrorMsg(err.message || t('admin.security.passkeyDeleteError'));
     } finally {
       setActionLoading(false);
     }
@@ -124,10 +126,10 @@ export default function SecuritySettingsSection() {
     setSuccessMsg(null);
     try {
       await revokeOtherSessions();
-      setSuccessMsg('Alle anderen aktiven Sitzungen wurden beendet.');
+      setSuccessMsg(t('admin.security.otherSessionsRevoked'));
       setConfirmRevokeOthers(false);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Sitzungen konnten nicht beendet werden.');
+      setErrorMsg(err.message || t('admin.security.revokeError'));
     } finally {
       setActionLoading(false);
     }
@@ -137,10 +139,10 @@ export default function SecuritySettingsSection() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', maxWidth: '720px' }}>
       <div>
         <h3 style={{ fontSize: '1.25rem', fontWeight: 600, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
-          Sicherheit, Admin-Zugang & Passkeys
+          {t('admin.security.title')}
         </h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)', margin: 0 }}>
-          Verwalte deine Admin-Authentifizierung, registrierte Passkeys und aktive Gerätesitzungen.
+          {t('admin.security.subtitle')}
         </p>
       </div>
 
@@ -150,12 +152,12 @@ export default function SecuritySettingsSection() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '1.2rem' }}>{hasActiveToken ? '🟢' : '🔑'}</span>
             <strong style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>
-              {hasActiveToken ? 'Admin-Sitzung aktiv' : 'Admin-Authentifizierung'}
+              {hasActiveToken ? t('admin.security.activeTitle') : t('admin.security.inactiveTitle')}
             </strong>
           </div>
           {hasActiveToken && (
             <Button size="sm" variant="ghost" onClick={handleLogoutToken}>
-              Abmelden
+              {t('admin.security.logout')}
             </Button>
           )}
         </div>
@@ -163,28 +165,28 @@ export default function SecuritySettingsSection() {
         {!hasActiveToken ? (
           <div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem 0' }}>
-              Gib dein Admin-Token ein (Standard: <code>test04</code>), um Passkeys und gekoppelte Geräte zu verwalten.
+              {t('admin.security.inputDescription')}
             </p>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <input
                 type="password"
-                placeholder="Admin-Token eingeben (z.B. test04)"
+                placeholder={t('admin.security.inputPlaceholder')}
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSaveAdminToken(); }}
                 style={{ flex: 1, minWidth: '200px', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '0.875rem' }}
               />
               <Button size="sm" onClick={handleSaveAdminToken} disabled={!tokenInput.trim()}>
-                Anmelden
+                {t('admin.security.loginButton')}
               </Button>
               <Button size="sm" variant="secondary" onClick={() => { setTokenInput('test04'); }}>
-                test04 einsetzen
+                {t('admin.security.fillDefault')}
               </Button>
             </div>
           </div>
         ) : (
           <p style={{ fontSize: '0.85rem', color: 'var(--status-success)', margin: 0 }}>
-            Du bist erfolgreich als Administrator authentifiziert. Alle Admin-Funktionen sind freigeschaltet.
+            {t('admin.security.authenticatedSuccess')}
           </p>
         )}
       </div>
@@ -205,8 +207,8 @@ export default function SecuritySettingsSection() {
       <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div>
-            <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>Registrierte Passkeys</h4>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{passkeys.length} Passkey(s) verknüpft</span>
+            <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>{t('admin.security.registeredPasskeys')}</h4>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{t('admin.security.passkeysCount', { count: passkeys.length })}</span>
           </div>
           <Button
             size="sm"
@@ -214,37 +216,37 @@ export default function SecuritySettingsSection() {
             disabled={actionLoading || !hasActiveToken}
             data-testid="add-passkey-button"
           >
-            {actionLoading ? 'Registriere...' : 'Passkey hinzufügen'}
+            {actionLoading ? t('admin.security.registering') : t('admin.security.addPasskey')}
           </Button>
         </div>
 
         {/* Modal for Custom Passkey Nickname */}
         {showNicknameModal && (
           <div style={{ padding: '1rem', backgroundColor: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <h5 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--accent-action)' }}>Passkey-Bezeichnung angeben</h5>
+            <h5 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--accent-action)' }}>{t('admin.security.nicknameModalTitle')}</h5>
             <input
               type="text"
               value={passkeyNickname}
               onChange={(e) => setPasskeyNickname(e.target.value)}
-              placeholder="z.B. Manuels MacBook Air (Touch ID)"
+              placeholder={t('admin.security.nicknamePlaceholder')}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.75rem' }}
             />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <Button size="sm" onClick={() => { void handleAddPasskeyWithNickname(passkeyNickname); }} disabled={actionLoading}>
-                Jetzt registrieren
+                {t('admin.security.registerNow')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowNicknameModal(false)}>
-                Abbrechen
+                {t('admin.security.cancel')}
               </Button>
             </div>
           </div>
         )}
 
         {loading ? (
-          <div style={{ padding: '1rem', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>Lade Passkeys...</div>
+          <div style={{ padding: '1rem', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>{t('admin.security.loadingPasskeys')}</div>
         ) : passkeys.length === 0 ? (
           <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-disabled)', fontSize: '0.875rem', backgroundColor: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px' }}>
-            Noch keine Passkeys registriert. Füge einen Passkey für schnellen Zugang via Touch ID / Face ID hinzu.
+            {t('admin.security.emptyPasskeys')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -263,16 +265,16 @@ export default function SecuritySettingsSection() {
               >
                 <div>
                   <div style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                    {key.nickname || 'Passkey'}
+                    {key.nickname || t('admin.security.defaultPasskeyLabel')}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', marginTop: '0.125rem' }}>
-                    Erstellt am: {new Date(key.createdAt).toLocaleString()}
+                    {t('admin.security.createdOn', { date: new Date(key.createdAt).toLocaleString(i18n.language) })}
                   </div>
                 </div>
 
                 {deletingId === key.id ? (
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--status-error)' }}>Löschen?</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--status-error)' }}>{t('admin.security.confirmDeleteQuestion')}</span>
                     <Button
                       size="sm"
                       variant="primary"
@@ -280,10 +282,10 @@ export default function SecuritySettingsSection() {
                       disabled={actionLoading}
                       style={{ backgroundColor: 'var(--status-error)' }}
                     >
-                      Ja
+                      {t('admin.security.yes')}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setDeletingId(null)}>
-                      Abbrechen
+                      {t('admin.security.cancel')}
                     </Button>
                   </div>
                 ) : (
@@ -294,7 +296,7 @@ export default function SecuritySettingsSection() {
                     style={{ color: 'var(--status-error)' }}
                     data-testid={`delete-passkey-${key.id}`}
                   >
-                    Entfernen
+                    {t('admin.security.delete')}
                   </Button>
                 )}
               </div>
@@ -305,15 +307,15 @@ export default function SecuritySettingsSection() {
 
       {/* SECTION 2: SESSION MANAGEMENT */}
       <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Sitzungsverwaltung</h4>
+        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>{t('admin.security.sessionManagementTitle')}</h4>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', margin: '0 0 1rem 0' }}>
-          Beende alle anderen aktiven Web-Sitzungen auf anderen Geräten und Browsern.
+          {t('admin.security.sessionManagementDesc')}
         </p>
 
         {confirmRevokeOthers ? (
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.08)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--status-error)' }}>
-              Wirklich alle anderen aktiven Sitzungen abmelden?
+              {t('admin.security.confirmRevokeQuestion')}
             </span>
             <Button
               size="sm"
@@ -322,10 +324,10 @@ export default function SecuritySettingsSection() {
               style={{ backgroundColor: 'var(--status-error)', color: 'var(--text-primary)' }}
               data-testid="confirm-revoke-others-button"
             >
-              Ja, alle abmelden
+              {t('admin.security.confirmRevokeAll')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirmRevokeOthers(false)}>
-              Abbrechen
+              {t('admin.security.cancel')}
             </Button>
           </div>
         ) : (
@@ -335,7 +337,7 @@ export default function SecuritySettingsSection() {
             disabled={actionLoading}
             data-testid="revoke-other-sessions-button"
           >
-            Andere Sitzungen abmelden
+            {t('admin.security.revokeOtherSessions')}
           </Button>
         )}
       </div>
