@@ -132,6 +132,16 @@ final class AppModel {
     private(set) var isLoadingChannels = false
     private(set) var lastDataRefreshTime: Date?
 
+    func setChannelsForTesting(
+        _ channels: [Channel],
+        schedule: [String: NowNext] = [:],
+        fullEpg: [String: [NowNext.Entry]] = [:]
+    ) {
+        self.channels = channels
+        self.schedule = schedule
+        self.fullEpg = fullEpg
+    }
+
     /// Bumped whenever the channel list, Now/Next schedule or full EPG is replaced.
     ///
     /// Views that derive an expensive projection from this data key their
@@ -550,7 +560,10 @@ final class AppModel {
         }
     }
 
-    static let favoritesBouquetID = "xg2g_local_favorites"
+    nonisolated static let favoritesBouquetID = "xg2g_local_favorites"
+    nonisolated static var favoritesBouquet: ChannelBouquet {
+        ChannelBouquet(id: favoritesBouquetID, name: "Favorites")
+    }
 
     private(set) var favoriteChannelIDs: Set<String> = {
         let stored = UserDefaults.standard.stringArray(forKey: "xg2g.favorites") ?? []
@@ -657,25 +670,39 @@ final class AppModel {
             }
         }
 
-        var label: String {
+        var localizedLabel: LocalizedStringResource {
             switch self {
-            case .now: return "Jetzt"
-            case .next: return "Gleich"
-            case .primeTimeTonight: return "20:15"
-            case .lateNightTonight: return "22:00"
+            case .now:
+                return LocalizedStringResource("Live Now")
+            case .next:
+                return LocalizedStringResource("Next")
+            case .primeTimeTonight:
+                return LocalizedStringResource(stringLiteral: Self.formatPresetTime(hour: 20, minute: 15))
+            case .lateNightTonight:
+                return LocalizedStringResource(stringLiteral: Self.formatPresetTime(hour: 22, minute: 0))
             case .day(let date):
                 let calendar = Calendar.current
                 if calendar.isDateInToday(date) {
-                    return "Heute"
+                    return LocalizedStringResource("Today")
                 } else if calendar.isDateInTomorrow(date) {
-                    return "Morgen"
+                    return LocalizedStringResource("Tomorrow")
                 } else {
-                    let f = DateFormatter()
-                    f.locale = Locale(identifier: "de_DE")
-                    f.dateFormat = "E, d. MMM"
-                    return f.string(from: date)
+                    return LocalizedStringResource(stringLiteral: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
                 }
             }
+        }
+
+        var label: String {
+            String(localized: localizedLabel)
+        }
+
+        nonisolated static func formatPresetTime(hour: Int, minute: Int) -> String {
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: Date())
+            components.hour = hour
+            components.minute = minute
+            let date = calendar.date(from: components) ?? Date()
+            return date.formatted(date: .omitted, time: .shortened)
         }
 
         var icon: String {

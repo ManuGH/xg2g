@@ -786,4 +786,141 @@ struct LocalizationTests {
         #expect(resolve(prepNoDataErr.title, locale: enLocale) == "No Broadcast Signal")
         #expect(resolve(prepNoDataErr.title, locale: deLocale) == "Kein Sendesignal")
     }
+
+    // MARK: - 11. Batch 2: Channel Discovery & Home Hub Localization Tests
+
+    @Test("ChannelBouquet resolves localized synthetic favorites by ID and preserves receiver bouquets verbatim")
+    func channelBouquetLocalizationAndIdentity() {
+        let favBouquet = AppModel.favoritesBouquet
+        #expect(favBouquet.id == AppModel.favoritesBouquetID)
+        let deFav = resolve(favBouquet.displayNameResource, locale: deLocale)
+        let enFav = resolve(favBouquet.displayNameResource, locale: enLocale)
+        #expect(deFav == "Favoriten")
+        #expect(enFav == "Favorites")
+
+        let receiverBouquet = ChannelBouquet(
+            id: "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET userbouquet.favourites.tv ORDER BY bouquet",
+            name: "Favourites (TV)",
+            servicesCount: 42
+        )
+        #expect(resolve(receiverBouquet.displayNameResource, locale: deLocale) == "Favourites (TV)")
+        #expect(resolve(receiverBouquet.displayNameResource, locale: enLocale) == "Favourites (TV)")
+        #expect(receiverBouquet.displayName == "Favourites (TV)")
+    }
+
+    @Test("TimeFilter localizes quick jumps and preset times accurately in DE and EN")
+    func timeFilterAndPresetFormatting() {
+        let deNow = resolve(AppModel.TimeFilter.now.localizedLabel, locale: deLocale)
+        let enNow = resolve(AppModel.TimeFilter.now.localizedLabel, locale: enLocale)
+        #expect(deNow == "Jetzt Live")
+        #expect(enNow == "Live Now")
+
+        let deNext = resolve(AppModel.TimeFilter.next.localizedLabel, locale: deLocale)
+        let enNext = resolve(AppModel.TimeFilter.next.localizedLabel, locale: enLocale)
+        #expect(deNext == "Gleich")
+        #expect(enNext == "Next")
+
+        let primeStr = AppModel.TimeFilter.formatPresetTime(hour: 20, minute: 15)
+        #expect(!primeStr.isEmpty)
+        let lateStr = AppModel.TimeFilter.formatPresetTime(hour: 22, minute: 0)
+        #expect(!lateStr.isEmpty)
+    }
+
+    @Test("Programmatic smoke test: Render ChannelListView and HomeHubView in German and English, retaining PNG artifacts")
+    @MainActor
+    func renderChannelDiscoveryAndHomeHubInBothLocales() throws {
+        let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        let channel1 = Channel(
+            id: "c1",
+            name: "Das Erste HD",
+            number: "1",
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            logoURL: nil
+        )
+        let channel2 = Channel(
+            id: "c2",
+            name: "ZDF HD",
+            number: "2",
+            serviceRef: "1:0:19:2B66:3F3:1:C00000:0:0:0:",
+            logoURL: nil
+        )
+        let now = Date.now
+        let entry1 = NowNext.Entry(
+            title: "Tagesschau",
+            description: "Nachrichten der ARD",
+            start: now.addingTimeInterval(-600),
+            end: now.addingTimeInterval(600)
+        )
+        let next1 = NowNext.Entry(
+            title: "Tatort",
+            description: "Krimi aus München",
+            start: now.addingTimeInterval(600),
+            end: now.addingTimeInterval(6000)
+        )
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let model = AppModel()
+            model.setChannelsForTesting(
+                [channel1, channel2],
+                schedule: [channel1.serviceRef: NowNext(serviceRef: channel1.serviceRef, now: entry1, next: next1)]
+            )
+            model.toggleFavorite(channel1)
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+
+            // 1. ChannelListView
+            let listView = ChannelListView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+            let listController = UIHostingController(rootView: listView)
+            listController.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            listController.view.overrideUserInterfaceStyle = .dark
+            let listWindow = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            listWindow.rootViewController = listController
+            listWindow.makeKeyAndVisible()
+            listController.view.setNeedsLayout()
+            listController.view.layoutIfNeeded()
+
+            let listRenderer = UIGraphicsImageRenderer(bounds: listController.view.bounds, format: format)
+            let listImage = listRenderer.image { _ in
+                listController.view.drawHierarchy(in: listController.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(listImage.size.width > 0 && listImage.size.height > 0)
+            Self.saveScreenshot(listImage, name: "channel_list_\(code)")
+
+            // 2. HomeHubView
+            let homeView = HomeHubView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+            let homeController = UIHostingController(rootView: homeView)
+            homeController.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            homeController.view.overrideUserInterfaceStyle = .dark
+            let homeWindow = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            homeWindow.rootViewController = homeController
+            homeWindow.makeKeyAndVisible()
+            homeController.view.setNeedsLayout()
+            homeController.view.layoutIfNeeded()
+
+            let homeRenderer = UIGraphicsImageRenderer(bounds: homeController.view.bounds, format: format)
+            let homeImage = homeRenderer.image { _ in
+                homeController.view.drawHierarchy(in: homeController.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(homeImage.size.width > 0 && homeImage.size.height > 0)
+            Self.saveScreenshot(homeImage, name: "home_hub_\(code)")
+        }
+    }
 }

@@ -254,7 +254,7 @@ struct iPadSidebar: View {
                         let isFavSelected = model.selectedBouquet?.id == AppModel.favoritesBouquetID
                         Button {
                             triggerHaptic(.light)
-                            Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favorites")) }
+                            Task { await model.selectBouquet(AppModel.favoritesBouquet) }
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "star.circle.fill")
@@ -294,7 +294,7 @@ struct iPadSidebar: View {
                                     .font(.system(size: 16))
                                     .foregroundStyle(isSelected ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
 
-                                Text(bouquet.name)
+                                Text(verbatim: bouquet.name)
                                     .font(.system(size: 14, weight: isSelected ? .bold : .medium))
                                     .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                                     .lineLimit(1)
