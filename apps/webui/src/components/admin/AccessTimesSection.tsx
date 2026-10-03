@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { debugError, formatError } from '../../utils/logging';
 
 export interface AccessPolicyData {
   accountId: string;
@@ -37,13 +38,13 @@ export const AccessTimesSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchAccessPolicy = async () => {
     setLoading(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const res = await fetch('/api/v3/household/policies/access');
       if (res.ok) {
@@ -51,8 +52,9 @@ export const AccessTimesSection: React.FC = () => {
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
     } catch (e: any) {
+      debugError('Failed to load access policy:', formatError(e));
       setError(t('admin.accessTimes.loadError'));
-      setErrorDetail(e?.message && e.message !== t('admin.accessTimes.loadError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,7 @@ export const AccessTimesSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
 
     try {
@@ -84,8 +86,9 @@ export const AccessTimesSection: React.FC = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSuccess(t('admin.accessTimes.saveSuccess'));
     } catch (e: any) {
+      debugError('Failed to save access policy:', formatError(e));
       setError(t('admin.accessTimes.saveError'));
-      setErrorDetail(e?.message && e.message !== t('admin.accessTimes.saveError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -114,11 +117,11 @@ export const AccessTimesSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          <div>⚠️ {error}</div>
-          {errorDetail && (
-            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-              {errorDetail}
-            </div>
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
           )}
         </div>
       )}

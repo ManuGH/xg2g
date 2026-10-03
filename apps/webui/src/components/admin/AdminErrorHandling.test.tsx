@@ -33,7 +33,7 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
   });
 
   describe('ProfileManagementSection error handling', () => {
-    it('presents localized error in English and preserves browser network error in diagnostic detail', async () => {
+    it('presents localized error in English and does not expose technical message in the UI', async () => {
       setTestLanguage('en');
       globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
 
@@ -43,12 +43,11 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Error loading viewing profiles/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('Failed to fetch');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Failed to fetch/i)).not.toBeInTheDocument();
     });
 
-    it('presents localized error in German and preserves browser network error in diagnostic detail', async () => {
+    it('presents localized error in German and does not expose technical message in the UI', async () => {
       setTestLanguage('de');
       globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
 
@@ -58,12 +57,11 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Fehler beim Laden der Sehprofile/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('Failed to fetch');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Failed to fetch/i)).not.toBeInTheDocument();
     });
 
-    it('presents localized error when backend returns HTTP 500 and keeps detail separate', async () => {
+    it('presents localized error when backend returns HTTP 500 without leaking backend error detail into DOM', async () => {
       setTestLanguage('en');
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
@@ -78,14 +76,38 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Error loading viewing profiles/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('Database connection failed');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Database connection failed/i)).not.toBeInTheDocument();
+    });
+
+    it('displays correlation reference separately when backend provides X-Request-Id header', async () => {
+      setTestLanguage('en');
+      const headers = new Headers();
+      headers.set('X-Request-Id', 'req-trace-456');
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        headers,
+        json: async () => ({ detail: 'Database pool exhausted' }),
+      } as any);
+
+      renderWithProviders(<ProfileManagementSection />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Error loading viewing profiles/i)).toBeInTheDocument();
+      });
+
+      const ref = screen.getByTestId('error-reference');
+      expect(ref).toBeInTheDocument();
+      expect(ref).toHaveTextContent('(req-trace-456)');
+      expect(screen.queryByText(/Database pool exhausted/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
     });
   });
 
   describe('DevicesManagementSection error handling', () => {
-    it('presents localized error in English with separate error detail for API rejection', async () => {
+    it('presents localized error in English without leaking raw API rejection to DOM', async () => {
       setTestLanguage('en');
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('403 Forbidden: Invalid device credentials'));
 
@@ -95,12 +117,12 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Could not load devices/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('403 Forbidden: Invalid device credentials');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/403 Forbidden/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Invalid device credentials/i)).not.toBeInTheDocument();
     });
 
-    it('presents localized error in German with separate error detail for API rejection', async () => {
+    it('presents localized error in German without leaking raw API rejection to DOM', async () => {
       setTestLanguage('de');
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('403 Forbidden: Invalid device credentials'));
 
@@ -110,14 +132,14 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Geräte konnten nicht geladen werden/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('403 Forbidden: Invalid device credentials');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/403 Forbidden/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Invalid device credentials/i)).not.toBeInTheDocument();
     });
   });
 
   describe('ParentalControlSection error handling', () => {
-    it('presents localized error in English for network failure and keeps technical message in detail', async () => {
+    it('presents localized error in English for network failure without exposing raw error in DOM', async () => {
       setTestLanguage('en');
       globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('NetworkError when attempting to fetch resource'));
 
@@ -127,12 +149,11 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Could not load approval requests/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('NetworkError when attempting to fetch resource');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/NetworkError/i)).not.toBeInTheDocument();
     });
 
-    it('presents localized error in German for network failure and keeps technical message in detail', async () => {
+    it('presents localized error in German for network failure without exposing raw error in DOM', async () => {
       setTestLanguage('de');
       globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('NetworkError when attempting to fetch resource'));
 
@@ -142,14 +163,13 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Freigabe-Anfragen konnten nicht geladen werden/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('NetworkError when attempting to fetch resource');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/NetworkError/i)).not.toBeInTheDocument();
     });
   });
 
   describe('ConcurrencySettingsSection error handling', () => {
-    it('presents localized error in English on fetch failure', async () => {
+    it('presents localized error in English without leaking technical message to DOM', async () => {
       setTestLanguage('en');
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('Resource policy offline'));
 
@@ -159,12 +179,11 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Could not load resource limits/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('Resource policy offline');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Resource policy offline/i)).not.toBeInTheDocument();
     });
 
-    it('presents localized error in German on fetch failure', async () => {
+    it('presents localized error in German without leaking technical message to DOM', async () => {
       setTestLanguage('de');
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('Resource policy offline'));
 
@@ -174,9 +193,8 @@ describe('Admin Error Presentation & Diagnostic Detail Separation', () => {
         expect(screen.getByText(/Ressourcen-Limits konnten nicht geladen werden/i)).toBeInTheDocument();
       });
 
-      const detail = screen.getByTestId('error-detail');
-      expect(detail).toBeInTheDocument();
-      expect(detail).toHaveTextContent('Resource policy offline');
+      expect(screen.queryByTestId('error-detail')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Resource policy offline/i)).not.toBeInTheDocument();
     });
   });
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
+import { debugError, formatError } from '../../utils/logging';
 
 export interface FamilyMember {
   id: string;
@@ -15,7 +16,7 @@ export const FamilyManagementSection: React.FC = () => {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Invite Modal
@@ -30,13 +31,14 @@ export const FamilyManagementSection: React.FC = () => {
   const fetchMembers = async () => {
     setLoading(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const data = await request<FamilyMember[]>('/api/v3/household/members');
       setMembers(Array.isArray(data) ? data : []);
     } catch (e: any) {
+      debugError('Failed to load family members:', formatError(e));
       setError(t('admin.family.loadError'));
-      setErrorDetail(e?.message && e.message !== t('admin.family.loadError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -50,7 +52,7 @@ export const FamilyManagementSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setGeneratedInvite(null);
 
     try {
@@ -65,8 +67,9 @@ export const FamilyManagementSection: React.FC = () => {
       setGeneratedInvite({ code, url });
       setSuccess(t('admin.family.inviteSuccess'));
     } catch (e: any) {
+      debugError('Failed to create invite:', formatError(e));
       setError(t('admin.family.inviteError'));
-      setErrorDetail(e?.message && e.message !== t('admin.family.inviteError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -81,7 +84,7 @@ export const FamilyManagementSection: React.FC = () => {
   const handleRemoveMember = async (id: string) => {
     setSaving(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -89,8 +92,9 @@ export const FamilyManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchMembers();
     } catch (e: any) {
+      debugError('Failed to remove member:', formatError(e));
       setError(t('admin.family.removeError'));
-      setErrorDetail(e?.message && e.message !== t('admin.family.removeError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -137,11 +141,11 @@ export const FamilyManagementSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          <div>⚠️ {error}</div>
-          {errorDetail && (
-            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-              {errorDetail}
-            </div>
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
           )}
         </div>
       )}

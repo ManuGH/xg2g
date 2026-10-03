@@ -1,8 +1,6 @@
-// Copyright (c) 2025-2026 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { debugError, formatError } from '../../utils/logging';
 
 export interface ApprovalRequest {
   id: string;
@@ -23,13 +21,13 @@ export const ParentalControlSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchApprovals = async () => {
     setLoading(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const res = await fetch('/api/v3/household/approvals');
       if (res.ok) {
@@ -37,8 +35,9 @@ export const ParentalControlSection: React.FC = () => {
         setApprovals(Array.isArray(data) ? data : []);
       }
     } catch (e: any) {
+      debugError('Failed to load parental approvals:', formatError(e));
       setError(t('admin.parental.loadError'));
-      setErrorDetail(e?.message && e.message !== t('admin.parental.loadError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -51,7 +50,7 @@ export const ParentalControlSection: React.FC = () => {
   const handleApprove = async (id: string, scope: 'once' | 'always') => {
     setActionLoading(id);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
     try {
       const res = await fetch(`/api/v3/household/approvals/${id}/approve`, {
@@ -63,8 +62,9 @@ export const ParentalControlSection: React.FC = () => {
       setSuccess(scope === 'always' ? t('admin.parental.approvedAlways') : t('admin.parental.approvedOnce'));
       void fetchApprovals();
     } catch (e: any) {
+      debugError('Failed to approve request:', formatError(e));
       setError(t('admin.parental.approveError'));
-      setErrorDetail(e?.message && e.message !== t('admin.parental.approveError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setActionLoading(null);
     }
@@ -73,7 +73,7 @@ export const ParentalControlSection: React.FC = () => {
   const handleDeny = async (id: string) => {
     setActionLoading(id);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
     try {
       const res = await fetch(`/api/v3/household/approvals/${id}/deny`, {
@@ -83,8 +83,9 @@ export const ParentalControlSection: React.FC = () => {
       setSuccess(t('admin.parental.denied'));
       void fetchApprovals();
     } catch (e: any) {
+      debugError('Failed to deny request:', formatError(e));
       setError(t('admin.parental.denyError'));
-      setErrorDetail(e?.message && e.message !== t('admin.parental.denyError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setActionLoading(null);
     }
@@ -104,11 +105,11 @@ export const ParentalControlSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          <div>⚠️ {error}</div>
-          {errorDetail && (
-            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-              {errorDetail}
-            </div>
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
           )}
         </div>
       )}

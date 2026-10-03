@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
+import { debugError, formatError } from '../../utils/logging';
 
 export interface ProfileData {
   id: string;
@@ -19,7 +20,7 @@ export const ProfileManagementSection: React.FC = () => {
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Modal State
@@ -39,13 +40,14 @@ export const ProfileManagementSection: React.FC = () => {
   const fetchProfiles = async () => {
     setLoading(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const data = await request<ProfileData[]>('/api/v3/household/profiles');
       setProfiles(Array.isArray(data) ? data : []);
     } catch (e: any) {
+      debugError('Failed to load profiles:', formatError(e));
       setError(t('admin.profiles.loadError'));
-      setErrorDetail(e?.message && e.message !== t('admin.profiles.loadError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -81,13 +83,13 @@ export const ProfileManagementSection: React.FC = () => {
     e.preventDefault();
     if (!formName.trim()) {
       setError(t('admin.profiles.nameRequired'));
-      setErrorDetail(null);
+      setCorrelationId(null);
       return;
     }
 
     setSaving(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
 
     const payload = {
@@ -114,8 +116,9 @@ export const ProfileManagementSection: React.FC = () => {
       setIsModalOpen(false);
       void fetchProfiles();
     } catch (e: any) {
+      debugError('Failed to save profile:', formatError(e));
       setError(t('admin.profiles.saveError'));
-      setErrorDetail(e?.message && e.message !== t('admin.profiles.saveError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -124,7 +127,7 @@ export const ProfileManagementSection: React.FC = () => {
   const handleDelete = async (id: string) => {
     setSaving(true);
     setError(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -132,8 +135,9 @@ export const ProfileManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchProfiles();
     } catch (e: any) {
+      debugError('Failed to delete profile:', formatError(e));
       setError(t('admin.profiles.deleteError'));
-      setErrorDetail(e?.message && e.message !== t('admin.profiles.deleteError') ? e.message : null);
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -179,11 +183,11 @@ export const ProfileManagementSection: React.FC = () => {
       {/* Banners */}
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          <div>⚠️ {error}</div>
-          {errorDetail && (
-            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-              {errorDetail}
-            </div>
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
           )}
         </div>
       )}

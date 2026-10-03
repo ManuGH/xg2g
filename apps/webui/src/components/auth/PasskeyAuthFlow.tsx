@@ -18,6 +18,7 @@ import {
   acknowledgeRecovery,
   loginWithRecoveryCode,
 } from '../../services/passkeyApi';
+import { debugError, formatError } from '../../utils/logging';
 
 interface PasskeyAuthFlowProps {
   mode: 'bootstrap' | 'login' | 'expired';
@@ -43,7 +44,7 @@ export default function PasskeyAuthFlow({
   const [step, setStep] = useState<'passkey' | 'recovery-backup' | 'recovery-login' | 'token-login'>('passkey');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
 
   // Recovery code backup state
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
@@ -108,7 +109,7 @@ export default function PasskeyAuthFlow({
   const handleCreatePasskey = async (tokenToUse?: string) => {
     setLoading(true);
     setErrorMsg(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const activeToken = (tokenToUse !== undefined ? tokenToUse : setupTokenInput).trim() || setupToken;
       const startRes = await startPasskeyRegistration('admin', activeToken);
@@ -124,8 +125,9 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyFailed'));
       }
     } catch (err: any) {
+      debugError('Failed to create passkey:', formatError(err));
       setErrorMsg(t('auth.bootstrap.passkeyCouldNotBeCreated'));
-      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.passkeyCouldNotBeCreated') ? err.message : null);
+      setCorrelationId(err?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -136,13 +138,14 @@ export default function PasskeyAuthFlow({
     if (!codesConfirmed) return;
     setLoading(true);
     setErrorMsg(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       await acknowledgeRecovery();
       onSuccess();
     } catch (err: any) {
+      debugError('Failed to acknowledge recovery codes:', formatError(err));
       setErrorMsg(t('auth.bootstrap.setupCouldNotBeCompleted'));
-      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.setupCouldNotBeCompleted') ? err.message : null);
+      setCorrelationId(err?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -152,7 +155,7 @@ export default function PasskeyAuthFlow({
   const handlePasskeyLogin = async () => {
     setLoading(true);
     setErrorMsg(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const startRes = await startPasskeyLogin();
       const assertion = await getPasskeyAssertion(startRes.options, false);
@@ -164,8 +167,9 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyLoginFailed'));
       }
     } catch (err: any) {
+      debugError('Failed to login with passkey:', formatError(err));
       setErrorMsg(t('auth.bootstrap.passkeyLoginFailed'));
-      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.passkeyLoginFailed') ? err.message : null);
+      setCorrelationId(err?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -180,7 +184,7 @@ export default function PasskeyAuthFlow({
 
     setLoading(true);
     setErrorMsg(null);
-    setErrorDetail(null);
+    setCorrelationId(null);
     try {
       const res = await loginWithRecoveryCode(username, code);
       if (res && res.user) {
@@ -189,8 +193,9 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.invalidRecoveryCode'));
       }
     } catch (err: any) {
+      debugError('Failed to login with recovery code:', formatError(err));
       setErrorMsg(t('auth.bootstrap.recoveryCodeRejected'));
-      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.recoveryCodeRejected') ? err.message : null);
+      setCorrelationId(err?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -276,11 +281,11 @@ export default function PasskeyAuthFlow({
             </div>
             {errorMsg ? (
               <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
-                <div>{errorMsg}</div>
-                {errorDetail && (
-                  <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                    {errorDetail}
-                  </div>
+                <span>{errorMsg}</span>
+                {correlationId && (
+                  <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+                    ({correlationId})
+                  </span>
                 )}
               </div>
             ) : null}
@@ -349,11 +354,11 @@ export default function PasskeyAuthFlow({
 
           {errorMsg ? (
             <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
-              <div>{errorMsg}</div>
-              {errorDetail && (
-                <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                  {errorDetail}
-                </div>
+              <span>{errorMsg}</span>
+              {correlationId && (
+                <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+                  ({correlationId})
+                </span>
               )}
             </div>
           ) : null}
@@ -414,11 +419,11 @@ export default function PasskeyAuthFlow({
             </div>
             {errorMsg ? (
               <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
-                <div>{errorMsg}</div>
-                {errorDetail && (
-                  <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                    {errorDetail}
-                  </div>
+                <span>{errorMsg}</span>
+                {correlationId && (
+                  <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+                    ({correlationId})
+                  </span>
                 )}
               </div>
             ) : null}
@@ -473,11 +478,11 @@ export default function PasskeyAuthFlow({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', marginTop: '1rem' }}>
           {errorMsg ? (
             <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
-              <div>{errorMsg}</div>
-              {errorDetail && (
-                <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
-                  {errorDetail}
-                </div>
+              <span>{errorMsg}</span>
+              {correlationId && (
+                <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+                  ({correlationId})
+                </span>
               )}
             </div>
           ) : null}
