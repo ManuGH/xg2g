@@ -170,9 +170,8 @@ When source recordings are written by a receiver to an NFS share mounted on the 
   or partial stream corruption if the stall exceeds device buffers.
 
 ### 2. Transport Protocol & Timeout Parameters
-- **Protocol**: NFS over TCP (`proto=tcp`). In our receiver environment, NFSv3 is currently the
-  negotiated active state (`vers=3` in `/proc/mounts`), though the fstab configuration does not
-  explicitly pin the version.
+- **Protocol**: NFS over TCP (`proto=tcp`). In our receiver environment, NFSv4.2 is the
+  currently configured and active state (`vers=4.2` in `/proc/mounts`).
 - **Timeout (`timeo=600`)**: Under NFS over TCP, the Linux client performs **linear backoff**
   (each retransmission increases the timeout by `timeo` up to a maximum of 600 s; see
   [nfs(5)](https://man7.org/linux/man-pages/man5/nfs.5.html)). The standard TCP default is
@@ -182,15 +181,26 @@ When source recordings are written by a receiver to an NFS share mounted on the 
   kernels.
 
 ### 3. Current Receiver Configuration Example
-The current receiver `/etc/fstab` configuration:
+The current active receiver `/etc/fstab` configuration:
 
 ```fstab
-<nfs-server-ip>:<export-path> /media/nfs-recordings nfs _netdev,rw,nolock,tcp,hard,timeo=600 0 0
+<nfs-server-ip>:<export-path> /media/nfs-recordings nfs _netdev,rw,nolock,tcp,hard,timeo=600,vers=4.2 0 0
 ```
 
 > **Note on `nolock`**: `nolock` is an inherited setting from our existing receiver configuration
 > to avoid RPC lock manager dependencies on single-client shares; it is not a general operational
 > recommendation for all NFS deployments.
+
+#### Fallback Configuration
+Should issues arise with NFSv4.2 under long-duration load, the proven fallback configuration is
+NFSv3 with hard timeouts:
+
+```fstab
+<nfs-server-ip>:<export-path> /media/nfs-recordings nfs _netdev,rw,nolock,tcp,hard,timeo=600 0 0
+```
+
+*Note: Before switching configurations, always secure diagnostic evidence and confirm no recordings
+are active or imminent.*
 
 ### 4. Operational Maintenance & Test Protocol
 When modifying storage mount options or performing validation tests on recording filesystems:
@@ -208,10 +218,11 @@ When modifying storage mount options or performing validation tests on recording
   error, correlated with multiple kernel NFS client timeouts to the storage host while configured
   with `soft,timeo=14`. The primary cause of the server/network response latency remains unproven
   (server-side daemon and kernel logs reported no crashes or service restarts).
-- **Remediation & Activation (2026-10-03)**: The receiver mount was updated to `hard,timeo=600`.
-  A short-duration test recording confirmed container readability, stream parsing, and metadata
-  extraction with `ffprobe`.
-- **Validation Status**: **Pending long-duration validation**. Real-world resilience over an
-  extended multi-hour recording window (e.g. 180-minute broadcast) remains to be verified under
-  active production scheduling.
+- **Remediation & Activation (2026-10-03)**: The receiver mount was updated first to NFSv3 `hard,timeo=600`
+  and subsequently to NFSv4.2 (`vers=4.2,hard,timeo=600`). In both cases, short-duration test
+  recordings confirmed container readability, stream parsing, and metadata extraction with `ffprobe`.
+- **Validation Status**: **Pending long-duration validation**. The upcoming scheduled recording
+  (e.g. 180-minute broadcast on 2026-10-04) evaluates **NFSv4.2 combined with `hard,timeo=600`** under
+  active production scheduling (not an isolated test of the prior NFSv3 state).
+
 
