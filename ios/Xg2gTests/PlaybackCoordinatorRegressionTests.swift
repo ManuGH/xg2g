@@ -42,12 +42,17 @@ final class ControlledBarrier: @unchecked Sendable {
         condition.unlock()
     }
 
-    func blockUntilReleased() {
+    @discardableResult
+    func blockUntilReleased(timeoutSeconds: Double = 5.0) -> Bool {
         condition.lock()
+        defer { condition.unlock() }
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
         while !isReleased {
-            condition.wait()
+            if !condition.wait(until: deadline) {
+                return false
+            }
         }
-        condition.unlock()
+        return true
     }
 }
 
@@ -252,6 +257,13 @@ struct PlaybackCoordinatorRegressionTests {
         }
         let tracker = RequestTracker()
         let barrierB = ControlledBarrier()
+        var taskBOpt: Task<Void, Never>?
+        var taskCOpt: Task<Void, Never>?
+        defer {
+            barrierB.release()
+            taskBOpt?.cancel()
+            taskCOpt?.cancel()
+        }
 
         PrepareStubURLProtocol.setHandler { req in
             let path = req.url?.path ?? ""
@@ -286,13 +298,16 @@ struct PlaybackCoordinatorRegressionTests {
 
         // 1. Start zap to B
         let taskB = Task { await coordinator.zap(to: self.srefB) }
-        await barrierB.waitForArrival()
+        taskBOpt = taskB
+        let barrierBArrived = await barrierB.waitForArrival(timeoutSeconds: 5.0)
+        #expect(barrierBArrived, "Channel B preparation must arrive at barrier")
 
         #expect(coordinator.requestedServiceRef == self.srefB)
         #expect(coordinator.presentedServiceRef == self.srefA)
 
         // 2. Rapidly zap to C while B is held
         let taskC = Task { await coordinator.zap(to: self.srefC) }
+        taskCOpt = taskC
         await taskC.value
 
         coordinator.playing?.onFirstPictureVisible?()
@@ -336,6 +351,11 @@ struct PlaybackCoordinatorRegressionTests {
         }
         let cancelTracker = CancelTracker()
         let barrierStatus = ControlledBarrier()
+        var zapTaskOpt: Task<Void, Never>?
+        defer {
+            barrierStatus.release()
+            zapTaskOpt?.cancel()
+        }
 
         PrepareStubURLProtocol.setHandler { req in
             let path = req.url?.path ?? ""
@@ -371,7 +391,9 @@ struct PlaybackCoordinatorRegressionTests {
         }
 
         let zapTask = Task { await coordinator.zap(to: self.srefB) }
-        await barrierStatus.waitForArrival()
+        zapTaskOpt = zapTask
+        let arrived = await barrierStatus.waitForArrival(timeoutSeconds: 5.0)
+        #expect(arrived, "Status poll must arrive at barrier")
 
         #expect(coordinator.requestedServiceRef == self.srefB)
 
@@ -397,6 +419,11 @@ struct PlaybackCoordinatorRegressionTests {
     func stopDismissalSuppressesError() async throws {
         let (coordinator, _) = try makeCoordinator()
         let barrier = ControlledBarrier()
+        var zapTaskOpt: Task<Void, Never>?
+        defer {
+            barrier.release()
+            zapTaskOpt?.cancel()
+        }
 
         PrepareStubURLProtocol.setHandler { req in
             let path = req.url?.path ?? ""
@@ -419,7 +446,9 @@ struct PlaybackCoordinatorRegressionTests {
 
         // Zap is in flight
         let zapTask = Task { await coordinator.zap(to: self.srefB) }
-        await barrier.waitForArrival()
+        zapTaskOpt = zapTask
+        let arrived = await barrier.waitForArrival(timeoutSeconds: 5.0)
+        #expect(arrived, "Slow prep poll must arrive at barrier")
 
         // Screen is dismissed / stop is called
         await coordinator.stop()
@@ -512,6 +541,15 @@ struct PlaybackCoordinatorRegressionTests {
         let barrierStatusB = ControlledBarrier()
         let barrierDeleteB = ControlledBarrier()
         let barrierPrepC = ControlledBarrier()
+        var taskBOpt: Task<Void, Never>?
+        var taskCOpt: Task<Void, Never>?
+        defer {
+            barrierStatusB.release()
+            barrierDeleteB.release()
+            barrierPrepC.release()
+            taskBOpt?.cancel()
+            taskCOpt?.cancel()
+        }
 
         PrepareStubURLProtocol.setHandler { req in
             let path = req.url?.path ?? ""
@@ -566,6 +604,7 @@ struct PlaybackCoordinatorRegressionTests {
 
         // 1. Start zap to Channel B and wait for proven status poll (confirming inFlight is established)
         let taskB = Task { await coordinator.zap(to: self.srefB) }
+        taskBOpt = taskB
         let statusBArrived = await barrierStatusB.waitForArrival(timeoutSeconds: 5.0)
         #expect(statusBArrived, "Status poll for Channel B must arrive before cancellation")
 
@@ -578,6 +617,7 @@ struct PlaybackCoordinatorRegressionTests {
 
         // 3. While old cleanup for B is suspended on the DELETE response barrier, start a newer zap to Channel C
         let taskC = Task { await coordinator.zap(to: self.srefC) }
+        taskCOpt = taskC
         let prepCArrived = await barrierPrepC.waitForArrival(timeoutSeconds: 5.0)
         #expect(prepCArrived, "Preparation start for Channel C must arrive")
 
