@@ -13,6 +13,7 @@ import {
   groupRecordings,
   normalizeTitle,
   type RecordingCategory,
+  type SeriesGroup,
 } from '../features/recordings/classification';
 import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
@@ -920,6 +921,49 @@ export default function RecordingsList() {
     );
   };
 
+  const renderSeriesCard = (group: SeriesGroup) => {
+    const latestEpisode = group.episodes[0];
+    const episodeCountLabel = group.episodes.length === 1
+      ? t('recordings.episodesCountSingle')
+      : t('recordings.episodesCount', { count: group.episodes.length });
+
+    return (
+      <Card
+        key={group.normalizedKey}
+        interactive
+        className={styles.seriesFolderCard}
+        onClick={() => handleSelectSeries(group.seriesTitle)}
+      >
+        <CardBody className={styles.seriesFolderCardBody}>
+          {latestEpisode ? (
+            <div className={styles.seriesPosterPreview} style={resolveRecordingPreviewStyle(latestEpisode)}>
+              <RecordingPreviewArtwork recording={latestEpisode} authToken={auth.token} />
+              <div className={styles.seriesPosterTop}>
+                <span className={styles.seriesFolderBadge}>{episodeCountLabel}</span>
+              </div>
+              <div className={styles.playOverlay} aria-hidden="true">
+                <PlayCircleIcon className={styles.playOverlayIcon} />
+              </div>
+            </div>
+          ) : (
+            <div className={styles.seriesFolderIcon}>
+              <FolderIcon className={styles.iconSm} />
+            </div>
+          )}
+          <div className={styles.seriesFolderCopy}>
+            <span className={styles.seriesFolderTitle}>{group.seriesTitle}</span>
+            <div className={`${styles.seriesFolderMeta} tabular`.trim()}>
+              {!latestEpisode && <span className={styles.seriesFolderBadge}>{episodeCountLabel}</span>}
+              <span>{formatRecordingLength(group.totalDurationSeconds)}</span>
+              <span>•</span>
+              <span>{formatRecordingCardDate(group.latestBeginUnixSeconds)}</span>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    );
+  };
+
   if (!canAccessDvrPlayback) {
     return (
       <div className={[styles.container, 'animate-enter'].join(' ')}>
@@ -1071,6 +1115,25 @@ export default function RecordingsList() {
       </section>
 
       <div className={styles.browserBar}>
+        <div className={styles.categoryControls} role="tablist" aria-label={t('recordings.categoryLabel')}>
+          {categoryOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={categoryFilter === option.value}
+              className={[
+                styles.categoryButton,
+                categoryFilter === option.value ? styles.categoryButtonActive : null,
+              ].filter(Boolean).join(' ')}
+              onClick={() => handleCategoryChange(option.value)}
+              disabled={deleteLoading}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <div className={styles.toolbarPrimary}>
           <div className={styles.toolbarGroup}>
             <label className={styles.infoLabel}>{t('recordings.location')}</label>
@@ -1145,25 +1208,6 @@ export default function RecordingsList() {
           )}
         </div>
 
-        <div className={styles.categoryControls} role="tablist" aria-label={t('recordings.categoryLabel')}>
-          {categoryOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="tab"
-              aria-selected={categoryFilter === option.value}
-              className={[
-                styles.categoryButton,
-                categoryFilter === option.value ? styles.categoryButtonActive : null,
-              ].filter(Boolean).join(' ')}
-              onClick={() => handleCategoryChange(option.value)}
-              disabled={deleteLoading}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
         <div className={styles.segmentedControls}>
           <div className={styles.segmentGroup} role="tablist" aria-label={t('recordings.view')}>
             {filterOptions.map((option) => (
@@ -1207,26 +1251,68 @@ export default function RecordingsList() {
 
       {selectedSeries && (
         <div className={styles.subfolderHeader}>
+          {activeSeriesGroup?.episodes[0] && (
+            <div className={styles.seriesHubBackdrop} style={resolveRecordingPreviewStyle(activeSeriesGroup.episodes[0])}>
+              <RecordingPreviewArtwork recording={activeSeriesGroup.episodes[0]} authToken={auth.token} />
+              <div className={styles.seriesHubBackdropOverlay} />
+            </div>
+          )}
           <div className={styles.subfolderInfo}>
             <div className={styles.subfolderIcon}>
               <FolderIcon className={styles.iconSm} />
             </div>
             <div>
+              <div className={styles.seriesHubBadges}>
+                <span className={styles.seriesHubBadgeTag}>{t('recordings.categorySeries')}</span>
+                <span className={styles.subfolderMeta}>
+                  {visibleRecordings.length === 1
+                    ? t('recordings.episodesCountSingle')
+                    : t('recordings.episodesCount', { count: visibleRecordings.length })}
+                </span>
+                {activeSeriesGroup?.totalDurationSeconds ? (
+                  <span className={styles.seriesHubDuration}>
+                    {t('recordings.seriesTotalDuration', {
+                      duration: formatRecordingLength(activeSeriesGroup.totalDurationSeconds),
+                      defaultValue: `Gesamt: ${formatRecordingLength(activeSeriesGroup.totalDurationSeconds)}`,
+                    })}
+                  </span>
+                ) : null}
+              </div>
               <h2 className={styles.subfolderTitle}>{selectedSeries}</h2>
-              <span className={styles.subfolderMeta}>
-                {visibleRecordings.length === 1
-                  ? t('recordings.episodesCountSingle')
-                  : t('recordings.episodesCount', { count: visibleRecordings.length })}
-              </span>
+              {activeSeriesGroup?.episodes[0]?.description ? (
+                <p className={styles.seriesHubDescription}>
+                  {activeSeriesGroup.episodes[0].description}
+                </p>
+              ) : null}
             </div>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => handleSelectSeries(null)}
-          >
-            {categoryFilter === 'series' ? t('recordings.backToAllSeries') : t('recordings.backToRecordings')}
-          </Button>
+          <div className={styles.seriesHubHeaderActions}>
+            {canAccessDvrPlayback && visibleRecordings.length > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  const firstRec = visibleRecordings[0];
+                  if (!firstRec) return;
+                  if (resolveEligibleResume(firstRec)) {
+                    handleOpenPreplay(firstRec);
+                  } else {
+                    void handlePlay(firstRec, { startPositionSeconds: 0, suppressResumePrompt: true });
+                  }
+                }}
+              >
+                <PlayCircleIcon className={styles.iconSm} />
+                <span>{t('recordings.playLatestEpisode', { defaultValue: 'Neueste Folge abspielen' })}</span>
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleSelectSeries(null)}
+            >
+              {categoryFilter === 'series' ? t('recordings.backToAllSeries') : t('recordings.backToRecordings')}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1264,31 +1350,7 @@ export default function RecordingsList() {
             <h2 className={styles.sectionTitle}>{t('recordings.seriesFolders')}</h2>
           </div>
           <div className={styles.seriesRail}>
-            {seriesGroups.map((group) => (
-              <Card
-                key={group.normalizedKey}
-                interactive
-                className={styles.seriesFolderCard}
-                onClick={() => handleSelectSeries(group.seriesTitle)}
-              >
-                <CardBody className={styles.seriesFolderCardBody}>
-                  <div className={styles.seriesFolderIcon}>
-                    <FolderIcon className={styles.iconSm} />
-                  </div>
-                  <div className={styles.seriesFolderCopy}>
-                    <span className={styles.seriesFolderTitle}>{group.seriesTitle}</span>
-                    <div className={styles.seriesFolderMeta}>
-                      <span className={styles.seriesFolderBadge}>
-                        {group.episodes.length === 1
-                          ? t('recordings.episodesCountSingle')
-                          : t('recordings.episodesCount', { count: group.episodes.length })}
-                      </span>
-                      <span>{formatTime(group.latestBeginUnixSeconds)}</span>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
+            {seriesGroups.map(renderSeriesCard)}
           </div>
         </section>
       )}
@@ -1299,29 +1361,7 @@ export default function RecordingsList() {
             <h2 className={styles.sectionTitle}>{t('recordings.seriesFolders')}</h2>
           </div>
           <div className={styles.seriesRail}>
-            {multiEpisodeSeries.map((group) => (
-              <Card
-                key={group.normalizedKey}
-                interactive
-                className={styles.seriesFolderCard}
-                onClick={() => handleSelectSeries(group.seriesTitle)}
-              >
-                <CardBody className={styles.seriesFolderCardBody}>
-                  <div className={styles.seriesFolderIcon}>
-                    <FolderIcon className={styles.iconSm} />
-                  </div>
-                  <div className={styles.seriesFolderCopy}>
-                    <span className={styles.seriesFolderTitle}>{group.seriesTitle}</span>
-                    <div className={styles.seriesFolderMeta}>
-                      <span className={styles.seriesFolderBadge}>
-                        {t('recordings.episodesCount', { count: group.episodes.length })}
-                      </span>
-                      <span>{formatTime(group.latestBeginUnixSeconds)}</span>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
+            {multiEpisodeSeries.map(renderSeriesCard)}
           </div>
         </section>
       )}
