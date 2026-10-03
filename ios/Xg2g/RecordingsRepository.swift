@@ -27,10 +27,7 @@ struct Recording: Identifiable, Equatable, Sendable {
     }
 
     var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: beginDate)
+        beginDate.formatted(date: .abbreviated, time: .shortened)
     }
 
     var genre: EpgGenre {

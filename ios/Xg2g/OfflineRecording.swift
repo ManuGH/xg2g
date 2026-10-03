@@ -98,7 +98,7 @@ struct OfflineRecording: Identifiable, Codable, Equatable, Sendable {
         if hours > 0 {
             return "\(hours)h \(minutes)m"
         }
-        return "\(minutes) Min."
+        return "\(minutes)m"
     }
 
     var formattedSize: String {
@@ -109,10 +109,7 @@ struct OfflineRecording: Identifiable, Codable, Equatable, Sendable {
     }
 
     var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: downloadDate)
+        downloadDate.formatted(date: .abbreviated, time: .shortened)
     }
 
     func localFileURL() -> URL {

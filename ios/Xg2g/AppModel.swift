@@ -99,18 +99,21 @@ struct RerunItem: Identifiable, Sendable {
     let channel: Channel
     let entry: NowNext.Entry
 
-    var formattedRelativeTime: String {
+    var formattedRelativeTimeResource: LocalizedStringResource {
         let calendar = Calendar.current
+        let timeString = entry.formattedStartTime
         if calendar.isDateInToday(entry.start) {
-            return "Heute, \(entry.formattedStartTime) Uhr"
+            return LocalizedStringResource("Today, \(timeString)")
         } else if calendar.isDateInTomorrow(entry.start) {
-            return "Morgen, \(entry.formattedStartTime) Uhr"
+            return LocalizedStringResource("Tomorrow, \(timeString)")
         } else {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "de_DE")
-            f.dateFormat = "E, d. MMM • HH:mm"
-            return "\(f.string(from: entry.start)) Uhr"
+            let dateString = entry.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+            return LocalizedStringResource("\(dateString) • \(timeString)")
         }
+    }
+
+    var formattedRelativeTime: String {
+        String(localized: formattedRelativeTimeResource)
     }
 }
 
@@ -140,6 +143,14 @@ final class AppModel {
         self.channels = channels
         self.schedule = schedule
         self.fullEpg = fullEpg
+    }
+
+    func setRecordingsAndTimersForTesting(
+        recordings: [Recording] = [],
+        timers: [DVRTimer] = []
+    ) {
+        self.recordings = recordings
+        self.timers = timers
     }
 
     /// Bumped whenever the channel list, Now/Next schedule or full EPG is replaced.

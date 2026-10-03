@@ -1053,4 +1053,191 @@ struct LocalizationTests {
             Self.saveScreenshot(image, name: "guide_\(code)")
         }
     }
+
+    // MARK: - 11. Batch 4: Recordings, Timers & Program Details Audit
+
+    @Test("Recordings CategoryFilter and artwork palette provide DE and EN localized titles")
+    func recordingsCategoryAndPaletteLocalization() {
+        let expectedFilters: [(filter: RecordingsView.CategoryFilter, raw: String, de: String, en: String)] = [
+            (.all, "all", "Alle", "All"),
+            (.offline, "offline", "Downloads", "Downloads"),
+            (.movies, "movies", "🎬 Spielfilme", "🎬 Movies"),
+            (.series, "series", "📺 Serien", "📺 Series"),
+            (.sport, "sport", "⚽️ Sport", "⚽️ Sports"),
+            (.docus, "docus", "🌍 Dokus", "🌍 Documentaries")
+        ]
+
+        for item in expectedFilters {
+            #expect(item.filter.rawValue == item.raw)
+            #expect(item.filter.id == item.raw)
+            #expect(resolve(item.filter.localizedTitle, locale: deLocale) == item.de)
+            #expect(resolve(item.filter.localizedTitle, locale: enLocale) == item.en)
+        }
+    }
+
+    @Test("Batch 4 keys localize accurately across DE and EN")
+    func batch4KeysLocalization() {
+        let keys: [(key: String.LocalizationValue, de: String, en: String)] = [
+            ("Recordings", "Aufnahmen", "Recordings"),
+            ("All Recordings", "Alle Aufnahmen", "All Recordings"),
+            ("No Recordings", "Keine Aufnahmen", "No Recordings"),
+            ("No Downloads", "Keine Downloads", "No Downloads"),
+            ("No Timers", "Keine Timer", "No Timers"),
+            ("New Timer", "Neuer Timer", "New Timer"),
+            ("Recording Details", "Aufnahmedetails", "Recording Details"),
+            ("Broadcast Details", "Sendungsdetails", "Broadcast Details"),
+            ("Earlier", "Davor", "Earlier"),
+            ("Later", "Danach", "Later"),
+            ("ON AIR NOW", "LÄUFT JETZT LIVE", "ON AIR NOW"),
+            ("Timer Scheduled", "Timer programmiert", "Timer Scheduled"),
+            ("Episode Scheduled", "Folge programmiert", "Episode Scheduled"),
+            ("Play from Start", "Von Beginn an abspielen", "Play from Start"),
+            ("Play Recording", "Aufnahme abspielen", "Play Recording"),
+            ("Delete from Server", "Vom Server löschen", "Delete from Server"),
+            ("Delete Download", "Download löschen", "Delete Download"),
+            ("Delete Timer", "Timer löschen", "Delete Timer")
+        ]
+
+        for item in keys {
+            #expect(localize(item.key, locale: deLocale) == item.de)
+            #expect(localize(item.key, locale: enLocale) == item.en)
+        }
+    }
+
+    @Test("Programmatic smoke test: Render RecordingsView in German and English, retaining PNG artifacts")
+    @MainActor
+    func renderRecordingsViewInBothLocales() throws {
+        let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        let recording1 = Recording(
+            id: "rec-1",
+            title: "Tatort: Das Wunder von Merazhofen",
+            description: "Ein rätselhafter Mordfall im Allgäu.",
+            beginDate: Date.now.addingTimeInterval(-86400),
+            durationSeconds: 5400,
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            filename: "20261002 2015 - Das Erste HD - Tatort.ts",
+            status: "completed",
+            serverResumePos: 1200
+        )
+        let recording2 = Recording(
+            id: "rec-2",
+            title: "Planet Erde: Wüstenwelten",
+            description: "Faszinierende Aufnahmen der trockensten Regionen.",
+            beginDate: Date.now.addingTimeInterval(-172800),
+            durationSeconds: 3000,
+            serviceRef: "1:0:19:2B66:3F3:1:C00000:0:0:0:",
+            filename: "20261001 1930 - ZDF HD - Planet Erde.ts",
+            status: "completed",
+            serverResumePos: 0
+        )
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let model = AppModel()
+            model.setRecordingsAndTimersForTesting(recordings: [recording1, recording2])
+
+            let view = RecordingsView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let controller = UIHostingController(rootView: view)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            controller.view.overrideUserInterfaceStyle = .dark
+
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "recordings_\(code)")
+        }
+    }
+
+    @Test("Programmatic smoke test: Render TimersView in German and English, retaining PNG artifacts")
+    @MainActor
+    func renderTimersViewInBothLocales() throws {
+        let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        let now = Date.now
+        let timer1 = DVRTimer(
+            id: "timer-1",
+            name: "Tagesschau 20:00",
+            description: "Nachrichten des Tages",
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            serviceName: "Das Erste HD",
+            beginDate: now.addingTimeInterval(-300),
+            endDate: now.addingTimeInterval(900),
+            state: "running"
+        )
+        let timer2 = DVRTimer(
+            id: "timer-2",
+            name: "heute-show",
+            description: "Satiremagazin mit Oliver Welke",
+            serviceRef: "1:0:19:2B66:3F3:1:C00000:0:0:0:",
+            serviceName: "ZDF HD",
+            beginDate: now.addingTimeInterval(7200),
+            endDate: now.addingTimeInterval(9600),
+            state: "waiting"
+        )
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let model = AppModel()
+            model.setRecordingsAndTimersForTesting(timers: [timer1, timer2])
+
+            let view = TimersView(model: model)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let controller = UIHostingController(rootView: view)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            controller.view.overrideUserInterfaceStyle = .dark
+
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "timers_\(code)")
+        }
+    }
 }
