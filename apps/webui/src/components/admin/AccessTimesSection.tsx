@@ -2,6 +2,8 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface AccessPolicyData {
   accountId: string;
@@ -13,16 +15,17 @@ export interface AccessPolicyData {
 }
 
 const DAYS_OF_WEEK = [
-  { bit: 1, label: 'Mo' },
-  { bit: 2, label: 'Di' },
-  { bit: 4, label: 'Mi' },
-  { bit: 8, label: 'Do' },
-  { bit: 16, label: 'Fr' },
-  { bit: 32, label: 'Sa' },
-  { bit: 64, label: 'So' },
+  { bit: 1, key: 'admin.accessTimes.days.1' as const },
+  { bit: 2, key: 'admin.accessTimes.days.2' as const },
+  { bit: 4, key: 'admin.accessTimes.days.4' as const },
+  { bit: 8, key: 'admin.accessTimes.days.8' as const },
+  { bit: 16, key: 'admin.accessTimes.days.16' as const },
+  { bit: 32, key: 'admin.accessTimes.days.32' as const },
+  { bit: 64, key: 'admin.accessTimes.days.64' as const },
 ];
 
 export const AccessTimesSection: React.FC = () => {
+  const { t } = useTranslation();
   const [policy, setPolicy] = useState<AccessPolicyData>({
     accountId: 'default_member',
     allowedDaysMask: 127, // All 7 days
@@ -35,19 +38,23 @@ export const AccessTimesSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchAccessPolicy = async () => {
     setLoading(true);
     setError(null);
+    setCorrelationId(null);
     try {
       const res = await fetch('/api/v3/household/policies/access');
       if (res.ok) {
         const data = await res.json();
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
-    } catch {
-      setError('Zugriffszeiten konnten nicht geladen werden.');
+    } catch (e: any) {
+      debugDiagnosticError('admin.accessTimes.load', e);
+      setError(t('admin.accessTimes.loadError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -66,6 +73,7 @@ export const AccessTimesSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setCorrelationId(null);
     setSuccess(null);
 
     try {
@@ -75,18 +83,20 @@ export const AccessTimesSection: React.FC = () => {
         body: JSON.stringify(policy),
       });
 
-      if (!res.ok) throw new Error('Speichern der Zugriffsregeln fehlgeschlagen.');
-      setSuccess('Zugriffszeiten und Tagesfenster wurden erfolgreich aktualisiert.');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSuccess(t('admin.accessTimes.saveSuccess'));
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Speichern.');
+      debugDiagnosticError('admin.accessTimes.save', e);
+      setError(t('admin.accessTimes.saveError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
   };
 
   // Timeline bar calculations (0..24h)
-  const parseHourFraction = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
+  const parseHourFraction = (tStr: string) => {
+    const [h, m] = tStr.split(':').map(Number);
     return (h || 0) + (m || 0) / 60;
   };
 
@@ -99,15 +109,20 @@ export const AccessTimesSection: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Tägliche Zugriffszeiten & Sperrstunden</h3>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.accessTimes.title')}</h3>
         <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-          Legen Sie tägliche Sehfenster und erlaubte Wochentage fest. Außerhalb dieser Zeiten schlägt die Arbitrierung fail-closed fehl.
+          {t('admin.accessTimes.subtitle')}
         </p>
       </div>
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
+          )}
         </div>
       )}
       {success && (
@@ -117,12 +132,12 @@ export const AccessTimesSection: React.FC = () => {
       )}
 
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Zugriffszeiten werden geladen...</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>{t('admin.accessTimes.loading')}</div>
       ) : (
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Days of Week Selector */}
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: 'var(--text-primary)' }}>Erlaubte Wochentage</h4>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: 'var(--text-primary)' }}>{t('admin.accessTimes.allowedDays')}</h4>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               {DAYS_OF_WEEK.map((d) => {
                 const isActive = (policy.allowedDaysMask & d.bit) !== 0;
@@ -144,7 +159,7 @@ export const AccessTimesSection: React.FC = () => {
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    {d.label}
+                    {t(d.key)}
                   </button>
                 );
               })}
@@ -153,11 +168,11 @@ export const AccessTimesSection: React.FC = () => {
 
           {/* Time Window & Timeline Preview */}
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', color: 'var(--text-primary)' }}>Tägliches Sehzeitfenster</h4>
+            <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', color: 'var(--text-primary)' }}>{t('admin.accessTimes.dailyWindow')}</h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Startzeit (ab)</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.accessTimes.startTime')}</label>
                 <input
                   type="time"
                   value={policy.dailyStart}
@@ -166,7 +181,7 @@ export const AccessTimesSection: React.FC = () => {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Endzeit (bis)</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.accessTimes.endTime')}</label>
                 <input
                   type="time"
                   value={policy.dailyEnd}
@@ -179,9 +194,9 @@ export const AccessTimesSection: React.FC = () => {
             {/* 24h Timeline Visualizer */}
             <div style={{ marginTop: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
-                <span>00:00 Uhr</span>
-                <span style={{ color: 'var(--accent-action)', fontWeight: 600 }}>Erlaubt: {policy.dailyStart} – {policy.dailyEnd} Uhr</span>
-                <span>24:00 Uhr</span>
+                <span>{t('admin.accessTimes.timelineStart')}</span>
+                <span style={{ color: 'var(--accent-action)', fontWeight: 600 }}>{t('admin.accessTimes.allowedRange', { start: policy.dailyStart, end: policy.dailyEnd })}</span>
+                <span>{t('admin.accessTimes.timelineEnd')}</span>
               </div>
 
               <div style={{ height: '16px', width: '100%', backgroundColor: 'var(--bg-base)', borderRadius: '8px', overflow: 'hidden', position: 'relative', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -208,12 +223,12 @@ export const AccessTimesSection: React.FC = () => {
 
           {/* Product Permissions Toggles */}
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h4 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)' }}>Produkt-Berechtigungen</h4>
+            <h4 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)' }}>{t('admin.accessTimes.productPermissions')}</h4>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Live-TV Zugriff</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Erlaubt das Ansehen von Live-Sendern im Wochentagsfenster</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.accessTimes.liveTvAccess')}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('admin.accessTimes.liveTvAccessDesc')}</div>
               </div>
               <input
                 type="checkbox"
@@ -225,8 +240,8 @@ export const AccessTimesSection: React.FC = () => {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Aufnahmen & Bibliothek</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Erlaubt das Ansehen und Programmieren von DVR-Aufnahmen</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.accessTimes.recordingsAccess')}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{t('admin.accessTimes.recordingsAccessDesc')}</div>
               </div>
               <input
                 type="checkbox"
@@ -252,7 +267,7 @@ export const AccessTimesSection: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              {saving ? 'Speichern...' : '💾 Zugriffszeiten speichern'}
+              {saving ? t('admin.accessTimes.saving') : t('admin.accessTimes.save')}
             </button>
           </div>
         </form>

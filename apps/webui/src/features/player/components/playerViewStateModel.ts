@@ -308,6 +308,30 @@ export function buildProfileOptions(
   ];
 }
 
+const STATUS_STATE_KEY_MAP = {
+  idle: 'player.statusStates.idle',
+  starting: 'player.statusStates.starting',
+  priming: 'player.statusStates.priming',
+  building: 'player.statusStates.building',
+  ready: 'player.statusStates.ready',
+  buffering: 'player.statusStates.buffering',
+  playing: 'player.statusStates.playing',
+  paused: 'player.statusStates.paused',
+  error: 'player.statusStates.error',
+  recovering: 'player.statusStates.recovering',
+  stopped: 'player.statusStates.stopped',
+  active: 'player.statusStates.active',
+  stalled: 'player.statusStates.stalled',
+  ending: 'player.statusStates.ending',
+} as const;
+
+function formatStatusStateLabel(status: string | undefined | null, t: TFunction): string {
+  if (status && status in STATUS_STATE_KEY_MAP) {
+    return t(STATUS_STATE_KEY_MAP[status as keyof typeof STATUS_STATE_KEY_MAP]);
+  }
+  return status || '';
+}
+
 export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewState {
   const { t, formatClock } = input;
   const showVerboseErrorTelemetry = !input.isCompactTouchLayout;
@@ -395,7 +419,7 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     showStatsOverlay: input.showStats && input.showPlaybackChrome,
     statsTitle,
     statusLabel: t('player.status'),
-    statusChipLabel: t(`player.statusStates.${input.status}`, { defaultValue: input.status }),
+    statusChipLabel: formatStatusStateLabel(input.status, t),
     statusChipState: input.status === 'ready' ? 'live' : input.status === 'error' ? 'error' : 'idle',
     statsRows,
     showNativeBufferingMask: input.showNativeBufferingMask,
@@ -405,7 +429,7 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     showSpinnerCard: input.showSpinnerCard,
     channelLogoUrl: input.channel?.logoUrl ?? null,
     useNativeBufferingSafeOverlay: input.useNativeBufferingSafeOverlay,
-    overlayStatusLabel: t(`player.statusStates.${input.overlayStatus}`, { defaultValue: input.overlayStatus }),
+    overlayStatusLabel: formatStatusStateLabel(input.overlayStatus, t),
     overlayStatusState: input.overlayStatus === 'buffering' ? 'live' : 'idle',
     spinnerEyebrow: t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' }),
     spinnerLabel: input.spinnerLabel,

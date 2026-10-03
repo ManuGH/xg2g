@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   CLIENT_AUTH_CHANGED_EVENT,
   getClientAuthToken,
@@ -75,6 +76,7 @@ export function useHouseholdProfiles(): HouseholdProfilesContextValue {
 }
 
 export function HouseholdProfilesProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { promptPin, toast } = useUiOverlay();
   const [profiles, setProfiles] = useState<HouseholdProfile[]>(() => [createDefaultHouseholdProfile()]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>(() => readStoredSelectedProfileId());
@@ -267,10 +269,10 @@ export function HouseholdProfilesProvider({ children }: { children: ReactNode })
     }
 
     const pin = await promptPin({
-      title: options?.title ?? 'Haushalt-PIN',
-      message: options?.message ?? 'Dieser Bereich ist mit dem Haushalt-PIN geschützt.',
-      confirmLabel: options?.confirmLabel ?? 'Freischalten',
-      cancelLabel: options?.cancelLabel ?? 'Abbrechen',
+      title: options?.title ?? t('settings.household.pin.eyebrow'),
+      message: options?.message ?? t('settings.household.pin.hint'),
+      confirmLabel: options?.confirmLabel ?? t('common.open'),
+      cancelLabel: options?.cancelLabel ?? t('common.cancel'),
       placeholder: 'PIN',
     });
     if (!pin) {

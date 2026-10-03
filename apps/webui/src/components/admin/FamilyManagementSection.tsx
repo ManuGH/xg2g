@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { request } from '../../lib/api';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface FamilyMember {
   id: string;
@@ -10,9 +12,11 @@ export interface FamilyMember {
 }
 
 export const FamilyManagementSection: React.FC = () => {
+  const { t } = useTranslation();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Invite Modal
@@ -27,11 +31,14 @@ export const FamilyManagementSection: React.FC = () => {
   const fetchMembers = async () => {
     setLoading(true);
     setError(null);
+    setCorrelationId(null);
     try {
       const data = await request<FamilyMember[]>('/api/v3/household/members');
       setMembers(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Laden der Haushaltsmitglieder.');
+      debugDiagnosticError('admin.family.load', e);
+      setError(t('admin.family.loadError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -45,6 +52,7 @@ export const FamilyManagementSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setCorrelationId(null);
     setGeneratedInvite(null);
 
     try {
@@ -57,9 +65,11 @@ export const FamilyManagementSection: React.FC = () => {
       const code = data.inviteCode || data.code || 'INV-' + Math.random().toString(36).substr(2, 8).toUpperCase();
       const url = data.inviteUrl || data.url || (window.location.origin + '/bootstrap?invite=' + code);
       setGeneratedInvite({ code, url });
-      setSuccess('Einladungscode wurde erfolgreich generiert.');
+      setSuccess(t('admin.family.inviteSuccess'));
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Erstellen der Einladung.');
+      debugDiagnosticError('admin.family.createInvite', e);
+      setError(t('admin.family.inviteError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -74,26 +84,35 @@ export const FamilyManagementSection: React.FC = () => {
   const handleRemoveMember = async (id: string) => {
     setSaving(true);
     setError(null);
+    setCorrelationId(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setSuccess('Mitglied wurde aus dem Haushalt entfernt.');
+      setSuccess(t('admin.family.removeSuccess'));
       setDeletingId(null);
       void fetchMembers();
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Entfernen.');
+      debugDiagnosticError('admin.family.removeMember', e);
+      setError(t('admin.family.removeError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
+  };
+
+  const roleLabels: Record<string, string> = {
+    admin: t('admin.family.roleAdmin'),
+    member: t('admin.family.roleMember'),
+    guest: t('admin.family.roleGuest'),
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Familienmitglieder & Einladungen</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.family.title')}</h3>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-            Verwalten Sie Konten und erstellen Sie Einladungslinks für Familienmitglieder oder Gäste.
+            {t('admin.family.subtitle')}
           </p>
         </div>
         <button
@@ -116,13 +135,18 @@ export const FamilyManagementSection: React.FC = () => {
             cursor: 'pointer',
           }}
         >
-          <span>✉️</span> Mitglied einladen
+          <span>✉️</span> {t('admin.family.inviteMember')}
         </button>
       </div>
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
+          )}
         </div>
       )}
       {success && (
@@ -133,7 +157,7 @@ export const FamilyManagementSection: React.FC = () => {
 
       {/* Members List */}
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Mitglieder werden geladen...</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>{t('admin.family.loading')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {members.map((m) => (
@@ -158,7 +182,7 @@ export const FamilyManagementSection: React.FC = () => {
                     {m.displayName || m.username}
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                    Benutzername: {m.username}
+                    {t('admin.family.usernameLabel', { username: m.username })}
                   </div>
                 </div>
               </div>
@@ -174,17 +198,17 @@ export const FamilyManagementSection: React.FC = () => {
                     color: m.role === 'admin' ? 'var(--accent-action)' : m.role === 'member' ? 'var(--status-success)' : 'var(--status-warning)',
                   }}
                 >
-                  {m.role === 'admin' ? 'Administrator' : m.role === 'member' ? 'Familienmitglied' : 'Gast'}
+                  {roleLabels[m.role] || m.role}
                 </span>
 
                 {m.role !== 'admin' && (
                   deletingId === m.id ? (
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => setDeletingId(null)} style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px' }}>Nein</button>
-                      <button onClick={() => handleRemoveMember(m.id)} disabled={saving} style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600 }}>Entfernen</button>
+                      <button onClick={() => setDeletingId(null)} style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px' }}>{t('admin.family.no')}</button>
+                      <button onClick={() => handleRemoveMember(m.id)} disabled={saving} style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600 }}>{t('admin.family.remove')}</button>
                     </div>
                   ) : (
-                    <button onClick={() => setDeletingId(m.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Entfernen</button>
+                    <button onClick={() => setDeletingId(m.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>{t('admin.family.remove')}</button>
                   )
                 )}
               </div>
@@ -198,57 +222,57 @@ export const FamilyManagementSection: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.12)', padding: '28px' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Neues Mitglied einladen
+              {t('admin.family.inviteModalTitle')}
             </h3>
 
             {!generatedInvite ? (
               <form onSubmit={handleCreateInvite} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Anzeigename (optional)</label>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.family.displayNameLabel')}</label>
                   <input
                     type="text"
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
-                    placeholder="z. B. Oma Maria, Cousine Lisa"
+                    placeholder={t('admin.family.displayNamePlaceholder')}
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Zugriffsrolle</label>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('admin.family.roleLabel')}</label>
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as any)}
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   >
-                    <option value="member">Familienmitglied (Dauerhafter Zugriff)</option>
-                    <option value="guest">Gast (Eingeschränkte Priorität & Zeitfenster)</option>
+                    <option value="member">{t('admin.family.roleOptionMember')}</option>
+                    <option value="guest">{t('admin.family.roleOptionGuest')}</option>
                   </select>
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '12px' }}>
-                  <button type="button" onClick={() => setIsInviteOpen(false)} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '14px', cursor: 'pointer' }}>Abbrechen</button>
-                  <button type="submit" disabled={saving} style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--accent-action)', color: 'var(--bg-base)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Generiere...' : 'Einladung erzeugen'}</button>
+                  <button type="button" onClick={() => setIsInviteOpen(false)} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '14px', cursor: 'pointer' }}>{t('admin.family.cancel')}</button>
+                  <button type="submit" disabled={saving} style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--accent-action)', color: 'var(--bg-base)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>{saving ? t('admin.family.generating') : t('admin.family.generateInvite')}</button>
                 </div>
               </form>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(56,189,248,0.3)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Einladungscode (1-malig gültig)</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('admin.family.inviteCodeLabel')}</div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--accent-action)', letterSpacing: '3px' }}>{generatedInvite.code}</div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Einladungs-Link</label>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{t('admin.family.inviteUrlLabel')}</label>
                   <input type="text" readOnly value={generatedInvite.url} style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)', fontSize: '12px' }} />
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', marginTop: '8px' }}>
                   <button onClick={() => handleCopy(generatedInvite.url)} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: copied ? 'var(--status-success)' : 'var(--surface-highlight)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                    {copied ? '✓ In Zwischenablage kopiert' : '📋 Link kopieren'}
+                    {copied ? t('admin.family.copied') : t('admin.family.copyLink')}
                   </button>
                   <button onClick={() => setIsInviteOpen(false)} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--accent-action)', color: 'var(--bg-base)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
-                    Fertig
+                    {t('admin.family.done')}
                   </button>
                 </div>
               </div>

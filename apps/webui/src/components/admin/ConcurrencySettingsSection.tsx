@@ -1,7 +1,6 @@
-// Copyright (c) 2025-2026 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { debugDiagnosticError } from '../../utils/logging';
 
 export interface ResourcePolicyData {
   householdId: string;
@@ -14,6 +13,7 @@ export interface ResourcePolicyData {
 }
 
 export const ConcurrencySettingsSection: React.FC = () => {
+  const { t } = useTranslation();
   const [policy, setPolicy] = useState<ResourcePolicyData>({
     householdId: 'default_household',
     maxConcurrentLiveServices: 3,
@@ -27,19 +27,23 @@ export const ConcurrencySettingsSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchPolicy = async () => {
     setLoading(true);
     setError(null);
+    setCorrelationId(null);
     try {
       const res = await fetch('/api/v3/household/resource-policy');
       if (res.ok) {
         const data = await res.json();
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
-    } catch {
-      setError('Ressourcen-Limits konnten nicht geladen werden.');
+    } catch (e: any) {
+      debugDiagnosticError('admin.concurrency.load', e);
+      setError(t('admin.concurrency.loadError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setLoading(false);
     }
@@ -53,6 +57,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setCorrelationId(null);
     setSuccess(null);
 
     try {
@@ -62,10 +67,12 @@ export const ConcurrencySettingsSection: React.FC = () => {
         body: JSON.stringify(policy),
       });
 
-      if (!res.ok) throw new Error('Speichern der Ressourcen-Limits fehlgeschlagen.');
-      setSuccess('Ressourcen-Limits und Preemption-Regeln wurden erfolgreich gespeichert.');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSuccess(t('admin.concurrency.saveSuccess'));
     } catch (e: any) {
-      setError(e.message || 'Fehler beim Speichern.');
+      debugDiagnosticError('admin.concurrency.save', e);
+      setError(t('admin.concurrency.saveError'));
+      setCorrelationId(e?.requestId || null);
     } finally {
       setSaving(false);
     }
@@ -85,18 +92,29 @@ export const ConcurrencySettingsSection: React.FC = () => {
     }
   };
 
+  const rankLabels: Record<string, string> = {
+    admin_live: t('admin.concurrency.rankAdminLive'),
+    member_live: t('admin.concurrency.rankMemberLive'),
+    guest_live: t('admin.concurrency.rankGuestLive'),
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Gleichzeitige Nutzung & Tuner-Arbitrierung</h3>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.concurrency.title')}</h3>
         <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-          Konfigurieren Sie kapazitive Hardware-Grenzen für Tuner, Transcoder und deterministische Preemption-Prioritäten.
+          {t('admin.concurrency.subtitle')}
         </p>
       </div>
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <span>⚠️ {error}</span>
+          {correlationId && (
+            <span data-testid="error-reference" style={{ marginLeft: '8px', opacity: 0.75, fontSize: '11px', fontFamily: 'monospace' }}>
+              ({correlationId})
+            </span>
+          )}
         </div>
       )}
       {success && (
@@ -106,14 +124,14 @@ export const ConcurrencySettingsSection: React.FC = () => {
       )}
 
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Ressourcen-Regeln werden geladen...</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>{t('admin.concurrency.loading')}</div>
       ) : (
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Capacity Limits Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
             {/* Live TV Services */}
             <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-action)' }}>📡 Max Live TV Sender</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-action)' }}>{t('admin.concurrency.maxLive')}</div>
               <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxConcurrentLiveServices}</div>
               <input
                 type="range"
@@ -123,12 +141,12 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 onChange={(e) => setPolicy({ ...policy, maxConcurrentLiveServices: Number(e.target.value) })}
                 style={{ width: '100%', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Hardware-Tuner Limit</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>{t('admin.concurrency.hardwareTunerLimit')}</div>
             </div>
 
             {/* Household Viewers */}
             <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-success)' }}>👨‍👩‍👧‍👦 Max Zuschauer</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-success)' }}>{t('admin.concurrency.maxViewers')}</div>
               <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxConcurrentViewers}</div>
               <input
                 type="range"
@@ -138,12 +156,12 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 onChange={(e) => setPolicy({ ...policy, maxConcurrentViewers: Number(e.target.value) })}
                 style={{ width: '100%', accentColor: 'var(--status-success)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Aktive Client-Streams</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>{t('admin.concurrency.activeClientStreams')}</div>
             </div>
 
             {/* DVR Recordings */}
             <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-warning)' }}>📼 Max Parallele Aufnahmen</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-warning)' }}>{t('admin.concurrency.maxRecordings')}</div>
               <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxParallelRecordings}</div>
               <input
                 type="range"
@@ -153,12 +171,12 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 onChange={(e) => setPolicy({ ...policy, maxParallelRecordings: Number(e.target.value) })}
                 style={{ width: '100%', accentColor: 'var(--status-warning)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Geschützte DVR Worker</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>{t('admin.concurrency.protectedDvrWorkers')}</div>
             </div>
 
             {/* Transcodes */}
             <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-info)' }}>⚙️ Max Transcodes</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-info)' }}>{t('admin.concurrency.maxTranscodes')}</div>
               <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxParallelTranscodes}</div>
               <input
                 type="range"
@@ -168,7 +186,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 onChange={(e) => setPolicy({ ...policy, maxParallelTranscodes: Number(e.target.value) })}
                 style={{ width: '100%', accentColor: 'var(--status-info)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>FFmpeg Transcoder-Slots</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>{t('admin.concurrency.ffmpegTranscoderSlots')}</div>
             </div>
           </div>
 
@@ -176,9 +194,9 @@ export const ConcurrencySettingsSection: React.FC = () => {
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>Verdrängung & Preemption (Deterministisch)</h4>
+                <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>{t('admin.concurrency.preemptionTitle')}</h4>
                 <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-                  Bei Tuner-Engpässen werden Sessions nach festen Prioritätsstufen verdrängt. Identische Ränge verdrängen die jüngste Session (Tie-Breaker).
+                  {t('admin.concurrency.preemptionSubtitle')}
                 </p>
               </div>
               <input
@@ -191,7 +209,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
 
             {policy.preemptionEnabled && (
               <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Prioritätsreihenfolge (Höchste zuerst)</div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-disabled)', textTransform: 'uppercase' }}>{t('admin.concurrency.priorityOrder')}</div>
                 {(policy.preemptionPriorityRanks || ['admin_live', 'member_live', 'guest_live']).map((rank, idx) => (
                   <div
                     key={rank}
@@ -208,7 +226,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--accent-action)', width: '20px' }}>#{idx + 1}</span>
                       <span style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                        {rank === 'admin_live' ? '👑 Admin Live-TV' : rank === 'member_live' ? '👤 Mitglied Live-TV' : '🎟️ Gast Live-TV'}
+                        {rankLabels[rank] || rank}
                       </span>
                     </div>
 
@@ -251,7 +269,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              {saving ? 'Speichern...' : '💾 Limits speichern'}
+              {saving ? t('admin.concurrency.saving') : t('admin.concurrency.saveLimits')}
             </button>
           </div>
         </form>

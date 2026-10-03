@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { debugError } from '../../utils/logging';
 
 export interface AuditLogItem {
@@ -15,6 +16,7 @@ export interface AuditLogItem {
 }
 
 export const AuditNotificationsSection: React.FC = () => {
+  const { t, i18n } = useTranslation();
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export const AuditNotificationsSection: React.FC = () => {
         setLogs(Array.isArray(data) ? data : []);
       }
     } catch {
-      setError('Audit-Protokoll konnte nicht geladen werden.');
+      setError(t('admin.audit.loadError'));
     } finally {
       setLoading(false);
     }
@@ -57,21 +59,27 @@ export const AuditNotificationsSection: React.FC = () => {
       const perm = await Notification.requestPermission();
       setPushStatus(perm);
       if (perm === 'granted') {
-        new Notification('xg2g Benachrichtigungen aktiv', {
-          body: 'Sie erhalten nun Echtzeit-Freigabeanfragen und Sicherheitswarnungen im Browser.',
+        new Notification(t('admin.audit.notificationTitle'), {
+          body: t('admin.audit.notificationBody'),
           icon: '/favicon.ico',
         });
       }
-	} catch (e) {
-		debugError('WebPush subscription error:', e);
-	} finally {
+    } catch (e) {
+      debugError('WebPush subscription error:', e);
+    } finally {
       setSubscribing(false);
     }
   };
 
   const exportAuditLogsCSV = () => {
     if (logs.length === 0) return;
-    const headers = ['ID', 'Zeitstempel', 'Akteur', 'Aktion', 'Zielressource', 'SHA-256 Hash'];
+    const headers = [
+      t('admin.audit.colTimestamp'),
+      t('admin.audit.colActor'),
+      t('admin.audit.colAction'),
+      t('admin.audit.colTargetResource'),
+      t('admin.audit.colHash'),
+    ];
     const rows = logs.map((l) => [l.id, l.createdAt, l.actorUserId, l.action, l.targetResource, l.hash]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -93,9 +101,9 @@ export const AuditNotificationsSection: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Benachrichtigungen & Unveränderliches Audit-Protokoll</h3>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{t('admin.audit.title')}</h3>
         <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-          SHA-256 fälschungssicheres Protokoll aller administrativen Änderungen und WebPush-Benachrichtigungseinstellungen.
+          {t('admin.audit.subtitle')}
         </p>
       </div>
 
@@ -109,10 +117,10 @@ export const AuditNotificationsSection: React.FC = () => {
       <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📲</span> Browser-WebPush & Push-Benachrichtigungen
+            <span>📲</span> {t('admin.audit.webPushTitle')}
           </h4>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
-            Erhalten Sie Sofortbenachrichtigungen bei Kinder-Freigabeanfragen oder unbefugten Login-Versuchen.
+            {t('admin.audit.webPushSubtitle')}
           </p>
         </div>
 
@@ -127,7 +135,7 @@ export const AuditNotificationsSection: React.FC = () => {
               color: pushStatus === 'granted' ? 'var(--status-success)' : pushStatus === 'denied' ? 'var(--status-error)' : 'var(--status-warning)',
             }}
           >
-            {pushStatus === 'granted' ? 'Aktiviert' : pushStatus === 'denied' ? 'Blockiert' : 'Nicht eingerichtet'}
+            {pushStatus === 'granted' ? t('admin.audit.pushStatusGranted') : pushStatus === 'denied' ? t('admin.audit.pushStatusDenied') : t('admin.audit.pushStatusDefault')}
           </span>
 
           {pushStatus !== 'granted' && pushStatus !== 'unsupported' && (
@@ -145,7 +153,7 @@ export const AuditNotificationsSection: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              {subscribing ? 'Aktiviere...' : 'WebPush aktivieren'}
+              {subscribing ? t('admin.audit.subscribing') : t('admin.audit.enablePush')}
             </button>
           )}
         </div>
@@ -155,7 +163,7 @@ export const AuditNotificationsSection: React.FC = () => {
       <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ padding: '6px 12px', borderRadius: '8px', backgroundColor: 'rgba(34,197,94,0.1)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
-            ✓ SHA-256 Integritätskette intakt ({logs.length} Einträge)
+            {t('admin.audit.integrityBadge', { count: logs.length })}
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -163,7 +171,7 @@ export const AuditNotificationsSection: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="🔍 Nach Aktion oder Akteur filtern..."
+              placeholder={t('admin.audit.filterPlaceholder')}
               style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none', width: '220px' }}
             />
             <button
@@ -171,30 +179,30 @@ export const AuditNotificationsSection: React.FC = () => {
               disabled={logs.length === 0}
               style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
             >
-              📥 CSV Export
+              {t('admin.audit.exportCsv')}
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Protokoll wird geladen...</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>{t('admin.audit.loading')}</div>
         ) : filteredLogs.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-tertiary)' }}>
-                  <th style={{ padding: '10px' }}>Zeitstempel</th>
-                  <th style={{ padding: '10px' }}>Akteur</th>
-                  <th style={{ padding: '10px' }}>Aktion</th>
-                  <th style={{ padding: '10px' }}>Zielressource</th>
-                  <th style={{ padding: '10px' }}>SHA-256 Hash</th>
+                  <th style={{ padding: '10px' }}>{t('admin.audit.colTimestamp')}</th>
+                  <th style={{ padding: '10px' }}>{t('admin.audit.colActor')}</th>
+                  <th style={{ padding: '10px' }}>{t('admin.audit.colAction')}</th>
+                  <th style={{ padding: '10px' }}>{t('admin.audit.colTargetResource')}</th>
+                  <th style={{ padding: '10px' }}>{t('admin.audit.colHash')}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLogs.map((log) => (
                   <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
                     <td style={{ padding: '10px', fontSize: '12px', color: 'var(--text-disabled)' }}>
-                      {new Date(log.createdAt).toLocaleString()}
+                      {new Date(log.createdAt).toLocaleString(i18n.language)}
                     </td>
                     <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>{log.actorUserId}</td>
                     <td style={{ padding: '10px' }}>
@@ -213,7 +221,7 @@ export const AuditNotificationsSection: React.FC = () => {
           </div>
         ) : (
           <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '16px', textAlign: 'center' }}>
-            Keine Protokolleinträge gefunden.
+            {t('admin.audit.empty')}
           </div>
         )}
       </div>

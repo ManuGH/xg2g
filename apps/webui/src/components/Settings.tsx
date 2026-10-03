@@ -235,13 +235,29 @@ function Settings() {
     ? toolLabelMap[activeTool]
     : sectionLabelMap[activeSection];
 
+  const SECTION_CONTEXT_KEY_MAP = {
+    setup: 'settings.context.section.setup',
+    household: 'settings.context.section.household',
+    'android-tv': 'settings.context.section.android-tv',
+    scan: 'settings.context.section.scan',
+    streaming: 'settings.context.section.streaming',
+    security: 'settings.context.section.security',
+    advanced: 'settings.context.section.advanced',
+    about: 'settings.context.section.about',
+  } as const;
+
+  const TOOL_CONTEXT_KEY_MAP = {
+    files: 'settings.context.tool.files',
+    logs: 'settings.context.tool.logs',
+  } as const;
+
   const headerSubtitle = activeTool
-    ? t(`settings.context.tool.${activeTool}`, {
+    ? t(TOOL_CONTEXT_KEY_MAP[activeTool], {
       defaultValue: activeTool === 'files'
         ? 'Playlist, guide and compatibility feeds now live under the advanced settings area.'
         : 'Diagnostics and recent server events now live under the advanced settings area.',
     })
-    : t(`settings.context.section.${activeSection}`, {
+    : t(SECTION_CONTEXT_KEY_MAP[activeSection], {
       defaultValue: 'This area is part of Settings and can also be reached directly by URL.',
     });
 

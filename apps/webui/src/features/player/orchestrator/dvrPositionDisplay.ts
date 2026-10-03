@@ -11,7 +11,8 @@ export interface DvrPositionDisplayInput {
   currentTimeDisplay: string;
 }
 
-export type DvrPositionTranslate = (key: string, options: Record<string, unknown>) => string;
+export type DvrPositionKey = 'player.dvrPosition.live' | 'player.dvrPosition.behindLive';
+export type DvrPositionTranslate = (key: DvrPositionKey, options: Record<string, unknown>) => string;
 
 // Within this many seconds of the edge we render "Live" instead of an offset. It
 // covers the chrome's own isAtLiveEdge tolerance plus a little slack so the readout

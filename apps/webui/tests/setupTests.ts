@@ -9,6 +9,7 @@ import { resetPlaybackNetworkProbeCache } from '../src/features/player/utils/pla
 // to call cleanup() locally.
 afterEach(() => {
   cleanup();
+  currentLanguage = 'en';
   // The network probe caches its verdict in module state; without this a test
   // inherits whatever the previous one measured, making results order-dependent.
   resetPlaybackNetworkProbeCache();
@@ -113,13 +114,23 @@ if (videoProto && !('requestPictureInPicture' in videoProto)) {
 }
 
 import enTranslations from '../src/locales/en.json';
+import deTranslations from '../src/locales/de.json';
+
+let currentLanguage: 'en' | 'de' = 'en';
+
+export function setTestLanguage(lang: 'en' | 'de') {
+  currentLanguage = lang;
+}
+(globalThis as any).__setTestLanguage = setTestLanguage;
+
+const getActiveTranslations = () => (currentLanguage === 'de' ? deTranslations : enTranslations);
 
 const tMock = (key: string, opts?: any) => {
   if (typeof opts === 'string') return opts;
 
-  // Try to find the key in enTranslations
+  // Try to find the key in active translations (en or de)
   const keys = key.split('.');
-  let val: any = enTranslations;
+  let val: any = getActiveTranslations();
   for (const k of keys) {
     val = val?.[k];
   }
@@ -147,8 +158,12 @@ const tMock = (key: string, opts?: any) => {
 };
 
 const i18nMock = {
-  language: 'en',
-  changeLanguage: async () => { }
+  get language() {
+    return currentLanguage;
+  },
+  changeLanguage: async (lng: string) => {
+    currentLanguage = lng.toLowerCase().startsWith('de') ? 'de' : 'en';
+  }
 };
 
 vi.mock('react-i18next', async () => {
@@ -163,7 +178,7 @@ vi.mock('react-i18next', async () => {
       if (defaults) return defaults;
       if (!i18nKey) return '';
       const keys = i18nKey.split('.');
-      let val: any = enTranslations;
+      let val: any = getActiveTranslations();
       for (const k of keys) {
         val = val?.[k];
       }

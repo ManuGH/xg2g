@@ -19,6 +19,14 @@ interface ChannelScanSectionProps {
   handleStartScan: () => Promise<void>;
 }
 
+const SCAN_STATUS_MAP = {
+  idle: 'settings.streaming.scan.status.idle',
+  running: 'settings.streaming.scan.status.running',
+  complete: 'settings.streaming.scan.status.complete',
+  failed: 'settings.streaming.scan.status.failed',
+  cancelled: 'settings.streaming.scan.status.cancelled',
+} as const;
+
 export default function ChannelScanSection({
   scanStatus,
   scanStatusErrorMessage,
@@ -50,7 +58,13 @@ export default function ChannelScanSection({
             <div className={styles.scanHeader}>
               <div className={styles.scanBadge}>
                 <span className={styles.statusDot} data-state={scanStatus.state || undefined}></span>
-                <span className={styles.statusText}>{t(`settings.streaming.scan.status.${scanStatus.state || 'idle'}`)}</span>
+                <span className={styles.statusText}>
+                  {t(
+                    scanStatus.state && scanStatus.state in SCAN_STATUS_MAP
+                      ? SCAN_STATUS_MAP[scanStatus.state as keyof typeof SCAN_STATUS_MAP]
+                      : SCAN_STATUS_MAP.idle
+                  )}
+                </span>
               </div>
               {scanStatus.startedAt && scanStatus.startedAt > 0 && (
                 <div className={styles.scanTime}>

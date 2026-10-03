@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { type SystemInfoData as ApiSystemInfoData } from '../../client-ts';
 import { useSystemInfo } from '../../hooks/useServerQueries';
@@ -423,29 +424,31 @@ function normalizeSystemInfo(data: ApiSystemInfoData): SystemInfoViewData {
   };
 }
 
+const STORAGE_PATH_TYPE_KEYS = {
+  receiver_attached: 'system.storageType.receiver_attached',
+  receiver_share: 'system.storageType.receiver_share',
+  xg2g_local: 'system.storageType.xg2g_local',
+  xg2g_share: 'system.storageType.xg2g_share',
+  xg2g_aggregate: 'system.storageType.xg2g_aggregate',
+  unknown: 'system.storageType.unknown',
+} as const;
+
 function resolveStorageOriginLabel(
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
   origin?: string,
 ): string {
   return origin === 'xg2g' ? t('system.storageOrigin.xg2g') : t('system.storageOrigin.receiver');
 }
 
 function resolveStoragePathTypeLabel(
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
   pathType?: string,
   isNas?: boolean,
 ): string {
-  switch (pathType) {
-    case 'receiver_attached':
-    case 'receiver_share':
-    case 'xg2g_local':
-    case 'xg2g_share':
-    case 'xg2g_aggregate':
-    case 'unknown':
-      return t(`system.storageType.${pathType}`);
-    default:
-      return isNas ? t('system.nas') : t('system.internal');
+  if (pathType && pathType in STORAGE_PATH_TYPE_KEYS) {
+    return t(STORAGE_PATH_TYPE_KEYS[pathType as keyof typeof STORAGE_PATH_TYPE_KEYS]);
   }
+  return isNas ? t('system.nas') : t('system.internal');
 }
 
 // Parse memory string like "757824 kB" to bytes

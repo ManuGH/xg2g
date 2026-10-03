@@ -44,10 +44,26 @@
         "outputLabel": "Connected Devices"
       }
     },
-    "brandSubtitle": "Control Surface"
+    "brandSubtitle": "Control Surface",
+    "profileAccess": {
+      "playback": "Live + recordings",
+      "live": "Live TV only"
+    },
+    "profile": "Profile",
+    "profileChild": "Child",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "mainNavigationLabel": "Main navigation",
+    "mobileNavigationLabel": "Mobile navigation",
+    "closeNavigationLabel": "Close navigation",
+    "logoutProtectedTitle": "Logout protected",
+    "logoutProtectedMessage": "Logging out from child profile requires the household PIN.",
+    "logoutConfirmLabel": "Logout"
   },
   "app": {
-    "initializing": "Initializing..."
+    "initializing": "Initializing...",
+    "bootstrapErrorEyebrow": "Recovery",
+    "bootstrapErrorTitle": "Unable to start xg2g"
   },
   "auth": {
     "title": "Authentication Required",
@@ -67,7 +83,42 @@
     "showToken": "Show token",
     "hideToken": "Hide token",
     "clearToken": "Clear",
-    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately."
+    "tvHint": "On TV the token can stay visible while typing so you can spot mistakes immediately.",
+    "bootstrap": {
+      "eyebrow": "Initial Setup",
+      "title": "Set up xg2g",
+      "copy": "Secure your access with a passkey. Touch ID, Face ID, or your password manager work automatically.",
+      "setupTokenLabel": "Setup Token (if required)",
+      "setupTokenPlaceholder": "e.g. xg2g_setup_...",
+      "createPasskey": "Create Passkey",
+      "creatingPasskey": "Creating passkey…",
+      "passkeyFailed": "Passkey creation failed.",
+      "passkeyCouldNotBeCreated": "Could not create passkey.",
+      "backupEyebrow": "Security Backup",
+      "backupTitle": "Save Recovery Codes",
+      "backupCopy": "If you lose your passkey, you can use these one-time codes. Store them in a safe place.",
+      "downloadCodes": "Download",
+      "copyCodes": "Copy",
+      "codesSavedConfirm": "I have safely stored my recovery codes",
+      "finishSetup": "Complete Setup",
+      "finishingSetup": "Completing setup…",
+      "setupCouldNotBeCompleted": "Setup could not be completed.",
+      "recoveryEyebrow": "Account Recovery",
+      "recoveryTitle": "Sign In with Recovery Code",
+      "recoveryCopy": "Enter your username and one of your 10-character single-use recovery codes.",
+      "recoveryCodeLabel": "Recovery Code",
+      "recoveryCodePlaceholder": "e.g. AB12-CD34-EF",
+      "checkingCode": "Checking code…",
+      "signIn": "Sign In",
+      "usernameLabel": "Username",
+      "backToPasskey": "Back to passkey sign in",
+      "loginWithPasskey": "Sign in with Passkey",
+      "loggingIn": "Signing in…",
+      "useRecoveryCode": "Use recovery code",
+      "passkeyLoginFailed": "Passkey sign-in cancelled or failed.",
+      "invalidRecoveryCode": "Invalid recovery code.",
+      "recoveryCodeRejected": "Recovery code was not accepted."
+    }
   },
   "common": {
     "language": "Language",
@@ -104,7 +155,13 @@
     "loading": "Loading...",
     "receiverStandby": "Receiver in Standby",
     "receiverUnavailable": "Receiver is in standby (idle)",
-    "noCurrentProgram": "No current program information"
+    "noCurrentProgram": "No current program information",
+    "saveFailed": "Save failed",
+    "appName": "xg2g",
+    "requestId": "Request ID",
+    "yes": "Yes",
+    "no": "No",
+    "clear": "Clear"
   },
   "legacyRoute": {
     "eyebrow": "Expert path",
@@ -123,7 +180,15 @@
     "emptyHint": "Create a timer from the EPG or recordings to schedule a recording.",
     "dvrBlocked": "This profile does not have permission to use the DVR.",
     "scheduledRecordings": "Scheduled Recordings",
-    "loadError": "Failed to load timers. Ensure backend is running and authenticated."
+    "loadError": "Failed to load timers. Ensure backend is running and authenticated.",
+    "createTitle": "New Timer",
+    "editTitle": "Edit Timer",
+    "readOnly": "Timer changes are not supported.",
+    "validation": {
+      "serviceRequired": "Please select a channel.",
+      "nameRequired": "Name is required.",
+      "timeRangeInvalid": "End time must be after start time."
+    }
   },
   "player": {
     "status": "Status",
@@ -190,7 +255,10 @@
       "paused": "Paused",
       "error": "Error",
       "recovering": "Recovering…",
-      "stopped": "Stopped"
+      "stopped": "Stopped",
+      "active": "Active",
+      "stalled": "Stalled",
+      "ending": "Ending"
     },
     "startupHints": {
       "safariCompatTranscode": "Preparing Safari-compatible stream…",
@@ -336,7 +404,42 @@
     "badgeSupported": "Supported",
     "badgeAv1Hw": "10-Bit VAAPI",
     "badgeUniversal": "Universal",
-    "badgeDirect": "Passthrough"
+    "badgeDirect": "Passthrough",
+    "measuring": "Measuring…",
+    "ttff": "Time to first frame (TTFF)",
+    "av1Mms": "AV1/MMS",
+    "clientPath": "Client Path",
+    "requestProfile": "Request Profile",
+    "requestedIntent": "Requested Intent",
+    "resolvedIntent": "Resolved Intent",
+    "qualityRung": "Quality Rung",
+    "audioQualityRung": "Audio Quality Rung",
+    "videoQualityRung": "Video Quality Rung",
+    "degradedFrom": "Degraded From",
+    "hostPressure": "Host Pressure",
+    "hostOverrideApplied": "Host Override Applied",
+    "forcedIntent": "Forced Intent",
+    "operatorMaxQualityRung": "Operator Max Quality",
+    "operatorRuleName": "Operator Rule",
+    "operatorRuleScope": "Operator Rule Scope",
+    "clientFallbackDisabled": "Client Fallback Disabled",
+    "operatorOverrideApplied": "Operator Override Applied",
+    "sourceProfile": "Source Profile",
+    "outputProfile": "Output Profile",
+    "profileHash": "Profile Hash",
+    "execution": "Execution",
+    "ffmpegPlan": "FFmpeg Plan",
+    "firstFrame": "First Frame",
+    "fallbacks": "Fallbacks",
+    "stopReason": "Stop",
+    "outputKind": "Output Kind",
+    "seekableRange": "Seekable",
+    "playhead": "Playhead",
+    "seekWindow": "Seek Window",
+    "fullscreenPath": "Fullscreen Path",
+    "sessionExpiredTitle": "Playback session ended",
+    "sessionExpiredDetail": "The streaming session was terminated. Please restart the stream.",
+    "streamFailed": "Playback failed"
   },
   "dashboard": {
     "controlSummary": "Control summary",
@@ -423,7 +526,13 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "heroAside": {
-      "standbyDetail": "The box is sleeping. Status and programme data will mirror once activity resumes."
+      "eyebrow": "Next best move",
+      "standbyTitle": "Receiver is in standby",
+      "streamingTitle": "Streaming active",
+      "streamingDetail": "{{count}} active stream(s)",
+      "readyTitle": "Ready for playback",
+      "readyDetail": "All tuners available",
+      "standbyDetail": "The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly."
     },
     "start": {
       "eyebrow": "Start here",
@@ -476,7 +585,9 @@
     },
     "startLive": {
       "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."
-    }
+    },
+    "loadErrorTitle": "Unable to load system health",
+    "loadErrorDetail": "Try again to refresh the current receiver and guide status."
   },
   "epg": {
     "backToGuide": "Back to Live TV",
@@ -544,7 +655,22 @@
     "planRecording": "Schedule recording",
     "filterChannels": "Filter channels (name or number)",
     "clearChannelFilter": "Clear channel filter",
-    "noChannelsMatchFilter": "No channel matches “{{query}}”"
+    "noChannelsMatchFilter": "No channel matches “{{query}}”",
+    "pageTitleEyebrow": "Live Guide",
+    "playCta": "Watch",
+    "playChannel": "Watch programme",
+    "addFavorite": "Add to favourites",
+    "removeFavorite": "Remove favourite",
+    "favoriteOn": "Favourite",
+    "favoriteOff": "Mark",
+    "favorites": "Favourites",
+    "favoritesOn": "Favourites active",
+    "favoritesOff": "Filter favourites",
+    "noFavorites": "This profile does not have favourite channels yet.",
+    "rangeNow": "Now",
+    "rangeDay": "24h",
+    "rangeWeek": "7d",
+    "rangeAll": "All"
   },
   "recordings": {
     "seriesRulesAction": "Series Rules",
@@ -664,7 +790,8 @@
         "scan": "Channel scan is now reachable as a direct subsection of Settings.",
         "streaming": "Streaming defaults now live in a clearly scoped Settings subsection.",
         "advanced": "Expert tools are now grouped inside the advanced settings area.",
-        "about": "Version details, system status and local browser cache management."
+        "about": "Version details, system status and local browser cache management.",
+        "security": "Passkeys and API token access now live in a dedicated security area."
       },
       "tool": {
         "files": "Playlist, guide and compatibility feeds now live under the advanced settings area.",
@@ -1079,6 +1206,347 @@
       "error": "Error",
       "unknown": "Unknown",
       "skipped": "Skipped"
+    }
+  },
+  "unlock": {
+    "pageTitle": "Unlock Status",
+    "pageSubtitle": "This page shows which commercial scopes are still missing before the playback surface opens.",
+    "eyebrow": "Unlock Required",
+    "title": "{{productName}} required",
+    "active": "{{productName}} active",
+    "pending": "{{productName}} still locked",
+    "requiredEyebrow": "Required Scopes",
+    "noneRequired": "No unlock scopes configured.",
+    "grantedEyebrow": "Granted Now",
+    "grantedTitle": "Active Access",
+    "noneGranted": "No active unlock scopes yet.",
+    "missingEyebrow": "Still Missing",
+    "missingTitle": "What Blocks Playback",
+    "noneMissing": "Nothing missing. Playback can open.",
+    "grantsEyebrow": "Recorded Grants",
+    "grantsTitle": "Entitlement Sources",
+    "expiresAt": "expires",
+    "grantActive": "active",
+    "grantExpired": "expired",
+    "noGrants": "No entitlement grants recorded yet.",
+    "openInfo": "Open Unlock Info",
+    "viewStatus": "View Unlock Status",
+    "openSettings": "Open Settings",
+    "copyWithUrl": "Copy unlock details (with purchase link)",
+    "copyNoUrl": "Copy unlock details"
+  },
+  "errors": {
+    "sectionLoadTitle": "This area could not be loaded",
+    "sectionLoadDetail": "Try again or return to the dashboard.",
+    "devDetails": "Developer details"
+  },
+  "series": {
+    "ruleActivated": "Rule activated",
+    "rulePaused": "Rule paused",
+    "toggleFailed": "Failed to update rule status",
+    "daysDaily": "Daily",
+    "daysWeekdays": "Weekdays (Mon-Fri)",
+    "daysWeekend": "Weekend (Sat-Sun)",
+    "retentionDays": "{{count}} days"
+  },
+  "admin": {
+    "header": {
+      "title": "Household & Administration",
+      "subtitle": "Material 3 Management Center"
+    },
+    "sections": {
+      "account": {
+        "label": "Account",
+        "description": "Personal account details & primary role"
+      },
+      "family": {
+        "label": "Family",
+        "description": "Household members & invitations"
+      },
+      "profiles": {
+        "label": "Profiles",
+        "description": "Viewing profiles, age limits & PINs"
+      },
+      "devices": {
+        "label": "Devices",
+        "description": "Connected devices & 30-day trust"
+      },
+      "security": {
+        "label": "Security",
+        "description": "Web sessions, passkeys & revocation"
+      },
+      "access_times": {
+        "label": "Access Times",
+        "description": "Daily viewing schedules & expirations"
+      },
+      "parental": {
+        "label": "Parental Control",
+        "description": "Age ratings & EPG approvals"
+      },
+      "recordings": {
+        "label": "Recordings",
+        "description": "Storage quotas & libraries"
+      },
+      "concurrency": {
+        "label": "Concurrency",
+        "description": "Tuner allocation & priorities"
+      },
+      "audit": {
+        "label": "Notifications & Audit",
+        "description": "Change log & push rules"
+      }
+    },
+    "devices": {
+      "title": "Connected Devices & 30-Day Trust",
+      "subtitle": "Overview of all registered TVs, mobile devices, and browsers with DPoP key binding.",
+      "loadError": "Could not load devices.",
+      "revokeSuccess": "Device access was revoked successfully.",
+      "revokeError": "Error revoking device access.",
+      "loading": "Loading devices…",
+      "trustBadge": "✓ 30-day trust",
+      "typePrefix": "Type: {{type}}",
+      "cancel": "Cancel",
+      "revoke": "Revoke",
+      "revokeAccess": "Revoke access",
+      "empty": "No registered Android TV or mobile devices are currently active."
+    },
+    "account": {
+      "title": "Main Account Data",
+      "description": "Manage username, password, and emergency recovery keys.",
+      "statusActive": "Account status: Active (Admin)"
+    },
+    "recordingsQuotas": {
+      "title": "Recordings & Storage Quotas",
+      "description": "Manage DVR recording destination path and automatic quota management."
+    },
+    "profiles": {
+      "title": "Managed Viewing Profiles",
+      "subtitle": "Create customized viewing environments with age ratings and parental PINs.",
+      "loadError": "Error loading viewing profiles.",
+      "nameRequired": "Please enter a name for the profile.",
+      "createProfile": "New Profile",
+      "createProfileTitle": "Create New Viewing Profile",
+      "editProfile": "Edit Viewing Profile",
+      "name": "Profile Name",
+      "namePlaceholder": "e.g. Kids Room, Living Room TV, Max",
+      "avatar": "Avatar Symbol",
+      "childProfile": "Child profile (Kids UI)",
+      "childProfileDesc": "Enables simplified navigation and strict age filtering",
+      "childBadge": "Child Profile",
+      "mainBadge": "Main Profile",
+      "maxRating": "Maximum Age Rating (FSK)",
+      "fskRatingLabel": "FSK {{rating}}",
+      "fskMax": "FSK max: {{rating}}",
+      "fskUnlimited": "Unlimited",
+      "pinActive": "🔒 PIN active",
+      "withoutEpgRating": "Without EPG rating:",
+      "unknownPolicy": "Handling unknown ratings",
+      "unknownPolicyLabel": "Behavior for unknown EPG rating (UNKNOWN = -1)",
+      "unknownPolicyOptionApproval": "Request approval from admin (Recommended)",
+      "unknownPolicyOptionBlock": "Strict block (Fail-closed)",
+      "unknownPolicyOptionAllow": "Always allow",
+      "pinLabel": "Parental PIN (optional)",
+      "pinPlaceholder": "4-digit PIN e.g. 1234",
+      "save": "Save",
+      "saveProfile": "Save Profile",
+      "saving": "Saving…",
+      "delete": "Delete",
+      "deleteConfirm": "Permanently delete this profile?",
+      "deleteConfirmBtn": "Yes, delete",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "policyBlock": "Block",
+      "policyApproval": "Request Approval",
+      "policyAllow": "Allow",
+      "loading": "Loading viewing profiles…",
+      "empty": "No additional viewing profiles available. Create a profile for children or household members.",
+      "updateSuccess": "Profile updated successfully.",
+      "createSuccess": "New viewing profile created.",
+      "saveError": "Error saving profile.",
+      "deleteSuccess": "Profile deleted successfully.",
+      "deleteError": "Error deleting profile."
+    },
+    "parental": {
+      "title": "Parental Control & Live Approvals",
+      "subtitle": "Manage pending age rating approval requests from child profiles in real time.",
+      "loading": "Loading approvals…",
+      "loadError": "Could not load approval requests.",
+      "approveError": "Approval failed.",
+      "approvedAlways": "Broadcast approved permanently.",
+      "approvedOnce": "Broadcast approved for single viewing.",
+      "denyError": "Denial failed.",
+      "denied": "Broadcast request denied.",
+      "pendingRequests": "Pending Approval Requests ({{count}})",
+      "refresh": "🔄 Refresh",
+      "defaultProfile": "Child Profile",
+      "fallbackProfile": "Profile",
+      "fskRating": "FSK {{rating}}",
+      "requestWantToWatch": "Wants to watch “{{title}}”",
+      "requestWantToWatchWithChannel": "Wants to watch “{{title}}” on {{channel}}",
+      "requestedAt": "Requested at {{time}}",
+      "deny": "Deny",
+      "approveOnce": "Allow once",
+      "approveAlways": "Always approve",
+      "empty": "No pending approval requests. All child profiles are adhering to their age rating limits.",
+      "historyTitle": "History of Past Decisions",
+      "statusApproved": "Approved",
+      "statusDenied": "Denied"
+    },
+    "concurrency": {
+      "title": "Concurrent Usage & Tuner Arbitration",
+      "subtitle": "Configure capacitive hardware limits for tuners, transcoders, and deterministic preemption priorities.",
+      "loading": "Loading resource policies…",
+      "loadError": "Could not load resource limits.",
+      "saveSuccess": "Resource limits and preemption rules saved successfully.",
+      "saveError": "Could not save resource limits.",
+      "maxLive": "📡 Max Live TV Channels",
+      "hardwareTunerLimit": "Hardware tuner limit",
+      "maxViewers": "👨‍👩‍👧‍👦 Max Viewers",
+      "activeClientStreams": "Active client streams",
+      "maxRecordings": "📼 Max Parallel Recordings",
+      "protectedDvrWorkers": "Protected DVR workers",
+      "maxTranscodes": "⚙️ Max Transcodes",
+      "ffmpegTranscoderSlots": "FFmpeg transcoder slots",
+      "preemption": "Enable priority preemption",
+      "preemptionTitle": "Eviction & Preemption (Deterministic)",
+      "preemptionSubtitle": "During tuner bottlenecks, sessions are evicted according to fixed priority tiers. Identical ranks evict the youngest session (tie breaker).",
+      "priorityOrder": "Priority Order (Highest first)",
+      "rankAdminLive": "👑 Admin Live TV",
+      "rankMemberLive": "👤 Member Live TV",
+      "rankGuestLive": "🎟️ Guest Live TV",
+      "save": "Save Limits",
+      "saveLimits": "💾 Save Limits",
+      "saving": "Saving…"
+    },
+    "family": {
+      "title": "Family Members & Invitations",
+      "subtitle": "Manage accounts and create invite links for family members or guests.",
+      "inviteMember": "✉️ Invite Member",
+      "loading": "Loading members…",
+      "loadError": "Error loading household members.",
+      "inviteSuccess": "Invite code generated successfully.",
+      "inviteError": "Error generating invitation.",
+      "removeSuccess": "Member removed from household.",
+      "removeError": "Error removing member.",
+      "usernameLabel": "Username: {{username}}",
+      "roleAdmin": "Administrator",
+      "roleMember": "Family Member",
+      "roleGuest": "Guest",
+      "no": "No",
+      "remove": "Remove",
+      "inviteModalTitle": "Invite New Member",
+      "displayNameLabel": "Display name (optional)",
+      "displayNamePlaceholder": "e.g. Grandma Mary, Cousin Lisa",
+      "roleLabel": "Access role",
+      "roleOptionMember": "Family member (Permanent access)",
+      "roleOptionGuest": "Guest (Restricted priority & time window)",
+      "cancel": "Cancel",
+      "generating": "Generating…",
+      "generateInvite": "Create Invitation",
+      "inviteCodeLabel": "Invitation code (single-use)",
+      "inviteUrlLabel": "Invitation link",
+      "copied": "✓ Copied to clipboard",
+      "copyLink": "📋 Copy link",
+      "done": "Done"
+    },
+    "accessTimes": {
+      "title": "Daily Access Times & Curfews",
+      "subtitle": "Define daily viewing windows and allowed weekdays. Outside these times, arbitration fails closed.",
+      "loading": "Loading access times…",
+      "loadError": "Could not load access times.",
+      "saveError": "Could not save access rules.",
+      "saveSuccess": "Access times and daily windows updated successfully.",
+      "allowedDays": "Allowed Weekdays",
+      "days": {
+        "1": "Mon",
+        "2": "Tue",
+        "4": "Wed",
+        "8": "Thu",
+        "16": "Fri",
+        "32": "Sat",
+        "64": "Sun"
+      },
+      "dailyWindow": "Daily Viewing Window",
+      "startTime": "Start time (from)",
+      "endTime": "End time (until)",
+      "allowedRange": "Allowed: {{start}} – {{end}}",
+      "timelineStart": "00:00",
+      "timelineEnd": "24:00",
+      "productPermissions": "Product Permissions",
+      "liveTvAccess": "Live TV Access",
+      "liveTvAccessDesc": "Allows watching live channels within the weekday window",
+      "recordingsAccess": "Recordings & Library",
+      "recordingsAccessDesc": "Allows viewing and scheduling DVR recordings",
+      "saving": "Saving…",
+      "save": "💾 Save Access Times"
+    },
+    "audit": {
+      "title": "Notifications & Immutable Audit Log",
+      "subtitle": "SHA-256 tamper-proof log of all administrative changes and WebPush notification settings.",
+      "loadError": "Could not load audit log.",
+      "webPushTitle": "📲 Browser WebPush & Push Notifications",
+      "webPushSubtitle": "Receive instant alerts for child approval requests or unauthorized login attempts.",
+      "pushStatusGranted": "Enabled",
+      "pushStatusDenied": "Blocked",
+      "pushStatusDefault": "Not configured",
+      "subscribing": "Enabling…",
+      "enablePush": "Enable WebPush",
+      "notificationTitle": "xg2g notifications active",
+      "notificationBody": "You will now receive real-time approval requests and security alerts in your browser.",
+      "integrityBadge": "✓ SHA-256 integrity chain intact ({{count}} entries)",
+      "filterPlaceholder": "🔍 Filter by action or actor…",
+      "exportCsv": "📥 CSV Export",
+      "loading": "Loading log…",
+      "colTimestamp": "Timestamp",
+      "colActor": "Actor",
+      "colAction": "Action",
+      "colTargetResource": "Target Resource",
+      "colHash": "SHA-256 Hash",
+      "empty": "No log entries found."
+    },
+    "security": {
+      "title": "Security, Admin Access & Passkeys",
+      "subtitle": "Manage your admin authentication, registered passkeys, and active device sessions.",
+      "activeTitle": "Admin Session Active",
+      "inactiveTitle": "Admin Authentication",
+      "logout": "Log Out",
+      "inputDescription": "Enter your admin token (default: test04) to manage passkeys and paired devices.",
+      "inputPlaceholder": "Enter admin token (e.g. test04)",
+      "loginButton": "Log In",
+      "fillDefault": "Fill test04",
+      "authenticatedSuccess": "You are successfully authenticated as an administrator. All admin functions are unlocked.",
+      "authRequired": "Admin authentication required. Please log in with your admin token below.",
+      "loadError": "Could not load passkeys.",
+      "tokenSaved": "✅ Admin token saved successfully!",
+      "sessionLoggedOut": "Admin session logged out.",
+      "passkeyAdded": "Passkey “{{nickname}}” was added successfully.",
+      "passkeySaveError": "Could not save passkey.",
+      "registrationCancelled": "Passkey registration was cancelled.",
+      "passkeyDeleted": "Passkey removed.",
+      "passkeyDeleteError": "Could not delete passkey.",
+      "otherSessionsRevoked": "All other active sessions have been revoked.",
+      "revokeError": "Could not revoke sessions.",
+      "registeredPasskeys": "Registered Passkeys",
+      "passkeysCount": "{{count}} passkey(s) linked",
+      "registering": "Registering…",
+      "addPasskey": "Add Passkey",
+      "nicknameModalTitle": "Enter Passkey Label",
+      "nicknamePlaceholder": "e.g. Manuel's MacBook Air (Touch ID)",
+      "defaultNickname": "Admin Passkey",
+      "registerNow": "Register Now",
+      "cancel": "Cancel",
+      "loadingPasskeys": "Loading passkeys…",
+      "emptyPasskeys": "No passkeys registered yet. Add a passkey for fast sign-in with Touch ID / Face ID.",
+      "defaultPasskeyLabel": "Passkey",
+      "createdOn": "Created on: {{date}}",
+      "confirmDeleteQuestion": "Delete?",
+      "yes": "Yes",
+      "delete": "Remove",
+      "sessionManagementTitle": "Session Management",
+      "sessionManagementDesc": "Terminate all other active web sessions on other devices and browsers.",
+      "confirmRevokeQuestion": "Really log out all other active sessions?",
+      "confirmRevokeAll": "Yes, log out all",
+      "revokeOtherSessions": "Log out other sessions"
     }
   }
 }

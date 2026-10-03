@@ -96,6 +96,25 @@ const formatPreferredHlsEngine = (engine: string | undefined): string => {
 const shouldShowDeviceType = (deviceType: string | undefined): boolean =>
   Boolean(deviceType && deviceType !== 'web');
 
+const STREAM_STATE_KEY_MAP = {
+  idle: 'player.statusStates.idle',
+  starting: 'player.statusStates.starting',
+  priming: 'player.statusStates.priming',
+  building: 'player.statusStates.building',
+  ready: 'player.statusStates.ready',
+  buffering: 'player.statusStates.buffering',
+  playing: 'player.statusStates.playing',
+  paused: 'player.statusStates.paused',
+  error: 'player.statusStates.error',
+  recovering: 'player.statusStates.recovering',
+  stopped: 'player.statusStates.stopped',
+  active: 'player.statusStates.active',
+  stalled: 'player.statusStates.stalled',
+  ending: 'player.statusStates.ending',
+} as const;
+
+type StreamStateKey = keyof typeof STREAM_STATE_KEY_MAP;
+
 export default function StreamsList({ compact = false }: StreamsListProps) {
   const { t } = useTranslation();
   const { confirm, toast } = useUiOverlay();
@@ -148,10 +167,11 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
 
       <div className={styles.list} role="list">
         {streams.map((s: StreamSession) => {
-          const chip = mapStreamToChip(
-            s,
-            t(`player.statusStates.${s.detailedState ?? s.state}`, { defaultValue: s.detailedState ?? s.state })
-          );
+          const rawState = s.detailedState ?? s.state;
+          const label = rawState && rawState in STREAM_STATE_KEY_MAP
+            ? t(STREAM_STATE_KEY_MAP[rawState as StreamStateKey])
+            : rawState;
+          const chip = mapStreamToChip(s, label);
           const isStopping = stopStreamMutation.isPending && stoppingSessionId === s.sessionId;
           const metaItems = [
             {

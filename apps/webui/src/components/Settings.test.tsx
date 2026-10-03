@@ -273,7 +273,7 @@ describe('Settings', () => {
 
     renderWithQueryClient(['/settings?section=household']);
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Haushalt & Administration' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: /^(Haushalt & Administration|Household & Administration)$/i })).toBeInTheDocument();
     expect(screen.getByText('Material 3 Management Center')).toBeInTheDocument();
   });
 
