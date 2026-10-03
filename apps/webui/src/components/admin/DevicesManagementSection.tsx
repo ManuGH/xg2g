@@ -18,16 +18,19 @@ export const DevicesManagementSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchDevices = async () => {
     setLoading(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const data = await request<DeviceData[]>('/api/v3/household/devices');
       setDevices(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      setError(err?.message || t('admin.devices.loadError'));
+      setError(t('admin.devices.loadError'));
+      setErrorDetail(err?.message && err.message !== t('admin.devices.loadError') ? err.message : null);
     } finally {
       setLoading(false);
     }
@@ -39,6 +42,7 @@ export const DevicesManagementSection: React.FC = () => {
 
   const handleRevokeDevice = async (id: string) => {
     setError(null);
+    setErrorDetail(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/devices/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
@@ -46,7 +50,8 @@ export const DevicesManagementSection: React.FC = () => {
       setRevokingId(null);
       void fetchDevices();
     } catch (e: any) {
-      setError(e.message || t('admin.devices.revokeError'));
+      setError(t('admin.devices.revokeError'));
+      setErrorDetail(e?.message && e.message !== t('admin.devices.revokeError') ? e.message : null);
     }
   };
 
@@ -74,7 +79,12 @@ export const DevicesManagementSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <div>⚠️ {error}</div>
+          {errorDetail && (
+            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+              {errorDetail}
+            </div>
+          )}
         </div>
       )}
       {success && (

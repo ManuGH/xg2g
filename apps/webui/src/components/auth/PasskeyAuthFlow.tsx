@@ -43,6 +43,7 @@ export default function PasskeyAuthFlow({
   const [step, setStep] = useState<'passkey' | 'recovery-backup' | 'recovery-login' | 'token-login'>('passkey');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   // Recovery code backup state
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
@@ -107,6 +108,7 @@ export default function PasskeyAuthFlow({
   const handleCreatePasskey = async (tokenToUse?: string) => {
     setLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     try {
       const activeToken = (tokenToUse !== undefined ? tokenToUse : setupTokenInput).trim() || setupToken;
       const startRes = await startPasskeyRegistration('admin', activeToken);
@@ -122,7 +124,8 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyFailed'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || t('auth.bootstrap.passkeyCouldNotBeCreated'));
+      setErrorMsg(t('auth.bootstrap.passkeyCouldNotBeCreated'));
+      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.passkeyCouldNotBeCreated') ? err.message : null);
     } finally {
       setLoading(false);
     }
@@ -133,11 +136,13 @@ export default function PasskeyAuthFlow({
     if (!codesConfirmed) return;
     setLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     try {
       await acknowledgeRecovery();
       onSuccess();
     } catch (err: any) {
-      setErrorMsg(err.message || t('auth.bootstrap.setupCouldNotBeCompleted'));
+      setErrorMsg(t('auth.bootstrap.setupCouldNotBeCompleted'));
+      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.setupCouldNotBeCompleted') ? err.message : null);
     } finally {
       setLoading(false);
     }
@@ -147,6 +152,7 @@ export default function PasskeyAuthFlow({
   const handlePasskeyLogin = async () => {
     setLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     try {
       const startRes = await startPasskeyLogin();
       const assertion = await getPasskeyAssertion(startRes.options, false);
@@ -158,7 +164,8 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.passkeyLoginFailed'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || t('auth.bootstrap.passkeyLoginFailed'));
+      setErrorMsg(t('auth.bootstrap.passkeyLoginFailed'));
+      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.passkeyLoginFailed') ? err.message : null);
     } finally {
       setLoading(false);
     }
@@ -173,6 +180,7 @@ export default function PasskeyAuthFlow({
 
     setLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     try {
       const res = await loginWithRecoveryCode(username, code);
       if (res && res.user) {
@@ -181,7 +189,8 @@ export default function PasskeyAuthFlow({
         throw new Error(t('auth.bootstrap.invalidRecoveryCode'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || t('auth.bootstrap.recoveryCodeRejected'));
+      setErrorMsg(t('auth.bootstrap.recoveryCodeRejected'));
+      setErrorDetail(err?.message && err.message !== t('auth.bootstrap.recoveryCodeRejected') ? err.message : null);
     } finally {
       setLoading(false);
     }
@@ -265,7 +274,16 @@ export default function PasskeyAuthFlow({
                 data-testid="bootstrap-setup-token-input"
               />
             </div>
-            {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+            {errorMsg ? (
+              <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
+                <div>{errorMsg}</div>
+                {errorDetail && (
+                  <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+                    {errorDetail}
+                  </div>
+                )}
+              </div>
+            ) : null}
             <Button
               onClick={() => { void handleCreatePasskey(); }}
               disabled={loading}
@@ -329,7 +347,16 @@ export default function PasskeyAuthFlow({
             <span>{t('auth.bootstrap.codesSavedConfirm')}</span>
           </label>
 
-          {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+          {errorMsg ? (
+            <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
+              <div>{errorMsg}</div>
+              {errorDetail && (
+                <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+                  {errorDetail}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <Button
             onClick={() => { void handleCommitBootstrap(); }}
@@ -385,7 +412,16 @@ export default function PasskeyAuthFlow({
                 data-testid="recovery-username-input"
               />
             </div>
-            {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+            {errorMsg ? (
+              <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
+                <div>{errorMsg}</div>
+                {errorDetail && (
+                  <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+                    {errorDetail}
+                  </div>
+                )}
+              </div>
+            ) : null}
             <Button variant="ghost" onClick={() => setStep('passkey')} style={{ fontSize: '0.85rem' }}>
               {t('auth.bootstrap.backToPasskey')}
             </Button>
@@ -435,7 +471,16 @@ export default function PasskeyAuthFlow({
       }}
       actions={
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', marginTop: '1rem' }}>
-          {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+          {errorMsg ? (
+            <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>
+              <div>{errorMsg}</div>
+              {errorDetail && (
+                <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+                  {errorDetail}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <Button
             onClick={() => { void handlePasskeyLogin(); }}

@@ -15,6 +15,7 @@ export const FamilyManagementSection: React.FC = () => {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Invite Modal
@@ -29,11 +30,13 @@ export const FamilyManagementSection: React.FC = () => {
   const fetchMembers = async () => {
     setLoading(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const data = await request<FamilyMember[]>('/api/v3/household/members');
       setMembers(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(e.message || t('admin.family.loadError'));
+      setError(t('admin.family.loadError'));
+      setErrorDetail(e?.message && e.message !== t('admin.family.loadError') ? e.message : null);
     } finally {
       setLoading(false);
     }
@@ -47,6 +50,7 @@ export const FamilyManagementSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     setGeneratedInvite(null);
 
     try {
@@ -61,7 +65,8 @@ export const FamilyManagementSection: React.FC = () => {
       setGeneratedInvite({ code, url });
       setSuccess(t('admin.family.inviteSuccess'));
     } catch (e: any) {
-      setError(e.message || t('admin.family.inviteError'));
+      setError(t('admin.family.inviteError'));
+      setErrorDetail(e?.message && e.message !== t('admin.family.inviteError') ? e.message : null);
     } finally {
       setSaving(false);
     }
@@ -76,6 +81,7 @@ export const FamilyManagementSection: React.FC = () => {
   const handleRemoveMember = async (id: string) => {
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -83,7 +89,8 @@ export const FamilyManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchMembers();
     } catch (e: any) {
-      setError(e.message || t('admin.family.removeError'));
+      setError(t('admin.family.removeError'));
+      setErrorDetail(e?.message && e.message !== t('admin.family.removeError') ? e.message : null);
     } finally {
       setSaving(false);
     }
@@ -130,7 +137,12 @@ export const FamilyManagementSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <div>⚠️ {error}</div>
+          {errorDetail && (
+            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+              {errorDetail}
+            </div>
+          )}
         </div>
       )}
       {success && (

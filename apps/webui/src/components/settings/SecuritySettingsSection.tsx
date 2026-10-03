@@ -23,6 +23,7 @@ export default function SecuritySettingsSection() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [hasActiveToken, setHasActiveToken] = useState<boolean>(() => Boolean(auth.token || auth.isAuthenticated || getStoredToken()));
@@ -34,6 +35,7 @@ export default function SecuritySettingsSection() {
   const fetchPasskeys = async () => {
     setLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     try {
       const data = await listPasskeys();
       setPasskeys(data);
@@ -41,9 +43,11 @@ export default function SecuritySettingsSection() {
     } catch (err: any) {
       if (err?.message?.includes('Authentication required') || err?.status === 401) {
         setErrorMsg(t('admin.security.authRequired'));
+        setErrorDetail(null);
         setHasActiveToken(false);
       } else {
-        setErrorMsg(err.message || t('admin.security.loadError'));
+        setErrorMsg(t('admin.security.loadError'));
+        setErrorDetail(err?.message && err.message !== t('admin.security.loadError') ? err.message : null);
       }
     } finally {
       setLoading(false);
@@ -82,6 +86,7 @@ export default function SecuritySettingsSection() {
   const handleAddPasskeyWithNickname = async (nicknameToUse: string) => {
     setActionLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     setSuccessMsg(null);
     try {
       const startRes = await startPasskeyRegistration('admin', '');
@@ -98,7 +103,8 @@ export default function SecuritySettingsSection() {
         throw new Error(t('admin.security.passkeySaveError'));
       }
     } catch (err: any) {
-      setErrorMsg(err.message || t('admin.security.registrationCancelled'));
+      setErrorMsg(t('admin.security.registrationCancelled'));
+      setErrorDetail(err?.message && err.message !== t('admin.security.registrationCancelled') ? err.message : null);
     } finally {
       setActionLoading(false);
     }
@@ -107,6 +113,7 @@ export default function SecuritySettingsSection() {
   const handleDeletePasskey = async (id: string) => {
     setActionLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     setSuccessMsg(null);
     try {
       await deletePasskey(id);
@@ -114,7 +121,8 @@ export default function SecuritySettingsSection() {
       setDeletingId(null);
       void fetchPasskeys();
     } catch (err: any) {
-      setErrorMsg(err.message || t('admin.security.passkeyDeleteError'));
+      setErrorMsg(t('admin.security.passkeyDeleteError'));
+      setErrorDetail(err?.message && err.message !== t('admin.security.passkeyDeleteError') ? err.message : null);
     } finally {
       setActionLoading(false);
     }
@@ -123,13 +131,15 @@ export default function SecuritySettingsSection() {
   const handleRevokeOthers = async () => {
     setActionLoading(true);
     setErrorMsg(null);
+    setErrorDetail(null);
     setSuccessMsg(null);
     try {
       await revokeOtherSessions();
       setSuccessMsg(t('admin.security.otherSessionsRevoked'));
       setConfirmRevokeOthers(false);
     } catch (err: any) {
-      setErrorMsg(err.message || t('admin.security.revokeError'));
+      setErrorMsg(t('admin.security.revokeError'));
+      setErrorDetail(err?.message && err.message !== t('admin.security.revokeError') ? err.message : null);
     } finally {
       setActionLoading(false);
     }
@@ -193,7 +203,12 @@ export default function SecuritySettingsSection() {
 
       {errorMsg ? (
         <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--status-error)', fontSize: '0.875rem' }}>
-          {errorMsg}
+          <div>{errorMsg}</div>
+          {errorDetail && (
+            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+              {errorDetail}
+            </div>
+          )}
         </div>
       ) : null}
 

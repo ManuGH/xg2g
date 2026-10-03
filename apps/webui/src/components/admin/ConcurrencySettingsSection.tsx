@@ -29,19 +29,22 @@ export const ConcurrencySettingsSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchPolicy = async () => {
     setLoading(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const res = await fetch('/api/v3/household/resource-policy');
       if (res.ok) {
         const data = await res.json();
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
-    } catch {
+    } catch (e: any) {
       setError(t('admin.concurrency.loadError'));
+      setErrorDetail(e?.message && e.message !== t('admin.concurrency.loadError') ? e.message : null);
     } finally {
       setLoading(false);
     }
@@ -55,6 +58,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     setSuccess(null);
 
     try {
@@ -64,10 +68,11 @@ export const ConcurrencySettingsSection: React.FC = () => {
         body: JSON.stringify(policy),
       });
 
-      if (!res.ok) throw new Error(t('admin.concurrency.saveError'));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSuccess(t('admin.concurrency.saveSuccess'));
     } catch (e: any) {
-      setError(e.message || t('admin.concurrency.saveError'));
+      setError(t('admin.concurrency.saveError'));
+      setErrorDetail(e?.message && e.message !== t('admin.concurrency.saveError') ? e.message : null);
     } finally {
       setSaving(false);
     }
@@ -104,7 +109,12 @@ export const ConcurrencySettingsSection: React.FC = () => {
 
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <div>⚠️ {error}</div>
+          {errorDetail && (
+            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+              {errorDetail}
+            </div>
+          )}
         </div>
       )}
       {success && (

@@ -19,6 +19,7 @@ export const ProfileManagementSection: React.FC = () => {
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Modal State
@@ -38,11 +39,13 @@ export const ProfileManagementSection: React.FC = () => {
   const fetchProfiles = async () => {
     setLoading(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const data = await request<ProfileData[]>('/api/v3/household/profiles');
       setProfiles(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(e.message || t('admin.profiles.loadError'));
+      setError(t('admin.profiles.loadError'));
+      setErrorDetail(e?.message && e.message !== t('admin.profiles.loadError') ? e.message : null);
     } finally {
       setLoading(false);
     }
@@ -78,11 +81,13 @@ export const ProfileManagementSection: React.FC = () => {
     e.preventDefault();
     if (!formName.trim()) {
       setError(t('admin.profiles.nameRequired'));
+      setErrorDetail(null);
       return;
     }
 
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     setSuccess(null);
 
     const payload = {
@@ -109,7 +114,8 @@ export const ProfileManagementSection: React.FC = () => {
       setIsModalOpen(false);
       void fetchProfiles();
     } catch (e: any) {
-      setError(e.message || t('admin.profiles.saveError'));
+      setError(t('admin.profiles.saveError'));
+      setErrorDetail(e?.message && e.message !== t('admin.profiles.saveError') ? e.message : null);
     } finally {
       setSaving(false);
     }
@@ -118,6 +124,7 @@ export const ProfileManagementSection: React.FC = () => {
   const handleDelete = async (id: string) => {
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     setSuccess(null);
     try {
       await request(`/api/v3/household/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -125,7 +132,8 @@ export const ProfileManagementSection: React.FC = () => {
       setDeletingId(null);
       void fetchProfiles();
     } catch (e: any) {
-      setError(e.message || t('admin.profiles.deleteError'));
+      setError(t('admin.profiles.deleteError'));
+      setErrorDetail(e?.message && e.message !== t('admin.profiles.deleteError') ? e.message : null);
     } finally {
       setSaving(false);
     }
@@ -171,7 +179,12 @@ export const ProfileManagementSection: React.FC = () => {
       {/* Banners */}
       {error && (
         <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
+          <div>⚠️ {error}</div>
+          {errorDetail && (
+            <div data-testid="error-detail" style={{ marginTop: '4px', fontSize: '11px', opacity: 0.85, fontFamily: 'monospace' }}>
+              {errorDetail}
+            </div>
+          )}
         </div>
       )}
       {success && (
