@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
@@ -70,6 +71,7 @@ type Orchestrator struct {
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
+	IPTVParser          *sourceref.Parser
 
 	// ReceiverBaseURL identifies the receiver box so a direct-URL session can be
 	// refused when it points there. Empty disables the check.

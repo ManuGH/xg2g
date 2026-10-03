@@ -169,6 +169,10 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	liveConnectorCfg.Password = s.cfg.Enigma2.Password
 	liveConnectorCfg.TopologyService = s.topologyService
 	liveConnectorCfg.RequireTopology = true // Production live route is strictly FAIL-CLOSED
+	if resolver := s.IPTVResolver(); resolver != nil {
+		liveConnectorCfg.IPTVParser = resolver.Parser()
+	}
+	liveConnectorCfg.OutboundPolicy = preflightOutboundPolicyFromConfig(s.cfg)
 	if s.liveConnectorModifier != nil {
 		s.liveConnectorModifier(&liveConnectorCfg)
 	}

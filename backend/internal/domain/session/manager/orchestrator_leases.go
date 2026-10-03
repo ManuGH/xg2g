@@ -11,6 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
@@ -58,6 +59,10 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	requiresTunerSlot := true
+	_, isIPTV, _ := sourceref.ClassifyReference(o.IPTVParser, sessionCtx.ServiceRef)
+	if isIPTV {
+		requiresTunerSlot = false
+	}
 	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
 	if o.UsageEvaluator != nil {
 		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
@@ -175,7 +180,7 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	// Topology Service Stream Registration & Lifecycle Hook with Strict Generation Fencing
-	if o.TopologyService != nil && sessionCtx.ServiceRef != "" {
+	if o.TopologyService != nil && sessionCtx.ServiceRef != "" && !isIPTV {
 		claimRes, topoDec, topoErr := o.TopologyService.AcquireClaimSetAtomic(
 			ctx,
 			o.Store,
@@ -225,7 +230,7 @@ func (o *Orchestrator) acquireLeases(
 				case <-hbCtx.Done():
 					return
 				case <-t.C:
-					if o.TopologyService != nil {
+					if o.TopologyService != nil && !isIPTV {
 						if ok := o.TopologyService.HeartbeatStream(event.SessionID, o.LeaseTTL); !ok {
 							if o.TopologyService.Mode() == receivertopology.EvaluationModeEnforce &&
 								o.TopologyService.Topology().Confidence == receivertopology.ConfidenceVerified {

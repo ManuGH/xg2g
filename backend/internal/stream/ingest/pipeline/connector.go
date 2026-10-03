@@ -13,10 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/mediafacts"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
@@ -118,7 +121,10 @@ type ConnectorConfig struct {
 	RingCapacity    int
 	TopologyService TopologyService // Optional (if nil, topology admission is skipped unless RequireTopology is true)
 	RequireTopology bool            // If true, missing TopologyService fails-closed immediately with ErrAdmissionDenied
-	DialFn          DialFunc        // Optional custom dialer (for testing or proxying)
+	DialFn          DialFunc        // Optional custom dialer for receiver/DVB streams (for testing or proxying)
+	IPTVDialFn      DialFunc        // Optional custom dialer for IPTV provider streams (for testing or proxying)
+	IPTVParser      *sourceref.Parser
+	OutboundPolicy  platformnet.OutboundPolicy
 	// ConnectTimeout bounds the upstream connect and response-header phase. It cannot be
 	// expressed through the caller's context, because that context dies with the connect
 	// attempt while the body must keep streaming, so it is enforced on the transport.
@@ -157,6 +163,7 @@ func DefaultTestConnectorConfig(receiverBaseURL string, streamPort int) Connecto
 type LivePipelineConnector struct {
 	cfg        ConnectorConfig
 	httpClient *http.Client
+	iptvClient *http.Client
 }
 
 // NewLivePipelineConnector creates a new connector for live broadcast pipelines.
@@ -167,6 +174,16 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = defaultConnectTimeout
 	}
+	timeout := cfg.ConnectTimeout
+	policy := cfg.OutboundPolicy
+	iptvTransport := platformnet.NewSafeTransport(policy)
+	iptvTransport.DialContext = platformnet.SafeDialContext(policy, &net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+	})
+	iptvTransport.ResponseHeaderTimeout = timeout
+	iptvTransport.TLSHandshakeTimeout = timeout
+
 	return &LivePipelineConnector{
 		cfg: cfg,
 		httpClient: &http.Client{
@@ -181,46 +198,77 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 				IdleConnTimeout:       30 * time.Second,
 			},
 		},
+		iptvClient: &http.Client{
+			Timeout:   0, // Continuous streaming: no ceiling on the body
+			Transport: iptvTransport,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return errors.New("stopped after 10 redirects")
+				}
+				if _, err := platformnet.ParseValidatedOutboundURL(req.Context(), req.URL.String(), policy); err != nil {
+					return fmt.Errorf("redirect blocked by outbound policy: %w", err)
+				}
+				return nil
+			},
+		},
 	}
 }
 
-// Connect dials the upstream tuner and initializes the SessionPipeline.
-// It executes the strict sequence: Topology Admission -> Upstream Dial -> SessionPipeline Start.
+// Connect dials the upstream tuner or IPTV provider and initializes the SessionPipeline.
+// For DVB streams, it executes the strict sequence: Topology Admission -> Upstream Dial -> SessionPipeline Start.
+// For IPTV streams, it executes: Provider Ingest -> SessionPipeline Start (zero tuner/topology lease).
 func (c *LivePipelineConnector) Connect(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
-	// 1. Check & reserve topology lease BEFORE dialing upstream
-	var topLease TopologyLease
-	if c.cfg.TopologyService != nil {
-		sessionID := fmt.Sprintf("live-ingest:%s", key.String())
-		_, decision, err := c.cfg.TopologyService.ReserveStreamLeaseAtomic(key.ServiceRef, sessionID, receivertopology.PriorityLive, 0)
-		if err != nil || !decision.Allowed {
-			if err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrAdmissionDenied, err)
-			}
-			return nil, fmt.Errorf("%w: %s", ErrAdmissionDenied, decision.Reason)
-		}
-		topLease = &topologyLeaseWrapper{
-			service:   c.cfg.TopologyService,
-			sessionID: sessionID,
-			decision:  decision,
-		}
-	} else if c.cfg.RequireTopology {
-		return nil, fmt.Errorf("%w: topology service is required for production live stream but is not configured", ErrAdmissionDenied)
+	src, isIPTV, err := sourceref.ClassifyReference(c.cfg.IPTVParser, key.ServiceRef)
+	if err != nil {
+		return nil, fmt.Errorf("invalid iptv reference: %w", err)
 	}
 
-	// 2. Dial upstream
+	var topLease TopologyLease
 	var upstream io.ReadCloser
 	var upstreamCancel context.CancelFunc
-	var err error
-	if c.cfg.DialFn != nil {
-		upstream, err = c.cfg.DialFn(ctx, key)
-	} else {
-		upstream, upstreamCancel, err = c.dialHTTP(ctx, key)
-	}
-	if err != nil {
-		if topLease != nil {
-			topLease.Release() // Release lease immediately if dial fails
+
+	if isIPTV {
+		// Zero tuner/topology lease for IPTV streams.
+		if c.cfg.IPTVDialFn != nil {
+			upstream, err = c.cfg.IPTVDialFn(ctx, key)
+		} else {
+			upstream, upstreamCancel, err = c.dialIPTV(ctx, src.RevealURL())
 		}
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// 1. Check & reserve topology lease BEFORE dialing upstream DVB tuner
+		if c.cfg.TopologyService != nil {
+			sessionID := fmt.Sprintf("live-ingest:%s", key.String())
+			_, decision, err := c.cfg.TopologyService.ReserveStreamLeaseAtomic(key.ServiceRef, sessionID, receivertopology.PriorityLive, 0)
+			if err != nil || !decision.Allowed {
+				if err != nil {
+					return nil, fmt.Errorf("%w: %v", ErrAdmissionDenied, err)
+				}
+				return nil, fmt.Errorf("%w: %s", ErrAdmissionDenied, decision.Reason)
+			}
+			topLease = &topologyLeaseWrapper{
+				service:   c.cfg.TopologyService,
+				sessionID: sessionID,
+				decision:  decision,
+			}
+		} else if c.cfg.RequireTopology {
+			return nil, fmt.Errorf("%w: topology service is required for production live stream but is not configured", ErrAdmissionDenied)
+		}
+
+		// 2. Dial upstream DVB tuner
+		if c.cfg.DialFn != nil {
+			upstream, err = c.cfg.DialFn(ctx, key)
+		} else {
+			upstream, upstreamCancel, err = c.dialHTTP(ctx, key)
+		}
+		if err != nil {
+			if topLease != nil {
+				topLease.Release() // Release lease immediately if dial fails
+			}
+			return nil, err
+		}
 	}
 
 	// 3. Create and start SessionPipeline
@@ -304,6 +352,57 @@ func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.Sessio
 		_ = resp.Body.Close()
 		streamCancel()
 		return nil, nil, fmt.Errorf("upstream receiver returned HTTP %d for %s", resp.StatusCode, targetURL)
+	}
+
+	return resp.Body, streamCancel, nil
+}
+
+func (c *LivePipelineConnector) dialIPTV(ctx context.Context, providerURL string) (io.ReadCloser, context.CancelFunc, error) {
+	normalizedURL, err := platformnet.ValidateOutboundURL(ctx, providerURL, c.cfg.OutboundPolicy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("outbound url rejected by policy: %w", err)
+	}
+
+	streamCtx, streamCancel := context.WithCancel(context.WithoutCancel(ctx))
+
+	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, normalizedURL, nil)
+	if err != nil {
+		streamCancel()
+		return nil, nil, fmt.Errorf("failed to create upstream iptv request: %w", err)
+	}
+
+	req.Close = true
+	req.Header.Set("User-Agent", "curl/8.10.1")
+	req.Header.Set("Accept", "*/*")
+
+	client := c.iptvClient
+	if client == nil {
+		client = &http.Client{
+			Transport: platformnet.NewSafeTransport(c.cfg.OutboundPolicy),
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		streamCancel()
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return nil, nil, fmt.Errorf("upstream iptv provider request failed: %s", urlErr.Err)
+		}
+		return nil, nil, fmt.Errorf("failed to connect to upstream iptv provider: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		streamCancel()
+		return nil, nil, fmt.Errorf("upstream iptv provider returned HTTP %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(strings.ToLower(contentType), "text/html") {
+		_ = resp.Body.Close()
+		streamCancel()
+		return nil, nil, fmt.Errorf("upstream iptv provider returned non-stream content-type %q", contentType)
 	}
 
 	return resp.Body, streamCancel, nil

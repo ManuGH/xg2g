@@ -36,7 +36,7 @@ func TestPipelineHandler_IPTVInboundResolution(t *testing.T) {
 
 	var dialedRef string
 	cfg := DefaultTestConnectorConfig("", 8001)
-	cfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+	mockDial := func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
 		dialedRef = key.ServiceRef
 		pr, pw := io.Pipe()
 		go func() {
@@ -44,6 +44,8 @@ func TestPipelineHandler_IPTVInboundResolution(t *testing.T) {
 		}()
 		return pr, nil
 	}
+	cfg.DialFn = mockDial
+	cfg.IPTVDialFn = mockDial
 
 	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(cfg))
 	h := NewHandlerWithReceiver(mgr, "127.0.0.1", 8001)

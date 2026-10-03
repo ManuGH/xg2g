@@ -1,6 +1,7 @@
 package sourceref
 
 import (
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -71,6 +72,12 @@ func (p *Parser) Parse(ref string) (Source, error) {
 	}
 
 	rawURLField := parts[10]
+	nameStartIndex := 11
+	if (rawURLField == "http" || rawURLField == "https") && len(parts) > 11 && strings.HasPrefix(parts[11], "//") {
+		rawURLField = parts[10] + ":" + parts[11]
+		nameStartIndex = 12
+	}
+
 	if rawURLField == "" {
 		return Source{}, ErrInvalidRef
 	}
@@ -81,8 +88,8 @@ func (p *Parser) Parse(ref string) (Source, error) {
 
 	// Service name is reconstructed from any trailing fields.
 	var serviceName string
-	if len(parts) > 11 {
-		serviceName = strings.Join(parts[11:], ":")
+	if len(parts) > nameStartIndex {
+		serviceName = strings.Join(parts[nameStartIndex:], ":")
 	}
 
 	// Percent-decode exactly once using PathUnescape (preserves literal '+')
@@ -159,4 +166,28 @@ func Parse(ref string, hmacKey []byte) (Source, error) {
 		return Source{}, err
 	}
 	return p.Parse(ref)
+}
+
+// unkeyedClassifier is an internal parser used when ClassifyReference is called with a nil Parser.
+// It uses a static 16-byte key to allow structural parsing and URL extraction without a configured HMAC secret.
+var unkeyedClassifier = &Parser{key: make([]byte, 16)}
+
+// ClassifyReference distinguishes DVB from parsed 4097/5001/5002 IPTV sources at one shared boundary.
+// It parses the reference using p (or a default unkeyed parser if p is nil) and extracts its internal URL.
+// Returns:
+//   - (src, true, nil) if ref is a valid IPTV reference (service type 4097, 5001, 5002).
+//   - (Source{}, false, nil) if ref is a non-IPTV reference (e.g. DVB starting with 1:, or empty).
+//   - (Source{}, false, err) if ref is an IPTV reference (starts with 4097/5001/5002) but is malformed or invalid.
+func ClassifyReference(p *Parser, ref string) (Source, bool, error) {
+	if p == nil {
+		p = unkeyedClassifier
+	}
+	src, err := p.Parse(ref)
+	if err == nil {
+		return src, true, nil
+	}
+	if errors.Is(err, ErrNotIPTV) || errors.Is(err, ErrEmptyRef) {
+		return Source{}, false, nil
+	}
+	return Source{}, false, err
 }
