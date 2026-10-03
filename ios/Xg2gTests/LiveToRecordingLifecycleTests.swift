@@ -140,9 +140,15 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(recording: testRecording, startPosition: 120.0)
 
         // 3. Assert exact canonical state
-        let expectedItem = PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 120.0)
-        #expect(manager.state == .recording(expectedItem, mode: .fullscreen))
-        #expect(manager.activeRecordingItem == expectedItem)
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 120.0)
+        #expect(mode == .fullscreen)
+        #expect(manager.activeRecordingItem?.recording == testRecording)
+        #expect(manager.activeRecordingItem?.initialPosition == 120.0)
         #expect(manager.currentChannel == nil, "Live channel must be cleared")
         #expect(manager.presentationMode == .fullscreen, "Recording presentationMode is fullscreen")
         #expect(manager.isStreaming == false, "isStreaming must be false for VOD recordings")
@@ -166,7 +172,8 @@ struct LiveToRecordingLifecycleTests {
 
         // 2. Recording Player registers its cleanup hook (e.g. AVPlayer teardown)
         var cleanupExecutionCount = 0
-        manager.registerRecordingCleanup {
+        let token = try #require(manager.activeRecordingSessionToken)
+        manager.registerRecordingCleanup(for: token) {
             cleanupExecutionCount += 1
         }
 
@@ -222,7 +229,7 @@ struct LiveToRecordingLifecycleTests {
             #expect(manager.activeRecordingItem == nil)
 
             await manager.play(recording: testRecording, startPosition: 50.0)
-            #expect(manager.activeRecordingItem?.id == testRecording.id)
+            #expect(manager.activeRecordingItem?.recording.id == testRecording.id)
             #expect(manager.currentChannel == nil)
 
             await manager.play(channel: channelB, mode: .fullscreen)
@@ -248,9 +255,13 @@ struct LiveToRecordingLifecycleTests {
         await manager.play(recording: testRecording, startPosition: 42.0)
 
         // 3. Verify Live is completely torn down
-        #expect(manager.coordinator.playing == nil)
-        #expect(manager.coordinator.presentedServiceRef == nil)
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 42.0), mode: .fullscreen))
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 42.0)
+        #expect(mode == .fullscreen)
 
         await manager.stop()
         #expect(manager.state == .idle)
@@ -279,7 +290,7 @@ struct LiveToRecordingLifecycleTests {
             #expect(manager.activeRecordingItem == nil)
             #expect(manager.activeOfflineRecording == nil)
         case .recording(let rec, _):
-            #expect(rec.id == self.testRecording.id)
+            #expect(rec.recording.id == self.testRecording.id)
             #expect(manager.currentChannel == nil)
             #expect(manager.activeOfflineRecording == nil)
         case .offline(let off):
@@ -338,7 +349,13 @@ struct LiveToRecordingLifecycleTests {
         await offlineTransition.task.value
 
         // 4. Assert Recording won exclusively and offline was discarded
-        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0), mode: .fullscreen))
+        guard case .recording(let item, let mode) = manager.state else {
+            Issue.record("Expected .recording state")
+            return
+        }
+        #expect(item.recording == testRecording)
+        #expect(item.initialPosition == 55.0)
+        #expect(mode == .fullscreen)
         #expect(manager.activeRecordingItem != nil)
         #expect(manager.activeOfflineRecording == nil)
         #expect(manager.currentChannel == nil)
@@ -426,6 +443,96 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.coordinator.playing === sessionB, "Session B must remain playing and not be destroyed by old stop")
         #expect(manager.coordinator.presentedServiceRef == channelB.serviceRef, "Channel B must remain presented")
         #expect(manager.state == .live(channelB, mode: .fullscreen), "State must remain .live(channelB)")
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    // MARK: - Invariant 7: Screen Unmount Teardown Ownership
+
+    @Test("Live A screen unmount after Offline B is committed preserves Offline B as canonical target (ownership-aware screen teardown; SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountPreservesCommittedOfflineTarget() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active in fullscreen
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+        #expect(manager.presentationMode == .fullscreen)
+
+        // 2. User selects Offline Recording B; manager transitions to Offline B
+        await manager.play(offline: testOffline)
+        #expect(manager.state == .offline(testOffline))
+        #expect(manager.presentationMode == .hidden)
+
+        // 3. Live A's TestTSPlayerScreen unmounts late (.onDisappear).
+        // Since manager.presentationMode == .hidden, the unmount hook invokes teardownPlayback().
+        // With ownership check (LiveTeardownDecision), Live A recognizes that manager.state
+        // is no longer .live(channelA), so it does NOT stop the manager.
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == false, "Disappearing Live A screen must NOT stop playback when Offline B is active")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        // 4. Assert Offline B remains the active canonical target
+        #expect(manager.state == .offline(testOffline))
+        #expect(manager.activeOfflineRecording == testOffline)
+        #expect(manager.currentTarget == .offline(testOffline))
+
+        // 5. Teardown
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Live A screen unmount when user dismisses Live A cleanly stops playback (SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountStopsWhenScreenOwnsLiveState() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+
+        // 2. User dismisses Live A while on channelA:
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == true, "Disappearing Live A screen MUST stop playback when it owns the active live state")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        // 3. Assert manager is cleanly idle
+        #expect(manager.state == .idle)
+        #expect(manager.currentChannel == nil)
+    }
+
+    @Test("Live A screen unmount after zapping to Live B does not tear down Live B (SwiftUI view lifecycle unmount is modeled)")
+    func liveScreenUnmountDoesNotStopSubsequentLiveChannel() async throws {
+        let manager = makeManager()
+
+        // 1. Live A is active
+        await manager.play(channel: channelA, mode: .fullscreen)
+
+        // 2. Zap to Live B
+        await manager.play(channel: channelB, mode: .fullscreen)
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+
+        // 3. Late unmount of Live A screen
+        let shouldStop = LiveTeardownDecision.shouldStopPlayback(
+            activeState: manager.state,
+            screenChannel: channelA
+        )
+        #expect(shouldStop == false, "Disappearing Live A screen must NOT stop subsequent Live B channel")
+        if shouldStop {
+            await manager.stop()
+        }
+
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+        #expect(manager.currentChannel == channelB)
 
         await manager.stop()
         #expect(manager.state == .idle)

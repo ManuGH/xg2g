@@ -10,6 +10,18 @@ import SwiftUI
 struct OfflinePlayerScreen: View {
 
     let offlineRecording: OfflineRecording
+    @State private var sessionToken: UUID
+    private let audioSession: any AudioSessionControlling
+
+    init(
+        offlineRecording: OfflineRecording,
+        sessionToken: UUID = UUID(),
+        audioSession: any AudioSessionControlling = AudioSessionManager.shared
+    ) {
+        self.offlineRecording = offlineRecording
+        self._sessionToken = State(initialValue: sessionToken)
+        self.audioSession = audioSession
+    }
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
@@ -115,7 +127,7 @@ struct OfflinePlayerScreen: View {
             }
         }
         .task {
-            AudioSessionManager.shared.configureForPlayback()
+            audioSession.activate(for: sessionToken)
             let localURL = offlineRecording.localFileURL()
             let player = AVPlayer(url: localURL)
             self.player = player
@@ -126,7 +138,7 @@ struct OfflinePlayerScreen: View {
             hideControlsTask?.cancel()
             player?.pause()
             player = nil
-            AudioSessionManager.shared.deactivate()
+            audioSession.deactivate(for: sessionToken)
         }
     }
 
