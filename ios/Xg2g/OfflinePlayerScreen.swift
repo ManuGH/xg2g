@@ -10,7 +10,7 @@ import SwiftUI
 struct OfflinePlayerScreen: View {
 
     let offlineRecording: OfflineRecording
-    var sessionToken: UUID
+    @State private var sessionToken: UUID
     private let audioSession: any AudioSessionControlling
 
     init(
@@ -19,7 +19,7 @@ struct OfflinePlayerScreen: View {
         audioSession: any AudioSessionControlling = AudioSessionManager.shared
     ) {
         self.offlineRecording = offlineRecording
-        self.sessionToken = sessionToken
+        self._sessionToken = State(initialValue: sessionToken)
         self.audioSession = audioSession
     }
 
