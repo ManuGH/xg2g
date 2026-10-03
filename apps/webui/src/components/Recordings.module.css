@@ -9,10 +9,18 @@
 }
 
 .hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 0;
+  gap: 16px;
+  padding: 24px 28px;
+  border-radius: var(--radius-lg, 16px);
+  background:
+    radial-gradient(ellipse at 85% -30%, color-mix(in srgb, var(--accent-action) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-panel) 90%, transparent) 0%, var(--surface-panel) 100%);
+  border: 1px solid color-mix(in srgb, var(--border-base) 85%, transparent);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .heroCopy {
@@ -60,28 +68,34 @@
 .heroSignals {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .heroSignal {
-  min-width: 88px;
+  min-width: 96px;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-panel-strong) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-base) 70%, transparent);
 }
 
 .heroSignalValue {
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: 1rem;
+  font-size: 1.25rem;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .heroSignalLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .browserBar {
@@ -165,17 +179,17 @@
 .categoryControls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 4px 0 8px 0;
+  padding: 4px 0 12px 0;
 }
 
 .categoryButton {
   appearance: none;
-  border: 1px solid var(--border-base);
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--border-base) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-panel) 65%, transparent);
   color: var(--text-secondary);
-  padding: 8px 16px;
+  padding: 9px 20px;
   border-radius: 999px;
   font: inherit;
   font-size: var(--text-sm);
@@ -185,12 +199,15 @@
     background var(--motion-standard) var(--ease-standard),
     border-color var(--motion-standard) var(--ease-standard),
     color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard);
+    transform var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
+  backdrop-filter: blur(8px);
 }
 
 .categoryButton:hover {
   color: var(--text-primary);
   border-color: var(--border-elevated);
+  background: var(--bg-hover);
   transform: translateY(-1px);
 }
 
@@ -198,6 +215,7 @@
   color: var(--text-primary);
   border-color: var(--accent-action);
   background: var(--accent-action);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent-action) 45%, transparent);
 }
 
 .segmentedControls {
@@ -313,26 +331,65 @@
 
 .seriesRail {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
 }
 
 .seriesFolderCard {
+  position: relative;
   overflow: hidden;
-  transition: transform var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard);
+  transition:
+    transform var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 260px;
 }
 
 .seriesFolderCard:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--border-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
 .seriesFolderCardBody {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 76px;
-  padding: 12px 14px;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.seriesPosterPreview {
+  --recording-accent: var(--accent-action);
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--gradient-recordings-media-preview);
+  border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
+  box-shadow: var(--shadow-recordings-media-preview);
+  transition: transform var(--motion-standard) var(--ease-standard);
+}
+
+.seriesFolderCard:hover .seriesPosterPreview {
+  transform: scale(1.02);
+}
+
+.seriesPosterPreview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--gradient-recordings-media-preview-overlay);
+  pointer-events: none;
+}
+
+.seriesPosterTop {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
 }
 
 .seriesFolderIcon {
@@ -375,56 +432,136 @@
 .seriesFolderBadge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
-  font-weight: 600;
-  background: color-mix(in srgb, var(--accent-action) 18%, var(--surface-highlight) 82%);
-  color: var(--accent-action);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--accent-action) 90%, black 10%);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .subfolderHeader {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 14px 18px;
+  padding: 24px 28px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-base);
   background: var(--surface-panel);
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.seriesHubBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  opacity: 0.32;
+  filter: blur(14px) saturate(1.2);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.seriesHubBackdropOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--surface-panel) 0%,
+    color-mix(in srgb, var(--surface-panel) 88%, transparent) 55%,
+    var(--surface-panel) 100%
+  );
 }
 
 .subfolderInfo {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
+  flex: 1 1 300px;
+  min-width: 0;
 }
 
 .subfolderIcon {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent-action) 16%, var(--bg-hover) 84%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-action) 18%, var(--bg-hover) 82%);
   color: var(--accent-action);
+}
+
+.seriesHubBadges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.seriesHubBadgeTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, var(--accent-action) 20%, var(--surface-panel) 80%);
+  color: var(--accent-action);
+  border: 1px solid color-mix(in srgb, var(--accent-action) 35%, transparent);
+}
+
+.seriesHubDuration {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.seriesHubDescription {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 680px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.seriesHubHeaderActions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .subfolderTitle {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-heading);
-  font-size: 1.25rem;
+  font-size: clamp(1.3rem, 2.2vw, 1.8rem);
   line-height: 1.2;
 }
 
 .subfolderMeta {
   color: var(--text-secondary);
   font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .resumeShelf,
