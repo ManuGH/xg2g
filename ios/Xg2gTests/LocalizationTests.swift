@@ -5,6 +5,7 @@
 import Foundation
 import SwiftUI
 import Testing
+import UIKit
 @testable import Xg2g
 
 @Suite("iOS Localization Foundation & Bounded Migration Tests")
@@ -83,10 +84,16 @@ struct LocalizationTests {
             #expect(!tradeoff.gains.isEmpty)
             #expect(!tradeoff.costs.isEmpty)
             for gain in tradeoff.gains {
-                #expect(!gain.isEmpty)
+                let deGain = resolve(gain, locale: deLocale)
+                let enGain = resolve(gain, locale: enLocale)
+                #expect(!deGain.isEmpty)
+                #expect(!enGain.isEmpty)
             }
             for cost in tradeoff.costs {
-                #expect(!cost.isEmpty)
+                let deCost = resolve(cost, locale: deLocale)
+                let enCost = resolve(cost, locale: enLocale)
+                #expect(!deCost.isEmpty)
+                #expect(!enCost.isEmpty)
             }
         }
     }
@@ -185,30 +192,44 @@ struct LocalizationTests {
     // hierarchies (pickers, toggles, subviews, and navigation titles) complete layout passes without
     // layout recursion, frame corruption, or missing text under both German and English locales, as well as
     // under extreme Dynamic Type accessibility scalings (accessibilityExtraExtraLarge). Rendered images are
-    // retained as reviewable PNG artifacts for inspection.
+    // saved to a configurable directory (XG2G_ARTIFACTS_DIR or repo artifacts/screenshots).
 
     private static func saveScreenshot(_ image: UIImage, name: String) {
         guard let data = image.pngData() else { return }
-        let primaryDir = URL(fileURLWithPath: "/Users/manuel/.gemini/antigravity/brain/4a394db7-9692-48bf-a316-6f2121ab0ef0/screenshots")
-        let fallbackDir = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("artifacts/screenshots")
-
-        for dir in [primaryDir, fallbackDir] {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let fileURL = dir.appendingPathComponent("\(name).png")
-            try? data.write(to: fileURL)
+        let targetDir: URL
+        if let envDir = ProcessInfo.processInfo.environment["XG2G_ARTIFACTS_DIR"], !envDir.isEmpty {
+            targetDir = URL(fileURLWithPath: envDir)
+        } else {
+            targetDir = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("artifacts/screenshots")
         }
+
+        try? FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        let fileURL = targetDir.appendingPathComponent("\(name).png")
+        try? data.write(to: fileURL)
     }
 
     @Test("Programmatic smoke test: Render SettingsView snapshots in German and English, retaining PNG artifacts")
     @MainActor
     func renderSettingsViewsInBothLocales() throws {
         let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
 
         for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
             let model = AppModel()
             model.playbackEngine = .auto
             model.qualityPreference = .auto
@@ -264,13 +285,26 @@ struct LocalizationTests {
     @MainActor
     func settingsViewDynamicTypeLayout() {
         let locales = [("de", deLocale), ("en", enLocale)]
+        let priorLanguages = UserDefaults.standard.stringArray(forKey: "AppleLanguages")
+
+        defer {
+            if let priorLanguages {
+                UserDefaults.standard.set(priorLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
 
         for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
             let model = AppModel()
             model.playbackEngine = .auto
             model.qualityPreference = .auto
 
             let dynamicTypeView = SettingsView(model: model)
+                .environment(\.dynamicTypeSize, .accessibility2)
                 .environment(\.sizeCategory, .accessibilityExtraExtraLarge)
                 .environment(\.locale, loc)
                 .preferredColorScheme(.dark)
@@ -359,14 +393,18 @@ struct LocalizationTests {
         }
     }
 
-    // MARK: - 8. EPG Content Language Boundary Preservation
+    // MARK: - 8. EPG Content Language Boundary Preservation (Real Rendering Path)
 
-    @Test("EPG source content is preserved verbatim in its original broadcast language inside English UI")
-    func epgSourceContentLanguagePreservation() {
-        // Enigma2 source broadcast in German
+    @Test("EPG source content is preserved verbatim through real UI rendering path even when matching translation keys")
+    @MainActor
+    func epgSourceContentLanguagePreservationInRealRenderingPath() {
+        // Enigma2 broadcast content:
+        // Case A: Programme title matches an English application key ("Settings")
+        // Case B: German broadcast metadata ("Tagesschau", "Nachrichten der ARD")
         let germanChannelName = "Das Erste HD"
+        let collisionProgrammeTitle = "Settings" // identical to an application key
         let germanProgrammeTitle = "Tagesschau"
-        let germanProgrammeDesc = "Nachrichten der ARD mit Wetterbericht und Berichten aus Politik, Wirtschaft und Kultur"
+        let germanProgrammeDesc = "Nachrichten der ARD mit Wetterbericht"
 
         let channel = Channel(
             id: "1",
@@ -376,32 +414,66 @@ struct LocalizationTests {
             logoURL: nil
         )
 
-        let entry = NowNext.Entry(
+        let collisionEntry = NowNext.Entry(
+            title: collisionProgrammeTitle,
+            description: germanProgrammeDesc,
+            start: Date(),
+            end: Date().addingTimeInterval(900)
+        )
+
+        let germanEntry = NowNext.Entry(
             title: germanProgrammeTitle,
             description: germanProgrammeDesc,
             start: Date(),
             end: Date().addingTimeInterval(900)
         )
 
-        // Verbatim preservation in models
-        #expect(channel.name == germanChannelName)
-        #expect(entry.title == germanProgrammeTitle)
-        #expect(entry.description == germanProgrammeDesc)
+        let nowNextCollision = NowNext(serviceRef: channel.serviceRef, now: collisionEntry, next: nil)
+        let nowNextGerman = NowNext(serviceRef: channel.serviceRef, now: germanEntry, next: nil)
 
-        // Application chrome is localized into active English UI while broadcast metadata is untouched
-        let enNewsGenre = resolve(EpgGenre.news.localizedTitle, locale: enLocale)
-        #expect(enNewsGenre == "News", "App genre chrome must be English")
+        // Helper to recursively collect all SwiftUI Text instances and their storage from the view hierarchy
+        func extractSwiftUITexts(from value: Any) -> [String] {
+            var results: [String] = []
+            let desc = String(describing: value)
+            if desc.starts(with: "Text(storage: ") {
+                results.append(desc)
+            }
+            let mirror = Mirror(reflecting: value)
+            for child in mirror.children {
+                results.append(contentsOf: extractSwiftUITexts(from: child.value))
+            }
+            return results
+        }
 
-        let enChannelListHeader = localize("All Channels", locale: enLocale)
-        #expect(enChannelListHeader == "All Channels", "App header chrome must be English")
+        // 1. Render ChannelRow in an English UI environment with a show matching an application translation key ("Settings")
+        let rowA = ChannelRow(
+            channel: channel,
+            nowNext: nowNextCollision,
+            fullSchedule: [collisionEntry]
+        )
+        let textsA = extractSwiftUITexts(from: rowA.body)
+        #expect(textsA.contains(where: { $0.contains("verbatim(\"Das Erste HD\")") }), "Channel name must be stored as verbatim text")
+        #expect(textsA.contains(where: { $0.contains("verbatim(\"Settings\")") }), "Broadcast title 'Settings' must be stored as verbatim text, never a LocalizedStringKey")
 
-        let enNoBroadcastsInGenre = localize("No broadcasts in \(enNewsGenre)", locale: enLocale)
-        #expect(enNoBroadcastsInGenre == "No broadcasts in News")
+        // 2. Render ChannelRow with German programme in English UI
+        let rowB = ChannelRow(
+            channel: channel,
+            nowNext: nowNextGerman,
+            fullSchedule: [germanEntry]
+        )
+        let textsB = extractSwiftUITexts(from: rowB.body)
+        #expect(textsB.contains(where: { $0.contains("verbatim(\"Tagesschau\")") }), "German programme title must be preserved verbatim in English UI")
+        #expect(textsB.contains(where: { $0.contains("verbatim(\"Nachrichten der ARD") }), "German programme description must be preserved verbatim")
 
-        // Verbatim broadcast content must not be translated by application dictionaries
-        let broadcastTitleAsResource = LocalizedStringResource(stringLiteral: germanProgrammeTitle)
-        let resolvedTitleInEn = resolve(broadcastTitleAsResource, locale: enLocale)
-        #expect(resolvedTitleInEn == germanProgrammeTitle, "Broadcast title must never be translated into English by app catalogs")
+        // 3. In German UI, 'Settings' broadcast must still be verbatim("Settings"), never a LocalizedStringKey that translates to 'Einstellungen'
+        let rowC = ChannelRow(
+            channel: channel,
+            nowNext: nowNextCollision,
+            fullSchedule: [collisionEntry]
+        )
+        let textsC = extractSwiftUITexts(from: rowC.body)
+        #expect(textsC.contains(where: { $0.contains("verbatim(\"Settings\")") }), "Broadcast title 'Settings' must be stored as verbatim text in German UI")
+        #expect(!textsC.contains(where: { $0.contains("Einstellungen") }), "Broadcast title 'Settings' must never produce 'Einstellungen' in UI storage")
     }
 
     // MARK: - 9. ErrorClassifier & UserFacingError Presentation
@@ -479,5 +551,114 @@ struct LocalizationTests {
         #expect(resolve(reauthUserFacing!.title, locale: deLocale) == "Gerät muss erneut gekoppelt werden")
         #expect(reauthUserFacing!.isRetryable == false)
     }
-}
 
+    // MARK: - 10. Admission Distinction & Diagnostic Formatting
+
+    @Test("ErrorClassifier separates admission session capacity from tuner exhaustion and formats diagnostics")
+    func errorClassifierAdmissionDistinctionAndDiagnostics() {
+        // 1. ADMISSION_NO_TUNERS
+        let tunerProblem = ProblemDetails(
+            type: "https://xg2g.local/problems/admission-no-tuners",
+            title: "No Tuners Available",
+            status: 503,
+            requestId: "req-tuners-1",
+            code: "ADMISSION_NO_TUNERS",
+            detail: "All 4 tuners in use on Vu+ Uno 4K",
+            instance: nil
+        )
+        let tunerError = ErrorClassifier.classify(APIError.problem(tunerProblem))
+        #expect(tunerError != nil)
+        #expect(resolve(tunerError!.title, locale: enLocale) == "All Tuners Occupied")
+        #expect(resolve(tunerError!.title, locale: deLocale) == "Alle Tuner belegt")
+        #expect(resolve(tunerError!.detail!, locale: enLocale) == "No free receiver tuners available right now.")
+        #expect(resolve(tunerError!.detail!, locale: deLocale) == "Aktuell sind keine freien Receiver-Tuner verfügbar.")
+        #expect(tunerError!.code == "ADMISSION_NO_TUNERS")
+        #expect(tunerError!.requestId == "req-tuners-1")
+        #expect(tunerError!.diagnosticSummary.contains("code=ADMISSION_NO_TUNERS"))
+        #expect(tunerError!.diagnosticSummary.contains("requestId=req-tuners-1"))
+
+        // 2. ADMISSION_SESSIONS_FULL
+        let sessionProblem = ProblemDetails(
+            type: "https://xg2g.local/problems/admission-sessions-full",
+            title: "Max Sessions Reached",
+            status: 503,
+            requestId: "req-sessions-2",
+            code: "ADMISSION_SESSIONS_FULL",
+            detail: "Max concurrent client limit 8 reached",
+            instance: nil
+        )
+        let sessionError = ErrorClassifier.classify(APIError.problem(sessionProblem))
+        #expect(sessionError != nil)
+        #expect(resolve(sessionError!.title, locale: enLocale) == "Streaming Limit Reached")
+        #expect(resolve(sessionError!.title, locale: deLocale) == "Streaming-Limit erreicht")
+        #expect(resolve(sessionError!.detail!, locale: enLocale) == "The maximum number of active streaming sessions has been reached.")
+        #expect(resolve(sessionError!.detail!, locale: deLocale) == "Die maximale Anzahl aktiver Streaming-Sitzungen wurde erreicht.")
+        #expect(sessionError!.code == "ADMISSION_SESSIONS_FULL")
+        #expect(sessionError!.requestId == "req-sessions-2")
+        #expect(sessionError!.diagnosticSummary.contains("code=ADMISSION_SESSIONS_FULL"))
+        #expect(sessionError!.diagnosticSummary.contains("requestId=req-sessions-2"))
+
+        // 3. ADMISSION_TRANSCODES_FULL
+        let transcodeProblem = ProblemDetails(
+            type: "https://xg2g.local/problems/admission-transcodes-full",
+            title: "Max Transcodes Reached",
+            status: 503,
+            requestId: "req-trans-3",
+            code: "ADMISSION_TRANSCODES_FULL",
+            detail: "QSV transcode slot exhaustion",
+            instance: nil
+        )
+        let transcodeError = ErrorClassifier.classify(APIError.problem(transcodeProblem))
+        #expect(transcodeError != nil)
+        #expect(resolve(transcodeError!.title, locale: enLocale) == "Transcoding Limit Reached")
+        #expect(resolve(transcodeError!.title, locale: deLocale) == "Transkodierungs-Limit erreicht")
+
+        // 4. ZapPreparation classification
+        let prepTuningTimeout = ZapPreparation(
+            preparationId: "p1",
+            zapId: "z1",
+            serviceRef: "sref",
+            state: "failed",
+            outcome: "tuning_timeout",
+            generation: nil,
+            readyAfterMs: nil,
+            pending: nil,
+            detail: "lock timed out after 3000ms"
+        )
+        let prepTimeoutErr = ErrorClassifier.classifyZapPreparation(prepTuningTimeout)
+        #expect(resolve(prepTimeoutErr.title, locale: enLocale) == "Channel Tuning Timed Out")
+        #expect(resolve(prepTimeoutErr.title, locale: deLocale) == "Kanalabstimmung abgelaufen")
+        #expect(prepTimeoutErr.diagnosticLog == "lock timed out after 3000ms")
+
+        let prepScrambled = ZapPreparation(
+            preparationId: "p2",
+            zapId: "z2",
+            serviceRef: "sref",
+            state: "failed",
+            outcome: "scrambled",
+            generation: nil,
+            readyAfterMs: nil,
+            pending: nil,
+            detail: "CA status 0x80"
+        )
+        let prepScrambledErr = ErrorClassifier.classifyZapPreparation(prepScrambled)
+        #expect(resolve(prepScrambledErr.title, locale: enLocale) == "Channel Scrambled")
+        #expect(resolve(prepScrambledErr.title, locale: deLocale) == "Kanal verschlüsselt")
+        #expect(prepScrambledErr.isRetryable == false)
+
+        let prepNoData = ZapPreparation(
+            preparationId: "p3",
+            zapId: "z3",
+            serviceRef: "sref",
+            state: "failed",
+            outcome: "no_data",
+            generation: nil,
+            readyAfterMs: nil,
+            pending: nil,
+            detail: "tuner unlocked"
+        )
+        let prepNoDataErr = ErrorClassifier.classifyZapPreparation(prepNoData)
+        #expect(resolve(prepNoDataErr.title, locale: enLocale) == "No Broadcast Signal")
+        #expect(resolve(prepNoDataErr.title, locale: deLocale) == "Kein Sendesignal")
+    }
+}

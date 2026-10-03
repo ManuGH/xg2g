@@ -4,7 +4,10 @@
 
 import Foundation
 import Observation
+import os
 import UIKit
+
+private let appLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "app")
 
 /// Remembers which server this app is pointed at.
 ///
@@ -136,6 +139,10 @@ final class AppModel {
     private func setError(_ error: UserFacingError?) {
         currentError = error
         lastError = error?.localizedMessage
+        if let error {
+            appLogger.error("User-facing error presented: [\(error.diagnosticSummary, privacy: .public)]")
+            TelemetryServer.shared.log("[ERROR] \(error.diagnosticSummary)")
+        }
     }
 
     /// The stream currently handed to the player, if any.
@@ -291,44 +298,44 @@ final class AppModel {
         }
 
         /// What the viewer gains and gives up, in their terms.
-        var tradeoff: (gains: [String], costs: [String]) {
+        var tradeoff: (gains: [LocalizedStringResource], costs: [LocalizedStringResource]) {
             switch self {
             case .auto:
                 return (
                     gains: [
-                        String(localized: "The xg2g Planner automatically selects the optimal pipeline"),
-                        String(localized: "Lossless streaming and lowest latency on local network"),
-                        String(localized: "Seamless switch to adaptive streaming when away from home")
+                        LocalizedStringResource("The xg2g Planner automatically selects the optimal pipeline"),
+                        LocalizedStringResource("Lossless streaming and lowest latency on local network"),
+                        LocalizedStringResource("Seamless switch to adaptive streaming when away from home")
                     ],
                     costs: [
-                        String(localized: "Timeshift/pause is only available when HLS is active")
+                        LocalizedStringResource("Timeshift/pause is only available when HLS is active")
                     ]
                 )
             case .native:
                 return (
                     gains: [
-                        String(localized: "Direct video and audio with minimal latency"),
-                        String(localized: "Significantly faster channel zapping (hardware decoding)"),
-                        String(localized: "Minimal server load (no video transcoding)"),
-                        String(localized: "Closer to the live broadcast")
+                        LocalizedStringResource("Direct video and audio with minimal latency"),
+                        LocalizedStringResource("Significantly faster channel zapping (hardware decoding)"),
+                        LocalizedStringResource("Minimal server load (no video transcoding)"),
+                        LocalizedStringResource("Closer to the live broadcast")
                     ],
                     costs: [
-                        String(localized: "No pausing or rewinding (timeshift)"),
-                        String(localized: "Only available on the same network as the ingest receiver"),
-                        String(localized: "Requires the full broadcast bitrate continuously")
+                        LocalizedStringResource("No pausing or rewinding (timeshift)"),
+                        LocalizedStringResource("Only available on the same network as the ingest receiver"),
+                        LocalizedStringResource("Requires the full broadcast bitrate continuously")
                     ]
                 )
             case .hls:
                 return (
                     gains: [
-                        String(localized: "Pause live TV, rewind, and watch from the beginning (timeshift)"),
-                        String(localized: "Works reliably outside the home network"),
-                        String(localized: "Adaptive quality on fluctuating bandwidth"),
-                        String(localized: "AirPlay and system screen sharing")
+                        LocalizedStringResource("Pause live TV, rewind, and watch from the beginning (timeshift)"),
+                        LocalizedStringResource("Works reliably outside the home network"),
+                        LocalizedStringResource("Adaptive quality on fluctuating bandwidth"),
+                        LocalizedStringResource("AirPlay and system screen sharing")
                     ],
                     costs: [
-                        String(localized: "Higher latency than Native Live TV"),
-                        String(localized: "Zapping times depend on GOP segment boundaries")
+                        LocalizedStringResource("Higher latency than Native Live TV"),
+                        LocalizedStringResource("Zapping times depend on GOP segment boundaries")
                     ]
                 )
             }

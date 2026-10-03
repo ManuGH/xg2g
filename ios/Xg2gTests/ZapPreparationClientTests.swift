@@ -119,17 +119,21 @@ final class PrepareStubURLProtocol: URLProtocol {
         let handler = Self._responseHandler
         Self.lock.unlock()
 
-        let (statusCode, data) = handler?(request) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
+        let req = request
+        DispatchQueue.global().async { [weak self] in
+            guard let self else { return }
+            let (statusCode, data) = handler?(req) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
 
-        let response = HTTPURLResponse(
-            url: request.url ?? URL(string: "http://example.test")!,
-            statusCode: statusCode,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+            let response = HTTPURLResponse(
+                url: req.url ?? URL(string: "http://example.test")!,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     override func stopLoading() {}

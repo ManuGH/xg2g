@@ -4,8 +4,11 @@
 
 import AVKit
 import CoreMedia
+import os
 import SwiftUI
 import UIKit
+
+private let playerScreenLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "player-screen")
 
 /// 100% Native Apple AVPlayerViewController playback inspired by
 /// MagentaTV 2.0, Zattoo & Channels DVR:
@@ -365,8 +368,11 @@ struct PlayerScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime)) { notif in
             if let currentItem = player?.currentItem, notif.object as? AVPlayerItem == currentItem {
                 if let err = notif.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                    let classified = ErrorClassifier.classify(err)
-                    self.failure = classified?.localizedMessage ?? String(localized: "Playback Error: \(err.localizedDescription)")
+                    if let classified = ErrorClassifier.classify(err) {
+                        self.failure = classified.localizedMessage
+                        playerScreenLogger.error("AVPlayerItemFailedToPlayToEndTime: \(classified.diagnosticSummary, privacy: .public)")
+                        TelemetryServer.shared.log("[ERROR] AVPlayerItemFailedToPlayToEndTime: \(classified.diagnosticSummary)")
+                    }
                 }
             }
         }

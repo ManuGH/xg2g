@@ -35,6 +35,40 @@
         }
       }
     },
+    "A network error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein Netzwerkfehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A network error occurred."
+          }
+        }
+      }
+    },
+    "A secure TLS connection could not be established.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine sichere TLS-Verbindung konnte nicht aufgebaut werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A secure TLS connection could not be established."
+          }
+        }
+      }
+    },
     "About xg2g": {
       "extractionState": "manual",
       "localizations": {
@@ -48,6 +82,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "About xg2g"
+          }
+        }
+      }
+    },
+    "Access Denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff verweigert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access Denied"
           }
         }
       }
@@ -205,6 +256,57 @@
         }
       }
     },
+    "All Tuners Occupied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Tuner belegt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Tuners Occupied"
+          }
+        }
+      }
+    },
+    "An internal server error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein interner Serverfehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An internal server error occurred."
+          }
+        }
+      }
+    },
+    "An unexpected error occurred.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein unerwarteter Fehler ist aufgetreten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An unexpected error occurred."
+          }
+        }
+      }
+    },
     "Are you sure you want to clear the cache?": {
       "extractionState": "manual",
       "localizations": {
@@ -235,6 +337,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Are you sure you want to disconnect this device?"
+          }
+        }
+      }
+    },
+    "Authentication Required": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentifizierung erforderlich"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication Required"
           }
         }
       }
@@ -307,6 +426,23 @@
         }
       }
     },
+    "Cannot Reach Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server nicht erreichbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot Reach Server"
+          }
+        }
+      }
+    },
     "Channel list: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -320,6 +456,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Channel list: %@"
+          }
+        }
+      }
+    },
+    "Channel Scrambled": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanal verschlüsselt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel Scrambled"
+          }
+        }
+      }
+    },
+    "Channel Tuning Timed Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanalabstimmung abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel Tuning Timed Out"
+          }
+        }
+      }
+    },
+    "Checking channel availability.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanalverfügbarkeit wird geprüft."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking channel availability."
+          }
+        }
+      }
+    },
+    "Choose Another Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anderen Server wählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Another Server"
           }
         }
       }
@@ -392,6 +596,23 @@
         }
       }
     },
+    "Code Already Used": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code bereits verwendet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code Already Used"
+          }
+        }
+      }
+    },
     "Compact (HEVC) saves up to 75% storage space on your device and is ideal for flights and long series seasons.": {
       "extractionState": "manual",
       "localizations": {
@@ -426,6 +647,23 @@
         }
       }
     },
+    "Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        }
+      }
+    },
     "Connected": {
       "extractionState": "manual",
       "localizations": {
@@ -456,6 +694,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection & Infrastructure"
+          }
+        }
+      }
+    },
+    "Connection Timed Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeitüberschreitung bei der Verbindung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Timed Out"
+          }
+        }
+      }
+    },
+    "Could not load %@ (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ konnte nicht geladen werden (%@)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load %@ (%@)"
           }
         }
       }
@@ -524,6 +796,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Device Identity"
+          }
+        }
+      }
+    },
+    "Device Must Be Paired Again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät muss erneut gekoppelt werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device Must Be Paired Again"
           }
         }
       }
@@ -783,6 +1072,40 @@
         }
       }
     },
+    "Invalid API Endpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültiger API-Endpunkt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid API Endpoint"
+          }
+        }
+      }
+    },
+    "Invalid stream URL.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige Stream-URL."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid stream URL."
+          }
+        }
+      }
+    },
     "Key Storage": {
       "extractionState": "manual",
       "localizations": {
@@ -936,6 +1259,23 @@
         }
       }
     },
+    "Network Error": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkfehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network Error"
+          }
+        }
+      }
+    },
     "Network Status": {
       "extractionState": "manual",
       "localizations": {
@@ -1000,6 +1340,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "No %@ broadcasts"
+          }
+        }
+      }
+    },
+    "No Broadcast Signal": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Sendesignal"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Broadcast Signal"
           }
         }
       }
@@ -1072,6 +1429,40 @@
         }
       }
     },
+    "No free receiver tuners available right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuell sind keine freien Receiver-Tuner verfügbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No free receiver tuners available right now."
+          }
+        }
+      }
+    },
+    "No Internet Connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Internetverbindung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Internet Connection"
+          }
+        }
+      }
+    },
     "No pausing or rewinding (timeshift)": {
       "extractionState": "manual",
       "localizations": {
@@ -1085,6 +1476,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "No pausing or rewinding (timeshift)"
+          }
+        }
+      }
+    },
+    "No playback session could be created.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es konnte keine Wiedergabesitzung erstellt werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No playback session could be created."
           }
         }
       }
@@ -1136,6 +1544,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "No results for “%@”"
+          }
+        }
+      }
+    },
+    "Not Found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not Found"
           }
         }
       }
@@ -1208,23 +1633,6 @@
         }
       }
     },
-    "Original · No video transcoding · Minimal server load": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Original · Keine Video-Transkodierung · Minimale Serverlast"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Original · No video transcoding · Minimal server load"
-          }
-        }
-      }
-    },
     "Original HD (1:1)": {
       "extractionState": "manual",
       "localizations": {
@@ -1255,6 +1663,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "Original Quality"
+          }
+        }
+      }
+    },
+    "Original · No video transcoding · Minimal server load": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original · Keine Video-Transkodierung · Minimale Serverlast"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original · No video transcoding · Minimal server load"
+          }
+        }
+      }
+    },
+    "Pairing Code Expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplungscode abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Code Expired"
+          }
+        }
+      }
+    },
+    "Pairing could not be completed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung konnte nicht abgeschlossen werden: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing could not be completed: %@"
+          }
+        }
+      }
+    },
+    "Pairing Denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung abgelehnt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing Denied"
+          }
+        }
+      }
+    },
+    "Pairing was denied in the admin console. Please request a new code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing was denied in the admin console. Please request a new code."
           }
         }
       }
@@ -1327,6 +1820,57 @@
         }
       }
     },
+    "Playback Error": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabefehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Error"
+          }
+        }
+      }
+    },
+    "Playback Error: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabefehler: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Error: %@"
+          }
+        }
+      }
+    },
+    "Playback Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Failed"
+          }
+        }
+      }
+    },
     "Playback Mode": {
       "extractionState": "manual",
       "localizations": {
@@ -1340,6 +1884,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "Playback Mode"
+          }
+        }
+      }
+    },
+    "Playback Ticket Refused": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe-Ticket abgelehnt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Ticket Refused"
+          }
+        }
+      }
+    },
+    "Please check the server address and connectivity.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte Server-Adresse und Verbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please check the server address and connectivity."
+          }
+        }
+      }
+    },
+    "Please check your network connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte die Netzwerkverbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please check your network connection."
+          }
+        }
+      }
+    },
+    "Please request a new pairing code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please request a new pairing code."
+          }
+        }
+      }
+    },
+    "Please sign in or pair again to continue.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte erneut anmelden oder koppeln."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please sign in or pair again to continue."
+          }
+        }
+      }
+    },
+    "Please wait a moment before trying again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitte kurz warten und erneut versuchen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please wait a moment before trying again."
           }
         }
       }
@@ -1395,6 +2041,40 @@
         }
       }
     },
+    "Receiver Unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver Unavailable"
+          }
+        }
+      }
+    },
+    "Receiver Unreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver nicht erreichbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver Unreachable"
+          }
+        }
+      }
+    },
     "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations.": {
       "extractionState": "manual",
       "localizations": {
@@ -1408,6 +2088,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recordings and scheduled timers are unaffected by these settings — they always run on the server and work across all configurations."
+          }
+        }
+      }
+    },
+    "Request Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request Failed"
+          }
+        }
+      }
+    },
+    "Request New Code": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuen Code anfordern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request New Code"
           }
         }
       }
@@ -1446,6 +2160,23 @@
         }
       }
     },
+    "Retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
     "Save up to 75% storage (~800 MB / 90m)": {
       "extractionState": "manual",
       "localizations": {
@@ -1476,6 +2207,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seamless switch to adaptive streaming when away from home"
+          }
+        }
+      }
+    },
+    "Secure Connection Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichere TLS-Verbindung fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secure Connection Failed"
           }
         }
       }
@@ -1531,6 +2279,23 @@
         }
       }
     },
+    "Server Error": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-Fehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Error"
+          }
+        }
+      }
+    },
     "Server Status": {
       "extractionState": "manual",
       "localizations": {
@@ -1578,6 +2343,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Server Streaming (HLS) enables pause/timeshift, remote access, and adaptive bitrate; xg2g decides whether copy, remux, or transcode is required."
+          }
+        }
+      }
+    },
+    "Service Unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dienst nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service Unavailable"
           }
         }
       }
@@ -1684,6 +2466,23 @@
         }
       }
     },
+    "Start Pairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung starten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pairing"
+          }
+        }
+      }
+    },
     "Storage & Cache": {
       "extractionState": "manual",
       "localizations": {
@@ -1697,6 +2496,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "Storage & Cache"
+          }
+        }
+      }
+    },
+    "Stored credentials could not be opened.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherte Zugangsdaten konnten nicht geöffnet werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored credentials could not be opened."
+          }
+        }
+      }
+    },
+    "Stream Being Verified": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream wird geprüft"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Being Verified"
+          }
+        }
+      }
+    },
+    "Stream Stalled": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream stockt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Stalled"
+          }
+        }
+      }
+    },
+    "Stream Start Timed Out": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Start abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream Start Timed Out"
+          }
+        }
+      }
+    },
+    "Streaming Limit Reached": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Limit erreicht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Limit Reached"
           }
         }
       }
@@ -1803,6 +2687,40 @@
         }
       }
     },
+    "That does not look like a server address.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das sieht nicht nach einer gültigen Server-Adresse aus."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That does not look like a server address."
+          }
+        }
+      }
+    },
+    "The channel arrived but could not be displayed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Kanal wurde empfangen, konnte aber nicht angezeigt werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The channel arrived but could not be displayed."
+          }
+        }
+      }
+    },
     "The device will be signed out on the server. To regain access, the pairing code must be approved again.": {
       "extractionState": "manual",
       "localizations": {
@@ -1816,6 +2734,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "The device will be signed out on the server. To regain access, the pairing code must be approved again."
+          }
+        }
+      }
+    },
+    "The display layer refused the channel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anzeigeebene hat den Kanal abgelehnt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The display layer refused the channel."
+          }
+        }
+      }
+    },
+    "The maximum number of active streaming sessions has been reached.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die maximale Anzahl aktiver Streaming-Sitzungen wurde erreicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The maximum number of active streaming sessions has been reached."
           }
         }
       }
@@ -1837,6 +2789,244 @@
         }
       }
     },
+    "The receiver received no data for this channel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Receiver hat keine Daten für diesen Kanal empfangen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The receiver received no data for this channel."
+          }
+        }
+      }
+    },
+    "The receiver took too long to tune the channel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Receiver hat zu lange gebraucht, um den Kanal einzustellen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The receiver took too long to tune the channel."
+          }
+        }
+      }
+    },
+    "The request could not be completed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anfrage konnte nicht abgeschlossen werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request could not be completed."
+          }
+        }
+      }
+    },
+    "The requested endpoint is not available.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der angeforderte Endpunkt ist nicht verfügbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The requested endpoint is not available."
+          }
+        }
+      }
+    },
+    "The requested resource was not found.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die angeforderte Ressource wurde nicht gefunden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The requested resource was not found."
+          }
+        }
+      }
+    },
+    "The server is currently processing the maximum number of transcodes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server verarbeitet derzeit die maximale Anzahl an Transkodierungen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server is currently processing the maximum number of transcodes."
+          }
+        }
+      }
+    },
+    "The server is temporarily unavailable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server ist vorübergehend nicht erreichbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server is temporarily unavailable."
+          }
+        }
+      }
+    },
+    "The server refused playback authorization.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat die Wiedergabeberechtigung abgelehnt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server refused playback authorization."
+          }
+        }
+      }
+    },
+    "The server response was unexpected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Server-Antwort entsprach nicht dem erwarteten Format."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server response was unexpected."
+          }
+        }
+      }
+    },
+    "The server took too long to respond.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat nicht rechtzeitig geantwortet."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server took too long to respond."
+          }
+        }
+      }
+    },
+    "The stream could not be started.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Stream konnte nicht gestartet werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stream could not be started."
+          }
+        }
+      }
+    },
+    "The stream did not start in time. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Stream konnte nicht rechtzeitig gestartet werden. Bitte erneut versuchen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stream did not start in time. Please try again."
+          }
+        }
+      }
+    },
+    "The TV receiver cannot be reached. Please check its connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der TV-Receiver ist nicht erreichbar. Bitte die Verbindung prüfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV receiver cannot be reached. Please check its connection."
+          }
+        }
+      }
+    },
+    "The TV receiver did not return stream data.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der TV-Receiver lieferte keine Daten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV receiver did not return stream data."
+          }
+        }
+      }
+    },
     "The xg2g Planner automatically selects the optimal pipeline": {
       "extractionState": "manual",
       "localizations": {
@@ -1854,6 +3044,57 @@
         }
       }
     },
+    "This channel is encrypted and cannot be decoded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Kanal ist verschlüsselt und kann nicht decodiert werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This channel is encrypted and cannot be decoded."
+          }
+        }
+      }
+    },
+    "This code has already been claimed. Please request a new code.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Code wurde bereits verwendet. Bitte einen neuen Code anfordern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This code has already been claimed. Please request a new code."
+          }
+        }
+      }
+    },
+    "This device holds expired credentials. Please pair again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Gerät besitzt abgelaufene Zugangsdaten. Bitte neu koppeln."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device holds expired credentials. Please pair again."
+          }
+        }
+      }
+    },
     "Timeshift/pause is only available when HLS is active": {
       "extractionState": "manual",
       "localizations": {
@@ -1867,6 +3108,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Timeshift/pause is only available when HLS is active"
+          }
+        }
+      }
+    },
+    "Too Many Requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu viele Anfragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too Many Requests"
+          }
+        }
+      }
+    },
+    "Transcoding Limit Reached": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkodierungs-Limit erreicht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcoding Limit Reached"
           }
         }
       }
@@ -1905,6 +3180,23 @@
         }
       }
     },
+    "Unexpected Server Response": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unerwartete Server-Antwort"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unexpected Server Response"
+          }
+        }
+      }
+    },
     "Version": {
       "extractionState": "manual",
       "localizations": {
@@ -1918,6 +3210,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version"
+          }
+        }
+      }
+    },
+    "Video processing stopped emitting data.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Videoverarbeitung liefert keine Daten mehr."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video processing stopped emitting data."
           }
         }
       }
@@ -1990,108 +3299,6 @@
         }
       }
     },
-    "Zapping times depend on GOP segment boundaries": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Umschaltzeiten hängen von GOP-Segmenten ab"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zapping times depend on GOP segment boundaries"
-          }
-        }
-      }
-    },
-    "Device Must Be Paired Again": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gerät muss erneut gekoppelt werden"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Device Must Be Paired Again"
-          }
-        }
-      }
-    },
-    "This device holds expired credentials. Please pair again.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieses Gerät besitzt abgelaufene Zugangsdaten. Bitte neu koppeln."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This device holds expired credentials. Please pair again."
-          }
-        }
-      }
-    },
-    "Authentication Required": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authentifizierung erforderlich"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authentication Required"
-          }
-        }
-      }
-    },
-    "Please sign in or pair again to continue.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bitte erneut anmelden oder koppeln."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please sign in or pair again to continue."
-          }
-        }
-      }
-    },
-    "Access Denied": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zugriff verweigert"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Access Denied"
-          }
-        }
-      }
-    },
     "You do not have permission for this action.": {
       "extractionState": "manual",
       "localizations": {
@@ -2109,1005 +3316,19 @@
         }
       }
     },
-    "Pairing Code Expired": {
+    "Zapping times depend on GOP segment boundaries": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kopplungscode abgelaufen"
+            "value": "Umschaltzeiten hängen von GOP-Segmenten ab"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing Code Expired"
-          }
-        }
-      }
-    },
-    "Please request a new pairing code.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bitte einen neuen Code anfordern."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please request a new pairing code."
-          }
-        }
-      }
-    },
-    "Code Already Used": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Code bereits verwendet"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Code Already Used"
-          }
-        }
-      }
-    },
-    "This code has already been claimed. Please request a new code.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieser Code wurde bereits verwendet. Bitte einen neuen Code anfordern."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This code has already been claimed. Please request a new code."
-          }
-        }
-      }
-    },
-    "Pairing Denied": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kopplung abgelehnt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing Denied"
-          }
-        }
-      }
-    },
-    "Pairing was denied in the admin console. Please request a new code.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing was denied in the admin console. Please request a new code."
-          }
-        }
-      }
-    },
-    "All Tuners Occupied": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alle Tuner belegt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All Tuners Occupied"
-          }
-        }
-      }
-    },
-    "No free receiver tuners available right now.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aktuell sind keine freien Receiver-Tuner verfügbar."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No free receiver tuners available right now."
-          }
-        }
-      }
-    },
-    "Stream Stalled": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream stockt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream Stalled"
-          }
-        }
-      }
-    },
-    "Video processing stopped emitting data.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Videoverarbeitung liefert keine Daten mehr."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Video processing stopped emitting data."
-          }
-        }
-      }
-    },
-    "Stream Start Timed Out": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream-Start abgelaufen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream Start Timed Out"
-          }
-        }
-      }
-    },
-    "The stream did not start in time. Please try again.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Stream konnte nicht rechtzeitig gestartet werden. Bitte erneut versuchen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The stream did not start in time. Please try again."
-          }
-        }
-      }
-    },
-    "Receiver Unreachable": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receiver nicht erreichbar"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receiver Unreachable"
-          }
-        }
-      }
-    },
-    "The TV receiver cannot be reached. Please check its connection.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der TV-Receiver ist nicht erreichbar. Bitte die Verbindung prüfen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The TV receiver cannot be reached. Please check its connection."
-          }
-        }
-      }
-    },
-    "Receiver Unavailable": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receiver nicht verfügbar"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receiver Unavailable"
-          }
-        }
-      }
-    },
-    "The TV receiver did not return stream data.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der TV-Receiver lieferte keine Daten."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The TV receiver did not return stream data."
-          }
-        }
-      }
-    },
-    "Stream Being Verified": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream wird geprüft"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream Being Verified"
-          }
-        }
-      }
-    },
-    "Checking channel availability.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kanalverfügbarkeit wird geprüft."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Checking channel availability."
-          }
-        }
-      }
-    },
-    "No Internet Connection": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keine Internetverbindung"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No Internet Connection"
-          }
-        }
-      }
-    },
-    "Please check your network connection.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bitte die Netzwerkverbindung prüfen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please check your network connection."
-          }
-        }
-      }
-    },
-    "Connection Timed Out": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zeitüberschreitung bei der Verbindung"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connection Timed Out"
-          }
-        }
-      }
-    },
-    "The server took too long to respond.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server hat nicht rechtzeitig geantwortet."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server took too long to respond."
-          }
-        }
-      }
-    },
-    "Cannot Reach Server": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server nicht erreichbar"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cannot Reach Server"
-          }
-        }
-      }
-    },
-    "Please check the server address and connectivity.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bitte Server-Adresse und Verbindung prüfen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please check the server address and connectivity."
-          }
-        }
-      }
-    },
-    "Secure Connection Failed": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sichere TLS-Verbindung fehlgeschlagen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Secure Connection Failed"
-          }
-        }
-      }
-    },
-    "A secure TLS connection could not be established.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Eine sichere TLS-Verbindung konnte nicht aufgebaut werden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A secure TLS connection could not be established."
-          }
-        }
-      }
-    },
-    "Network Error": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Netzwerkfehler"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Network Error"
-          }
-        }
-      }
-    },
-    "A network error occurred.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ein Netzwerkfehler ist aufgetreten."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A network error occurred."
-          }
-        }
-      }
-    },
-    "Playback Failed": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiedergabe fehlgeschlagen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback Failed"
-          }
-        }
-      }
-    },
-    "No playback session could be created.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Es konnte keine Wiedergabesitzung erstellt werden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No playback session could be created."
-          }
-        }
-      }
-    },
-    "Invalid stream URL.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ungültige Stream-URL."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid stream URL."
-          }
-        }
-      }
-    },
-    "Playback Ticket Refused": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiedergabe-Ticket abgelehnt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback Ticket Refused"
-          }
-        }
-      }
-    },
-    "The server refused playback authorization.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server hat die Wiedergabeberechtigung abgelehnt."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server refused playback authorization."
-          }
-        }
-      }
-    },
-    "Not Found": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nicht gefunden"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not Found"
-          }
-        }
-      }
-    },
-    "The requested resource was not found.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die angeforderte Ressource wurde nicht gefunden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The requested resource was not found."
-          }
-        }
-      }
-    },
-    "Too Many Requests": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zu viele Anfragen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Too Many Requests"
-          }
-        }
-      }
-    },
-    "Please wait a moment before trying again.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bitte kurz warten und erneut versuchen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please wait a moment before trying again."
-          }
-        }
-      }
-    },
-    "Service Unavailable": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dienst nicht verfügbar"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Service Unavailable"
-          }
-        }
-      }
-    },
-    "The server is temporarily unavailable.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server ist vorübergehend nicht erreichbar."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server is temporarily unavailable."
-          }
-        }
-      }
-    },
-    "Server Error": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server-Fehler"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server Error"
-          }
-        }
-      }
-    },
-    "An internal server error occurred.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ein interner Serverfehler ist aufgetreten."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An internal server error occurred."
-          }
-        }
-      }
-    },
-    "Request Failed": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anfrage fehlgeschlagen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Request Failed"
-          }
-        }
-      }
-    },
-    "The request could not be completed.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Anfrage konnte nicht abgeschlossen werden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The request could not be completed."
-          }
-        }
-      }
-    },
-    "An unexpected error occurred.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ein unerwarteter Fehler ist aufgetreten."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An unexpected error occurred."
-          }
-        }
-      }
-    },
-    "Unexpected Server Response": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unerwartete Server-Antwort"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unexpected Server Response"
-          }
-        }
-      }
-    },
-    "The server response was unexpected.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Server-Antwort entsprach nicht dem erwarteten Format."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server response was unexpected."
-          }
-        }
-      }
-    },
-    "Invalid API Endpoint": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ungültiger API-Endpunkt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid API Endpoint"
-          }
-        }
-      }
-    },
-    "The requested endpoint is not available.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der angeforderte Endpunkt ist nicht verfügbar."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The requested endpoint is not available."
-          }
-        }
-      }
-    },
-    "The stream could not be started.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Stream konnte nicht gestartet werden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The stream could not be started."
-          }
-        }
-      }
-    },
-    "Playback Error: %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiedergabefehler: %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback Error: %@"
-          }
-        }
-      }
-    },
-    "Could not load %@ (%@)": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ konnte nicht geladen werden (%@)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not load %@ (%@)"
-          }
-        }
-      }
-    },
-    "Retry": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erneut versuchen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Retry"
-          }
-        }
-      }
-    },
-    "Request New Code": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neuen Code anfordern"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Request New Code"
-          }
-        }
-      }
-    },
-    "Choose Another Server": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anderen Server wählen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Another Server"
-          }
-        }
-      }
-    },
-    "Connect": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verbinden"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect"
-          }
-        }
-      }
-    },
-    "Start Pairing": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kopplung starten"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start Pairing"
-          }
-        }
-      }
-    },
-    "Stored credentials could not be opened.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gespeicherte Zugangsdaten konnten nicht geöffnet werden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stored credentials could not be opened."
-          }
-        }
-      }
-    },
-    "That does not look like a server address.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Das sieht nicht nach einer gültigen Server-Adresse aus."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "That does not look like a server address."
-          }
-        }
-      }
-    },
-    "Pairing could not be completed: %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kopplung konnte nicht abgeschlossen werden: %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing could not be completed: %@"
+            "value": "Zapping times depend on GOP segment boundaries"
           }
         }
       }

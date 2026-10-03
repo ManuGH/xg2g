@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsView: View {
 
     @Bindable var model: AppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingRevokeConfirmation = false
     @State private var showingClearCacheConfirmation = false
 
@@ -18,14 +19,32 @@ struct SettingsView: View {
                 List {
                     // MARK: - 1. Ebene: Wiedergabe
                     Section {
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
-                            Picker("Playback Mode", selection: $model.playbackEngine) {
-                                ForEach(AppModel.PlaybackEngine.allCases) { engine in
-                                    Text(engine.displayName).tag(engine)
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
+                                    Text("Playback Mode")
+                                        .font(.headline)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
                                 }
+                                Picker("Playback Mode", selection: $model.playbackEngine) {
+                                    ForEach(AppModel.PlaybackEngine.allCases) { engine in
+                                        Text(engine.localizedTitle).tag(engine)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
                             }
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                        } else {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
+                                Picker("Playback Mode", selection: $model.playbackEngine) {
+                                    ForEach(AppModel.PlaybackEngine.allCases) { engine in
+                                        Text(engine.localizedTitle).tag(engine)
+                                    }
+                                }
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            }
                         }
 
                         PlaybackEngineComparison(selected: model.playbackEngine)
@@ -47,14 +66,32 @@ struct SettingsView: View {
                                     .foregroundStyle(Theme.Colors.accentLive)
                             }
                         } else {
-                            HStack(spacing: 12) {
-                                SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
-                                Picker("Streaming Quality", selection: $model.qualityPreference) {
-                                    ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
-                                        Text(pref.displayName).tag(pref)
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
+                                        Text("Streaming Quality")
+                                            .font(.headline)
+                                            .foregroundStyle(Theme.Colors.textPrimary)
                                     }
+                                    Picker("Streaming Quality", selection: $model.qualityPreference) {
+                                        ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                                            Text(pref.localizedTitle).tag(pref)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(.menu)
                                 }
-                                .foregroundStyle(Theme.Colors.textPrimary)
+                            } else {
+                                HStack(spacing: 12) {
+                                    SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
+                                    Picker("Streaming Quality", selection: $model.qualityPreference) {
+                                        ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                                            Text(pref.localizedTitle).tag(pref)
+                                        }
+                                    }
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                }
                             }
                         }
 
@@ -93,17 +130,38 @@ struct SettingsView: View {
 
                     // MARK: - 2. Ebene: Offline & Downloads
                     Section {
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
-                            Picker("Default Download Quality", selection: Binding(
-                                get: { DownloadManager.shared.defaultQuality },
-                                set: { DownloadManager.shared.defaultQuality = $0 }
-                            )) {
-                                ForEach(DownloadQuality.supportedQualities) { q in
-                                    Text(q.title).tag(q)
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
+                                    Text("Default Download Quality")
+                                        .font(.headline)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
                                 }
+                                Picker("Default Download Quality", selection: Binding(
+                                    get: { DownloadManager.shared.defaultQuality },
+                                    set: { DownloadManager.shared.defaultQuality = $0 }
+                                )) {
+                                    ForEach(DownloadQuality.supportedQualities) { q in
+                                        Text(q.localizedTitle).tag(q)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
                             }
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                        } else {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
+                                Picker("Default Download Quality", selection: Binding(
+                                    get: { DownloadManager.shared.defaultQuality },
+                                    set: { DownloadManager.shared.defaultQuality = $0 }
+                                )) {
+                                    ForEach(DownloadQuality.supportedQualities) { q in
+                                        Text(q.localizedTitle).tag(q)
+                                    }
+                                }
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            }
                         }
 
                         Toggle(isOn: Binding(
@@ -479,17 +537,17 @@ struct PlaybackEngineComparison: View {
         let tradeoff = selected.tradeoff
 
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(tradeoff.gains, id: \.self) { gain in
+            ForEach(Array(tradeoff.gains.enumerated()), id: \.offset) { _, gain in
                 row(icon: "checkmark.circle.fill", tint: Theme.Colors.statusSuccess, text: gain)
             }
-            ForEach(tradeoff.costs, id: \.self) { cost in
+            ForEach(Array(tradeoff.costs.enumerated()), id: \.offset) { _, cost in
                 row(icon: "minus.circle.fill", tint: Theme.Colors.statusWarning, text: cost)
             }
         }
         .padding(.vertical, 4)
     }
 
-    private func row(icon: String, tint: Color, text: String) -> some View {
+    private func row(icon: String, tint: Color, text: LocalizedStringResource) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: icon)
                 .font(.caption)

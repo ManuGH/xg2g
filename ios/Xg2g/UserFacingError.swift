@@ -65,6 +65,15 @@ public struct UserFacingError: Equatable, Sendable {
         }
         return titleStr
     }
+
+    /// Formatted diagnostic summary for logging.
+    public var diagnosticSummary: String {
+        var parts: [String] = []
+        if let code { parts.append("code=\(code)") }
+        if let requestId { parts.append("requestId=\(requestId)") }
+        if let diagnosticLog { parts.append("diag=\(diagnosticLog)") }
+        return parts.joined(separator: " ")
+    }
 }
 
 /// Classifies system, network, and domain errors into structured `UserFacingError` representations.
@@ -116,6 +125,64 @@ public enum ErrorClassifier {
             severity: .error,
             diagnosticLog: error.localizedDescription
         )
+    }
+
+    /// Classifies backend zap preparation failures into structured user-facing errors.
+    static func classifyZapPreparation(_ preparation: ZapPreparation) -> UserFacingError {
+        let outcome = preparation.outcome ?? preparation.state
+        let diagnostic = preparation.failureSummary
+
+        switch outcome {
+        case "admission_denied":
+            return UserFacingError(
+                title: LocalizedStringResource("All Tuners Occupied"),
+                detail: LocalizedStringResource("No free receiver tuners available right now."),
+                isRetryable: true,
+                severity: .warning,
+                code: "ADMISSION_NO_TUNERS",
+                diagnosticLog: diagnostic
+            )
+
+        case "tuning_timeout":
+            return UserFacingError(
+                title: LocalizedStringResource("Channel Tuning Timed Out"),
+                detail: LocalizedStringResource("The receiver took too long to tune the channel."),
+                isRetryable: true,
+                severity: .error,
+                code: "TUNING_TIMEOUT",
+                diagnosticLog: diagnostic
+            )
+
+        case "scrambled":
+            return UserFacingError(
+                title: LocalizedStringResource("Channel Scrambled"),
+                detail: LocalizedStringResource("This channel is encrypted and cannot be decoded."),
+                isRetryable: false,
+                severity: .error,
+                code: "CHANNEL_SCRAMBLED",
+                diagnosticLog: diagnostic
+            )
+
+        case "no_data", "no_pat_pmt":
+            return UserFacingError(
+                title: LocalizedStringResource("No Broadcast Signal"),
+                detail: LocalizedStringResource("The receiver received no data for this channel."),
+                isRetryable: true,
+                severity: .error,
+                code: "NO_BROADCAST_SIGNAL",
+                diagnosticLog: diagnostic
+            )
+
+        default:
+            return UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("The stream could not be started."),
+                isRetryable: true,
+                severity: .error,
+                code: outcome,
+                diagnosticLog: diagnostic
+            )
+        }
     }
 
     private static func classifyAPIError(_ apiError: APIError) -> UserFacingError? {
@@ -268,10 +335,32 @@ public enum ErrorClassifier {
                 diagnosticLog: problem.detail
             )
 
-        case "ADMISSION_NO_TUNERS", "ADMISSION_SESSIONS_FULL":
+        case "ADMISSION_NO_TUNERS":
             return UserFacingError(
                 title: LocalizedStringResource("All Tuners Occupied"),
                 detail: LocalizedStringResource("No free receiver tuners available right now."),
+                isRetryable: true,
+                severity: .warning,
+                code: code,
+                requestId: reqId,
+                diagnosticLog: problem.detail
+            )
+
+        case "ADMISSION_SESSIONS_FULL":
+            return UserFacingError(
+                title: LocalizedStringResource("Streaming Limit Reached"),
+                detail: LocalizedStringResource("The maximum number of active streaming sessions has been reached."),
+                isRetryable: true,
+                severity: .warning,
+                code: code,
+                requestId: reqId,
+                diagnosticLog: problem.detail
+            )
+
+        case "ADMISSION_TRANSCODES_FULL":
+            return UserFacingError(
+                title: LocalizedStringResource("Transcoding Limit Reached"),
+                detail: LocalizedStringResource("The server is currently processing the maximum number of transcodes."),
                 isRetryable: true,
                 severity: .warning,
                 code: code,

@@ -4,8 +4,11 @@
 
 import AVFoundation
 import CoreMedia
+import os
 import SwiftUI
 import UIKit
+
+private let zapPlayerLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "test-ts-player")
 
 /// SwiftUI screen to test and benchmark the Phase 1 1080i50 $\rightarrow$ 1080p50 VideoToolbox + Metal Vertical Slice.
 public struct TestTSPlayerScreen: View {
@@ -494,9 +497,13 @@ public struct TestTSPlayerScreen: View {
         }
         .onChange(of: coordinator.phase) { _, newPhase in
             switch newPhase {
-            case .failed(let serviceRef, let reason):
+            case .failed(let serviceRef, let error):
                 let name = presets.first(where: { $0.serviceRef == serviceRef })?.name ?? serviceRef
-                displayZapToast(String(localized: "Could not load \(name) (\(reason))"))
+                let localizedTitle = String(localized: error.title)
+                displayZapToast("\(name): \(localizedTitle)")
+                if let diag = error.diagnosticLog {
+                    zapPlayerLogger.error("[Zap] Failed to load \(name) (\(serviceRef)): \(diag, privacy: .public)")
+                }
             case .warming, .buffering, .idle:
                 break
             }
