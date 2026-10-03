@@ -393,11 +393,15 @@ struct LocalizationTests {
         }
     }
 
-    // MARK: - 8. EPG Content Language Boundary Preservation (Real Rendering Path)
+    // MARK: - 8. EPG Content Language Boundary Preservation (ChannelRow Structure / Verbatim Test)
 
-    @Test("EPG source content is preserved verbatim through real UI rendering path even when matching translation keys")
+    /// ChannelRow structure/verbatim test: proves that the ChannelRow view structure preserves
+    /// Enigma2 broadcast and EPG content verbatim as Text.Storage.verbatim. This ensures broadcast titles
+    /// matching application translation keys (such as "Settings") are never converted into LocalizedStringKey
+    /// or translated (e.g. to "Einstellungen"), and German broadcast content remains verbatim in an English UI.
+    @Test("EPG source content is preserved verbatim in ChannelRow structure even when matching translation keys")
     @MainActor
-    func epgSourceContentLanguagePreservationInRealRenderingPath() {
+    func epgSourceContentLanguagePreservationInChannelRowStructure() {
         // Enigma2 broadcast content:
         // Case A: Programme title matches an English application key ("Settings")
         // Case B: German broadcast metadata ("Tagesschau", "Nachrichten der ARD")

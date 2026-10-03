@@ -435,4 +435,157 @@ struct PlaybackCoordinatorRegressionTests {
         #expect(coordinator.phase == .idle, "Phase must be idle after stop, never failed")
         #expect(coordinator.playing == nil)
     }
+
+    // MARK: - Invariant 7: Cancellation During Buffering
+
+    /// Proves that cancelling an in-flight zap while waiting for presentation readiness (buffering phase)
+    /// cancels the exact backend preparation, clears requestedServiceRef, resets phase to .idle,
+    /// and never publishes a NOT_PRESENTABLE failure.
+    @Test("Buffering cancellation: cancelling zap while waiting for presentable stream does not publish failure")
+    func cancellationDuringBufferingSuppressesError() async throws {
+        let (coordinator, _) = try makeCoordinator()
+
+        // 1. Establish running session on Channel A via unprepared direct route
+        await coordinator.play(unprepared: URL(string: "http://example.test:8089/api/v3/stream/live/\(srefA)")!)
+        #expect(coordinator.presentedServiceRef == srefA)
+
+        // 2. Setup handler for Channel B with immediate ready preparation but session remains non-presentable
+        final class CancelTracker: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _cancelledPreps: [String] = []
+            func recordCancel(prepID: String) { lock.withLock { _cancelledPreps.append(prepID) } }
+            var cancelledPreps: [String] { lock.withLock { _cancelledPreps } }
+        }
+        let cancelTracker = CancelTracker()
+
+        PrepareStubURLProtocol.setHandler { req in
+            let path = req.url?.path ?? ""
+            if req.httpMethod == "DELETE" {
+                let prepId = path.components(separatedBy: "/").last ?? "unknown"
+                cancelTracker.recordCancel(prepID: prepId)
+                return (200, Data(#"{"status":"ok"}"#.utf8))
+            }
+            return (200, Data("""
+            {
+                "preparationId": "prep-buffering-b",
+                "state": "ready",
+                "generation": 2,
+                "serviceRef": "\(self.srefB)"
+            }
+            """.utf8))
+        }
+
+        // 3. Start zap to Channel B and wait until coordinator enters buffering phase
+        let zapTask = Task { await coordinator.zap(to: self.srefB) }
+
+        while true {
+            if case .buffering(let sref) = coordinator.phase, sref == self.srefB { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(coordinator.requestedServiceRef == self.srefB)
+        #expect(coordinator.presentedServiceRef == self.srefA)
+
+        // 4. Cancel zap while buffering
+        zapTask.cancel()
+        await zapTask.value
+
+        // 5. Assert exact backend cancellation and no failure publication
+        #expect(cancelTracker.cancelledPreps.contains("prep-buffering-b"), "Backend must cancel exact preparation ID")
+        #expect(coordinator.requestedServiceRef == nil, "Requested service ref must be cleared")
+        #expect(coordinator.phase == .idle, "Phase must reset to idle, never failed with NOT_PRESENTABLE")
+        #expect(coordinator.presentedServiceRef == self.srefA, "Existing playback must remain preserved")
+
+        await coordinator.stop()
+    }
+
+    // MARK: - Invariant 8: Cleanup Race & Operation Ownership Revalidation
+
+    /// Proves that when an old zap's backend cleanup (DELETE) response is delayed and a new zap starts in the interim,
+    /// releasing the old cleanup never mutates or corrupts the newer zap's phase or requestedServiceRef.
+    @Test("Operation ownership: delayed cleanup completion of old zap never corrupts newer zap state")
+    func delayedCleanupDoesNotCorruptNewerZap() async throws {
+        let (coordinator, _) = try makeCoordinator()
+
+        let barrierDeleteB = ControlledBarrier()
+        let barrierPrepC = ControlledBarrier()
+
+        PrepareStubURLProtocol.setHandler { req in
+            let path = req.url?.path ?? ""
+            if req.httpMethod == "DELETE" && path.contains("prep-b") {
+                barrierDeleteB.markArrived()
+                barrierDeleteB.blockUntilReleased()
+                return (200, Data(#"{"status":"ok"}"#.utf8))
+            }
+
+            if req.url?.query?.contains(self.srefB) == true {
+                return (200, Data("""
+                {
+                    "preparationId": "prep-b",
+                    "state": "pending",
+                    "generation": 1,
+                    "serviceRef": "\(self.srefB)"
+                }
+                """.utf8))
+            }
+
+            if req.url?.query?.contains(self.srefC) == true {
+                barrierPrepC.markArrived()
+                barrierPrepC.blockUntilReleased()
+                return (200, Data("""
+                {
+                    "preparationId": "prep-c",
+                    "state": "pending",
+                    "generation": 2,
+                    "serviceRef": "\(self.srefC)"
+                }
+                """.utf8))
+            }
+
+            return (200, Data(#"{"status":"ok"}"#.utf8))
+        }
+
+        // 1. Start zap to Channel B
+        let taskB = Task { await coordinator.zap(to: self.srefB) }
+
+        // Wait until coordinator has requested B
+        while true {
+            if coordinator.requestedServiceRef == self.srefB { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        // 2. Cancel zap B while in flight; this triggers abandonInFlight which hits barrierDeleteB
+        taskB.cancel()
+        await barrierDeleteB.waitForArrival()
+
+        // 3. While old cleanup for B is suspended on the DELETE response barrier, start a newer zap to Channel C
+        let taskC = Task { await coordinator.zap(to: self.srefC) }
+        await barrierPrepC.waitForArrival()
+
+        #expect(coordinator.requestedServiceRef == self.srefC, "Channel C is now the active requested service")
+        if case .warming(let sref) = coordinator.phase {
+            #expect(sref == self.srefC)
+        } else {
+            Issue.record("Expected phase to be warming(srefC), got \(coordinator.phase)")
+        }
+
+        // 4. Release the old preparation B cleanup
+        barrierDeleteB.release()
+        await taskB.value
+
+        // 5. CRITICAL ASSERTION: The completion of old zap B's cleanup must NOT have set phase = .idle
+        // or wiped requestedServiceRef = nil!
+        #expect(coordinator.requestedServiceRef == self.srefC, "Newer requestedServiceRef must remain intact after old cleanup")
+        if case .warming(let sref) = coordinator.phase {
+            #expect(sref == self.srefC, "Newer phase must remain warming(srefC)")
+        } else {
+            Issue.record("Newer phase corrupted by old zap cleanup: \(coordinator.phase)")
+        }
+
+        // 6. Complete Channel C cleanly
+        taskC.cancel()
+        barrierPrepC.release()
+        await taskC.value
+
+        await coordinator.stop()
+    }
 }
