@@ -45,7 +45,7 @@ struct MiniPlayerBar: View {
                 eyebrow: AnyView(
                     HStack(spacing: 6) {
                         PulsingLiveDot(size: 6)
-                        Text(channel.name)
+                        Text(verbatim: channel.name)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
@@ -83,7 +83,7 @@ struct MiniPlayerBar: View {
                             .padding(.vertical, 1)
                             .background(Theme.Colors.accentAction.opacity(0.15), in: Capsule())
 
-                        Text(rec.recording.title)
+                        Text(verbatim: rec.recording.title)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
@@ -108,7 +108,7 @@ struct MiniPlayerBar: View {
                 VStack(alignment: .leading, spacing: 2) {
                     eyebrow
 
-                    Text(subtitle)
+                    Text(verbatim: subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)

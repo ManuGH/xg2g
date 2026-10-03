@@ -3560,7 +3560,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Live TV"
+            "value": "Live-TV"
           }
         },
         "en": {
@@ -3832,7 +3832,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "AUFNAHME"
+            "value": "REC"
           }
         },
         "en": {
@@ -3866,7 +3866,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wiedergabe beenden"
+            "value": "Wiedergabe stoppen"
           }
         },
         "en": {
@@ -4444,7 +4444,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "• noch %lld Min."
+            "value": "• noch %lld Min"
           }
         },
         "en": {
@@ -5811,6 +5811,1206 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ • %@"
+          }
+        }
+      }
+    },
+    "Loading resume…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fortsetzen wird geladen…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading resume…"
+          }
+        }
+      }
+    },
+    "Starting playback…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe wird gestartet…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting playback…"
+          }
+        }
+      }
+    },
+    "Recording could not be loaded": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahme konnte nicht geladen werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording could not be loaded"
+          }
+        }
+      }
+    },
+    "Invalid server address": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige Server-Adresse"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid server address"
+          }
+        }
+      }
+    },
+    "Playback error": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabefehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback error"
+          }
+        }
+      }
+    },
+    "Loading %@…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird geladen…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading %@…"
+          }
+        }
+      }
+    },
+    "🔴 Recording started": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🔴 Aufnahme gestartet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🔴 Recording started"
+          }
+        }
+      }
+    },
+    "Recording error": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufnahmefehler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording error"
+          }
+        }
+      }
+    },
+    "CHANNELS & LIVE SCHEDULE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SENDER & LIVE-PROGRAMM"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CHANNELS & LIVE SCHEDULE"
+          }
+        }
+      }
+    },
+    "Channel: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanal: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel: %@"
+          }
+        }
+      }
+    },
+    "⏪ Show beginning / buffer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⏪ Beginn der Sendung / Puffer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⏪ Show beginning / buffer"
+          }
+        }
+      }
+    },
+    "🔴 Live edge": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🔴 Live-Kante"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🔴 Live edge"
+          }
+        }
+      }
+    },
+    "QUICK ZAPPING": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SCHNELL-ZAPPING"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUICK ZAPPING"
+          }
+        }
+      }
+    },
+    "LIVE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE"
+          }
+        }
+      }
+    },
+    "(%lld min left)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(noch %lld Min)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(%lld min left)"
+          }
+        }
+      }
+    },
+    "From start": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von Beginn"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From start"
+          }
+        }
+      }
+    },
+    "To Live": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zur Live-Kante"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To Live"
+          }
+        }
+      }
+    },
+    "LIVE • DVR": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE • DVR"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE • DVR"
+          }
+        }
+      }
+    },
+    "All Channels (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Sender (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Channels (%lld)"
+          }
+        }
+      }
+    },
+    "Favorites (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favoriten (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites (%lld)"
+          }
+        }
+      }
+    },
+    "ON AIR": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LÄUFT"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ON AIR"
+          }
+        }
+      }
+    },
+    "Preparing timeshift…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift wird vorbereitet…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing timeshift…"
+          }
+        }
+      }
+    },
+    "Preparing…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird vorbereitet…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing…"
+          }
+        }
+      }
+    },
+    "Start Picture in Picture": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild-in-Bild starten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Picture in Picture"
+          }
+        }
+      }
+    },
+    "Audio Tracks (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonspuren (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Tracks (%lld)"
+          }
+        }
+      }
+    },
+    "Off": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "Subtitles (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untertitel (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles (%lld)"
+          }
+        }
+      }
+    },
+    "Hide stream info": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Info ausblenden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide stream info"
+          }
+        }
+      }
+    },
+    "Stream info (inspector)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Info (Inspector)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream info (inspector)"
+          }
+        }
+      }
+    },
+    "Render path: System Layer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderpfad: System Layer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render path: System Layer"
+          }
+        }
+      }
+    },
+    "Render path: Metal Direct": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderpfad: Metal Direct"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render path: Metal Direct"
+          }
+        }
+      }
+    },
+    "Stream routing (lab)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Routing (Labor)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream routing (lab)"
+          }
+        }
+      }
+    },
+    "Already at live edge": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereits an der Live-Kante"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already at live edge"
+          }
+        }
+      }
+    },
+    "Channel list": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Senderliste"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel list"
+          }
+        }
+      }
+    },
+    "CHANNEL LIST": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SENDERLISTE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CHANNEL LIST"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stoppen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        }
+      }
+    },
+    "Start": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start"
+          }
+        }
+      }
+    },
+    "WARMING…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WÄRMT…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WARMING…"
+          }
+        }
+      }
+    },
+    "ACTIVE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AKTIV"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ACTIVE"
+          }
+        }
+      }
+    },
+    "CUSTOM STREAM URL": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "BENUTZERDEFINIERTE STREAM-URL"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CUSTOM STREAM URL"
+          }
+        }
+      }
+    },
+    "Load": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load"
+          }
+        }
+      }
+    },
+    "VIDEO (SOURCE STREAM)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VIDEO (QUELL-STREAM)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VIDEO (SOURCE STREAM)"
+          }
+        }
+      }
+    },
+    "Resolution": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auflösung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution"
+          }
+        }
+      }
+    },
+    "Detecting…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erkenne…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detecting…"
+          }
+        }
+      }
+    },
+    "Field Order": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halbbild-Ordnung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Field Order"
+          }
+        }
+      }
+    },
+    "Not confirmed yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht bestätigt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not confirmed yet"
+          }
+        }
+      }
+    },
+    "COLOR SPACE & DYNAMICS (SIGNAL)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FARBRAUM & DYNAMIK (SIGNAL)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "COLOR SPACE & DYNAMICS (SIGNAL)"
+          }
+        }
+      }
+    },
+    "Color Space": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Farbraum"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color Space"
+          }
+        }
+      }
+    },
+    "Dynamic Range": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dynamikumfang"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dynamic Range"
+          }
+        }
+      }
+    },
+    "Value Range": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wertebereich"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Value Range"
+          }
+        }
+      }
+    },
+    "SOURCE GEOMETRY (BITSTREAM)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUELL-GEOMETRIE (BITSTREAM)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOURCE GEOMETRY (BITSTREAM)"
+          }
+        }
+      }
+    },
+    "Not signaled (1:1)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht signalisiert (1:1)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not signaled (1:1)"
+          }
+        }
+      }
+    },
+    "Source DAR": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quell-DAR"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source DAR"
+          }
+        }
+      }
+    },
+    "PRESENTATION & OUTPUT": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DARSTELLUNG & AUSGABE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PRESENTATION & OUTPUT"
+          }
+        }
+      }
+    },
+    "Output DAR": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgabe-DAR"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output DAR"
+          }
+        }
+      }
+    },
+    "Scaling": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skalierung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scaling"
+          }
+        }
+      }
+    },
+    "Render Path": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderpfad"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render Path"
+          }
+        }
+      }
+    },
+    "AUDIO & STREAM HEALTH": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AUDIO & STREAM-HEALTH"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AUDIO & STREAM HEALTH"
+          }
+        }
+      }
+    },
+    "PERFORMANCE & TTFP": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PERFORMANCE & TTFP"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PERFORMANCE & TTFP"
+          }
+        }
+      }
+    },
+    "TTFP (First Frame)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTFP (Erstes Bild)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTFP (First Frame)"
+          }
+        }
+      }
+    },
+    "Timeshift unavailable": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift unavailable"
+          }
+        }
+      }
+    },
+    "❚❚ Timeshift paused": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❚❚ Timeshift Pausiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❚❚ Timeshift paused"
+          }
+        }
+      }
+    },
+    "Timeshift could not be started": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift konnte nicht gestartet werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift could not be started"
+          }
+        }
+      }
+    },
+    "Timeshift error: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehler bei Timeshift: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timeshift error: %@"
+          }
+        }
+      }
+    },
+    "▶ Live edge (Native TS)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶ Live-Kante (Native TS)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶ Live edge (Native TS)"
+          }
+        }
+      }
+    },
+    "❚❚ Paused": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❚❚ Pausiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❚❚ Paused"
+          }
+        }
+      }
+    },
+    "▶ Resume": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶ Fortsetzen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶ Resume"
+          }
+        }
+      }
+    },
+    "Aspect ratio: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildformat: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aspect ratio: %@"
+          }
+        }
+      }
+    },
+    "%@ broadcasts in a format that direct playback cannot render": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ sendet in einem Format, das die Direktwiedergabe nicht darstellen kann"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ broadcasts in a format that direct playback cannot render"
+          }
+        }
+      }
+    },
+    "The channel broadcasts %@. This device cannot decode this with direct playback.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Sender überträgt %@. Dieses Gerät kann das bei Direktwiedergabe nicht dekodieren."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The channel broadcasts %@. This device cannot decode this with direct playback."
+          }
+        }
+      }
+    },
+    "Switch to \"Via Server\" in Settings → Playback Mode to watch this channel.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stelle unter Einstellungen → Wiedergabe-Art auf „Über den Server“ um, dann läuft dieser Sender."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to \"Via Server\" in Settings → Playback Mode to watch this channel."
+          }
+        }
+      }
+    },
+    "OFFLINE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFFLINE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFFLINE"
+          }
+        }
+      }
+    },
+    "Fill": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Füllen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill"
+          }
+        }
+      }
+    },
+    "Fill Screen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildschirm füllen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill Screen"
+          }
+        }
+      }
+    },
+    "Standard": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
           }
         }
       }

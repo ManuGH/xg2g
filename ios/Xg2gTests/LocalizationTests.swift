@@ -126,7 +126,7 @@ struct LocalizationTests {
     func tabLocalizationAndStability() {
         let expectedTabs: [(tab: Xg2g.Tab, raw: String, de: String, en: String)] = [
             (.home, "Für dich", "Für dich", "For You"),
-            (.liveTV, "Live TV", "Live TV", "Live TV"),
+            (.liveTV, "Live TV", "Live-TV", "Live TV"),
             (.guide, "Programm", "Programm", "Guide"),
             (.recordings, "Aufnahmen", "Aufnahmen", "Recordings"),
             (.timers, "Timer", "Timer", "Timers"),
@@ -161,9 +161,9 @@ struct LocalizationTests {
             ("Code valid for", "Code gültig noch", "Code valid for"),
             ("Generating P-256 hardware key & starting pairing…", "Generiere P-256 Hardwareschlüssel & starte Kopplung…", "Generating P-256 hardware key & starting pairing…"),
             ("This device requires one-time approval before streams can be played.", "Dieses Gerät benötigt eine einmalige Genehmigung, bevor Streams gestartet werden können.", "This device requires one-time approval before streams can be played."),
-            ("REC", "AUFNAHME", "REC"),
+            ("REC", "REC", "REC"),
             ("Open current playback", "Aktuelle Wiedergabe öffnen", "Open current playback"),
-            ("Stop playback", "Wiedergabe beenden", "Stop playback")
+            ("Stop playback", "Wiedergabe stoppen", "Stop playback")
         ]
 
         for item in shellKeys {
@@ -1238,6 +1238,96 @@ struct LocalizationTests {
             }
             #expect(image.size.width > 0 && image.size.height > 0)
             Self.saveScreenshot(image, name: "timers_\(code)")
+        }
+    }
+
+    // MARK: - 25. Batch 5: Player Overlays, Aspect Ratios & Timeshift Controls
+
+    @Test("Player overlay strings, aspect ratio presets, and transport buttons localize accurately")
+    func playerOverlaysAndControlsLocalization() {
+        let expectedPairs: [(key: String, de: String, en: String)] = [
+            ("To Live", "Zur Live-Kante", "To Live"),
+            ("From start", "Von Beginn", "From start"),
+            ("NEXT:", "DANACH:", "NEXT:"),
+            ("ON AIR", "LÄUFT", "ON AIR"),
+            ("No programme information", "Keine Programminformationen", "No programme information"),
+            ("Switch to \"Via Server\" in Settings → Playback Mode to watch this channel.", "Stelle unter Einstellungen → Wiedergabe-Art auf „Über den Server“ um, dann läuft dieser Sender.", "Switch to \"Via Server\" in Settings → Playback Mode to watch this channel."),
+            ("Loading resume…", "Fortsetzen wird geladen…", "Loading resume…"),
+            ("Starting playback…", "Wiedergabe wird gestartet…", "Starting playback…"),
+            ("Recording could not be loaded", "Aufnahme konnte nicht geladen werden", "Recording could not be loaded"),
+            ("Invalid server address", "Ungültige Server-Adresse", "Invalid server address"),
+            ("Playback error", "Wiedergabefehler", "Playback error"),
+            ("Already at live edge", "Bereits an der Live-Kante", "Already at live edge"),
+            ("Preparing timeshift…", "Timeshift wird vorbereitet…", "Preparing timeshift…"),
+            ("Timeshift unavailable", "Timeshift nicht verfügbar", "Timeshift unavailable"),
+            ("VIDEO (SOURCE STREAM)", "VIDEO (QUELL-STREAM)", "VIDEO (SOURCE STREAM)"),
+            ("SOURCE GEOMETRY (BITSTREAM)", "QUELL-GEOMETRIE (BITSTREAM)", "SOURCE GEOMETRY (BITSTREAM)"),
+            ("AUDIO & STREAM HEALTH", "AUDIO & STREAM-HEALTH", "AUDIO & STREAM HEALTH"),
+            ("Stream info (inspector)", "Stream-Info (Inspector)", "Stream info (inspector)"),
+            ("Stream routing (lab)", "Stream-Routing (Labor)", "Stream routing (lab)")
+        ]
+
+        for item in expectedPairs {
+            let de = localize(String.LocalizationValue(item.key), locale: deLocale)
+            let en = localize(String.LocalizationValue(item.key), locale: enLocale)
+            #expect(de == item.de, "DE mismatch for \(item.key): expected '\(item.de)', got '\(de)'")
+            #expect(en == item.en, "EN mismatch for \(item.key): expected '\(item.en)', got '\(en)'")
+        }
+
+        // Test aspect ratio presets
+        #expect(VideoViewPreset.r16_9.localizedShortLabel == "16:9")
+        #expect(VideoViewPreset.standard.localizedShortLabel == "Standard")
+        #expect(VideoViewPreset.fillScreen.localizedShortLabel == "Füllen" || VideoViewPreset.fillScreen.localizedShortLabel == "Fill")
+    }
+
+    // MARK: - 26. Batch 5: Offline Player & Controls Smoke Snapshot
+
+    @Test("Offline player interface renders cleanly under German and English locales")
+    @MainActor
+    func offlinePlayerRenderingSnapshot() {
+        let sample = OfflineRecording(
+            id: "rec-offline-1",
+            recordingId: "rec-1",
+            title: "Tagesschau 20:00",
+            channelName: "Das Erste HD",
+            durationSeconds: 900,
+            fileSize: 450 * 1024 * 1024,
+            downloadDate: Date(timeIntervalSince1970: 1774880000),
+            localRelativePath: "rec-1.ts",
+            quality: .compact
+        )
+
+        let locales: [(code: String, loc: Locale)] = [
+            ("de", deLocale),
+            ("en", enLocale)
+        ]
+
+        for (code, loc) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let view = OfflinePlayerScreen(offlineRecording: sample)
+                .environment(\.locale, loc)
+                .preferredColorScheme(.dark)
+
+            let controller = UIHostingController(rootView: view)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            controller.view.overrideUserInterfaceStyle = .dark
+
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "offline_player_\(code)")
         }
     }
 }
