@@ -178,8 +178,10 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 	}
 
 	// 5.5. Topology & RF Front-End Capacity Evaluation
+	// Invariant: IPTV sources do not consume physical RF front-end tuners or demodulators.
+	// Topology evaluation is strictly bypassed for IPTV sources.
 	isMultiplexReuse := false
-	if e.topologyService != nil && req.Source.ServiceReference != "" {
+	if !req.Source.IsIPTV && e.topologyService != nil && req.Source.ServiceReference != "" {
 		priority := receivertopology.PriorityLive
 		switch req.Intent {
 		case IntentRecording:
@@ -212,27 +214,36 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 
 	// 6. Build Lease Requirements Plan
 	var reqs []LeaseRequirement
-	if isRestricted {
+	if req.Source.IsIPTV {
+		// First-class IPTV source: requires 0 physical tuner slots, 0 multiplex slots, 0 CAM slots.
 		reqs = append(reqs, LeaseRequirement{
-			Kind:       ReqRestrictedAccessSlot,
-			ReceiverID: req.ReceiverID,
-			Quantity:   1,
-		})
-	}
-
-	if isMultiplexReuse {
-		// Multiplex reuse consumes 0 additional physical demodulator tuner slots
-		reqs = append(reqs, LeaseRequirement{
-			Kind:       ReqReceiverMultiplex,
+			Kind:       ReqIPTVStream,
 			ReceiverID: req.ReceiverID,
 			Quantity:   1,
 		})
 	} else {
-		reqs = append(reqs, LeaseRequirement{
-			Kind:       ReqTunerSlot,
-			ReceiverID: req.ReceiverID,
-			Quantity:   1,
-		})
+		if isRestricted {
+			reqs = append(reqs, LeaseRequirement{
+				Kind:       ReqRestrictedAccessSlot,
+				ReceiverID: req.ReceiverID,
+				Quantity:   1,
+			})
+		}
+
+		if isMultiplexReuse {
+			// Multiplex reuse consumes 0 additional physical demodulator tuner slots
+			reqs = append(reqs, LeaseRequirement{
+				Kind:       ReqReceiverMultiplex,
+				ReceiverID: req.ReceiverID,
+				Quantity:   1,
+			})
+		} else {
+			reqs = append(reqs, LeaseRequirement{
+				Kind:       ReqTunerSlot,
+				ReceiverID: req.ReceiverID,
+				Quantity:   1,
+			})
+		}
 	}
 
 	return UsageDecision{

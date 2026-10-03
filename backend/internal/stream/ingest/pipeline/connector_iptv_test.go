@@ -511,10 +511,10 @@ func TestConnector_IPTV_OrdinaryDVBStreaming_Intact(t *testing.T) {
 	assert.Equal(t, 1, topo.ReleaseCallCount(), "tuner lease must be released on stream close")
 }
 
-// 4. Gate 2 End-to-End Proof:
+// 4. Handler + Mock Provider + GoCore Integration Test:
 // authenticated request with iptv_<id> -> resolved reference -> production IPTV provider ingest
-// -> primed ring-buffer attach -> nonempty MPEG-TS output -> verified audio/video decode -> clean stop.
-func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
+// -> primed ring-buffer attach -> nonempty MPEG-TS output -> verified audio/video decode with ffmpeg -> clean stop.
+func TestConnector_IPTV_HandlerMockProvider_GoCore_MPEGTS(t *testing.T) {
 	fixtureData := tsfixture.Load(t, "verify_final_v3.ts")
 	require.NotEmpty(t, fixtureData, "test capture verify_final_v3.ts must be available")
 
@@ -606,7 +606,7 @@ func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
 		handler.ServeHTTP(w, req)
 	}()
 
-	// Read bytes from recorder until we have at least 500 KB (enough for ffprobe keyframe decode)
+	// Read bytes from recorder until we have at least 500 KB (enough for keyframe decode)
 	deadline := time.Now().Add(5 * time.Second)
 	for w.Len() < 500*1024 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
@@ -619,7 +619,7 @@ func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
 	assert.Equal(t, 0, topo.ReserveCallCount(), "IPTV playback must have ZERO tuner leases on physical topology")
 	assert.Equal(t, int32(1), providerHits.Load(), "provider must have been dialed exactly once")
 
-	// 7. Verify ffprobe video decode on the received stream bytes
+	// 7. Verify ffprobe video stream information on the received stream bytes
 	ffprobeVideoCmd := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", "pipe:0")
 	ffprobeVideoCmd.Stdin = bytes.NewReader(capturedBytes)
@@ -629,7 +629,7 @@ func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
 	assert.Contains(t, string(videoOut), "1280", "decoded video width must be 1280")
 	assert.Contains(t, string(videoOut), "720", "decoded video height must be 720")
 
-	// 8. Verify ffprobe audio decode on the received stream bytes
+	// 8. Verify ffprobe audio stream information on the received stream bytes
 	ffprobeAudioCmd := exec.Command("ffprobe", "-v", "error", "-select_streams", "a:0",
 		"-show_entries", "stream=codec_name", "-of", "csv=p=0", "pipe:0")
 	ffprobeAudioCmd.Stdin = bytes.NewReader(capturedBytes)
@@ -637,7 +637,16 @@ func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
 	require.NoError(t, err, "ffprobe audio probe must succeed on captured IPTV stream")
 	assert.Contains(t, string(audioOut), "aac", "decoded audio codec must be aac")
 
-	// 9. Clean stop: cancel client request and verify clean termination
+	// 9. Verify ffmpeg actual video frame and audio sample decoding
+	ffmpegVideoCmd := exec.Command("ffmpeg", "-v", "error", "-i", "pipe:0", "-vframes", "1", "-f", "null", "-")
+	ffmpegVideoCmd.Stdin = bytes.NewReader(capturedBytes)
+	require.NoError(t, ffmpegVideoCmd.Run(), "ffmpeg must successfully decode at least one video frame from captured IPTV stream")
+
+	ffmpegAudioCmd := exec.Command("ffmpeg", "-v", "error", "-i", "pipe:0", "-aframes", "10", "-f", "null", "-")
+	ffmpegAudioCmd.Stdin = bytes.NewReader(capturedBytes)
+	require.NoError(t, ffmpegAudioCmd.Run(), "ffmpeg must successfully decode audio samples from captured IPTV stream")
+
+	// 10. Clean stop: cancel client request and verify clean termination
 	clientCancel()
 	select {
 	case <-handlerDone:
@@ -645,6 +654,187 @@ func TestConnector_IPTV_Gate2_EndToEnd_OpaqueID_To_DecodedMedia(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("handler did not terminate cleanly after client cancel")
 	}
+}
+
+// 5. Credential-bearing Canary Test:
+// Proves that raw IPTV references and provider secrets (tokens/passwords) in URLs
+// NEVER leak into logs, error responses, or status messages.
+func TestConnector_IPTV_CredentialCanary_NoSecretsInLogsOrErrors(t *testing.T) {
+	const canarySecret = "CANARY_TOKEN_TOP_SECRET_DO_NOT_LEAK_998877"
+
+	// Provider returns 200 with small TS data
+	fixtureData := tsfixture.Load(t, "verify_final_v3.ts")
+	require.NotEmpty(t, fixtureData)
+
+	providerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(fixtureData[:188*10])
+	}))
+	defer providerSrv.Close()
+
+	secret := "canary-secret-key-at-least-32-bytes!!"
+	parser, err := sourceref.NewParser([]byte(secret))
+	require.NoError(t, err)
+
+	canaryURL := fmt.Sprintf("%s/live/stream.ts?token=%s", providerSrv.URL, canarySecret)
+	encodedURL := encodeIPTVURL(canaryURL)
+	rawRef := fmt.Sprintf("4097:0:1:0:0:0:0:0:0:0:%s:CanaryChannel", encodedURL)
+
+	src, err := parser.Parse(rawRef)
+	require.NoError(t, err)
+
+	reg := sourceref.NewRegistry()
+	require.NoError(t, reg.Replace([]sourceref.Source{src}))
+	resolver := edge.NewResolver(reg, parser, nil)
+	opaqueID := string(src.ID())
+
+	cfg := DefaultTestConnectorConfig("127.0.0.1", 8001)
+	cfg.IPTVParser = parser
+	cfg.OutboundPolicy = testAllowPolicyForURL(t, providerSrv.URL)
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(cfg))
+	defer mgr.Close()
+
+	handler := NewHandlerWithReceiver(mgr, "127.0.0.1", 8001)
+	handler.SetIPTVResolver(resolver)
+
+	// Test 1: Request with valid opaque ID
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+opaqueID, nil).WithContext(ctx)
+	w := newThreadSafeStreamRecorder()
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		handler.ServeHTTP(w, req)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	<-handlerDone
+
+	body := string(w.Bytes())
+	assert.NotContains(t, body, canarySecret, "HTTP response body must NEVER contain canary secret")
+	for k, v := range w.Header() {
+		assert.NotContains(t, k, canarySecret)
+		for _, val := range v {
+			assert.NotContains(t, val, canarySecret, "HTTP headers must NEVER contain canary secret")
+		}
+	}
+
+	// Test 2: Request causing bad gateway error (provider closed)
+	badURL := fmt.Sprintf("http://127.0.0.1:1/live/stream.ts?token=%s", canarySecret)
+	badRawRef := fmt.Sprintf("4097:0:1:0:0:0:0:0:0:0:%s:BadChannel", encodeIPTVURL(badURL))
+	badSrc, err := parser.Parse(badRawRef)
+	require.NoError(t, err)
+	require.NoError(t, reg.Replace([]sourceref.Source{badSrc}))
+
+	badReq := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+string(badSrc.ID()), nil)
+	badW := newThreadSafeStreamRecorder()
+	handler.ServeHTTP(badW, badReq)
+
+	assert.NotContains(t, string(badW.Bytes()), canarySecret, "error response body must NEVER leak provider secret")
+	assert.NotContains(t, badW.Header().Get("Location"), canarySecret)
+}
+
+// 6. Colliding DVB-Triplet Test:
+// IPTV references often copy satellite triplet fields (e.g. 4E27 for PULS 4 Austria).
+// Proves that the media pipeline sets TargetProgram = 0 (auto-detect from stream TS PAT)
+// rather than inferring program 20007 from Enigma2 reference parts, allowing correct decoding.
+func TestConnector_IPTV_CollidingDVBTriplet_SelectsProgramFromTS(t *testing.T) {
+	fixtureData := tsfixture.Load(t, "verify_final_v3.ts")
+	require.NotEmpty(t, fixtureData)
+
+	providerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		const chunkSize = 188 * 100
+		offset := 0
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+				end := offset + chunkSize
+				if end > len(fixtureData) {
+					end = len(fixtureData)
+				}
+				chunk := fixtureData[offset:end]
+				offset = end
+				if offset >= len(fixtureData) {
+					offset = 0
+				}
+				if _, err := w.Write(chunk); err != nil {
+					return
+				}
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				time.Sleep(15 * time.Millisecond)
+			}
+		}
+	}))
+	defer providerSrv.Close()
+
+	secret := "triplet-test-secret-at-least-32-bytes!"
+	parser, err := sourceref.NewParser([]byte(secret))
+	require.NoError(t, err)
+
+	// Note parts[3] = 4E27 (PULS 4 Austria satellite SID = 20007).
+	// The transport stream in fixtureData has Program 1, NOT 20007.
+	encodedURL := encodeIPTVURL(providerSrv.URL + "/live/stream.ts")
+	collidingRef := fmt.Sprintf("4097:0:1:4E27:43A:1:C00000:0:0:0:%s:PULS 4 HD", encodedURL)
+
+	src, err := parser.Parse(collidingRef)
+	require.NoError(t, err)
+
+	reg := sourceref.NewRegistry()
+	require.NoError(t, reg.Replace([]sourceref.Source{src}))
+	resolver := edge.NewResolver(reg, parser, nil)
+
+	cfg := DefaultTestConnectorConfig("127.0.0.1", 8001)
+	cfg.IPTVParser = parser
+	cfg.OutboundPolicy = testAllowPolicyForURL(t, providerSrv.URL)
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(cfg))
+	defer mgr.Close()
+
+	handler := NewHandlerWithReceiver(mgr, "127.0.0.1", 8001)
+	handler.SetIPTVResolver(resolver)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+string(src.ID()), nil).WithContext(ctx)
+	w := newThreadSafeStreamRecorder()
+
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		handler.ServeHTTP(w, req)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for w.Len() < 500*1024 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	captured := w.Bytes()
+	require.GreaterOrEqual(t, len(captured), 100*1024, "must receive stream despite colliding satellite service-ID triplet")
+
+	// Verify ffmpeg frame decode works cleanly on program detected from TS
+	ffmpegCmd := exec.Command("ffmpeg", "-v", "error", "-i", "pipe:0", "-vframes", "1", "-f", "null", "-")
+	ffmpegCmd.Stdin = bytes.NewReader(captured)
+	require.NoError(t, ffmpegCmd.Run(), "ffmpeg must decode video frame using program detected from TS")
+
+	cancel()
+	<-handlerDone
 }
 
 type threadSafeStreamRecorder struct {

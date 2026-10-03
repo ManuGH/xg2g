@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (o *Orchestrator) acquireLeases(
 	}
 	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
 	if o.UsageEvaluator != nil {
-		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
+		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, !isIPTV, false, time.Now(), isIPTV)
 		activeSessions, _ := o.Store.ListSessions(ctx)
 		snap := BuildSystemSnapshot(o.ReceiverID, activeSessions, nil)
 
@@ -87,10 +88,10 @@ func (o *Orchestrator) acquireLeases(
 			if len(decision.Requirements) > 0 {
 				requiresTunerSlot = false
 				for _, reqItem := range decision.Requirements {
-					if reqItem.Kind == receiverusage.ReqTunerSlot {
+					if reqItem.Kind == receiverusage.ReqTunerSlot && !isIPTV {
 						requiresTunerSlot = true
 					}
-					if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
+					if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot && !isIPTV {
 						ctrl := o.RestrictedAccessCtrl
 						if ctrl == nil {
 							ctrl = receiverusage.NewRestrictedAccessController(o.Store)
@@ -380,11 +381,24 @@ func (o *Orchestrator) startPipeline(
 		}
 		trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(currentProfileSpec, string(spec.Source.Type), 0)
 	})
+	logSourceID := spec.Source.ID
+	if src, isIPTVRef, _ := sourceref.ClassifyReference(o.IPTVParser, logSourceID); isIPTVRef {
+		if src.ID() != "" {
+			logSourceID = string(src.ID())
+		} else {
+			logSourceID = "iptv:<redacted>"
+		}
+	} else if spec.Source.Type == ports.SourceURL {
+		if u, err := url.Parse(logSourceID); err == nil && u.Scheme != "" {
+			logSourceID = u.Redacted()
+		}
+	}
+
 	startupLogger.Info().
 		Str("session_id", e.SessionID).
 		Str("startup_phase", "pipeline_start_requested").
 		Str("source_type", string(spec.Source.Type)).
-		Str("source_id", spec.Source.ID).
+		Str("source_id", logSourceID).
 		Msg("pipeline start requested")
 
 	handle, err := o.Pipeline.Start(hbCtx, spec)

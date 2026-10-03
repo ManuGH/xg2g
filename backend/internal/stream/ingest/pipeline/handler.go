@@ -17,6 +17,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -177,15 +178,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	serviceRef = rawRef
 
-	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
-	parts := strings.Split(serviceRef, ":")
-	if len(parts) >= 4 {
-		if val, err := strconv.ParseUint(parts[3], 16, 16); err == nil && val > 0 {
-			key.TargetProgram = uint16(val)
-		}
+	var iptvParser *sourceref.Parser
+	if h.resolver != nil {
+		iptvParser = h.resolver.Parser()
 	}
+	src, isIPTV, _ := sourceref.ClassifyReference(iptvParser, serviceRef)
+
+	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
+	if !isIPTV {
+		parts := strings.Split(serviceRef, ":")
+		if len(parts) >= 4 {
+			if val, err := strconv.ParseUint(parts[3], 16, 16); err == nil && val > 0 {
+				key.TargetProgram = uint16(val)
+			}
+		}
+	} else {
+		// Invariant: For IPTV, Enigma2 reference triplet fields (e.g. 4E27) are dummy/EPG placeholders
+		// copied from satellite lamedb and do NOT match the provider transport stream's internal program.
+		// TargetProgram must remain 0 so MasterRing automatically selects the present program from the TS PAT.
+		key.TargetProgram = 0
+	}
+
 	if err := key.Validate(); err != nil {
-		http.Error(w, fmt.Sprintf("invalid serviceRef: %v", err), http.StatusBadRequest)
+		http.Error(w, "invalid serviceRef", http.StatusBadRequest)
 		return
 	}
 
@@ -200,8 +215,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// label: one series per zap would blow up cardinality for no gain.
 	zapID := sanitizeZapID(r.Header.Get(zapIDHeader))
 
+	logServiceRef := key.ServiceRef
+	if isIPTV {
+		if src.ID() != "" {
+			logServiceRef = string(src.ID())
+		} else {
+			logServiceRef = "iptv:" + src.ServiceType()
+		}
+	}
+
 	logger := log.L().With().
-		Str("serviceRef", key.ServiceRef).
+		Str("serviceRef", logServiceRef).
 		Uint16("targetProgram", key.TargetProgram).
 		Str("zap_id", zapID).
 		Logger()
@@ -217,7 +241,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Str("event", "zap.failed").
 			Str("stage", "acquire").
 			Msg("failed to acquire live ingest lease")
-		http.Error(w, fmt.Sprintf("upstream stream unavailable: %v", err), http.StatusBadGateway)
+		http.Error(w, "upstream stream unavailable", http.StatusBadGateway)
 		return
 	}
 	defer lease.Release()
@@ -273,7 +297,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Str("event", "zap.failed").
 			Str("stage", "attach").
 			Msg("failed to perform primed attach to stream")
-		http.Error(w, fmt.Sprintf("failed to attach to live stream: %v (runErr: %v)", err, runErr), http.StatusBadGateway)
+		http.Error(w, "failed to attach to live stream", http.StatusBadGateway)
 		return
 	}
 
