@@ -229,11 +229,12 @@ func TestSeriesEngine_RunOnce_RuleExpired_DayFilterTakesPrecedence(t *testing.T)
 	tmpDir := t.TempDir()
 	rm := NewManager(tmpDir)
 
-	now := time.Now()
-	expiredTime := now.Add(-1 * time.Hour)
+	// Fixed reference time at 12:00 local to guarantee +2h stays today and +26h is tomorrow regardless of run time
+	refTime := time.Date(2026, time.October, 3, 12, 0, 0, 0, time.Local)
+	expiredTime := refTime.Add(-1 * time.Hour)
 
 	// Rule is configured only for tomorrow's weekday
-	tomorrowWeekday := int(now.Add(24 * time.Hour).Weekday())
+	tomorrowWeekday := int(refTime.Add(24 * time.Hour).Weekday())
 
 	ruleID, err := rm.AddRule(SeriesRule{
 		Enabled:    true,
@@ -251,9 +252,9 @@ func TestSeriesEngine_RunOnce_RuleExpired_DayFilterTakesPrecedence(t *testing.T)
 
 	events := []openwebif.EPGEvent{
 		// Event today: wrong weekday, must be dropped silently by DayFilter without counting as rule_expired
-		{Title: "Café PULS heute", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: now.Add(2 * time.Hour).Unix(), Duration: 3600},
+		{Title: "Café PULS heute", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: refTime.Add(2 * time.Hour).Unix(), Duration: 3600},
 		// Event tomorrow: matching weekday, but rule is expired -> recorded as rule_expired
-		{Title: "Café PULS morgen", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: now.Add(26 * time.Hour).Unix(), Duration: 3600},
+		{Title: "Café PULS morgen", SRef: "1:0:19:14B8:407:1:C00000:0:0:0:", Begin: refTime.Add(26 * time.Hour).Unix(), Duration: 3600},
 	}
 	mockClient.On("GetEPG", mock.Anything, "1:0:19:14B8:407:1:C00000:0:0:0:", 7).Return(events, nil)
 	mockClient.On("GetTimers", mock.Anything).Return([]openwebif.Timer{}, nil)
