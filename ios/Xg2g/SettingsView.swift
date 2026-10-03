@@ -404,7 +404,7 @@ struct SettingsView: View {
                         Text("Session")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Disconnects the DPoP session from the server and securely removes the cryptographic device key from the Secure Enclave.")
+                        Text("Disconnects the DPoP-bound session from the server and securely removes the cryptographic device key from the Secure Enclave.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
