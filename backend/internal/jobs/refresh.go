@@ -505,12 +505,16 @@ func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.R
 // For IPTV services, it masks service references and URLs to opaque IDs (iptv_<id>) and
 // routes live playback through /api/v3/stream/live/iptv_<id>, while masking logo URLs to
 // /logos/iptv_<id>.png. Non-IPTV (DVB) items remain unaltered.
+//
+// Fail-closed contract: any IPTV service reference that cannot be converted to an opaque ID
+// (e.g. parser is nil or parsing returns an error) is omitted from the public playlist export.
+// It is NEVER copied into the public export in raw or fallback form.
 func buildPublicPlaylistItems(items []playlist.Item, parser *sourceref.Parser, proxyBase, publicURL string) []playlist.Item {
 	if len(items) == 0 {
 		return nil
 	}
-	out := make([]playlist.Item, len(items))
-	for i, it := range items {
+	out := make([]playlist.Item, 0, len(items))
+	for _, it := range items {
 		ref := strings.TrimSpace(it.ServiceRef)
 		if ref == "" {
 			ref = strings.TrimSpace(it.TvgID)
@@ -536,21 +540,26 @@ func buildPublicPlaylistItems(items []playlist.Item, parser *sourceref.Parser, p
 				}
 				masked.TvgLogo = fmt.Sprintf("/logos/%s.png%s", opaqueID, query)
 			}
-			out[i] = masked
+			out = append(out, masked)
 			continue
 		}
 
 		parts := strings.Split(ref, ":")
 		isIPTV := len(parts) > 0 && sourceref.IsIPTVServiceType(parts[0])
 
-		if !isIPTV || parser == nil {
-			out[i] = it
+		if !isIPTV {
+			out = append(out, it)
+			continue
+		}
+
+		// Fail closed: if parser is missing, omit IPTV item from public export
+		if parser == nil {
 			continue
 		}
 
 		src, err := parser.Parse(ref)
 		if err != nil {
-			out[i] = it
+			// Fail closed: if parsing fails, omit IPTV item from public export
 			continue
 		}
 
@@ -576,7 +585,7 @@ func buildPublicPlaylistItems(items []playlist.Item, parser *sourceref.Parser, p
 			masked.TvgLogo = fmt.Sprintf("/logos/%s.png%s", opaqueID, query)
 		}
 
-		out[i] = masked
+		out = append(out, masked)
 	}
 	return out
 }

@@ -25,6 +25,7 @@ import (
 	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
+	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -919,31 +920,107 @@ func TestIPTV_CanaryLeakAudit_ConcurrentReplaceRace(t *testing.T) {
 	wg.Wait()
 }
 
-// TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons asserts that the exported public playlist
-// and file server responses contain zero canary tokens, hosts, or raw references.
-func TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons(t *testing.T) {
-	_, opaqueID, _ := setupCanaryResolver(t)
+// createCanaryReceiverServer spins up a fake OpenWebIF receiver server returning bouquets and services for canary tests.
+func createCanaryReceiverServer(t *testing.T, servicesJSON string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "bouquets") {
+			_, _ = w.Write([]byte(`{"bouquets":[["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet","Favourites"]]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "getservices") || strings.Contains(r.URL.Path, "getallservices") {
+			_, _ = w.Write([]byte(servicesJSON))
+			return
+		}
+		if strings.Contains(r.URL.Path, "streamcurrent") {
+			_, _ = w.Write([]byte(`{"result": true}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+}
 
+func setupCanaryRefreshSnapshot(t *testing.T, serverURL string) (config.Snapshot, string) {
+	t.Helper()
 	dataDir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir: dataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    serverURL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	snap.Runtime.PlaylistFilename = "playlist.m3u"
+	return snap, dataDir
+}
+
+// TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons asserts that the exported public playlist
+// generated via the real refresh job and served through the file server contains zero canary tokens,
+// hosts, or raw references, while internal playlist.m3u remains intact.
+func TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons(t *testing.T) {
+	parser, err := sourceref.NewParser([]byte(canarySecret))
+	require.NoError(t, err)
+	reg := sourceref.NewRegistry()
+
+	servicesJSON := fmt.Sprintf(`{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary Channel 1", "servicereference": %q}
+		]
+	}`, canaryRawRef)
+
+	mockOWI := createCanaryReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	snap, dataDir := setupCanaryRefreshSnapshot(t, mockOWI.URL)
+
+	// Setup mock picon file in dataDir/picons
 	piconsDir := filepath.Join(dataDir, "picons")
 	require.NoError(t, os.MkdirAll(piconsDir, 0755))
-
-	// Write mock picon file using stored sanitized name
 	storeRef := strings.TrimRight(strings.ReplaceAll(strings.ReplaceAll(canaryRawRef, ":", "_"), "/", "_"), "_")
 	fakePNG := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRcanary_clean")
 	require.NoError(t, os.WriteFile(filepath.Join(piconsDir, storeRef+".png"), fakePNG, 0644))
 
-	// Setup public playlist in dataDir
-	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
-	maskedItem := fmt.Sprintf("#EXTM3U\n#EXTINF:-1 tvg-id=%q tvg-logo=\"/logos/%s.png\",Canary Channel 1\n/api/v3/stream/live/%s\n", opaqueID, opaqueID, opaqueID)
-	require.NoError(t, os.WriteFile(publicPlaylistPath, []byte(maskedItem), 0644))
+	// Execute REAL refresh job with IPTV parser and registry
+	status, err := jobs.RefreshWithOptions(context.Background(), snap, jobs.WithIPTVSources(parser, reg))
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Channels)
 
-	// Setup raw playlist in dataDir with secrets
+	// 1. Filesystem existence & permission verification
 	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
-	rawItem := fmt.Sprintf("#EXTM3U\n#EXTINF:-1 tvg-id=%q tvg-logo=\"/logos/4097_test.png\",Canary Channel 1\n%s\n", canaryRawRef, canaryRawRef)
-	require.NoError(t, os.WriteFile(rawPlaylistPath, []byte(rawItem), 0600))
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
 
-	// Setup file server and test /playlist.m3u and /playlist_public.m3u
+	rawInfo, err := os.Stat(rawPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), rawInfo.Mode().Perm(), "internal playlist.m3u must have 0600 permissions")
+
+	publicInfo, err := os.Stat(publicPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), publicInfo.Mode().Perm(), "public playlist_public.m3u must have 0644 permissions")
+
+	// 2. Internal raw playlist content check: preserves raw references for internal subsystems
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	for _, marker := range canaryMarkers {
+		assert.True(t, strings.Contains(rawStr, marker), "internal playlist must preserve canary marker %q", marker)
+	}
+	assert.Contains(t, rawStr, canaryRawRef)
+
+	// 3. Resolve opaque ID
+	assert.Equal(t, 1, reg.Len(), "registry must contain parsed canary IPTV source")
+	var opaqueID string
+	for _, src := range reg.Snapshot() {
+		opaqueID = string(src.ID())
+		break
+	}
+	require.NotEmpty(t, opaqueID)
+
+	// 4. File server verification: HTTP requests for both /playlist.m3u and /playlist_public.m3u
 	fileServer := controlhttp.SecureFileServer(dataDir, nil)
 
 	for _, reqPath := range []string{"/playlist.m3u", "/playlist_public.m3u"} {
@@ -956,6 +1033,150 @@ func TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons(t *testing.T) {
 		for _, marker := range canaryMarkers {
 			assert.False(t, strings.Contains(body, marker), "playlist response for %s leaked canary marker %q: %s", reqPath, marker, body)
 		}
-		assert.Contains(t, body, string(opaqueID))
+		assert.False(t, strings.Contains(body, "4097:"), "playlist response for %s leaked raw 4097 ref", reqPath)
+		assert.Contains(t, body, opaqueID)
+		assert.Contains(t, body, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+		assert.Contains(t, body, "DVB Das Erste")
+	}
+}
+
+// TestIPTV_CanaryLeakAudit_RealRefreshAndFileServer_MissingParser asserts that when the IPTV parser
+// is missing/nil, the public playlist export fails closed: all IPTV items are omitted, zero canary tokens
+// or raw references are exposed via HTTP file serving, while internal playlist.m3u remains intact.
+func TestIPTV_CanaryLeakAudit_RealRefreshAndFileServer_MissingParser(t *testing.T) {
+	servicesJSON := fmt.Sprintf(`{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary Channel 1", "servicereference": %q}
+		]
+	}`, canaryRawRef)
+
+	mockOWI := createCanaryReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	snap, dataDir := setupCanaryRefreshSnapshot(t, mockOWI.URL)
+
+	// Execute REAL refresh WITHOUT WithIPTVSources (parser is nil)
+	status, err := jobs.RefreshWithOptions(context.Background(), snap)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Channels)
+
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+
+	// 1. Internal playlist must be intact with 0600 permissions and raw references/tokens
+	rawInfo, err := os.Stat(rawPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), rawInfo.Mode().Perm())
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	for _, marker := range canaryMarkers {
+		assert.True(t, strings.Contains(rawStr, marker), "internal playlist must retain canary marker %q", marker)
+	}
+	assert.Contains(t, rawStr, canaryRawRef)
+
+	// 2. Public playlist must exist with 0644 permissions
+	publicInfo, err := os.Stat(publicPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), publicInfo.Mode().Perm())
+
+	// 3. HTTP file serving must fail closed: zero canary tokens, zero raw IPTV refs
+	fileServer := controlhttp.SecureFileServer(dataDir, nil)
+
+	for _, reqPath := range []string{"/playlist.m3u", "/playlist_public.m3u"} {
+		req := httptest.NewRequest(http.MethodGet, reqPath, nil)
+		rec := httptest.NewRecorder()
+		fileServer.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code, "file server should return 200 for %s", reqPath)
+		body := rec.Body.String()
+		for _, marker := range canaryMarkers {
+			assert.False(t, strings.Contains(body, marker), "playlist response for %s leaked canary marker %q when parser is nil: %s", reqPath, marker, body)
+		}
+		assert.False(t, strings.Contains(body, "4097:"), "playlist response for %s leaked raw 4097 ref when parser is nil", reqPath)
+		assert.False(t, strings.Contains(body, "Canary Channel 1"), "unconvertible IPTV channel must be omitted from public export")
+
+		// DVB channel must remain intact and served
+		assert.Contains(t, body, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+		assert.Contains(t, body, "DVB Das Erste")
+	}
+}
+
+// TestIPTV_CanaryLeakAudit_RealRefreshAndFileServer_InvalidIPTVReference asserts that when an IPTV reference
+// is invalid or unparseable, the public playlist export fails closed: the invalid item is omitted,
+// zero canary tokens or raw references are exposed via HTTP file serving, while internal playlist.m3u remains intact.
+func TestIPTV_CanaryLeakAudit_RealRefreshAndFileServer_InvalidIPTVReference(t *testing.T) {
+	parser, err := sourceref.NewParser([]byte(canarySecret))
+	require.NoError(t, err)
+	reg := sourceref.NewRegistry()
+
+	// Malformed IPTV references containing canary credentials:
+	// 1) Unencoded port colon (fails sourceref.Parser.Parse with ErrInvalidRef)
+	// 2) Malformed URL scheme/format (fails sourceref.Parser.Parse with ErrInvalidScheme / ErrInvalidURL)
+	portCanaryRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid:8080/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Port Channel"
+	badURLCanaryRef := "4097:0:1:0:0:0:0:0:0:0:not-a-valid-url-canary.invalid-SECRET-CANARY-1-token-xyz-987:Canary BadURL Channel"
+
+	servicesJSON := fmt.Sprintf(`{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary Port Channel", "servicereference": %q},
+			{"servicename": "Canary BadURL Channel", "servicereference": %q}
+		]
+	}`, portCanaryRef, badURLCanaryRef)
+
+	mockOWI := createCanaryReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	snap, dataDir := setupCanaryRefreshSnapshot(t, mockOWI.URL)
+
+	// Execute REAL refresh WITH IPTV parser and registry
+	status, err := jobs.RefreshWithOptions(context.Background(), snap, jobs.WithIPTVSources(parser, reg))
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 3, status.Channels)
+
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+
+	// 1. Internal playlist must be intact with 0600 permissions and invalid raw references containing canary tokens
+	rawInfo, err := os.Stat(rawPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), rawInfo.Mode().Perm())
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	for _, marker := range canaryMarkers {
+		assert.True(t, strings.Contains(rawStr, marker), "internal playlist must retain canary marker %q from invalid ref", marker)
+	}
+	assert.Contains(t, rawStr, portCanaryRef)
+	assert.Contains(t, rawStr, badURLCanaryRef)
+
+	// 2. Public playlist must exist with 0644 permissions
+	publicInfo, err := os.Stat(publicPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), publicInfo.Mode().Perm())
+
+	// 3. HTTP file serving must fail closed: zero canary tokens, zero raw IPTV refs
+	fileServer := controlhttp.SecureFileServer(dataDir, nil)
+
+	for _, reqPath := range []string{"/playlist.m3u", "/playlist_public.m3u"} {
+		req := httptest.NewRequest(http.MethodGet, reqPath, nil)
+		rec := httptest.NewRecorder()
+		fileServer.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code, "file server should return 200 for %s", reqPath)
+		body := rec.Body.String()
+		for _, marker := range canaryMarkers {
+			assert.False(t, strings.Contains(body, marker), "playlist response for %s leaked canary marker %q from invalid ref: %s", reqPath, marker, body)
+		}
+		assert.False(t, strings.Contains(body, "4097:"), "playlist response for %s leaked raw 4097 ref from invalid ref", reqPath)
+		assert.False(t, strings.Contains(body, "Canary Port Channel"), "invalid IPTV channel must be omitted from public export")
+		assert.False(t, strings.Contains(body, "Canary BadURL Channel"), "invalid IPTV channel must be omitted from public export")
+
+		// DVB channel must remain intact and served
+		assert.Contains(t, body, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+		assert.Contains(t, body, "DVB Das Erste")
 	}
 }
