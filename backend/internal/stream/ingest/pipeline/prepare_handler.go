@@ -192,7 +192,7 @@ func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID 
 		Str("event", "zap.prepare.started").
 		Str("preparation_id", prep.ID()).
 		Str("zap_id", zapID).
-		Str("serviceRef", key.ServiceRef).
+		Str("serviceRef", clientServiceRef).
 		Msg("preparation started")
 
 	// 202: accepted and running. Readiness is not a property of this response, which

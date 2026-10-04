@@ -263,7 +263,7 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 	logger := m.logger.With().
 		Str("preparation_id", p.id).
 		Str("zap_id", p.zapID).
-		Str("serviceRef", req.Key.ServiceRef).
+		Str("serviceRef", p.serviceRef).
 		Logger()
 
 	lease, err := m.sessions.Acquire(ctx, req.Key)

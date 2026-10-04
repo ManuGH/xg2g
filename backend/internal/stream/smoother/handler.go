@@ -124,6 +124,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serviceRef = unescaped
 	}
 
+	clientServiceRef := serviceRef
 	rawRef, _, err := h.resolver.ResolveInbound(metrics.EndpointStreamSmooth, serviceRef)
 	if err != nil {
 		reqForProblem := r.Clone(r.Context())
@@ -152,17 +153,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetURL := fmt.Sprintf("http://%s:%d/%s", h.receiverHost, h.streamPort, serviceRef)
-	logger := log.L().With().
-		Str("serviceRef", serviceRef).
-		Str("targetURL", targetURL).
-		Float64("reservoirMs", h.cfg.StartupReservoirMs).
-		Logger()
+	loggerCtx := log.L().With().
+		Str("serviceRef", clientServiceRef).
+		Float64("reservoirMs", h.cfg.StartupReservoirMs)
+	if !isIPTVRef(serviceRef) {
+		loggerCtx = loggerCtx.Str("targetURL", targetURL)
+	}
+	logger := loggerCtx.Logger()
 
 	logger.Info().Msg("starting smoothed TS stream session")
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to create upstream request: %v", err), http.StatusInternalServerError)
+		http.Error(w, "failed to create upstream request", http.StatusInternalServerError)
 		return
 	}
 
@@ -178,8 +181,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to connect to upstream receiver")
-		http.Error(w, fmt.Sprintf("upstream receiver unavailable: %v", err), http.StatusBadGateway)
+		logger.Warn().Msg("failed to connect to upstream receiver")
+		http.Error(w, "upstream receiver unavailable", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
