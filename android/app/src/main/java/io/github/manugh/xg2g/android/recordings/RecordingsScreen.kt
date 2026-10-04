@@ -57,6 +57,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -146,9 +147,9 @@ internal fun RecordingsScreen(
                             ) {
                                 Text(
                                     text = if (state.currentPath.isNotEmpty()) {
-                                        "Keine Aufnahmen oder Unterordner in diesem Pfad."
+                                        stringResource(R.string.recordings_empty_in_path)
                                     } else {
-                                        "Keine Aufnahmen auf dem Receiver vorhanden."
+                                        stringResource(R.string.recordings_empty)
                                     },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = colorResource(R.color.color_text_secondary)
@@ -156,7 +157,7 @@ internal fun RecordingsScreen(
 
                                 if (state.currentPath.isNotEmpty()) {
                                     TvActionButton(
-                                        label = "Zurück zum Hauptverzeichnis",
+                                        label = stringResource(R.string.recordings_action_back_to_root),
                                         onClick = { viewModel.navigateToBreadcrumb("") },
                                         isPrimary = true
                                     )
@@ -188,7 +189,7 @@ internal fun RecordingsScreen(
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 Column {
                                     Text(
-                                        text = "ORDNER (${state.directories.size})",
+                                        text = stringResource(R.string.recordings_folders_count, state.directories.size),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = colorResource(R.color.color_text_secondary),
                                         fontWeight = FontWeight.Bold,
@@ -217,7 +218,7 @@ internal fun RecordingsScreen(
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 Column {
                                     Text(
-                                        text = "WEITERANSCHAUEN",
+                                        text = stringResource(R.string.recordings_continue_watching),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = colorResource(R.color.color_live),
                                         fontWeight = FontWeight.Bold,
@@ -253,7 +254,7 @@ internal fun RecordingsScreen(
                         // Section: Recordings Grid Header
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Text(
-                                text = "AUFNAHMEN (${recordings.size})",
+                                text = stringResource(R.string.recordings_count, recordings.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colorResource(R.color.color_text_secondary),
                                 fontWeight = FontWeight.Bold,
@@ -315,7 +316,7 @@ private fun PathNavigationBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "Speicherort:",
+                        text = stringResource(R.string.recordings_storage_location),
                         style = MaterialTheme.typography.labelSmall,
                         color = colorResource(R.color.color_text_secondary),
                         fontWeight = FontWeight.Bold
@@ -341,7 +342,7 @@ private fun PathNavigationBar(
             // Up Button (when inside a subfolder)
             if (currentPath.isNotEmpty()) {
                 TvActionButton(
-                    label = "⬅ Ebene hoch",
+                    label = stringResource(R.string.recordings_navigate_up),
                     onClick = onNavigateUp,
                     isPrimary = false
                 )
@@ -385,7 +386,7 @@ private fun DirectoryGridSection(
 ) {
     Column {
         Text(
-            text = "ORDNER (${directories.size})",
+            text = stringResource(R.string.recordings_folders_count, directories.size),
             style = MaterialTheme.typography.labelSmall,
             color = colorResource(R.color.color_text_secondary),
             fontWeight = FontWeight.Bold,
@@ -453,7 +454,7 @@ private fun DirectoryCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "Ordner öffnen",
+                    text = stringResource(R.string.recordings_open_folder),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorResource(R.color.color_text_secondary),
                     fontSize = 11.sp
@@ -551,20 +552,24 @@ private fun RecordingsHeader(
     ) {
         Column {
             Text(
-                text = "xg2g BROADCAST CONSOLE",
+                text = stringResource(R.string.brand_console),
                 style = MaterialTheme.typography.labelSmall,
                 color = colorResource(R.color.color_text_secondary),
                 letterSpacing = 1.5.sp
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "Aufnahmen",
+                    text = stringResource(R.string.recordings_header_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = colorResource(R.color.color_text_primary)
                 )
                 Text(
-                    text = if (currentPath.isNotBlank()) "in $currentRoot / $currentPath" else "in $currentRoot",
+                    text = if (currentPath.isNotBlank()) {
+                        stringResource(R.string.recordings_in_path, currentRoot, currentPath)
+                    } else {
+                        stringResource(R.string.recordings_in_root, currentRoot)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = colorResource(R.color.color_text_secondary)
                 )
@@ -605,7 +610,11 @@ private fun RecordingsErrorView(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = if (isAuthError) "Anmeldung erforderlich, um Aufnahmen abzurufen." else message,
+                text = if (isAuthError) {
+                    stringResource(R.string.dashboard_recordings_auth_required)
+                } else {
+                    stringResource(R.string.dashboard_recordings_error)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = colorResource(R.color.color_status_warning)
             )
@@ -613,13 +622,13 @@ private fun RecordingsErrorView(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (isAuthError && onOpenSetup != null) {
                     TvActionButton(
-                        label = "Jetzt Anmelden",
+                        label = stringResource(R.string.dashboard_action_signin_now),
                         onClick = onOpenSetup,
                         isPrimary = true
                     )
                 } else {
                     TvActionButton(
-                        label = "Erneut versuchen",
+                        label = stringResource(R.string.recordings_retry),
                         onClick = onRetry,
                         isPrimary = true
                     )
@@ -692,7 +701,7 @@ private fun RecordingCard(
                 RecordingThumbnailImage(
                     recordingId = item.recordingId,
                     baseUrl = baseUrl,
-                    title = item.title ?: "Aufnahme"
+                    title = item.title ?: stringResource(R.string.dashboard_recordings_fallback_channel)
                 )
 
                 // Length chip top right
@@ -739,7 +748,7 @@ private fun RecordingCard(
                 modifier = Modifier.padding(10.dp)
             ) {
                 Text(
-                    text = item.title ?: "Unbenannte Aufnahme",
+                    text = item.title ?: stringResource(R.string.recordings_fallback_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = colorResource(R.color.color_text_primary),

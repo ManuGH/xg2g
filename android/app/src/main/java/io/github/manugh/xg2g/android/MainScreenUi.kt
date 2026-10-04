@@ -224,8 +224,8 @@ internal class MainScreenUi(
             is MainUiState.Setup -> renderSetup(state)
             is MainUiState.Error -> renderError(state)
             is MainUiState.Loading -> renderLoading(state)
-            is MainUiState.Revoked -> renderError(MainUiState.Error("Zugriff beendet", state.reason))
-            is MainUiState.ReauthRequired -> renderError(MainUiState.Error("Sitzung abgelaufen", state.reason))
+            is MainUiState.Revoked -> renderError(MainUiState.Error(activity.getString(R.string.auth_revoked_title), state.reason))
+            is MainUiState.ReauthRequired -> renderError(MainUiState.Error(activity.getString(R.string.auth_reauth_title), state.reason))
             is MainUiState.RefreshingBanner -> renderContent()
             MainUiState.Content -> renderContent()
         }

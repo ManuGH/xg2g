@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">xg2g</string>
     <string name="app_description">xg2g – High-Performance Live TV, EPG &amp; Streaming Bridge for Enigma2/Vu+ Receiver.</string>
+    <string name="brand_console">xg2g BROADCAST CONSOLE</string>
+    <string name="rail_console_brand">CONSOLE</string>
+
     <string name="server_setup_kicker">TV host setup</string>
     <string name="server_setup_title">Connect to xg2g</string>
     <string name="server_setup_support">Keep this screen pointed at your xg2g bridge. On TV, app links are the fastest way back into the native shell.</string>
@@ -12,6 +15,7 @@
     <string name="server_setup_invalid_url">Please enter a valid URL.</string>
     <string name="server_setup_error_no_scheme">URL must start with http:// or https://</string>
     <string name="server_change_button">Change Server</string>
+
     <string name="tv_home_kicker">TV home</string>
     <string name="tv_home_title">Jump into TV</string>
     <string name="tv_home_support">Live TV first. Drop into the web tools only when you need setup or deeper control.</string>
@@ -36,6 +40,7 @@
     <string name="webview_renderer_crashed">Android had to restart the embedded browser process after it crashed. Retry the page.</string>
     <string name="webview_renderer_gone">Android reclaimed the embedded browser process. Retry the page.</string>
     <string name="webview_ssl_error_detail">Android rejected the TLS certificate for %1$s. Check that the certificate is valid and trusted on this device.</string>
+
     <string name="tv_quick_actions_kicker">TV navigation</string>
     <string name="tv_quick_actions_title">Browse xg2g</string>
     <string name="tv_quick_actions_context">Current page: %1$s</string>
@@ -54,6 +59,7 @@
     <string name="tv_quick_actions_change_server">Change server</string>
     <string name="tv_quick_actions_browser">Open external browser</string>
     <string name="tv_quick_actions_exit">Exit</string>
+
     <string name="guide_kicker">Live guide</string>
     <string name="guide_title">Live TV</string>
     <string name="guide_support">Browse bouquets, scan the next few hours, then jump straight into playback.</string>
@@ -80,6 +86,13 @@
     <string name="guide_no_program_syncing">EPG is still syncing on xg2g</string>
     <string name="guide_no_program_receiver">Receiver data unavailable</string>
     <string name="guide_play">Play</string>
+    <string name="guide_details">Details</string>
+    <string name="guide_live_indicator">● LIVE</string>
+    <string name="guide_live_now_indicator">● LIVE NOW</string>
+    <string name="guide_remaining_minutes">%1$d minutes remaining</string>
+    <string name="guide_remaining_minutes_short">· %1$dm left</string>
+    <string name="guide_next_prefix">NEXT: %1$s (%2$s)</string>
+
     <string name="native_playback_title">Native Playback</string>
     <string name="native_playback_status_loading">Preparing native playback…</string>
     <string name="native_playback_status_idle">Waiting for native playback request</string>
@@ -89,4 +102,149 @@
     <string name="server_switch_confirm_message">A link wants to change your xg2g server from\n\n%1$s\n\nto\n\n%2$s\n\nOnly continue if you initiated this change.</string>
     <string name="server_switch_confirm_accept">Switch</string>
     <string name="server_switch_confirm_decline">Keep current</string>
+
+    <!-- Dashboard Strings -->
+    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_health_receiver_ready">RECEIVER READY</string>
+    <string name="dashboard_health_limited_epg">LIMITED EPG</string>
+    <string name="dashboard_auth_required">SIGN-IN REQUIRED</string>
+    <string name="dashboard_offline">OFFLINE</string>
+    <string name="dashboard_hero_kicker">QUICK ACCESS</string>
+    <string name="dashboard_hero_title">Main Navigation &amp; Live TV</string>
+    <string name="dashboard_hero_subtitle">Select TV Guide for EPG &amp; channels or access recordings and timers directly.</string>
+    <string name="dashboard_action_open_guide">Open Guide</string>
+    <string name="dashboard_card_guide_title">TV Guide</string>
+    <string name="dashboard_card_guide_subtitle">EPG &amp; Channels</string>
+    <string name="dashboard_card_recordings_title">Recordings</string>
+    <string name="dashboard_card_recordings_subtitle">Saved Shows</string>
+    <string name="dashboard_card_timers_title">Timers</string>
+    <string name="dashboard_card_timers_subtitle">Scheduled Recordings</string>
+    <string name="dashboard_card_settings_title">Settings</string>
+    <string name="dashboard_card_settings_subtitle">Server &amp; Profile</string>
+    <string name="dashboard_recordings_title">Recent Recordings</string>
+    <string name="dashboard_recordings_empty">No recordings found.</string>
+    <string name="dashboard_recordings_fallback_channel">Recording</string>
+    <string name="dashboard_recordings_auth_required">Sign-in required to view recordings.</string>
+    <string name="dashboard_action_signin_now">Sign In Now</string>
+    <string name="dashboard_recordings_error">Recordings could not be loaded.</string>
+    <string name="dashboard_timers_title">Active Timers</string>
+    <string name="dashboard_timers_empty">No active timers configured.</string>
+    <string name="dashboard_timers_fallback_channel">Scheduled Timer</string>
+    <string name="dashboard_timers_auth_required">Sign-in required to view timers.</string>
+    <string name="dashboard_timers_error">Timers could not be loaded.</string>
+
+    <!-- Recordings Strings -->
+    <string name="recordings_header_title">Recordings</string>
+    <string name="recordings_in_root">in %1$s</string>
+    <string name="recordings_in_path">in %1$s / %2$s</string>
+    <string name="recordings_storage_location">Storage location:</string>
+    <string name="recordings_navigate_up">⬅ Up one level</string>
+    <string name="recordings_empty_in_path">No recordings or subfolders in this path.</string>
+    <string name="recordings_empty">No recordings found on receiver.</string>
+    <string name="recordings_action_back_to_root">Back to main directory</string>
+    <string name="recordings_folders_count">FOLDERS (%1$d)</string>
+    <string name="recordings_continue_watching">CONTINUE WATCHING</string>
+    <string name="recordings_count">RECORDINGS (%1$d)</string>
+    <string name="recordings_open_folder">Open folder</string>
+    <string name="recordings_retry">Retry</string>
+    <string name="recordings_fallback_title">Untitled recording</string>
+
+    <!-- Timers Strings -->
+    <string name="timers_header_title">Scheduled Timers</string>
+    <string name="timers_empty">No scheduled timers found on receiver.</string>
+    <string name="timers_count">SCHEDULED TIMERS (%1$d)</string>
+    <string name="timers_unknown_service">Unknown channel</string>
+    <string name="timers_fallback_title">Scheduled recording</string>
+    <string name="timers_status_disabled">DISABLED</string>
+    <string name="timers_status_recording">RECORDING</string>
+    <string name="timers_status_running">RUNNING</string>
+    <string name="timers_status_scheduled">SCHEDULED</string>
+
+    <!-- Settings Strings -->
+    <string name="settings_header_title">Settings &amp; System</string>
+    <string name="settings_back_to_dashboard">Back to Dashboard</string>
+    <string name="settings_section_admin_pin">ADMIN MODE &amp; HOUSEHOLD PIN</string>
+    <string name="settings_admin_unlocked">🔓 ADMIN MODE UNLOCKED</string>
+    <string name="settings_admin_locked">🔒 ADMIN PROTECTION ACTIVE</string>
+    <string name="settings_pin_not_set">ℹ️ HOUSEHOLD PIN NOT SET</string>
+    <string name="settings_admin_desc_unlocked">Full access to server, token &amp; channel scan active.</string>
+    <string name="settings_admin_desc_locked">Advanced admin features are protected by household PIN.</string>
+    <string name="settings_pin_desc_not_set">Household PIN is not configured in WebUI yet. All settings are directly accessible.</string>
+    <string name="settings_action_lock">🔒 Lock</string>
+    <string name="settings_action_unlock_pin">🔑 Unlock with PIN</string>
+    <string name="settings_section_household_profiles">HOUSEHOLD PROFILES</string>
+    <string name="settings_active_household_profile">Active Household Profile</string>
+    <string name="settings_household_profiles_desc">Controls visible bouquets, channel permissions, and age ratings for TV Guide and playback.</string>
+    <string name="settings_default_profile_active">Default profile active</string>
+    <string name="settings_section_server">SERVER CONNECTION</string>
+    <string name="settings_active_server_url">Active server URL</string>
+    <string name="settings_no_server_configured">No URL configured</string>
+    <string name="settings_change_server">Change server</string>
+    <string name="settings_section_auth_token">AUTHENTICATION &amp; API TOKEN</string>
+    <string name="settings_api_token_title">xg2g API Token</string>
+    <string name="settings_token_active">Token: %1$s•••••••• (Active)</string>
+    <string name="settings_no_token">No token configured</string>
+    <string name="settings_status_authenticated">AUTHENTICATED</string>
+    <string name="settings_status_no_token">NO TOKEN</string>
+    <string name="settings_pairing_title">📱 PAIR DEVICE (DEVICE PAIRING)</string>
+    <string name="settings_pairing_desc">Enter this PIN in WebUI under Settings &gt; Android TV:</string>
+    <string name="settings_pairing_generating">Generating PIN…</string>
+    <string name="settings_pairing_waiting">Waiting for confirmation in WebUI…</string>
+    <string name="settings_pairing_cancel">Cancel pairing</string>
+    <string name="settings_pairing_action_start">📱 Pair TV with WebUI (PIN / QR)</string>
+    <string name="settings_token_action_enter">Enter token manually</string>
+    <string name="settings_token_action_edit">Edit manually</string>
+    <string name="settings_token_action_delete">Delete token</string>
+    <string name="settings_section_streaming">STREAMING &amp; AUDIO SETTINGS</string>
+    <string name="settings_audio_mode">Audio mode</string>
+    <string name="settings_audio_mode_desc">Stereo for maximum compatibility, Surround for 5.1 AC-3 / E-AC-3 passthrough.</string>
+    <string name="settings_audio_stereo">Stereo (Default)</string>
+    <string name="settings_audio_surround">Surround (5.1 Passthrough)</string>
+    <string name="settings_dvr_mode">DVR &amp; Timeshift Buffer</string>
+    <string name="settings_dvr_mode_desc">Determines how far live TV can be rewound.</string>
+    <string name="settings_dvr_live_only">Live TV only</string>
+    <string name="settings_dvr_1h">1 hour</string>
+    <string name="settings_dvr_2h">2 hours</string>
+    <string name="settings_dvr_4h">4 hours</string>
+    <string name="settings_section_scan">CHANNEL SCAN &amp; EPG</string>
+    <string name="settings_scan_title">Scan channels &amp; stream capabilities</string>
+    <string name="settings_scan_desc">Checks codecs, bitrates, and streams of all channels in the background.</string>
+    <string name="settings_scan_running">Scan running…</string>
+    <string name="settings_scan_start">Start scan now</string>
+    <string name="settings_scan_progress">Scanned channels: %1$d / %2$d</string>
+    <string name="settings_scan_status">Updated: %1$d · Status: %2$s</string>
+    <string name="settings_section_diagnostics">SYSTEM STATUS &amp; DIAGNOSTICS</string>
+    <string name="settings_diag_receiver">Vu+ Receiver Status</string>
+    <string name="settings_diag_epg">EPG &amp; Channels</string>
+    <string name="settings_diag_app_engine">App Engine</string>
+    <string name="settings_diag_refresh">Refresh status now</string>
+    <string name="settings_dialog_pin_title">🔑 Enter Household PIN</string>
+    <string name="settings_dialog_pin_desc">Enter the household PIN to unlock admin settings:</string>
+    <string name="settings_action_unlock">Unlock</string>
+    <string name="settings_action_save">Save</string>
+    <string name="settings_dialog_token_title">Configure API Token</string>
+    <string name="settings_dialog_token_desc">Enter the server token for xg2g (e.g. test04):</string>
+
+    <!-- General / Auth UI -->
+    <string name="auth_revoked_title">Access Revoked</string>
+    <string name="auth_reauth_title">Session Expired</string>
+
+    <!-- Settings Diagnostic & Action Status -->
+    <string name="settings_diag_status_loading">Loading…</string>
+    <string name="settings_diag_status_online_ready">ONLINE (Ready)</string>
+    <string name="settings_diag_status_offline">OFFLINE</string>
+    <string name="settings_diag_status_epg_active">ACTIVE (Synchronized)</string>
+    <string name="settings_diag_status_epg_limited">LIMITED</string>
+    <string name="settings_diag_status_unreachable">Unreachable</string>
+    <string name="settings_diag_status_unavailable">Unavailable</string>
+    <string name="settings_pairing_error_start">Failed to start pairing.</string>
+    <string name="settings_pairing_error_expired">Pairing request expired or was rejected.</string>
+    <string name="settings_pairing_success">Device paired successfully!</string>
+    <string name="settings_profile_activated">Profile &quot;%1$s&quot; activated.</string>
+    <string name="settings_admin_unlocked_msg">Admin mode unlocked.</string>
+    <string name="settings_admin_wrong_pin">Incorrect household PIN.</string>
+    <string name="settings_admin_unlock_failed">Unlock failed.</string>
+    <string name="settings_admin_locked_msg">Admin mode locked.</string>
+    <string name="settings_scan_start_failed">Failed to start scan.</string>
+    <string name="settings_token_saved">API token saved successfully.</string>
 </resources>
