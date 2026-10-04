@@ -19,8 +19,8 @@ import kotlinx.coroutines.launch
 internal data class SettingsUiState(
     val serverUrl: String = "",
     val authToken: String? = null,
-    val receiverStatus: String = "Lade...",
-    val epgStatus: String = "Lade...",
+    val receiverStatus: String = "loading",
+    val epgStatus: String = "loading",
     val appVersion: String = "2.0.0 (Native Compose TV)",
     val isSaving: Boolean = false,
     val message: String? = null,
@@ -100,9 +100,10 @@ internal class SettingsViewModel(
 
                 pollPairing(client, startRes.pairingId, startRes.pairingSecret)
             } catch (e: Exception) {
+                android.util.Log.w("SettingsViewModel", "Failed to start pairing", e)
                 _uiState.value = _uiState.value.copy(
                     pairingStatus = "error",
-                    pairingError = "Kopplung konnte nicht gestartet werden: ${e.localizedMessage}"
+                    pairingError = "pairing_start_failed"
                 )
             }
         }
@@ -127,13 +128,13 @@ internal class SettingsViewModel(
                         _uiState.value = _uiState.value.copy(
                             isPairingActive = false,
                             pairingStatus = "success",
-                            message = "Gerät erfolgreich gekoppelt!"
+                            message = "pairing_success"
                         )
                         break
                     } else if (statusRes.status == "expired" || statusRes.status == "revoked") {
                         _uiState.value = _uiState.value.copy(
                             pairingStatus = "error",
-                            pairingError = "Kopplungs-Anfrage ist abgelaufen oder wurde abgelehnt."
+                            pairingError = "pairing_expired"
                         )
                         break
                     }
@@ -167,13 +168,14 @@ internal class SettingsViewModel(
             try {
                 val health = dashboardApiClient.fetchHealth(token)
                 _uiState.value = _uiState.value.copy(
-                    receiverStatus = if (health.receiverHealthy) "ONLINE (Bereit)" else "OFFLINE",
-                    epgStatus = if (health.epgHealthy) "AKTIV (Synchronisiert)" else "EINGESCHRÄNKT"
+                    receiverStatus = if (health.receiverHealthy) "ready" else "offline",
+                    epgStatus = if (health.epgHealthy) "active" else "limited"
                 )
             } catch (e: Exception) {
+                android.util.Log.w("SettingsViewModel", "Health fetch failed", e)
                 _uiState.value = _uiState.value.copy(
-                    receiverStatus = "Nicht erreichbar",
-                    epgStatus = "Nicht verfügbar"
+                    receiverStatus = "unreachable",
+                    epgStatus = "unavailable"
                 )
             }
         }
@@ -220,7 +222,7 @@ internal class SettingsViewModel(
             serverSettingsStore.saveSelectedProfileId(profileId)
             _uiState.value = _uiState.value.copy(
                 selectedProfileId = profileId,
-                message = "Profil \"${target?.name ?: profileId}\" aktiviert."
+                message = "profile_activated:${target?.name ?: profileId}"
             )
         }
     }
@@ -237,20 +239,21 @@ internal class SettingsViewModel(
                         pinConfigured = res.pinConfigured,
                         isUnlocking = false,
                         unlockError = null,
-                        message = "Admin-Modus freigeschaltet."
+                        message = "admin_unlocked"
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isUnlocked = false,
                         isUnlocking = false,
-                        unlockError = "Falscher Haushalt-PIN."
+                        unlockError = "wrong_pin"
                     )
                 }
             } catch (e: Exception) {
+                android.util.Log.w("SettingsViewModel", "PIN unlock failed", e)
                 _uiState.value = _uiState.value.copy(
                     isUnlocked = false,
                     isUnlocking = false,
-                    unlockError = "Freischaltung fehlgeschlagen: ${e.localizedMessage}"
+                    unlockError = "unlock_failed"
                 )
             }
         }
@@ -266,7 +269,7 @@ internal class SettingsViewModel(
             } finally {
                 _uiState.value = _uiState.value.copy(
                     isUnlocked = false,
-                    message = "Admin-Modus gesperrt."
+                    message = "admin_locked"
                 )
             }
         }
@@ -309,9 +312,10 @@ internal class SettingsViewModel(
                 _uiState.value = _uiState.value.copy(isScanTriggering = false, scanState = "running")
                 refreshScanStatus()
             } catch (e: Exception) {
+                android.util.Log.w("SettingsViewModel", "Scan trigger failed", e)
                 _uiState.value = _uiState.value.copy(
                     isScanTriggering = false,
-                    scanError = "Scan konnte nicht gestartet werden: ${e.localizedMessage}"
+                    scanError = "scan_start_failed"
                 )
             }
         }
@@ -324,7 +328,7 @@ internal class SettingsViewModel(
             _uiState.value = _uiState.value.copy(
                 authToken = token?.trim()?.takeIf { it.isNotEmpty() },
                 isSaving = false,
-                message = "API-Token erfolgreich gespeichert."
+                message = "token_saved"
             )
             refreshHealth()
             refreshUnlockStatus()

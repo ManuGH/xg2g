@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -126,14 +127,14 @@ private fun DashboardHeader(
     ) {
         Column {
             Text(
-                text = "xg2g BROADCAST CONSOLE",
+                text = stringResource(R.string.brand_console),
                 style = MaterialTheme.typography.labelMedium,
                 color = colorResource(R.color.color_live),
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Dashboard",
+                text = stringResource(R.string.dashboard_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = colorResource(R.color.color_text_primary),
                 fontWeight = FontWeight.Bold
@@ -162,7 +163,7 @@ private fun DashboardHeader(
                         ) {
                             Box(modifier = Modifier.size(8.dp).background(badgeColor, CircleShape))
                             Text(
-                                text = if (isHealthy) "RECEIVER READY" else "LIMITED EPG",
+                                text = if (isHealthy) stringResource(R.string.dashboard_health_receiver_ready) else stringResource(R.string.dashboard_health_limited_epg),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = badgeColor,
                                 fontWeight = FontWeight.Bold
@@ -176,7 +177,7 @@ private fun DashboardHeader(
                 is ModuleState.Error -> {
                     val msg = healthState.message.orEmpty()
                     val isAuthError = msg.contains("401") || msg.contains("Auth") || msg.contains("Unauthorized")
-                    val statusText = if (isAuthError) "ANMELDUNG ERFORDERLICH" else "OFFLINE"
+                    val statusText = if (isAuthError) stringResource(R.string.dashboard_auth_required) else stringResource(R.string.dashboard_offline)
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.labelMedium,
@@ -185,7 +186,7 @@ private fun DashboardHeader(
                     )
                 }
                 else -> {
-                    Text("OFFLINE", style = MaterialTheme.typography.labelMedium, color = colorResource(R.color.color_status_error))
+                    Text(stringResource(R.string.dashboard_offline), style = MaterialTheme.typography.labelMedium, color = colorResource(R.color.color_status_error))
                 }
 
             }
@@ -226,21 +227,21 @@ private fun DashboardHeroStage(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "SCHNELLZUGRIFF",
+                    text = stringResource(R.string.dashboard_hero_kicker),
                     style = MaterialTheme.typography.labelMedium,
                     color = colorResource(R.color.color_action),
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Hauptnavigation & Live-TV",
+                    text = stringResource(R.string.dashboard_hero_title),
                     style = MaterialTheme.typography.titleLarge,
                     color = colorResource(R.color.color_text_primary),
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Wähle TV Guide für EPG & Kanäle oder greife direkt auf Aufnahmen und Timer zu.",
+                    text = stringResource(R.string.dashboard_hero_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colorResource(R.color.color_text_secondary)
                 )
@@ -249,7 +250,7 @@ private fun DashboardHeroStage(
             Spacer(modifier = Modifier.width(24.dp))
 
             TvActionButton(
-                label = "Guide öffnen",
+                label = stringResource(R.string.dashboard_action_open_guide),
                 onClick = onOpenGuide,
                 isPrimary = true
             )
@@ -270,26 +271,26 @@ private fun DashboardQuickDestinations(
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         TvCardButton(
-            title = "TV Guide",
-            subtitle = "EPG & Kanäle",
+            title = stringResource(R.string.dashboard_card_guide_title),
+            subtitle = stringResource(R.string.dashboard_card_guide_subtitle),
             onClick = onOpenGuide,
             modifier = Modifier.weight(1f)
         )
         TvCardButton(
-            title = "Aufnahmen",
-            subtitle = "Gespeicherte Shows",
+            title = stringResource(R.string.dashboard_card_recordings_title),
+            subtitle = stringResource(R.string.dashboard_card_recordings_subtitle),
             onClick = onOpenRecordings,
             modifier = Modifier.weight(1f)
         )
         TvCardButton(
-            title = "Timers",
-            subtitle = "Geplante Aufnahmen",
+            title = stringResource(R.string.dashboard_card_timers_title),
+            subtitle = stringResource(R.string.dashboard_card_timers_subtitle),
             onClick = onOpenTimers,
             modifier = Modifier.weight(1f)
         )
         TvCardButton(
-            title = "Settings",
-            subtitle = "Server & Profil",
+            title = stringResource(R.string.dashboard_card_settings_title),
+            subtitle = stringResource(R.string.dashboard_card_settings_subtitle),
             onClick = onOpenSettings,
             modifier = Modifier.weight(1f)
         )
@@ -303,7 +304,7 @@ private fun RecordingsPreviewSection(
 ) {
     Column {
         Text(
-            text = "Neueste Aufnahmen",
+            text = stringResource(R.string.dashboard_recordings_title),
             style = MaterialTheme.typography.titleMedium,
             color = colorResource(R.color.color_text_primary),
             fontWeight = FontWeight.SemiBold
@@ -312,11 +313,12 @@ private fun RecordingsPreviewSection(
 
         when (recordingsState) {
             is ModuleState.Success -> {
+                val fallbackChannel = stringResource(R.string.dashboard_recordings_fallback_channel)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(recordingsState.data.take(5), key = { it.id }) { recording ->
                         TvItemCard(
                             title = recording.title,
-                            subtitle = recording.channelName ?: "Aufnahme",
+                            subtitle = recording.channelName ?: fallbackChannel,
                             onClick = onOpenRecordings
                         )
                     }
@@ -324,7 +326,7 @@ private fun RecordingsPreviewSection(
             }
             is ModuleState.Empty -> {
                 Text(
-                    text = "Keine Aufnahmen vorhanden.",
+                    text = stringResource(R.string.dashboard_recordings_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colorResource(R.color.color_text_secondary)
                 )
@@ -338,19 +340,19 @@ private fun RecordingsPreviewSection(
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "Anmeldung erforderlich, um Aufnahmen abzurufen.",
+                            text = stringResource(R.string.dashboard_recordings_auth_required),
                             style = MaterialTheme.typography.bodyMedium,
                             color = colorResource(R.color.color_status_warning)
                         )
                         TvActionButton(
-                            label = "Jetzt Anmelden",
+                            label = stringResource(R.string.dashboard_action_signin_now),
                             onClick = onOpenRecordings,
                             isPrimary = false
                         )
                     }
                 } else {
                     Text(
-                        text = "Aufnahmen konnten nicht geladen werden.",
+                        text = stringResource(R.string.dashboard_recordings_error),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colorResource(R.color.color_status_error)
                     )
@@ -370,7 +372,7 @@ private fun TimersPreviewSection(
 ) {
     Column {
         Text(
-            text = "Aktive Timer",
+            text = stringResource(R.string.dashboard_timers_title),
             style = MaterialTheme.typography.titleMedium,
             color = colorResource(R.color.color_text_primary),
             fontWeight = FontWeight.SemiBold
@@ -379,11 +381,12 @@ private fun TimersPreviewSection(
 
         when (timersState) {
             is ModuleState.Success -> {
+                val fallbackChannel = stringResource(R.string.dashboard_timers_fallback_channel)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(timersState.data.take(5), key = { it.id }) { timer ->
                         TvItemCard(
                             title = timer.title,
-                            subtitle = timer.channelName ?: "Geplanter Timer",
+                            subtitle = timer.channelName ?: fallbackChannel,
                             onClick = onOpenTimers
                         )
                     }
@@ -391,7 +394,7 @@ private fun TimersPreviewSection(
             }
             is ModuleState.Empty -> {
                 Text(
-                    text = "Keine aktiven Timer eingerichtet.",
+                    text = stringResource(R.string.dashboard_timers_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colorResource(R.color.color_text_secondary)
                 )
@@ -405,19 +408,19 @@ private fun TimersPreviewSection(
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "Anmeldung erforderlich, um Timer abzurufen.",
+                            text = stringResource(R.string.dashboard_timers_auth_required),
                             style = MaterialTheme.typography.bodyMedium,
                             color = colorResource(R.color.color_status_warning)
                         )
                         TvActionButton(
-                            label = "Jetzt Anmelden",
+                            label = stringResource(R.string.dashboard_action_signin_now),
                             onClick = onOpenTimers,
                             isPrimary = false
                         )
                     }
                 } else {
                     Text(
-                        text = "Timer konnten nicht geladen werden.",
+                        text = stringResource(R.string.dashboard_timers_error),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colorResource(R.color.color_status_error)
                     )

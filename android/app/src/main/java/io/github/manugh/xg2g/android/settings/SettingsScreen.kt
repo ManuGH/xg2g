@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -85,13 +86,13 @@ internal fun SettingsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "xg2g BROADCAST CONSOLE",
+                            text = stringResource(R.string.brand_console),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorResource(R.color.color_text_secondary),
                             letterSpacing = 1.5.sp
                         )
                         Text(
-                            text = "Einstellungen & System",
+                            text = stringResource(R.string.settings_header_title),
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = colorResource(R.color.color_text_primary)
@@ -100,7 +101,7 @@ internal fun SettingsScreen(
 
                     if (onBack != null) {
                         TvSettingsButton(
-                            label = "Zurück zum Dashboard",
+                            label = stringResource(R.string.settings_back_to_dashboard),
                             onClick = onBack,
                             isPrimary = false
                         )
@@ -110,7 +111,7 @@ internal fun SettingsScreen(
 
             // Admin Mode / Household PIN Security Status
             item {
-                SettingsSectionTitle(title = "ADMIN-MODUS & HAUSHALT-PIN")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_admin_pin))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Row(
@@ -122,9 +123,9 @@ internal fun SettingsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = if (state.pinConfigured) {
-                                        if (state.isUnlocked) "🔓 ADMIN-MODUS FREIGESCHALTET" else "🔒 ADMIN-SCHUTZ AKTIV"
+                                        if (state.isUnlocked) stringResource(R.string.settings_admin_unlocked) else stringResource(R.string.settings_admin_locked)
                                     } else {
-                                        "ℹ️ HAUSHALT-PIN NICHT GESETZT"
+                                        stringResource(R.string.settings_pin_not_set)
                                     },
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
@@ -135,12 +136,12 @@ internal fun SettingsScreen(
                             Text(
                                 text = if (state.pinConfigured) {
                                     if (state.isUnlocked) {
-                                        "Voller Zugriff auf Server, Token & Kanal-Scan aktiv."
+                                        stringResource(R.string.settings_admin_desc_unlocked)
                                     } else {
-                                        "Erweiterte Admin-Funktionen sind durch den Haushalt-PIN geschützt."
+                                        stringResource(R.string.settings_admin_desc_locked)
                                     }
                                 } else {
-                                    "Haushalt-PIN ist in der WebUI noch nicht konfiguriert. Alle Einstellungen sind direkt zugänglich."
+                                    stringResource(R.string.settings_pin_desc_not_set)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colorResource(R.color.color_text_secondary)
@@ -152,13 +153,13 @@ internal fun SettingsScreen(
                         if (state.pinConfigured) {
                             if (state.isUnlocked) {
                                 TvSettingsButton(
-                                    label = "🔒 Sperren",
+                                    label = stringResource(R.string.settings_action_lock),
                                     onClick = { viewModel.lockAdminMode() },
                                     isPrimary = false
                                 )
                             } else {
                                 TvSettingsButton(
-                                    label = "🔑 PIN Freischalten",
+                                    label = stringResource(R.string.settings_action_unlock_pin),
                                     onClick = {
                                         pinEditValue = ""
                                         showPinDialog = true
@@ -174,18 +175,18 @@ internal fun SettingsScreen(
 
             // Household Profiles Selection Section
             item {
-                SettingsSectionTitle(title = "HAUSHALTSPROFILE")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_household_profiles))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "Aktives Haushaltsprofil",
+                            text = stringResource(R.string.settings_active_household_profile),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = colorResource(R.color.color_text_primary)
                         )
                         Text(
-                            text = "Steuert sichtbare Bouquets, Senderrechte und Altersfreigaben für TV-Guide und Wiedergabe.",
+                            text = stringResource(R.string.settings_household_profiles_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = colorResource(R.color.color_text_secondary)
                         )
@@ -193,7 +194,7 @@ internal fun SettingsScreen(
 
                         if (state.profiles.isEmpty()) {
                             Text(
-                                text = "Standard-Profil aktiv",
+                                text = stringResource(R.string.settings_default_profile_active),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colorResource(R.color.color_text_secondary)
                             )
@@ -222,7 +223,7 @@ internal fun SettingsScreen(
 
             // Section 1: Server Connection
             item {
-                SettingsSectionTitle(title = "SERVER-VERBINDUNG")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_server))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Row(
@@ -232,14 +233,14 @@ internal fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Aktive Server-URL",
+                                text = stringResource(R.string.settings_active_server_url),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = colorResource(R.color.color_text_primary)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = state.serverUrl.ifBlank { "Keine URL konfiguriert" },
+                                text = state.serverUrl.ifBlank { stringResource(R.string.settings_no_server_configured) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colorResource(R.color.color_text_secondary)
                             )
@@ -248,7 +249,7 @@ internal fun SettingsScreen(
                         Spacer(modifier = Modifier.width(16.dp))
 
                         TvSettingsButton(
-                            label = "Server ändern",
+                            label = stringResource(R.string.settings_change_server),
                             onClick = {
                                 if (isAdminAllowed) {
                                     onChangeServer()
@@ -265,7 +266,7 @@ internal fun SettingsScreen(
 
             // Section 2: API Token / Authentication
             item {
-                SettingsSectionTitle(title = "AUTHENTIFIZIERUNG & API-TOKEN")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_auth_token))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Column {
@@ -276,7 +277,7 @@ internal fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "xg2g API-Token",
+                                    text = stringResource(R.string.settings_api_token_title),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = colorResource(R.color.color_text_primary)
@@ -284,9 +285,9 @@ internal fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (!state.authToken.isNullOrBlank()) {
-                                        "Token: ${state.authToken.orEmpty().take(3)}•••••••• (Aktiv)"
+                                        stringResource(R.string.settings_token_active, state.authToken.orEmpty().take(3))
                                     } else {
-                                        "Kein Token hinterlegt"
+                                        stringResource(R.string.settings_no_token)
                                     },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = colorResource(R.color.color_text_secondary)
@@ -299,7 +300,7 @@ internal fun SettingsScreen(
                                 color = if (hasToken) Color(0xFF065F46) else Color(0xFF78350F)
                             ) {
                                 Text(
-                                    text = if (hasToken) "AUTHENTIFIZIERT" else "KEIN TOKEN",
+                                    text = if (hasToken) stringResource(R.string.settings_status_authenticated) else stringResource(R.string.settings_status_no_token),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (hasToken) Color(0xFF34D399) else Color(0xFFFBBF24),
                                     fontSize = 10.sp,
@@ -324,13 +325,13 @@ internal fun SettingsScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = "📱 GERÄT KOPPELN (DEVICE PAIRING)",
+                                        text = stringResource(R.string.settings_pairing_title),
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF60A5FA)
                                     )
                                     Text(
-                                        text = "Gib diesen PIN in der WebUI unter Einstellungen > Android TV ein:",
+                                        text = stringResource(R.string.settings_pairing_desc),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = Color.White
                                     )
@@ -340,7 +341,7 @@ internal fun SettingsScreen(
                                         border = BorderStroke(1.dp, Color(0xFF60A5FA))
                                     ) {
                                         Text(
-                                            text = state.pairingCode ?: "Generiere PIN...",
+                                            text = state.pairingCode ?: stringResource(R.string.settings_pairing_generating),
                                             style = MaterialTheme.typography.headlineLarge,
                                             fontWeight = FontWeight.Black,
                                             color = Color(0xFF38BDF8),
@@ -349,20 +350,20 @@ internal fun SettingsScreen(
                                         )
                                     }
                                     Text(
-                                        text = "Warte auf Bestätigung in der WebUI...",
+                                        text = stringResource(R.string.settings_pairing_waiting),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = colorResource(R.color.color_text_secondary)
                                     )
                                     if (state.pairingError != null) {
                                         Text(
-                                            text = state.pairingError.orEmpty(),
+                                            text = formatPairingError(state.pairingError.orEmpty()),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = Color(0xFFEF4444)
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     TvSettingsButton(
-                                        label = "Kopplung abbrechen",
+                                        label = stringResource(R.string.settings_pairing_cancel),
                                         onClick = { viewModel.cancelPairing() },
                                         isPrimary = false
                                     )
@@ -371,7 +372,7 @@ internal fun SettingsScreen(
                         } else {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TvSettingsButton(
-                                    label = "📱 TV mit WebUI koppeln (PIN / QR)",
+                                    label = stringResource(R.string.settings_pairing_action_start),
                                     onClick = {
                                         if (isAdminAllowed) {
                                             viewModel.startPairing()
@@ -383,7 +384,7 @@ internal fun SettingsScreen(
                                 )
 
                                 TvSettingsButton(
-                                    label = if (state.authToken.isNullOrBlank()) "Token manuell eingeben" else "Manuell bearbeiten",
+                                    label = if (state.authToken.isNullOrBlank()) stringResource(R.string.settings_token_action_enter) else stringResource(R.string.settings_token_action_edit),
                                     onClick = {
                                         if (isAdminAllowed) {
                                             tokenEditValue = state.authToken.orEmpty()
@@ -397,7 +398,7 @@ internal fun SettingsScreen(
 
                                 if (!state.authToken.isNullOrBlank() && isAdminAllowed) {
                                     TvSettingsButton(
-                                        label = "Token löschen",
+                                        label = stringResource(R.string.settings_token_action_delete),
                                         onClick = { viewModel.saveToken(null) },
                                         isPrimary = false
                                     )
@@ -408,7 +409,7 @@ internal fun SettingsScreen(
                         if (state.message != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = state.message.orEmpty(),
+                                text = formatSettingsMessage(state.message.orEmpty()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF34D399)
                             )
@@ -419,32 +420,32 @@ internal fun SettingsScreen(
 
             // Section 3: Streaming & Audio Settings
             item {
-                SettingsSectionTitle(title = "STREAMING & AUDIO EINSTELLUNGEN")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_streaming))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         // Audio Mode
                         Column {
                             Text(
-                                text = "Audio-Modus",
+                                text = stringResource(R.string.settings_audio_mode),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = colorResource(R.color.color_text_primary)
                             )
                             Text(
-                                text = "Stereo für maximale Kompatibilität, Surround für 5.1 AC-3 / E-AC-3 Passthrough.",
+                                text = stringResource(R.string.settings_audio_mode_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colorResource(R.color.color_text_secondary)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 TvSettingsOptionButton(
-                                    label = "Stereo (Standard)",
+                                    label = stringResource(R.string.settings_audio_stereo),
                                     isSelected = state.audioMode == "stereo",
                                     onClick = { viewModel.saveAudioMode("stereo") }
                                 )
                                 TvSettingsOptionButton(
-                                    label = "Surround (5.1 Passthrough)",
+                                    label = stringResource(R.string.settings_audio_surround),
                                     isSelected = state.audioMode == "surround",
                                     onClick = { viewModel.saveAudioMode("surround") }
                                 )
@@ -456,35 +457,35 @@ internal fun SettingsScreen(
                         // DVR Mode / Timeshift
                         Column {
                             Text(
-                                text = "DVR & Timeshift-Puffer",
+                                text = stringResource(R.string.settings_dvr_mode),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = colorResource(R.color.color_text_primary)
                             )
                             Text(
-                                text = "Legt fest, wie weit beim Live-TV zurückgespult werden kann.",
+                                text = stringResource(R.string.settings_dvr_mode_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colorResource(R.color.color_text_secondary)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 TvSettingsOptionButton(
-                                    label = "Nur Live-TV",
+                                    label = stringResource(R.string.settings_dvr_live_only),
                                     isSelected = state.dvrMode == "live_only",
                                     onClick = { viewModel.saveDvrMode("live_only") }
                                 )
                                 TvSettingsOptionButton(
-                                    label = "1 Stunde",
+                                    label = stringResource(R.string.settings_dvr_1h),
                                     isSelected = state.dvrMode == "1h",
                                     onClick = { viewModel.saveDvrMode("1h") }
                                 )
                                 TvSettingsOptionButton(
-                                    label = "2 Stunden",
+                                    label = stringResource(R.string.settings_dvr_2h),
                                     isSelected = state.dvrMode == "2h",
                                     onClick = { viewModel.saveDvrMode("2h") }
                                 )
                                 TvSettingsOptionButton(
-                                    label = "4 Stunden",
+                                    label = stringResource(R.string.settings_dvr_4h),
                                     isSelected = state.dvrMode == "4h",
                                     onClick = { viewModel.saveDvrMode("4h") }
                                 )
@@ -496,7 +497,7 @@ internal fun SettingsScreen(
 
             // Section 4: Channel Scan & EPG
             item {
-                SettingsSectionTitle(title = "KANAL-SCAN & EPG")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_scan))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -507,13 +508,13 @@ internal fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Kanäle & Stream-Capabilities scannen",
+                                    text = stringResource(R.string.settings_scan_title),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = colorResource(R.color.color_text_primary)
                                 )
                                 Text(
-                                    text = "Prüft Codecs, Bitraten und Streams aller Kanäle im Hintergrund.",
+                                    text = stringResource(R.string.settings_scan_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colorResource(R.color.color_text_secondary)
                                 )
@@ -523,7 +524,7 @@ internal fun SettingsScreen(
 
                             val isScanRunning = state.scanState == "running" || state.isScanTriggering
                             TvSettingsButton(
-                                label = if (isScanRunning) "Scan läuft…" else "Scan jetzt starten",
+                                label = if (isScanRunning) stringResource(R.string.settings_scan_running) else stringResource(R.string.settings_scan_start),
                                 onClick = {
                                     if (isAdminAllowed) {
                                         viewModel.triggerChannelScan()
@@ -537,7 +538,7 @@ internal fun SettingsScreen(
 
                         if (state.scanError != null) {
                             Text(
-                                text = state.scanError.orEmpty(),
+                                text = formatScanError(state.scanError.orEmpty()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFEF4444)
                             )
@@ -563,12 +564,12 @@ internal fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Gescannte Kanäle: ${state.scannedChannels} / ${state.totalChannels}",
+                                    text = stringResource(R.string.settings_scan_progress, state.scannedChannels, state.totalChannels),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colorResource(R.color.color_text_secondary)
                                 )
                                 Text(
-                                    text = "Aktualisiert: ${state.updatedCount} · Status: ${state.scanState.uppercase()}",
+                                    text = stringResource(R.string.settings_scan_status, state.updatedCount, state.scanState.uppercase()),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = if (state.scanState == "running") Color(0xFF38BDF8) else Color(0xFF34D399)
@@ -581,18 +582,18 @@ internal fun SettingsScreen(
 
             // Section 5: Diagnostics & System Status
             item {
-                SettingsSectionTitle(title = "SYSTEMSTATUS & DIAGNOSE")
+                SettingsSectionTitle(title = stringResource(R.string.settings_section_diagnostics))
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DiagnosticRow(label = "Vu+ Receiver Status", value = state.receiverStatus)
-                        DiagnosticRow(label = "EPG & Kanäle", value = state.epgStatus)
-                        DiagnosticRow(label = "App Engine", value = state.appVersion)
+                        DiagnosticRow(label = stringResource(R.string.settings_diag_receiver), value = formatReceiverStatus(state.receiverStatus))
+                        DiagnosticRow(label = stringResource(R.string.settings_diag_epg), value = formatEpgStatus(state.epgStatus))
+                        DiagnosticRow(label = stringResource(R.string.settings_diag_app_engine), value = state.appVersion)
 
                         Spacer(modifier = Modifier.height(4.dp))
 
                         TvSettingsButton(
-                            label = "Status jetzt aktualisieren",
+                            label = stringResource(R.string.settings_diag_refresh),
                             onClick = {
                                 viewModel.refreshHealth()
                                 viewModel.refreshScanStatus()
@@ -616,7 +617,7 @@ internal fun SettingsScreen(
             onDismissRequest = { showPinDialog = false },
             title = {
                 Text(
-                    text = "🔑 Haushalt-PIN eingeben",
+                    text = stringResource(R.string.settings_dialog_pin_title),
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
@@ -624,7 +625,7 @@ internal fun SettingsScreen(
             text = {
                 Column {
                     Text(
-                        text = "Gib den Haushalt-PIN ein, um Admin-Einstellungen freizuschalten:",
+                        text = stringResource(R.string.settings_dialog_pin_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFFCBD5E1)
                     )
@@ -646,7 +647,7 @@ internal fun SettingsScreen(
                     if (state.unlockError != null) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = state.unlockError.orEmpty(),
+                            text = formatUnlockError(state.unlockError.orEmpty()),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFFEF4444)
                         )
@@ -662,12 +663,12 @@ internal fun SettingsScreen(
                         }
                     }
                 ) {
-                    Text("Freischalten", color = colorResource(R.color.color_action), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.settings_action_unlock), color = colorResource(R.color.color_action), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showPinDialog = false }) {
-                    Text("Abbrechen", color = Color.White)
+                    Text(stringResource(R.string.server_setup_cancel), color = Color.White)
                 }
             },
             containerColor = colorResource(R.color.color_bg_elevated),
@@ -681,7 +682,7 @@ internal fun SettingsScreen(
             onDismissRequest = { showTokenDialog = false },
             title = {
                 Text(
-                    text = "API-Token konfigurieren",
+                    text = stringResource(R.string.settings_dialog_token_title),
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
@@ -689,7 +690,7 @@ internal fun SettingsScreen(
             text = {
                 Column {
                     Text(
-                        text = "Gib den Server-Token für xg2g ein (z.B. test04):",
+                        text = stringResource(R.string.settings_dialog_token_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFFCBD5E1)
                     )
@@ -715,12 +716,12 @@ internal fun SettingsScreen(
                         showTokenDialog = false
                     }
                 ) {
-                    Text("Speichern", color = colorResource(R.color.color_action), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.settings_action_save), color = colorResource(R.color.color_action), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showTokenDialog = false }) {
-                    Text("Abbrechen", color = Color.White)
+                    Text(stringResource(R.string.server_setup_cancel), color = Color.White)
                 }
             },
             containerColor = colorResource(R.color.color_bg_elevated),
@@ -848,3 +849,27 @@ private fun TvSettingsOptionButton(
         )
     }
 }
+
+@Composable
+private fun formatReceiverStatus(status: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatReceiverStatus(status, androidx.compose.ui.platform.LocalContext.current)
+
+@Composable
+private fun formatEpgStatus(status: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatEpgStatus(status, androidx.compose.ui.platform.LocalContext.current)
+
+@Composable
+private fun formatSettingsMessage(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatSettingsMessage(raw, androidx.compose.ui.platform.LocalContext.current)
+
+@Composable
+private fun formatPairingError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatPairingError(raw, androidx.compose.ui.platform.LocalContext.current)
+
+@Composable
+private fun formatUnlockError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatUnlockError(raw, androidx.compose.ui.platform.LocalContext.current)
+
+@Composable
+private fun formatScanError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatScanError(raw, androidx.compose.ui.platform.LocalContext.current)

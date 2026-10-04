@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,7 +98,7 @@ internal fun TimersScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Keine geplanten Timer auf dem Receiver vorhanden.",
+                            text = stringResource(R.string.timers_empty),
                             style = MaterialTheme.typography.bodyLarge,
                             color = colorResource(R.color.color_text_secondary)
                         )
@@ -115,7 +116,7 @@ internal fun TimersScreen(
                     }
 
                     Text(
-                        text = "GEPLANTE TIMER (${timers.size})",
+                        text = stringResource(R.string.timers_count, timers.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = colorResource(R.color.color_text_secondary),
                         fontWeight = FontWeight.Bold,
@@ -158,13 +159,13 @@ private fun TimersHeader(
     ) {
         Column {
             Text(
-                text = "xg2g BROADCAST CONSOLE",
+                text = stringResource(R.string.brand_console),
                 style = MaterialTheme.typography.labelSmall,
                 color = colorResource(R.color.color_text_secondary),
                 letterSpacing = 1.5.sp
             )
             Text(
-                text = "Geplante Timer",
+                text = stringResource(R.string.timers_header_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = colorResource(R.color.color_text_primary)
@@ -205,7 +206,11 @@ private fun TimersErrorView(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = if (isAuthError) "Anmeldung erforderlich, um Timer abzudrucken." else message,
+                text = if (isAuthError) {
+                    stringResource(R.string.dashboard_timers_auth_required)
+                } else {
+                    stringResource(R.string.dashboard_timers_error)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = colorResource(R.color.color_status_warning)
             )
@@ -213,13 +218,13 @@ private fun TimersErrorView(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (isAuthError && onOpenSetup != null) {
                     TvActionButton(
-                        label = "Jetzt Anmelden",
+                        label = stringResource(R.string.dashboard_action_signin_now),
                         onClick = onOpenSetup,
                         isPrimary = true
                     )
                 } else {
                     TvActionButton(
-                        label = "Erneut versuchen",
+                        label = stringResource(R.string.recordings_retry),
                         onClick = onRetry,
                         isPrimary = true
                     )
@@ -269,7 +274,7 @@ private fun TimerCard(
             ) {
                 // Channel Name
                 Text(
-                    text = item.serviceName ?: "Unbekannter Sender",
+                    text = item.serviceName ?: stringResource(R.string.timers_unknown_service),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorResource(R.color.color_live),
                     fontWeight = FontWeight.Bold,
@@ -288,7 +293,7 @@ private fun TimerCard(
 
             // Timer Title
             Text(
-                text = item.title ?: "Geplante Aufnahme",
+                text = item.title ?: stringResource(R.string.timers_fallback_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = colorResource(R.color.color_text_primary),
@@ -312,10 +317,10 @@ private fun TimerCard(
 @Composable
 private fun TimerStatusBadge(disabled: Boolean, state: String?) {
     val (label, bg, fg) = when {
-        disabled -> Triple("DEAKTIVIERT", Color(0xFF334155), Color(0xFF94A3B8))
-        state?.lowercase() == "recording" -> Triple("NIMMT AUF", Color(0xFF7F1D1D), Color(0xFFEF4444))
-        state?.lowercase() == "running" -> Triple("AKTIV", Color(0xFF065F46), Color(0xFF10B981))
-        else -> Triple("GEPLANT", Color(0xFF1E293B), Color(0xFF38BDF8))
+        disabled -> Triple(stringResource(R.string.timers_status_disabled), Color(0xFF334155), Color(0xFF94A3B8))
+        state?.lowercase() == "recording" -> Triple(stringResource(R.string.timers_status_recording), Color(0xFF7F1D1D), Color(0xFFEF4444))
+        state?.lowercase() == "running" -> Triple(stringResource(R.string.timers_status_running), Color(0xFF065F46), Color(0xFF10B981))
+        else -> Triple(stringResource(R.string.timers_status_scheduled), Color(0xFF1E293B), Color(0xFF38BDF8))
     }
 
     Surface(

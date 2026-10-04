@@ -108,7 +108,7 @@ internal fun EventDetailsDialog(
                             border = BorderStroke(1.dp, colorResource(R.color.color_live).copy(alpha = 0.5f))
                         ) {
                             Text(
-                                text = "● LIVE NOW",
+                                text = stringResource(R.string.guide_live_now_indicator),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
@@ -118,7 +118,7 @@ internal fun EventDetailsDialog(
 
                         if (remainingMinutes != null) {
                             Text(
-                                text = "Noch $remainingMinutes Minuten",
+                                text = stringResource(R.string.guide_remaining_minutes, remainingMinutes),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.8f)
                             )

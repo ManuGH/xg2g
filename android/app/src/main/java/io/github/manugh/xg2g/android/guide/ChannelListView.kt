@@ -282,7 +282,7 @@ internal fun WebUiChannelCard(
                                 border = BorderStroke(1.dp, colorResource(R.color.color_live).copy(alpha = 0.5f))
                             ) {
                                 Text(
-                                    text = "● LIVE",
+                                    text = stringResource(R.string.guide_live_indicator),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
@@ -309,7 +309,7 @@ internal fun WebUiChannelCard(
 
                         if (remainingMinutes != null) {
                             Text(
-                                text = "· Noch ${remainingMinutes}m",
+                                text = stringResource(R.string.guide_remaining_minutes_short, remainingMinutes),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFF00E5FF)
@@ -336,7 +336,11 @@ internal fun WebUiChannelCard(
                     // Next Program
                     if (channel.next != null) {
                         Text(
-                            text = "DANACH: ${channel.next.title} (${channel.next.displayStartTime(displayZoneId)})",
+                            text = stringResource(
+                                R.string.guide_next_prefix,
+                                channel.next.title,
+                                channel.next.displayStartTime(displayZoneId)
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.5f),
                             maxLines = 1,
@@ -372,7 +376,7 @@ internal fun WebUiChannelCard(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "Details",
+                            text = stringResource(R.string.guide_details),
                             style = MaterialTheme.typography.labelMedium
                         )
                     }

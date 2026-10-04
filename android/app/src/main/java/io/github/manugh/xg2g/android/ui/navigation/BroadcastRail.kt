@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.manugh.xg2g.android.R
@@ -123,7 +124,7 @@ internal fun BroadcastRail(
                     exit = fadeOut()
                 ) {
                     Text(
-                        text = "CONSOLE",
+                        text = stringResource(R.string.rail_console_brand),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = colorResource(R.color.color_text_primary),
@@ -137,7 +138,7 @@ internal fun BroadcastRail(
             // Navigation Items
             RailItem(
                 icon = Icons.Default.Home,
-                label = "Dashboard",
+                label = stringResource(R.string.tv_destination_home),
                 isActive = currentDestination == TvNavigationDestination.Home,
                 isExpanded = isRailFocused,
                 onClick = { onNavigate(TvNavigationDestination.Home) }
@@ -147,7 +148,7 @@ internal fun BroadcastRail(
 
             RailItem(
                 icon = Icons.AutoMirrored.Filled.List,
-                label = "TV Guide",
+                label = stringResource(R.string.tv_destination_guide),
                 isActive = currentDestination == TvNavigationDestination.Guide,
                 isExpanded = isRailFocused,
                 onClick = { onNavigate(TvNavigationDestination.Guide) }
@@ -157,7 +158,7 @@ internal fun BroadcastRail(
 
             RailItem(
                 icon = Icons.Default.PlayArrow,
-                label = "Recordings",
+                label = stringResource(R.string.tv_destination_recordings),
                 isActive = currentDestination == TvNavigationDestination.Recordings,
                 isExpanded = isRailFocused,
                 onClick = { onNavigate(TvNavigationDestination.Recordings) }
@@ -167,7 +168,7 @@ internal fun BroadcastRail(
 
             RailItem(
                 icon = Icons.Default.Timer,
-                label = "Timers",
+                label = stringResource(R.string.tv_destination_timers),
                 isActive = currentDestination == TvNavigationDestination.Timers,
                 isExpanded = isRailFocused,
                 onClick = { onNavigate(TvNavigationDestination.Timers) }
@@ -177,7 +178,7 @@ internal fun BroadcastRail(
 
             RailItem(
                 icon = Icons.Default.Settings,
-                label = "Settings",
+                label = stringResource(R.string.tv_destination_settings),
                 isActive = currentDestination == TvNavigationDestination.Settings,
                 isExpanded = isRailFocused,
                 onClick = { onNavigate(TvNavigationDestination.Settings) }

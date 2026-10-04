@@ -398,7 +398,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 showErrorUi(
                     title = getString(R.string.webview_error_title),
-                    detail = error.message ?: getString(R.string.webview_error_generic)
+                    detail = io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.resolveWebErrorDetail(this@MainActivity)
                 )
                 return@launch
             }

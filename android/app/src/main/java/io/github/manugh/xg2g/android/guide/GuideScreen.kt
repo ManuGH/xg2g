@@ -214,9 +214,9 @@ internal fun GuideError(state: GuideScreenState.Error, onRefresh: () -> Unit) {
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = if (state.authRequired) {
-                    state.detail.ifBlank { stringResource(R.string.guide_auth_detail) }
+                    stringResource(R.string.guide_auth_detail)
                 } else {
-                    state.detail.ifBlank { stringResource(R.string.guide_generic_detail) }
+                    stringResource(R.string.guide_generic_detail)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
