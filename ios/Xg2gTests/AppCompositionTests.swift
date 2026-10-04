@@ -21,14 +21,23 @@ private final class StubDVRRepo: DVRRepository, @unchecked Sendable {
 }
 
 private final class StubPlaybackCtrl: PlaybackControlling {
+    var currentTarget: PlaybackTarget? = nil
     var currentChannel: Channel? = nil
+    var currentRecording: Recording? = nil
     var isPlaying: Bool = false
     func play(channel: Channel) {}
+    func play(recording: Recording, startPosition: Double?) {}
+    func seek(to position: Double) {}
     func stop() {}
     func togglePlayPause() {}
 
     func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
         handler(currentChannel, isPlaying)
+        return AnyCancellable {}
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (PlaybackTarget?, Bool) -> Void) -> AnyCancellable {
+        handler(currentTarget, isPlaying)
         return AnyCancellable {}
     }
 }

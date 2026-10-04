@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -49,6 +50,7 @@ func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 		Households:         deps.Households,
 		Receipts:           deps.Receipts,
 		TopologyService:    deps.TopologyService,
+		IPTVResolver:       deps.IPTVResolver,
 	}
 }
 
@@ -76,6 +78,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		Receipts:           deps.runtimeDeps.Receipts,
 		StoreRegistry:      deps.runtimeDeps.StoreRegistry,
 		TopologyService:    deps.runtimeDeps.TopologyService,
+		IPTVResolver:       deps.runtimeDeps.IPTVResolver,
 		PathMapper:         deps.recordingPathMapper,
 		ChannelManager:     deps.channelManager,
 		SeriesManager:      deps.seriesManager,
@@ -119,6 +122,14 @@ func (s *Server) LibraryService() *library.Service {
 // VODManager returns the underlying VOD manager.
 func (s *Server) VODManager() *vod.Manager {
 	return s.vodManager
+}
+
+// IPTVResolver returns the underlying IPTV resolver from v3 handler.
+func (s *Server) IPTVResolver() *edge.Resolver {
+	if s.v3Handler != nil {
+		return s.v3Handler.IPTVResolver()
+	}
+	return nil
 }
 
 func (s *Server) receiverClient() *openwebif.Client {

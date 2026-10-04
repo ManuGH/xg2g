@@ -33,6 +33,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/household"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -129,6 +130,7 @@ type Server struct {
 	profileResolver         profiles.Resolver
 	clientAV1Disabled       bool
 	iosNativeHEVCHWMode     string
+	iptvResolver            *edge.Resolver
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -401,6 +403,7 @@ type Dependencies struct {
 	PreflightProvider  PreflightProvider
 	IdentityService    *identity.Service
 	TopologyService    *receivertopology.Service
+	IPTVResolver       *edge.Resolver
 }
 
 // SetDependencies injects shared services into the handler.
@@ -593,6 +596,12 @@ func (s *Server) applyServiceDependencies(deps Dependencies) {
 	} else {
 		s.recordingsService = nil
 	}
+
+	if !isNil(deps.IPTVResolver) {
+		s.iptvResolver = deps.IPTVResolver
+	} else {
+		s.iptvResolver = nil
+	}
 }
 
 // applyDeviceAuthDependencies wires the device-auth state store and, when it is
@@ -630,4 +639,11 @@ func (s *Server) applyVODDependencies(deps Dependencies) {
 		s.vodManager = nil
 		s.artifacts = nil
 	}
+}
+
+// IPTVResolver returns the injected IPTV edge resolver, or nil if disabled.
+func (s *Server) IPTVResolver() *edge.Resolver {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.iptvResolver
 }

@@ -2211,6 +2211,24 @@ export function usePlaybackOrchestrator(
     };
   }, []);
 
+  // Stop stream on browser tab close, reload, or page navigation.
+  // We explicitly bind to 'pagehide' only (deliberately NOT 'beforeunload', which also fires
+  // on in-page mailto:/tel: links, file downloads, or cancelled leave dialogs without the user leaving).
+  // 'keepalive: true' ensures the stop fetch survives document teardown (delivery remains best-effort).
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleUnload = () => {
+      void controller.stop('unload', false);
+    };
+
+    window.addEventListener('pagehide', handleUnload);
+    return () => {
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, [controller]);
+
   useEffect(() => {
     if (!hostEnvironment.isTv) {
       return;

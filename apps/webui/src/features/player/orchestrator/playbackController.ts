@@ -100,7 +100,11 @@ export interface PlaybackController {
 
   // Live session lifecycle
   startLive(params: StartLiveParams): Promise<StartLiveResult>;
-  stop(reason?: PlaybackStopReason | string, notifyClose?: boolean): Promise<void>;
+  stop(
+    reason?: PlaybackStopReason | string,
+    notifyClose?: boolean,
+    options?: { keepalive?: boolean },
+  ): Promise<void>;
   activate(): void;
   dispose(): void;
 
@@ -220,6 +224,7 @@ export function createPlaybackController(
   function retireAndStopSession(
     sessionId: string,
     transportToUse?: LiveSessionTransport,
+    keepalive = false,
   ): Promise<void> {
     if (stoppingSessionIds.has(sessionId)) {
       return activeStopPromises.get(sessionId) ?? Promise.resolve();
@@ -240,7 +245,7 @@ export function createPlaybackController(
       }, stopRequestTimeoutMs);
 
       Promise.resolve(
-        transportForStop.postStopIntent({ sessionId, signal: stopController.signal }),
+        transportForStop.postStopIntent({ sessionId, signal: stopController.signal, keepalive }),
       ).then(
         () => {
           if (timer) clearTimeout(timer);
@@ -836,6 +841,7 @@ export function createPlaybackController(
   function stop(
     reason: PlaybackStopReason | string = 'user_stop',
     notifyClose: boolean = false,
+    options?: { keepalive?: boolean },
   ): Promise<void> {
     const inFlight = inFlightStopPromises.get(playbackEpoch);
     if (inFlight) {
@@ -895,6 +901,19 @@ export function createPlaybackController(
       }
     }
 
+    // Flush unadopted candidates and synchronously initiate remote session stop
+    // before ANY await / microtask yield, ensuring tab close / pagehide initiates fetch immediately.
+    flushPendingAdoptionCandidates();
+
+    const isUnload = reason === 'unload' || options?.keepalive === true;
+    const stopRemotePromise = sessionToStop
+      ? retireAndStopSession(
+          sessionToStop,
+          transportForActiveSession ?? getLatestTransport(),
+          isUnload,
+        )
+      : null;
+
     const doStop = async () => {
       // 4. Dispatch intent.stop.requested (media teardown commands)
       runtime.dispatch({
@@ -906,11 +925,8 @@ export function createPlaybackController(
 
       await runtime.waitForCommands();
 
-      // 5. Clean up active session and flush unadopted candidates
-      flushPendingAdoptionCandidates();
-
-      if (sessionToStop) {
-        await retireAndStopSession(sessionToStop, transportForActiveSession ?? getLatestTransport());
+      if (stopRemotePromise) {
+        await stopRemotePromise;
       }
 
       // 6. Dispatch normative.playback.stopped

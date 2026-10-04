@@ -10,6 +10,21 @@ import UIKit
 
 private let zapPlayerLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "test-ts-player")
 
+/// Pure decision policy for live player teardown ownership.
+///
+/// Ensures that a disappearing live player screen tears down playback and clears Now Playing
+/// only if the active playback manager state still belongs to this live screen/channel.
+/// Prevents a late unmount (e.g. during Live -> Offline or Live -> Recording transitions)
+/// from killing the successor's playback state.
+enum LiveTeardownDecision: Sendable {
+    static func shouldStopPlayback(activeState: PlaybackState, screenChannel: Channel) -> Bool {
+        if case .live(let activeChannel, _) = activeState {
+            return activeChannel.serviceRef == screenChannel.serviceRef || activeChannel == screenChannel
+        }
+        return false
+    }
+}
+
 /// SwiftUI screen to test and benchmark the Phase 1 1080i50 $\rightarrow$ 1080p50 VideoToolbox + Metal Vertical Slice.
 public struct TestTSPlayerScreen: View {
 
@@ -1315,12 +1330,14 @@ public struct TestTSPlayerScreen: View {
 
     private func teardownPlayback() {
         teardownTimeshift()
-        playbackManager.stop()
+        if LiveTeardownDecision.shouldStopPlayback(activeState: playbackManager.state, screenChannel: currentChannel) {
+            playbackManager.stop()
+            NowPlayingManager.shared.clear()
+        }
         isStreaming = false
         UIApplication.shared.isIdleTimerDisabled = false
         autoHideControlsTask?.cancel()
         hideZapToastTask?.cancel()
-        NowPlayingManager.shared.clear()
     }
 
     private func effectiveStreamURL(for rawURLString: String) -> URL? {

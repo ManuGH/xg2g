@@ -7,14 +7,53 @@ import OSLog
 
 private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "audio-session")
 
+/// Protocol defining the contract for audio session management and session leasing.
+protocol AudioSessionControlling: AnyObject, Sendable {
+    func configureForPlayback()
+    func deactivate()
+    @discardableResult
+    func activate(for token: UUID) -> Bool
+    @discardableResult
+    func deactivate(for token: UUID) -> Bool
+}
+
 /// Configures and manages the iOS audio session for video/live-stream playback,
 /// background audio, and seamless Picture-in-Picture.
-final class AudioSessionManager: @unchecked Sendable {
+final class AudioSessionManager: AudioSessionControlling, @unchecked Sendable {
 
     static let shared = AudioSessionManager()
     private let queue = DispatchQueue(label: "io.github.manugh.xg2g.audiosession", qos: .userInitiated)
+    private var activeLeaseToken: UUID?
 
     private init() {}
+
+    /// Activates the audio session for playback under the specified session lease token.
+    @discardableResult
+    func activate(for token: UUID) -> Bool {
+        queue.sync {
+            activeLeaseToken = token
+        }
+        configureForPlayback()
+        return true
+    }
+
+    /// Deactivates the audio session only if the lease still belongs to the specified session token.
+    /// If another session has acquired the lease (or if this token is stale), the deactivation is safely rejected.
+    @discardableResult
+    func deactivate(for token: UUID) -> Bool {
+        var isOwner = false
+        queue.sync {
+            if activeLeaseToken == token {
+                activeLeaseToken = nil
+                isOwner = true
+            }
+        }
+        guard isOwner else {
+            return false
+        }
+        deactivate()
+        return true
+    }
 
     /// Below this many output channels the route cannot carry multichannel
     /// content — every Bluetooth headphone, AirPods included, sits here.

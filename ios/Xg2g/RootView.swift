@@ -107,6 +107,7 @@ struct RootContentView: View {
                 recording: item.recording,
                 serverAddress: serverAddress,
                 initialPosition: item.initialPosition,
+                sessionToken: item.sessionToken,
                 model: model,
                 onProgressUpdate: { current, total in
                     model.updateRecordingProgress(
@@ -117,6 +118,7 @@ struct RootContentView: View {
                     )
                 }
             )
+            .id(item.sessionToken)
             .ignoresSafeArea(.all)
             }
         }

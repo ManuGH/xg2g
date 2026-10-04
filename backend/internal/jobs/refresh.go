@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/epg/store"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -28,6 +29,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/ManuGH/xg2g/internal/validate"
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -61,6 +63,8 @@ type refreshOptions struct {
 	piconPool       *PiconPool
 	enrichmentStore store.EnrichmentStore
 	enrichmentQueue *epg.EnrichmentQueue
+	iptvParser      *sourceref.Parser
+	iptvRegistry    *sourceref.Registry
 }
 
 type resolvedBouquet struct {
@@ -90,6 +94,15 @@ func WithEnrichmentStore(store store.EnrichmentStore) RefreshOption {
 func WithEnrichmentQueue(queue *epg.EnrichmentQueue) RefreshOption {
 	return func(opts *refreshOptions) {
 		opts.enrichmentQueue = queue
+	}
+}
+
+// WithIPTVSources provides an IPTV parser and registry to populate during refresh.
+// If parser or reg is nil, IPTV source population is skipped.
+func WithIPTVSources(parser *sourceref.Parser, reg *sourceref.Registry) RefreshOption {
+	return func(opts *refreshOptions) {
+		opts.iptvParser = parser
+		opts.iptvRegistry = reg
 	}
 }
 
@@ -163,6 +176,10 @@ func RefreshWithOptions(ctx context.Context, snap config.Snapshot, opts ...Refre
 	items, err := buildPlaylistItems(ctx, client, validBouquets, proxyBase)
 	if err != nil {
 		return nil, err
+	}
+
+	if refreshOpts.iptvParser != nil && refreshOpts.iptvRegistry != nil {
+		populateIPTVRegistry(logger, refreshOpts.iptvParser, refreshOpts.iptvRegistry, items)
 	}
 
 	if err := writeRefreshPlaylist(ctx, cfg, rt, items, refreshOpts); err != nil {
@@ -581,4 +598,58 @@ func safeURLHost(raw string) string {
 		return "<invalid-url>"
 	}
 	return u.Host
+}
+
+var testHookReplaceRegistry func(reg *sourceref.Registry, snapshot []sourceref.Source) error
+
+func populateIPTVRegistry(logger zerolog.Logger, parser *sourceref.Parser, reg *sourceref.Registry, items []playlist.Item) {
+	if parser == nil || reg == nil {
+		return
+	}
+	var (
+		parsedCount  int
+		skippedCount int
+		snapshot     []sourceref.Source
+	)
+	for _, item := range items {
+		ref := strings.TrimSpace(item.ServiceRef)
+		if ref == "" {
+			continue
+		}
+		parts := strings.Split(ref, ":")
+		if len(parts) == 0 || !sourceref.IsIPTVServiceType(parts[0]) {
+			continue
+		}
+		src, err := parser.Parse(ref)
+		if err != nil {
+			skippedCount++
+			continue
+		}
+		parsedCount++
+		snapshot = append(snapshot, src)
+	}
+
+	replaceFn := reg.Replace
+	if testHookReplaceRegistry != nil {
+		replaceFn = func(snapshot []sourceref.Source) error {
+			return testHookReplaceRegistry(reg, snapshot)
+		}
+	}
+
+	if err := replaceFn(snapshot); err != nil {
+		if errors.Is(err, sourceref.ErrCollision) {
+			logger.Warn().Msg("iptv sources snapshot rejected due to collision; keeping previous snapshot")
+			return
+		}
+		logger.Warn().Err(err).Msg("failed to update iptv sources registry")
+		return
+	}
+
+	dedupedCount := parsedCount - reg.Len()
+	logger.Info().
+		Int("parsed", parsedCount).
+		Int("skipped", skippedCount).
+		Int("deduped", dedupedCount).
+		Int("total_registered", reg.Len()).
+		Msg("iptv sources registry updated")
 }

@@ -59,21 +59,45 @@ private final class MockDVRRepository: DVRRepository, @unchecked Sendable {
 }
 
 private final class MockPlaybackController: PlaybackControlling {
-    var currentChannel: Channel? {
+    var currentTarget: PlaybackTarget? {
         didSet { notify() }
+    }
+    var currentChannel: Channel? {
+        get {
+            if case .live(let channel) = currentTarget { return channel }
+            return nil
+        }
+        set {
+            if let newValue {
+                currentTarget = .live(newValue)
+            } else if case .live = currentTarget {
+                currentTarget = nil
+            }
+        }
+    }
+    var currentRecording: Recording? {
+        if case .recording(let rec, _) = currentTarget { return rec }
+        return nil
     }
     var isPlaying: Bool = false {
         didSet { notify() }
     }
-    private var observers: [@MainActor (Channel?, Bool) -> Void] = []
+    private var observers: [@MainActor (PlaybackTarget?, Bool) -> Void] = []
 
     func play(channel: Channel) {
-        currentChannel = channel
+        currentTarget = .live(channel)
         isPlaying = true
     }
 
+    func play(recording: Recording, startPosition: Double? = nil) {
+        currentTarget = .recording(recording, startPosition: startPosition)
+        isPlaying = true
+    }
+
+    func seek(to position: Double) {}
+
     func stop() {
-        currentChannel = nil
+        currentTarget = nil
         isPlaying = false
     }
 
@@ -82,31 +106,60 @@ private final class MockPlaybackController: PlaybackControlling {
     }
 
     func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
+        observeTargetState { target, isPlaying in
+            let channel: Channel?
+            if case .live(let ch) = target {
+                channel = ch
+            } else {
+                channel = nil
+            }
+            handler(channel, isPlaying)
+        }
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (PlaybackTarget?, Bool) -> Void) -> AnyCancellable {
         observers.append(handler)
-        handler(currentChannel, isPlaying)
+        handler(currentTarget, isPlaying)
         return AnyCancellable {}
     }
 
     private func notify() {
         for observer in observers {
-            observer(currentChannel, isPlaying)
+            observer(currentTarget, isPlaying)
         }
     }
 }
 
 private final class LifetimePlaybackController: PlaybackControlling {
-    var currentChannel: Channel?
+    var currentTarget: PlaybackTarget?
+    var currentChannel: Channel? {
+        if case .live(let channel) = currentTarget { return channel }
+        return nil
+    }
+    var currentRecording: Recording? {
+        if case .recording(let rec, _) = currentTarget { return rec }
+        return nil
+    }
     var isPlaying: Bool = false
     var onPlay: ((Channel) -> Void)?
+    var onPlayRecording: ((Recording) -> Void)?
 
     func play(channel: Channel) {
-        currentChannel = channel
+        currentTarget = .live(channel)
         isPlaying = true
         onPlay?(channel)
     }
 
+    func play(recording: Recording, startPosition: Double? = nil) {
+        currentTarget = .recording(recording, startPosition: startPosition)
+        isPlaying = true
+        onPlayRecording?(recording)
+    }
+
+    func seek(to position: Double) {}
+
     func stop() {
-        currentChannel = nil
+        currentTarget = nil
         isPlaying = false
     }
 
@@ -116,6 +169,11 @@ private final class LifetimePlaybackController: PlaybackControlling {
 
     func observeState(_ handler: @escaping @MainActor (Channel?, Bool) -> Void) -> AnyCancellable {
         handler(currentChannel, isPlaying)
+        return AnyCancellable {}
+    }
+
+    func observeTargetState(_ handler: @escaping @MainActor (PlaybackTarget?, Bool) -> Void) -> AnyCancellable {
+        handler(currentTarget, isPlaying)
         return AnyCancellable {}
     }
 }
