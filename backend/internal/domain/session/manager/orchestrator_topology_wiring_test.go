@@ -487,4 +487,3 @@ func TestOrchestrator_IPTV_ReceiverUsageEnforcement_BypassesTopology(t *testing.
 
 	assert.Equal(t, -1, leasesIPTV.Slot, "IPTV must consume -1 (zero) physical tuner slots")
 }
-

@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/epg"
 	householddomain "github.com/ManuGH/xg2g/internal/household"
@@ -61,7 +64,7 @@ func setupCanaryResolver(t *testing.T) (*edge.Resolver, sourceref.ID, *sourceref
 
 // refFreeRoutes documents routes that do not take or return channel/stream service references.
 var refFreeRoutes = map[string]string{
-	"GET /.well-known/assetlinks.json":                                    "Static Android Digital Asset Links metadata",
+	"GET /.well-known/assetlinks.json":                                   "Static Android Digital Asset Links metadata",
 	"POST /api/v3/auth/bootstrap/acknowledge-recovery":                   "Auth: recovery acknowledgment",
 	"POST /api/v3/auth/device/grant/finish":                              "Auth: device authorization finish",
 	"POST /api/v3/auth/device/grant/start":                               "Auth: device authorization start",
@@ -80,7 +83,7 @@ var refFreeRoutes = map[string]string{
 	"POST /api/v3/auth/recovery":                                         "Auth: start account recovery",
 	"POST /api/v3/auth/session":                                          "Auth: create user session",
 	"DELETE /api/v3/auth/session":                                        "Auth: delete user session",
-	"POST /api/v3/auth/sessions/revoke-others":                            "Auth: revoke other active sessions",
+	"POST /api/v3/auth/sessions/revoke-others":                           "Auth: revoke other active sessions",
 	"GET /api/v3/auth/status":                                            "Auth: check session authentication status",
 	"GET /api/v3/dvr/capabilities":                                       "DVR: tuner slot and hardware capabilities",
 	"GET /api/v3/dvr/status":                                             "DVR: engine admission status",
@@ -107,8 +110,8 @@ var refFreeRoutes = map[string]string{
 	"POST /api/v3/household/unlock":                                      "Household: authenticate unlock pin",
 	"GET /api/v3/notifications":                                          "Notifications: list notifications",
 	"DELETE /api/v3/notifications/{id}":                                  "Notifications: delete notification",
-	"POST /api/v3/notifications/mark-all-read":                          "Notifications: mark all read",
-	"POST /api/v3/notifications/mark-read":                              "Notifications: mark single read",
+	"POST /api/v3/notifications/mark-all-read":                           "Notifications: mark all read",
+	"POST /api/v3/notifications/mark-read":                               "Notifications: mark single read",
 	"POST /api/v3/notifications/push-subscriptions":                      "Notifications: register WebPush subscription",
 	"GET /api/v3/notifications/stream":                                   "Notifications: SSE notification stream",
 	"GET /api/v3/notifications/vapid-key":                                "Notifications: get VAPID public key",
@@ -162,24 +165,24 @@ var refFreeRoutes = map[string]string{
 
 // exercisedRoutes documents the inbound entry points that are exercised with opaque IDs.
 var exercisedRoutes = map[string]string{
-	"POST /api/v3/intents":                     "Inbound: stream start/stop intents",
-	"POST /api/v3/services/now-next":           "Inbound: batch now-next EPG lookups",
-	"POST /api/v3/live/playback-summary":       "Inbound: batch playback summary",
-	"POST /api/v3/timers":                      "Inbound: timer creation",
-	"GET /api/v3/timers/{timerId}":             "Inbound: timer lookup by opaque ID",
-	"PATCH /api/v3/timers/{timerId}":           "Inbound: timer update by opaque ID",
-	"DELETE /api/v3/timers/{timerId}":          "Inbound: timer deletion by opaque ID",
-	"POST /api/v3/timers/conflicts:preview":    "Inbound: timer conflicts preview",
-	"POST /api/v3/stream/prepare":              "Inbound: zap preparation start",
-	"GET /api/v3/stream/prepare/{preparationId}": "Inbound: zap preparation status",
+	"POST /api/v3/intents":                               "Inbound: stream start/stop intents",
+	"POST /api/v3/services/now-next":                     "Inbound: batch now-next EPG lookups",
+	"POST /api/v3/live/playback-summary":                 "Inbound: batch playback summary",
+	"POST /api/v3/timers":                                "Inbound: timer creation",
+	"GET /api/v3/timers/{timerId}":                       "Inbound: timer lookup by opaque ID",
+	"PATCH /api/v3/timers/{timerId}":                     "Inbound: timer update by opaque ID",
+	"DELETE /api/v3/timers/{timerId}":                    "Inbound: timer deletion by opaque ID",
+	"POST /api/v3/timers/conflicts:preview":              "Inbound: timer conflicts preview",
+	"POST /api/v3/stream/prepare":                        "Inbound: zap preparation start",
+	"GET /api/v3/stream/prepare/{preparationId}":         "Inbound: zap preparation status",
 	"POST /api/v3/stream/prepare/{preparationId}/commit": "Inbound: zap preparation commit",
-	"DELETE /api/v3/stream/prepare/{preparationId}": "Inbound: zap preparation cancel",
-	"POST /api/v3/household/profiles":          "Inbound: household profile creation",
-	"PUT /api/v3/household/profiles/{profileId}": "Inbound: household profile update",
-	"PUT /api/v3/household/profiles/{id}":      "Inbound: household profile update by id",
-	"POST /api/v3/profiles":                    "Inbound: legacy profile create alias",
-	"PUT /api/v3/profiles/{id}":                "Inbound: legacy profile update alias",
-	"POST /api/v3/telemetry/playback":          "Inbound: client telemetry playback reporting",
+	"DELETE /api/v3/stream/prepare/{preparationId}":      "Inbound: zap preparation cancel",
+	"POST /api/v3/household/profiles":                    "Inbound: household profile creation",
+	"PUT /api/v3/household/profiles/{profileId}":         "Inbound: household profile update",
+	"PUT /api/v3/household/profiles/{id}":                "Inbound: household profile update by id",
+	"POST /api/v3/profiles":                              "Inbound: legacy profile create alias",
+	"PUT /api/v3/profiles/{id}":                          "Inbound: legacy profile update alias",
+	"POST /api/v3/telemetry/playback":                    "Inbound: client telemetry playback reporting",
 }
 
 // allowlistEntry describes an outbound sink or log that currently leaks raw refs.
@@ -914,4 +917,45 @@ func TestIPTV_CanaryLeakAudit_ConcurrentReplaceRace(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons asserts that the exported public playlist
+// and file server responses contain zero canary tokens, hosts, or raw references.
+func TestIPTV_CanaryLeakAudit_ExportedPlaylistAndPicons(t *testing.T) {
+	_, opaqueID, _ := setupCanaryResolver(t)
+
+	dataDir := t.TempDir()
+	piconsDir := filepath.Join(dataDir, "picons")
+	require.NoError(t, os.MkdirAll(piconsDir, 0755))
+
+	// Write mock picon file using stored sanitized name
+	storeRef := strings.TrimRight(strings.ReplaceAll(strings.ReplaceAll(canaryRawRef, ":", "_"), "/", "_"), "_")
+	fakePNG := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRcanary_clean")
+	require.NoError(t, os.WriteFile(filepath.Join(piconsDir, storeRef+".png"), fakePNG, 0644))
+
+	// Setup public playlist in dataDir
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+	maskedItem := fmt.Sprintf("#EXTM3U\n#EXTINF:-1 tvg-id=%q tvg-logo=\"/logos/%s.png\",Canary Channel 1\n/api/v3/stream/live/%s\n", opaqueID, opaqueID, opaqueID)
+	require.NoError(t, os.WriteFile(publicPlaylistPath, []byte(maskedItem), 0644))
+
+	// Setup raw playlist in dataDir with secrets
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	rawItem := fmt.Sprintf("#EXTM3U\n#EXTINF:-1 tvg-id=%q tvg-logo=\"/logos/4097_test.png\",Canary Channel 1\n%s\n", canaryRawRef, canaryRawRef)
+	require.NoError(t, os.WriteFile(rawPlaylistPath, []byte(rawItem), 0600))
+
+	// Setup file server and test /playlist.m3u and /playlist_public.m3u
+	fileServer := controlhttp.SecureFileServer(dataDir, nil)
+
+	for _, reqPath := range []string{"/playlist.m3u", "/playlist_public.m3u"} {
+		req := httptest.NewRequest(http.MethodGet, reqPath, nil)
+		rec := httptest.NewRecorder()
+		fileServer.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code, "file server should return 200 for %s", reqPath)
+		body := rec.Body.String()
+		for _, marker := range canaryMarkers {
+			assert.False(t, strings.Contains(body, marker), "playlist response for %s leaked canary marker %q: %s", reqPath, marker, body)
+		}
+		assert.Contains(t, body, string(opaqueID))
+	}
 }

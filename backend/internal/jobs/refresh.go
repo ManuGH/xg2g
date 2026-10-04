@@ -458,7 +458,7 @@ func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.R
 
 	// Pass Public URL to M3U writer for absolute paths in M3U (Plex compatibility).
 	// WebUI uses relative paths internally.
-	if err := writeM3U(ctx, playlistPath, items, rt.PublicURL, rt.XTvgURL); err != nil {
+	if err := writeM3U(ctx, playlistPath, items, rt.PublicURL, rt.XTvgURL, 0600); err != nil {
 		metrics.IncRefreshFailure("write_m3u")
 		metrics.RecordPlaylistFileValidity("m3u", false)
 		err = fmt.Errorf("failed to write M3U playlist: %w", err)
@@ -477,7 +477,108 @@ func writeRefreshPlaylist(ctx context.Context, cfg config.AppConfig, rt config.R
 		Int("channels", len(items)).
 		Msg("playlist written")
 
+	// Generate and write masked public playlist (playlist_public.m3u) with 0644 permissions
+	publicItems := buildPublicPlaylistItems(items, opts.iptvParser, rt.ProxyBaseURL, rt.PublicURL)
+	publicPlaylistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, "playlist_public.m3u")
+	if err != nil {
+		err = WrapPlaylistPathError(fmt.Errorf("invalid public playlist path: %w", err))
+		logJobError("refresh", logger.Error().Err(err).Str("playlist", "playlist_public.m3u"), err).Msg("invalid public playlist path")
+		metrics.IncRefreshFailure("playlist_path_invalid")
+		return err
+	}
+	if err := writeM3U(ctx, publicPlaylistPath, publicItems, rt.PublicURL, rt.XTvgURL, 0644); err != nil {
+		metrics.IncRefreshFailure("write_public_m3u")
+		err = fmt.Errorf("failed to write public M3U playlist: %w", err)
+		logJobError("refresh", logger.Error().Err(err).Str("event", "refresh.failed").Str("stage", "write_public_m3u").Str("path", publicPlaylistPath), err).Msg("failed to write public M3U playlist")
+		return err
+	}
+	logger.Info().
+		Str("event", "playlist_public.write").
+		Str("path", publicPlaylistPath).
+		Int("channels", len(publicItems)).
+		Msg("public playlist written")
+
 	return nil
+}
+
+// buildPublicPlaylistItems converts internal playlist items into public export playlist items.
+// For IPTV services, it masks service references and URLs to opaque IDs (iptv_<id>) and
+// routes live playback through /api/v3/stream/live/iptv_<id>, while masking logo URLs to
+// /logos/iptv_<id>.png. Non-IPTV (DVB) items remain unaltered.
+func buildPublicPlaylistItems(items []playlist.Item, parser *sourceref.Parser, proxyBase, publicURL string) []playlist.Item {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]playlist.Item, len(items))
+	for i, it := range items {
+		ref := strings.TrimSpace(it.ServiceRef)
+		if ref == "" {
+			ref = strings.TrimSpace(it.TvgID)
+		}
+
+		if strings.HasPrefix(ref, sourceref.IDPrefix) {
+			opaqueID := ref
+			masked := it
+			masked.TvgID = opaqueID
+			masked.ServiceRef = opaqueID
+			streamPath := "/api/v3/stream/live/" + opaqueID
+			if proxyBase != "" {
+				masked.URL = strings.TrimRight(proxyBase, "/") + streamPath
+			} else if publicURL != "" {
+				masked.URL = strings.TrimRight(publicURL, "/") + streamPath
+			} else {
+				masked.URL = streamPath
+			}
+			if it.TvgLogo != "" {
+				query := ""
+				if idx := strings.Index(it.TvgLogo, "?"); idx != -1 {
+					query = it.TvgLogo[idx:]
+				}
+				masked.TvgLogo = fmt.Sprintf("/logos/%s.png%s", opaqueID, query)
+			}
+			out[i] = masked
+			continue
+		}
+
+		parts := strings.Split(ref, ":")
+		isIPTV := len(parts) > 0 && sourceref.IsIPTVServiceType(parts[0])
+
+		if !isIPTV || parser == nil {
+			out[i] = it
+			continue
+		}
+
+		src, err := parser.Parse(ref)
+		if err != nil {
+			out[i] = it
+			continue
+		}
+
+		opaqueID := string(src.ID())
+		masked := it
+		masked.TvgID = opaqueID
+		masked.ServiceRef = opaqueID
+
+		streamPath := "/api/v3/stream/live/" + opaqueID
+		if proxyBase != "" {
+			masked.URL = strings.TrimRight(proxyBase, "/") + streamPath
+		} else if publicURL != "" {
+			masked.URL = strings.TrimRight(publicURL, "/") + streamPath
+		} else {
+			masked.URL = streamPath
+		}
+
+		if it.TvgLogo != "" {
+			query := ""
+			if idx := strings.Index(it.TvgLogo, "?"); idx != -1 {
+				query = it.TvgLogo[idx:]
+			}
+			masked.TvgLogo = fmt.Sprintf("/logos/%s.png%s", opaqueID, query)
+		}
+
+		out[i] = masked
+	}
+	return out
 }
 
 func writeRefreshXMLTV(ctx context.Context, cfg config.AppConfig, rt config.RuntimeSnapshot, client epgFetchClient, items []playlist.Item, opts refreshOptions) (int, error) {

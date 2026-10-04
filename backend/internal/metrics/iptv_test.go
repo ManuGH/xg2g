@@ -25,6 +25,7 @@ func TestIPTVLegacyIngress_Normalization(t *testing.T) {
 		EndpointStreamSmooth,
 		EndpointHousehold,
 		EndpointTelemetry,
+		EndpointLogos,
 	}
 
 	for _, ep := range expectedEndpoints {
@@ -72,6 +73,7 @@ func TestIPTVLegacyIngress_LabelSetEnumStrict(t *testing.T) {
 		"stream_smooth":  {},
 		"household":      {},
 		"telemetry":      {},
+		"logos":          {},
 		"other":          {},
 	}
 

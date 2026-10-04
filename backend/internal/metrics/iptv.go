@@ -20,6 +20,7 @@ const (
 	EndpointStreamSmooth  = "stream_smooth"
 	EndpointHousehold     = "household"
 	EndpointTelemetry     = "telemetry"
+	EndpointLogos         = "logos"
 	EndpointOther         = "other"
 )
 
@@ -33,6 +34,7 @@ var allowedIPTVEndpoints = map[string]struct{}{
 	EndpointStreamSmooth:  {},
 	EndpointHousehold:     {},
 	EndpointTelemetry:     {},
+	EndpointLogos:         {},
 	EndpointOther:         {},
 }
 
