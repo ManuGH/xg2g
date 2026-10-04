@@ -1330,4 +1330,147 @@ struct LocalizationTests {
             Self.saveScreenshot(image, name: "offline_player_\(code)")
         }
     }
+
+    // MARK: - 27. Recording Player Error Presentation & Diagnostic Separation
+
+    @Test("Recording player failure policy maps raw technical errors to catalog-backed DE/EN banners without leaking raw descriptions")
+    func recordingPlayerErrorPresentationSeparatesDiagnosticFromBanner() {
+        struct InjectedTechnicalError: LocalizedError {
+            let errorDescription: String?
+        }
+
+        let injectedErrors = [
+            "AVFoundation CoreMediaErrorDomain -12865: Connection dropped",
+            "HTTP 500: Database lock held by pid 4920 at /var/data/xg2g.db",
+            "Sensitive credential leak: Bearer eyJhbGciOiJIUzI1NiIsIn...",
+            "Disk read failure: unexpected EOF at sector 0x7FFF"
+        ]
+
+        let token = UUID()
+
+        for rawDesc in injectedErrors {
+            let error = InjectedTechnicalError(errorDescription: rawDesc)
+
+            // 1. English evaluation
+            let actionEN = RecordingPlaybackDecision.decideStatusAction(
+                status: .failed,
+                error: error,
+                sessionToken: token,
+                activeToken: token,
+                startPosition: nil,
+                locale: enLocale
+            )
+
+            // 2. German evaluation
+            let actionDE = RecordingPlaybackDecision.decideStatusAction(
+                status: .failed,
+                error: error,
+                sessionToken: token,
+                activeToken: token,
+                startPosition: nil,
+                locale: deLocale
+            )
+
+            guard case .handleFailure(let userMsgEN, let diagEN) = actionEN,
+                  case .handleFailure(let userMsgDE, let diagDE) = actionDE else {
+                Issue.record("Expected .handleFailure for matching active token")
+                continue
+            }
+
+            // Catalog-backed exact matching
+            #expect(userMsgEN == "Playback error")
+            #expect(userMsgDE == "Wiedergabefehler")
+
+            // Raw descriptions MUST NOT leak into user-visible messages
+            #expect(!userMsgEN.contains(rawDesc), "Raw error description leaked into EN user message: \(userMsgEN)")
+            #expect(!userMsgDE.contains(rawDesc), "Raw error description leaked into DE user message: \(userMsgDE)")
+
+            // Diagnostic details MUST be preserved for telemetry and logging
+            #expect(diagEN == rawDesc, "EN diagnostic detail was lost or corrupted")
+            #expect(diagDE == rawDesc, "DE diagnostic detail was lost or corrupted")
+        }
+
+        // Test nil error fallback as well
+        let nilActionEN = RecordingPlaybackDecision.decideStatusAction(
+            status: .failed,
+            error: nil,
+            sessionToken: token,
+            activeToken: token,
+            startPosition: nil,
+            locale: enLocale
+        )
+        let nilActionDE = RecordingPlaybackDecision.decideStatusAction(
+            status: .failed,
+            error: nil,
+            sessionToken: token,
+            activeToken: token,
+            startPosition: nil,
+            locale: deLocale
+        )
+        guard case .handleFailure(let nilMsgEN, let nilDiagEN) = nilActionEN,
+              case .handleFailure(let nilMsgDE, let nilDiagDE) = nilActionDE else {
+            Issue.record("Expected .handleFailure for nil error with matching token")
+            return
+        }
+        #expect(nilMsgEN == "Playback error")
+        #expect(nilMsgDE == "Wiedergabefehler")
+        #expect(nilDiagEN == "Playback error")
+        #expect(nilDiagDE == "Playback error")
+    }
+
+    @Test("Programmatic smoke test: Render RecordingPlayerScreen error state in German and English, retaining PNG artifacts")
+    @MainActor
+    func recordingPlayerScreenErrorStateRenderSmoke() throws {
+        let sample = Recording(
+            id: "rec-err-1",
+            title: "Tagesschau 20:00",
+            description: "Nachrichten",
+            beginDate: Date(timeIntervalSince1970: 1774880000),
+            durationSeconds: 900,
+            serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+            filename: "rec-err.ts",
+            status: "completed",
+            serverResumePos: 0
+        )
+        let addr = try ServerAddressParser.parseTrusted("http://127.0.0.1:8089/")
+        let token = UUID()
+
+        let locales: [(code: String, loc: Locale, expectedMsg: String, expectedClose: String)] = [
+            ("de", deLocale, "Wiedergabefehler", "Schließen"),
+            ("en", enLocale, "Playback error", "Close")
+        ]
+
+        for (code, loc, expectedMsg, _) in locales {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+            UserDefaults.standard.synchronize()
+
+            let view = RecordingPlayerScreen(
+                recording: sample,
+                serverAddress: addr,
+                sessionToken: token,
+                errorMessage: expectedMsg
+            )
+            .environment(\.locale, loc)
+            .preferredColorScheme(.dark)
+
+            let controller = UIHostingController(rootView: view)
+            controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            controller.overrideUserInterfaceStyle = .dark
+
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2.0
+            let renderer = UIGraphicsImageRenderer(bounds: controller.view.bounds, format: format)
+            let image = renderer.image { _ in
+                controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+            }
+            #expect(image.size.width > 0 && image.size.height > 0)
+            Self.saveScreenshot(image, name: "recording_player_error_\(code)")
+        }
+    }
 }
