@@ -20,9 +20,9 @@ struct SmartSearchResultsView: View {
             VStack(spacing: 16) {
                 Spacer()
                 ContentUnavailableView(
-                    "Keine Treffer für „\(result.query)“",
+                    String(localized: "No results for “\(result.query)”"),
                     systemImage: "magnifyingglass",
-                    description: Text("Weder Sender noch laufende oder kommende Sendungen entsprechen deiner Suche.")
+                    description: Text(String(localized: "No channels, currently airing, or upcoming programmes match your search."))
                 )
                 .foregroundStyle(Theme.Colors.textSecondary)
                 Spacer()
@@ -35,7 +35,7 @@ struct SmartSearchResultsView: View {
                     if !result.channels.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             sectionHeader(
-                                title: "SENDER",
+                                title: String(localized: "CHANNELS"),
                                 icon: "tv",
                                 count: result.channels.count,
                                 color: Theme.Colors.accentAction
@@ -57,7 +57,7 @@ struct SmartSearchResultsView: View {
                                                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                                                             .foregroundStyle(Theme.Colors.accentAction)
                                                     }
-                                                    Text(channel.name)
+                                                    Text(verbatim: channel.name)
                                                         .font(.system(size: 13, weight: .bold))
                                                         .foregroundStyle(Theme.Colors.textPrimary)
                                                         .lineLimit(1)
@@ -88,7 +88,7 @@ struct SmartSearchResultsView: View {
                     if !result.liveShows.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             sectionHeader(
-                                title: "JETZT LIVE",
+                                title: String(localized: "LIVE NOW"),
                                 icon: "dot.radiowaves.left.and.right",
                                 count: result.liveShows.count,
                                 color: Theme.Colors.accentLive
@@ -119,7 +119,7 @@ struct SmartSearchResultsView: View {
                     if !result.upcomingShows.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             sectionHeader(
-                                title: "DEMNÄCHST IM PROGRAMM",
+                                title: String(localized: "UPCOMING"),
                                 icon: "calendar.badge.clock",
                                 count: result.upcomingShows.count,
                                 color: Theme.Colors.accentAction
@@ -189,7 +189,7 @@ private struct LiveSearchResultCard: View {
             HStack(spacing: 8) {
                 ChannelLogo(url: item.channel.logoURL, name: item.channel.name, size: 26)
 
-                Text(item.channel.name)
+                Text(verbatim: item.channel.name)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -208,13 +208,13 @@ private struct LiveSearchResultCard: View {
 
             // Title & description
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.entry.title)
+                Text(verbatim: item.entry.title)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)
 
                 if let desc = item.entry.description, !desc.isEmpty {
-                    Text(desc)
+                    Text(verbatim: desc)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(2)
@@ -234,7 +234,7 @@ private struct LiveSearchResultCard: View {
                         Spacer()
 
                         if let rem = item.remainingMinutes {
-                            Text("noch \(rem) Min")
+                            Text(String(localized: "• \(rem) min left"))
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
@@ -248,7 +248,7 @@ private struct LiveSearchResultCard: View {
                     HStack(spacing: 5) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text("Live ansehen")
+                        Text("Watch Live")
                             .font(.system(size: 13, weight: .bold))
                     }
                     .padding(.horizontal, 14)
@@ -262,7 +262,7 @@ private struct LiveSearchResultCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "record.circle")
                             .font(.system(size: 12))
-                        Text("Aufnehmen")
+                        Text("Record")
                             .font(.system(size: 12, weight: .medium))
                     }
                     .padding(.horizontal, 11)
@@ -321,7 +321,7 @@ private struct UpcomingSearchResultCard: View {
                     Text("•")
                         .foregroundStyle(Theme.Colors.textDisabled)
 
-                    Text(item.channel.name)
+                    Text(verbatim: item.channel.name)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
@@ -330,13 +330,13 @@ private struct UpcomingSearchResultCard: View {
                 }
 
                 // Show Title
-                Text(item.entry.title)
+                Text(verbatim: item.entry.title)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(2)
 
                 if let desc = item.entry.description, !desc.isEmpty {
-                    Text(desc)
+                    Text(verbatim: desc)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .lineLimit(1)

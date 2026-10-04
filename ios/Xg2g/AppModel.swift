@@ -4,7 +4,10 @@
 
 import Foundation
 import Observation
+import os
 import UIKit
+
+private let appLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "app")
 
 /// Remembers which server this app is pointed at.
 ///
@@ -61,6 +64,23 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var title: LocalizedStringResource {
+        switch self {
+        case .home:
+            return LocalizedStringResource("For You", comment: "Home tab title")
+        case .liveTV:
+            return LocalizedStringResource("Live TV", comment: "Live TV tab title")
+        case .guide:
+            return LocalizedStringResource("Guide", comment: "Guide tab title")
+        case .recordings:
+            return LocalizedStringResource("Recordings", comment: "Recordings tab title")
+        case .timers:
+            return LocalizedStringResource("Timers", comment: "Timers tab title")
+        case .settings:
+            return LocalizedStringResource("Settings", comment: "Settings tab title")
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .home: return "sparkles.tv"
@@ -79,18 +99,21 @@ struct RerunItem: Identifiable, Sendable {
     let channel: Channel
     let entry: NowNext.Entry
 
-    var formattedRelativeTime: String {
+    var formattedRelativeTimeResource: LocalizedStringResource {
         let calendar = Calendar.current
+        let timeString = entry.formattedStartTime
         if calendar.isDateInToday(entry.start) {
-            return "Heute, \(entry.formattedStartTime) Uhr"
+            return LocalizedStringResource("Today, \(timeString)")
         } else if calendar.isDateInTomorrow(entry.start) {
-            return "Morgen, \(entry.formattedStartTime) Uhr"
+            return LocalizedStringResource("Tomorrow, \(timeString)")
         } else {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "de_DE")
-            f.dateFormat = "E, d. MMM • HH:mm"
-            return "\(f.string(from: entry.start)) Uhr"
+            let dateString = entry.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+            return LocalizedStringResource("\(dateString) • \(timeString)")
         }
+    }
+
+    var formattedRelativeTime: String {
+        String(localized: formattedRelativeTimeResource)
     }
 }
 
@@ -112,6 +135,24 @@ final class AppModel {
     private(set) var isLoadingChannels = false
     private(set) var lastDataRefreshTime: Date?
 
+    func setChannelsForTesting(
+        _ channels: [Channel],
+        schedule: [String: NowNext] = [:],
+        fullEpg: [String: [NowNext.Entry]] = [:]
+    ) {
+        self.channels = channels
+        self.schedule = schedule
+        self.fullEpg = fullEpg
+    }
+
+    func setRecordingsAndTimersForTesting(
+        recordings: [Recording] = [],
+        timers: [DVRTimer] = []
+    ) {
+        self.recordings = recordings
+        self.timers = timers
+    }
+
     /// Bumped whenever the channel list, Now/Next schedule or full EPG is replaced.
     ///
     /// Views that derive an expensive projection from this data key their
@@ -126,7 +167,21 @@ final class AppModel {
     private(set) var timers: [DVRTimer] = []
     private(set) var isLoadingTimers = false
 
+    private(set) var currentError: UserFacingError?
     private(set) var lastError: String?
+
+    func clearError() {
+        setError(nil)
+    }
+
+    private func setError(_ error: UserFacingError?) {
+        currentError = error
+        lastError = error?.localizedMessage
+        if let error {
+            appLogger.error("User-facing error presented: [\(error.diagnosticSummary, privacy: .public)]")
+            TelemetryServer.shared.log("[ERROR] \(error.diagnosticSummary)")
+        }
+    }
 
     /// The stream currently handed to the player, if any.
     private(set) var liveStream: LiveStream?
@@ -193,20 +248,29 @@ final class AppModel {
         /// User-friendly label for standard settings UI
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch"
-            case .passthrough: return "Originalqualität"
-            case .qsvNormalize: return "Kompatibilität"
-            case .dataSaver: return "Datensparen"
+            case .auto: return String(localized: "Auto")
+            case .passthrough: return String(localized: "Original Quality")
+            case .qsvNormalize: return String(localized: "Compatibility")
+            case .dataSaver: return String(localized: "Data Saver")
+            }
+        }
+
+        var localizedTitle: LocalizedStringResource {
+            switch self {
+            case .auto: return LocalizedStringResource("Auto")
+            case .passthrough: return LocalizedStringResource("Original Quality")
+            case .qsvNormalize: return LocalizedStringResource("Compatibility")
+            case .dataSaver: return LocalizedStringResource("Data Saver")
             }
         }
 
         /// Subtitle / explanation
         var summary: String {
             switch self {
-            case .auto: return "xg2g ermittelt die beste Balance aus Qualität und Latenz (Empfohlen)"
-            case .passthrough: return "1:1 Bitstream ohne Video-Transkodierung"
-            case .qsvNormalize: return "Standardisiertes HLS mit maximaler Gerätekompatibilität"
-            case .dataSaver: return "Bandbreitenoptimiertes Streaming (HEVC/AV1) für unterwegs"
+            case .auto: return String(localized: "xg2g finds the best balance of quality and latency (Recommended)")
+            case .passthrough: return String(localized: "1:1 bitstream without video transcoding")
+            case .qsvNormalize: return String(localized: "Standardized HLS with maximum device compatibility")
+            case .dataSaver: return String(localized: "Bandwidth-optimized streaming (HEVC/AV1) for on-the-go")
             }
         }
 
@@ -248,60 +312,68 @@ final class AppModel {
 
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch"
-            case .native: return "Native Live-TV"
-            case .hls: return "Server-Streaming (HLS)"
+            case .auto: return String(localized: "Auto")
+            case .native: return String(localized: "Native Live TV")
+            case .hls: return String(localized: "Server Streaming (HLS)")
+            }
+        }
+
+        var localizedTitle: LocalizedStringResource {
+            switch self {
+            case .auto: return LocalizedStringResource("Auto")
+            case .native: return LocalizedStringResource("Native Live TV")
+            case .hls: return LocalizedStringResource("Server Streaming (HLS)")
             }
         }
 
         /// One line for the settings row.
         var summary: String {
             switch self {
-            case .auto: return "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
-            case .native: return "xg2g liefert den Sender möglichst unverändert an den nativen Player"
-            case .hls: return "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
+            case .auto: return String(localized: "xg2g dynamically chooses the best route for your device and network (Recommended)")
+            case .native: return String(localized: "xg2g delivers the channel as directly as possible to the native player")
+            case .hls: return String(localized: "Enables timeshift/pause, remote streaming, and adaptive bitrate")
             }
         }
 
         /// What the viewer gains and gives up, in their terms.
-        var tradeoff: (gains: [String], costs: [String]) {
+        var tradeoff: (gains: [LocalizedStringResource], costs: [LocalizedStringResource]) {
             switch self {
             case .auto:
                 return (
                     gains: [
-                        "Der xg2g Planner wählt automatisch die optimale Pipeline",
-                        "Verlustfreies Streaming und niedrigste Latenz im Heimnetz",
-                        "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
+                        LocalizedStringResource("The xg2g Planner automatically selects the optimal pipeline"),
+                        LocalizedStringResource("Lossless streaming and lowest latency on local network"),
+                        LocalizedStringResource("Seamless switch to adaptive streaming when away from home")
                     ],
                     costs: [
-                        "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
+                        LocalizedStringResource("Timeshift/pause is only available when HLS is active")
                     ]
                 )
             case .native:
                 return (
                     gains: [
-                        "Bild und Ton möglichst unverändert mit minimaler Latenz",
-                        "Deutlich schnelleres Umschalten (Hardware-Decoding)",
-                        "Minimale Serverlast (keine Video-Transkodierung)",
-                        "Näher am Live-Signal"
+                        LocalizedStringResource("Direct video and audio with minimal latency"),
+                        LocalizedStringResource("Significantly faster channel zapping (hardware decoding)"),
+                        LocalizedStringResource("Minimal server load (no video transcoding)"),
+                        LocalizedStringResource("Closer to the live broadcast")
                     ],
                     costs: [
-                        "Kein Pausieren oder Zurückspulen (Timeshift)",
-                        "Nur im selben Netzwerk wie der Ingest verfügbar",
-                        "Benötigt durchgehend die volle Bitrate des Senders"
+                        LocalizedStringResource("No pausing or rewinding (timeshift)"),
+                        LocalizedStringResource("Only available on the same network as the ingest receiver"),
+                        LocalizedStringResource("Requires the full broadcast bitrate continuously")
                     ]
                 )
             case .hls:
                 return (
                     gains: [
-                        "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)",
-                        "Funktioniert auch zuverlässig außerhalb des Heimnetzes",
-                        "Adaptive Qualität bei schwankender Bandbreite",
-                        "AirPlay und System-Bildschirmübertragung"
+                        LocalizedStringResource("Pause live TV, rewind, and watch from the beginning (timeshift)"),
+                        LocalizedStringResource("Works reliably outside the home network"),
+                        LocalizedStringResource("Adaptive quality on fluctuating bandwidth"),
+                        LocalizedStringResource("AirPlay and system screen sharing")
                     ],
                     costs: [
-                        "Höhere Latenz als bei Native Live-TV",
-                        "Umschaltzeiten hängen von GOP-Segmenten ab"
+                        LocalizedStringResource("Higher latency than Native Live TV"),
+                        LocalizedStringResource("Zapping times depend on GOP segment boundaries")
                     ]
                 )
             }
@@ -499,7 +571,10 @@ final class AppModel {
         }
     }
 
-    static let favoritesBouquetID = "xg2g_local_favorites"
+    nonisolated static let favoritesBouquetID = "xg2g_local_favorites"
+    nonisolated static var favoritesBouquet: ChannelBouquet {
+        ChannelBouquet(id: favoritesBouquetID, name: "Favorites")
+    }
 
     private(set) var favoriteChannelIDs: Set<String> = {
         let stored = UserDefaults.standard.stringArray(forKey: "xg2g.favorites") ?? []
@@ -606,25 +681,39 @@ final class AppModel {
             }
         }
 
-        var label: String {
+        var localizedLabel: LocalizedStringResource {
             switch self {
-            case .now: return "Jetzt"
-            case .next: return "Gleich"
-            case .primeTimeTonight: return "20:15"
-            case .lateNightTonight: return "22:00"
+            case .now:
+                return LocalizedStringResource("Live Now")
+            case .next:
+                return LocalizedStringResource("Next")
+            case .primeTimeTonight:
+                return LocalizedStringResource(stringLiteral: Self.formatPresetTime(hour: 20, minute: 15))
+            case .lateNightTonight:
+                return LocalizedStringResource(stringLiteral: Self.formatPresetTime(hour: 22, minute: 0))
             case .day(let date):
                 let calendar = Calendar.current
                 if calendar.isDateInToday(date) {
-                    return "Heute"
+                    return LocalizedStringResource("Today")
                 } else if calendar.isDateInTomorrow(date) {
-                    return "Morgen"
+                    return LocalizedStringResource("Tomorrow")
                 } else {
-                    let f = DateFormatter()
-                    f.locale = Locale(identifier: "de_DE")
-                    f.dateFormat = "E, d. MMM"
-                    return f.string(from: date)
+                    return LocalizedStringResource(stringLiteral: date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
                 }
             }
+        }
+
+        var label: String {
+            String(localized: localizedLabel)
+        }
+
+        nonisolated static func formatPresetTime(hour: Int, minute: Int) -> String {
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: Date())
+            components.hour = hour
+            components.minute = minute
+            let date = calendar.date(from: components) ?? Date()
+            return date.formatted(date: .omitted, time: .shortened)
         }
 
         var icon: String {
@@ -869,7 +958,12 @@ final class AppModel {
         do {
             try await credentials.prepareForLaunch()
         } catch {
-            lastError = "Stored credentials could not be opened."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Authentication Required"),
+                detail: LocalizedStringResource("Stored credentials could not be opened."),
+                isRetryable: false,
+                severity: .warning
+            ))
             return
         }
 
@@ -896,10 +990,15 @@ final class AppModel {
     /// allowed; everything downstream deals in a parsed address.
     func useServer(_ typed: String) async {
         guard let parsed = try? ServerAddressParser.parseUserEntered(typed) else {
-            lastError = "That does not look like a server address."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Request Failed"),
+                detail: LocalizedStringResource("That does not look like a server address."),
+                isRetryable: false,
+                severity: .warning
+            ))
             return
         }
-        lastError = nil
+        setError(nil)
         addressStore.save(parsed)
         configure(with: parsed)
         state = .needsPairing
@@ -945,35 +1044,10 @@ final class AppModel {
     func beginPairing() async -> EnrollmentCoordinator.Invitation? {
         guard let enrollment else { return nil }
         do {
-            lastError = nil
+            setError(nil)
             return try await enrollment.startPairing(deviceName: Self.deviceName, deviceType: Self.deviceType)
-        } catch let apiErr as APIError {
-            switch apiErr {
-            case .problem(let prob):
-                lastError = prob.detail ?? prob.title
-            case .http(let status, _, let body):
-                lastError = "Server antwortete mit HTTP \(status): \(body)"
-            case .transport(let tr):
-                switch tr {
-                case .offline:
-                    lastError = "Keine Netzwerkverbindung oder Server nicht erreichbar."
-                case .timedOut:
-                    lastError = "Zeitüberschreitung beim Verbinden mit \(serverURLString)."
-                case .cannotConnect:
-                    lastError = "Verbindung zu \(serverURLString) fehlgeschlagen. Bitte Server-Adresse prüfen."
-                case .tls:
-                    lastError = "Sichere TLS/HTTPS-Verbindung fehlgeschlagen."
-                default:
-                    lastError = "Netzwerkfehler: \(tr)"
-                }
-            case .unexpectedPayload(let payload):
-                lastError = "Unerwartete Serverantwort (Status \(payload.status)): \(payload.bodyPreview)"
-            case .invalidEndpoint(let path):
-                lastError = "Ungültiger API-Pfad: \(path)"
-            }
-            return nil
         } catch {
-            lastError = "Fehler bei der Kopplung: \(error.localizedDescription)"
+            handle(error)
             return nil
         }
     }
@@ -1014,13 +1088,31 @@ final class AppModel {
         // "request a new code", and the text has to make that the obvious
         // next step rather than "choose another server".
         case .expired:
-            lastError = "Der Kopplungscode ist abgelaufen. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Pairing Code Expired"),
+                detail: LocalizedStringResource("Please request a new pairing code."),
+                isRetryable: false,
+                severity: .info,
+                code: "PAIRING_EXPIRED"
+            ))
             return .ended
         case .consumed:
-            lastError = "Dieser Kopplungscode wurde bereits verwendet. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Code Already Used"),
+                detail: LocalizedStringResource("This code has already been claimed. Please request a new code."),
+                isRetryable: false,
+                severity: .info,
+                code: "PAIRING_CONSUMED"
+            ))
             return .ended
         case .revoked:
-            lastError = "Die Kopplung wurde in der Admin-Konsole abgelehnt. Bitte einen neuen Code anfordern."
+            setError(UserFacingError(
+                title: LocalizedStringResource("Pairing Denied"),
+                detail: LocalizedStringResource("Pairing was denied in the admin console. Please request a new code."),
+                isRetryable: false,
+                severity: .warning,
+                code: "PAIRING_REVOKED"
+            ))
             return .ended
         }
     }
@@ -1030,7 +1122,7 @@ final class AppModel {
         do {
             _ = try await enrollment.completeEnrollment()
             await session?.resetAfterReenrollment()
-            lastError = nil
+            setError(nil)
 
             // Load before announcing `.ready`. The pairing screen's task is
             // what awaits this call, and SwiftUI cancels that task the moment
@@ -1046,7 +1138,7 @@ final class AppModel {
             guard state == stateBeforeLoad else { return }
             state = .ready
         } catch {
-            lastError = "Pairing could not be completed: \(error.localizedDescription)"
+            handle(error)
         }
     }
 
@@ -1056,7 +1148,7 @@ final class AppModel {
         identity = nil
         enrollment = nil
         session = nil
-        lastError = nil
+        setError(nil)
         state = .needsServer
     }
 
@@ -1177,7 +1269,7 @@ final class AppModel {
                 bouquetChannelsCache["all"] = loaded
             }
             channels = loaded
-            lastError = nil
+            setError(nil)
 
             async let nowNextTask = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
             async let epgTask = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
@@ -1292,7 +1384,7 @@ final class AppModel {
                 }
             }
             UserDefaults.standard.set(recordingProgress, forKey: "xg2g.recordingProgress")
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1306,7 +1398,7 @@ final class AppModel {
         do {
             _ = try? await session?.validSession()
             timers = try await timersRepository.timers()
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1421,7 +1513,7 @@ final class AppModel {
                 serviceRef: channel.serviceRef,
                 qualityPreference: qualityPreference.rawValue
             )
-            lastError = nil
+            setError(nil)
         } catch {
             handle(error)
         }
@@ -1477,7 +1569,7 @@ final class AppModel {
         bouquets = []
         recordings = []
         timers = []
-        lastError = nil
+        setError(nil)
     }
 
     // MARK: - Errors
@@ -1485,53 +1577,21 @@ final class AppModel {
     private func handle(_ error: any Error) {
         if let apiError = error as? APIError {
             Task { await session?.noteRequestFailure(apiError) }
-            switch apiError {
-            case .problem(let problem):
-                if problem.code == SessionCoordinator.deviceReauthRequiredCode {
-                    state = .needsRePairing
-                    lastError = "Dieses Gerät muss erneut gekoppelt werden."
-                    return
-                }
-                lastError = problem.detail ?? problem.title
-                return
-            case .http(let status, _, let preview):
-                if status == 401 {
-                    state = .needsRePairing
-                    lastError = "Authentifizierung abgelaufen. Bitte neu koppeln."
-                    return
-                }
-                lastError = "Server-Fehler (HTTP \(status)): \(preview)"
-                return
-            case .transport(let transport):
-                switch transport {
-                case .cancelled:
-                    return // Ignore cancelled SwiftUI task transitions
-                case .offline:
-                    lastError = "Keine Internetverbindung."
-                case .timedOut:
-                    lastError = "Zeitüberschreitung bei der Serververbindung."
-                case .cannotConnect:
-                    lastError = "Verbindung zum Server fehlgeschlagen."
-                case .tls:
-                    lastError = "TLS / Zertifikatsfehler bei Verbindung."
-                case .other(let code):
-                    lastError = "Netzwerkfehler (Code \(code))."
-                }
-                return
-            case .invalidEndpoint(let path):
-                lastError = "Endpunkt nicht verfügbar (\(path))"
-                return
-            case .unexpectedPayload(let payload):
-                lastError = "Unerwartete Server-Antwort (Status \(payload.status))"
-                return
-            }
         }
-        if case SessionCoordinator.Failure.reauthenticationRequired = error {
-            state = .needsRePairing
-            lastError = "Dieses Gerät muss erneut gekoppelt werden."
+        guard let classified = ErrorClassifier.classify(error) else {
+            // Cancellation suppressed: normal user transitions do not flash error states
+            setError(nil)
             return
         }
-        lastError = error.localizedDescription
+
+        if classified.code == SessionCoordinator.deviceReauthRequiredCode ||
+           classified.code == "DEVICE_REAUTH_REQUIRED" {
+            state = .needsRePairing
+        } else if let apiError = error as? APIError, case .http(let status, _, _) = apiError, status == 401 {
+            state = .needsRePairing
+        }
+
+        setError(classified)
     }
 
     // MARK: - Device description

@@ -44,7 +44,7 @@ struct ChannelListView: View {
                                     if ok {
                                         triggerHaptic(.medium)
                                         withAnimation {
-                                            recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                                            recordConfirmationMessage = String(localized: "“\(entry.title)” scheduled")
                                         }
                                     }
                                 }
@@ -65,7 +65,7 @@ struct ChannelListView: View {
                             } label: {
                                 HStack(spacing: 5) {
                                     PulsingLiveDot(size: 6)
-                                    Text("Jetzt Live")
+                                    Text("Live Now")
                                         .font(.system(size: 13, weight: isNow ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
@@ -85,14 +85,14 @@ struct ChannelListView: View {
                                         if isFav {
                                             await model.selectBouquet(nil)
                                         } else {
-                                            await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
+                                            await model.selectBouquet(AppModel.favoritesBouquet)
                                         }
                                     }
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: isFav ? "star.fill" : "star")
                                             .font(.system(size: 11))
-                                        Text("Favoriten")
+                                        Text("Favorites")
                                             .font(.system(size: 13, weight: isFav ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
@@ -115,7 +115,7 @@ struct ChannelListView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "popcorn.fill")
                                         .font(.system(size: 11))
-                                    Text("20:15")
+                                    Text(AppModel.TimeFilter.formatPresetTime(hour: 20, minute: 15))
                                         .font(.system(size: 13, weight: isPrime ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
@@ -137,7 +137,7 @@ struct ChannelListView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "moon.fill")
                                         .font(.system(size: 11))
-                                    Text("22:00")
+                                    Text(AppModel.TimeFilter.formatPresetTime(hour: 22, minute: 0))
                                         .font(.system(size: 13, weight: isLate ? .bold : .medium))
                                 }
                                 .padding(.horizontal, 14)
@@ -164,7 +164,7 @@ struct ChannelListView: View {
                                     HStack(spacing: 4) {
                                         Image(systemName: genre.icon)
                                             .font(.system(size: 11))
-                                        Text(genre.rawValue)
+                                        Text(genre.localizedTitle)
                                             .font(.system(size: 13, weight: isGenreSelected ? .bold : .medium))
                                     }
                                     .padding(.horizontal, 14)
@@ -172,6 +172,7 @@ struct ChannelListView: View {
                                     .background(isGenreSelected ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.85), in: Capsule())
                                     .foregroundStyle(isGenreSelected ? Theme.Colors.bgBase : Theme.Colors.textPrimary)
                                     .overlay { if !isGenreSelected { Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8) } }
+                                    .accessibilityLabel(String(localized: "Genre: \(String(localized: genre.localizedTitle))"))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -187,16 +188,25 @@ struct ChannelListView: View {
                     Group {
                         if model.channels.isEmpty && model.isLoadingChannels {
                             Spacer()
-                            ProgressView("Lade Sender und EPG-Daten…")
+                            ProgressView("Loading channels and EPG data…")
                                 .tint(Theme.Colors.accentAction)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                             Spacer()
                         } else if currentChannels.isEmpty {
                             Spacer()
+                            let emptyTitle: String = {
+                                if !model.searchQuery.isEmpty {
+                                    return String(localized: "No Results")
+                                }
+                                if model.selectedGenre != .all {
+                                    return String(localized: "No \(String(localized: model.selectedGenre.localizedTitle)) broadcasts")
+                                }
+                                return String(localized: "No Channels")
+                            }()
                             ContentUnavailableView(
-                                model.searchQuery.isEmpty ? (model.selectedGenre != .all ? "Keine \(model.selectedGenre.rawValue)" : "Keine Sender") : "Keine Treffer",
+                                emptyTitle,
                                 systemImage: model.selectedGenre != .all ? model.selectedGenre.icon : "tv.slash",
-                                description: Text(model.searchQuery.isEmpty ? "Keine Sendungen für den gewählten Filter gefunden." : "Kein Sender entspricht deiner Suche.")
+                                description: Text(model.searchQuery.isEmpty ? String(localized: "No broadcasts found for the selected filter.") : String(localized: "No channel matches your search."))
                             )
                             .foregroundStyle(Theme.Colors.textSecondary)
                             Spacer()
@@ -222,7 +232,7 @@ struct ChannelListView: View {
                                                     if ok {
                                                         triggerHaptic(.medium)
                                                         withAnimation {
-                                                            recordConfirmationMessage = "„\(spotlight.entry.title)“ programmiert"
+                                                            recordConfirmationMessage = String(localized: "“\(spotlight.entry.title)” scheduled")
                                                         }
                                                     }
                                                 }
@@ -260,13 +270,13 @@ struct ChannelListView: View {
 
                                     // 3. Station Grid Header
                                     HStack {
-                                        Text(model.selectedBouquet?.name ?? "Alle Sender")
+                                        Text(model.selectedBouquet?.displayName ?? String(localized: "All Channels"))
                                             .font(.headline.weight(.bold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
 
                                         Spacer()
 
-                                        Text("\(currentChannels.count) Sender")
+                                        Text(String(localized: "\(currentChannels.count) channels"))
                                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                     }
@@ -300,7 +310,7 @@ struct ChannelListView: View {
                                                         if success {
                                                             triggerHaptic(.medium)
                                                             withAnimation {
-                                                                recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                                                                recordConfirmationMessage = String(localized: "“\(entry.title)” scheduled")
                                                             }
                                                         }
                                                     }
@@ -310,20 +320,20 @@ struct ChannelListView: View {
                                                 Button {
                                                     model.playingChannel = channel
                                                 } label: {
-                                                    Label("Live schauen", systemImage: "play.fill")
+                                                    Label("Watch Live", systemImage: "play.fill")
                                                 }
 
                                                 if let now = model.schedule[channel.serviceRef]?.now {
                                                     Button {
                                                         selectedDetail = ProgramDetailPayload(channel: channel, entry: now)
                                                     } label: {
-                                                        Label("Sendungsdetails", systemImage: "info.circle")
+                                                        Label("Programme Details", systemImage: "info.circle")
                                                     }
 
                                                     Button {
                                                         Task { _ = await model.scheduleProgramTimer(channel: channel, entry: now) }
                                                     } label: {
-                                                        Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
+                                                        Label(String(localized: "Record “\(now.title)”"), systemImage: "record.circle")
                                                     }
                                                 }
 
@@ -331,7 +341,7 @@ struct ChannelListView: View {
                                                     Button {
                                                         Task { _ = await model.scheduleProgramTimer(channel: channel, entry: next) }
                                                     } label: {
-                                                        Label("„\(next.title)“ aufnehmen", systemImage: "record.circle")
+                                                        Label(String(localized: "Record “\(next.title)”"), systemImage: "record.circle")
                                                     }
                                                 }
 
@@ -339,7 +349,7 @@ struct ChannelListView: View {
                                                     model.toggleFavorite(channel)
                                                 } label: {
                                                     Label(
-                                                        model.isFavorite(channel) ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen",
+                                                        model.isFavorite(channel) ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites"),
                                                         systemImage: model.isFavorite(channel) ? "star.slash" : "star"
                                                     )
                                                 }
@@ -386,7 +396,7 @@ struct ChannelListView: View {
                     }
                 }
             }
-            .navigationTitle(model.selectedBouquet?.name ?? "Alle Sender")
+            .navigationTitle(model.selectedBouquet?.displayName ?? String(localized: "All Channels"))
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -398,7 +408,7 @@ struct ChannelListView: View {
                             Task { await model.selectBouquet(nil) }
                         } label: {
                             HStack {
-                                Text("Alle Sender (\(model.channels.count))")
+                                Text("\(String(localized: "All Channels")) (\(model.channels.count))")
                                 if model.selectedBouquet == nil {
                                     Image(systemName: "checkmark")
                                 }
@@ -408,10 +418,10 @@ struct ChannelListView: View {
                         if !model.favoriteChannelIDs.isEmpty {
                             Button {
                                 triggerHaptic(.light)
-                                Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                                Task { await model.selectBouquet(AppModel.favoritesBouquet) }
                             } label: {
                                 HStack {
-                                    Text("Favoriten (\(model.favoriteChannelIDs.count))")
+                                    Text("\(String(localized: "Favorites")) (\(model.favoriteChannelIDs.count))")
                                     if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
                                         Image(systemName: "checkmark")
                                     }
@@ -427,7 +437,7 @@ struct ChannelListView: View {
                                     Task { await model.selectBouquet(bouquet) }
                                 } label: {
                                     HStack {
-                                        Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
+                                        Text("\(bouquet.displayName)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
                                         if model.selectedBouquet?.id == bouquet.id {
                                             Image(systemName: "checkmark")
                                         }
@@ -437,7 +447,7 @@ struct ChannelListView: View {
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            Text(model.selectedBouquet?.name ?? "Alle Sender")
+                            Text(model.selectedBouquet?.displayName ?? String(localized: "All Channels"))
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Image(systemName: "chevron.down.circle.fill")
@@ -456,7 +466,7 @@ struct ChannelListView: View {
                     Menu {
                         Picker("Genre", selection: $model.selectedGenre) {
                             ForEach(EpgGenre.allCases) { genre in
-                                Label(genre.rawValue, systemImage: genre.icon).tag(genre)
+                                Label(String(localized: genre.localizedTitle), systemImage: genre.icon).tag(genre)
                             }
                         }
                     } label: {
@@ -464,9 +474,10 @@ struct ChannelListView: View {
                             .font(.system(size: 19))
                             .foregroundStyle(model.selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
                     }
+                    .accessibilityLabel(String(localized: "Genre: \(String(localized: model.selectedGenre.localizedTitle))"))
                 }
             }
-            .searchable(text: $model.searchQuery, prompt: "Sender oder Sendungen suchen…")
+            .searchable(text: $model.searchQuery, prompt: Text("Search channels or programmes…"))
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
@@ -479,7 +490,7 @@ struct ChannelListView: View {
                             if ok {
                                 triggerHaptic(.medium)
                                 withAnimation {
-                                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                                    recordConfirmationMessage = String(localized: "“\(entry.title)” scheduled")
                                 }
                             }
                         }

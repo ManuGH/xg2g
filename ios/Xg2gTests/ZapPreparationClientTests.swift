@@ -24,13 +24,13 @@ struct ZapPreparationClientTests {
 
     private func client() throws -> (ZapPreparationClient, () -> URLRequest?) {
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [PrepareStubURLProtocol.self]
-        PrepareStubURLProtocol.reset()
+        config.protocolClasses = [ZapPreparationTestStubURLProtocol.self]
+        ZapPreparationTestStubURLProtocol.reset()
         let api = HTTPAPIClient(
             address: try ServerAddressParser.parseTrusted("http://example.test:8089/"),
             session: URLSession(configuration: config)
         )
-        return (ZapPreparationClient(api: api, clientID: "sterling-test"), { PrepareStubURLProtocol.lastRequest })
+        return (ZapPreparationClient(api: api, clientID: "sterling-test"), { ZapPreparationTestStubURLProtocol.lastRequest })
     }
 
     @Test func startAsksTheDeploymentsPrepareEndpoint() async throws {
@@ -89,7 +89,58 @@ struct ZapPreparationClientTests {
 }
 
 
-/// A transport used by this suite alone, so it cannot read another suite's requests.
+/// Dedicated transport for ZapPreparationClientTests to guarantee complete isolation
+/// from other test suites that may be running concurrently.
+private final class ZapPreparationTestStubURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _lastRequest: URLRequest?
+    nonisolated(unsafe) private static var _responseHandler: (@Sendable (URLRequest) -> (Int, Data))?
+
+    static var lastRequest: URLRequest? {
+        lock.lock(); defer { lock.unlock() }; return _lastRequest
+    }
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        _lastRequest = nil
+        _responseHandler = nil
+    }
+
+    static func setHandler(_ handler: @escaping @Sendable (URLRequest) -> (Int, Data)) {
+        lock.lock(); defer { lock.unlock() }
+        _responseHandler = handler
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self._lastRequest = request
+        let handler = Self._responseHandler
+        Self.lock.unlock()
+
+        let req = request
+        DispatchQueue.global().async { [weak self] in
+            guard let self else { return }
+            let (statusCode, data) = handler?(req) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
+
+            let response = HTTPURLResponse(
+                url: req.url ?? URL(string: "http://example.test")!,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+/// A transport used by other preparation-related test suites.
 final class PrepareStubURLProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _lastRequest: URLRequest?
@@ -119,17 +170,21 @@ final class PrepareStubURLProtocol: URLProtocol {
         let handler = Self._responseHandler
         Self.lock.unlock()
 
-        let (statusCode, data) = handler?(request) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
+        let req = request
+        DispatchQueue.global().async { [weak self] in
+            guard let self else { return }
+            let (statusCode, data) = handler?(req) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
 
-        let response = HTTPURLResponse(
-            url: request.url ?? URL(string: "http://example.test")!,
-            statusCode: statusCode,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+            let response = HTTPURLResponse(
+                url: req.url ?? URL(string: "http://example.test")!,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     override func stopLoading() {}

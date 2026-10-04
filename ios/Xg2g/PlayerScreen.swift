@@ -4,8 +4,11 @@
 
 import AVKit
 import CoreMedia
+import os
 import SwiftUI
 import UIKit
+
+private let playerScreenLogger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "player-screen")
 
 /// 100% Native Apple AVPlayerViewController playback inspired by
 /// MagentaTV 2.0, Zattoo & Channels DVR:
@@ -79,7 +82,7 @@ struct PlayerScreen: View {
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .multilineTextAlignment(.center)
 
-                                    Button("Erneut versuchen") {
+                                    Button(String(localized: "Retry")) {
                                         Task { await startStreaming(channel: currentChannel) }
                                     }
                                     .buttonStyle(.borderedProminent)
@@ -100,7 +103,7 @@ struct PlayerScreen: View {
                                         .tint(Theme.Colors.accentLive)
                                         .scaleEffect(1.2)
 
-                                    Text("\(currentChannel.name) wird geladen…")
+                                    Text(String.localizedStringWithFormat(NSLocalizedString("Loading %@…", comment: "Channel loading message"), currentChannel.name))
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -156,7 +159,7 @@ struct PlayerScreen: View {
                                         triggerHaptic(.medium)
                                         Task {
                                             let ok = await model.recordLiveNow(channel: currentChannel)
-                                            displayZapToast(ok ? "🔴 Aufnahme gestartet" : "Aufnahmefehler")
+                                            displayZapToast(ok ? String(localized: "🔴 Recording started") : String(localized: "Recording error"))
                                         }
                                     },
                                     onSeekToBeginning: { seekToBeginning() },
@@ -181,14 +184,14 @@ struct PlayerScreen: View {
                                         Image(systemName: "tv")
                                             .font(.system(size: 11, weight: .bold))
                                             .foregroundStyle(Theme.Colors.accentAction)
-                                        Text("SENDER & LIVE-PROGRAMM")
+                                        Text("CHANNELS & LIVE SCHEDULE")
                                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                                             .foregroundStyle(Theme.Colors.textSecondary)
                                     }
 
                                     Spacer()
 
-                                    Text("\(model.filteredChannels.count) Sender")
+                                    Text(String.localizedStringWithFormat(NSLocalizedString("%lld channels", comment: "Filtered channels count"), Int64(model.filteredChannels.count)))
                                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.textTertiary)
                                 }
@@ -241,7 +244,7 @@ struct PlayerScreen: View {
                             triggerHaptic(.medium)
                             Task {
                                 let ok = await model.recordLiveNow(channel: currentChannel)
-                                displayZapToast(ok ? "🔴 Aufnahme gestartet" : "Aufnahmefehler")
+                                displayZapToast(ok ? String(localized: "🔴 Recording started") : String(localized: "Recording error"))
                             }
                         },
                         onTogglePlayPause: {
@@ -366,7 +369,11 @@ struct PlayerScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime)) { notif in
             if let currentItem = player?.currentItem, notif.object as? AVPlayerItem == currentItem {
                 if let err = notif.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                    self.failure = "Wiedergabefehler: \(err.localizedDescription)"
+                    if let classified = ErrorClassifier.classify(err) {
+                        self.failure = classified.localizedMessage
+                        playerScreenLogger.error("AVPlayerItemFailedToPlayToEndTime: \(classified.diagnosticSummary, privacy: .public)")
+                        TelemetryServer.shared.log("[ERROR] AVPlayerItemFailedToPlayToEndTime: \(classified.diagnosticSummary)")
+                    }
                 }
             }
         }
@@ -466,7 +473,7 @@ struct PlayerScreen: View {
         await model.play(channel)
 
         guard let stream = model.liveStream else {
-            failure = model.lastError ?? "Der Stream konnte nicht gestartet werden."
+            failure = model.lastError ?? String(localized: "The stream could not be started.")
             return
         }
         let p = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
@@ -525,7 +532,7 @@ struct PlayerScreen: View {
             serverAddress: model.serverURLString
         )
 
-        displayZapToast("Kanal: \(newChannel.name)")
+        displayZapToast(String.localizedStringWithFormat(NSLocalizedString("Channel: %@", comment: "Channel toast"), newChannel.name))
         // Setting currentChannel automatically triggers .task(id: currentChannel.id) without race condition
     }
 
@@ -586,7 +593,7 @@ struct PlayerScreen: View {
         if let firstRange = item.seekableTimeRanges.first?.timeRangeValue {
             player.seek(to: firstRange.start, toleranceBefore: .zero, toleranceAfter: .zero)
             isTimeshifted = true
-            displayZapToast("⏪ Beginn der Sendung / Puffer")
+            displayZapToast(String(localized: "⏪ Show beginning / buffer"))
         }
     }
 
@@ -596,7 +603,7 @@ struct PlayerScreen: View {
         if let lastRange = item.seekableTimeRanges.last?.timeRangeValue {
             player.seek(to: lastRange.end, toleranceBefore: .zero, toleranceAfter: .zero)
             isTimeshifted = false
-            displayZapToast("🔴 Live-Kante")
+            displayZapToast(String(localized: "🔴 Live edge"))
         }
     }
 
@@ -734,7 +741,7 @@ struct LandscapeQuickZapBar: View {
                     Circle()
                         .fill(Theme.Colors.accentLive)
                         .frame(width: 6, height: 6)
-                    Text("SCHNELL-ZAPPING")
+                    Text("QUICK ZAPPING")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
@@ -773,7 +780,7 @@ struct LandscapeQuickZapBar: View {
                                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                                     .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
                                             }
-                                            Text(ch.name)
+                                            Text(verbatim: ch.name)
                                                 .font(.system(size: 13, weight: .bold))
                                                 .foregroundStyle(isCurrent ? .white : Theme.Colors.textPrimary)
                                                 .lineLimit(1)
@@ -789,7 +796,7 @@ struct LandscapeQuickZapBar: View {
                                         }
 
                                         if let title = nowEntry?.title {
-                                            Text(title)
+                                            Text(verbatim: title)
                                                 .font(.system(size: 11, weight: .medium))
                                                 .foregroundStyle(isCurrent ? Color.white.opacity(0.9) : Theme.Colors.textSecondary)
                                                 .lineLimit(1)
@@ -900,7 +907,7 @@ struct LandscapeBroadcastOverlay: View {
                                     .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
                             }
 
-                            Text(currentChannel.name)
+                            Text(verbatim: currentChannel.name)
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
 
@@ -914,7 +921,7 @@ struct LandscapeBroadcastOverlay: View {
 
                         if let now = nowNext?.now {
                             HStack(spacing: 6) {
-                                Text(now.title)
+                                Text(verbatim: now.title)
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(.white.opacity(0.9))
                                     .lineLimit(1)
@@ -924,7 +931,7 @@ struct LandscapeBroadcastOverlay: View {
                                     .foregroundStyle(.white.opacity(0.6))
 
                                 if let rem = now.remainingMinutes(at: .now) {
-                                    Text("(noch \(rem) Min)")
+                                    Text(String.localizedStringWithFormat(NSLocalizedString("(%lld min left)", comment: "Minutes remaining in show"), Int64(rem)))
                                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
                                 }
@@ -946,7 +953,7 @@ struct LandscapeBroadcastOverlay: View {
                         HStack(spacing: 4) {
                             Image(systemName: "record.circle")
                                 .font(.system(size: 13, weight: .bold))
-                            Text("Aufnehmen")
+                            Text("Record")
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .padding(.horizontal, 10)
@@ -1026,7 +1033,7 @@ struct LandscapeBroadcastOverlay: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.counterclockwise")
                                     .font(.system(size: 11, weight: .bold))
-                                Text("Von Beginn")
+                                Text("From start")
                                     .font(.system(size: 11, weight: .semibold))
                             }
                             .padding(.horizontal, 10)
@@ -1042,7 +1049,7 @@ struct LandscapeBroadcastOverlay: View {
                             Button(action: onJumpToLive) {
                                 HStack(spacing: 4) {
                                     PulsingLiveDot(size: 5)
-                                    Text("Zur Live-Kante")
+                                    Text("To Live")
                                         .font(.system(size: 11, weight: .bold))
                                 }
                                 .padding(.horizontal, 10)
@@ -1070,7 +1077,7 @@ struct LandscapeBroadcastOverlay: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "tv")
                                     .font(.system(size: 12, weight: .bold))
-                                Text("Sender")
+                                Text("Channels")
                                     .font(.system(size: 11, weight: .semibold))
                             }
                             .padding(.horizontal, 12)
@@ -1271,7 +1278,7 @@ struct PortraitBroadcastHeroCard: View {
                                 .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                         }
 
-                        Text(currentChannel.name)
+                        Text(verbatim: currentChannel.name)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -1298,7 +1305,7 @@ struct PortraitBroadcastHeroCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "record.circle")
                             .font(.system(size: 13, weight: .bold))
-                        Text("Aufnehmen")
+                        Text("Record")
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .padding(.horizontal, 10)
@@ -1313,7 +1320,7 @@ struct PortraitBroadcastHeroCard: View {
             // Active Show Information
             if let now = nowNext?.now {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(now.title)
+                    Text(verbatim: now.title)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(2)
@@ -1324,7 +1331,7 @@ struct PortraitBroadcastHeroCard: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
 
                         if let remaining = now.remainingMinutes(at: .now) {
-                            Text("• noch \(remaining) Min")
+                            Text(String.localizedStringWithFormat(NSLocalizedString("• %lld min left", comment: "Minutes remaining in show"), Int64(remaining)))
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                         }
@@ -1337,7 +1344,7 @@ struct PortraitBroadcastHeroCard: View {
                     }
 
                     if let desc = now.description, !desc.isEmpty {
-                        Text(desc)
+                        Text(verbatim: desc)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(2)
@@ -1352,7 +1359,7 @@ struct PortraitBroadcastHeroCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.counterclockwise")
                             .font(.system(size: 11, weight: .bold))
-                        Text("Von Beginn")
+                        Text("From start")
                             .font(.system(size: 11, weight: .semibold))
                     }
                     .padding(.horizontal, 10)
@@ -1367,7 +1374,7 @@ struct PortraitBroadcastHeroCard: View {
                     Button(action: onJumpToLive) {
                         HStack(spacing: 4) {
                             PulsingLiveDot(size: 5)
-                            Text("Zur Live-Kante")
+                            Text("To Live")
                                 .font(.system(size: 11, weight: .bold))
                         }
                         .padding(.horizontal, 10)
@@ -1407,7 +1414,7 @@ struct PortraitBroadcastHeroCard: View {
 
             if let next = nowNext?.next {
                 HStack(spacing: 6) {
-                    Text("DANACH:")
+                    Text("NEXT:")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textTertiary)
 
@@ -1415,7 +1422,7 @@ struct PortraitBroadcastHeroCard: View {
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.accentAction)
 
-                    Text(next.title)
+                    Text(verbatim: next.title)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
@@ -1486,7 +1493,7 @@ struct PortraitBouquetFilterBar: View {
                 Button {
                     onSelectBouquet(nil)
                 } label: {
-                    Text("Alle Sender (\(channelsCount))")
+                    Text(String.localizedStringWithFormat(NSLocalizedString("All Channels (%lld)", comment: "All channels filter pill"), Int64(channelsCount)))
                         .font(.system(size: 12, weight: isAll ? .bold : .medium))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -1499,13 +1506,13 @@ struct PortraitBouquetFilterBar: View {
                 if favoriteCount > 0 {
                     let isFav = selectedBouquet?.id == AppModel.favoritesBouquetID
                     Button {
-                        onSelectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten"))
+                        onSelectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: String(localized: "Favorites")))
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.yellow)
-                            Text("Favoriten (\(favoriteCount))")
+                            Text(String.localizedStringWithFormat(NSLocalizedString("Favorites (%lld)", comment: "Favorites filter pill"), Int64(favoriteCount)))
                                 .font(.system(size: 12, weight: isFav ? .bold : .medium))
                         }
                         .padding(.horizontal, 12)
@@ -1522,13 +1529,23 @@ struct PortraitBouquetFilterBar: View {
                     Button {
                         onSelectBouquet(isSelected ? nil : bouquet)
                     } label: {
-                        Text(bouquet.name)
-                            .font(.system(size: 12, weight: isSelected ? .bold : .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated, in: Capsule())
-                            .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
-                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        if bouquet.id == AppModel.favoritesBouquetID {
+                            Text("Favorites")
+                                .font(.system(size: 12, weight: isSelected ? .bold : .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated, in: Capsule())
+                                .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        } else {
+                            Text(verbatim: bouquet.name)
+                                .font(.system(size: 12, weight: isSelected ? .bold : .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated, in: Capsule())
+                                .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -1580,7 +1597,7 @@ struct PortraitChannelRow: View {
                                 .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
                         }
 
-                        Text(channel.name)
+                        Text(verbatim: channel.name)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
                             .lineLimit(1)
@@ -1590,7 +1607,7 @@ struct PortraitChannelRow: View {
                         if isCurrent {
                             HStack(spacing: 4) {
                                 PulsingLiveDot(size: 5)
-                                Text("LÄUFT")
+                                Text("ON AIR")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentLive)
                             }
@@ -1605,7 +1622,7 @@ struct PortraitChannelRow: View {
                     }
 
                     if let now = nowEntry {
-                        Text(now.title)
+                        Text(verbatim: now.title)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)
@@ -1615,7 +1632,7 @@ struct PortraitChannelRow: View {
                                 .padding(.top, 1)
                         }
                     } else {
-                        Text("Keine Programminformationen")
+                        Text("No programme information")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }

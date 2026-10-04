@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import SecuritySettingsSection from '../settings/SecuritySettingsSection';
 import ProfileManagementSection from './ProfileManagementSection';
 import FamilyManagementSection from './FamilyManagementSection';
@@ -63,19 +64,20 @@ interface AdminLayoutProps {
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'account' }) => {
+  const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<AdminSectionKey>(initialSection);
 
   const sections: { key: AdminSectionKey; label: string; icon: string; description: string }[] = [
-    { key: 'account', label: 'Konto', icon: '👤', description: 'Persönliche Kontodaten & Hauptrolle' },
-    { key: 'family', label: 'Familie', icon: '👨‍👩‍👧‍👦', description: 'Haushaltsmitglieder & Einladungen' },
-    { key: 'profiles', label: 'Profile', icon: '🎭', description: 'Sehprofile, Altersgrenzen & PINs' },
-    { key: 'devices', label: 'Geräte', icon: '📱', description: 'Verbundene Geräte & 30-Tage-Vertrauen' },
-    { key: 'security', label: 'Sicherheit', icon: '🛡️', description: 'Web-Sitzungen, Passkeys & Widerruf' },
-    { key: 'access_times', label: 'Zugriffszeiten', icon: '🕒', description: 'Tägliche Sehzeiten & Ablaufdaten' },
-    { key: 'parental', label: 'Jugendschutz', icon: '🔒', description: 'FSK-Freigaben & EPG-Korrekturen' },
-    { key: 'recordings', label: 'Aufnahmen', icon: '📼', description: 'Speicherkontingente & Bibliotheken' },
-    { key: 'concurrency', label: 'Gleichzeitige Nutzung', icon: '📡', description: 'Tuner-Auslastung & Prioritäten' },
-    { key: 'audit', label: 'Benachrichtigungen & Audit', icon: '📜', description: 'Änderungsprotokoll & Push-Regeln' },
+    { key: 'account', label: t('admin.sections.account.label'), icon: '👤', description: t('admin.sections.account.description') },
+    { key: 'family', label: t('admin.sections.family.label'), icon: '👨‍👩‍👧‍👦', description: t('admin.sections.family.description') },
+    { key: 'profiles', label: t('admin.sections.profiles.label'), icon: '🎭', description: t('admin.sections.profiles.description') },
+    { key: 'devices', label: t('admin.sections.devices.label'), icon: '📱', description: t('admin.sections.devices.description') },
+    { key: 'security', label: t('admin.sections.security.label'), icon: '🛡️', description: t('admin.sections.security.description') },
+    { key: 'access_times', label: t('admin.sections.access_times.label'), icon: '🕒', description: t('admin.sections.access_times.description') },
+    { key: 'parental', label: t('admin.sections.parental.label'), icon: '🔒', description: t('admin.sections.parental.description') },
+    { key: 'recordings', label: t('admin.sections.recordings.label'), icon: '📼', description: t('admin.sections.recordings.description') },
+    { key: 'concurrency', label: t('admin.sections.concurrency.label'), icon: '📡', description: t('admin.sections.concurrency.description') },
+    { key: 'audit', label: t('admin.sections.audit.label'), icon: '📜', description: t('admin.sections.audit.description') },
   ];
 
   return (
@@ -83,8 +85,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
       {/* Material 3 Sidebar Navigation */}
       <div style={{ width: '280px', backgroundColor: 'var(--surface-panel-strong)', padding: '24px 16px', borderRight: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
         <div style={{ paddingBottom: '16px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--accent-action)' }}>Haushalt & Administration</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '4px 0 0 0' }}>Material 3 Management Center</p>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--accent-action)' }}>{t('admin.header.title')}</h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '4px 0 0 0' }}>{t('admin.header.subtitle')}</p>
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -144,18 +146,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
 
         {activeSection === 'account' && (
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Hauptkontodaten</h3>
-            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von Benutzername, Passwort und Notfall-Wiederherstellungsschlüsseln.</p>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{t('admin.account.title')}</h3>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>{t('admin.account.description')}</p>
             <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
-              Konto-Status: Aktiv (Admin)
+              {t('admin.account.statusActive')}
             </div>
           </div>
         )}
 
         {activeSection === 'recordings' && (
           <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Aufnahmen & Speicherkontingente</h3>
-            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von DVR-Aufnahmepfad und automatischem Quota-Management.</p>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{t('admin.recordingsQuotas.title')}</h3>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>{t('admin.recordingsQuotas.description')}</p>
           </div>
         )}
       </div>

@@ -244,6 +244,7 @@ export default function BootstrapGate() {
         eyebrow={t('unlock.eyebrow', { defaultValue: 'Unlock Required' })}
         title={t('unlock.title', {
           defaultValue: `${productName} required`,
+          productName,
         })}
         copy={purchaseUrl
           ? t('unlock.copyWithUrl', {

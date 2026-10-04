@@ -60,15 +60,16 @@ struct OfflinePlayerScreen: View {
                                 .font(.title2)
                                 .foregroundStyle(Theme.Colors.textPrimary.opacity(0.85))
                         }
+                        .accessibilityLabel(Text("Close", comment: "Dismiss offline player"))
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(offlineRecording.title)
+                            Text(verbatim: offlineRecording.title)
                                 .font(.headline)
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
 
                             if let channel = offlineRecording.channelName {
-                                Text(channel)
+                                Text(verbatim: channel)
                                     .font(.caption)
                                     .foregroundStyle(Theme.Colors.textSecondary)
                             }

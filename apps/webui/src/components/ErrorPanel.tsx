@@ -14,12 +14,6 @@ interface ErrorPanelProps {
   className?: string;
 }
 
-function getSeverityLabel(severity: NonNullable<AppError['severity']>, t: ReturnType<typeof useTranslation>['t']): string {
-  return t(`common.errorSeverity.${severity}`, {
-    defaultValue: severity.charAt(0).toUpperCase() + severity.slice(1),
-  });
-}
-
 function isAbsoluteUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
@@ -34,7 +28,20 @@ export default function ErrorPanel({
 }: ErrorPanelProps) {
   const { t } = useTranslation();
   const TitleTag = titleAs;
-  const severityLabel = error.severity ? getSeverityLabel(error.severity, t) : null;
+  const severityLabel = error.severity
+    ? (() => {
+      switch (error.severity) {
+        case 'info':
+          return t('common.errorSeverity.info');
+        case 'warning':
+          return t('common.errorSeverity.warning');
+        case 'error':
+          return t('common.errorSeverity.error');
+        case 'critical':
+          return t('common.errorSeverity.critical');
+      }
+    })()
+    : null;
   const hasMeta = Boolean(severityLabel || typeof error.status === 'number' || error.code);
   const hasGuidance = Boolean(error.operatorHint || error.runbookUrl);
 

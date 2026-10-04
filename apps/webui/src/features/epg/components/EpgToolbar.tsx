@@ -134,7 +134,7 @@ export function EpgToolbar({
               type="button"
               className={styles.filterSearchClear}
               onClick={() => onFilterChange({ query: '' })}
-              aria-label="Löschen"
+              aria-label={t('common.clear')}
             >
               ✕
             </button>

@@ -94,10 +94,10 @@ struct ProgramDetailSheet: View {
                                     Image(systemName: "chevron.left")
                                         .font(.system(size: 11, weight: .bold))
                                     if let prev = previousEntry {
-                                        Text(prev.title)
+                                        Text(verbatim: prev.title)
                                             .lineLimit(1)
                                     } else {
-                                        Text("Davor")
+                                        Text("Earlier")
                                     }
                                 }
                                 .font(.caption.weight(.semibold))
@@ -111,7 +111,7 @@ struct ProgramDetailSheet: View {
 
                             Spacer()
 
-                            Text("\(currentIndex + 1) von \(allShows.count)")
+                            Text("\(currentIndex + 1) of \(allShows.count)")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
 
@@ -123,10 +123,10 @@ struct ProgramDetailSheet: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     if let next = nextEntry {
-                                        Text(next.title)
+                                        Text(verbatim: next.title)
                                             .lineLimit(1)
                                     } else {
-                                        Text("Danach")
+                                        Text("Later")
                                     }
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 11, weight: .bold))
@@ -153,7 +153,7 @@ struct ProgramDetailSheet: View {
                                 ChannelLogo(url: channel.logoURL, name: channel.name, size: 56)
 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(channel.name)
+                                    Text(verbatim: channel.name)
                                         .font(.headline)
                                         .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -161,7 +161,7 @@ struct ProgramDetailSheet: View {
                                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
 
-                                    Text("\(currentEntry.formattedTimeRange) (\(currentEntry.durationMinutes) Min)")
+                                    Text("\(currentEntry.formattedTimeRange) (\(currentEntry.durationMinutes) min)")
                                         .font(.subheadline.monospacedDigit())
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -174,7 +174,7 @@ struct ProgramDetailSheet: View {
                             let currentGenre = currentEntry.genre(channelName: channel.name)
                             if currentGenre != .all {
                                 HStack {
-                                    Label(currentGenre.rawValue, systemImage: currentGenre.icon)
+                                    Label(currentGenre.localizedName, systemImage: currentGenre.icon)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.accentAction)
                                         .padding(.horizontal, 10)
@@ -185,14 +185,14 @@ struct ProgramDetailSheet: View {
                             }
 
                             // Show Title
-                            Text(currentEntry.title)
+                            Text(verbatim: currentEntry.title)
                                 .font(.title2.weight(.bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             // Live Scrubber (if currently on air)
                             if let fraction = currentEntry.progress(at: .now) {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("LÄUFT JETZT LIVE")
+                                    Text("ON AIR NOW")
                                         .font(.caption.weight(.bold).monospaced())
                                         .foregroundStyle(Theme.Colors.accentLive)
 
@@ -200,7 +200,7 @@ struct ProgramDetailSheet: View {
                                         progress: fraction,
                                         startTime: currentEntry.formattedStartTime,
                                         endTime: currentEntry.formattedEndTime,
-                                        remainingText: currentEntry.remainingMinutes(at: .now).map { "noch \($0) Min" }
+                                        remainingText: currentEntry.remainingMinutes(at: .now).map { String(localized: "\($0) min left") }
                                     )
                                 }
                                 .padding(14)
@@ -209,17 +209,17 @@ struct ProgramDetailSheet: View {
 
                             // Full Description / Synopsis
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("INHALTSANGABE")
+                                Text("SYNOPSIS")
                                     .font(.caption.weight(.bold).monospaced())
                                     .foregroundStyle(Theme.Colors.textTertiary)
 
                                 if let desc = currentEntry.description, !desc.isEmpty {
-                                    Text(desc)
+                                    Text(verbatim: desc)
                                         .font(.body)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .lineSpacing(4)
                                 } else {
-                                    Text("Keine ausführliche Beschreibung für diese Sendung vorhanden.")
+                                    Text("No detailed description available for this broadcast.")
                                         .font(.subheadline)
                                         .foregroundStyle(Theme.Colors.textTertiary)
                                 }
@@ -232,7 +232,7 @@ struct ProgramDetailSheet: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: "repeat")
                                             .font(.caption.weight(.bold))
-                                        Text("WEITERE SENDETERMINE & FOLGEN (\(reruns.count))")
+                                        Text("UPCOMING EPISODES & RERUNS (\(reruns.count))")
                                             .font(.caption.weight(.bold).monospaced())
                                     }
                                     .foregroundStyle(Theme.Colors.accentLive)
@@ -264,11 +264,11 @@ struct ProgramDetailSheet: View {
                                             .tint(.white)
                                     } else if recordSuccess == true {
                                         Image(systemName: "checkmark")
-                                        Text("Timer programmiert")
+                                        Text("Timer Scheduled")
                                             .font(.headline)
                                     } else {
                                         Image(systemName: "record.circle")
-                                        Text("Timer aufnehmen")
+                                        Text("Record Timer")
                                             .font(.headline)
                                     }
                                     Spacer()
@@ -300,13 +300,13 @@ struct ProgramDetailSheet: View {
                     #endif
                 }
             }
-            .navigationTitle("Sendungsdetails")
+            .navigationTitle("Broadcast Details")
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Schließen") { dismiss() }
+                    Button("Close") { dismiss() }
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
             }
@@ -361,7 +361,7 @@ struct ExpandableRerunCard: View {
 
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Text(rerun.channel.name)
+                            Text(verbatim: rerun.channel.name)
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -369,18 +369,18 @@ struct ExpandableRerunCard: View {
                                 .font(.caption2)
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
-                            Text(rerun.formattedRelativeTime)
+                            Text(rerun.formattedRelativeTimeResource)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
                         }
 
                         if let desc = rerun.entry.description, !desc.isEmpty {
-                            Text(desc)
+                            Text(verbatim: desc)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .lineLimit(isExpanded ? nil : 1)
                         } else {
-                            Text(rerun.entry.title)
+                            Text(verbatim: rerun.entry.title)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .lineLimit(1)
@@ -408,25 +408,25 @@ struct ExpandableRerunCard: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Text(rerun.entry.title)
+                            Text(verbatim: rerun.entry.title)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             Spacer()
 
-                            Text("\(rerun.entry.formattedTimeRange) (\(rerun.entry.durationMinutes) Min)")
+                            Text("\(rerun.entry.formattedTimeRange) (\(rerun.entry.durationMinutes) min)")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
 
                         if let desc = rerun.entry.description, !desc.isEmpty {
-                            Text(desc)
+                            Text(verbatim: desc)
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .lineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text("Keine separate Folgen-Beschreibung vorhanden.")
+                            Text("No separate episode description available.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
@@ -451,11 +451,11 @@ struct ExpandableRerunCard: View {
                                     .tint(.white)
                             } else if recordSuccess {
                                 Image(systemName: "checkmark")
-                                Text("Folge programmiert")
+                                Text("Episode Scheduled")
                                     .font(.system(size: 12, weight: .bold))
                             } else {
                                 Image(systemName: "record.circle")
-                                Text("Diese Folge aufnehmen")
+                                Text("Record This Episode")
                                     .font(.system(size: 12, weight: .bold))
                             }
                             Spacer()

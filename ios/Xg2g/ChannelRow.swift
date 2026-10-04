@@ -40,7 +40,7 @@ struct ChannelRow: View {
                                     .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                             }
 
-                            Text(channel.name)
+                            Text(verbatim: channel.name)
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
@@ -62,7 +62,7 @@ struct ChannelRow: View {
                                 PulsingLiveDot(size: 5)
                             }
                             if currentGenre != .all {
-                                Text(currentGenre.rawValue)
+                                Text(currentGenre.localizedTitle)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(timeFilter == .now ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
                                     .padding(.horizontal, 7)
@@ -80,7 +80,7 @@ struct ChannelRow: View {
                 if let show = displayedShow {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .top) {
-                            Text(show.title)
+                            Text(verbatim: show.title)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
@@ -106,18 +106,18 @@ struct ChannelRow: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
 
                             if timeFilter == .now, let remaining = show.remainingMinutes(at: .now) {
-                                Text("• noch \(remaining) Min")
+                                Text(String(localized: "• \(remaining) min left"))
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentLive)
                             } else {
-                                Text("• \(show.durationMinutes) Min")
+                                Text(String(localized: "• \(show.durationMinutes) min"))
                                     .font(.system(size: 11, weight: .regular))
                                     .foregroundStyle(Theme.Colors.textTertiary)
                             }
                         }
 
                         if let desc = show.description, !desc.isEmpty {
-                            Text(desc)
+                            Text(verbatim: desc)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .lineLimit(1)
@@ -148,7 +148,7 @@ struct ChannelRow: View {
                         .padding(.top, 2)
                     }
                 } else {
-                    Text("Keine Programminformationen verfügbar")
+                    Text("No programme information available")
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .padding(.vertical, 4)
@@ -157,7 +157,7 @@ struct ChannelRow: View {
                 // MARK: - Next Show Preview ("Danach")
                 if timeFilter == .now, let next = nowNext?.next {
                     HStack(spacing: 6) {
-                        Text("DANACH:")
+                        Text("NEXT:")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
 
@@ -165,7 +165,7 @@ struct ChannelRow: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentAction)
 
-                        Text(next.title)
+                        Text(verbatim: next.title)
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)

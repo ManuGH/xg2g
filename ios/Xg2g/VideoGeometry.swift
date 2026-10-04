@@ -75,6 +75,20 @@ public enum VideoViewPreset: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public var localizedShortLabel: String {
+        switch self {
+        case .standard:   return String(localized: "Standard")
+        case .fillScreen: return String(localized: "Fill")
+        case .r16_9:      return "16:9"
+        case .r4_3:       return "4:3"
+        case .r5_4:       return "5:4"
+        case .r16_10:     return "16:10"
+        case .r2_21:      return "2.21:1"
+        case .r2_35:      return "2.35:1"
+        case .r2_39:      return "2.39:1"
+        }
+    }
+
     public var scalingMode: VideoScalingMode {
         switch self {
         case .fillScreen:

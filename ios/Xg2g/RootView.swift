@@ -175,7 +175,7 @@ struct iPadSidebar: View {
 
     var body: some View {
         List {
-            Section("Mediathek") {
+            Section("Library") {
                 ForEach(Tab.allCases) { tab in
                     let isSelected = model.selectedTab == tab
                     Button {
@@ -188,7 +188,7 @@ struct iPadSidebar: View {
                                 backgroundColor: isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated
                             )
 
-                            Text(tab.rawValue)
+                            Text(tab.title)
                                 .font(.system(size: 15, weight: isSelected ? .bold : .medium))
                                 .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
@@ -219,7 +219,7 @@ struct iPadSidebar: View {
             }
 
             if (model.selectedTab == .liveTV || model.selectedTab == .guide) && !model.bouquets.isEmpty {
-                Section("Bouquets & Sendergruppen") {
+                Section("Bouquets & Channel Groups") {
                     // Alle Sender
                     let isAllSelected = model.selectedBouquet == nil
                     Button {
@@ -231,7 +231,7 @@ struct iPadSidebar: View {
                                 .font(.system(size: 18))
                                 .foregroundStyle(isAllSelected ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
 
-                            Text("Alle Sender")
+                            Text("All Channels")
                                 .font(.system(size: 14, weight: isAllSelected ? .bold : .medium))
                                 .foregroundStyle(isAllSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
@@ -256,14 +256,14 @@ struct iPadSidebar: View {
                         let isFavSelected = model.selectedBouquet?.id == AppModel.favoritesBouquetID
                         Button {
                             triggerHaptic(.light)
-                            Task { await model.selectBouquet(ChannelBouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                            Task { await model.selectBouquet(AppModel.favoritesBouquet) }
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "star.circle.fill")
                                     .font(.system(size: 18))
                                     .foregroundStyle(Theme.Colors.accentLive)
 
-                                Text("Favoriten")
+                                Text("Favorites")
                                     .font(.system(size: 14, weight: isFavSelected ? .bold : .medium))
                                     .foregroundStyle(isFavSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
@@ -296,7 +296,7 @@ struct iPadSidebar: View {
                                     .font(.system(size: 16))
                                     .foregroundStyle(isSelected ? Theme.Colors.accentAction : Theme.Colors.textTertiary)
 
-                                Text(bouquet.name)
+                                Text(verbatim: bouquet.name)
                                     .font(.system(size: 14, weight: isSelected ? .bold : .medium))
                                     .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                                     .lineLimit(1)
@@ -366,31 +366,31 @@ struct MainTabView: View {
         TabView(selection: $model.selectedTab) {
             HomeHubView(model: model)
                 .tabItem {
-                    Label(Tab.home.rawValue, systemImage: Tab.home.systemImage)
+                    Label(String(localized: Tab.home.title), systemImage: Tab.home.systemImage)
                 }
                 .tag(Tab.home)
 
             ChannelListView(model: model)
                 .tabItem {
-                    Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
+                    Label(String(localized: Tab.liveTV.title), systemImage: Tab.liveTV.systemImage)
                 }
                 .tag(Tab.liveTV)
 
             GuideView(model: model)
                 .tabItem {
-                    Label(Tab.guide.rawValue, systemImage: Tab.guide.systemImage)
+                    Label(String(localized: Tab.guide.title), systemImage: Tab.guide.systemImage)
                 }
                 .tag(Tab.guide)
 
             RecordingsView(model: model)
                 .tabItem {
-                    Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
+                    Label(String(localized: Tab.recordings.title), systemImage: Tab.recordings.systemImage)
                 }
                 .tag(Tab.recordings)
 
             SettingsView(model: model)
                 .tabItem {
-                    Label(Tab.settings.rawValue, systemImage: Tab.settings.systemImage)
+                    Label(String(localized: Tab.settings.title), systemImage: Tab.settings.systemImage)
                 }
                 .tag(Tab.settings)
         }
@@ -419,18 +419,18 @@ struct ServerSetupView: View {
                     .overlay(Circle().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
 
                 VStack(spacing: 8) {
-                    Text("Mit xg2g verbinden")
+                    Text("Connect to xg2g")
                         .font(.title2.bold())
                         .foregroundStyle(Theme.Colors.textPrimary)
 
-                    Text("Gib die Adresse deines xg2g-Servers ein.")
+                    Text("Enter the address of your xg2g server.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .multilineTextAlignment(.center)
                 }
 
                 VStack(spacing: 16) {
-                    TextField("tv.example oder xg2g.home.matrixcentral.de", text: $typed)
+                    TextField("tv.example or xg2g.home.matrixcentral.de", text: $typed)
                         .padding()
                         .background(Theme.Colors.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -466,7 +466,7 @@ struct ServerSetupView: View {
                     Button {
                         connect()
                     } label: {
-                        Text("Verbinden")
+                        Text("Connect")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -523,7 +523,7 @@ struct PairingView: View {
                     .overlay(Circle().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
 
                 VStack(spacing: 8) {
-                    Text("Geräte-Kopplung")
+                    Text("Device Pairing")
                         .font(.title2.bold())
                         .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -535,7 +535,7 @@ struct PairingView: View {
                         .background(Theme.Colors.surfaceElevated, in: Capsule())
 
                     if let invitation {
-                        Text("Gib diesen Code in deiner Web-Admin-Konsole unter Geräte ein:")
+                        Text("Enter this code in your Web Admin console under Devices:")
                             .font(.subheadline)
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .multilineTextAlignment(.center)
@@ -556,14 +556,14 @@ struct PairingView: View {
                                 HStack(spacing: 8) {
                                     ProgressView()
                                         .tint(Theme.Colors.accentLive)
-                                    Text("Warte auf Bestätigung in der Admin-Konsole…")
+                                    Text("Waiting for approval in admin console…")
                                         .font(.footnote)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
                                 // `.timer` counts down to a future date on its
                                 // own; no timer to own, nothing to invalidate.
                                 HStack(spacing: 4) {
-                                    Text("Code gültig noch")
+                                    Text("Code valid for")
                                     Text(invitation.expiresAt, style: .timer)
                                         .monospacedDigit()
                                 }
@@ -576,13 +576,13 @@ struct PairingView: View {
                         VStack(spacing: 12) {
                             ProgressView()
                                 .tint(Theme.Colors.accentAction)
-                            Text("Generiere P-256 Hardwareschlüssel & starte Kopplung…")
+                            Text("Generating P-256 hardware key & starting pairing…")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
                         .padding(.vertical, 24)
                     } else {
-                        Text("Dieses Gerät benötigt eine einmalige Genehmigung, bevor Streams gestartet werden können.")
+                        Text("This device requires one-time approval before streams can be played.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .multilineTextAlignment(.center)
@@ -590,7 +590,7 @@ struct PairingView: View {
                         Button {
                             startPairing()
                         } label: {
-                            Text("Kopplung starten")
+                            Text("Start Pairing")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -614,11 +614,11 @@ struct PairingView: View {
                             // Only once a pairing was issued: before that the
                             // "Kopplung starten" button above is the same action.
                             if invitation != nil {
-                                Button("Neuen Code anfordern") {
+                                Button("Request New Code") {
                                     startPairing()
                                 }
                             }
-                            Button("Anderen Server wählen") {
+                            Button("Choose Another Server") {
                                 model.changeServer()
                             }
                         }

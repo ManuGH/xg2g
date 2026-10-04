@@ -13,17 +13,29 @@ enum RecordingPlaybackAction: Equatable {
     case pauseAndDiscard
     case seek(Double)
     case play
-    case handleFailure(String)
+    case handleFailure(userMessage: String, diagnostic: String)
     case ignore
 }
 
 struct RecordingPlaybackDecision {
+    static let failureUserMessageResource = LocalizedStringResource("Playback error")
+
+    static func failureUserMessage(locale: Locale? = nil) -> String {
+        if let locale {
+            var res = failureUserMessageResource
+            res.locale = locale
+            return String(localized: res)
+        }
+        return String(localized: failureUserMessageResource)
+    }
+
     static func decideStatusAction(
         status: AVPlayerItem.Status,
         error: Error?,
         sessionToken: UUID,
         activeToken: UUID?,
-        startPosition: Double?
+        startPosition: Double?,
+        locale: Locale? = nil
     ) -> RecordingPlaybackAction {
         guard activeToken == sessionToken else {
             return .pauseAndDiscard
@@ -36,8 +48,9 @@ struct RecordingPlaybackDecision {
                 return .play
             }
         case .failed:
-            let msg = error?.localizedDescription ?? "Wiedergabefehler"
-            return .handleFailure(msg)
+            let diagnostic = error?.localizedDescription ?? "Playback error"
+            let userMsg = failureUserMessage(locale: locale)
+            return .handleFailure(userMessage: userMsg, diagnostic: diagnostic)
         default:
             return .ignore
         }
@@ -68,6 +81,29 @@ struct RecordingPlayerScreen: View {
     var model: AppModel? = nil
     var playbackManager: PlaybackManager? = nil
     var onProgressUpdate: @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
+
+    init(
+        recording: Recording,
+        serverAddress: ServerAddress,
+        initialPosition: Double? = nil,
+        sessionToken: UUID,
+        model: AppModel? = nil,
+        playbackManager: PlaybackManager? = nil,
+        errorMessage: String? = nil,
+        onProgressUpdate: @escaping @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
+    ) {
+        self.recording = recording
+        self.serverAddress = serverAddress
+        self.initialPosition = initialPosition
+        self.sessionToken = sessionToken
+        self.model = model
+        self.playbackManager = playbackManager
+        self._errorMessage = State(initialValue: errorMessage)
+        if errorMessage != nil {
+            self._isPreparing = State(initialValue: false)
+        }
+        self.onProgressUpdate = onProgressUpdate
+    }
 
     private var activeManager: PlaybackManager? {
         playbackManager ?? model?.playbackManager
@@ -251,7 +287,7 @@ struct RecordingPlayerScreen: View {
                     }
 
                     VStack(spacing: 6) {
-                        Text(recording.title)
+                        Text(verbatim: recording.title)
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .multilineTextAlignment(.center)
@@ -278,7 +314,7 @@ struct RecordingPlayerScreen: View {
                             .tint(palette.accent)
                             .scaleEffect(0.9)
 
-                        Text(initialPosition != nil && initialPosition! > 5 ? "Fortsetzen wird geladen…" : "Wiedergabe wird gestartet…")
+                        Text(initialPosition != nil && initialPosition! > 5 ? String(localized: "Loading resume…") : String(localized: "Starting playback…"))
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
@@ -302,13 +338,13 @@ struct RecordingPlayerScreen: View {
                 .font(.system(size: 40))
                 .foregroundStyle(Color.red)
 
-            Text(errorMessage ?? "Aufnahme konnte nicht geladen werden")
+            Text(errorMessage ?? String(localized: "Recording could not be loaded"))
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            Button("Schließen") {
+            Button(String(localized: "Close")) {
                 cleanup()
                 model?.playbackManager.stop()
                 dismiss()
@@ -323,6 +359,9 @@ struct RecordingPlayerScreen: View {
     // MARK: - Player Setup
 
     private func setupPlayer() {
+        if errorMessage != nil {
+            return
+        }
         let token = self.sessionToken
         guard let manager = activeManager,
               manager.activateRecordingAudioSession(for: token) else {
@@ -367,7 +406,7 @@ struct RecordingPlayerScreen: View {
             ) else {
                 await MainActor.run {
                     guard self.activeManager?.activeRecordingSessionToken == token else { return }
-                    errorMessage = "Ungültige Server-Adresse"
+                    errorMessage = String(localized: "Invalid server address")
                     isPreparing = false
                 }
                 return
@@ -469,11 +508,11 @@ struct RecordingPlayerScreen: View {
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 self.isPreparing = false
                             }
-                        case .handleFailure(let errStr):
-                            TelemetryServer.shared.log("[RecordingPlayer] ❌ AVPlayerItem failed: \(errStr)")
-                            print("[RecordingPlayer] ❌ AVPlayerItem failed: \(String(describing: observedItem.error))")
+                        case .handleFailure(let userMessage, let diagnostic):
+                            TelemetryServer.shared.log("[RecordingPlayer] ❌ AVPlayerItem failed: \(diagnostic)")
+                            print("[RecordingPlayer] ❌ AVPlayerItem failed: \(diagnostic)")
                             withAnimation(.easeInOut(duration: 0.35)) {
-                                self.errorMessage = errStr
+                                self.errorMessage = userMessage
                                 self.isPreparing = false
                             }
                         case .ignore:

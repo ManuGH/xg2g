@@ -38,7 +38,7 @@ final class ZapCoordinator: ObservableObject {
         /// The channel is arriving here and is not yet worth showing.
         case buffering(serviceRef: String)
         /// It failed, and the old channel was not disturbed.
-        case failed(serviceRef: String, reason: String)
+        case failed(serviceRef: String, error: UserFacingError)
     }
 
     @Published private(set) var phase: Phase = .idle
@@ -189,7 +189,20 @@ final class ZapCoordinator: ObservableObject {
             preparation = try await preparations.start(serviceRef: serviceRef, zapID: zapID)
         } catch {
             guard isCurrent(zapID) else { return }
-            return await failOrStartOutright(zapID, serviceRef, "the receiver could not be asked to prepare: \(describe(error))")
+            if error is CancellationError || (error as? APIError) == .transport(.cancelled) {
+                requestedServiceRef = nil
+                phase = .idle
+                return
+            }
+            let userError = ErrorClassifier.classify(error) ?? UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("The stream could not be started."),
+                isRetryable: true,
+                severity: .error,
+                code: "PREPARATION_START_FAILED",
+                diagnosticLog: "the receiver could not be asked to prepare: \(describe(error))"
+            )
+            return await failOrStartOutright(zapID, serviceRef, userError)
         }
         guard isCurrent(zapID) else {
             await preparations.cancel(preparation.preparationId, zapID: zapID)
@@ -210,18 +223,35 @@ final class ZapCoordinator: ObservableObject {
             settled = try await awaitSettled(preparation, using: preparations, zapID: zapID)
         } catch {
             guard isCurrent(zapID) else { return }
+            if error is CancellationError || (error as? APIError) == .transport(.cancelled) {
+                await abandonInFlight(reason: "cancelled")
+                guard isCurrent(zapID) else { return }
+                requestedServiceRef = nil
+                phase = .idle
+                return
+            }
+            let userError = ErrorClassifier.classify(error) ?? UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("The stream could not be started."),
+                isRetryable: true,
+                severity: .error,
+                code: "PREPARATION_FAILED",
+                diagnosticLog: describe(error)
+            )
             await abandonInFlight(reason: "lost track of the preparation")
-            return await failOrStartOutright(zapID, serviceRef, "lost track of the preparation: \(describe(error))")
+            guard isCurrent(zapID) else { return }
+            return await failOrStartOutright(zapID, serviceRef, userError)
         }
         guard isCurrent(zapID) else { return }
 
         guard settled.parsedState == .ready, let backendGeneration = settled.generation else {
             await abandonInFlight(reason: "preparation did not become ready")
             guard isCurrent(zapID) else { return }
+            let userError = ErrorClassifier.classifyZapPreparation(settled)
             return await failOrStartOutright(
                 zapID,
                 serviceRef,
-                settled.failureSummary,
+                userError,
                 isAdmissionDenied: settled.isAdmissionDenied
             )
         }
@@ -234,7 +264,15 @@ final class ZapCoordinator: ObservableObject {
         guard let url = streamURL(serviceRef) else {
             await abandonInFlight(reason: "no stream address")
             guard isCurrent(zapID) else { return }
-            return fail(zapID, serviceRef, "no stream address for \(serviceRef)")
+            let userError = UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("Invalid stream URL."),
+                isRetryable: false,
+                severity: .error,
+                code: "NO_STREAM_URL",
+                diagnosticLog: "no stream address for \(serviceRef)"
+            )
+            return fail(zapID, serviceRef, userError)
         }
 
         let session = makeSession()
@@ -248,12 +286,29 @@ final class ZapCoordinator: ObservableObject {
         // Presentation readiness is decided here, not by the backend: a picture decoded,
         // audio that covers the instant the clock will start on, and no recovery in
         // progress. The backend can only say the transport is sound.
-        let ready = await awaitPresentable(session, zapID: zapID)
+        let outcome = await awaitPresentable(session, zapID: zapID)
         guard isCurrent(zapID) else { return }
-        guard ready else {
+        switch outcome {
+        case .ready:
+            break
+        case .cancelled:
+            await abandonInFlight(reason: "cancelled while buffering")
+            guard isCurrent(zapID) else { return }
+            requestedServiceRef = nil
+            phase = .idle
+            return
+        case .notPresentable:
             await abandonInFlight(reason: "never became presentable")
             guard isCurrent(zapID) else { return }
-            return fail(zapID, serviceRef, "the channel arrived but never became presentable")
+            let userError = UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("The channel arrived but could not be displayed."),
+                isRetryable: true,
+                severity: .error,
+                code: "NOT_PRESENTABLE",
+                diagnosticLog: "the channel arrived but never became presentable"
+            )
+            return fail(zapID, serviceRef, userError)
         }
         let presentationReadyAt = CACurrentMediaTime()
         let presentationMs = Int((presentationReadyAt - transportReadyAt) * 1000)
@@ -265,7 +320,15 @@ final class ZapCoordinator: ObservableObject {
         guard context.bind(session) else {
             await abandonInFlight(reason: "commit refused")
             guard isCurrent(zapID) else { return }
-            return fail(zapID, serviceRef, "the surface refused the channel")
+            let userError = UserFacingError(
+                title: LocalizedStringResource("Playback Error"),
+                detail: LocalizedStringResource("The display layer refused the channel."),
+                isRetryable: true,
+                severity: .error,
+                code: "COMMIT_REFUSED",
+                diagnosticLog: "the surface refused the channel"
+            )
+            return fail(zapID, serviceRef, userError)
         }
         let bindAt = CACurrentMediaTime()
         let bindMs = Int((bindAt - presentationReadyAt) * 1000)
@@ -461,12 +524,30 @@ final class ZapCoordinator: ObservableObject {
         return latest
     }
 
-    private func awaitPresentable(_ session: NativeTSVideoPipeline, zapID: String) async -> Bool {
+    private enum PresentableOutcome {
+        case ready
+        case cancelled
+        case notPresentable
+    }
+
+    private func awaitPresentable(_ session: NativeTSVideoPipeline, zapID: String) async -> PresentableOutcome {
         while isCurrent(zapID) {
-            if session.isPresentable { return true }
-            try? await Task.sleep(for: Self.pollInterval)
+            if Task.isCancelled {
+                return .cancelled
+            }
+            if session.isPresentable {
+                return .ready
+            }
+            do {
+                try await Task.sleep(for: Self.pollInterval)
+            } catch {
+                return .cancelled
+            }
+            if Task.isCancelled {
+                return .cancelled
+            }
         }
-        return false
+        return isCurrent(zapID) ? .notPresentable : .cancelled
     }
 
     /// Drops whatever preparation is in flight, on both sides.
@@ -475,11 +556,16 @@ final class ZapCoordinator: ObservableObject {
     /// holding a tuner rather than waiting to time out. The channel on screen is not
     /// touched: that is the guarantee the whole transaction exists for.
     private func abandonInFlight(reason: String) async {
-        requestedServiceRef = nil
         guard let flight = inFlight else { return }
         inFlight = nil
+        if requestedServiceRef == flight.serviceRef {
+            requestedServiceRef = nil
+        }
         flight.session?.stopStreaming()
-        await preparations?.cancel(flight.preparationID, zapID: flight.zapID)
+        let prep = preparations
+        await Task.detached {
+            await prep?.cancel(flight.preparationID, zapID: flight.zapID)
+        }.value
         note(flight.zapID, "prepare.abandoned", flight.serviceRef, extra: reason)
     }
 
@@ -496,13 +582,16 @@ final class ZapCoordinator: ObservableObject {
     /// For any stream-level failure (e.g. timeout, ingest_ended, unpresentable, scrambled,
     /// no PAT/PMT, generation change), the running channel (`playing`) is kept alive and untouched,
     /// preserving the core Make-before-Break safety guarantee.
-    private func failOrStartOutright(_ zapID: String, _ serviceRef: String, _ reason: String, isAdmissionDenied: Bool = false) async {
-        note(zapID, "zap.failed", serviceRef, extra: reason)
+    private func failOrStartOutright(_ zapID: String, _ serviceRef: String, _ error: UserFacingError, isAdmissionDenied: Bool = false) async {
+        guard isCurrent(zapID) else { return }
+        let diagReason = error.diagnosticLog ?? String(describing: error.title)
+        note(zapID, "zap.failed", serviceRef, extra: diagReason)
 
         let allowFallback = (playing == nil) || isAdmissionDenied
-        guard allowFallback, let url = streamURL(serviceRef), isCurrent(zapID) else {
+        guard allowFallback, let url = streamURL(serviceRef) else {
+            guard isCurrent(zapID) else { return }
             requestedServiceRef = nil
-            phase = .failed(serviceRef: serviceRef, reason: reason)
+            phase = .failed(serviceRef: serviceRef, error: error)
             return
         }
 
@@ -516,10 +605,12 @@ final class ZapCoordinator: ObservableObject {
         await startOutright(url: url, zapID: zapID, requestedAt: CACurrentMediaTime())
     }
 
-    private func fail(_ zapID: String, _ serviceRef: String, _ reason: String) {
+    private func fail(_ zapID: String, _ serviceRef: String, _ error: UserFacingError) {
+        guard isCurrent(zapID) else { return }
         requestedServiceRef = nil
-        phase = .failed(serviceRef: serviceRef, reason: reason)
-        note(zapID, "zap.failed", serviceRef, extra: reason)
+        phase = .failed(serviceRef: serviceRef, error: error)
+        let diagReason = error.diagnosticLog ?? String(describing: error.title)
+        note(zapID, "zap.failed", serviceRef, extra: diagReason)
     }
 
     /// Follows the visible session, so a screen bound to this object keeps redrawing.

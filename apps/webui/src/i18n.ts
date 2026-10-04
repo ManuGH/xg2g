@@ -12,6 +12,16 @@ import enTranslation from './locales/en.json';
 const SUPPORTED_LANGUAGES = ['de', 'en'] as const;
 type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+declare module 'i18next' {
+  interface CustomTypeOptions {
+    defaultNS: 'translation';
+    resources: {
+      translation: typeof enTranslation;
+    };
+    strictKeyChecks: true;
+  }
+}
+
 const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 const STORAGE_KEY = 'xg2g_lang';
 

@@ -219,6 +219,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public let telemetry = StreamTelemetry()
     @Published public private(set) var runtimePlan: SessionRuntimePlan?
+    #if DEBUG
+    public var forcePresentableForTesting: Bool = false
+    #endif
 
     private let tsParser = TSPacketParser()
     private let pesAssembler = PESPacketAssembler()
@@ -2929,6 +2932,9 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
     ///   - their timestamps are coherent with it, which is what says the leading
     ///     orphan audio can be trimmed once rather than resynchronised forever.
     public var isPresentable: Bool {
+        #if DEBUG
+        if forcePresentableForTesting { return true }
+        #endif
         // Never while rebuilding. A session mid-recovery may still be holding an anchor
         // and a picture from the timeline it is discarding, and committing to that is
         // committing to a stream that has already gone.

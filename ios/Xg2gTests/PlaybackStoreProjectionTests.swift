@@ -1009,18 +1009,47 @@ struct PlaybackStoreProjectionTests {
         )
         #expect(actionSuperseded == .pauseAndDiscard, "Queued readyToPlay for superseded session must be discarded")
 
-        // 5. Matching token + failed -> handleFailure
+        // 5. Matching token + failed -> handleFailure with catalog-backed user message & preserved diagnostics
         struct DummyError: LocalizedError {
             var errorDescription: String? { "Disk read error" }
         }
-        let actionFailed = RecordingPlaybackDecision.decideStatusAction(
+        let actionFailedEN = RecordingPlaybackDecision.decideStatusAction(
             status: .failed,
             error: DummyError(),
             sessionToken: tokenA,
             activeToken: tokenA,
-            startPosition: nil
+            startPosition: nil,
+            locale: Locale(identifier: "en")
         )
-        #expect(actionFailed == .handleFailure("Disk read error"))
+        #expect(actionFailedEN == .handleFailure(
+            userMessage: "Playback error",
+            diagnostic: "Disk read error"
+        ))
+
+        let actionFailedDE = RecordingPlaybackDecision.decideStatusAction(
+            status: .failed,
+            error: DummyError(),
+            sessionToken: tokenA,
+            activeToken: tokenA,
+            startPosition: nil,
+            locale: Locale(identifier: "de")
+        )
+        #expect(actionFailedDE == .handleFailure(
+            userMessage: "Wiedergabefehler",
+            diagnostic: "Disk read error"
+        ))
+
+        // Raw diagnostic must never leak into user-facing message
+        if case .handleFailure(let userMsg, let diagnostic) = actionFailedEN {
+            #expect(userMsg == "Playback error")
+            #expect(!userMsg.contains("Disk read error"))
+            #expect(diagnostic == "Disk read error")
+        }
+        if case .handleFailure(let userMsg, let diagnostic) = actionFailedDE {
+            #expect(userMsg == "Wiedergabefehler")
+            #expect(!userMsg.contains("Disk read error"))
+            #expect(diagnostic == "Disk read error")
+        }
 
         // 6. Superseded token + failed -> pauseAndDiscard
         let actionFailedSuperseded = RecordingPlaybackDecision.decideStatusAction(

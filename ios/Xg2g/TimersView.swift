@@ -17,14 +17,14 @@ struct TimersView: View {
 
                 Group {
                     if model.timers.isEmpty && model.isLoadingTimers {
-                        ProgressView("Lade Timer…")
+                        ProgressView("Loading timers…")
                             .tint(Theme.Colors.accentAction)
                             .foregroundStyle(Theme.Colors.textSecondary)
                     } else if model.timers.isEmpty {
                         ContentUnavailableView(
-                            "Keine Timer",
+                            "No Timers",
                             systemImage: "clock.badge.checkmark",
-                            description: Text("Derzeit sind keine Aufnahme-Timer auf der Vu+ Uno 4K geplant.")
+                            description: Text("No recording timers are currently scheduled on the receiver.")
                         )
                         .foregroundStyle(Theme.Colors.textSecondary)
                     } else {
@@ -40,7 +40,7 @@ struct TimersView: View {
                                             Button(role: .destructive) {
                                                 Task { await model.deleteTimer(timer) }
                                             } label: {
-                                                Label("Timer löschen", systemImage: "trash")
+                                                Label("Delete Timer", systemImage: "trash")
                                             }
                                         }
                                 }
@@ -53,7 +53,7 @@ struct TimersView: View {
                     }
                 }
             }
-            .navigationTitle("Timer")
+            .navigationTitle("Timers")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -108,7 +108,7 @@ struct TimerRow: View {
                     HStack(spacing: 6) {
                         if timer.isRunning {
                             PulsingLiveDot(size: 5)
-                            Text("NIMMT AUF")
+                            Text("RECORDING")
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.statusError)
                                 .padding(.horizontal, 5)
@@ -116,22 +116,28 @@ struct TimerRow: View {
                                 .background(Theme.Colors.statusError.opacity(0.15), in: Capsule())
                         }
 
-                        Text(timer.name)
+                        Text(verbatim: timer.name)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                     }
 
-                    Text(timer.serviceName ?? "Timer")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Theme.Colors.accentLive)
+                    if let sName = timer.serviceName {
+                        Text(verbatim: sName)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                    } else {
+                        Text("Timer")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                    }
                 }
 
                 Spacer()
             }
 
             if let description = timer.description, !description.isEmpty {
-                Text(description)
+                Text(verbatim: description)
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(2)
@@ -175,29 +181,29 @@ struct AddTimerSheet: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 Form {
-                    Section("Sendungsdaten") {
-                        TextField("Titel", text: $name)
-                        TextField("Beschreibung (optional)", text: $description)
+                    Section("Broadcast Details") {
+                        TextField("Title", text: $name)
+                        TextField("Description (optional)", text: $description)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
-                    Section("Sender") {
-                        Picker("Sender", selection: $selectedChannel) {
-                            Text("Sender wählen…").tag(nil as Channel?)
+                    Section("Channel") {
+                        Picker("Channel", selection: $selectedChannel) {
+                            Text("Select channel…").tag(nil as Channel?)
                             ForEach(model.channels) { ch in
-                                Text(ch.name).tag(ch as Channel?)
+                                Text(verbatim: ch.name).tag(ch as Channel?)
                             }
                         }
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
-                    Section("Sendezeit") {
+                    Section("Broadcast Time") {
                         #if !os(tvOS)
-                        DatePicker("Startzeit", selection: $begin)
-                        DatePicker("Endzeit", selection: $end)
+                        DatePicker("Start Time", selection: $begin)
+                        DatePicker("End Time", selection: $end)
                         #else
                         Text("Start: \(begin.formatted())")
-                        Text("Ende: \(end.formatted())")
+                        Text("End: \(end.formatted())")
                         #endif
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
@@ -206,18 +212,18 @@ struct AddTimerSheet: View {
                 .scrollContentBackground(.hidden)
                 #endif
             }
-            .navigationTitle("Neuer Timer")
+            .navigationTitle("New Timer")
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") {
+                    Button("Cancel") {
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Planen") {
+                    Button("Schedule") {
                         save()
                     }
                     .disabled(name.isEmpty || selectedChannel == nil || isSaving)

@@ -18,13 +18,13 @@ struct FavoritesQuickRail: View {
                 Image(systemName: "star.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.yellow)
-                Text("MEINE FAVORITEN")
+                Text("MY FAVORITES")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
 
-                Text("\(channels.count) Sender")
+                Text(String(localized: "\(channels.count) channels"))
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -52,14 +52,14 @@ struct FavoritesQuickRail: View {
                                                 .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
                                         }
 
-                                        Text(channel.name)
+                                        Text(verbatim: channel.name)
                                             .font(.system(size: 13, weight: .bold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
                                             .lineLimit(1)
                                     }
 
                                     if let now = nowNext?.now {
-                                        Text(now.title)
+                                        Text(verbatim: now.title)
                                             .font(.system(size: 11, weight: .medium))
                                             .foregroundStyle(Theme.Colors.textTertiary)
                                             .lineLimit(1)
@@ -105,13 +105,13 @@ struct RecentlyWatchedRail: View {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.Colors.accentAction)
-                Text("ZULETZT GESPIELT")
+                Text("RECENTLY PLAYED")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 Spacer()
 
-                Text("\(channels.count) Sender")
+                Text(String(localized: "\(channels.count) channels"))
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -163,7 +163,7 @@ struct RecentChannelCard: View {
                                     .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                             }
 
-                            Text(channel.name)
+                            Text(verbatim: channel.name)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
@@ -182,7 +182,7 @@ struct RecentChannelCard: View {
                     Spacer(minLength: 4)
 
                     if let now = nowNext?.now, let remaining = now.remainingMinutes(at: .now) {
-                        Text("noch \(remaining)m")
+                        Text(String(localized: "\(remaining)m left"))
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.accentLive)
                             .padding(.horizontal, 7)
@@ -195,7 +195,7 @@ struct RecentChannelCard: View {
                 if let now = nowNext?.now {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(alignment: .top) {
-                            Text(now.title)
+                            Text(verbatim: now.title)
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
@@ -237,7 +237,7 @@ struct RecentChannelCard: View {
                         }
                     }
                 } else {
-                    Text("Keine Programminformationen")
+                    Text("No programme information")
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .padding(.vertical, 2)
@@ -248,7 +248,7 @@ struct RecentChannelCard: View {
                     HStack(spacing: 5) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 10, weight: .bold))
-                        Text("Weiterschauen")
+                        Text("Continue Watching")
                             .font(.system(size: 11, weight: .bold))
                     }
                     .padding(.horizontal, 10)
@@ -260,7 +260,7 @@ struct RecentChannelCard: View {
                     Spacer()
 
                     if let next = nowNext?.next {
-                        Text("Danach: \(next.title)")
+                        Text(String(localized: "Next: \(next.title)"))
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(1)
