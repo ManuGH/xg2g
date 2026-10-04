@@ -269,3 +269,85 @@ func TestE2_5c_Compensation_JoinedErrorPreservesCause(t *testing.T) {
 		t.Fatalf("joined error must return true for errors.Is(relErr)")
 	}
 }
+
+// Test 7: Verify DVB sessions enforce MaxRestrictedAccessSessions while IPTV sessions bypass CAM/CI limits.
+func TestE2_5c_RestrictedAccessLimitEnforced_DVB_Bypassed_IPTV(t *testing.T) {
+	st := store.NewMemoryStore()
+	evaluator := receiverusage.NewEvaluator()
+	ctrl := receiverusage.NewRestrictedAccessController(st)
+
+	policy := receiverusage.ConservativeSingleUsePolicy()
+	policy.MaxRestrictedAccessSessions = 1
+
+	o := &Orchestrator{
+		Store:                st,
+		ReceiverID:           "rec-limit-1",
+		Owner:                "test-worker-1",
+		TunerSlots:           []int{0, 1}, // Multiple tuners available so tuner isn't the bottleneck
+		LeaseTTL:             10 * time.Minute,
+		UsageEvaluator:       evaluator,
+		RestrictedAccessCtrl: ctrl,
+		UsagePolicy:          policy,
+		LeaseKeyFunc:         func(e model.StartSessionEvent) string { return "dedup:" + e.SessionID },
+	}
+
+	// 1. First DVB session on protected channel succeeds and acquires restricted access slot
+	dvbEvent1 := model.StartSessionEvent{
+		SessionID:  "sess-dvb-1",
+		ServiceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+	}
+	dvbCtx1 := &sessionContext{
+		SessionID:  dvbEvent1.SessionID,
+		Mode:       model.ModeLive,
+		ServiceRef: dvbEvent1.ServiceRef,
+	}
+	res1, err := o.acquireLeases(context.Background(), dvbCtx1, dvbEvent1, "owner-dvb-1", zerolog.Nop())
+	if err != nil {
+		t.Fatalf("first DVB session should succeed, got err: %v", err)
+	}
+	defer res1.ReleaseRestrictedAccess()
+	defer res1.ReleaseTuner()
+
+	// 2. Second DVB session on protected channel must fail with restricted access limit exceeded
+	dvbEvent2 := model.StartSessionEvent{
+		SessionID:  "sess-dvb-2",
+		ServiceRef: "1:0:19:283E:3FB:1:C00000:0:0:0:",
+	}
+	dvbCtx2 := &sessionContext{
+		SessionID:  dvbEvent2.SessionID,
+		Mode:       model.ModeLive,
+		ServiceRef: dvbEvent2.ServiceRef,
+	}
+	_, err2 := o.acquireLeases(context.Background(), dvbCtx2, dvbEvent2, "owner-dvb-2", zerolog.Nop())
+	if err2 == nil {
+		t.Fatalf("second DVB session must fail due to restricted access limit, got nil")
+	}
+	reason, _, _, ok := lifecycle.ReasonFromError(err2)
+	if !ok || reason != model.RReceiverUsageRestrictedAccessLimitExceeded {
+		t.Fatalf("expected reason RReceiverUsageRestrictedAccessLimitExceeded, got reason %v (err: %v)", reason, err2)
+	}
+
+	// 3. IPTV session must succeed even when CAM/CI restricted access slot limit is fully occupied
+	iptvEvent := model.StartSessionEvent{
+		SessionID:  "sess-iptv-1",
+		ServiceRef: "4097:0:1:0:0:0:0:0:0:0:http%3a//example.com/live.ts:Test",
+	}
+	iptvCtx := &sessionContext{
+		SessionID:  iptvEvent.SessionID,
+		Mode:       model.ModeLive,
+		ServiceRef: iptvEvent.ServiceRef,
+	}
+	resIPTV, errIPTV := o.acquireLeases(context.Background(), iptvCtx, iptvEvent, "owner-iptv-1", zerolog.Nop())
+	if errIPTV != nil {
+		t.Fatalf("IPTV session should succeed and bypass restricted access limit, got err: %v", errIPTV)
+	}
+	if res1.RestrictedAccessHandle.LeaseID == "" {
+		t.Fatalf("first DVB session must hold an active restricted access lease handle")
+	}
+	if resIPTV.RestrictedAccessHandle.LeaseID != "" {
+		t.Fatalf("IPTV session must not hold a restricted access lease handle, got %s", resIPTV.RestrictedAccessHandle.LeaseID)
+	}
+	if resIPTV.Slot >= 0 {
+		t.Fatalf("IPTV session must not occupy a tuner slot, got slot %d", resIPTV.Slot)
+	}
+}

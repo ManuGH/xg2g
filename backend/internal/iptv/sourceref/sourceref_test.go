@@ -238,6 +238,54 @@ func TestParser_A1_Matrix(t *testing.T) {
 			wantName:    "101",
 			wantURLFrag: "http://example.invalid:8080/live.m3u8",
 		},
+		{
+			name:     "Unencoded http: port with path fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://h.invalid:8080/live.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Unencoded http: port without path fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://h.invalid:8080:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Unencoded http: userinfo with password fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://user:pass@h.invalid/x.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Encoded http%3a: unencoded userinfo password fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http%3a//user:pass@h.invalid/x.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:        "Unencoded http: valid path without colons in authority succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http://h.invalid/live.ts:MyChannel",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "MyChannel",
+			wantURLFrag: "http://h.invalid/live.ts",
+		},
+		{
+			name:        "Unencoded http: valid path with colons in channel name succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http://h.invalid/live.ts:Sky Cinema: Action HD",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "Sky Cinema: Action HD",
+			wantURLFrag: "http://h.invalid/live.ts",
+		},
+		{
+			name:        "Encoded URL: properly encoded userinfo and port succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http%3a//user%3apass@h.invalid%3a8080/x.ts:Name",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "Name",
+			wantURLFrag: "http://user:pass@h.invalid:8080/x.ts",
+		},
 	}
 
 	for _, tt := range tests {

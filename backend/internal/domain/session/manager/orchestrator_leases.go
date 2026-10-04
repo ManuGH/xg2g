@@ -66,7 +66,7 @@ func (o *Orchestrator) acquireLeases(
 	}
 	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
 	if o.UsageEvaluator != nil {
-		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, !isIPTV, false, time.Now(), isIPTV)
+		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now(), isIPTV)
 		activeSessions, _ := o.Store.ListSessions(ctx)
 		snap := BuildSystemSnapshot(o.ReceiverID, activeSessions, nil)
 

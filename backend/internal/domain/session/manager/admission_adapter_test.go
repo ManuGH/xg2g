@@ -58,6 +58,23 @@ func TestAdmissionAdapter_BuildUsageRequest_Unknown(t *testing.T) {
 	}
 }
 
+func TestAdmissionAdapter_BuildUsageRequest_IPTV(t *testing.T) {
+	sCtx := &sessionContext{
+		Mode:       model.ModeLive,
+		ServiceRef: "4097:0:1:0:0:0:0:0:0:0:http%3a//example.com/live.ts:Test",
+	}
+
+	// For IPTV, even if channelProtectionKnown=true and isChannelProtected=true, it must yield AccessCapacityNone and IsIPTV=true
+	req := BuildUsageRequest(sCtx, "rec-1", "owner-1", true, true, fixedTime, true)
+
+	if !req.Source.IsIPTV {
+		t.Fatalf("expected req.Source.IsIPTV == true, got false")
+	}
+	if req.Access.Class != receiverusage.AccessCapacityNone {
+		t.Fatalf("expected AccessCapacityNone for IPTV, got %v", req.Access.Class)
+	}
+}
+
 func TestAdmissionAdapter_BuildSystemSnapshot_MergesXg2gAndOpenWebif(t *testing.T) {
 	activeXg2g := []*model.SessionRecord{
 		{

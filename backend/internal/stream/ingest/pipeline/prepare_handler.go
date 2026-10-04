@@ -14,6 +14,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -170,7 +171,15 @@ func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID 
 	serviceRef = rawRef
 
 	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
-	key.TargetProgram = targetProgramFromServiceRef(serviceRef)
+	_, isIPTV, _ := sourceref.ClassifyReference(nil, serviceRef)
+	if !isIPTV {
+		key.TargetProgram = targetProgramFromServiceRef(serviceRef)
+	} else {
+		// Invariant: For IPTV, Enigma2 reference triplet fields (e.g. 4E27) are dummy/EPG placeholders
+		// copied from satellite lamedb and do NOT match the provider transport stream's internal program.
+		// TargetProgram must remain 0 so MasterRing automatically selects the present program from the TS PAT.
+		key.TargetProgram = 0
+	}
 	if err := key.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid sref: %v", err))
 		return
