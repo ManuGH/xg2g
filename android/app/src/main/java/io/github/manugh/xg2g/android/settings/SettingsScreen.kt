@@ -851,52 +851,25 @@ private fun TvSettingsOptionButton(
 }
 
 @Composable
-private fun formatReceiverStatus(status: String): String = when (status.lowercase()) {
-    "ready", "online", "online (bereit)" -> stringResource(R.string.settings_diag_status_online_ready)
-    "offline" -> stringResource(R.string.settings_diag_status_offline)
-    "unreachable", "nicht erreichbar" -> stringResource(R.string.settings_diag_status_unreachable)
-    "loading", "lade..." -> stringResource(R.string.settings_diag_status_loading)
-    else -> status
-}
+private fun formatReceiverStatus(status: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatReceiverStatus(status, androidx.compose.ui.platform.LocalContext.current)
 
 @Composable
-private fun formatEpgStatus(status: String): String = when (status.lowercase()) {
-    "active", "aktiv (synchronisiert)" -> stringResource(R.string.settings_diag_status_epg_active)
-    "limited", "eingeschränkt" -> stringResource(R.string.settings_diag_status_epg_limited)
-    "unavailable", "nicht verfügbar" -> stringResource(R.string.settings_diag_status_unavailable)
-    "loading", "lade..." -> stringResource(R.string.settings_diag_status_loading)
-    else -> status
-}
+private fun formatEpgStatus(status: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatEpgStatus(status, androidx.compose.ui.platform.LocalContext.current)
 
 @Composable
-private fun formatSettingsMessage(raw: String): String = when {
-    raw == "pairing_success" || raw == "Gerät erfolgreich gekoppelt!" -> stringResource(R.string.settings_pairing_success)
-    raw == "admin_unlocked" || raw == "Admin-Modus freigeschaltet." -> stringResource(R.string.settings_admin_unlocked_msg)
-    raw == "admin_locked" || raw == "Admin-Modus gesperrt." -> stringResource(R.string.settings_admin_locked_msg)
-    raw == "token_saved" || raw == "API-Token erfolgreich gespeichert." -> stringResource(R.string.settings_token_saved)
-    raw.startsWith("profile_activated:") -> {
-        val name = raw.removePrefix("profile_activated:")
-        stringResource(R.string.settings_profile_activated, name)
-    }
-    else -> raw
-}
+private fun formatSettingsMessage(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatSettingsMessage(raw, androidx.compose.ui.platform.LocalContext.current)
 
 @Composable
-private fun formatPairingError(raw: String): String = when {
-    raw == "pairing_expired" || raw.contains("abgelaufen") -> stringResource(R.string.settings_pairing_error_expired)
-    raw == "pairing_start_failed" || raw.contains("nicht gestartet") -> stringResource(R.string.settings_pairing_error_start)
-    else -> stringResource(R.string.settings_pairing_error_start)
-}
+private fun formatPairingError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatPairingError(raw, androidx.compose.ui.platform.LocalContext.current)
 
 @Composable
-private fun formatUnlockError(raw: String): String = when {
-    raw == "wrong_pin" || raw.contains("Falscher Haushalt-PIN") -> stringResource(R.string.settings_admin_wrong_pin)
-    raw == "unlock_failed" || raw.contains("fehlgeschlagen") -> stringResource(R.string.settings_admin_unlock_failed)
-    else -> stringResource(R.string.settings_admin_unlock_failed)
-}
+private fun formatUnlockError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatUnlockError(raw, androidx.compose.ui.platform.LocalContext.current)
 
 @Composable
-private fun formatScanError(raw: String): String = when {
-    raw == "scan_start_failed" || raw.contains("nicht gestartet") -> stringResource(R.string.settings_scan_start_failed)
-    else -> stringResource(R.string.settings_scan_start_failed)
-}
+private fun formatScanError(raw: String): String =
+    io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.formatScanError(raw, androidx.compose.ui.platform.LocalContext.current)

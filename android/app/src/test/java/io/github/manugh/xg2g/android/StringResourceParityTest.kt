@@ -78,6 +78,42 @@ class StringResourceParityTest {
         }
     }
 
+    @Test
+    fun `formatting placeholders match exactly between default and german catalogs`() {
+        val projectRoot = findProjectRoot()
+        val defaultStringsFile = File(projectRoot, "android/app/src/main/res/values/strings.xml").let {
+            if (it.exists()) it else File(projectRoot, "app/src/main/res/values/strings.xml")
+        }
+        val germanStringsFile = File(projectRoot, "android/app/src/main/res/values-de/strings.xml").let {
+            if (it.exists()) it else File(projectRoot, "app/src/main/res/values-de/strings.xml")
+        }
+
+        val defaultMap = parseStringKeyValueMap(defaultStringsFile)
+        val germanMap = parseStringKeyValueMap(germanStringsFile)
+
+        val placeholderRegex = Regex("%(\\d+\\$)?[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z%]")
+
+        for ((key, enValue) in defaultMap) {
+            val deValue = germanMap[key] ?: error("Missing key in German: $key")
+
+            val enPlaceholders = placeholderRegex.findAll(enValue)
+                .map { it.value }
+                .filter { it != "%%" }
+                .toList()
+
+            val dePlaceholders = placeholderRegex.findAll(deValue)
+                .map { it.value }
+                .filter { it != "%%" }
+                .toList()
+
+            assertEquals(
+                "Formatting placeholders must match between EN and DE for key '$key' (EN: '$enValue', DE: '$deValue')",
+                enPlaceholders,
+                dePlaceholders
+            )
+        }
+    }
+
     private fun parseStringKeyValueMap(file: File): Map<String, String> {
         val factory = DocumentBuilderFactory.newInstance()
         val builder = factory.newDocumentBuilder()

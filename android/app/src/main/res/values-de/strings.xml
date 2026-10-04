@@ -227,7 +227,9 @@
 
     <!-- General / Auth UI -->
     <string name="auth_revoked_title">Zugriff beendet</string>
+    <string name="auth_revoked_detail">Der Geräte-Zugriff wurde vom Administrator widerrufen.</string>
     <string name="auth_reauth_title">Sitzung abgelaufen</string>
+    <string name="auth_reauth_detail">Die Sitzung ist abgelaufen. Bitte erneut anmelden.</string>
 
     <!-- Settings Diagnostic & Action Status -->
     <string name="settings_diag_status_loading">Lade…</string>
@@ -247,4 +249,5 @@
     <string name="settings_admin_locked_msg">Admin-Modus gesperrt.</string>
     <string name="settings_scan_start_failed">Sendersuchlauf konnte nicht gestartet werden.</string>
     <string name="settings_token_saved">API-Token erfolgreich gespeichert.</string>
+    <string name="settings_message_generic">Einstellungen wurden aktualisiert.</string>
 </resources>

@@ -224,8 +224,18 @@ internal class MainScreenUi(
             is MainUiState.Setup -> renderSetup(state)
             is MainUiState.Error -> renderError(state)
             is MainUiState.Loading -> renderLoading(state)
-            is MainUiState.Revoked -> renderError(MainUiState.Error(activity.getString(R.string.auth_revoked_title), state.reason))
-            is MainUiState.ReauthRequired -> renderError(MainUiState.Error(activity.getString(R.string.auth_reauth_title), state.reason))
+            is MainUiState.Revoked -> renderError(
+                MainUiState.Error(
+                    title = activity.getString(R.string.auth_revoked_title),
+                    detail = io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.resolveAuthRevokedDetail(activity)
+                )
+            )
+            is MainUiState.ReauthRequired -> renderError(
+                MainUiState.Error(
+                    title = activity.getString(R.string.auth_reauth_title),
+                    detail = io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy.resolveAuthReauthDetail(activity)
+                )
+            )
             is MainUiState.RefreshingBanner -> renderContent()
             MainUiState.Content -> renderContent()
         }

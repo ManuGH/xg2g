@@ -227,7 +227,9 @@
 
     <!-- General / Auth UI -->
     <string name="auth_revoked_title">Access Revoked</string>
+    <string name="auth_revoked_detail">Device access has been revoked by the administrator.</string>
     <string name="auth_reauth_title">Session Expired</string>
+    <string name="auth_reauth_detail">The session has expired. Please sign in again.</string>
 
     <!-- Settings Diagnostic & Action Status -->
     <string name="settings_diag_status_loading">Loading…</string>
@@ -247,4 +249,5 @@
     <string name="settings_admin_locked_msg">Admin mode locked.</string>
     <string name="settings_scan_start_failed">Failed to start scan.</string>
     <string name="settings_token_saved">API token saved successfully.</string>
+    <string name="settings_message_generic">Settings updated successfully.</string>
 </resources>
