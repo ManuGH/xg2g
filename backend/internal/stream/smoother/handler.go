@@ -5,6 +5,7 @@
 package smoother
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 // FlusherWriter wraps an http.ResponseWriter and http.Flusher.
@@ -37,6 +42,7 @@ type Handler struct {
 	streamPort   int
 	cfg          Config
 	client       *http.Client
+	resolver     *edge.Resolver
 }
 
 // isValidServiceRef validates that serviceRef conforms strictly to DVB/Enigma2
@@ -89,6 +95,15 @@ func NewHandler(receiverBaseURL string, streamPort int, cfg Config) *Handler {
 	}
 }
 
+// SetIPTVResolver sets or updates the injected IPTV edge resolver.
+func (h *Handler) SetIPTVResolver(resolver *edge.Resolver) {
+	h.resolver = resolver
+}
+
+func isIPTVRef(ref string) bool {
+	return strings.HasPrefix(ref, "4097:") || strings.HasPrefix(ref, "5001:") || strings.HasPrefix(ref, "5002:")
+}
+
 // ServeHTTP handles GET /api/v3/stream/smooth/* requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract service reference from wildcard or query param
@@ -109,23 +124,48 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serviceRef = unescaped
 	}
 
-	if !isValidServiceRef(serviceRef) {
+	clientServiceRef := serviceRef
+	rawRef, _, err := h.resolver.ResolveInbound(metrics.EndpointStreamSmooth, serviceRef)
+	if err != nil {
+		reqForProblem := r.Clone(r.Context())
+		reqForProblem.URL.Path = "/api/v3/stream/smooth"
+		if errors.Is(err, edge.ErrNotFound) {
+			problem.Write(w, reqForProblem, http.StatusNotFound, "smooth/not_found", "Resource Not Found", problemcode.CodeNotFound, "iptv source not found", nil)
+			return
+		}
+		if errors.Is(err, edge.ErrInvalidID) {
+			problem.Write(w, reqForProblem, http.StatusBadRequest, "smooth/invalid_id", "Invalid Request", problemcode.CodeInvalidInput, "invalid iptv source id", nil)
+			return
+		}
+		problem.Write(w, reqForProblem, http.StatusBadRequest, "smooth/invalid_ref", "Invalid Request", problemcode.CodeInvalidInput, "invalid service reference", nil)
+		return
+	}
+	serviceRef = rawRef
+
+	if isIPTVRef(serviceRef) {
+		if strings.ContainsAny(serviceRef, "\r\n\x00") || strings.Contains(serviceRef, "..") {
+			http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
+			return
+		}
+	} else if !isValidServiceRef(serviceRef) {
 		http.Error(w, "invalid serviceRef: path traversal or invalid characters detected", http.StatusBadRequest)
 		return
 	}
 
 	targetURL := fmt.Sprintf("http://%s:%d/%s", h.receiverHost, h.streamPort, serviceRef)
-	logger := log.L().With().
-		Str("serviceRef", serviceRef).
-		Str("targetURL", targetURL).
-		Float64("reservoirMs", h.cfg.StartupReservoirMs).
-		Logger()
+	loggerCtx := log.L().With().
+		Str("serviceRef", clientServiceRef).
+		Float64("reservoirMs", h.cfg.StartupReservoirMs)
+	if !isIPTVRef(serviceRef) {
+		loggerCtx = loggerCtx.Str("targetURL", targetURL)
+	}
+	logger := loggerCtx.Logger()
 
 	logger.Info().Msg("starting smoothed TS stream session")
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to create upstream request: %v", err), http.StatusInternalServerError)
+		http.Error(w, "failed to create upstream request", http.StatusInternalServerError)
 		return
 	}
 
@@ -141,8 +181,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to connect to upstream receiver")
-		http.Error(w, fmt.Sprintf("upstream receiver unavailable: %v", err), http.StatusBadGateway)
+		logger.Warn().Msg("failed to connect to upstream receiver")
+		http.Error(w, "upstream receiver unavailable", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()

@@ -12,6 +12,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
+	"github.com/ManuGH/xg2g/internal/problemcode"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newHandlerUnderTest(t *testing.T, recv *fakeReceiver, cfg PreparationConfig) *PrepareHandler {
@@ -320,5 +326,81 @@ func TestPrepareHTTP_ServiceRefIsDecodedExactlyOnce(t *testing.T) {
 	}
 	if strings.Contains(body.ServiceRef, "%20:") {
 		t.Fatalf("service reference was decoded twice: %q", body.ServiceRef)
+	}
+}
+
+func TestPrepareHTTP_IPTVInboundResolution(t *testing.T) {
+	secret := "secret-test-key-of-at-least-32-bytes!!"
+	parser, err := sourceref.NewParser([]byte(secret))
+	require.NoError(t, err)
+	reg := sourceref.NewRegistry()
+	rawCanary := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.ts:Canary"
+	src, err := parser.Parse(rawCanary)
+	require.NoError(t, err)
+	require.NoError(t, reg.Replace([]sourceref.Source{src}))
+	res := edge.NewResolver(reg, parser, nil)
+
+	opaqueID := string(src.ID())
+
+	recv := newFakeReceiver(t)
+	recv.serve(rawCanary, presentableBroadcast(t))
+	h := newHandlerUnderTest(t, recv, DefaultPreparationConfig())
+	h.SetIPTVResolver(res)
+
+	// 1. Opaque known: starts preparation, returns 202, body.ServiceRef is opaque ID, no canary leak
+	{
+		started := startPreparation(t, h, opaqueID, "client-canary-1")
+		assert.Equal(t, string(PreparationPending), started.State)
+		assert.Equal(t, opaqueID, started.ServiceRef)
+		assert.NotContains(t, started.ServiceRef, "canary.invalid")
+	}
+
+	// 2. Opaque unknown: returns 404 ProblemDetails, zero input echo
+	{
+		unknownID := "iptv_abcdefghijklmnopqrstuvwxyz"
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare?sref="+url.QueryEscape(unknownID), nil)
+		req.Header.Set(clientIDHeader, "client-canary-1")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusNotFound, rec.Code)
+		assert.NotContains(t, rec.Body.String(), unknownID)
+		assert.Contains(t, rec.Body.String(), problemcode.CodeNotFound)
+	}
+
+	// 3. Malformed iptv_ ID: returns 400 ProblemDetails, zero input echo
+	{
+		malformedID := "iptv_invalid_base32!!!"
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare?sref="+url.QueryEscape(malformedID), nil)
+		req.Header.Set(clientIDHeader, "client-canary-1")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.NotContains(t, rec.Body.String(), malformedID)
+		assert.Contains(t, rec.Body.String(), problemcode.CodeInvalidInput)
+	}
+
+	// 4. Raw IPTV ref: passes through, returns 202
+	{
+		started := startPreparation(t, h, rawCanary, "client-canary-2")
+		assert.Equal(t, string(PreparationPending), started.State)
+	}
+
+	// 5. Nil resolver: opaque returns 404, raw IPTV ref succeeds
+	{
+		hNil := newHandlerUnderTest(t, recv, DefaultPreparationConfig())
+		hNil.SetIPTVResolver(nil)
+
+		// Opaque -> 404
+		req := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare?sref="+url.QueryEscape(opaqueID), nil)
+		req.Header.Set(clientIDHeader, "client-canary-3")
+		rec := httptest.NewRecorder()
+		hNil.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusNotFound, rec.Code)
+
+		// Raw -> 202
+		started := startPreparation(t, hNil, rawCanary, "client-canary-4")
+		assert.Equal(t, string(PreparationPending), started.State)
 	}
 }

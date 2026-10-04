@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
@@ -366,3 +367,124 @@ func TestOrchestrator_TopologyService_HeartbeatLoss_AuditOnly_FailOpen(t *testin
 	require.NoError(t, err)
 	assert.False(t, sess.State.IsTerminal(), "Session must NOT be terminalized in AUDIT_ONLY mode on missing lease")
 }
+
+func TestOrchestrator_IPTV_ReceiverUsageEnforcement_BypassesTopology(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	memBus := NewStubBus()
+
+	// Setup single-tuner physical topology in strict ENFORCE mode
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Single Tuner Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "in_a", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	registry := receivertopology.NewTransponderRegistry()
+	registry.RegisterTransponder(0x03FB, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
+	registry.RegisterTransponder(0x0437, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11361750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
+	topoSvc.SetResolver(registry)
+
+	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
+	pipe := NewThreadSafeFakeMediaPipeline()
+
+	orch := &Orchestrator{
+		Bus:            memBus,
+		Store:          st,
+		LeaseTTL:       24 * time.Hour,
+		HeartbeatEvery: 0,
+		Owner:          "test-worker-usage",
+		TunerSlots:     []int{0}, // Exactly 1 tuner slot
+		ReceiverID:     "rec-1",
+		Pipeline:       pipe,
+		UsagePolicy: receiverusage.ReceiverUsagePolicy{
+			Mode:                        receiverusage.ReceiverUsageModeEnforce,
+			MaxLiveSessions:             4,
+			MaxRestrictedAccessSessions: 4,
+		},
+		UsageEvaluator:  evaluator,
+		TopologyService: topoSvc,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+	}
+
+	// 1. DVB Session 1 tunes Transponder 0x3FB and consumes the only physical tuner slot (Slot 0)
+	dvbRef1 := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	evt1 := model.StartSessionEvent{
+		SessionID:  "sess-dvb-1",
+		ServiceRef: dvbRef1,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-dvb-1",
+		ServiceRef: dvbRef1,
+		State:      model.SessionNew,
+	}))
+	sCtx1 := &sessionContext{SessionID: "sess-dvb-1", Mode: model.ModeLive, ServiceRef: dvbRef1}
+	leases1, err := orch.acquireLeases(ctx, sCtx1, evt1, "worker-1", zerolog.Nop())
+	require.NoError(t, err)
+	defer leases1.ReleaseTuner()
+	assert.Equal(t, 0, leases1.Slot)
+
+	// 2. DVB Session 2 on a DIFFERENT transponder (0x437) -> MUST FAIL because tuner is busy
+	dvbRef2 := "1:0:19:2B66:437:1:C00000:0:0:0:"
+	evt2 := model.StartSessionEvent{
+		SessionID:  "sess-dvb-2",
+		ServiceRef: dvbRef2,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-dvb-2",
+		ServiceRef: dvbRef2,
+		State:      model.SessionNew,
+	}))
+	sCtx2 := &sessionContext{SessionID: "sess-dvb-2", Mode: model.ModeLive, ServiceRef: dvbRef2}
+	_, err2 := orch.acquireLeases(ctx, sCtx2, evt2, "worker-2", zerolog.Nop())
+	require.Error(t, err2, "DVB on different transponder must be rejected when tuner is busy")
+	reason, _, _, ok := lifecycle.ReasonFromError(err2)
+	require.True(t, ok)
+	assert.Equal(t, model.RLeaseBusy, reason)
+
+	// 3. IPTV Session with receiver-usage policy ENFORCED and DVB topology 100% full:
+	// Invariant: IPTV must be a first-class source that bypasses topology evaluation,
+	// acquires 0 tuner slots (leases.Slot == -1), and is NOT rejected by full DVB topology!
+	iptvRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.invalid/live/stream.m3u8:FirstClassIPTV"
+	evtIPTV := model.StartSessionEvent{
+		SessionID:  "sess-iptv-1",
+		ServiceRef: iptvRef,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-iptv-1",
+		ServiceRef: iptvRef,
+		State:      model.SessionNew,
+	}))
+	sCtxIPTV := &sessionContext{SessionID: "sess-iptv-1", Mode: model.ModeLive, ServiceRef: iptvRef}
+	leasesIPTV, errIPTV := orch.acquireLeases(ctx, sCtxIPTV, evtIPTV, "worker-iptv", zerolog.Nop())
+	require.NoError(t, errIPTV, "IPTV must succeed even when DVB tuner topology is 100% full")
+	defer leasesIPTV.ReleaseTuner()
+
+	assert.Equal(t, -1, leasesIPTV.Slot, "IPTV must consume -1 (zero) physical tuner slots")
+}
+

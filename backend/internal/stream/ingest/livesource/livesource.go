@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -69,7 +70,15 @@ func (p *Provider) AcquireLiveSource(ctx context.Context, serviceRef string) (po
 	}
 
 	key := session.NewSessionKey(p.receiverHost, p.streamPort, serviceRef)
-	key.TargetProgram = targetProgramFromServiceRef(serviceRef)
+	_, isIPTV, _ := sourceref.ClassifyReference(nil, serviceRef)
+	if !isIPTV {
+		key.TargetProgram = targetProgramFromServiceRef(serviceRef)
+	} else {
+		// Invariant: For IPTV, Enigma2 reference triplet fields (e.g. 4E27) are dummy/EPG placeholders
+		// copied from satellite lamedb and do NOT match the provider transport stream's internal program.
+		// TargetProgram must remain 0 so MasterRing automatically selects the present program from the TS PAT.
+		key.TargetProgram = 0
+	}
 	if err := key.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid service reference %q: %w", serviceRef, err)
 	}

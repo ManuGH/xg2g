@@ -9,6 +9,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 )
 
 // OpenWebifActivity represents an observed activity running directly on the receiver via OpenWebif.
@@ -21,7 +22,7 @@ type OpenWebifActivity struct {
 }
 
 // BuildUsageRequest constructs a receiverusage.UsageRequest from session context parameters and channel protection metadata.
-func BuildUsageRequest(sCtx *sessionContext, receiverID, owner string, channelProtectionKnown bool, isChannelProtected bool, now time.Time) receiverusage.UsageRequest {
+func BuildUsageRequest(sCtx *sessionContext, receiverID, owner string, channelProtectionKnown bool, isChannelProtected bool, now time.Time, isIPTV ...bool) receiverusage.UsageRequest {
 	recID := receiverID
 	if recID == "" {
 		recID = "default-receiver"
@@ -32,23 +33,35 @@ func BuildUsageRequest(sCtx *sessionContext, receiverID, owner string, channelPr
 		intent = receiverusage.IntentRecording
 	}
 
+	serviceRef := ""
+	sessionID := ""
+	if sCtx != nil {
+		serviceRef = sCtx.ServiceRef
+		sessionID = sCtx.SessionID
+	}
+
+	iptv := false
+	if len(isIPTV) > 0 && isIPTV[0] {
+		iptv = true
+	} else if serviceRef != "" {
+		_, isIPTVRef, _ := sourceref.ClassifyReference(nil, serviceRef)
+		iptv = isIPTVRef
+	}
+
 	accessClass := receiverusage.AccessCapacityUnknown
 	confidence := receiverusage.ConfidenceUnknown
 
-	if channelProtectionKnown {
+	if iptv {
+		// First-class IPTV source: never restricted by hardware CAM/CI
+		confidence = receiverusage.ConfidenceVerified
+		accessClass = receiverusage.AccessCapacityNone
+	} else if channelProtectionKnown {
 		confidence = receiverusage.ConfidenceVerified
 		if isChannelProtected {
 			accessClass = receiverusage.AccessCapacityRestricted
 		} else {
 			accessClass = receiverusage.AccessCapacityNone
 		}
-	}
-
-	serviceRef := ""
-	sessionID := ""
-	if sCtx != nil {
-		serviceRef = sCtx.ServiceRef
-		sessionID = sCtx.SessionID
 	}
 
 	return receiverusage.UsageRequest{
@@ -59,6 +72,7 @@ func BuildUsageRequest(sCtx *sessionContext, receiverID, owner string, channelPr
 		Source: receiverusage.SourceIdentity{
 			ReceiverID:       recID,
 			ServiceReference: serviceRef,
+			IsIPTV:           iptv,
 		},
 		Access: receiverusage.AccessClassification{
 			Class:      accessClass,

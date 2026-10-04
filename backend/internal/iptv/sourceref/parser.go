@@ -1,6 +1,7 @@
 package sourceref
 
 import (
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -71,6 +72,12 @@ func (p *Parser) Parse(ref string) (Source, error) {
 	}
 
 	rawURLField := parts[10]
+	nameStartIndex := 11
+	if (rawURLField == "http" || rawURLField == "https") && len(parts) > 11 && strings.HasPrefix(parts[11], "//") {
+		rawURLField = parts[10] + ":" + parts[11]
+		nameStartIndex = 12
+	}
+
 	if rawURLField == "" {
 		return Source{}, ErrInvalidRef
 	}
@@ -81,8 +88,8 @@ func (p *Parser) Parse(ref string) (Source, error) {
 
 	// Service name is reconstructed from any trailing fields.
 	var serviceName string
-	if len(parts) > 11 {
-		serviceName = strings.Join(parts[11:], ":")
+	if len(parts) > nameStartIndex {
+		serviceName = strings.Join(parts[nameStartIndex:], ":")
 	}
 
 	// Percent-decode exactly once using PathUnescape (preserves literal '+')
@@ -117,23 +124,25 @@ func (p *Parser) Parse(ref string) (Source, error) {
 		return Source{}, ErrInvalidURL
 	}
 
-	// Heuristic for unencoded port colon (D3 / E2):
-	// If a hand-edited bouquet contains an unencoded colon before the port
-	// (e.g. "http%3a//h.invalid:8080/live/x.ts:Chan" or "http%3a//h.invalid:8080:Chan"),
-	// the colon split causes parts[10] to receive only the host and parts[11] to receive
-	// the port and optional path.
-	// To avoid false positives on valid references where parts[10] already has a path or query
-	// (e.g. "http%3a//h.invalid/live.m3u8:101" or "http%3a//h.invalid/live.m3u8:5/6 Kanal"),
+	// Heuristic for unencoded port colon (D3 / E2) and unencoded userinfo colon:
+	// If a bouquet contains an unencoded colon before the port
+	// (e.g. "http%3a//h.invalid:8080/live/x.ts:Chan" or "http://h.invalid:8080/live/x.ts:Chan")
+	// or an unencoded colon between user and password
+	// (e.g. "http%3a//user:pass@h.invalid/live/x.ts:Chan" or "http://user:pass@h.invalid/live/x.ts:Chan"),
+	// the colon split causes rawURLField to receive only the host or user, and parts[nameStartIndex]
+	// to receive the port/path continuation or userinfo continuation.
+	// To avoid false positives on valid references where parts already have a path or query
+	// (e.g. "http%3a//h.invalid/live.m3u8:101" or "http://h.invalid/live.m3u8:101"),
 	// the heuristic rejects with ErrInvalidRef iff ALL of the following hold:
-	// - len(parts) > 11
+	// - len(parts) > nameStartIndex
 	// - parsed.Port() == "" (no explicit port decoded)
 	// - decoded path is "" or "/" (parsed.Path == "" || parsed.Path == "/")
 	// - parsed.RawQuery == "" (no query string)
-	// - portContinuationRegex.MatchString(parts[11])
+	// - parts[nameStartIndex] matches portContinuationRegex OR contains "@"
 	// Residual ambiguity (documented, fail-closed):
 	// A host-only URL followed by a purely numeric channel name is rejected.
 	isHostOnly := (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == ""
-	if len(parts) > 11 && parsed.Port() == "" && isHostOnly && portContinuationRegex.MatchString(parts[11]) {
+	if len(parts) > nameStartIndex && parsed.Port() == "" && isHostOnly && (portContinuationRegex.MatchString(parts[nameStartIndex]) || strings.Contains(parts[nameStartIndex], "@")) {
 		return Source{}, ErrInvalidRef
 	}
 
@@ -159,4 +168,28 @@ func Parse(ref string, hmacKey []byte) (Source, error) {
 		return Source{}, err
 	}
 	return p.Parse(ref)
+}
+
+// unkeyedClassifier is an internal parser used when ClassifyReference is called with a nil Parser.
+// It uses a static 16-byte key to allow structural parsing and URL extraction without a configured HMAC secret.
+var unkeyedClassifier = &Parser{key: make([]byte, 16)}
+
+// ClassifyReference distinguishes DVB from parsed 4097/5001/5002 IPTV sources at one shared boundary.
+// It parses the reference using p (or a default unkeyed parser if p is nil) and extracts its internal URL.
+// Returns:
+//   - (src, true, nil) if ref is a valid IPTV reference (service type 4097, 5001, 5002).
+//   - (Source{}, false, nil) if ref is a non-IPTV reference (e.g. DVB starting with 1:, or empty).
+//   - (Source{}, false, err) if ref is an IPTV reference (starts with 4097/5001/5002) but is malformed or invalid.
+func ClassifyReference(p *Parser, ref string) (Source, bool, error) {
+	if p == nil {
+		p = unkeyedClassifier
+	}
+	src, err := p.Parse(ref)
+	if err == nil {
+		return src, true, nil
+	}
+	if errors.Is(err, ErrNotIPTV) || errors.Is(err, ErrEmptyRef) {
+		return Source{}, false, nil
+	}
+	return Source{}, false, err
 }

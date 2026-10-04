@@ -18,6 +18,7 @@ import (
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -66,7 +67,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		intentType = model.IntentTypeStreamStart
 	}
 
-	serviceRef, done := resolveIntentServiceRef(w, r, deps, intentType, derefString(req.ServiceRef))
+	serviceRef, done := s.resolveIntentServiceRef(w, r, deps, intentType, derefString(req.ServiceRef))
 	if done {
 		return
 	}
@@ -171,12 +172,19 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, &resp)
 }
 
-// resolveIntentServiceRef trims the requested serviceRef and, for stream-start
-// intents that carry a direct HTTP(S) URL, validates it against the outbound
-// policy. It returns the resolved serviceRef and done=true when it has already
-// written a failure response and the caller must return.
-func resolveIntentServiceRef(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, intentType model.IntentType, rawServiceRef string) (serviceRef string, done bool) {
-	serviceRef = strings.TrimSpace(rawServiceRef)
+// resolveIntentServiceRef resolves the client-supplied serviceRef (including opaque IPTV IDs)
+// and, for stream-start intents that carry a direct HTTP(S) URL, validates it against the outbound
+// policy. It returns the resolved serviceRef and done=true when it has already written a failure response.
+func (s *Server) resolveIntentServiceRef(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, intentType model.IntentType, rawServiceRef string) (serviceRef string, done bool) {
+	trimmed := strings.TrimSpace(rawServiceRef)
+	if trimmed == "" {
+		return "", false
+	}
+	resolved, ok := s.resolveClientServiceRef(w, r, metrics.EndpointIntents, trimmed)
+	if !ok {
+		return "", true
+	}
+	serviceRef = resolved
 	if intentType == model.IntentTypeStreamStart {
 		if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
 			// A direct URL becomes a SourceURL session, which hands the URL to

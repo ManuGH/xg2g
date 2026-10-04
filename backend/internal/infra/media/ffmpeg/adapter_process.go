@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/hls/cmaf"
 	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -47,7 +48,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		defer cancelPrepare()
 	}
 
-	if spec.Source.Type == ports.SourceTuner && a.E2 != nil {
+	_, isIPTV, _ := sourceref.ClassifyReference(nil, spec.Source.ID)
+	if spec.Source.Type == ports.SourceTuner && a.E2 != nil && !isIPTV {
 		if spec.Source.TunerSlot < 0 {
 			return "", fmt.Errorf("invalid tuner slot: %d", spec.Source.TunerSlot)
 		}

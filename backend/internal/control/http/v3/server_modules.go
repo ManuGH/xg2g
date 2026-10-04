@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
@@ -40,6 +41,7 @@ type sessionsModuleDeps struct {
 	admission      *admission.Controller
 	admissionState AdmissionState
 	playbackSLO    *playbackSessionTracker
+	iptvResolver   *edge.Resolver
 }
 
 // IntentDeps defines the server methods required by intent handlers.
@@ -69,6 +71,7 @@ func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 		admission:      s.admission,
 		admissionState: s.admissionState,
 		playbackSLO:    s.playbackSLO,
+		iptvResolver:   s.iptvResolver,
 	}
 }
 

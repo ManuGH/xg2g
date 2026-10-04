@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -51,6 +52,21 @@ func resolvePreflightSource(ctx context.Context, deps sessionsModuleDeps, servic
 
 	if u, ok := platformnet.ParseDirectHTTPURL(serviceRef); ok {
 		src, err := buildPreflightSourceRef(u.String())
+		if err != nil {
+			return preflight.SourceRef{}, err
+		}
+		if err := validatePreflightOutboundURL(ctx, src.URL, outboundPolicyFromConfig(cfg)); err != nil {
+			return preflight.SourceRef{}, err
+		}
+		return src, nil
+	}
+
+	var parser *sourceref.Parser
+	if deps.iptvResolver != nil {
+		parser = deps.iptvResolver.Parser()
+	}
+	if srcIPTV, isIPTV, err := sourceref.ClassifyReference(parser, serviceRef); err == nil && isIPTV {
+		src, err := buildPreflightSourceRef(srcIPTV.RevealURL())
 		if err != nil {
 			return preflight.SourceRef{}, err
 		}

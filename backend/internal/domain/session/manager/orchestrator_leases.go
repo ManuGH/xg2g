@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
@@ -58,9 +60,13 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	requiresTunerSlot := true
+	_, isIPTV, _ := sourceref.ClassifyReference(o.IPTVParser, sessionCtx.ServiceRef)
+	if isIPTV {
+		requiresTunerSlot = false
+	}
 	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
 	if o.UsageEvaluator != nil {
-		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
+		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now(), isIPTV)
 		activeSessions, _ := o.Store.ListSessions(ctx)
 		snap := BuildSystemSnapshot(o.ReceiverID, activeSessions, nil)
 
@@ -82,10 +88,10 @@ func (o *Orchestrator) acquireLeases(
 			if len(decision.Requirements) > 0 {
 				requiresTunerSlot = false
 				for _, reqItem := range decision.Requirements {
-					if reqItem.Kind == receiverusage.ReqTunerSlot {
+					if reqItem.Kind == receiverusage.ReqTunerSlot && !isIPTV {
 						requiresTunerSlot = true
 					}
-					if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
+					if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot && !isIPTV {
 						ctrl := o.RestrictedAccessCtrl
 						if ctrl == nil {
 							ctrl = receiverusage.NewRestrictedAccessController(o.Store)
@@ -175,7 +181,7 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	// Topology Service Stream Registration & Lifecycle Hook with Strict Generation Fencing
-	if o.TopologyService != nil && sessionCtx.ServiceRef != "" {
+	if o.TopologyService != nil && sessionCtx.ServiceRef != "" && !isIPTV {
 		claimRes, topoDec, topoErr := o.TopologyService.AcquireClaimSetAtomic(
 			ctx,
 			o.Store,
@@ -225,7 +231,7 @@ func (o *Orchestrator) acquireLeases(
 				case <-hbCtx.Done():
 					return
 				case <-t.C:
-					if o.TopologyService != nil {
+					if o.TopologyService != nil && !isIPTV {
 						if ok := o.TopologyService.HeartbeatStream(event.SessionID, o.LeaseTTL); !ok {
 							if o.TopologyService.Mode() == receivertopology.EvaluationModeEnforce &&
 								o.TopologyService.Topology().Confidence == receivertopology.ConfidenceVerified {
@@ -375,11 +381,24 @@ func (o *Orchestrator) startPipeline(
 		}
 		trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(currentProfileSpec, string(spec.Source.Type), 0)
 	})
+	logSourceID := spec.Source.ID
+	if src, isIPTVRef, _ := sourceref.ClassifyReference(o.IPTVParser, logSourceID); isIPTVRef {
+		if src.ID() != "" {
+			logSourceID = string(src.ID())
+		} else {
+			logSourceID = "iptv:<redacted>"
+		}
+	} else if spec.Source.Type == ports.SourceURL {
+		if u, err := url.Parse(logSourceID); err == nil && u.Scheme != "" {
+			logSourceID = u.Redacted()
+		}
+	}
+
 	startupLogger.Info().
 		Str("session_id", e.SessionID).
 		Str("startup_phase", "pipeline_start_requested").
 		Str("source_type", string(spec.Source.Type)).
-		Str("source_id", spec.Source.ID).
+		Str("source_id", logSourceID).
 		Msg("pipeline start requested")
 
 	handle, err := o.Pipeline.Start(hbCtx, spec)

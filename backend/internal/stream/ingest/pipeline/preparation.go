@@ -205,10 +205,11 @@ func NewPreparationManager(sessions SessionAcquirer, cfg PreparationConfig, logg
 // programme, and who is asking. What the client can present is a separate question,
 // answered against its effective capabilities rather than against any list here.
 type PrepareRequest struct {
-	ClientID      string
-	ZapID         string
-	Key           session.SessionKey
-	TargetProgram uint16
+	ClientID         string
+	ZapID            string
+	Key              session.SessionKey
+	TargetProgram    uint16
+	ClientServiceRef string
 }
 
 // Prepare starts preparing a channel change and returns immediately.
@@ -230,18 +231,22 @@ func (m *PreparationManager) Prepare(req PrepareRequest) (*Preparation, error) {
 	m.seq++
 	id := fmt.Sprintf("prep-%d-%d", m.seq, len(m.byID))
 	ctx, cancel := context.WithCancel(context.Background())
+	clientRef := req.ClientServiceRef
+	if clientRef == "" {
+		clientRef = req.Key.ServiceRef
+	}
 	p := &Preparation{
 		id:         id,
 		zapID:      req.ZapID,
 		clientID:   req.ClientID,
-		serviceRef: req.Key.ServiceRef,
+		serviceRef: clientRef,
 		state:      PreparationPending,
 		cancel:     cancel,
 		done:       make(chan struct{}),
 		status: PreparationStatus{
 			ID:         id,
 			ZapID:      req.ZapID,
-			ServiceRef: req.Key.ServiceRef,
+			ServiceRef: clientRef,
 			State:      PreparationPending,
 		},
 	}
@@ -258,7 +263,7 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 	logger := m.logger.With().
 		Str("preparation_id", p.id).
 		Str("zap_id", p.zapID).
-		Str("serviceRef", req.Key.ServiceRef).
+		Str("serviceRef", p.serviceRef).
 		Logger()
 
 	lease, err := m.sessions.Acquire(ctx, req.Key)

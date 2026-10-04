@@ -97,7 +97,7 @@ type wireBootstrapState struct {
 }
 
 // WireServices builds the production dependency graph and returns a runnable container.
-func WireServices(ctx context.Context, version, commit, buildDate, explicitConfigPath string) (*Container, error) {
+func WireServices(ctx context.Context, version, commit, buildDate, explicitConfigPath string, opts ...api.ServerOption) (*Container, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("wire services context is nil")
 	}
@@ -132,7 +132,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	configMgr, cfgHolder, snap, cfg := buildWireConfigState(cfg, version, effectiveConfigPath)
 
 	apiDeps := buildAPIConstructorDeps(cfg, snap, logger)
-	s, err := api.NewWithDeps(cfg, configMgr, apiDeps, api.WithRootContext(ctx))
+	serverOpts := append([]api.ServerOption{api.WithRootContext(ctx)}, opts...)
+	s, err := api.NewWithDeps(cfg, configMgr, apiDeps, serverOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("initialize api server: %w", err)
 	}

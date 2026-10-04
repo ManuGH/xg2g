@@ -123,21 +123,31 @@ func ParseLivePlaybackPostInput(r *http.Request) (LivePlaybackInfoInput, *Playba
 		}
 	}
 
-	serviceRef := normalize.ServiceRef(req.ServiceRef)
-	if err := recordings.ValidateLiveRef(serviceRef); err != nil {
-		return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
-			Status:      http.StatusBadRequest,
-			ProblemType: "live/invalid",
-			Title:       "Invalid Request",
-			Code:        problemcode.CodeInvalidInput,
-			Detail:      "serviceRef must be a valid live Enigma2 reference",
+	rawTrimmed := strings.TrimSpace(req.ServiceRef)
+	var finalRef string
+	if strings.HasPrefix(rawTrimmed, "iptv_") || isIPTVRef(rawTrimmed) {
+		finalRef = rawTrimmed
+	} else {
+		finalRef = normalize.ServiceRef(rawTrimmed)
+		if err := recordings.ValidateLiveRef(finalRef); err != nil {
+			return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
+				Status:      http.StatusBadRequest,
+				ProblemType: "live/invalid",
+				Title:       "Invalid Request",
+				Code:        problemcode.CodeInvalidInput,
+				Detail:      "serviceRef must be a valid live Enigma2 reference",
+			}
 		}
 	}
 
 	return LivePlaybackInfoInput{
-		ServiceRef:   serviceRef,
+		ServiceRef:   finalRef,
 		Capabilities: (*PlaybackCapabilities)(&req.Capabilities),
 	}, nil
+}
+
+func isIPTVRef(ref string) bool {
+	return strings.HasPrefix(ref, "4097:") || strings.HasPrefix(ref, "5001:") || strings.HasPrefix(ref, "5002:")
 }
 
 func valueOrEmpty(value *string) string {

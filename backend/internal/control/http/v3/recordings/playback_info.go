@@ -293,11 +293,13 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
-		if err := domainrecordings.ValidateLiveRef(subjectID); err != nil {
-			return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
-				Kind:    PlaybackInfoErrorInvalidInput,
-				Message: "serviceRef must be a valid live Enigma2 reference",
-				Cause:   err,
+		if !isIPTVRef(subjectID) {
+			if err := domainrecordings.ValidateLiveRef(subjectID); err != nil {
+				return "", playback.MediaTruth{}, nil, &PlaybackInfoError{
+					Kind:    PlaybackInfoErrorInvalidInput,
+					Message: "serviceRef must be a valid live Enigma2 reference",
+					Cause:   err,
+				}
 			}
 		}
 		source := s.deps.ChannelTruthSource()
@@ -914,4 +916,8 @@ func plannerHostEncoderCapabilities(hostContext requestHostContext) []playbackpl
 		})
 	}
 	return out
+}
+
+func isIPTVRef(ref string) bool {
+	return strings.HasPrefix(ref, "4097:") || strings.HasPrefix(ref, "5001:") || strings.HasPrefix(ref, "5002:")
 }

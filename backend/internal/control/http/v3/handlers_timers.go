@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/problemcode"
@@ -104,8 +105,12 @@ func (s *Server) AddTimer(w http.ResponseWriter, r *http.Request) {
 	client := s.owi(cfg, snap)
 	ctx := r.Context()
 
-	// 0. Resolve ServiceRef if it's an M3U Channel ID
-	realSRef := req.ServiceRef
+	// 0. Resolve ServiceRef if it's an M3U Channel ID or opaque IPTV ID
+	resolvedSRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, req.ServiceRef)
+	if !ok {
+		return
+	}
+	realSRef := resolvedSRef
 	if !strings.Contains(realSRef, ":") {
 		// Doesn't look like Enigma2 Ref (1:0:1...), try to resolve from Playlist
 		playlistName := strings.TrimSpace(snap.Runtime.PlaylistFilename)
@@ -267,6 +272,11 @@ func (s *Server) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId str
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
 		return
 	}
+	resolvedSRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, sRef)
+	if !ok {
+		return
+	}
+	sRef = resolvedSRef
 	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, sRef); !ok {
 		return
 	}
@@ -305,6 +315,11 @@ func (s *Server) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId str
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
 		return
 	}
+	resolvedOldSRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, oldSRef)
+	if !ok {
+		return
+	}
+	oldSRef = resolvedOldSRef
 	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, oldSRef); !ok {
 		return
 	}
@@ -466,6 +481,11 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusUnprocessableEntity, "dvr/validation", "Invalid Timer Order", problemcode.CodeInvalidTime, "Begin time must be before end time", nil)
 		return
 	}
+	resolvedSRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, req.Proposed.ServiceRef)
+	if !ok {
+		return
+	}
+	req.Proposed.ServiceRef = resolvedSRef
 	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, req.Proposed.ServiceRef); !ok {
 		return
 	}
@@ -619,6 +639,11 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "dvr/invalid_id", "Invalid Timer ID", problemcode.CodeInvalidID, "The provided timer ID is invalid", nil)
 		return
 	}
+	resolvedSRef, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, sRef)
+	if !ok {
+		return
+	}
+	sRef = resolvedSRef
 	if _, ok := s.requireHouseholdTimerServiceAccess(w, r, sRef); !ok {
 		return
 	}

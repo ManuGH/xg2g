@@ -71,6 +71,7 @@ type SourceIdentity struct {
 	ServiceReference string
 	TransponderID    string
 	AccessContextID  string
+	IsIPTV           bool
 }
 
 type LeaseRequirementKind string
@@ -79,6 +80,7 @@ const (
 	ReqRestrictedAccessSlot LeaseRequirementKind = "RESTRICTED_ACCESS_SLOT"
 	ReqTunerSlot            LeaseRequirementKind = "TUNER_SLOT"
 	ReqReceiverMultiplex    LeaseRequirementKind = "RECEIVER_MULTIPLEX"
+	ReqIPTVStream           LeaseRequirementKind = "IPTV_STREAM"
 )
 
 type LeaseRequirement struct {

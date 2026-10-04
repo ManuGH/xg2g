@@ -238,6 +238,54 @@ func TestParser_A1_Matrix(t *testing.T) {
 			wantName:    "101",
 			wantURLFrag: "http://example.invalid:8080/live.m3u8",
 		},
+		{
+			name:     "Unencoded http: port with path fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://h.invalid:8080/live.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Unencoded http: port without path fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://h.invalid:8080:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Unencoded http: userinfo with password fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http://user:pass@h.invalid/x.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:     "Encoded http%3a: unencoded userinfo password fails closed with ErrInvalidRef",
+			ref:      "4097:0:1:0:0:0:0:0:0:0:http%3a//user:pass@h.invalid/x.ts:Name",
+			wantErr:  sourceref.ErrInvalidRef,
+			wantType: "",
+		},
+		{
+			name:        "Unencoded http: valid path without colons in authority succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http://h.invalid/live.ts:MyChannel",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "MyChannel",
+			wantURLFrag: "http://h.invalid/live.ts",
+		},
+		{
+			name:        "Unencoded http: valid path with colons in channel name succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http://h.invalid/live.ts:Sky Cinema: Action HD",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "Sky Cinema: Action HD",
+			wantURLFrag: "http://h.invalid/live.ts",
+		},
+		{
+			name:        "Encoded URL: properly encoded userinfo and port succeeds",
+			ref:         "4097:0:1:0:0:0:0:0:0:0:http%3a//user%3apass@h.invalid%3a8080/x.ts:Name",
+			wantErr:     nil,
+			wantType:    "4097",
+			wantName:    "Name",
+			wantURLFrag: "http://user:pass@h.invalid:8080/x.ts",
+		},
 	}
 
 	for _, tt := range tests {
@@ -875,3 +923,105 @@ func TestSource_RawRef(t *testing.T) {
 		}
 	})
 }
+
+func TestClassifyReference(t *testing.T) {
+	parser, err := sourceref.NewParser(testHMACKey1)
+	if err != nil {
+		t.Fatalf("failed to create parser: %v", err)
+	}
+
+	t.Run("DVB reference classified as non-IPTV", func(t *testing.T) {
+		dvbRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+		src, isIPTV, err := sourceref.ClassifyReference(parser, dvbRef)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if isIPTV {
+			t.Errorf("expected isIPTV=false for DVB ref, got true")
+		}
+		if !src.IsZero() {
+			t.Errorf("expected zero Source, got %+v", src)
+		}
+	})
+
+	t.Run("DVB reference with colliding service ID (PULS 4 Austria 4E27) classified as non-IPTV", func(t *testing.T) {
+		collidingRef := "1:0:1:4E27:43A:1:C00000:0:0:0:"
+		src, isIPTV, err := sourceref.ClassifyReference(nil, collidingRef)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if isIPTV {
+			t.Errorf("expected isIPTV=false for colliding DVB ref, got true")
+		}
+		if !src.IsZero() {
+			t.Errorf("expected zero Source, got %+v", src)
+		}
+	})
+
+	t.Run("Valid 4097 IPTV reference classified as IPTV with nil parser", func(t *testing.T) {
+		iptvRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//example.invalid/live/stream.m3u8:Test Channel"
+		src, isIPTV, err := sourceref.ClassifyReference(nil, iptvRef)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !isIPTV {
+			t.Fatalf("expected isIPTV=true for 4097 ref, got false")
+		}
+		if src.RevealURL() != "http://example.invalid/live/stream.m3u8" {
+			t.Errorf("RevealURL() = %q, want %q", src.RevealURL(), "http://example.invalid/live/stream.m3u8")
+		}
+		if src.RawRef() != iptvRef {
+			t.Errorf("RawRef() = %q, want %q", src.RawRef(), iptvRef)
+		}
+		if src.ServiceType() != "4097" {
+			t.Errorf("ServiceType() = %q, want 4097", src.ServiceType())
+		}
+	})
+
+	t.Run("Valid 5001 and 5002 classified as IPTV with keyed parser", func(t *testing.T) {
+		for _, serviceType := range []string{"5001", "5002"} {
+			ref := fmt.Sprintf("%s:0:1:0:0:0:0:0:0:0:https%%3a//example.invalid/stream.ts:Chan", serviceType)
+			src, isIPTV, err := sourceref.ClassifyReference(parser, ref)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", serviceType, err)
+			}
+			if !isIPTV {
+				t.Fatalf("expected isIPTV=true for %s, got false", serviceType)
+			}
+			if src.RevealURL() != "https://example.invalid/stream.ts" {
+				t.Errorf("RevealURL() = %q, want https://example.invalid/stream.ts", src.RevealURL())
+			}
+			if src.ID() == "" {
+				t.Errorf("expected non-empty ID for keyed parser")
+			}
+		}
+	})
+
+	t.Run("Malformed 4097 reference returns error", func(t *testing.T) {
+		malformedRef := "4097:0:1:bad"
+		src, isIPTV, err := sourceref.ClassifyReference(nil, malformedRef)
+		if err == nil {
+			t.Fatalf("expected error for malformed 4097 ref, got nil")
+		}
+		if isIPTV {
+			t.Errorf("expected isIPTV=false on error, got true")
+		}
+		if !src.IsZero() {
+			t.Errorf("expected zero Source on error, got %+v", src)
+		}
+	})
+
+	t.Run("Empty reference classified as non-IPTV with nil error", func(t *testing.T) {
+		src, isIPTV, err := sourceref.ClassifyReference(nil, "   ")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if isIPTV {
+			t.Errorf("expected isIPTV=false for empty ref, got true")
+		}
+		if !src.IsZero() {
+			t.Errorf("expected zero Source, got %+v", src)
+		}
+	})
+}
+
