@@ -110,6 +110,7 @@ func newPrepManager(t *testing.T, recv *fakeReceiver, cfg PreparationConfig) (*P
 	connectorCfg.NormConfig.StartupReservoirMs = 0.0
 	connectorCfg.NormConfig.PacerIntervalMs = 5.0
 	connectorCfg.DialFn = recv.dial
+	connectorCfg.IPTVDialFn = recv.dial
 
 	mgr := session.NewManager(session.ManagerConfig{
 		WarmHoldDuration: 200 * time.Millisecond,
