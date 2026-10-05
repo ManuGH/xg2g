@@ -18,14 +18,17 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 	"github.com/ManuGH/xg2g/internal/stream/smoother"
 	"github.com/go-chi/chi/v5"
 )
 
-// piconFilenameRE matches safe picon filenames: hex/digit segments separated by underscores, ending in .png.
-var piconFilenameRE = regexp.MustCompile(`^[0-9A-Fa-f_]+\.png$`)
+// piconFilenameRE matches safe picon filenames: hex/digit segments separated by underscores, ending in .png,
+// or opaque IPTV picon filenames in the form iptv_<26 base32 chars>.png.
+var piconFilenameRE = regexp.MustCompile(`^(?:[0-9A-Fa-f_]+|iptv_[a-z2-7]{26})\.png$`)
 
 var publicUIReservedPrefixes = []string{
 	"/api",
@@ -356,7 +359,8 @@ func (s *Server) serveAndroidApk(w http.ResponseWriter, r *http.Request) {
 func (s *Server) servePiconLogo(w http.ResponseWriter, r *http.Request) {
 	filename := chi.URLParam(r, "filename")
 
-	// Strict validation: only hex/digit+underscore filenames ending in .png.
+	// Strict validation: only hex/digit+underscore filenames ending in .png,
+	// or opaque IPTV identifiers (iptv_<26 base32 chars>.png).
 	if !piconFilenameRE.MatchString(filename) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
@@ -367,13 +371,29 @@ func (s *Server) servePiconLogo(w http.ResponseWriter, r *http.Request) {
 
 	// Defense-in-depth: ensure resolved path stays inside picons dir.
 	absPath, err := filepath.Abs(fullPath)
-	if err != nil || !strings.HasPrefix(absPath, filepath.Clean(piconDir)) {
+	cleanPiconDir := filepath.Clean(piconDir)
+	if err != nil || (absPath != cleanPiconDir && !strings.HasPrefix(absPath, cleanPiconDir+string(filepath.Separator))) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	f, err := os.Open(absPath) // #nosec G304
 	if err != nil {
+		// If direct file open failed and this is an opaque IPTV picon request,
+		// attempt to resolve iptv_<id> to its stored raw service reference filename.
+		if strings.HasPrefix(filename, "iptv_") {
+			if fIPTV, infoIPTV, ok := s.lookupIPTVPicon(piconDir, filename); ok {
+				defer func() {
+					if closeErr := fIPTV.Close(); closeErr != nil {
+						log.L().Warn().Err(closeErr).Str("path", filename).Msg("failed to close picon file")
+					}
+				}()
+				w.Header().Set("Content-Type", "image/png")
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				http.ServeContent(w, r, filename, infoIPTV.ModTime(), fIPTV)
+				return
+			}
+		}
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -392,6 +412,71 @@ func (s *Server) servePiconLogo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.ServeContent(w, r, filename, info.ModTime(), f)
+}
+
+func (s *Server) lookupIPTVPicon(piconDir, filename string) (*os.File, os.FileInfo, bool) {
+	resolver := s.IPTVResolver()
+	if resolver == nil {
+		return nil, nil, false
+	}
+
+	idStr := strings.TrimSuffix(filename, ".png")
+	rawRef, _, err := resolver.ResolveInbound(metrics.EndpointLogos, idStr)
+	if err != nil || rawRef == "" {
+		return nil, nil, false
+	}
+
+	// Build candidate reference strings to check:
+	// 1. Direct rawRef (e.g. standard Enigma2 %2f encoded URL, or triplet)
+	// 2. Slashes converted to underscores (when rawRef contains unencoded /)
+	// 3. First 10 colon-delimited fields (DVB triplet prefix ignoring stream URL)
+	candidates := []string{rawRef}
+	if strings.Contains(rawRef, "/") {
+		candidates = append(candidates, strings.ReplaceAll(rawRef, "/", "_"))
+	}
+	parts := strings.Split(rawRef, ":")
+	if len(parts) >= 10 {
+		candidates = append(candidates, strings.Join(parts[:10], ":"))
+	}
+
+	for _, cand := range candidates {
+		// Exact storeRef for candidate
+		storeRef := strings.TrimRight(strings.ReplaceAll(cand, ":", "_"), "_")
+		candidatePath := filepath.Join(piconDir, storeRef+".png")
+		if f, info, ok := openPiconFile(piconDir, candidatePath); ok {
+			return f, info, true
+		}
+
+		// Normalized HD->SD fallback for candidate
+		normRef := openwebif.NormalizeServiceRefForPicon(cand)
+		if normRef != "" && normRef != cand {
+			normStoreRef := strings.TrimRight(strings.ReplaceAll(normRef, ":", "_"), "_")
+			candidateNormPath := filepath.Join(piconDir, normStoreRef+".png")
+			if f, info, ok := openPiconFile(piconDir, candidateNormPath); ok {
+				return f, info, true
+			}
+		}
+	}
+
+	return nil, nil, false
+}
+
+func openPiconFile(piconDir, candidatePath string) (*os.File, os.FileInfo, bool) {
+	absPath, err := filepath.Abs(candidatePath)
+	cleanPiconDir := filepath.Clean(piconDir)
+	if err != nil || (absPath != cleanPiconDir && !strings.HasPrefix(absPath, cleanPiconDir+string(filepath.Separator))) {
+		return nil, nil, false
+	}
+	f, err := os.Open(absPath) // #nosec G304
+	if err != nil {
+		return nil, nil, false
+	}
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		_ = f.Close()
+		return nil, nil, false
+	}
+	return f, info, true
 }
 
 func redirectTo(path string, code int) http.HandlerFunc {

@@ -11,6 +11,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ManuGH/xg2g/internal/epg"
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -20,11 +21,16 @@ import (
 
 // writeM3U safely writes the playlist with full durability guarantees using renameio
 // This ensures atomic + durable writes: fsync before rename prevents data loss on power failure
-func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL string, xTvgURL string) error {
+func writeM3U(ctx context.Context, path string, items []playlist.Item, publicURL string, xTvgURL string, perm os.FileMode) error {
 	logger := xglog.FromContext(ctx)
 
+	var opts []renameio.Option
+	if perm != 0 {
+		opts = append(opts, renameio.WithStaticPermissions(perm))
+	}
+
 	// renameio handles: temp file creation, fsync, atomic rename, cleanup on error
-	pendingFile, err := renameio.NewPendingFile(path)
+	pendingFile, err := renameio.NewPendingFile(path, opts...)
 	if err != nil {
 		return WrapPlaylistWriteError(fmt.Errorf("create pending M3U file: %w", err))
 	}

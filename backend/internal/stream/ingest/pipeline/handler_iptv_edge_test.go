@@ -194,7 +194,7 @@ func TestPipeline_PrepareAndLive_ConsistentSessionKey_IPTV(t *testing.T) {
 			defer func() { _ = pw.Close() }()
 			for {
 				for i := 0; i < len(capture); i += 188 * 32 {
-					end := i + 188 * 32
+					end := i + 188*32
 					if end > len(capture) {
 						end = len(capture)
 					}
@@ -280,4 +280,3 @@ func TestPipeline_PrepareAndLive_ConsistentSessionKey_IPTV(t *testing.T) {
 	assert.Equal(t, uint16(0x4E27), keyLiveDVB.TargetProgram)
 	assert.Equal(t, uint16(0x4E27), targetProgramFromServiceRef(dvbRef))
 }
-

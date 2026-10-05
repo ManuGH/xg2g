@@ -375,4 +375,3 @@ func TestBootstrap_IPTV_AuthenticatedRouter_To_Ingest(t *testing.T) {
 		assert.NotContains(t, rec.Body.String(), malformedID)
 	}
 }
-

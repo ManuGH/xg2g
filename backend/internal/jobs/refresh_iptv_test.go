@@ -18,6 +18,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
+	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -314,4 +315,266 @@ var logoTimestampRE = regexp.MustCompile(`\?v=\d+`)
 
 func stripTimestampParams(s string) string {
 	return logoTimestampRE.ReplaceAllString(s, "?v=")
+}
+
+func TestRefresh_PlaylistSeparationAndPermissions(t *testing.T) {
+	parser, err := sourceref.NewParser(testSecret)
+	require.NoError(t, err)
+	reg := sourceref.NewRegistry()
+
+	servicesJSON := `{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary IPTV", "servicereference": "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-TOKEN/live.ts:Canary IPTV"}
+		]
+	}`
+	mockOWI := createMockReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	dataDir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir: dataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockOWI.URL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	snap.Runtime.PlaylistFilename = "playlist.m3u"
+	status, err := RefreshWithOptions(context.Background(), snap, WithIPTVSources(parser, reg))
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Channels)
+
+	// 1. Filesystem existence & permission verification
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+
+	rawInfo, err := os.Stat(rawPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), rawInfo.Mode().Perm(), "internal playlist.m3u must have 0600 permissions")
+
+	publicInfo, err := os.Stat(publicPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), publicInfo.Mode().Perm(), "public playlist_public.m3u must have 0644 permissions")
+
+	// 2. Internal raw playlist content check: preserves raw references for internal subsystems
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	assert.Contains(t, rawStr, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+	assert.Contains(t, rawStr, "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-TOKEN/live.ts:Canary IPTV")
+	assert.Contains(t, rawStr, "SECRET-CANARY-TOKEN")
+
+	// 3. Public masked playlist content check: client-facing, zero secret exposure
+	publicBytes, err := os.ReadFile(publicPlaylistPath)
+	require.NoError(t, err)
+	publicStr := string(publicBytes)
+
+	// Zero canary markers
+	assert.False(t, strings.Contains(publicStr, "SECRET-CANARY-TOKEN"), "public playlist must not contain raw token")
+	assert.False(t, strings.Contains(publicStr, "canary.invalid"), "public playlist must not contain upstream host")
+	assert.False(t, strings.Contains(publicStr, "4097:"), "public playlist must not contain raw IPTV service ref")
+
+	// Must contain DVB item unaltered
+	assert.Contains(t, publicStr, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+	assert.Contains(t, publicStr, "DVB Das Erste")
+
+	// Must contain masked IPTV item with opaque ID
+	assert.Equal(t, 1, reg.Len(), "IPTV source must be registered")
+	var opaqueID string
+	for _, src := range reg.Snapshot() {
+		opaqueID = string(src.ID())
+		break
+	}
+	require.NotEmpty(t, opaqueID)
+
+	assert.Contains(t, publicStr, fmt.Sprintf(`tvg-id="%s"`, opaqueID))
+	assert.Contains(t, publicStr, fmt.Sprintf(`/logos/%s.png`, opaqueID))
+	assert.Contains(t, publicStr, fmt.Sprintf(`/api/v3/stream/live/%s`, opaqueID))
+}
+
+func TestRefresh_PublicPlaylist_FailClosed_MissingParser(t *testing.T) {
+	servicesJSON := `{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary IPTV", "servicereference": "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-TOKEN/live.ts:Canary IPTV"}
+		]
+	}`
+	mockOWI := createMockReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	dataDir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir: dataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockOWI.URL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	snap.Runtime.PlaylistFilename = "playlist.m3u"
+
+	// Deliberately execute WITHOUT WithIPTVSources (opts.iptvParser == nil)
+	status, err := RefreshWithOptions(context.Background(), snap)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Channels)
+
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+
+	// 1. Internal playlist must be intact with 0600 permissions and raw references/tokens
+	rawInfo, err := os.Stat(rawPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), rawInfo.Mode().Perm())
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	assert.Contains(t, rawStr, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+	assert.Contains(t, rawStr, "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-TOKEN/live.ts:Canary IPTV")
+	assert.Contains(t, rawStr, "SECRET-CANARY-TOKEN")
+
+	// 2. Public playlist must fail closed: omit IPTV channel completely, retain DVB channel, 0644 permissions
+	publicInfo, err := os.Stat(publicPlaylistPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0644), publicInfo.Mode().Perm())
+	publicBytes, err := os.ReadFile(publicPlaylistPath)
+	require.NoError(t, err)
+	publicStr := string(publicBytes)
+
+	// Zero canary credentials or raw IPTV references
+	assert.False(t, strings.Contains(publicStr, "SECRET-CANARY-TOKEN"), "public playlist must not leak token when parser is missing")
+	assert.False(t, strings.Contains(publicStr, "canary.invalid"), "public playlist must not leak host when parser is missing")
+	assert.False(t, strings.Contains(publicStr, "4097:"), "public playlist must not leak raw IPTV ref when parser is missing")
+	assert.False(t, strings.Contains(publicStr, "Canary IPTV"), "unconvertible IPTV channel must be omitted from public playlist")
+
+	// DVB channel must remain intact
+	assert.Contains(t, publicStr, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+	assert.Contains(t, publicStr, "DVB Das Erste")
+}
+
+func TestRefresh_PublicPlaylist_FailClosed_InvalidIPTVReference(t *testing.T) {
+	parser, err := sourceref.NewParser(testSecret)
+	require.NoError(t, err)
+	reg := sourceref.NewRegistry()
+
+	// Malformed IPTV reference with unencoded port colon (fails sourceref.Parser.Parse with ErrInvalidRef)
+	// and another with invalid URL scheme/format
+	servicesJSON := `{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary Port IPTV", "servicereference": "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid:8080/SECRET-PORT-CANARY/live.ts:Canary Port IPTV"},
+			{"servicename": "Canary BadURL IPTV", "servicereference": "4097:0:1:0:0:0:0:0:0:0:not-a-valid-url-with-SECRET-SCHEME-CANARY:Canary BadURL IPTV"}
+		]
+	}`
+	mockOWI := createMockReceiverServer(t, servicesJSON)
+	defer mockOWI.Close()
+
+	dataDir := t.TempDir()
+	cfg := config.AppConfig{
+		DataDir: dataDir,
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockOWI.URL,
+			StreamPort: 8001,
+		},
+		Bouquet: "Favourites",
+	}
+
+	snap := config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault())
+	snap.Runtime.PlaylistFilename = "playlist.m3u"
+
+	status, err := RefreshWithOptions(context.Background(), snap, WithIPTVSources(parser, reg))
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, 3, status.Channels)
+
+	rawPlaylistPath := filepath.Join(dataDir, "playlist.m3u")
+	publicPlaylistPath := filepath.Join(dataDir, "playlist_public.m3u")
+
+	// 1. Internal playlist must be intact with 0600 permissions and raw invalid references
+	rawBytes, err := os.ReadFile(rawPlaylistPath)
+	require.NoError(t, err)
+	rawStr := string(rawBytes)
+	assert.Contains(t, rawStr, "SECRET-PORT-CANARY")
+	assert.Contains(t, rawStr, "SECRET-SCHEME-CANARY")
+	assert.Contains(t, rawStr, "Canary Port IPTV")
+	assert.Contains(t, rawStr, "Canary BadURL IPTV")
+
+	// 2. Public playlist must fail closed: omit invalid IPTV items, retain DVB channel
+	publicBytes, err := os.ReadFile(publicPlaylistPath)
+	require.NoError(t, err)
+	publicStr := string(publicBytes)
+
+	assert.False(t, strings.Contains(publicStr, "SECRET-PORT-CANARY"), "public playlist must not leak canary from invalid ref")
+	assert.False(t, strings.Contains(publicStr, "SECRET-SCHEME-CANARY"), "public playlist must not leak canary from malformed ref")
+	assert.False(t, strings.Contains(publicStr, "canary.invalid"), "public playlist must not leak upstream host")
+	assert.False(t, strings.Contains(publicStr, "4097:"), "public playlist must not leak raw IPTV ref")
+	assert.False(t, strings.Contains(publicStr, "Canary Port IPTV"), "invalid IPTV channel must be omitted")
+	assert.False(t, strings.Contains(publicStr, "Canary BadURL IPTV"), "invalid IPTV channel must be omitted")
+
+	// DVB channel must remain intact
+	assert.Contains(t, publicStr, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+	assert.Contains(t, publicStr, "DVB Das Erste")
+}
+
+func TestBuildPublicPlaylistItems_Unit_FailClosed(t *testing.T) {
+	parser, err := sourceref.NewParser(testSecret)
+	require.NoError(t, err)
+
+	dvbItem := playlist.Item{
+		Name:       "Das Erste HD",
+		ServiceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:",
+		TvgID:      "1:0:19:283D:3FB:1:C00000:0:0:0:",
+		URL:        "http://receiver:8001/1:0:19:283D:3FB:1:C00000:0:0:0:",
+		TvgLogo:    "/logos/1_0_19_283D_3FB_1_C00000_0_0_0.png",
+	}
+	validIPTVItem := playlist.Item{
+		Name:       "Valid IPTV",
+		ServiceRef: "4097:0:1:0:0:0:0:0:0:0:http%3a//upstream.invalid/secret/live.ts:Valid IPTV",
+		TvgID:      "4097:0:1:0:0:0:0:0:0:0:http%3a//upstream.invalid/secret/live.ts:Valid IPTV",
+		URL:        "http://receiver:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//upstream.invalid/secret/live.ts:Valid IPTV",
+		TvgLogo:    "/logos/4097_test.png",
+	}
+	invalidIPTVItem := playlist.Item{
+		Name:       "Invalid IPTV",
+		ServiceRef: "4097:0:1:0:0:0:0:0:0:0:http%3a//upstream.invalid:8080/secret/live.ts:Invalid IPTV",
+		TvgID:      "4097:0:1:0:0:0:0:0:0:0:http%3a//upstream.invalid:8080/secret/live.ts:Invalid IPTV",
+		URL:        "http://receiver:8001/invalid",
+		TvgLogo:    "/logos/invalid.png",
+	}
+
+	t.Run("nil parser drops all IPTV items and preserves DVB", func(t *testing.T) {
+		items := []playlist.Item{dvbItem, validIPTVItem, invalidIPTVItem}
+		out := buildPublicPlaylistItems(items, nil, "", "")
+		require.Len(t, out, 1)
+		assert.Equal(t, dvbItem.ServiceRef, out[0].ServiceRef)
+		assert.Equal(t, dvbItem.Name, out[0].Name)
+	})
+
+	t.Run("keyed parser converts valid IPTV and drops invalid IPTV", func(t *testing.T) {
+		items := []playlist.Item{dvbItem, validIPTVItem, invalidIPTVItem}
+		out := buildPublicPlaylistItems(items, parser, "", "")
+		require.Len(t, out, 2)
+		// Item 0 is DVB unaltered
+		assert.Equal(t, dvbItem.ServiceRef, out[0].ServiceRef)
+		assert.Equal(t, dvbItem.Name, out[0].Name)
+
+		// Item 1 is valid IPTV masked
+		assert.True(t, strings.HasPrefix(out[1].ServiceRef, sourceref.IDPrefix))
+		assert.Equal(t, out[1].ServiceRef, out[1].TvgID)
+		assert.Contains(t, out[1].URL, "/api/v3/stream/live/iptv_")
+		assert.Contains(t, out[1].TvgLogo, "/logos/iptv_")
+		assert.False(t, strings.Contains(out[1].URL, "upstream.invalid"))
+		assert.False(t, strings.Contains(out[1].ServiceRef, "4097:"))
+
+		// Invalid IPTV is completely omitted
+		for _, it := range out {
+			assert.NotEqual(t, "Invalid IPTV", it.Name)
+		}
+	})
 }

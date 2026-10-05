@@ -1024,4 +1024,3 @@ func TestClassifyReference(t *testing.T) {
 		}
 	})
 }
-

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,10 +92,10 @@ func TestSecureFileServer_AllowlistAllowed(t *testing.T) {
 	tmpDir := t.TempDir()
 	metrics := newTestMetrics()
 
-	// Create an allowlisted file
-	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
+	// Create allowlisted public files
+	playlistPath := filepath.Join(tmpDir, "playlist_public.m3u")
 	content := []byte("#EXTM3U\ntest")
-	if err := os.WriteFile(playlistPath, content, 0600); err != nil {
+	if err := os.WriteFile(playlistPath, content, 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,6 +112,63 @@ func TestSecureFileServer_AllowlistAllowed(t *testing.T) {
 	}
 	if metrics.miss != 1 {
 		t.Errorf("Expected cache miss")
+	}
+}
+
+// TestSecureFileServer_PlaylistSeparation verifies that requests for /playlist.m3u
+// always serve playlist_public.m3u (masked) and never the internal playlist.m3u (raw).
+func TestSecureFileServer_PlaylistSeparation(t *testing.T) {
+	tmpDir := t.TempDir()
+	metrics := newTestMetrics()
+
+	rawPath := filepath.Join(tmpDir, "playlist.m3u")
+	rawContent := []byte("#EXTM3U\n#EXTINF:-1,Raw Secret Channel\nhttp://canary.invalid/SECRET-TOKEN/live.ts\n")
+	if err := os.WriteFile(rawPath, rawContent, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	publicPath := filepath.Join(tmpDir, "playlist_public.m3u")
+	publicContent := []byte("#EXTM3U\n#EXTINF:-1,Masked Public Channel\n/api/v3/stream/live/iptv_maskedid123\n")
+	if err := os.WriteFile(publicPath, publicContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := SecureFileServer(tmpDir, metrics)
+
+	// 1. Requesting /playlist.m3u must serve publicContent, NEVER rawContent
+	req := httptest.NewRequest(http.MethodGet, "/playlist.m3u", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if body != string(publicContent) {
+		t.Fatalf("Expected publicContent, got %q", body)
+	}
+	if strings.Contains(body, "SECRET-TOKEN") || strings.Contains(body, "canary.invalid") {
+		t.Fatalf("Raw secrets leaked in /playlist.m3u response: %s", body)
+	}
+
+	// 2. Requesting /playlist_public.m3u directly also serves publicContent
+	reqPub := httptest.NewRequest(http.MethodGet, "/playlist_public.m3u", nil)
+	wPub := httptest.NewRecorder()
+	handler.ServeHTTP(wPub, reqPub)
+	if wPub.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", wPub.Code)
+	}
+	if wPub.Body.String() != string(publicContent) {
+		t.Fatalf("Expected publicContent for /playlist_public.m3u")
+	}
+
+	// 3. When playlist_public.m3u is missing, /playlist.m3u fails closed (404) and never serves raw playlist.m3u
+	if err := os.Remove(publicPath); err != nil {
+		t.Fatal(err)
+	}
+	wMissing := httptest.NewRecorder()
+	handler.ServeHTTP(wMissing, req)
+	if wMissing.Code != http.StatusNotFound {
+		t.Fatalf("Expected 404 when public playlist is missing, got %d", wMissing.Code)
 	}
 }
 
@@ -166,8 +224,8 @@ func TestSecureFileServer_ETagCaching(t *testing.T) {
 	tmpDir := t.TempDir()
 	metrics := newTestMetrics()
 
-	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
-	if err := os.WriteFile(playlistPath, []byte("#EXTM3U"), 0600); err != nil {
+	playlistPath := filepath.Join(tmpDir, "playlist_public.m3u")
+	if err := os.WriteFile(playlistPath, []byte("#EXTM3U"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
