@@ -133,4 +133,58 @@ internal object ErrorPresentationPolicy {
 
     fun resolveAuthReauthDetail(context: Context): String =
         resolveAuthReauthDetail { context.getString(it) }
+
+    /**
+     * Resolves playback error reasons into a catalog-backed user-facing string.
+     * Technical diagnostic error messages, exception class names and SQL fragments NEVER reach the returned string.
+     */
+    fun formatPlaybackError(
+        raw: String?,
+        getString: (Int) -> String
+    ): String {
+        if (raw.isNullOrBlank()) return ""
+        return when {
+            raw.contains("decoder", ignoreCase = true) -> getString(R.string.native_playback_error_decoder)
+            else -> getString(R.string.native_playback_status_error)
+        }
+    }
+
+    fun formatPlaybackError(raw: String?, context: Context): String =
+        formatPlaybackError(raw) { context.getString(it) }
+
+    /**
+     * Resolves playback warnings into catalog-backed strings.
+     * Raw internal warning strings never reach the rendered UI.
+     */
+    fun formatPlaybackWarning(
+        raw: String?,
+        getString: (Int) -> String
+    ): String {
+        if (raw.isNullOrBlank()) return ""
+        return when {
+            raw.contains("Audio unavailable", ignoreCase = true) -> getString(R.string.native_playback_warning_audio_unavailable)
+            else -> getString(R.string.native_playback_warning_degraded)
+        }
+    }
+
+    fun formatPlaybackWarning(raw: String?, context: Context): String =
+        formatPlaybackWarning(raw) { context.getString(it) }
+
+    /**
+     * Resolves playback session state into catalog-backed strings without leaking wire protocol tokens.
+     */
+    fun formatPlaybackSessionState(
+        wireValue: String?,
+        getString: (Int) -> String
+    ): String {
+        return when (wireValue?.uppercase()) {
+            "ACTIVE" -> getString(R.string.native_playback_status_active)
+            "READY" -> getString(R.string.native_playback_state_ready)
+            "FAILED", "ERROR" -> getString(R.string.native_playback_status_error)
+            else -> getString(R.string.native_playback_status_loading)
+        }
+    }
+
+    fun formatPlaybackSessionState(wireValue: String?, context: Context): String =
+        formatPlaybackSessionState(wireValue) { context.getString(it) }
 }

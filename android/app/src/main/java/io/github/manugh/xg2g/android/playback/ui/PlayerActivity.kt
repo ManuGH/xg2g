@@ -23,6 +23,7 @@ import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackState
+import io.github.manugh.xg2g.android.ui.ErrorPresentationPolicy
 import io.github.manugh.xg2g.android.transport.playback.loadPlaybackLogoBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -251,15 +252,13 @@ class PlayerActivity : AppCompatActivity() {
 
         statusView.text = when {
             !state.lastError.isNullOrBlank() ->
-                getString(R.string.native_playback_status_error, state.lastError)
+                ErrorPresentationPolicy.formatPlaybackError(state.lastError, this)
 
-            !state.playbackWarning.isNullOrBlank() -> state.playbackWarning
+            !state.playbackWarning.isNullOrBlank() ->
+                ErrorPresentationPolicy.formatPlaybackWarning(state.playbackWarning, this)
 
             state.session != null ->
-                getString(
-                    R.string.native_playback_status_active,
-                    state.session.state.wireValue
-                )
+                ErrorPresentationPolicy.formatPlaybackSessionState(state.session.state.wireValue, this)
 
             state.activeRequest != null -> getString(R.string.native_playback_status_loading)
             else -> getString(R.string.native_playback_status_idle)
