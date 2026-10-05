@@ -96,8 +96,12 @@
     <string name="native_playback_title">Native Wiedergabe</string>
     <string name="native_playback_status_loading">Wiedergabe wird vorbereitet…</string>
     <string name="native_playback_status_idle">Warte auf Wiedergabeanforderung</string>
-    <string name="native_playback_status_error">Wiedergabefehler: %1$s</string>
-    <string name="native_playback_status_active">Wiedergabe %1$s</string>
+    <string name="native_playback_status_error">Wiedergabefehler</string>
+    <string name="native_playback_error_decoder">Videodecoder-Fehler</string>
+    <string name="native_playback_warning_audio_unavailable">Tonspur nicht verfügbar</string>
+    <string name="native_playback_warning_degraded">Eingeschränkte Wiedergabe</string>
+    <string name="native_playback_status_active">Wiedergabe aktiv</string>
+    <string name="native_playback_state_ready">Wiedergabe bereit</string>
     <string name="server_switch_confirm_title">xg2g-Server wechseln?</string>
     <string name="server_switch_confirm_message">Ein Link möchte deinen xg2g-Server von\n\n%1$s\n\nauf\n\n%2$s\n\nändern. Fahre nur fort, wenn du diese Änderung selbst veranlasst hast.</string>
     <string name="server_switch_confirm_accept">Wechseln</string>

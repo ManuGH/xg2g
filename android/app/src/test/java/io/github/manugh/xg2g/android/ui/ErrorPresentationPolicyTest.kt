@@ -209,4 +209,65 @@ class ErrorPresentationPolicyTest {
         assertFalse(deReauth.contains("DISTINCTIVE_RAW_SQL_INJECTION_ERR_7761"))
         assertEquals("Die Sitzung ist abgelaufen. Bitte erneut anmelden.", deReauth)
     }
+
+    @Test
+    fun `playback error suppresses raw diagnostic error string and SQL fragment under EN and DE`() {
+        val enResult = ErrorPresentationPolicy.formatPlaybackError(DISTINCTIVE_RAW_ERROR, ::resolveEn)
+        assertFalse("EN playback error must not leak raw error", enResult.contains("DISTINCTIVE_RAW_SQL_INJECTION_ERR_7761"))
+        assertFalse("EN playback error must not leak raw SQL", enResult.contains("SELECT password"))
+        assertEquals("Playback error", enResult)
+
+        val deResult = ErrorPresentationPolicy.formatPlaybackError(DISTINCTIVE_RAW_ERROR, ::resolveDe)
+        assertFalse("DE playback error must not leak raw error", deResult.contains("DISTINCTIVE_RAW_SQL_INJECTION_ERR_7761"))
+        assertFalse("DE playback error must not leak raw SQL", deResult.contains("SELECT password"))
+        assertEquals("Wiedergabefehler", deResult)
+
+        val enDecoder = ErrorPresentationPolicy.formatPlaybackError("MediaCodec video decoder initialization failed: c2.goldfish.decoder", ::resolveEn)
+        assertFalse(enDecoder.contains("c2.goldfish.decoder"))
+        assertEquals("Video decoder error", enDecoder)
+
+        val deDecoder = ErrorPresentationPolicy.formatPlaybackError("MediaCodec video decoder initialization failed: c2.goldfish.decoder", ::resolveDe)
+        assertFalse(deDecoder.contains("c2.goldfish.decoder"))
+        assertEquals("Videodecoder-Fehler", deDecoder)
+    }
+
+    @Test
+    fun `playback warning suppresses raw string and maps to catalog warning under EN and DE`() {
+        val enWarning = ErrorPresentationPolicy.formatPlaybackWarning("Audio unavailable: ac3 (passthrough denied)", ::resolveEn)
+        assertFalse(enWarning.contains("passthrough denied"))
+        assertEquals("Audio track unavailable", enWarning)
+
+        val deWarning = ErrorPresentationPolicy.formatPlaybackWarning("Audio unavailable: ac3 (passthrough denied)", ::resolveDe)
+        assertFalse(deWarning.contains("passthrough denied"))
+        assertEquals("Tonspur nicht verfügbar", deWarning)
+
+        val enDegraded = ErrorPresentationPolicy.formatPlaybackWarning(DISTINCTIVE_RAW_ERROR, ::resolveEn)
+        assertFalse(enDegraded.contains("DISTINCTIVE_RAW_SQL_INJECTION_ERR_7761"))
+        assertEquals("Playback degraded", enDegraded)
+
+        val deDegraded = ErrorPresentationPolicy.formatPlaybackWarning(DISTINCTIVE_RAW_ERROR, ::resolveDe)
+        assertFalse(deDegraded.contains("DISTINCTIVE_RAW_SQL_INJECTION_ERR_7761"))
+        assertEquals("Eingeschränkte Wiedergabe", deDegraded)
+    }
+
+    @Test
+    fun `playback session state maps to catalog strings without leaking wire protocol tokens`() {
+        val enActive = ErrorPresentationPolicy.formatPlaybackSessionState("ACTIVE", ::resolveEn)
+        assertEquals("Playback active", enActive)
+
+        val deActive = ErrorPresentationPolicy.formatPlaybackSessionState("ACTIVE", ::resolveDe)
+        assertEquals("Wiedergabe aktiv", deActive)
+
+        val enReady = ErrorPresentationPolicy.formatPlaybackSessionState("READY", ::resolveEn)
+        assertEquals("Playback ready", enReady)
+
+        val deReady = ErrorPresentationPolicy.formatPlaybackSessionState("READY", ::resolveDe)
+        assertEquals("Wiedergabe bereit", deReady)
+
+        val enError = ErrorPresentationPolicy.formatPlaybackSessionState("ERROR", ::resolveEn)
+        assertEquals("Playback error", enError)
+
+        val deError = ErrorPresentationPolicy.formatPlaybackSessionState("FAILED", ::resolveDe)
+        assertEquals("Wiedergabefehler", deError)
+    }
 }
