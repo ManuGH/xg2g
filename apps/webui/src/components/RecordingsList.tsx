@@ -78,6 +78,13 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const ArrowLeftIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="m12 19-7-7 7-7" />
+    <path d="M19 12H5" />
+  </svg>
+);
+
 interface PlayingState {
   recordingId: string;
   title: string;
@@ -704,6 +711,19 @@ export default function RecordingsList() {
     return seriesGroups.find(g => normalizeTitle(g.seriesTitle) === norm) || null;
   }, [selectedSeries, seriesGroups]);
 
+  const playingSeriesGroup = useMemo(() => {
+    if (!playing) return null;
+    if (activeSeriesGroup && activeSeriesGroup.episodes.some((ep) => ep.recordingId === playing.recordingId)) {
+      return activeSeriesGroup;
+    }
+    return seriesGroups.find((g) => g.episodes.some((ep) => ep.recordingId === playing.recordingId)) || null;
+  }, [playing, activeSeriesGroup, seriesGroups]);
+
+  const otherEpisodes = useMemo(() => {
+    if (!playingSeriesGroup) return [];
+    return playingSeriesGroup.episodes.filter((ep) => ep.recordingId !== playing?.recordingId);
+  }, [playingSeriesGroup, playing?.recordingId]);
+
   const multiEpisodeSeries = useMemo(() => {
     return seriesGroups.filter(g => g.episodes.length >= 2);
   }, [seriesGroups]);
@@ -810,6 +830,13 @@ export default function RecordingsList() {
             return;
           }
           if (eligibleResume) {
+            if (playing) {
+              void handlePlay(rec, {
+                startPositionSeconds: eligibleResume.posSeconds ?? 0,
+                suppressResumePrompt: true,
+              });
+              return;
+            }
             handleOpenPreplay(rec);
             return;
           }
@@ -1012,11 +1039,28 @@ export default function RecordingsList() {
   }
 
   if (playing) {
+    const backLabel = playingSeriesGroup
+      ? t('recordings.backToSeries', { title: playingSeriesGroup.seriesTitle })
+      : t('recordings.backToLibrary', { defaultValue: 'Zurück zu Aufnahmen' });
+
     return (
       <div className={[styles.container, styles.watchPage, 'animate-enter'].join(' ')}>
         <div className={styles.watchPageHeader}>
           <div className={styles.watchPageLead}>
-            <span className={styles.watchPageLabel}>{t('nav.recordings')}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={styles.watchPageBackAction}
+              onClick={() => {
+                handlePlayerClose();
+                if (playingSeriesGroup) {
+                  handleSelectSeries(playingSeriesGroup.seriesTitle);
+                }
+              }}
+            >
+              <ArrowLeftIcon className={styles.iconSm} />
+              <span>{backLabel}</span>
+            </Button>
           </div>
           <Button
             variant="secondary"
@@ -1029,57 +1073,105 @@ export default function RecordingsList() {
         </div>
 
         <div className={styles.watchPageBody}>
-          <Suspense fallback={
-            <div className={styles.watchPageFallback}>
-              <div className={[styles.preplayStage, styles.watchPageFallbackStage].join(' ')} aria-hidden="true">
-                <div className={styles.preplayStageCenter}>
-                  <PlayCircleIcon className={styles.preplayStageIcon} />
-                </div>
-                {playingProgressPercent !== null && (
-                  <div className={styles.preplayStageProgress}>
-                    <div
-                      className={styles.preplayStageProgressFill}
-                      style={{ '--xg2g-progress-width': `${playingProgressPercent}%` } as CSSProperties}
-                    ></div>
+          <div className={styles.watchPlayerStage}>
+            <Suspense fallback={
+              <div className={styles.watchPageFallback}>
+                <div className={[styles.preplayStage, styles.watchPageFallbackStage].join(' ')} aria-hidden="true">
+                  <div className={styles.preplayStageCenter}>
+                    <PlayCircleIcon className={styles.preplayStageIcon} />
                   </div>
-                )}
-                <div className={styles.preplayStageDock}>
-                  <div className={styles.preplayStageCopy}>
-                    <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
-                    <h1 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h1>
-                    <div className={styles.preplayMeta}>
-                      {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
-                      <span>{playing.lengthLabel}</span>
+                  {playingProgressPercent !== null && (
+                    <div className={styles.preplayStageProgress}>
+                      <div
+                        className={styles.preplayStageProgressFill}
+                        style={{ '--xg2g-progress-width': `${playingProgressPercent}%` } as CSSProperties}
+                      ></div>
                     </div>
-                  </div>
-                  <div className={styles.preplayStageActions}>
-                    <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
-                      <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
-                      <div className={styles.playerLaunchCopy}>
-                        <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
-                        <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                  )}
+                  <div className={styles.preplayStageDock}>
+                    <div className={styles.preplayStageCopy}>
+                      <div className={styles.preplayEyebrow}>{t('recordings.preplayEyebrow')}</div>
+                      <h1 className={styles.preplayTitle}>{playing.title || t('recordings.untitled')}</h1>
+                      <div className={styles.preplayMeta}>
+                        {playing.beginUnixSeconds ? <span>{formatTime(playing.beginUnixSeconds)}</span> : null}
+                        <span>{playing.lengthLabel}</span>
+                      </div>
+                    </div>
+                    <div className={styles.preplayStageActions}>
+                      <div className={styles.playerLaunchStatus} role="status" aria-live="polite">
+                        <span className={`${styles.playerLaunchSpinner} animate-recordings-launch-spinner`} aria-hidden="true" />
+                        <div className={styles.playerLaunchCopy}>
+                          <div className={styles.playerLaunchLabel}>{t('recordings.loadingPlayer')}</div>
+                          <p className={styles.playerLaunchHint}>{t('recordings.loadingPlayerHint')}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+            }>
+              <V3Player
+                recordingId={playing.recordingId}
+                recordingTitle={playing.title}
+                recordingDescription={playing.description}
+                recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
+                recordingLengthLabel={playing.lengthLabel}
+                layoutMode="page"
+                token={auth.token || undefined}
+                autoStart={true}
+                onClose={handlePlayerClose}
+                duration={playing.durationSeconds}
+                startPositionSeconds={playing.startPositionSeconds}
+                suppressResumePrompt={playing.suppressResumePrompt}
+              />
+            </Suspense>
+          </div>
+
+          <div className={styles.watchPageMetaCard}>
+            <div className={styles.watchPageMetaHeader}>
+              <div className={styles.watchPageMetaTitles}>
+                {playingSeriesGroup ? (
+                  <span className={styles.watchPageSeriesBadge}>
+                    {playingSeriesGroup.seriesTitle}
+                  </span>
+                ) : null}
+                <h1 className={styles.watchPageTitle}>{playing.title || t('recordings.untitled')}</h1>
+                <div className={styles.watchPageMetaDetails}>
+                  {playing.beginUnixSeconds ? (
+                    <span className={styles.watchPageMetaPill}>
+                      {formatTime(playing.beginUnixSeconds)}
+                    </span>
+                  ) : null}
+                  <span className={styles.watchPageMetaPill}>
+                    {playing.lengthLabel}
+                  </span>
+                </div>
+              </div>
             </div>
-          }>
-            <V3Player
-              recordingId={playing.recordingId}
-              recordingTitle={playing.title}
-              recordingDescription={playing.description}
-              recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
-              recordingLengthLabel={playing.lengthLabel}
-              layoutMode="page"
-              token={auth.token || undefined}
-              autoStart={true}
-              onClose={handlePlayerClose}
-              duration={playing.durationSeconds}
-              startPositionSeconds={playing.startPositionSeconds}
-              suppressResumePrompt={playing.suppressResumePrompt}
-            />
-          </Suspense>
+            {playing.description ? (
+              <p className={styles.watchPageDescription}>{playing.description}</p>
+            ) : null}
+          </div>
+
+          {otherEpisodes.length > 0 ? (
+            <section className={styles.watchPageUpNextSection}>
+              <div className={styles.watchPageUpNextHeader}>
+                <h2 className={styles.watchPageUpNextTitle}>
+                  {playingSeriesGroup?.seriesTitle
+                    ? t('recordings.moreEpisodes', { title: playingSeriesGroup.seriesTitle })
+                    : t('recordings.moreEpisodesGeneric')}
+                </h2>
+                <span className={styles.watchPageUpNextCount}>
+                  {otherEpisodes.length === 1
+                    ? t('recordings.episodesCountSingle')
+                    : t('recordings.episodesCount', { count: otherEpisodes.length })}
+                </span>
+              </div>
+              <div className={styles.watchPageUpNextGrid}>
+                {otherEpisodes.map((ep) => renderRecordingCard(ep, 'grid'))}
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
     );
