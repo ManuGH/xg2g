@@ -135,6 +135,7 @@ export interface V3PlayerViewState {
 }
 
 export interface BuildViewStateInput {
+  layoutMode?: 'overlay' | 'page';
   channel: { name?: string; logoUrl?: string | null } | undefined;
   playbackMode: string;
   liveNowPlaying: { title: string | null; desc: string | null };
@@ -412,9 +413,9 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     channelName: input.channel?.name ?? null,
     programmeTitle: input.liveNowPlaying?.title || (input.playbackMode === 'LIVE' ? null : (input.channel?.name ?? null)),
     programmeDesc: input.liveNowPlaying?.desc || null,
-    useOverlayLayout: Boolean(input.onClose),
+    useOverlayLayout: input.layoutMode !== 'page' && Boolean(input.onClose),
     userIdle: input.isIdle,
-    showCloseButton: Boolean(input.onClose),
+    showCloseButton: input.layoutMode !== 'page' && Boolean(input.onClose),
     closeButtonLabel: t('player.closePlayer'),
     showStatsOverlay: input.showStats && input.showPlaybackChrome,
     statsTitle,

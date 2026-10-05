@@ -2448,6 +2448,7 @@ export function usePlaybackOrchestrator(
   const dvrPreviewWindowStartUnix = startUnix && startUnix > 0 ? startUnix + seekableStart : null;
 
   const viewState = buildPlayerViewState({
+    layoutMode: props.layoutMode,
     channel,
     playbackMode,
     liveNowPlaying,
