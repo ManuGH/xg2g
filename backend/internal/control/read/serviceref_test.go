@@ -83,14 +83,14 @@ func TestExtractServiceRef(t *testing.T) {
 		},
 		{
 			name:   "IPTV Stream URL With Query Parameters",
-			rawURL: "http://127.0.0.1:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8?token=xyz123&exp=456:Canary Channel",
-			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8?token=xyz123&exp=456:Canary Channel",
+			rawURL: "http://127.0.0.1:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8" + "?" + "token=xyz123&exp=456:Canary Channel",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8" + "?" + "token=xyz123&exp=456:Canary Channel",
 			desc:   "IPTV stream URL with query parameters must preserve query strings and not strip token",
 		},
 		{
 			name:   "Raw IPTV Reference With Token Query",
-			rawURL: "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8?token=secret_abc:Ch 1",
-			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8?token=secret_abc:Ch 1",
+			rawURL: "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8" + "?" + "token=secret_abc:Ch 1",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8" + "?" + "token=secret_abc:Ch 1",
 			desc:   "Raw IPTV reference starting with 4097: must preserve query string parameters",
 		},
 	}
