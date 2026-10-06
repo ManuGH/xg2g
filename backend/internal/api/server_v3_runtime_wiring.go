@@ -10,6 +10,7 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/scrubber"
 	"github.com/ManuGH/xg2g/internal/library"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -106,6 +107,9 @@ func (s *Server) syncV3HandlerDependencies() {
 	}
 	if s.smootherHandler != nil {
 		s.smootherHandler.SetIPTVResolver(deps.runtimeDeps.IPTVResolver)
+	}
+	if deps.runtimeDeps.IPTVResolver != nil {
+		log.SetGlobalScrubber(scrubber.New(deps.runtimeDeps.IPTVResolver).Scrub)
 	}
 	s.mu.Unlock()
 }
