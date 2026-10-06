@@ -207,7 +207,7 @@ func TestSecureFileServer_NoDirectoryListing(t *testing.T) {
 
 	// Use allowlisted filename + trailing slash to reach directory_listing branch
 	// (avoids allowlist preemption)
-	req := httptest.NewRequest(http.MethodGet, "/xmltv.xml/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/playlist.m3u/", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -216,6 +216,26 @@ func TestSecureFileServer_NoDirectoryListing(t *testing.T) {
 	}
 	if metrics.denied["directory_listing"] == 0 {
 		t.Errorf("Expected directory_listing denial, got %v", metrics.denied)
+	}
+}
+
+// Test that XMLTV and EPG files are blocked from public file serving (Option B fail-closed)
+func TestSecureFileServer_XMLTVBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	metrics := newTestMetrics()
+	handler := SecureFileServer(tmpDir, metrics)
+
+	for _, name := range []string{"/xmltv.xml", "/epg.xml"} {
+		req := httptest.NewRequest(http.MethodGet, name, nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Path %s: expected 403 Forbidden, got %d", name, w.Code)
+		}
+	}
+	if metrics.denied["forbidden_file"] != 2 {
+		t.Errorf("Expected 2 forbidden_file denials, got %v", metrics.denied)
 	}
 }
 

@@ -25,11 +25,10 @@ var (
 	// Only serve paths resolved from this static allowlist, never direct user input.
 	// Internal playlist (playlist.m3u) is isolated and never served to clients;
 	// requests for playlist.m3u serve the masked export playlist_public.m3u.
+	// XMLTV and EPG files are excluded pending dedicated masked export PR.
 	allowedPublicFiles = map[string]string{
 		"playlist.m3u":        "playlist_public.m3u",
 		"playlist_public.m3u": "playlist_public.m3u",
-		"xmltv.xml":           "xmltv.xml",
-		"epg.xml":             "epg.xml",
 	}
 	sensitiveFileExtensions = []string{
 		".yaml", ".yml", ".key", ".pem", ".env", ".db", ".json", ".ini", ".conf",
