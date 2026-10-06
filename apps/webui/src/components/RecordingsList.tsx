@@ -724,9 +724,30 @@ export default function RecordingsList() {
     return playingSeriesGroup.episodes.filter((ep) => ep.recordingId !== playing?.recordingId);
   }, [playingSeriesGroup, playing?.recordingId]);
 
+  const filteredSeriesGroups = useMemo(() => {
+    if (filterMode === 'all') return seriesGroups;
+    return seriesGroups
+      .map((group) => ({
+        ...group,
+        episodes: group.episodes.filter((ep) => matchesRecordingsFilter(ep, filterMode)),
+      }))
+      .filter((group) => group.episodes.length > 0);
+  }, [seriesGroups, filterMode]);
+
   const multiEpisodeSeries = useMemo(() => {
-    return seriesGroups.filter(g => g.episodes.length >= 2);
-  }, [seriesGroups]);
+    return filteredSeriesGroups.filter((g) => g.episodes.length >= 2);
+  }, [filteredSeriesGroups]);
+
+  const multiEpisodeRecordingIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const group of multiEpisodeSeries) {
+      for (const ep of group.episodes) {
+        const id = ep.recordingId || `${ep.title}-${ep.beginUnixSeconds}`;
+        ids.add(id);
+      }
+    }
+    return ids;
+  }, [multiEpisodeSeries]);
 
   let candidateRecordings: RecordingItem[];
   if (selectedSeries && activeSeriesGroup) {
@@ -796,15 +817,32 @@ export default function RecordingsList() {
     { value: 'newest', label: t('recordings.sortNewest') },
     { value: 'oldest', label: t('recordings.sortOldest') },
   ];
-  const continueWatching = !selectionMode && filterMode === 'all' && !selectedSeries
-    ? visibleRecordings.filter((recording) => Boolean(resolveEligibleResume(recording))).slice(0, 4)
-    : [];
-  const continueWatchingIds = new Set(
+  const continueWatching = useMemo(() => {
+    return !selectionMode && filterMode === 'all' && !selectedSeries
+      ? visibleRecordings.filter((recording) => Boolean(resolveEligibleResume(recording))).slice(0, 4)
+      : [];
+  }, [selectionMode, filterMode, selectedSeries, visibleRecordings]);
+  const continueWatchingIds = useMemo(() => new Set(
     continueWatching.map((recording) => recording.recordingId).filter((recordingId): recordingId is string => Boolean(recordingId))
-  );
+  ), [continueWatching]);
   const primaryRecordings = continueWatchingIds.size > 0
     ? visibleRecordings.filter((recording) => !recording.recordingId || !continueWatchingIds.has(recording.recordingId))
     : visibleRecordings;
+
+  const standaloneSeriesRecordings = useMemo(() => {
+    return profileRecordings
+      .filter((rec) => {
+        const id = rec.recordingId || `${rec.title}-${rec.beginUnixSeconds}`;
+        return classifiedMap.get(id) === 'series' && !multiEpisodeRecordingIds.has(id);
+      })
+      .filter((rec) => !rec.recordingId || !continueWatchingIds.has(rec.recordingId))
+      .filter((recording) => matchesRecordingsFilter(recording as RecordingItem, filterMode))
+      .sort((left, right) => {
+        const leftBegin = left.beginUnixSeconds || 0;
+        const rightBegin = right.beginUnixSeconds || 0;
+        return sortMode === 'oldest' ? leftBegin - rightBegin : rightBegin - leftBegin;
+      });
+  }, [profileRecordings, classifiedMap, multiEpisodeRecordingIds, continueWatchingIds, filterMode, sortMode]);
 
   const renderRecordingCard = (rec: RecordingItem, variant: 'grid' | 'featured' = 'grid') => {
     const recordingId = String(rec.recordingId || '').trim();
@@ -1436,13 +1474,26 @@ export default function RecordingsList() {
         </section>
       ) : null}
 
-      {!selectedSeries && categoryFilter === 'series' && seriesGroups.length > 0 && (
+      {!selectedSeries && categoryFilter === 'series' && multiEpisodeSeries.length > 0 && (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>{t('recordings.seriesFolders')}</h2>
+            <h2 className={styles.sectionTitle}>{t('recordings.categorySeries')}</h2>
           </div>
           <div className={styles.seriesRail}>
-            {seriesGroups.map(renderSeriesCard)}
+            {multiEpisodeSeries.map(renderSeriesCard)}
+          </div>
+        </section>
+      )}
+
+      {!selectedSeries && categoryFilter === 'series' && standaloneSeriesRecordings.length > 0 && (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              {multiEpisodeSeries.length > 0 ? t('recordings.singleEpisodes') : t('recordings.categorySeries')}
+            </h2>
+          </div>
+          <div className={[styles.grid, selectionMode && canManageDvr ? styles.selectionMode : null].filter(Boolean).join(' ')}>
+            {standaloneSeriesRecordings.map((recording) => renderRecordingCard(recording))}
           </div>
         </section>
       )}
@@ -1469,7 +1520,7 @@ export default function RecordingsList() {
         </section>
       )}
 
-      {primaryRecordings.length > 0 && (
+      {primaryRecordings.length > 0 && !(categoryFilter === 'series' && !selectedSeries) && (
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
@@ -1481,8 +1532,6 @@ export default function RecordingsList() {
                 ? t('recordings.categoryMovies')
                 : categoryFilter === 'sport'
                 ? t('recordings.categorySport')
-                : categoryFilter === 'series'
-                ? t('recordings.categorySeries')
                 : t('recordings.title')}
             </h2>
           </div>
@@ -1492,7 +1541,11 @@ export default function RecordingsList() {
         </section>
       )}
 
-      {(!data?.directories?.length && !visibleRecordings.length && !(!selectedSeries && categoryFilter === 'series' && seriesGroups.length > 0)) && (
+      {(!data?.directories?.length && (
+        (!selectedSeries && categoryFilter === 'series')
+          ? (multiEpisodeSeries.length === 0 && standaloneSeriesRecordings.length === 0 && continueWatching.length === 0)
+          : (!visibleRecordings.length && !continueWatching.length)
+      )) && (
         <EmptyState
           icon="○"
           title={
