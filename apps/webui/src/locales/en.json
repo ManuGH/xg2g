@@ -58,7 +58,8 @@
     "closeNavigationLabel": "Close navigation",
     "logoutProtectedTitle": "Logout protected",
     "logoutProtectedMessage": "Logging out from child profile requires the household PIN.",
-    "logoutConfirmLabel": "Logout"
+    "logoutConfirmLabel": "Logout",
+    "toggleSidebar": "Toggle Sidebar ⌘B"
   },
   "app": {
     "initializing": "Initializing...",
@@ -161,7 +162,40 @@
     "requestId": "Request ID",
     "yes": "Yes",
     "no": "No",
-    "clear": "Clear"
+    "clear": "Clear",
+    "edit": "Edit",
+    "dismissNotification": "Dismiss notification",
+    "sectionPath": "Section path",
+    "days": {
+      "mo": "Mon",
+      "di": "Tue",
+      "mi": "Wed",
+      "do": "Thu",
+      "fr": "Fri",
+      "sa": "Sat",
+      "so": "Sun"
+    }
+  },
+  "statusChip": {
+    "state": {
+      "idle": "Ready",
+      "success": "Success",
+      "warning": "Warning",
+      "error": "Error",
+      "live": "Live",
+      "recording": "Recording",
+      "pending": "Pending",
+      "deleting": "Deleting"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "subtitle": "Notification center",
+    "unreadCount_one": "Unread ({{count}})",
+    "unreadCount_other": "Unread ({{count}})",
+    "allCount_one": "All ({{count}})",
+    "allCount_other": "All ({{count}})"
   },
   "legacyRoute": {
     "eyebrow": "Expert path",
@@ -173,7 +207,12 @@
     "logsDescription": "Diagnostics stay directly accessible, but most households should enter this area from Settings."
   },
   "logs": {
-    "empty": "No logs available."
+    "empty": "No logs available.",
+    "recentLogs": "Recent logs",
+    "time": "Time",
+    "level": "Level",
+    "component": "Component",
+    "message": "Message"
   },
   "timers": {
     "empty": "No timers scheduled.",
@@ -188,7 +227,16 @@
       "serviceRequired": "Please select a channel.",
       "nameRequired": "Name is required.",
       "timeRangeInvalid": "End time must be after start time."
-    }
+    },
+    "channelLabel": "Channel",
+    "selectChannel": "Select a channel",
+    "nameLabel": "Name",
+    "descriptionLabel": "Description",
+    "enabledLabel": "Enabled",
+    "startLabel": "Start",
+    "endLabel": "End",
+    "validating": "Checking for conflicts...",
+    "conflictFound": "Conflict found:"
   },
   "player": {
     "status": "Status",
@@ -242,6 +290,15 @@
     "pipLabel": "PiP",
     "statsLabel": "Stats",
     "switchChannel": "Switch Channel",
+    "channelLabel": "Channel",
+    "audioTracks": "Audio tracks",
+    "audioTrackFallback": "Audio track {{index}}",
+    "pictureMode": "Picture mode",
+    "pictureModes": {
+      "natural": "Natural (Studio • Reference)",
+      "vivid": "Vivid (TV • OLED-Punch)",
+      "cinema": "Cinema (Warm • D65-Look)"
+    },
     "searchChannel": "Search channels…",
     "noChannelFound": "No channel found",
     "statusStates": {
@@ -473,6 +530,7 @@
     "online": "Online",
     "synced": "Synced",
     "recorderIdle": "Recorder idle",
+    "recorderReady": "Ready",
     "recordingActive": "Recording active",
     "recorderUnknown": "Recorder unknown",
     "systemHealthy": "System healthy",
@@ -525,15 +583,6 @@
     "timeJustNow": "Just now",
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
-    "heroAside": {
-      "eyebrow": "Next best move",
-      "standbyTitle": "Receiver is in standby",
-      "streamingTitle": "Streaming active",
-      "streamingDetail": "{{count}} active stream(s)",
-      "readyTitle": "Ready for playback",
-      "readyDetail": "All tuners available",
-      "standbyDetail": "The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly."
-    },
     "start": {
       "eyebrow": "Start here",
       "title": "Choose the task, not the tool",
@@ -592,6 +641,16 @@
   "epg": {
     "backToGuide": "Back to Live TV",
     "sectionNavLabel": "Live TV sections",
+    "sidebarToggleTitle": "Show sidebar (⌘B)",
+    "sidebarToggleLabel": "Show sidebar",
+    "timelineLabel": "EPG Timeline",
+    "toggleFavorite": "Toggle favorite",
+    "uhdPaused": "UHD paused",
+    "unknownChannel": "Unknown channel",
+    "viewMode": {
+      "list": "List",
+      "timeline": "Timeline"
+    },
     "pageTitle": "EPG Overview ({{count}})",
     "timeRange": "Time Range",
     "rangeNowTo6h": "now to +6h",
@@ -670,7 +729,9 @@
     "rangeNow": "Now",
     "rangeDay": "24h",
     "rangeWeek": "7d",
-    "rangeAll": "All"
+    "rangeAll": "All",
+    "seriesKeywordPlaceholder": "e.g. Example Show",
+    "seriesTimeWindowPlaceholder": "e.g. 0530-0930"
   },
   "recordings": {
     "seriesRulesAction": "Series Rules",
@@ -780,6 +841,10 @@
     "regenerateErrorTitle": "Unable to regenerate playlist files"
   },
   "settings": {
+    "navGroup": {
+      "playbackAndDevices": "Playback & Devices",
+      "serverAndAdmin": "Server & Administration"
+    },
     "backToOverview": "Back to overview",
     "backToSection": "Back to {{section}}",
     "sectionNavLabel": "Settings sections",
@@ -1146,6 +1211,7 @@
     "webif": "WebIF",
     "tuners": "Tuners",
     "tunersDetected": "{{count}} detected",
+    "tunerNumber": "Tuner #{{number}}",
     "tunerStatus": {
       "live": "Live",
       "recording": "Recording",
@@ -1245,13 +1311,92 @@
     "devDetails": "Developer details"
   },
   "series": {
+    "title": "Series Recording Rules",
+    "newRule": "+ New Rule",
+    "clickToPause": "Click to pause",
+    "clickToActivate": "Click to activate",
+    "pauseAction": "Pause",
+    "activateAction": "Activate",
+    "active": "Active",
+    "disabled": "Disabled",
+    "channelLabel": "Channel:",
+    "allChannels": "All Channels",
+    "unknownChannel": "Unknown Channel",
+    "daysLabel": "Days:",
+    "timeLabel": "Time:",
+    "anytime": "Anytime",
+    "retentionLabel": "Retention:",
+    "retentionDaysAutoDelete": "{{count}} days (auto-delete)",
+    "keepForever": "Keep forever",
+    "validUntilLabel": "Valid until:",
+    "noExpiration": "No expiration (indefinite)",
+    "expiredBadge": "Expired ({{date}})",
+    "untilBadge": "Until {{date}}",
+    "lastRunLabel": "Last run:",
+    "runStatusSuccess": "Success",
+    "runStatusFailed": "Failed",
+    "unknownStatus": "Unknown",
+    "runSummaryWithPruned": "{{created}} created, {{pruned}} pruned",
+    "runSummaryCreated": "{{count}} created",
+    "neverRun": "Never run",
+    "pause": "Pause",
+    "activate": "Activate",
+    "running": "Running...",
+    "runNow": "Run Now",
+    "deleteConfirmTitle": "Delete rule",
+    "deleteConfirmMessage": "Really delete this series rule?",
+    "deleteFailed": "Failed to delete rule",
+    "daysWeekdaysFilter": "Weekdays (Mon-Fri)",
+    "daysWeekendFilter": "Weekend (Sat-Sun)",
+    "daysAll": "All days (No filter)",
+    "loadingRules": "Loading series rules...",
+    "saveFailed": "Failed to save rule",
+    "keywordRequired": "Keyword is required",
+    "runComplete": "Run complete",
+    "runCompleteDetails": "Matched: {{matched}} | Created: {{created}} | Errors: {{errors}}",
+    "runFailed": "Run failed",
+    "modal": {
+      "editRule": "Edit rule",
+      "newRule": "New series rule",
+      "ruleActive": "Rule active",
+      "ruleActiveHint": "When paused, the automatic scheduler ignores this rule.",
+      "keywordLabel": "Keyword (Show title)",
+      "keywordHint": "Partial match in show title (case insensitive).",
+      "channelLabel": "Channel",
+      "selectChannel": "-- Select Channel --",
+      "channelHint": "Required. The channel monitored for this series.",
+      "dayFilterLabel": "Day Filter",
+      "dayFilterHint": "Record specific days. Empty = Any day.",
+      "timeWindowLabel": "Time Window (HHMM-HHMM)",
+      "timeWindowHint": "Only match start times within this range.",
+      "retentionLabel": "Retention (days)",
+      "retentionUnlimited": "Unlimited",
+      "retention7Days": "7 Days",
+      "retention14Days": "14 Days",
+      "retention30Days": "30 Days",
+      "retentionHint": "Recordings older than this number of days will be deleted automatically.",
+      "expiresLabel": "Valid until (Expiration / EOL)",
+      "expiresNever": "Indefinite (no expiration)",
+      "expiresYearEnd": "Until year-end ({{year}})",
+      "expires3Months": "+3 months",
+      "expiresHint": "Optional. No new recordings will be scheduled after this date.",
+      "priorityLabel": "Priority",
+      "saveButton": "Save"
+    },
+    "placeholder": {
+      "keyword": "e.g. Example Show",
+      "timeWindow": "e.g. 2015-2200",
+      "retention": "0 = keep forever"
+    },
     "ruleActivated": "Rule activated",
     "rulePaused": "Rule paused",
     "toggleFailed": "Failed to update rule status",
     "daysDaily": "Daily",
     "daysWeekdays": "Weekdays (Mon-Fri)",
     "daysWeekend": "Weekend (Sat-Sun)",
-    "retentionDays": "{{count}} days"
+    "retentionDays": "{{count}} days",
+    "daysDailyAll": "Daily (All days)",
+    "unknownError": "Unknown error"
   },
   "admin": {
     "header": {

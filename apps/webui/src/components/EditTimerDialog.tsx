@@ -278,7 +278,7 @@ export default function EditTimerDialog({
 
         <div className={styles.form}>
           <div className={styles.formGroup}>
-            <label className={styles.label}>Channel</label>
+            <label className={styles.label}>{t('timers.channelLabel')}</label>
             {isCreateMode ? (
               <select
                 className={styles.inputField}
@@ -287,7 +287,7 @@ export default function EditTimerDialog({
                 disabled={!canEdit}
                 data-testid="timer-edit-service"
               >
-                <option value="">Select a channel</option>
+                <option value="">{t('timers.selectChannel')}</option>
                 {serviceOptions.map((service) => (
                   <option key={service.serviceRef || service.id} value={service.serviceRef || service.id}>
                     {service.name}
@@ -300,7 +300,7 @@ export default function EditTimerDialog({
           </div>
 
           <div className={styles.formGroup}>
-            <label className={styles.label}>Name</label>
+            <label className={styles.label}>{t('timers.nameLabel')}</label>
             <input
               className={styles.input}
               value={formData.name}
@@ -311,7 +311,7 @@ export default function EditTimerDialog({
             />
           </div>
           <div className={styles.formGroup}>
-            <label className={styles.label}>Description</label>
+            <label className={styles.label}>{t('timers.descriptionLabel')}</label>
             <textarea
               className={styles.textarea}
               value={formData.description}
@@ -323,7 +323,7 @@ export default function EditTimerDialog({
 
           <div className={styles.grid}>
             <div className={styles.formGroup}>
-              <label className={styles.label}>Enabled</label>
+              <label className={styles.label}>{t('timers.enabledLabel')}</label>
               <input
                 type="checkbox"
                 checked={formData.enabled}
@@ -336,7 +336,7 @@ export default function EditTimerDialog({
 
           <div className={styles.grid}>
             <div className={styles.formGroup}>
-              <label className={styles.label}>Start</label>
+              <label className={styles.label}>{t('timers.startLabel')}</label>
               <input
                 type="datetime-local"
                 className={styles.input}
@@ -346,7 +346,7 @@ export default function EditTimerDialog({
               />
             </div>
             <div className={styles.formGroup}>
-              <label className={styles.label}>End</label>
+              <label className={styles.label}>{t('timers.endLabel')}</label>
               <input
                 type="datetime-local"
                 className={styles.input}
@@ -358,10 +358,10 @@ export default function EditTimerDialog({
           </div>
 
           {/* Conflict Warning */}
-          {validating && <div className={styles.statusText}>Prüfe auf Konflikte...</div>}
+          {validating && <div className={styles.statusText}>{t('timers.validating')}</div>}
           {conflict && (
             <div className={styles.conflictAlert}>
-              <p className={styles.conflictTitle}>Konflikt gefunden:</p>
+              <p className={styles.conflictTitle}>{t('timers.conflictFound')}</p>
               <ul className={styles.conflictList}>
                 {conflict.conflicts?.map((c, i) => (
                   <li key={i}>

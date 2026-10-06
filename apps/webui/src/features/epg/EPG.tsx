@@ -552,43 +552,45 @@ export default function EPG({
       ].filter(Boolean).join(' ')}
     >
       {canManageDvr ? (
-        <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel', { defaultValue: 'Live TV sections' })}>
+        <div className={styles.surfaceNavHeader}>
           <button
             type="button"
             className={[styles.surfaceTab, styles.sidebarToggle].join(' ')}
             onClick={() => window.dispatchEvent(new Event('xg2g:toggle-sidebar'))}
-            title="Seitenleiste einblenden (⌘B)"
-            aria-label="Seitenleiste einblenden"
+            title={t('epg.sidebarToggleTitle', {})}
+            aria-label={t('epg.sidebarToggleLabel', {})}
           >
             <svg className={styles.sidebarToggleIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="3" />
               <line x1="9" y1="3" x2="9" y2="21" />
             </svg>
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === 'guide'}
-            className={[
-              styles.surfaceTab,
-              activeSection === 'guide' ? styles.surfaceTabActive : null,
-            ].filter(Boolean).join(' ')}
-            onClick={() => handleSectionChange('guide')}
-          >
-            {t('nav.epg')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSection === 'timers'}
-            className={[
-              styles.surfaceTab,
-              activeSection === 'timers' ? styles.surfaceTabActive : null,
-            ].filter(Boolean).join(' ')}
-            onClick={() => handleSectionChange('timers')}
-          >
-            {t('nav.timers')}
-          </button>
+          <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'guide'}
+              className={[
+                styles.surfaceTab,
+                activeSection === 'guide' ? styles.surfaceTabActive : null,
+              ].filter(Boolean).join(' ')}
+              onClick={() => handleSectionChange('guide')}
+            >
+              {t('nav.epg')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'timers'}
+              className={[
+                styles.surfaceTab,
+                activeSection === 'timers' ? styles.surfaceTabActive : null,
+              ].filter(Boolean).join(' ')}
+              onClick={() => handleSectionChange('timers')}
+            >
+              {t('nav.timers')}
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -628,7 +630,7 @@ export default function EPG({
               <>
                 <button type="button" onClick={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}>
                   <span className={styles.actionIcon} aria-hidden="true">{viewMode === 'grid' ? '☰' : '▦'}</span>
-                  <span className={styles.actionLabel}>{viewMode === 'grid' ? 'List' : 'Timeline'}</span>
+                  <span className={styles.actionLabel}>{viewMode === 'grid' ? t('epg.viewMode.list', {}) : t('epg.viewMode.timeline', {})}</span>
                 </button>
                 {canManageDvr ? (
                   <button type="button" onClick={() => handleSectionChange('timers')}>

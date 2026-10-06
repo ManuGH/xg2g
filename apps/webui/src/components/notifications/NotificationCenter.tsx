@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { debugError } from '../../utils/logging';
 
 export interface NotificationItem {
@@ -16,6 +17,7 @@ export interface NotificationItem {
 }
 
 export const NotificationCenter: React.FC = () => {
+  const { t } = useTranslation();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -194,7 +196,8 @@ export const NotificationCenter: React.FC = () => {
       {/* Bell Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        title="Benachrichtigungen"
+        title={t('notifications.title')}
+        aria-label={t('notifications.title')}
         style={{
           position: 'relative',
           display: 'flex',
@@ -261,10 +264,10 @@ export const NotificationCenter: React.FC = () => {
           >
             <div>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Benachrichtigungen
+                {t('notifications.title')}
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                Facebook-style Notification Center
+                {t('notifications.subtitle')}
               </p>
             </div>
             {unreadCount > 0 && (
@@ -340,7 +343,7 @@ export const NotificationCenter: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              Ungelesen ({notifications.filter((n) => !n.readAt).length})
+              {t('notifications.unreadCount', { count: notifications.filter((n) => !n.readAt).length })}
             </button>
             <button
               onClick={() => setFilter('all')}
@@ -355,7 +358,7 @@ export const NotificationCenter: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              Alle ({notifications.length})
+              {t('notifications.allCount', { count: notifications.length })}
             </button>
           </div>
 
@@ -379,7 +382,7 @@ export const NotificationCenter: React.FC = () => {
             {filteredNotifs.length === 0 ? (
               <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-disabled)' }}>
                 <span style={{ fontSize: '24px' }}>✨</span>
-                <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>Keine Benachrichtigungen</p>
+                <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>{t('notifications.empty')}</p>
               </div>
             ) : (
               filteredNotifs.map((item) => (

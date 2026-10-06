@@ -293,10 +293,10 @@ describe('V3PlayerView', () => {
     const video = container.querySelector('video')!;
     expect(video.className).not.toContain('pictureModeVivid');
 
-    const button = screen.getByTitle('Bildmodus');
+    const button = screen.getByTitle(/(Bildmodus|Picture mode)/i);
     fireEvent.click(button);
 
-    const vividOption = screen.getByText('Brillant (TV • OLED-Punch)');
+    const vividOption = screen.getByText(/(Brillant|Vivid) \(TV • OLED-Punch\)/i);
     fireEvent.click(vividOption);
 
     expect(video.className).toContain('pictureModeVivid');

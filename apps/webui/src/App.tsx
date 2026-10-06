@@ -11,7 +11,6 @@ import { useHouseholdProfiles } from './context/HouseholdProfilesContext';
 import { useUiOverlay } from './context/UiOverlayContext';
 import AppShell from './AppShell';
 import BootstrapGate from './components/BootstrapGate';
-import { InsecureContextBanner } from './components/InsecureContextBanner';
 import {
   filterServicesForProfile,
   isServiceAllowedForProfile,
@@ -111,7 +110,6 @@ function App() {
 
   return (
     <div className="app-container">
-      <InsecureContextBanner />
       {playback.playingChannel && (
         <Suspense fallback={<div className="loading-spinner"></div>}>
           <V3Player

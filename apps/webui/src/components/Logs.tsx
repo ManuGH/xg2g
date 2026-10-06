@@ -55,7 +55,7 @@ export default function Logs({ showLegacyNotice = true }: LogsProps) {
         />
       ) : null}
       <div className={styles.header}>
-        <h3>Recent Logs</h3>
+        <h3>{t('logs.recentLogs')}</h3>
         <Button onClick={fetchLogs} disabled={loading} variant="secondary" size="sm">
           {loading ? t('common.refreshing') : t('common.refresh')}
         </Button>
@@ -72,10 +72,10 @@ export default function Logs({ showLegacyNotice = true }: LogsProps) {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Level</th>
-                <th>Component</th>
-                <th>Message</th>
+                <th>{t('logs.time')}</th>
+                <th>{t('logs.level')}</th>
+                <th>{t('logs.component')}</th>
+                <th>{t('logs.message')}</th>
               </tr>
             </thead>
             <tbody>

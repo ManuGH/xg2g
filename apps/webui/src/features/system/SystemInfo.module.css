@@ -120,6 +120,16 @@
   color: var(--text-secondary);
 }
 
+.tunerNumber {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 8px;
+}
+
+.tunerTypeLabel {
+  color: var(--text-secondary);
+}
+
 .listItemValue {
   font-size: 14px;
   font-weight: 600;

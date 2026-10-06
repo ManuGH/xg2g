@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from './context/AppContext';
 import { useHouseholdProfiles } from './context/HouseholdProfilesContext';
 import Navigation from './components/Navigation';
+import { InsecureContextBanner } from './components/InsecureContextBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import { resetErrorCatalog } from './lib/errorCatalog';
@@ -68,6 +69,7 @@ export default function AppShell({ onLogout }: AppShellProps) {
 
   return (
     <>
+      <InsecureContextBanner />
       <a className="skip-link" href="#main-content">{t('a11y.skipToContent')}</a>
       {!usesNativeTvNavigation && <Navigation onLogout={onLogout} />}
       <main className="content-area" id="main-content" tabIndex={-1}>

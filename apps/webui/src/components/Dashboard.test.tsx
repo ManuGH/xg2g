@@ -9,6 +9,7 @@ const mockNavigate = vi.fn();
 const mockRefetch = vi.fn();
 const mockUseSystemHealth = vi.fn();
 const mockUseHouseholdProfiles = vi.fn();
+const mockUseDvrStatus = vi.fn();
 
 vi.mock('react-router', () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -20,11 +21,11 @@ vi.mock('../hooks/useServerQueries', () => ({
   useReceiverCurrent: () => ({
     data: {
       status: 'available',
-      channel: { name: 'Das Erste' }
+      channel: { name: 'Channel Two' }
     }
   }),
   useStreams: () => ({ data: [] }),
-  useDvrStatus: () => ({ data: null })
+  useDvrStatus: () => mockUseDvrStatus(),
 }));
 
 vi.mock('../features/resume/ContinueWatchingRail', () => ({
@@ -40,6 +41,7 @@ describe('Dashboard', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockRefetch.mockReset();
+    mockUseDvrStatus.mockReturnValue({ data: null });
     mockUseHouseholdProfiles.mockReturnValue({
       canAccessDvrPlayback: true,
       canManageDvr: true,
@@ -65,7 +67,7 @@ describe('Dashboard', () => {
     screen.getByRole('button', { name: 'Open Live TV' });
     screen.getByRole('button', { name: 'Household profiles' });
     screen.getByRole('button', { name: 'Timers' });
-    expect(screen.getByRole('status', { name: 'System healthy - success' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'System healthy – Success' })).toBeInTheDocument();
     expect(screen.queryByText('Recent logs')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     screen.getByText('Operator sessions');
@@ -126,4 +128,30 @@ describe('Dashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the programme only while isRecording; otherwise shows ready state', () => {
+    // 1. Idle state: even with a stale serviceName, it must show Ready, not the programme
+    mockUseDvrStatus.mockReturnValue({
+      data: {
+        isRecording: false,
+        serviceName: 'Channel One',
+      },
+    });
+
+    const { rerender } = render(<Dashboard />);
+    expect(screen.queryByText('Channel One')).toBeNull();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+
+    // 2. Active recording: displays the programme name
+    mockUseDvrStatus.mockReturnValue({
+      data: {
+        isRecording: true,
+        serviceName: 'Channel One',
+      },
+    });
+
+    rerender(<Dashboard />);
+    expect(screen.getByText('Channel One')).toBeInTheDocument();
+  });
+
 });

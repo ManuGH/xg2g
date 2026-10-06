@@ -41,7 +41,7 @@ describe('SeriesManager Retention Policy UI', () => {
     fireEvent.change(keywordInput, { target: { value: 'Cafe Puls' } });
 
     // Click 7 Days preset
-    const sevenDayBtn = screen.getByRole('button', { name: /7 Tage/i });
+    const sevenDayBtn = screen.getByRole('button', { name: /7 (Tage|Days)/i });
     fireEvent.click(sevenDayBtn);
 
     const retentionInput = screen.getByTestId('series-edit-retention') as HTMLInputElement;

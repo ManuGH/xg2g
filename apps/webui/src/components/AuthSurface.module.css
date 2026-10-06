@@ -4,12 +4,30 @@
   z-index: 2200;
   background: var(--overlay-backdrop-strong);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow-y: auto;
   padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
 }
 
+/* In flow above the dialog so it never covers it on short viewports;
+   the negative margins cancel the overlay padding but keep the safe-area insets. */
+.contextBanner {
+  flex-shrink: 0;
+  align-self: stretch;
+  margin: -16px -16px 12px;
+}
+
+.contextBanner:empty {
+  display: none;
+}
+
 .modal {
+  /* Auto block margins centre the dialog in the space left below the banner,
+     and collapse to zero when it is taller than the viewport so it scrolls. */
+  margin-block: auto;
+  flex-shrink: 0;
   width: min(520px, 100%);
   background: var(--bg-elevated);
   border: 1px solid var(--border-elevated);

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import styles from './UiOverlayContext.module.css';
@@ -77,6 +78,7 @@ export function useUiOverlay(): UiOverlayContextValue {
 }
 
 export function UiOverlayProvider({ children }: { children: ReactNode }) {
+  const { t: translate } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
 
@@ -214,7 +216,7 @@ export function UiOverlayProvider({ children }: { children: ReactNode }) {
                   <button
                     type="button"
                     className={styles.toastClose}
-                    aria-label="Dismiss notification"
+                    aria-label={translate('common.dismissNotification', {})}
                     onClick={() => dismissToast(t.id)}
                   >
                     ✕

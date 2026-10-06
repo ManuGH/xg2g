@@ -39,17 +39,17 @@ describe('NotificationCenter Component', () => {
 
   it('renders notification bell icon', async () => {
     render(<NotificationCenter />);
-    expect(screen.getByTitle('Benachrichtigungen')).toBeInTheDocument();
+    expect(screen.getByTitle(/(Benachrichtigungen|Notifications)/i)).toBeInTheDocument();
     expect(await screen.findByText('1')).toBeInTheDocument();
   });
 
   it('opens notification popover menu on click', async () => {
     render(<NotificationCenter />);
     expect(await screen.findByText('1')).toBeInTheDocument();
-    const bellBtn = screen.getByTitle('Benachrichtigungen');
+    const bellBtn = screen.getByTitle(/(Benachrichtigungen|Notifications)/i);
     fireEvent.click(bellBtn);
 
-    expect(screen.getByText('Facebook-style Notification Center')).toBeInTheDocument();
+    expect(screen.getByText(/Notification center|Benachrichtigungsübersicht/i)).toBeInTheDocument();
     expect(await screen.findByText(/Freigabe erforderlich/)).toBeInTheDocument();
     expect(screen.getByText('Erlauben')).toBeInTheDocument();
     expect(screen.getByText('Ablehnen')).toBeInTheDocument();
@@ -58,7 +58,7 @@ describe('NotificationCenter Component', () => {
   it('triggers inline approval action when Erlauben clicked', async () => {
     render(<NotificationCenter />);
     expect(await screen.findByText('1')).toBeInTheDocument();
-    const bellBtn = screen.getByTitle('Benachrichtigungen');
+    const bellBtn = screen.getByTitle(/(Benachrichtigungen|Notifications)/i);
     fireEvent.click(bellBtn);
 
     const approveBtn = await screen.findByText('Erlauben');

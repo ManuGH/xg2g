@@ -20,6 +20,7 @@ import { debugError, formatError } from '../utils/logging';
 import { formatLocalDateOnly } from '../utils/date';
 import { throwOnClientResultError } from '../services/clientWrapper';
 import { useUiOverlay } from '../context/UiOverlayContext';
+import { matchServiceRef } from '../utils/serviceRef';
 import { ROUTE_MAP } from '../routes';
 import { Button, Card, StatusChip } from './ui';
 import LegacyRouteNotice from './LegacyRouteNotice';
@@ -29,23 +30,6 @@ interface SeriesManagerProps {
   showLegacyNotice?: boolean;
 }
 
-const DAY_OPTIONS = [
-  { day: 1, label: 'Mo' },
-  { day: 2, label: 'Di' },
-  { day: 3, label: 'Mi' },
-  { day: 4, label: 'Do' },
-  { day: 5, label: 'Fr' },
-  { day: 6, label: 'Sa' },
-  { day: 0, label: 'So' },
-];
-
-const DAY_PRESETS = [
-  { label: 'Täglich', days: [0, 1, 2, 3, 4, 5, 6] },
-  { label: 'Werktags (Mo-Fr)', days: [1, 2, 3, 4, 5] },
-  { label: 'Wochenende (Sa-So)', days: [0, 6] },
-  { label: 'Alle Tage (Kein Filter)', days: [] },
-];
-
 interface DaySelectorProps {
   value: number[];
   onChange: (value: number[]) => void;
@@ -53,6 +37,25 @@ interface DaySelectorProps {
 
 // Helper component for Day Selection with quick presets and day buttons
 const DaySelector = ({ value, onChange }: DaySelectorProps) => {
+  const { t } = useTranslation();
+
+  const dayOptions = [
+    { day: 1, label: t('common.days.mo') },
+    { day: 2, label: t('common.days.di') },
+    { day: 3, label: t('common.days.mi') },
+    { day: 4, label: t('common.days.do') },
+    { day: 5, label: t('common.days.fr') },
+    { day: 6, label: t('common.days.sa') },
+    { day: 0, label: t('common.days.so') },
+  ];
+
+  const dayPresets = [
+    { label: t('series.daysDaily'), days: [0, 1, 2, 3, 4, 5, 6] },
+    { label: t('series.daysWeekdaysFilter'), days: [1, 2, 3, 4, 5] },
+    { label: t('series.daysWeekendFilter'), days: [0, 6] },
+    { label: t('series.daysAll'), days: [] },
+  ];
+
   const toggleDay = (dayIndex: number) => {
     const newValue = value.includes(dayIndex)
       ? value.filter(d => d !== dayIndex)
@@ -69,7 +72,7 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
   return (
     <div>
       <div className={styles.chipRow}>
-        {DAY_PRESETS.map((preset) => (
+        {dayPresets.map((preset) => (
           <button
             key={preset.label}
             type="button"
@@ -81,7 +84,7 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
         ))}
       </div>
       <div className={styles.daySelector}>
-        {DAY_OPTIONS.map((opt) => (
+        {dayOptions.map((opt) => (
           <button
             key={opt.day}
             className={[
@@ -99,11 +102,19 @@ const DaySelector = ({ value, onChange }: DaySelectorProps) => {
   );
 };
 
-const formatRuleDays = (days?: number[]) => {
-  if (!days || days.length === 0 || days.length === 7) return 'Täglich (Alle Tage)';
-  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'Werktags (Mo–Fr)';
-  if (days.length === 2 && [0, 6].every(d => days.includes(d))) return 'Wochenende (Sa–So)';
-  const dayNames: Record<number, string> = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr', 6: 'Sa', 0: 'So' };
+const formatRuleDays = (days: number[] | undefined, t: (key: string, options?: Record<string, unknown>) => string) => {
+  if (!days || days.length === 0 || days.length === 7) return t('series.daysDailyAll');
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return t('series.daysWeekdays');
+  if (days.length === 2 && [0, 6].every(d => days.includes(d))) return t('series.daysWeekend');
+  const dayNames: Record<number, string> = {
+    1: t('common.days.mo'),
+    2: t('common.days.di'),
+    3: t('common.days.mi'),
+    4: t('common.days.do'),
+    5: t('common.days.fr'),
+    6: t('common.days.sa'),
+    0: t('common.days.so'),
+  };
   return [...days]
     .sort((a, b) => ((a === 0 ? 7 : a) - (b === 0 ? 7 : b)))
     .map(d => dayNames[d] || String(d))
@@ -126,7 +137,7 @@ interface RuleFormState {
   channelRef: string;
   days: number[];
   startWindow: string;
-  priority: number | string; // Handle input string temporarily
+  priority: number | string;
   retentionDays: number | string;
   expiresAt: string; // YYYY-MM-DD
   enabled: boolean;
@@ -152,7 +163,6 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
     setLoading(true);
     try {
       const response = await getSeriesRules();
-      // SDK returns { data: SeriesRule[] }
       setRules(response.data || []);
     } catch (err) {
       debugError('Failed to load rules:', formatError(err));
@@ -200,10 +210,10 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
 
   const handleDelete = async (id: string) => {
     const ok = await confirm({
-      title: 'Delete Rule',
-      message: 'Are you sure you want to delete this rule?',
-      confirmLabel: 'Delete',
-      cancelLabel: 'Cancel',
+      title: t('series.deleteConfirmTitle'),
+      message: t('series.deleteConfirmMessage'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
       tone: 'danger',
     });
     if (!ok) return;
@@ -215,7 +225,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
       throwOnClientResultError(result, { source: 'SeriesManager.deleteSeriesRule' });
       await loadRules();
     } catch (err: any) {
-      toast({ kind: 'error', message: 'Failed to delete rule', details: err.message || 'Unknown error' });
+      toast({
+        kind: 'error',
+        message: t('series.deleteFailed'),
+        details: err.message || t('series.unknownError'),
+      });
     }
   };
 
@@ -224,7 +238,10 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
 
     try {
       if (!currentRule.keyword?.trim()) {
-        toast({ kind: 'warning', message: 'Keyword is required' });
+        toast({
+          kind: 'warning',
+          message: t('series.keywordRequired'),
+        });
         return;
       }
 
@@ -270,7 +287,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
       setIsEditing(false);
       await loadRules();
     } catch (err: any) {
-      toast({ kind: 'error', message: 'Failed to save rule', details: err.message || 'Unknown error' });
+      toast({
+        kind: 'error',
+        message: t('series.saveFailed'),
+        details: err.message || t('series.unknownError'),
+      });
     }
   };
 
@@ -296,15 +317,15 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
       toast({
         kind: 'success',
         message: nextEnabled
-          ? t('series.ruleActivated', { defaultValue: 'Regel aktiviert' })
-          : t('series.rulePaused', { defaultValue: 'Regel pausiert' }),
+          ? t('series.ruleActivated')
+          : t('series.rulePaused'),
       });
       await loadRules();
     } catch (err: any) {
       toast({
         kind: 'error',
-        message: t('series.toggleFailed', { defaultValue: 'Status konnte nicht geändert werden' }),
-        details: err.message || 'Unknown error',
+        message: t('series.toggleFailed'),
+        details: err.message || t('series.unknownError'),
       });
     }
   };
@@ -321,35 +342,50 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
       if (report) {
         toast({
           kind: 'success',
-          message: 'Run complete',
-          details: `Matched: ${report.summary?.epgItemsMatched ?? 0} | Created: ${report.summary?.timersCreated ?? 0} | Errors: ${report.summary?.timersErrored ?? 0}`,
+          message: t('series.runComplete'),
+          details: t('series.runCompleteDetails', {
+            matched: report.summary?.epgItemsMatched ?? 0,
+            created: report.summary?.timersCreated ?? 0,
+            errors: report.summary?.timersErrored ?? 0,
+          }),
         });
       }
       await loadRules();
     } catch (err: any) {
-      toast({ kind: 'error', message: 'Run failed', details: err.message || 'Unknown error' });
+      toast({
+        kind: 'error',
+        message: t('series.runFailed'),
+        details: err.message || t('series.unknownError'),
+      });
     } finally {
       setReportLoading(false);
     }
   };
 
-  if (loading && !rules.length) return <div className={styles.loadingState}>Loading Rules...</div>;
+  const matchingChannel = currentRule
+    ? channels.find(c => matchServiceRef(c.serviceRef || c.id, currentRule.channelRef))
+    : undefined;
+  const selectedChannelValue = currentRule
+    ? (matchingChannel ? (matchingChannel.serviceRef || matchingChannel.id || currentRule.channelRef) : currentRule.channelRef)
+    : '';
+
+  if (loading && !rules.length) {
+    return <div className={styles.loadingState}>{t('series.loadingRules')}</div>;
+  }
 
   return (
     <div className={`${styles.container} animate-enter`.trim()}>
       {showLegacyNotice ? (
         <LegacyRouteNotice
           parentLabel={t('nav.recordings')}
-          description={t('legacyRoute.seriesDescription', {
-            defaultValue: 'Series rules remain available as an expert workflow. For most DVR browsing, start in Recordings.',
-          })}
+          description={t('legacyRoute.seriesDescription')}
           route={ROUTE_MAP.recordings}
         />
       ) : null}
       <div className={styles.header}>
-        <h1>Series Recording Rules</h1>
+        <h1>{t('series.title')}</h1>
         <Button onClick={() => handleEdit(null)} data-testid="series-add-btn">
-          + New Rule
+          {t('series.newRule')}
         </Button>
       </div>
 
@@ -362,48 +398,64 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                 type="button"
                 className={styles.statusToggle}
                 onClick={() => handleToggleRule(rule)}
-                title={rule.enabled ? 'Klicken zum Pausieren' : 'Klicken zum Aktivieren'}
-                aria-label={rule.enabled ? 'Pausieren' : 'Aktivieren'}
+                title={rule.enabled ? t('series.clickToPause') : t('series.clickToActivate')}
+                aria-label={rule.enabled ? t('series.pauseAction') : t('series.activateAction')}
               >
                 <StatusChip
                   state={rule.enabled ? 'success' : 'idle'}
-                  label={rule.enabled ? 'ACTIVE' : 'DISABLED'}
+                  label={rule.enabled ? t('series.active') : t('series.disabled')}
                 />
               </button>
             </div>
 
             <div className={`${styles.ruleMeta} ${styles.textSecondary}`.trim()}>
               <div className={styles.metaRow}>
-                <span className={styles.metaLabel}>Channel:</span>
-                <span className={styles.metaValue}>{rule.channelRef ? (channels.find(c => (c.serviceRef || c.id) === rule.channelRef)?.name || rule.channelRef) : 'All Channels'}</span>
-
-              </div>
-              <div className={styles.metaRow}>
-                <span className={styles.metaLabel}>Days:</span>
+                <span className={styles.metaLabel}>{t('series.channelLabel')}</span>
                 <span className={styles.metaValue}>
-                  {formatRuleDays(rule.days)}
+                  {(() => {
+                    if (!rule.channelRef) {
+                      return <span>{t('series.allChannels')}</span>;
+                    }
+                    const matchedChannel = channels.find(c => matchServiceRef(c.serviceRef || c.id, rule.channelRef));
+                    return (
+                      <span className={styles.channelMetaValue}>
+                        {matchedChannel?.logoUrl && (
+                          <img src={matchedChannel.logoUrl} alt="" className={styles.channelMetaLogo} loading="lazy" />
+                        )}
+                        <span>{matchedChannel?.name || t('series.unknownChannel')}</span>
+                      </span>
+                    );
+                  })()}
                 </span>
               </div>
               <div className={styles.metaRow}>
-                <span className={styles.metaLabel}>Time:</span>
-                <span className={styles.metaValue}>{rule.startWindow || 'Anytime'}</span>
-              </div>
-              <div className={styles.metaRow}>
-                <span className={styles.metaLabel}>Retention:</span>
+                <span className={styles.metaLabel}>{t('series.daysLabel')}</span>
                 <span className={styles.metaValue}>
-                  {rule.retentionDays ? `${rule.retentionDays} days (auto-delete)` : 'Keep forever'}
+                  {formatRuleDays(rule.days, t)}
                 </span>
               </div>
               <div className={styles.metaRow}>
-                <span className={styles.metaLabel}>Valid Until:</span>
+                <span className={styles.metaLabel}>{t('series.timeLabel')}</span>
+                <span className={styles.metaValue}>{rule.startWindow || t('series.anytime')}</span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>{t('series.retentionLabel')}</span>
+                <span className={styles.metaValue}>
+                  {rule.retentionDays
+                    ? t('series.retentionDaysAutoDelete', { count: rule.retentionDays })
+                    : t('series.keepForever')}
+                </span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLabel}>{t('series.validUntilLabel')}</span>
                 <span className={styles.metaValue}>
                   {(() => {
                     const exp = formatRuleExpiry(rule.expiresAt);
-                    if (!exp) return 'No expiration (runs forever)';
+                    if (!exp) return t('series.noExpiration');
                     if (exp.isExpired) {
-                      return <span className={styles.expiredBadge}>Expired ({exp.dateStr})</span>;
+                      return <span className={styles.expiredBadge}>{t('series.expiredBadge', { date: exp.dateStr })}</span>;
                     }
-                    return `Until ${exp.dateStr}`;
+                    return t('series.untilBadge', { date: exp.dateStr });
                   })()}
                 </span>
               </div>
@@ -412,7 +464,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
             <div className={styles.ruleStats}>
               {rule.lastRunAt ? (
                 <div className={styles.lastRunInfo}>
-                  <span>Last Run: {new Date(rule.lastRunAt).toLocaleDateString()} {new Date(rule.lastRunAt).toLocaleTimeString()}</span>
+                  <span>{t('series.lastRunLabel')} {new Date(rule.lastRunAt).toLocaleDateString()} {new Date(rule.lastRunAt).toLocaleTimeString()}</span>
                   <span
                     className={[
                       styles.runStatus,
@@ -420,11 +472,28 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                       rule.lastRunStatus === 'failed' ? styles.runStatusFailed : '',
                     ].filter(Boolean).join(' ')}
                   >
-                    {rule.lastRunStatus || 'Unknown'} ({(rule.lastRunSummary?.timersCreated || 0)} Created{rule.lastRunSummary?.recordingsPruned ? `, ${rule.lastRunSummary.recordingsPruned} Pruned` : ''})
+                    {rule.lastRunStatus === 'success'
+                      ? t('series.runStatusSuccess')
+                      : rule.lastRunStatus === 'failed'
+                        ? t('series.runStatusFailed')
+                        : (rule.lastRunStatus || t('series.unknownStatus'))}
+                    {' '}({(() => {
+                      const created = rule.lastRunSummary?.timersCreated || 0;
+                      const pruned = rule.lastRunSummary?.recordingsPruned || 0;
+                      if (pruned > 0) {
+                        return t('series.runSummaryWithPruned', {
+                          created,
+                          pruned,
+                        });
+                      }
+                      return t('series.runSummaryCreated', {
+                        count: created,
+                      });
+                    })()})
                   </span>
                 </div>
               ) : (
-                <div className={styles.lastRunInfo}>Never Run</div>
+                <div className={styles.lastRunInfo}>{t('series.neverRun')}</div>
               )}
             </div>
 
@@ -435,7 +504,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                 className={styles.ruleAction}
                 data-testid={`series-toggle-${rule.id}`}
               >
-                {rule.enabled ? 'Pause' : 'Activate'}
+                {rule.enabled ? t('series.pause') : t('series.activate')}
               </Button>
               <Button
                 variant="secondary"
@@ -443,21 +512,21 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                 disabled={reportLoading === rule.id}
                 className={styles.ruleAction}
               >
-                {reportLoading === rule.id ? 'Running...' : 'Run Now'}
+                {reportLoading === rule.id ? t('series.running') : t('series.runNow')}
               </Button>
               <Button
                 variant="secondary"
                 onClick={() => handleEdit(rule)}
                 className={styles.ruleAction}
               >
-                Edit
+                {t('common.edit')}
               </Button>
               <Button
                 variant="danger"
                 onClick={() => rule.id && handleDelete(rule.id)}
                 className={styles.ruleAction}
               >
-                Delete
+                {t('common.delete')}
               </Button>
             </div>
           </Card>
@@ -468,11 +537,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
             <div className={styles.modalHeader}>
-              <h1>{currentRule.id ? 'Edit Rule' : 'New Series Rule'}</h1>
+              <h1>{currentRule.id ? t('series.modal.editRule') : t('series.modal.newRule')}</h1>
               <button
                 type="button"
                 className={styles.closeButton}
-                aria-label="Close"
+                aria-label={t('common.close')}
                 onClick={() => setIsEditing(false)}
               >
                 ×
@@ -488,70 +557,71 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                     onChange={e => setCurrentRule({ ...currentRule, enabled: e.target.checked })}
                     data-testid="series-edit-enabled"
                   />
-                  <span>Regel aktiv</span>
+                  <span>{t('series.modal.ruleActive')}</span>
                 </label>
-                <small className={styles.helpText}>Wenn pausiert, ignoriert der automatische Scheduler diese Regel.</small>
+                <small className={styles.helpText}>{t('series.modal.ruleActiveHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Keyword (Title Match)</label>
+                <label>{t('series.modal.keywordLabel')}</label>
                 <input
                   type="text"
                   value={currentRule.keyword}
                   onChange={e => setCurrentRule({ ...currentRule, keyword: e.target.value })}
-                  placeholder="e.g. Tatort"
+                  placeholder={t('series.placeholder.keyword')}
                   className={styles.inputField}
                   data-testid="series-edit-keyword"
                 />
-                <small className={styles.helpText}>Case-insensitive partial match on program title.</small>
+                <small className={styles.helpText}>{t('series.modal.keywordHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Channel</label>
+                <label>{t('series.modal.channelLabel')}</label>
                 <select
-                  value={currentRule.channelRef}
+                  value={selectedChannelValue}
                   onChange={e => setCurrentRule({ ...currentRule, channelRef: e.target.value })}
                   className={styles.inputField}
+                  data-testid="series-edit-channel"
                 >
-                  <option value="">-- Select Channel --</option>
+                  <option value="">{t('series.modal.selectChannel')}</option>
                   {channels.map(c => (
                     <option key={c.id || c.serviceRef} value={c.serviceRef || c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
-                <small className={styles.helpText}>Required. The channel monitored for this series.</small>
+                <small className={styles.helpText}>{t('series.modal.channelHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Day Filter</label>
+                <label>{t('series.modal.dayFilterLabel')}</label>
                 <DaySelector
                   value={currentRule.days || []}
                   onChange={v => setCurrentRule({ ...currentRule, days: v })}
                 />
-                <small className={styles.helpText}>Select specific days to record. Empty = Any day.</small>
+                <small className={styles.helpText}>{t('series.modal.dayFilterHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Time Window (HHMM-HHMM)</label>
+                <label>{t('series.modal.timeWindowLabel')}</label>
                 <input
                   type="text"
                   value={currentRule.startWindow}
                   onChange={e => setCurrentRule({ ...currentRule, startWindow: e.target.value })}
-                  placeholder="e.g. 2015-2200"
+                  placeholder={t('series.placeholder.timeWindow')}
                   className={styles.inputField}
                 />
-                <small className={styles.helpText}>Only match start times within this range.</small>
+                <small className={styles.helpText}>{t('series.modal.timeWindowHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Retention / Aufbewahrung (Tage)</label>
+                <label>{t('series.modal.retentionLabel')}</label>
                 <div className={styles.chipRow}>
                   {[
-                    { label: 'Unbegrenzt', val: 0 },
-                    { label: '7 Tage (z.B. Cafe Puls)', val: 7 },
-                    { label: '14 Tage', val: 14 },
-                    { label: '30 Tage', val: 30 },
+                    { label: t('series.modal.retentionUnlimited'), val: 0 },
+                    { label: t('series.modal.retention7Days'), val: 7 },
+                    { label: t('series.modal.retention14Days'), val: 14 },
+                    { label: t('series.modal.retention30Days'), val: 30 },
                   ].map(preset => (
                     <button
                       key={preset.val}
@@ -571,22 +641,22 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   min="0"
                   value={currentRule.retentionDays}
                   onChange={e => setCurrentRule({ ...currentRule, retentionDays: e.target.value })}
-                  placeholder="0 = dauerhaft behalten"
+                  placeholder={t('series.placeholder.retention')}
                   className={styles.inputField}
                   data-testid="series-edit-retention"
                 />
-                <small className={styles.helpText}>Aufnahmen, die älter als diese Anzahl an Tagen sind, werden automatisch gelöscht.</small>
+                <small className={styles.helpText}>{t('series.modal.retentionHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Gültig bis (Ablaufdatum / EOL)</label>
+                <label>{t('series.modal.expiresLabel')}</label>
                 <div className={styles.chipRow}>
                   <button
                     type="button"
                     className={[styles.chip, !currentRule.expiresAt ? styles.chipActive : ''].filter(Boolean).join(' ')}
                     onClick={() => setCurrentRule({ ...currentRule, expiresAt: '' })}
                   >
-                    Dauerhaft (Kein Ablauf)
+                    {t('series.modal.expiresNever')}
                   </button>
                   <button
                     type="button"
@@ -596,7 +666,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                       setCurrentRule({ ...currentRule, expiresAt: `${year}-12-31` });
                     }}
                   >
-                    Bis Jahresende ({new Date().getFullYear()})
+                    {t('series.modal.expiresYearEnd', { year: new Date().getFullYear() })}
                   </button>
                   <button
                     type="button"
@@ -607,7 +677,7 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                       setCurrentRule({ ...currentRule, expiresAt: formatLocalDateOnly(d) });
                     }}
                   >
-                    +3 Monate
+                    {t('series.modal.expires3Months')}
                   </button>
                 </div>
                 <input
@@ -617,11 +687,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
                   className={styles.inputField}
                   data-testid="series-edit-expires-at"
                 />
-                <small className={styles.helpText}>Optional. Nach diesem Datum werden keine neuen Sendungen mehr programmiert.</small>
+                <small className={styles.helpText}>{t('series.modal.expiresHint')}</small>
               </div>
 
               <div className={styles.formGroup}>
-                <label>Priority</label>
+                <label>{t('series.modal.priorityLabel')}</label>
                 <input
                   type="number"
                   value={currentRule.priority}
@@ -632,9 +702,11 @@ function SeriesManager({ showLegacyNotice = true }: SeriesManagerProps) {
             </div>
 
             <div className={styles.modalFooter}>
-              <Button variant="secondary" onClick={() => setIsEditing(false)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setIsEditing(false)}>
+                {t('common.cancel')}
+              </Button>
               <Button onClick={handleSave} data-testid="series-edit-save">
-                Confirm & Save
+                {t('series.modal.saveButton')}
               </Button>
             </div>
           </div>

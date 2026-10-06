@@ -19,6 +19,7 @@ import { useAppContext } from '../context/AppContext';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import { filterRecordingsForProfile } from '../features/household/model';
 import { useTranslation } from 'react-i18next';
+import { formatRecordingDescription } from '../utils/recordingDescription';
 import RecordingResumeBar, { isResumeEligible } from '../features/resume/RecordingResumeBar';
 import { usePlayerHistoryBridge } from '../features/player/usePlayerHistoryBridge';
 import { useUiOverlay } from '../context/UiOverlayContext';
@@ -538,7 +539,7 @@ export default function RecordingsList() {
     setPlaying({
       recordingId,
       title: item.title || 'Recording',
-      description: item.description || '',
+      description: formatRecordingDescription(item.description),
       beginUnixSeconds: item.beginUnixSeconds,
       lengthLabel: item.length || formatRecordingLength(item.durationSeconds ?? item.resume?.durationSeconds),
       durationSeconds: item.durationSeconds ?? item.resume?.durationSeconds ?? 0,
@@ -857,7 +858,8 @@ export default function RecordingsList() {
     const statusMetaLabel = !eligibleResume && (labelKey === 'rec' || labelKey === 'scheduled' || labelKey === 'failed' || labelKey === 'unknown')
       ? t(`recordings.badges.${labelKey}`)
       : null;
-    const showCardDescription = variant === 'featured' && Boolean(rec.description);
+    const formattedDescription = formatRecordingDescription(rec.description);
+    const showCardDescription = variant === 'featured' && Boolean(formattedDescription);
     const isSelectableCard = selectionMode && canManageDvr && Boolean(rec.recordingId);
     const canOpenPlayer = !selectionMode && canAccessDvrPlayback && Boolean(rec.recordingId);
     const cardIsInteractive = isSelectableCard || canOpenPlayer;
@@ -978,7 +980,7 @@ export default function RecordingsList() {
               ) : null}
             </div>
             {showCardDescription ? (
-              <p className={styles.itemDesc}>{rec.description}</p>
+              <p className={styles.itemDesc}>{formattedDescription}</p>
             ) : null}
           </div>
         </CardBody>
@@ -1151,7 +1153,7 @@ export default function RecordingsList() {
               <V3Player
                 recordingId={playing.recordingId}
                 recordingTitle={playing.title}
-                recordingDescription={playing.description}
+                recordingDescription={formatRecordingDescription(playing.description)}
                 recordingDateLabel={playing.beginUnixSeconds ? formatTime(playing.beginUnixSeconds) : undefined}
                 recordingLengthLabel={playing.lengthLabel}
                 layoutMode="page"
@@ -1187,7 +1189,7 @@ export default function RecordingsList() {
               </div>
             </div>
             {playing.description ? (
-              <p className={styles.watchPageDescription}>{playing.description}</p>
+              <p className={styles.watchPageDescription}>{formatRecordingDescription(playing.description)}</p>
             ) : null}
           </div>
 
@@ -1411,7 +1413,7 @@ export default function RecordingsList() {
               <h2 className={styles.subfolderTitle}>{selectedSeries}</h2>
               {activeSeriesGroup?.episodes[0]?.description ? (
                 <p className={styles.seriesHubDescription}>
-                  {activeSeriesGroup.episodes[0].description}
+                  {formatRecordingDescription(activeSeriesGroup.episodes[0].description)}
                 </p>
               ) : null}
             </div>
@@ -1662,7 +1664,7 @@ export default function RecordingsList() {
             <div className={styles.preplayBody}>
               <div className={styles.preplayMain}>
                 {preplayRecording.description ? (
-                  <p className={styles.preplayDescription}>{preplayRecording.description}</p>
+                  <p className={styles.preplayDescription}>{formatRecordingDescription(preplayRecording.description)}</p>
                 ) : null}
                 {preplayResume && (
                   <div className={styles.preplayResume}>

@@ -1,5 +1,6 @@
 import { useId, type FormEventHandler, type ReactNode, type RefObject } from 'react';
 import { Button } from './ui';
+import { InsecureContextBanner } from './InsecureContextBanner';
 import styles from './AuthSurface.module.css';
 
 interface AuthSurfaceFormProps {
@@ -44,6 +45,7 @@ export default function AuthSurface({
 
   return (
     <div className={styles.overlay}>
+      <div className={styles.contextBanner}><InsecureContextBanner /></div>
       <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}>
         {eyebrow ? <span className={styles.eyebrow}>{eyebrow}</span> : null}
         <h2 id={titleId}>{title}</h2>

@@ -77,7 +77,9 @@ export default function Dashboard() {
   const guideHealthLabel = missingChannels === 0
     ? t('dashboard.guideSynced')
     : t('dashboard.missing', { count: missingChannels });
-  const recorderLabel = recording?.serviceName || (recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle'));
+  const recorderLabel = recording?.isRecording
+    ? (recording.serviceName || t('dashboard.recordingActive'))
+    : t('dashboard.recorderReady', {});
 
   const liveAction = {
     label: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
@@ -89,59 +91,12 @@ export default function Dashboard() {
       onAction: () => navigate(buildRecordingsRoute()),
     }
     : null;
-  const settingsAction = canAccessSettings
-    ? {
-      label: t('dashboard.start.settings.action', { defaultValue: 'Open Setup' }),
-      onAction: () => navigate(buildSettingsRoute({ section: 'setup' })),
-    }
-    : null;
-  const summarySpotlight = receiverUnavailable
-    ? {
-      eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
-      title: t('dashboard.heroAside.standbyTitle', {
-        defaultValue: 'Start from live TV once the receiver wakes',
-      }),
-      detail: t('dashboard.heroAside.standbyDetail', {
-        defaultValue: 'The box is sleeping right now. Use the live TV path first so guide and channel state can rebuild cleanly.',
-      }),
-      chip: {
-        state: 'warning' as const,
-        label: t('dashboard.start.status.standby', { defaultValue: 'Receiver in standby' }),
-      },
-      primaryAction: liveAction,
-      secondaryAction: settingsAction,
-    }
+
+  const heroPrimaryAction = receiverUnavailable
+    ? liveAction
     : streamCount > 0
-      ? {
-        eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
-        title: t('dashboard.heroAside.streamingTitle', {
-          defaultValue: 'Playback is already live on the bridge',
-        }),
-        detail: t('dashboard.heroAside.streamingDetail', {
-          defaultValue: 'Use recordings for the next task or jump back into live TV without losing the current operator overview.',
-        }),
-        chip: {
-          state: 'live' as const,
-          label: t('dashboard.sessions', { count: streamCount }),
-        },
-        primaryAction: recordingsAction ?? liveAction,
-        secondaryAction: recordingsAction ? liveAction : settingsAction,
-      }
-      : {
-        eyebrow: t('dashboard.heroAside.eyebrow', { defaultValue: 'Next best move' }),
-        title: t('dashboard.heroAside.readyTitle', {
-          defaultValue: 'Everything is ready for the normal household path',
-        }),
-        detail: t('dashboard.heroAside.readyDetail', {
-          defaultValue: 'Live TV is the fastest entry. Recordings and setup stay one click away if the current profile allows them.',
-        }),
-        chip: {
-          state: 'success' as const,
-          label: t('dashboard.start.status.ready', { defaultValue: 'Ready now' }),
-        },
-        primaryAction: liveAction,
-        secondaryAction: recordingsAction ?? settingsAction,
-      };
+      ? (recordingsAction ?? liveAction)
+      : liveAction;
 
   const systemFacts = [
     {
@@ -239,8 +194,8 @@ export default function Dashboard() {
             )}
           </div>
           <div className={styles.heroAction}>
-            <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
-              {summarySpotlight.primaryAction.label}
+            <Button variant="primary" onClick={heroPrimaryAction.onAction}>
+              {heroPrimaryAction.label}
             </Button>
           </div>
         </div>
