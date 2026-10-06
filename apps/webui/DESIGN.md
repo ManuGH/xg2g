@@ -1,556 +1,307 @@
-# xg2g WebUI Design System - Broadcast Console 2026
+# xg2g WebUI Design Guide
 
-**Version:** 2.1 (Broadcast-Console, principles-only)  
-**Last Updated:** 2026-05-24  
-**Status:** Production  
-**Philosophy:** Professional broadcast console - precision over spectacle
+**Version:** 3.0
+**Last reviewed:** 2026-10-06 (against `main` @ `78f3e62b`, desktop 1440×900 and phone 390×844)
 
-> This document defines the design **principles, patterns, and invariants** for the xg2g WebUI. Concrete token values (colors, shadows, spacing) live exclusively in `src/index.css` — that file is the single source of truth for implementation. This doc explains the *why* and the *contract*; the CSS is the *what*.
+This guide holds the principles and rules for the WebUI. It deliberately holds
+**no token values**. Colors, sizes, shadows and durations live only in
+[`src/index.css`](src/index.css). A guide that copies values drifts away from
+the code. Version 2.x did exactly that (see [History](#history)).
 
----
-
-## Table of Contents
-
-1. [2026 Token Set](#2026-token-set---broadcast-console)
-2. [Typography Stack](#typography-stack)
-3. [Color System](#color-system---warm-neutrals--dual-accent)
-4. [Surface Treatment](#surface-treatment---subtle--technical)
-5. [Motion System](#motion-system---purposeful-only)
-6. [Component Patterns](#component-patterns---canonical)
-7. [Accessibility](#accessibility-global-guard)
-8. [Playback Governance](#playback-governance)
-9. [Contract Rules & Stop Criteria](#contract-rules--stop-criteria)
+Every rule names the gate that enforces it. A rule marked **unenforced** is a
+candidate for a gate. Until it has one, reviewers check it by hand.
 
 ---
 
-## 2026 Token Set - Broadcast Console
-
-> **Rule:** No hardcoded colors or magic numbers in feature code. All values flow through tokens defined in `src/index.css`. The lint gate `verify-no-hardcoded-colors.sh` enforces this.
-
-### Typography Stack
-
-#### Font Families
-
-```css
-/* Display & Headings - Technical, Modern */
---font-heading: 'Space Grotesk', -apple-system, sans-serif;
-
-/* Body & UI - Professional, Neutral */
---font-body: 'IBM Plex Sans', -apple-system, sans-serif;
-
-/* Technical Data - Tabular, Monospace */
---font-mono: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
-```
-
-**Variable Font Ranges:**
-
-- Space Grotesk: 400-700
-- IBM Plex Sans: 400-600  
-- JetBrains Mono: 400-500
-
-#### Type Scale (16px Base)
-
-```css
-/* Display */
---text-display: 2rem;      /* 32px - Dashboard title */
---text-h1: 1.5rem;         /* 24px - Section headers */
---text-h2: 1.25rem;        /* 20px - Card titles */
---text-h3: 1rem;           /* 16px - Subsection labels */
-
-/* Body */
---text-base: 1rem;         /* 16px - Standard body */
---text-sm: 0.875rem;       /* 14px - Secondary info */
---text-xs: 0.75rem;        /* 12px - Metadata, captions */
-
-/* Technical/Mono */
---text-mono-base: 0.875rem;  /* 14px - IPs, timestamps */
---text-mono-sm: 0.75rem;     /* 12px - Technical IDs */
-```
-
-#### Font Features
-
-```css
-/* Tabular numbers for technical data */
-.tabular {
-  font-feature-settings: 'tnum' 1;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Standard ligatures for body text */
-.body-text {
-  font-feature-settings: 'liga' 1, 'calt' 1;
-}
-```
-
-### Color System - Warm Neutrals + Dual Accent
-
-Concrete hex/rgba values live in `src/index.css`. This section defines the **token families and their semantic usage**.
-
-#### Background Layers — Warm Shift
-
-Tokens: `--bg-base`, `--bg-elevated`, `--bg-overlay`, `--bg-hover`, `--bg-input`.
-
-**Rationale:** Warmer than pure slate — less clinical, better for long operator sessions. Hierarchy goes from `base` (page) → `elevated` (cards) → `overlay` (modals).
-
-#### Text Hierarchy
-
-Tokens: `--text-primary`, `--text-secondary`, `--text-tertiary`, `--text-disabled`.
-
-**Contrast targets (WCAG AAA against `--bg-base`):**
-
-- Primary: ≥ 14:1 (headings, key data)
-- Secondary: ≥ 7:1 (standard UI labels, body)
-- Tertiary: ≥ 4.5:1 (metadata, hints)
-- Disabled: visibly differentiated, not necessarily AAA
-
-If you change a text or background token in `src/index.css`, re-check the ratios.
-
-#### Dual-Accent Semantic System
-
-**Blue = Action / Interactive** — `--accent-action`, `--accent-action-hover`, `--accent-action-pressed`, `--accent-action-subtle`.
-
-**Amber = Live / Recording (Critical Status)** — `--accent-live`, `--accent-live-hover`, `--accent-live-pulse`, `--accent-live-subtle`.
-
-**Semantic States** — `--status-success` (healthy/connected), `--status-warning` (degraded), `--status-error` (failed), `--status-info` (neutral information).
-
-**Usage Rules (hard):**
-
-- Blue for ALL user actions (buttons, links, navigation)
-- Amber ONLY for live/recording states (never decorative)
-- Green for success (health checks, connection status)
-- Red for errors (failures, disconnects)
-
-#### Borders & Dividers
-
-Tokens: `--border-base` (standard), `--border-elevated` (emphasized), `--border-focus` (alias of `--accent-action`).
-
-### Surface Treatment - Subtle & Technical
-
-#### Shadow Hierarchy
-
-Three intent-levels, all defined in `src/index.css`:
-
-- **`--shadow-card`** — resting state for standard cards. Subtle lift only.
-- **`--shadow-hover`** — interactive lift on hover/focus.
-- **`--shadow-accent-live` / `--shadow-accent-action`** — accent-tinted shadow for live/recording surfaces and primary actions respectively.
-
-**Hard rule:** No glow on standard elements. Glow/accent-shadow is reserved for status-bearing surfaces only.
-
-#### Card Patterns
-
-**Standard Card:**
-
-```css
-background: var(--bg-elevated);  /* Solid only, no gradients */
-border: 1px solid var(--border-base);
-border-radius: 12px;
-box-shadow: var(--shadow-card);
-```
-
-**Accent Card (Live/Recording):**
-
-```css
-border-color: var(--accent-live);
-box-shadow: var(--shadow-accent-live);
-```
-
-**Hover State:**
-
-```css
-transform: translateY(-2px);  /* Subtle lift, not -4px */
-box-shadow: var(--shadow-hover);
-border-color: var(--border-elevated);
-/* NO GLOW - hierarchy preserved */
-```
-
-### Background Texture - Grain/Scanline
-
-Subtle scanline + grain via `body::before` / `body::after` (implemented in `src/index.css`).
-
-**Hard performance guard:**
-
-- Texture opacity ≤ 0.04
-- Fixed-position, `pointer-events: none`, `z-index: -1`
-- No repaint on scroll
-- Disablable via CSS class if Safari/iPad performance degrades
-
----
-
-## Motion System - Purposeful Only
-
-> **CTO Contract:** Continuous motion is **FORBIDDEN** except status pulse (LIVE/REC) and functional loading spinners.
-
-### Allowed Animations
-
-#### 1. Entrance (One-Time, Page Load)
-
-> **CTO Rule:** All entrance animations must be defined in `index.css` as global utility classes. Feature-specific CSS is forbidden from defining or calling animations.
-
-```css
-/* index.css */
-@keyframes enterFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.animate-enter {
-  animation: enterFade 200ms ease-out forwards;
-}
-```
-
-**Rules:**
-
-- Duration: 200ms (fixed)
-- Easing: ease-out
-- No transform (GPU-friendly)
-- Once per page load only
-
-#### 2. Interactions (User Feedback)
-
-```css
-transition-duration: var(--motion-standard);  /* 180ms, range 160-220ms */
-transition-timing-function: var(--ease-standard);
-```
-
-**Applied to:**
-
-- Button press
-- Card hover
-- Navigation selection
-- Focus states
-
-**Motion Tokens** (defined in `src/index.css`):
-
-- `--motion-standard` — interactions (~180ms)
-- `--motion-slow` — non-critical UI transitions (~220ms upper bound)
-- `--ease-standard` — standard ease (cubic-bezier-ish, defined in CSS)
-
-**Hard rule:** Interaction durations must stay in the 160–220ms band. Anything slower is rejected.
-
-#### 3. Status Pulse (Live/Recording ONLY)
-
-```css
-@keyframes statusPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.status-chip[data-state="live"] .status-chip__icon,
-.status-chip[data-state="recording"] .status-chip__icon {
-  animation: statusPulse 2s ease-in-out infinite;
-}
-```
-
-**Exclusive to:** Live broadcasts, active recordings, critical errors
-
-#### 4. Loading (Functional Only)
-
-Allowed: spinner rotation for loading states, defined globally in `index.css` (`.loading-spinner` / `.spinner-base`). This is functional feedback, not decoration.
-
-### Forbidden Animations
-
- **Removed in 2.0:**
-
-- Background gradient animation (15s)
-- Progress bar shimmer (3s)
-- Button ripple effects
-- Card entrance translateY
-- Continuous decorative motion
-
-### Accessibility (Global Guard)
-
-> **CTO Rule:** `prefers-reduced-motion` is managed centrally in `index.css`. Feature CSS MUST NOT duplicate these blocks.
-
-```css
-/* index.css */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-```
-
-**Must be present in ALL CSS files.**
-
----
-
-## Component Patterns - Canonical
-
-> **CTO Contract:** These patterns are the product standard. Deviations require design review.
-
-### Status Chips (No Emojis)
-
-**Structure:**
-
-```html
-<span class="status-chip" data-state="live">
-  <span class="status-chip__icon">●</span>
-  <span class="status-chip__label">LIVE</span>
-</span>
-```
-
-**States:** `live`, `recording`, `idle`, `error`, `active`
-
-**CSS:**
-
-```css
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-family: var(--font-body);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-
-.status-chip[data-state="live"] {
-  background: var(--accent-live-subtle);
-  color: var(--accent-live);
-  border: 1px solid var(--accent-live);
-}
-
-.status-chip[data-state="live"] .status-chip__icon {
-  animation: statusPulse 2s infinite;
-}
-```
-
-**Icon Mapping:**
-
-- `●` (U+25CF) = LIVE, RECORDING
-- `○` (U+25CB) = IDLE
-- `✓` (U+2713) = SUCCESS
-- `⚠` (U+26A0) = WARNING
-- `✗` (U+2717) = ERROR
-
-### System Health Panel (Compact)
-
-**Layout:** 3-5 tiles, horizontal, monospace numbers
-
-```
-
- Receiver │ EPG │ Streams │ Rec │ Up   │
-    ✓     │  ✓  │    2    │  ●  │ 14h  │
-
-```
-
-**CSS:**
-
-```css
-.health-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 1px;
-  background: var(--border-base);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.health-tile {
-  background: var(--bg-elevated);
-  padding: 12px;
-  text-align: center;
-}
-
-.health-tile__value {
-  font-family: var(--font-mono);
-  font-size: var(--text-h2);
-  font-feature-settings: 'tnum' 1;
-}
-```
-
-### Navigation - Vertical Rail
-
-**Layout:** Left-side rail, 60px wide, icon + label on hover
-
-```
-
-  ●   │  Quick Actions
-
-  ⌂   │  Dashboard
-  ≡   │  Channels (active: inset bar)
-  ◷   │  EPG
-  ⏺   │  Recordings
- │  Settings (inset bar = active)│  
-
-```
-
-**Active State:** Inset vertical bar (3px, accent-action), NOT glow
-
-**CSS:**
-
-```css
-.nav-rail {
-  width: 60px;
-  background: var(--bg-elevated);
-  border-right: 1px solid var(--border-base);
-}
-
-.nav-item {
-  position: relative;
-  padding: 16px;
-  transition: background 180ms;
-}
-
-.nav-item[aria-current="page"]::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  background: var(--accent-action);
-  border-radius: 0 2px 2px 0;
-}
-```
-
----
-
-## Migration from v1.0 to v2.0
-
-### Breaking Changes
-
-1. **Fonts:** Inter → Space Grotesk (headings) + IBM Plex Sans (body)
-2. **Colors:** Cold slate → Warm neutrals
-3. **Motion:** Continuous animations removed
-4. **Cards:** Gradients removed, solid backgrounds
-5. **Navigation:** Top bar → Vertical rail
-
-### Compatibility
-
-- Reduced-motion support: ✅ Maintained
-- Touch targets (44px): ✅ Maintained
-- Contrast ratios: ✅ Improved (WCAG AAA)
-
----
-
-## Maintenance Rules
-
-### Before Adding Features
-
-1. **Check tokens first** - use existing, never hardcode
-2. **Verify motion budget** - entrance + status only
-3. **Test reduced-motion** - must work with animations off
-4. **Confirm pattern exists** - chips/panels/rail defined?
-
-### Design Review Stop Criteria
-
- **Reject if:**
-
-- Hardcoded hex colors outside `src/index.css` (enforced by `verify-no-hardcoded-colors.sh`)
-- Continuous animation without status purpose
-- Glow on non-status elements
-- Typography outside defined stack
-- Motion duration > 220ms for interactions
-
- **Approve if:**
-
-- Uses documented tokens
-- Follows canonical patterns
-- Respects motion budget
-- Maintains accessibility
-
----
-
-**Version History:**
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 2.1 | 2026-05-24 | Hex/rgba tables removed; `src/index.css` is the single source of truth for token values. This doc keeps principles, patterns, and invariants only. |
-| 2.0 | 2026-01-18 | Broadcast-Console design system |
-| 1.0 | 2026-01-18 | Initial design system |
-
----
-
----
-
-## Playback Governance
-
-> **CTO Contract:** Playback is the core mission. Logic must be deterministic, backend-driven, and browser-aware.
-
-### Browser Support Matrix (HLS Path)
-
-To ensure stability, we actively manage the HLS stack instead of relying on default browser behavior:
-
-| Platform | Recommended Browser | HLS Engine | Rationale |
-|----------|-------------------|------------|-----------|
-| **macOS / iOS** | Safari (Native) | **Native HLS** | MSE on iOS is historically unstable; native provides best battery/performance. |
-| **Windows / Linux** | Chrome / Edge / FF | **HLS.js** | Consistent seeking, DVR buffers, and error recovery across Chromium/Gecko engines. |
-| **Mobile Android** | Chrome | **HLS.js** | Standardized behavior for DVR window management. |
-
-### "Stats for Nerds" (First-Class Observability)
-
-The Stats Overlay is a **critical observability tool**, not a feature accessory.
-
-1. **Rule:** Technical data must be raw and unformatted (processed by backend, only displayed by UI).
-2. **UI:** Must use `Card`, `.tabular` (monospace), and `StatusChip`.
-3. **Copy-Friendliness:** Metrics must be easy to select and copy for bug reports.
-4. **Payload Requirement:** Must include `Session-ID` and `Request-ID` to allow direct log/metric correlation.
-
-### Strategy: Thin Client Playback
-
-1. **No Decision Engine:** The WebUI does NOT decide between "Direct Play" vs "Transcode". It follows the `PlaybackInfo` DTO provided by the backend.
-2. **Browser Choice Exception:** The WebUI MAY choose the HLS implementation (Native HLS vs HLS.js) based on browser platform for stability.
-3. **Hard Stop:** Logic related to quality, variants, or transcoding decisions is strictly FORBIDDEN in the frontend.
-4. **Modular Hooks:** Playback state is managed via hooks (`usePlaybackSession`) to keep views pure.
-
----
-
-## Phase 3: Backend Truth Hardening (Priorities)
-
-> **CTO Objective:** Finalize the "Backend = Truth" contract by closing DTO gaps.
-
-### 1. Extended Stream States
-
-Extend `StreamSession.state` from a simple binary to a semantic lifecycle:
-
-- `starting` | `buffering` | `active` | `stalled` | `ending` | `idle` | `error`
-
-### 2. DVR Window Truth
-
-`PlaybackInfo` must authoritatively deliver:
-
-- `dvr_window_seconds`: Total lookback duration.
-- `is_seekable`: Boolean flag for UI timeline enablement.
-- `live_edge_unix`: The absolute timestamp of the live edge.
-
-### 3. Recording Status Consolidation
-
-Consolidate multiple internal flags into a single `Status` enum:
-
-- `pending` | `recording` | `completed` | `failed` | `deleting`
-
-### 4. Observability Contract
-
-Ensure `Session-ID` and `Request-ID` are passed to the frontend in all playback DTOs for 1:1 trace correlation in the "Stats for Nerds" block.
-
----
-
----
-
-## Contract Rules & Stop Criteria
-
-### Phase 2F Go/No-Go Criteria (Streams & V3Player)
-
-**GO (Green Light):**
-
-- [x] `V3Player.css` is layout-only (Grid/Flex/Spacing).
-- [x] All statuses (buffering, live, error) use `StatusChip`.
-- [x] Numbers use `--font-mono` + `.tabular`.
-- [x] Inline styles are limited to one-liners for CSS variable passthrough.
-
-**NO-GO (Hard Stop):**
-
-- [ ] **Feature-Drift:** Importing heavy player libraries (Video.js, etc.) instead of native `<video>` + light HLS.js.
-- [ ] **Glow Drift:** Adding glows or gradients to the player UI for "aesthetic" reasons.
-- [ ] **Logic Drift:** Implementing a "Playback Decision Engine" in the frontend.
-- [ ] **Governance Failure:** Bypassing `check-ui-contract.sh` for player-related CSS.
-- [ ] **Redundancy:** Adding `prefers-reduced-motion` or animations to feature CSS (must be global).
-
----
-
+## 1. What the UI is for
+
+| | |
+|---|---|
+| **Who** | A household watching satellite TV in a browser on a couch, phone, tablet or desktop. Plus one operator who sets the system up. |
+| **Primary job** | Get to a moving picture in as few steps as possible: a live channel, a recording, or continue watching. |
+| **Secondary job** | Plan recordings (timers, series rules). |
+| **Tertiary job** | Operate the server: settings, system status, logs, playback diagnostics. |
+
+That split defines two kinds of surfaces:
+
+- **Household surfaces** are Start, TV guide, Recordings, the player and the
+  watch page. They are content-first. They never show transport or system
+  vocabulary: codecs, transcode profiles, service references, session or
+  request IDs, rule IDs, mount names.
+- **Operator surfaces** are Settings, System, Logs and Stats for Nerds. They
+  may be dense and technical. Raw values must stay selectable and copyable.
+
+## 2. Principles
+
+The identifiers exist so that reviews can cite a principle ("violates P3").
+They are not a ranking.
+
+- **P1 · The picture is the colour.** Channel logos, recording thumbnails and
+  video carry the chroma. Chrome is neutral and quiet. An accent colour
+  appears only where it means something (see §3.2).
+- **P2 · Content in the first viewport.** On a household surface, the first
+  viewport shows content (a channel row, a recording, a programme) at both
+  reference sizes. Headers, counters and filters do not count. A filter bar is
+  one row on desktop and collapses behind one control on a phone.
+- **P3 · One surface level per region.** Use at most page → surface →
+  overlay. Never put a card inside a card inside a panel. Group with spacing
+  and alignment before borders, and with borders before nested containers.
+- **P4 · Opaque by default.** Translucency and `backdrop-filter` are reserved
+  for chrome that sits on top of moving video: player controls, the channel
+  switcher, the mini-player. Everything else is opaque.
+- **P5 · Destructive actions are never the loudest element.** Delete sits
+  behind an overflow menu or a secondary button and always confirms through
+  `UiOverlayProvider`. It is never a full-width filled red button next to
+  routine actions.
+- **P6 · Say it in the household's words.** Name things by what people
+  watch, not by how the system is built (see §7).
+- **P7 · Every route is a place.** Anything a person can navigate to,
+  including a recording's watch page, has its own URL. Browser back returns
+  to where they came from. Entering a new place resets scroll.
+
+## 3. Tokens
+
+### 3.1 Architecture
+
+`src/index.css` is the single source of truth. Tokens come in three tiers.
+New tokens must fit one of them:
+
+| Tier | Purpose | Examples | May be used by |
+|---|---|---|---|
+| **Primitive** | Raw scale steps, no meaning | type steps, radius steps, spacing steps, palette | semantic tokens only |
+| **Semantic** | A role in the UI | `--bg-*`, `--surface-*`, `--text-*`, `--border-*`, `--accent-*`, `--status-*`, `--motion-*`, `--radius-*` | all feature CSS |
+| **Component** | A value the semantic tier cannot express | `--player-*`, `--channel-switcher-*` | that component only |
+
+Rules:
+
+- Add a component token only when a semantic token cannot express the value.
+  Don't add a component-specific shadow or gradient per feature: index.css has
+  45 shadow and 18 gradient tokens, most of them one-offs.
+- Author new colour tokens in `oklch()`. Derive tints with
+  `color-mix(in oklch, …)` instead of hand-writing another rgba variant.
+- Scale every font size, spacing step and radius through the user scale
+  variables (`--ui-font-scale`, `--ui-density-scale`). The Display settings
+  depend on it.
+- Shared tokens with the Android/iOS apps are **out of scope** for now. Each
+  native app has its own theme (`android/…/ui/theme/Theme.kt`, iOS assets).
+  A shared token source, for example the W3C Design Tokens (DTCG) format
+  generating CSS, Kotlin and Swift, is only worth it once the apps are meant
+  to look the same. That is a decision to make first, not a default.
+
+### 3.2 Colour semantics
+
+| Token family | Meaning | Allowed on |
+|---|---|---|
+| `--accent-action*` | Something the user can do: primary button, link, selection, focus | interactive elements |
+| `--accent-live*` | Live: the now-line in the guide, the LIVE chip, a live session | live state only |
+| `--status-error` / recording red | Recording in progress, and errors | REC indicators, error states |
+| `--status-success` / `--status-warning` / `--status-info` | Health of a system component | operator surfaces, status chips |
+| `--bg-video-stage` | True black behind video, so letterbox bars vanish on OLED/XDR | video stages only |
+
+Accent colour is never decoration: no gradient washes, no glow on
+non-status elements, no accent-tinted panels. **Gate:** hex literals outside
+`index.css` are blocked by `scripts/verify-no-hardcoded-colors.sh`.
+`rgba()`, `hsl()` and `oklch()` literals in feature CSS are **unenforced**
+(14 occurrences in 4 files today).
+
+### 3.3 Typography
+
+- **Family:** the platform UI font (`--font-body`, `--font-heading`). There is
+  no web font download, and text renders natively on Apple, Android and
+  Windows. `--font-mono` is for operator data only (logs, Stats for Nerds,
+  IDs). It is never used for dates, times or durations on household surfaces.
+- **Scale:** every `font-size` uses a `--text-*` token. A one-off size is a
+  missing step in the scale, not a local exception. **Unenforced** (75
+  distinct `font-size` values and 77 hard-coded `px` sizes today).
+- **Reading distance:** household surfaces are read from a couch. Body text
+  there must not go below the body step of the scale. The current body step
+  of 13 px is too small for that context (see §9).
+- **Figures:** times, durations and counts use `font-variant-numeric:
+  tabular-nums` so columns and the guide's time ruler do not jitter.
+- **Durations:** one format everywhere. Use `h:mm:ss` for anything over an hour
+  and `m:ss` below that. Never write `179:55` in one place and `2:59:55` in
+  another.
+- **Case:** sentence case everywhere. No all-caps eyebrow labels above
+  headings, and no `text-transform: uppercase` for decoration.
+- **Line length:** prose and descriptions are capped at about 75ch.
+
+### 3.4 Shape and space
+
+- **Radius:** use the `--radius-*` steps only. The radius encodes hierarchy:
+  larger containers get larger radii, controls get smaller ones. **Unenforced**
+  (30 distinct `border-radius` values today).
+- **Spacing:** a spacing step scale belongs in `index.css`. It does not exist
+  yet (0 spacing tokens, 125 distinct `padding` values). Until it does, new
+  CSS reuses the values already used on the same surface.
+- **Breakpoints:** use a small fixed set. There are 12 different `max-width`
+  and `min-width` values today. For components that appear in more than one
+  context (a recording card in the library grid and in "more episodes"), use
+  **container queries** instead of viewport breakpoints.
+- **Safe areas:** fixed and floating chrome respects
+  `env(safe-area-inset-*)`. Floating bottom navigation reserves its height in
+  `scroll-padding-bottom` so focused content is never hidden behind it
+  (WCAG 2.4.11).
+
+## 4. Components
+
+Feature code builds from the primitives in
+[`src/components/ui`](src/components/ui): `Button`, `ButtonLink`, `Card`,
+`StatusChip`, `EmptyState`. Create a new primitive when the same pattern
+appears in a third feature, not before.
+
+- **Buttons:** use the `Button` primitive. **Gate:**
+  `scripts/verify-no-btn-classes.sh` blocks feature-level `btn-*` classes.
+  Each view has exactly one primary action. A sign-in screen with two filled
+  primary buttons violates this.
+- **Dialogs:** use `UiOverlayProvider` confirm and toast. **Gate:**
+  `scripts/verify-no-window-dialogs.sh`.
+- **Icons:** one SVG icon set: a 24-unit grid, `currentColor` and a 1.8 stroke.
+  The style is defined by `NavIcon` in `Navigation.tsx` and
+  `playerControlGlyphs.tsx`. Emoji and Unicode glyphs (📺 📁 ⚡ ☰ ▦ ⏱ ✓ ⚠)
+  are never used as icons. **Unenforced.**
+- **Status chips:** state is carried by colour *and* shape, so it never relies
+  on colour alone. The accessible name is fully localised. Today it
+  concatenates an English state key.
+- **Cards:** a card is a hit target or a grouping, never both decoration and
+  container. Actions on media cards (edit, delete) appear on hover or focus,
+  or in an overflow menu, and are not permanently stamped on every thumbnail.
+
+## 5. Motion
+
+Motion answers a user action or signals live state. Otherwise there is none.
+
+- **Allowed:** feedback on interaction (`--motion-standard`, within the
+  160–220 ms band); a status pulse for live and recording; loading indicators;
+  one entrance per page load (`.animate-enter`, opacity only).
+- **Not allowed:** decorative continuous motion, shimmer, staggered entrances
+  and hover lifts on every card.
+- **Gate:** `scripts/verify-motion-contract.sh` blocks `@keyframes` and
+  `animation` outside `index.css` (except `statusPulse`). It checks *where*
+  motion is defined, not *what* it is. `index.css` currently holds 19
+  keyframes, including shimmer and spin effects for player start-up. Each one
+  needs a functional reason or should go.
+- `prefers-reduced-motion` is handled once, globally, in `index.css`. Feature
+  CSS does not repeat it.
+
+## 6. Accessibility baseline
+
+The bar is **WCAG 2.2 AA**, verified rather than claimed.
+
+- **Contrast:** text needs 4.5:1, large text 3:1, and UI components and focus
+  indicators 3:1. Measure on the surface the text actually sits on. A
+  translucent panel over a gradient is not `--bg-base`. Disabled controls
+  still need a clear accessible name.
+- **Focus:** every interactive element has a visible `:focus-visible` style
+  that doesn't rely on `box-shadow` alone (it vanishes in
+  `forced-colors` mode). Focus is never hidden behind sticky or floating
+  chrome (2.4.11).
+- **Targets:** at least 24×24 CSS px (2.5.8), and 44×44 on touch-first
+  surfaces (player controls, bottom navigation, guide rows on a phone).
+- **Structure:** a `role="tablist"` contains only `role="tab"` children, and
+  every icon-only button has a localised `aria-label`.
+- **User preferences:** respect `prefers-reduced-motion` (central),
+  `prefers-reduced-transparency` where the browser supports it (fall back to
+  opaque surfaces, see P4), and `forced-colors` (borders and focus must stay
+  visible).
+- **TV and remote:** the Android TV host uses native navigation
+  (`hostEnvironment.platform === 'android-tv'`). On any other big screen the
+  web UI must be fully usable with arrow keys, Enter and Back, in a logical
+  focus order.
+- **Tests:** `tests/Navigation.a11y.test.tsx`. Adding an automated axe pass
+  for household surfaces is **unenforced** (planned).
+
+## 7. Writing
+
+- **Language:** German first, English second. Every user-visible string goes
+  through `t()`. That includes `aria-label`, `title` and `placeholder`.
+  Parity between `de.json` and `en.json` is checked by
+  `src/locales/locales.parity.test.ts`. Literal strings in JSX are
+  **unenforced** today (for example `SeriesManager.tsx`, `EPG.tsx`,
+  `V3PlayerView.tsx` and `Navigation.tsx` still carry them).
+- **Voice:** plain verbs, sentence case and no filler. A button says what
+  happens ("Aufnahme löschen", not "OK"). An action keeps its name through
+  the flow: the button "Aufnehmen" leads to the toast "Aufnahme geplant".
+- **Errors:** say what happened and what to do next. Errors don't apologise,
+  never show a bare status code on household surfaces, and take over the stage
+  they block. A failed player shows the error and the way out, not a small
+  pill under a still-active play button. See
+  [`docs/arch/ERROR_PRESENTATION_SPECIFICATION.md`](../../docs/arch/ERROR_PRESENTATION_SPECIFICATION.md).
+- **Empty states:** an empty state is an invitation to act. If there is
+  nothing to act on, don't render the section at all.
+- **Internal markers stay internal.** Rule tags, IDs and raw references that
+  the backend stores in descriptions or names must be stripped or resolved
+  before display. Resolve a service reference to a channel name and logo, and
+  never fall back to the raw reference on a household surface.
+
+### Household vocabulary
+
+| Use | Avoid on household surfaces |
+|---|---|
+| Fernsehen / TV guide | EPG, EPG-Übersicht, Live-Programm |
+| Aufnahmen | DVR, DVR-Mediathek, Elemente |
+| Läuft gerade / Wiedergaben | Operator-Sitzungen, Sessions |
+| Sender | Service-Referenz, Service-Ref |
+| Senderliste | Bouquet (allowed on operator surfaces) |
+| Weiter schauen | Resume-Position |
+
+## 8. Playback boundary
+
+The UI renders what the backend decides. It does not decide.
+
+- It follows the backend's playback DTOs and has no client-side decision
+  engine for direct play, transcode, quality or variants. It may pick the HLS
+  implementation (native HLS vs hls.js) for stability.
+- **Gates enforced in CI** (as tests in `webui-test`, part of `make ci-pr`):
+  `gate:seekable-contract`, `gate:mode-bridge`.
+- **Gates defined but not wired into CI** (2026-10-06):
+  - Passing: `gate:no-ua-sniffing`, `gate:no-raw-error-text`.
+  - **Failing on `main`:** `gate:no-client-decision-engine` (11 hits),
+    `gate:no-duration-guessing` (5), `gate:no-seek-resume-guessing` (13),
+    `gate:no-raw-json-fetch` (11).
+  - The hits are not yet classified as real violations or heuristic false
+    positives. Until each hit is fixed or allow-listed with a reason and the
+    gates run in CI, these rules are **unenforced**.
+- The specification lives in
+  [`docs/arch/PLAYBACK_DECISION_SPEC_INDEX.md`](../../docs/arch/PLAYBACK_DECISION_SPEC_INDEX.md).
+  This guide only covers how playback looks: a true-black stage, chrome per
+  P4, errors per §7.
+
+## 9. Known drift and migration order
+
+Measured on 2026-10-06. This is the work that brings the code in line with
+this guide, in order. Each step is its own PR. Steps that touch player mount
+or unmount need the lifecycle test matrix from `AGENTS.md`.
+
+1. **Correctness on household surfaces:**
+   - Localise `SeriesManager` and the remaining JSX literals.
+   - Resolve the series-rule channel to its name.
+   - Strip rule markers from recording descriptions.
+   - Fix the Start "Recorder" tile, which shows a programme title next to
+     "inactive".
+2. **Watch page as a route (P7):** a recording's watch page gets its own URL,
+   browser back works, and scroll resets.
+3. **First viewport (P2, P3):**
+   - Collapse the Recordings header (title, filters and sort in one row, no
+     counter tiles) and the TV guide toolbar into one row each.
+   - In the guide, show record actions on hover or focus only.
+   - Remove the duplicate entry points (Timers, sidebar toggles).
+4. **Token pass:**
+   - Add spacing, radius and type step scales, and gates that block literals
+     outside them.
+   - Raise the household body size.
+   - Make non-video surfaces opaque (P4).
+   - Replace emoji and glyph icons with the SVG set and add a gate for them.
+   - Retire unused one-off shadow and gradient tokens.
+5. **Settings structure:** a section list plus a detail pane on desktop, list →
+   detail on a phone, and no near-empty landing section.
+
+When a step lands, update this section in the same PR.
+
+## History
+
+| Version | Date | Change |
+|---|---|---|
+| 3.0 | 2026-10-06 | Rewritten. Principles and gates instead of values. Added the household/operator split, WCAG 2.2 AA baseline, writing rules, token tiers and the measured drift with migration order. Removed stale claims (Space Grotesk/IBM Plex, a 16 px base, "no gradients", a 60 px rail), the "Phase 3 Backend Truth Hardening" backlog (its DTO fields are in the API: `isSeekable`, `dvrWindowSeconds`, `liveEdgeUnix`, `stalled`, `requestId`/`sessionId`), and the v1→v2 migration notes. The playback section now points to the gates and the architecture spec. |
+| 2.1 | 2026-05-24 | Token values moved to `src/index.css`. |
+| 2.0 | 2026-01-18 | "Broadcast Console" system. |
+| 1.0 | 2026-01-18 | Initial version. |
