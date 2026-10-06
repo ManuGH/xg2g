@@ -1002,20 +1002,23 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 
 	// 23. GET /api/v3/streams
 	{
-		// Seed an additional unlisted stream session (no playlist entry and no trailing channel name)
+		// Seed unlisted stream sessions (no playlist entry and no trailing channel name)
 		// to verify fallback to serviceRef is masked to opaque iptv_<id> and never leaks raw URL/tokens.
-		unlistedUUID := uuid.New().String()
-		rawUnlistedRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts"
-		require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
-			SessionID:          unlistedUUID,
-			State:              model.SessionReady,
-			ServiceRef:         rawUnlistedRef,
-			HeartbeatInterval:  30,
-			LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
-			ContextData: map[string]string{
-				model.CtxKeySource: rawUnlistedRef,
-			},
-		}))
+		for _, rawUnlistedRef := range []string{
+			"4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts",
+			"4097:0:1:0:0:0:0:0:0:0:http://canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts",
+		} {
+			require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+				SessionID:          uuid.New().String(),
+				State:              model.SessionReady,
+				ServiceRef:         rawUnlistedRef,
+				HeartbeatInterval:  30,
+				LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
+				ContextData: map[string]string{
+					model.CtxKeySource: rawUnlistedRef,
+				},
+			}))
+		}
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/api/v3/streams", nil)

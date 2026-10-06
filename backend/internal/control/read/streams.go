@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
@@ -235,6 +236,13 @@ func extractChannelNameFromRef(ref string) string {
 		return ""
 	}
 	parts := strings.Split(trimmed, ":")
+	if sourceref.IsIPTVServiceType(parts[0]) {
+		source, isIPTV, err := sourceref.ClassifyReference(nil, trimmed)
+		if err != nil || !isIPTV {
+			return ""
+		}
+		return strings.TrimSpace(source.ServiceName())
+	}
 	if len(parts) > 11 {
 		nameCandidate := strings.TrimSpace(strings.Join(parts[11:], ":"))
 		if nameCandidate != "" && !strings.Contains(nameCandidate, "://") && !strings.Contains(nameCandidate, "%3a//") {
