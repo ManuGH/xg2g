@@ -145,30 +145,31 @@ export default function Dashboard() {
 
   const systemFacts = [
     {
+      label: t('dashboard.systemState', { defaultValue: 'Systemstatus' }),
+      value: undefined,
+      detail: health.version ? `v${health.version}` : undefined,
+      chip: healthChip,
+    },
+    {
       label: t('dashboard.receiverLabel'),
       value: receiverUnavailable ? t('dashboard.standby') : t('dashboard.connected'),
-      detail: currentChannel
+      detail: currentChannel,
     },
     {
       label: t('dashboard.lastSyncLabel'),
       value: formatTimeAgo(health.receiver?.lastCheck, t),
-      detail: t('dashboard.readOnlySummary')
+      detail: t('dashboard.readOnlySummary'),
     },
     {
       label: t('dashboard.guideHealth'),
       value: guideHealthLabel,
-      detail: missingChannels === 0 ? t('dashboard.allChannelsHaveData') : t('dashboard.channelsMissingGuideData')
+      detail: missingChannels === 0 ? t('dashboard.allChannelsHaveData') : t('dashboard.channelsMissingGuideData'),
     },
     {
       label: t('dashboard.recorder'),
       value: recorderLabel,
-      detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle')
+      detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle'),
     },
-    {
-      label: t('dashboard.versionLabel'),
-      value: health.version || t('common.notAvailable'),
-      detail: healthChip.label
-    }
   ];
 
   const directActions = [
@@ -209,19 +210,32 @@ export default function Dashboard() {
       : null,
   ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
 
-
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
-      
-      {/* 1. SLIM HERO BANNER */}
+      {/* 1. HERO BANNER */}
       <Card variant="action" className={[styles.heroBanner, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
         <div className={styles.heroContent}>
           <div className={styles.heroIdentity}>
-            <div className={styles.heroTitleRow}>
-              <h1 className={styles.heroTitle}>{summaryTitle}</h1>
-              <StatusChip state={healthChip.state} label={healthChip.label} />
+            <div className={styles.heroEyebrowRow}>
+              <span className={styles.heroChannelBadge}>
+                {receiverUnavailable ? t('common.receiverStandby') : currentChannel}
+              </span>
+              {!receiverUnavailable && (
+                <span className={styles.heroLiveBadge}>
+                  <span className={styles.heroLiveDot} aria-hidden="true" />
+                  {t('dashboard.metricStreaming', { defaultValue: 'Live' })}
+                </span>
+              )}
             </div>
+            <h1 className={styles.heroTitle}>
+              {now?.title || summaryTitle}
+            </h1>
             <p className={styles.heroDescription}>{summaryDescription}</p>
+            {next?.title && now?.title && (
+              <p className={styles.heroNextHint}>
+                {t('dashboard.heroNextUp', { title: next.title })}
+              </p>
+            )}
           </div>
           <div className={styles.heroAction}>
             <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
@@ -233,33 +247,41 @@ export default function Dashboard() {
 
       <ContinueWatchingRail />
 
-      {/* 2. ACTIVE STREAMS (The Main Event) */}
-      <div className={styles.mainSection}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>{t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}</h2>
-          <StatusChip
-            state={streamCount > 0 ? 'live' : 'idle'}
-            label={streamCount > 0 ? t('dashboard.sessions', { count: streamCount }) : t('dashboard.noSessions')}
-          />
-        </div>
-        
-        {streamCount > 0 ? (
-          <div className={styles.streamsGrid}>
-             <StreamsList />
+      {/* 2. ACTIVE STREAMS (OPERATOR SESSIONS) */}
+      {streamCount > 0 ? (
+        <div className={styles.mainSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
+            </h2>
+            <StatusChip
+              state="live"
+              label={t('dashboard.sessions', { count: streamCount })}
+            />
           </div>
-        ) : (
-          <Card className={styles.emptyStreamsCard}>
-            <div className={styles.emptyState}>
-              <p className={styles.emptyTitle}>{t('dashboard.noActiveStreams')}</p>
-              <p className={styles.emptyText}>{t('dashboard.startPlaybackHint')}</p>
-            </div>
-          </Card>
-        )}
-      </div>
+          <div className={styles.streamsGrid}>
+            <StreamsList />
+          </div>
+        </div>
+      ) : (
+        <div className={styles.idleSessionsRow}>
+          <div className={styles.idleSessionsContent}>
+            <span className={styles.idleSessionsTitle}>
+              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
+            </span>
+            <span className={styles.idleSessionsDivider} aria-hidden="true">·</span>
+            <span className={styles.idleSessionsText}>
+              {t('dashboard.noActiveStreams', { defaultValue: 'Keine aktiven Streams' })}
+            </span>
+          </div>
+          <span className={styles.idleSessionsHint}>
+            {t('dashboard.startPlaybackHint', { defaultValue: 'Starte Wiedergabe über TV oder Aufnahmen' })}
+          </span>
+        </div>
+      )}
 
-      {/* 3. FOOTER: SHORTCUTS & HEALTH WIDGETS */}
+      {/* 3. FOOTER: SHORTCUTS & SYSTEM HEALTH */}
       <div className={styles.footerSection}>
-        
         {directActions.length > 0 && (
           <div className={styles.shortcutsRow}>
             {directActions.map((action) => (
@@ -279,15 +301,18 @@ export default function Dashboard() {
         <div className={styles.healthGrid}>
           {systemFacts.map((item) => (
             <Card key={item.label} className={styles.healthWidget}>
-              <span className={styles.healthLabel}>{item.label}</span>
-              <span className={styles.healthValue}>{item.value}</span>
-              <span className={styles.healthDetail}>{item.detail}</span>
+              <div className={styles.healthHeaderRow}>
+                <span className={styles.healthLabel}>{item.label}</span>
+                {item.chip && (
+                  <StatusChip state={item.chip.state} label={item.chip.label} />
+                )}
+              </div>
+              {item.value && <span className={styles.healthValue}>{item.value}</span>}
+              {item.detail && <span className={styles.healthDetail}>{item.detail}</span>}
             </Card>
           ))}
         </div>
-
       </div>
-
     </div>
   );
 }
