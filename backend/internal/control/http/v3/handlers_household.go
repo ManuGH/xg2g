@@ -182,7 +182,7 @@ func (s *Server) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"profile": prof,
-		"policy":  pol,
+		"policy":  s.maskProfilePolicy(pol),
 	})
 }
 
@@ -226,7 +226,7 @@ func (s *Server) GetProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"profile": prof,
-		"policy":  pol,
+		"policy":  s.maskProfilePolicy(pol),
 	})
 }
 
@@ -291,7 +291,7 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"profile": prof,
-		"policy":  pol,
+		"policy":  s.maskProfilePolicy(pol),
 	})
 }
 
@@ -346,7 +346,7 @@ func (s *Server) GetHouseholdProfiles(w http.ResponseWriter, r *http.Request, pa
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(profs)
+		_ = json.NewEncoder(w).Encode(s.maskHouseholdProfiles(profs))
 		return
 	}
 	s.ListProfiles(w, r)
@@ -368,7 +368,7 @@ func (s *Server) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, p
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(created)
+		_ = json.NewEncoder(w).Encode(s.maskHouseholdProfile(created))
 		return
 	}
 	s.CreateProfile(w, r)
@@ -403,7 +403,7 @@ func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, pro
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(updated)
+		_ = json.NewEncoder(w).Encode(s.maskHouseholdProfile(updated))
 		return
 	}
 	s.CreateProfile(w, r)
@@ -467,7 +467,7 @@ func (s *Server) GetAccessPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(pol)
+	_ = json.NewEncoder(w).Encode(s.maskAccessPolicy(pol))
 }
 
 func (s *Server) CreateAccessPolicy(w http.ResponseWriter, r *http.Request) {
@@ -502,7 +502,7 @@ func (s *Server) CreateAccessPolicy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(pol)
+	_ = json.NewEncoder(w).Encode(s.maskAccessPolicy(&pol))
 }
 
 func (s *Server) RevokeAccessPolicy(w http.ResponseWriter, r *http.Request) {

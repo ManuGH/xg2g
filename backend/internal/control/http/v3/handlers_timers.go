@@ -64,9 +64,11 @@ func (s *Server) GetTimers(w http.ResponseWriter, r *http.Request, params GetTim
 		if !household.IsServiceAllowedNormalized(profile, t.ServiceRef, "") {
 			continue
 		}
+		maskedRef := s.maskServiceRef(t.ServiceRef)
+		timerID := read.MakeTimerID(maskedRef, t.Begin, t.End)
 		mapped = append(mapped, Timer{
-			TimerId:     t.TimerID,
-			ServiceRef:  t.ServiceRef,
+			TimerId:     timerID,
+			ServiceRef:  maskedRef,
 			ServiceName: &t.ServiceName,
 			Name:        t.Name,
 			Description: &t.Description,
@@ -250,12 +252,14 @@ verifyAddLoop:
 	}
 
 	dto := read.MapOpenWebIFTimerToDTO(*createdTimer, read.RealClock{}.Now())
+	maskedRef := s.maskServiceRef(dto.ServiceRef)
+	timerID := read.MakeTimerID(maskedRef, dto.Begin, dto.End)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(Timer{
-		TimerId:     dto.TimerID,
-		ServiceRef:  dto.ServiceRef,
+		TimerId:     timerID,
+		ServiceRef:  maskedRef,
 		ServiceName: &dto.ServiceName,
 		Name:        dto.Name,
 		Description: &dto.Description,
@@ -450,12 +454,14 @@ verifyUpdateLoop:
 	}
 
 	dto := read.MapOpenWebIFTimerToDTO(*updatedTimer, read.RealClock{}.Now())
+	maskedRef := s.maskServiceRef(dto.ServiceRef)
+	timerID := read.MakeTimerID(maskedRef, dto.Begin, dto.End)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(Timer{
-		TimerId:     dto.TimerID,
-		ServiceRef:  dto.ServiceRef,
+		TimerId:     timerID,
+		ServiceRef:  maskedRef,
 		ServiceName: &dto.ServiceName,
 		Name:        dto.Name,
 		Description: &dto.Description,
@@ -504,7 +510,7 @@ func (s *Server) PreviewConflicts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conflicts := DetectConflicts(req.Proposed, timers)
+	conflicts := DetectConflicts(req.Proposed, timers, s.maskServiceRef)
 	var suggestions *[]struct {
 		Kind          *TimerConflictPreviewResponseSuggestionsKind `json:"kind,omitempty"`
 		Note          *string                                      `json:"note,omitempty"`
@@ -668,12 +674,14 @@ func (s *Server) GetTimer(w http.ResponseWriter, r *http.Request, timerId string
 		candRef := strings.TrimSuffix(t.ServiceRef, ":")
 		if candRef == sRefNorm && t.Begin == begin && t.End == end {
 			dto := read.MapOpenWebIFTimerToDTO(t, read.RealClock{}.Now())
+			maskedRef := s.maskServiceRef(dto.ServiceRef)
+			timerID := read.MakeTimerID(maskedRef, dto.Begin, dto.End)
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(Timer{
-				TimerId:     dto.TimerID,
-				ServiceRef:  dto.ServiceRef,
+				TimerId:     timerID,
+				ServiceRef:  maskedRef,
 				ServiceName: &dto.ServiceName,
 				Name:        dto.Name,
 				Description: &dto.Description,

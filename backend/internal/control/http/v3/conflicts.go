@@ -15,7 +15,12 @@ import (
 // DetectConflicts checks a proposed timer against a list of existing timers.
 // It returns a list of conflicts (Duplicates and Overlaps).
 // It implements a conservative overlap check: max(startA, startB) < min(endA, endB).
-func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []TimerConflict {
+func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer, maskFns ...func(string) string) []TimerConflict {
+	var maskFn func(string) string
+	if len(maskFns) > 0 {
+		maskFn = maskFns[0]
+	}
+
 	var conflicts []TimerConflict
 
 	// Calculate proposed effective start/end (including padding)
@@ -46,6 +51,12 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			continue // Disabled timers shouldn't block? User implicitly said filter states.
 		}
 
+		emitRef := t.ServiceRef
+		if maskFn != nil {
+			emitRef = maskFn(emitRef)
+		}
+		timerID := read.MakeTimerID(emitRef, t.Begin, t.End)
+
 		// 1. Duplicate Check (Exact Match)
 		// "Exact match on (serviceRef, begin, end) against an existing timer."
 		// Note: Existing timers in OWI might have padding applied already in their begin/end?
@@ -57,8 +68,8 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			conflicts = append(conflicts, TimerConflict{
 				Type: Duplicate,
 				BlockingTimer: Timer{
-					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
-					ServiceRef:  t.ServiceRef,
+					TimerId:     timerID,
+					ServiceRef:  emitRef,
 					ServiceName: &t.ServiceName,
 					Name:        t.Name,
 					Begin:       t.Begin,
@@ -84,8 +95,8 @@ func DetectConflicts(proposed TimerCreateRequest, existing []openwebif.Timer) []
 			conflicts = append(conflicts, TimerConflict{
 				Type: Overlap,
 				BlockingTimer: Timer{
-					TimerId:     read.MakeTimerID(t.ServiceRef, t.Begin, t.End),
-					ServiceRef:  t.ServiceRef,
+					TimerId:     timerID,
+					ServiceRef:  emitRef,
 					ServiceName: &t.ServiceName,
 					Name:        t.Name,
 					Begin:       t.Begin,

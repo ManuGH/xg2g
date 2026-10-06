@@ -32,10 +32,28 @@ func isHexColonServiceRef(ref string) bool {
 	return true
 }
 
+func extractIPTVFromURL(rawURL string) (string, bool) {
+	rawURL = strings.TrimSpace(rawURL)
+	prefixes := []string{"/4097:", "/5001:", "/5002:", "/iptv_", "/IPTV_"}
+	for _, pfx := range prefixes {
+		if idx := strings.Index(rawURL, pfx); idx != -1 {
+			return rawURL[idx+1:], true
+		}
+	}
+	rawPrefixes := []string{"4097:", "5001:", "5002:", "iptv_", "IPTV_"}
+	for _, pfx := range rawPrefixes {
+		if strings.HasPrefix(rawURL, pfx) {
+			return rawURL, true
+		}
+	}
+	return "", false
+}
+
 // ExtractServiceRef extracts a stable service reference from a stream URL.
 // Contract:
 // 1. If parseable URL:
 //   - If "ref" query param exists -> return it.
+//   - Else -> check if path embeds an IPTV service reference.
 //   - Else -> return last path segment.
 //
 // 2. If not parseable -> split by "/" and return last segment.
@@ -53,10 +71,13 @@ func ExtractServiceRef(rawURL string, fallback string) string {
 			// Priority: Query Param "ref"
 			if qRef := u.Query().Get("ref"); qRef != "" {
 				candidate = qRef
+			} else if iptvRef, ok := extractIPTVFromURL(rawURL); ok {
+				// IPTV service references embed nested URLs with slashes (e.g. /4097:0:...:http%3a//host/path/stream.ts),
+				// which must NOT be split by slash.
+				candidate = iptvRef
 			} else {
 				// Fallback: Last path segment
-				path := u.Path
-				parts := strings.Split(path, "/")
+				parts := strings.Split(u.Path, "/")
 				if len(parts) > 0 {
 					candidate = parts[len(parts)-1]
 				}
@@ -68,10 +89,14 @@ func ExtractServiceRef(rawURL string, fallback string) string {
 	}
 
 	if !isURL {
-		// 2. Not parseable: split raw string by /
-		parts := strings.Split(rawURL, "/")
-		if len(parts) > 0 {
-			candidate = parts[len(parts)-1]
+		if iptvRef, ok := extractIPTVFromURL(rawURL); ok {
+			candidate = iptvRef
+		} else {
+			// 2. Not parseable: split raw string by /
+			parts := strings.Split(rawURL, "/")
+			if len(parts) > 0 {
+				candidate = parts[len(parts)-1]
+			}
 		}
 	}
 

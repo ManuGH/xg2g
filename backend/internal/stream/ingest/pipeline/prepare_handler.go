@@ -86,11 +86,15 @@ type prepareResponse struct {
 	Detail  string            `json:"detail,omitempty"`
 }
 
-func toResponse(st PreparationStatus) prepareResponse {
+func (h *PrepareHandler) toResponse(st PreparationStatus) prepareResponse {
+	sRef := st.ServiceRef
+	if h != nil && h.resolver != nil {
+		sRef = h.resolver.MaskServiceRef(sRef)
+	}
 	resp := prepareResponse{
 		PreparationID: st.ID,
 		ZapID:         st.ZapID,
-		ServiceRef:    st.ServiceRef,
+		ServiceRef:    sRef,
 		State:         string(st.State),
 		Outcome:       string(st.Outcome),
 		Generation:    st.Generation,
@@ -206,7 +210,7 @@ func (h *PrepareHandler) start(w http.ResponseWriter, r *http.Request, clientID 
 
 	// 202: accepted and running. Readiness is not a property of this response, which
 	// is the whole point — an HTTP status has never said anything about a broadcast.
-	writeJSON(w, http.StatusAccepted, toResponse(prep.Status()))
+	writeJSON(w, http.StatusAccepted, h.toResponse(prep.Status()))
 }
 
 func (h *PrepareHandler) status(w http.ResponseWriter, clientID, id string) {
@@ -214,7 +218,7 @@ func (h *PrepareHandler) status(w http.ResponseWriter, clientID, id string) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, toResponse(st))
+	writeJSON(w, http.StatusOK, h.toResponse(st))
 }
 
 // resolve looks a preparation up and checks that it belongs to this client.
@@ -255,17 +259,17 @@ func (h *PrepareHandler) commit(w http.ResponseWriter, r *http.Request, clientID
 			Str("preparation_id", id).
 			Uint64("generation", generation).
 			Msg("client committed to the prepared stream")
-		writeJSON(w, http.StatusOK, toResponse(st))
+		writeJSON(w, http.StatusOK, h.toResponse(st))
 	case errors.Is(err, ErrNoSuchPreparation):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrGenerationChanged):
 		// The stream this preparation proved is gone. 409 rather than 400: the
 		// request was well formed, the world moved.
-		writeJSONWithError(w, http.StatusConflict, toResponse(st), err.Error())
+		writeJSONWithError(w, http.StatusConflict, h.toResponse(st), err.Error())
 	case errors.Is(err, ErrPreparationNotReady):
 		// Not an error the client made — it asked too early, or the preparation
 		// failed. The body says which.
-		writeJSONWithError(w, http.StatusPreconditionFailed, toResponse(st), err.Error())
+		writeJSONWithError(w, http.StatusPreconditionFailed, h.toResponse(st), err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -283,7 +287,7 @@ func (h *PrepareHandler) cancel(w http.ResponseWriter, clientID, id string) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, toResponse(st))
+	writeJSON(w, http.StatusOK, h.toResponse(st))
 }
 
 // owns reports whether the preparation was started by this client.

@@ -17,21 +17,37 @@ import (
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 )
 
-func writeSessionStateResponse(w http.ResponseWriter, r *http.Request, hlsRoot string, result v3sessions.GetSessionResult) {
-	resp := mapSessionStateResponse(requestID(r.Context()), hlsRoot, result)
+func writeSessionStateResponse(w http.ResponseWriter, r *http.Request, hlsRoot string, result v3sessions.GetSessionResult, maskFns ...func(string) string) {
+	resp := mapSessionStateResponse(requestID(r.Context()), hlsRoot, result, maskFns...)
 
 	ensureTraceHeader(w, r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.GetSessionResult) SessionResponse {
+func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.GetSessionResult, maskFns ...func(string) string) SessionResponse {
+	var maskFn func(string) string
+	if len(maskFns) > 0 {
+		maskFn = maskFns[0]
+	}
+
 	session := result.Session
 	out := result.Outcome
 
+	emitRef := session.ServiceRef
+	if maskFn != nil {
+		emitRef = maskFn(emitRef)
+	}
+
+	trace := mapSessionPlaybackTrace(reqID, session, hlsRoot)
+	if maskFn != nil && trace != nil && trace.Operator != nil && trace.Operator.RuntimePolicyReplay != nil && trace.Operator.RuntimePolicyReplay.Metadata != nil && trace.Operator.RuntimePolicyReplay.Metadata.ServiceRef != nil {
+		maskedTraceRef := maskFn(*trace.Operator.RuntimePolicyReplay.Metadata.ServiceRef)
+		trace.Operator.RuntimePolicyReplay.Metadata.ServiceRef = &maskedTraceRef
+	}
+
 	resp := SessionResponse{
 		SessionId:                openapi_types.UUID(parseUUID(session.SessionID)),
-		ServiceRef:               &session.ServiceRef,
+		ServiceRef:               &emitRef,
 		Profile:                  &session.Profile.Name,
 		ProfileReason:            sessionProfileReason(session),
 		UpdatedAtMs:              toPtr(int(session.UpdatedAtUnix * 1000)),
@@ -39,7 +55,7 @@ func mapSessionStateResponse(reqID string, hlsRoot string, result v3sessions.Get
 		LeaseExpiresAt:           time.Unix(session.LeaseExpiresAtUnix, 0).UTC(),
 		RequestId:                reqID,
 		CorrelationId:            &session.CorrelationID,
-		Trace:                    mapSessionPlaybackTrace(reqID, session, hlsRoot),
+		Trace:                    trace,
 	}
 
 	resp.State = mapSessionState(out.State)

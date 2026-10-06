@@ -26,7 +26,7 @@ func (s *Server) handleV3SessionsDebug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeSessionsDebugResponse(w, result)
+	writeSessionsDebugResponse(w, result, s.maskServiceRef)
 }
 
 // handleV3SessionState returns a single session state.
@@ -45,7 +45,7 @@ func (s *Server) handleV3SessionState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeSessionStateResponse(w, r, deps.cfg.HLS.Root, result)
+	writeSessionStateResponse(w, r, deps.cfg.HLS.Root, result, s.maskServiceRef)
 }
 
 // ReportPlaybackFeedback handles POST /sessions/{sessionId}/feedback

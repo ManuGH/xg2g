@@ -28,23 +28,35 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
+func (s *Service) maskServiceRef(rawRef string) string {
+	if s == nil || s.deps == nil {
+		return rawRef
+	}
+	return s.deps.MaskServiceRef(rawRef)
+}
+
 func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff, startOffsetMs int64) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
 	var url string
 
+	effectiveID := id
+	if schemaType == "live" {
+		effectiveID = s.maskServiceRef(id)
+	}
+
 	switch proto {
 	case "mp4":
 		mode = PlaybackInfoModeDirectMp4
 		if schemaType == "live" {
-			url = fmt.Sprintf("/api/v3/streams/%s", id)
+			url = fmt.Sprintf("/api/v3/streams/%s", effectiveID)
 		} else {
 			url = fmt.Sprintf("/api/v3/recordings/%s/stream.mp4", id)
 		}
 	case "hls":
 		mode = PlaybackInfoModeHls
 		if schemaType == "live" {
-			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
+			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", effectiveID)
 		} else {
 			var intent *ports.BuildIntent
 			if dec.TargetProfile != nil {
@@ -62,7 +74,7 @@ func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decisio
 
 	primaryStr := decision.ReasonPrimaryFrom(dec, nil)
 	mainReason := PlaybackInfoReason(primaryStr)
-	decDTO := buildPlaybackDecisionDTO(id, dec, url, rawTruth, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate, runtimePolicyReasons, runtimePolicyConstraints, runtimeProbeSuccessStreak, runtimeProbeFailureStreak)
+	decDTO := buildPlaybackDecisionDTO(effectiveID, dec, url, rawTruth, resolvedCaps, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate, runtimePolicyReasons, runtimePolicyConstraints, runtimeProbeSuccessStreak, runtimeProbeFailureStreak)
 	resDTO := buildPlaybackResumeSummary(rState)
 
 	var finalURL *string
@@ -87,7 +99,7 @@ func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decisio
 		Decision:              &decDTO,
 		Resume:                resDTO,
 		RequestId:             dec.Trace.RequestID,
-		SessionId:             fmt.Sprintf("rec:%s", id),
+		SessionId:             fmt.Sprintf("rec:%s", effectiveID),
 		PlaybackDecisionToken: s.BuildLivePlaybackDecisionToken(id, dec, schemaType, caps, plannerReceipt),
 	}
 	if durSec > 0 {
@@ -341,7 +353,7 @@ func (s *Service) BuildLivePlaybackDecisionToken(id string, dec *decision.Decisi
 	claims := v3auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
-		Sub:     normalize.ServiceRef(id),
+		Sub:     normalize.ServiceRef(s.maskServiceRef(id)),
 		Jti:     uuid.New().String(),
 		Iat:     now,
 		Nbf:     now,
@@ -360,7 +372,7 @@ func (s *Service) BuildLivePlaybackDecisionToken(id string, dec *decision.Decisi
 
 	tokenStr, err := v3auth.GenerateHS256(jwtSecret, claims, "kid-v1")
 	if err != nil {
-		log.L().Error().Err(err).Str("id", id).Msg("failed to generate secure playback token")
+		log.L().Error().Err(err).Str("id", s.maskServiceRef(id)).Msg("failed to generate secure playback token")
 		return nil
 	}
 
@@ -506,13 +518,14 @@ func applySegmentTruth(info *PlaybackInfo, truth *hls.SegmentTruth, attempted bo
 func (s *Service) MapLivePlannerPlaybackInfo(
 	id string, eval *v3recordings.PlannerEvaluation, truth playback.MediaTruth, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string,
 ) PlaybackInfo {
+	effectiveID := s.maskServiceRef(id)
 	isAllow := eval != nil &&
 		eval.Result.Plan.Decision == playbackplanner.DecisionAllow &&
 		eval.Result.Plan.Outcome == playbackplanner.DecisionAllow &&
 		(plannerReceipt == nil || (plannerReceipt.Plan.Decision == playbackplanner.DecisionAllow && plannerReceipt.Plan.Outcome == playbackplanner.DecisionAllow))
 
 	if !isAllow {
-		decDTO := buildPlannerDecisionDTO(id, eval, truth, resolvedCaps, "", reqID)
+		decDTO := buildPlannerDecisionDTO(effectiveID, eval, truth, resolvedCaps, "", reqID)
 		reasonCode := eval.Result.Plan.ReasonCode
 		if reasonCode == "" {
 			reasonCode = "unknown"
@@ -525,13 +538,13 @@ func (s *Service) MapLivePlannerPlaybackInfo(
 			Reason:                &unknownReason,
 			Decision:              &decDTO,
 			RequestId:             reqID,
-			SessionId:             fmt.Sprintf("rec:%s", id),
+			SessionId:             fmt.Sprintf("rec:%s", effectiveID),
 			PlaybackDecisionToken: nil,
 		}
 	}
 
 	mode := PlaybackInfoModeHls
-	url := fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
+	url := fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", effectiveID)
 	finalURL := &url
 
 	container := truth.Container
@@ -550,7 +563,7 @@ func (s *Service) MapLivePlannerPlaybackInfo(
 		audioCodec = eval.Evidence.SourceTruth.AudioCodec
 	}
 
-	decDTO := buildPlannerDecisionDTO(id, eval, truth, resolvedCaps, url, reqID)
+	decDTO := buildPlannerDecisionDTO(effectiveID, eval, truth, resolvedCaps, url, reqID)
 
 	var mainReason PlaybackInfoReason
 	switch eval.Result.Plan.Mode {
@@ -585,7 +598,7 @@ func (s *Service) MapLivePlannerPlaybackInfo(
 		Reason:                &mainReason,
 		Decision:              &decDTO,
 		RequestId:             reqID,
-		SessionId:             fmt.Sprintf("rec:%s", id),
+		SessionId:             fmt.Sprintf("rec:%s", effectiveID),
 		PlaybackDecisionToken: s.BuildLivePlannerDecisionToken(id, eval, caps, plannerReceipt, reqID),
 	}
 	applySegmentTruth(&info, nil, false)
@@ -775,7 +788,7 @@ func (s *Service) BuildLivePlannerDecisionToken(id string, eval *v3recordings.Pl
 	claims := v3auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
-		Sub:     normalize.ServiceRef(id),
+		Sub:     normalize.ServiceRef(s.maskServiceRef(id)),
 		Jti:     uuid.New().String(),
 		Iat:     now,
 		Nbf:     now,
@@ -794,7 +807,7 @@ func (s *Service) BuildLivePlannerDecisionToken(id string, eval *v3recordings.Pl
 
 	tokenStr, err := v3auth.GenerateHS256(jwtSecret, claims, "kid-v1")
 	if err != nil {
-		log.L().Error().Err(err).Str("id", id).Msg("failed to generate secure playback token")
+		log.L().Error().Err(err).Str("id", s.maskServiceRef(id)).Msg("failed to generate secure playback token")
 		return nil
 	}
 	return &tokenStr

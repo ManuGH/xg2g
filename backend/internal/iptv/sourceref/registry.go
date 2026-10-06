@@ -53,6 +53,50 @@ func (r *Registry) Replace(snapshot []Source) error {
 	return nil
 }
 
+// Register adds a single IPTV source to the registry using atomic CompareAndSwap copy-on-write semantics.
+// It is thread-safe and lock-free.
+// If s is zero or has an empty ID, Register returns nil without modifying the registry.
+// If an entry with s.ID() already exists:
+//   - If the existing entry has matching canonicalURL, Register treats it as equivalent and returns nil idempotently.
+//   - If the existing entry has differing canonicalURL, Register returns ErrCollision.
+//
+// If s is new, it allocates a new map, inserts s, and attempts an atomic CAS. If another goroutine
+// modified the registry concurrently, it retries until success.
+func (r *Registry) Register(s Source) error {
+	if s.IsZero() || s.ID() == "" {
+		return nil
+	}
+
+	for {
+		curr := r.sources.Load()
+		if curr != nil {
+			if existing, found := (*curr)[s.ID()]; found {
+				if existing.canonicalURL() != s.canonicalURL() {
+					return ErrCollision
+				}
+				// Idempotent: already registered with matching canonical URL
+				return nil
+			}
+		}
+
+		currLen := 0
+		if curr != nil {
+			currLen = len(*curr)
+		}
+		newMap := make(map[ID]Source, currLen+1)
+		if curr != nil {
+			for k, v := range *curr {
+				newMap[k] = v
+			}
+		}
+		newMap[s.ID()] = s
+
+		if r.sources.CompareAndSwap(curr, &newMap) {
+			return nil
+		}
+	}
+}
+
 // Lookup retrieves a Source by its opaque ID.
 // If the ID is not found, ErrNotFound is returned without echoing the input.
 func (r *Registry) Lookup(id ID) (Source, error) {

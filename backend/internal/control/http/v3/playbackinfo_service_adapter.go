@@ -50,6 +50,10 @@ func (d *serverPlaybackInfoDeps) RuntimeContext() context.Context {
 	return d.s.runtimeContextOrBackground()
 }
 
+func (d *serverPlaybackInfoDeps) MaskServiceRef(rawRef string) string {
+	return d.s.maskServiceRef(rawRef)
+}
+
 func (s *Server) playbackInfoProcessor() *v3playbackinfo.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()

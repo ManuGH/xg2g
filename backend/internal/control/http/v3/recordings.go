@@ -72,7 +72,7 @@ func (s *Server) GetRecordings(w http.ResponseWriter, r *http.Request, params Ge
 			continue
 		}
 		item := RecordingItem{
-			ServiceRef:       strPtr(m.ServiceRef),
+			ServiceRef:       s.maskServiceRefPtr(strPtr(m.ServiceRef)),
 			RecordingId:      strPtr(m.RecordingID),
 			Title:            strPtr(m.Title),
 			Description:      strPtr(m.Description),

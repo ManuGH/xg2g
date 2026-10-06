@@ -1024,3 +1024,110 @@ func TestClassifyReference(t *testing.T) {
 		}
 	})
 }
+
+func TestRegistry_Register(t *testing.T) {
+	parser, err := sourceref.NewParser([]byte("test-key-of-at-least-32-bytes---"))
+	if err != nil {
+		t.Fatalf("NewParser: %v", err)
+	}
+
+	src1, err := parser.Parse("4097:0:1:0:0:0:0:0:0:0:http%3a//example.com/live1.ts:Channel 1")
+	if err != nil {
+		t.Fatalf("Parse src1: %v", err)
+	}
+	src2, err := parser.Parse("4097:0:1:0:0:0:0:0:0:0:http%3a//example.com/live2.ts:Channel 2")
+	if err != nil {
+		t.Fatalf("Parse src2: %v", err)
+	}
+
+	t.Run("basic registration and lookup", func(t *testing.T) {
+		reg := sourceref.NewRegistry()
+		if err := reg.Register(src1); err != nil {
+			t.Fatalf("Register failed: %v", err)
+		}
+		if reg.Len() != 1 {
+			t.Fatalf("expected Len() == 1, got %d", reg.Len())
+		}
+		got, err := reg.Lookup(src1.ID())
+		if err != nil {
+			t.Fatalf("Lookup failed: %v", err)
+		}
+		if got.ID() != src1.ID() {
+			t.Fatalf("expected ID %s, got %s", src1.ID(), got.ID())
+		}
+	})
+
+	t.Run("idempotent re-registration of exact and equivalent sources", func(t *testing.T) {
+		reg := sourceref.NewRegistry()
+		if err := reg.Register(src1); err != nil {
+			t.Fatalf("first Register failed: %v", err)
+		}
+		// Exact same source again
+		if err := reg.Register(src1); err != nil {
+			t.Fatalf("second Register failed: %v", err)
+		}
+		if reg.Len() != 1 {
+			t.Fatalf("expected Len() == 1 after duplicate register, got %d", reg.Len())
+		}
+
+		// Equivalent source (same URL, different channel name / casing)
+		src1Equiv, _ := parser.Parse("5001:0:1:0:0:0:0:0:0:0:http%3a//EXAMPLE.COM/live1.ts:Channel 1 Alt")
+		if err := reg.Register(src1Equiv); err != nil {
+			t.Fatalf("equivalent Register failed: %v", err)
+		}
+		if reg.Len() != 1 {
+			t.Fatalf("expected Len() == 1 after equivalent register, got %d", reg.Len())
+		}
+	})
+
+	t.Run("ignore zero or empty ID source", func(t *testing.T) {
+		reg := sourceref.NewRegistry()
+		if err := reg.Register(sourceref.Source{}); err != nil {
+			t.Fatalf("Register zero source returned error: %v", err)
+		}
+		if reg.Len() != 0 {
+			t.Fatalf("expected Len() == 0, got %d", reg.Len())
+		}
+	})
+
+	t.Run("true HMAC collision detection returns ErrCollision", func(t *testing.T) {
+		reg := sourceref.NewRegistry()
+		s1 := sourceref.NewSourceForTest(src1.ID(), "http://example.com/real1", "http://example.com/canonical1", "ref1")
+		s2 := sourceref.NewSourceForTest(src1.ID(), "http://example.com/real2", "http://example.com/canonical2", "ref2")
+		if err := reg.Register(s1); err != nil {
+			t.Fatalf("Register s1 failed: %v", err)
+		}
+		err := reg.Register(s2)
+		if !errors.Is(err, sourceref.ErrCollision) {
+			t.Fatalf("expected ErrCollision, got %v", err)
+		}
+		if reg.Len() != 1 {
+			t.Fatalf("expected Len() == 1 after collision, got %d", reg.Len())
+		}
+	})
+
+	t.Run("concurrent register and lookup under race detector", func(t *testing.T) {
+		reg := sourceref.NewRegistry()
+		var wg sync.WaitGroup
+		const numWorkers = 50
+
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				s := src1
+				if idx%2 == 0 {
+					s = src2
+				}
+				_ = reg.Register(s)
+				_, _ = reg.Lookup(s.ID())
+				_ = reg.Len()
+			}(i)
+		}
+		wg.Wait()
+
+		if reg.Len() != 2 {
+			t.Fatalf("expected Len() == 2 after concurrent register, got %d", reg.Len())
+		}
+	})
+}

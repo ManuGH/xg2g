@@ -82,7 +82,7 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeNowNextResponse(w, buildNowNextItemsWithLookups(lookups, programs, time.Now()))
+	writeNowNextResponse(w, buildNowNextItemsWithLookups(lookups, programs, time.Now(), s.maskServiceRef))
 }
 
 func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
@@ -92,7 +92,12 @@ func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
 	writeJSON(w, http.StatusOK, NowNextResponse{Items: items})
 }
 
-func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Programme, now time.Time) []NowNextItem {
+func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Programme, now time.Time, maskFns ...func(string) string) []NowNextItem {
+	var maskFn func(string) string
+	if len(maskFns) > 0 {
+		maskFn = maskFns[0]
+	}
+
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {
 		canonicalRef := read.CanonicalServiceRef(program.Channel)
@@ -101,9 +106,14 @@ func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Progra
 
 	items := make([]NowNextItem, 0, len(lookups))
 	for _, lookup := range lookups {
+		emitRef := lookup.original
+		if maskFn != nil {
+			emitRef = maskFn(emitRef)
+		}
+
 		progs := progMap[read.CanonicalServiceRef(lookup.resolved)]
 		if len(progs) == 0 {
-			items = append(items, NowNextItem{ServiceRef: lookup.original})
+			items = append(items, NowNextItem{ServiceRef: emitRef})
 			continue
 		}
 
@@ -151,7 +161,7 @@ func buildNowNextItemsWithLookups(lookups []serviceLookup, programs []epg.Progra
 		}
 
 		items = append(items, NowNextItem{
-			ServiceRef: lookup.original,
+			ServiceRef: emitRef,
 			Now:        current,
 			Next:       next,
 		})
@@ -398,8 +408,8 @@ func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgPar
 			}
 		}
 		// Capture variables for pointer assignment
-		id := e.ID
-		sRef := e.ServiceRef
+		id := s.maskServiceRef(e.ID)
+		sRef := s.maskServiceRef(e.ServiceRef)
 		title := e.Title
 		desc := e.Desc
 		start := int64(e.Start)

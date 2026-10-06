@@ -9,7 +9,14 @@ func (s *Server) verifyLivePlaybackDecision(token, principal, serviceRef, mode s
 	if s.tokensService == nil {
 		return false
 	}
-	return s.tokensService.VerifyLivePlaybackDecision(token, principal, serviceRef, mode)
+	if s.tokensService.VerifyLivePlaybackDecision(token, principal, serviceRef, mode) {
+		return true
+	}
+	masked := s.maskServiceRef(serviceRef)
+	if masked != serviceRef {
+		return s.tokensService.VerifyLivePlaybackDecision(token, principal, masked, mode)
+	}
+	return false
 }
 
 //nolint:unused // Used by tests to mint deterministic attestation tokens.
@@ -17,5 +24,5 @@ func (s *Server) attestLivePlaybackDecision(requestID, principal, serviceRef, mo
 	if s.tokensService == nil {
 		return ""
 	}
-	return s.tokensService.AttestLivePlaybackDecision(requestID, principal, serviceRef, mode)
+	return s.tokensService.AttestLivePlaybackDecision(requestID, principal, s.maskServiceRef(serviceRef), mode)
 }

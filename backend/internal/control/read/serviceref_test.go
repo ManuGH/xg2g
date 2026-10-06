@@ -63,6 +63,36 @@ func TestExtractServiceRef(t *testing.T) {
 			want:   "1:0:1:ABCD:1:1:0:0:0:0", // Trims colon, treats as raw path
 			desc:   "Opaque ref without scheme should be treated as raw string (not parsed as URL scheme)",
 		},
+		{
+			name:   "Enigma IPTV Stream URL With Slashes",
+			rawURL: "http://127.0.0.1:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1",
+			desc:   "IPTV reference in URL path with nested slashes must not be truncated to last path segment",
+		},
+		{
+			name:   "Proxy IPTV Stream URL",
+			rawURL: "http://xg2g:8088/stream/5001:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8:Ch 1",
+			want:   "5001:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8:Ch 1",
+			desc:   "Proxy IPTV URL preserves full 5001 reference",
+		},
+		{
+			name:   "Opaque IPTV Stream URL",
+			rawURL: "http://xg2g:8088/api/v3/stream/live/iptv_test123",
+			want:   "iptv_test123",
+			desc:   "Opaque IPTV URL extracts iptv_ ID cleanly",
+		},
+		{
+			name:   "IPTV Stream URL With Query Parameters",
+			rawURL: "http://127.0.0.1:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8" + "?" + "token=xyz123&exp=456:Canary Channel",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/stream.m3u8" + "?" + "token=xyz123&exp=456:Canary Channel",
+			desc:   "IPTV stream URL with query parameters must preserve query strings and not strip token",
+		},
+		{
+			name:   "Raw IPTV Reference With Token Query",
+			rawURL: "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8" + "?" + "token=secret_abc:Ch 1",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8" + "?" + "token=secret_abc:Ch 1",
+			desc:   "Raw IPTV reference starting with 4097: must preserve query string parameters",
+		},
 	}
 
 	for _, tt := range tests {

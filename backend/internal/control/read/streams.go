@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
@@ -125,7 +126,14 @@ func GetStreams(ctx context.Context, cfg config.AppConfig, snap config.Snapshot,
 		// Resolve Name
 		name := nameMap[serviceRef]
 		if name == "" {
-			name = serviceRef // Fallback
+			name = nameMap[CanonicalServiceRef(serviceRef)]
+		}
+		if name == "" {
+			if chName := extractChannelNameFromRef(serviceRef); chName != "" {
+				name = chName
+			} else {
+				name = serviceRef // Fallback
+			}
 		}
 
 		// Resolve IP (Gated)
@@ -220,4 +228,26 @@ func streamClientSnapshot(session *model.SessionRecord) *model.PlaybackClientSna
 		return nil
 	}
 	return snapshot
+}
+
+func extractChannelNameFromRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, ":")
+	if sourceref.IsIPTVServiceType(parts[0]) {
+		source, isIPTV, err := sourceref.ClassifyReference(nil, trimmed)
+		if err != nil || !isIPTV {
+			return ""
+		}
+		return strings.TrimSpace(source.ServiceName())
+	}
+	if len(parts) > 11 {
+		nameCandidate := strings.TrimSpace(strings.Join(parts[11:], ":"))
+		if nameCandidate != "" && !strings.Contains(nameCandidate, "://") && !strings.Contains(nameCandidate, "%3a//") {
+			return nameCandidate
+		}
+	}
+	return ""
 }

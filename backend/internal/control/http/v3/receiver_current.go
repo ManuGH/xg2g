@@ -101,7 +101,7 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			enriched := mergeCurrentInfoFromSchedule(current, time.Now(), scheduleEntriesFromOWIEPG(events))
 			if enriched {
-				log.L().Info().Str("service_ref", current.Info.ServiceRef).Msg("filled current epg from receiver epg")
+				log.L().Info().Str("service_ref", s.maskServiceRef(current.Info.ServiceRef)).Msg("filled current epg from receiver epg")
 			}
 		} else {
 			log.L().Warn().Err(err).Msg("failed to fetch fallback epg")
@@ -111,7 +111,7 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 			if enriched, err := s.fillCurrentFromLocalEPG(epgCtx, current); err != nil {
 				log.L().Warn().Err(err).Msg("failed to load local epg fallback")
 			} else if enriched {
-				log.L().Info().Str("service_ref", current.Info.ServiceRef).Msg("filled current epg from local xmltv")
+				log.L().Info().Str("service_ref", s.maskServiceRef(current.Info.ServiceRef)).Msg("filled current epg from local xmltv")
 			}
 		}
 	}
@@ -125,7 +125,7 @@ func (s *Server) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {
 			Ref  *string `json:"ref,omitempty"`
 		}{
 			Name: &current.Info.ServiceName,
-			Ref:  &current.Info.ServiceRef,
+			Ref:  s.maskServiceRefPtr(&current.Info.ServiceRef),
 		},
 		Now: &struct {
 			BeginTimestamp *int64  `json:"beginTimestamp,omitempty"`

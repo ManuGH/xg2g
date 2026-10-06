@@ -62,7 +62,7 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 	for _, st := range streams {
 		// Pointers for optional fields (capture loop var)
 		id := st.ID
-		name := st.ChannelName
+		name := s.maskServiceRef(st.ChannelName)
 		ip := st.ClientIP
 		clientFamily := st.ClientFamily
 		client := st.Client
@@ -102,10 +102,14 @@ func (s *Server) GetStreams(w http.ResponseWriter, r *http.Request) {
 		if q.IncludeClientIP {
 			clientIP = &ip
 		}
+		var channelNamePtr *string
+		if name != "" {
+			channelNamePtr = &name
+		}
 		dto := StreamSession{
 			Id:            &id,
 			SessionId:     openapi_types.UUID(parseUUID(st.ID)),
-			ChannelName:   &name,
+			ChannelName:   channelNamePtr,
 			ClientIp:      clientIP,
 			DetailedState: detailedState,
 			StartedAt:     &start,

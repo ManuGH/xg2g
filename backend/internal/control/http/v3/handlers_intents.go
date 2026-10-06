@@ -272,7 +272,7 @@ func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, dep
 
 	normRef := normalize.ServiceRef(serviceRef)
 	normTokenSub := normalize.ServiceRef(claims.Sub)
-	if normRef != normTokenSub {
+	if normRef != normTokenSub && normalize.ServiceRef(s.maskServiceRef(serviceRef)) != normTokenSub {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
 		return verifiedDecisionToken{}, true
 	}

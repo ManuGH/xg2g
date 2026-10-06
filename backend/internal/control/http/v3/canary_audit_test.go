@@ -5,6 +5,7 @@
 package v3
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,23 +14,33 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	controlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
+	controlplayback "github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/read"
+	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
 	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	ilog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -57,6 +68,24 @@ func setupCanaryResolver(t *testing.T) (*edge.Resolver, sourceref.ID, *sourceref
 	require.NoError(t, reg.Replace([]sourceref.Source{src}))
 	res := edge.NewResolver(reg, parser, nil)
 	return res, src.ID(), reg
+}
+
+func assertNoCanaryLeak(t *testing.T, endpointName string, w *httptest.ResponseRecorder) {
+	t.Helper()
+	bodyStr := strings.ToLower(w.Body.String())
+	for _, marker := range canaryMarkers {
+		mLower := strings.ToLower(marker)
+		if strings.Contains(bodyStr, mLower) {
+			t.Fatalf("[%s] Canary leak detected in response body! Marker: %q, Body: %s", endpointName, marker, w.Body.String())
+		}
+		for hKey, hVals := range w.Header() {
+			for _, val := range hVals {
+				if strings.Contains(strings.ToLower(val), mLower) {
+					t.Fatalf("[%s] Canary leak detected in response header %q! Marker: %q, Value: %s", endpointName, hKey, marker, val)
+				}
+			}
+		}
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -147,7 +176,6 @@ var refFreeRoutes = map[string]string{
 	"HEAD /api/v3/sessions/{sessionID}/hls/{variant}/{filename}":         "Sessions: variant HLS segment HEAD",
 	"POST /api/v3/sessions/{sessionId}/playback-ticket":                  "Sessions: issue playback ticket",
 	"POST /api/v3/sessions/revoke-user-sessions":                         "Sessions: revoke user sessions",
-	"GET /api/v3/streams":                                                "Streams: list active streams",
 	"DELETE /api/v3/streams/{id}":                                        "Streams: stop active stream session",
 	"GET /api/v3/system/config":                                          "System: read config snapshot",
 	"PUT /api/v3/system/config":                                          "System: update config",
@@ -194,150 +222,37 @@ type allowlistEntry struct {
 	Description string
 }
 
+// auditedOutboundRoutes documents the outbound routes audited for zero canary leak in Slice 4.
+var auditedOutboundRoutes = map[string]string{
+	"GET /api/v3/services":                              "Outbound: services list returns masked iptv_<id>",
+	"GET /api/v3/services/bouquets":                     "Outbound: bouquet listings return masked iptv_<id>",
+	"GET /api/v3/epg":                                   "Outbound: full EPG export returns masked iptv_<id>",
+	"GET /api/v3/timers":                                "Outbound: timer listing returns masked iptv_<id>",
+	"GET /api/v3/sessions":                              "Outbound: active sessions return masked iptv_<id>",
+	"GET /api/v3/sessions/{sessionID}":                  "Outbound: session detail returns masked iptv_<id>",
+	"GET /api/v3/sessions/{sessionID}/events":           "Outbound: session SSE events return masked iptv_<id>",
+	"GET /api/v3/receiver/current":                      "Outbound: current live channel returns masked iptv_<id>",
+	"GET /api/v3/household/profiles":                    "Outbound: household profiles return masked iptv_<id>",
+	"GET /api/v3/household/profiles/{id}":               "Outbound: household profile by ID returns masked iptv_<id>",
+	"GET /api/v3/profiles":                              "Outbound: legacy profile list returns masked iptv_<id>",
+	"GET /api/v3/profiles/{id}":                         "Outbound: legacy profile by ID returns masked iptv_<id>",
+	"GET /api/v3/recordings":                            "Outbound: recordings list returns masked iptv_<id>",
+	"GET /api/v3/recordings/{recordingId}/stream-info":  "Outbound: recording stream info returns masked iptv_<id>",
+	"POST /api/v3/recordings/{recordingId}/stream-info": "Outbound: recording stream info post returns masked iptv_<id>",
+	"GET /api/v3/recordings/{recordingId}/status":       "Outbound: recording status returns masked iptv_<id>",
+	"GET /api/v3/series-rules":                          "Outbound: series rules return masked iptv_<id>",
+	"POST /api/v3/series-rules":                         "Outbound: series rule create returns masked iptv_<id>",
+	"PUT /api/v3/series-rules/{id}":                     "Outbound: series rule update returns masked iptv_<id>",
+	"POST /api/v3/live/stream-info":                     "Outbound: live playback info returns masked iptv_<id> and opaque token",
+	"GET /api/v3/streams":                               "Outbound: active stream listings return masked iptv_<id> or channel name",
+}
+
 var allowlistRoutes = map[string]allowlistEntry{
-	"GET /api/v3/services": {
-		Route:       "GET /api/v3/services",
-		SourceLoc:   "backend/internal/control/http/v3/services.go:45",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: services list returns raw IPTV URLs from OpenWebIF/playlist",
-	},
-	"GET /api/v3/services/bouquets": {
-		Route:       "GET /api/v3/services/bouquets",
-		SourceLoc:   "backend/internal/control/http/v3/services.go:120",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: bouquet channel listings leak raw refs",
-	},
-	"GET /api/v3/epg": {
-		Route:       "GET /api/v3/epg",
-		SourceLoc:   "backend/internal/control/http/v3/epg.go:50",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: full EPG export contains raw Enigma2 refs",
-	},
-	"GET /api/v3/timers": {
-		Route:       "GET /api/v3/timers",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_timers.go:300",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: receiver timer listing contains raw refs",
-	},
-	"GET /api/v3/sessions": {
-		Route:       "GET /api/v3/sessions",
-		SourceLoc:   "backend/internal/control/http/v3/sessions.go:80",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: active session listings contain raw refs",
-	},
-	"GET /api/v3/sessions/{sessionID}": {
-		Route:       "GET /api/v3/sessions/{sessionID}",
-		SourceLoc:   "backend/internal/control/http/v3/sessions.go:120",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: session detail contains raw ref",
-	},
-	"GET /api/v3/sessions/{sessionID}/events": {
-		Route:       "GET /api/v3/sessions/{sessionID}/events",
-		SourceLoc:   "backend/internal/control/http/v3/sessions.go:160",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: session SSE events contain raw ref",
-	},
-	"GET /api/v3/receiver/current": {
-		Route:       "GET /api/v3/receiver/current",
-		SourceLoc:   "backend/internal/control/http/v3/receiver.go:50",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: current live channel info from OpenWebIF contains raw ref",
-	},
-	"GET /api/v3/household/profiles": {
-		Route:       "GET /api/v3/household/profiles",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_household.go:180",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: household profile list returns internal raw refs",
-	},
-	"GET /api/v3/household/profiles/{id}": {
-		Route:       "GET /api/v3/household/profiles/{id}",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_household.go:210",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: household profile by ID returns internal raw refs",
-	},
-	"GET /api/v3/profiles": {
-		Route:       "GET /api/v3/profiles",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_household.go:380",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: legacy profile list returns internal raw refs",
-	},
-	"GET /api/v3/profiles/{id}": {
-		Route:       "GET /api/v3/profiles/{id}",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_household.go:420",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: legacy profile by ID returns internal raw refs",
-	},
-	"GET /api/v3/recordings": {
-		Route:       "GET /api/v3/recordings",
-		SourceLoc:   "backend/internal/control/http/v3/recordings.go:100",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: recordings list contains service refs",
-	},
-	"GET /api/v3/recordings/{recordingId}/stream-info": {
-		Route:       "GET /api/v3/recordings/{recordingId}/stream-info",
-		SourceLoc:   "backend/internal/control/http/v3/recordings.go:200",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: recording stream info contains recording refs",
-	},
-	"POST /api/v3/recordings/{recordingId}/stream-info": {
-		Route:       "POST /api/v3/recordings/{recordingId}/stream-info",
-		SourceLoc:   "backend/internal/control/http/v3/recordings.go:200",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: recording stream info post contains recording refs",
-	},
-	"GET /api/v3/recordings/{recordingId}/status": {
-		Route:       "GET /api/v3/recordings/{recordingId}/status",
-		SourceLoc:   "backend/internal/control/http/v3/recordings.go:250",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: recording status contains recording refs",
-	},
-	"GET /api/v3/series-rules": {
-		Route:       "GET /api/v3/series-rules",
-		SourceLoc:   "backend/internal/control/http/v3/series_rules.go:50",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: series rules contain target channel refs",
-	},
-	"POST /api/v3/series-rules": {
-		Route:       "POST /api/v3/series-rules",
-		SourceLoc:   "backend/internal/control/http/v3/series_rules.go:90",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: series rule create response echoes target channel ref",
-	},
-	"PUT /api/v3/series-rules/{id}": {
-		Route:       "PUT /api/v3/series-rules/{id}",
-		SourceLoc:   "backend/internal/control/http/v3/series_rules.go:120",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: series rule update response echoes target channel ref",
-	},
 	"GET /api/v3/logs": {
 		Route:       "GET /api/v3/logs",
-		SourceLoc:   "backend/internal/control/http/v3/logs.go:40",
+		SourceLoc:   "backend/internal/control/http/v3/http.go:143",
 		TargetSlice: "Slice 5",
 		Description: "Outbound: internal log sink contains pre-existing raw ref leaks until central scrubber",
-	},
-	"POST /api/v3/live/stream-info": {
-		Route:       "POST /api/v3/live/stream-info",
-		SourceLoc:   "backend/internal/control/http/v3/playbackinfo/response_mapping.go:534",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: stream URLs and session ID leak raw ref until Slice 4 outbound masking",
-	},
-	"POST /api/v3/live/playback-summary": {
-		Route:       "POST /api/v3/live/playback-summary",
-		SourceLoc:   "backend/internal/control/http/v3/playbackinfo/response_mapping.go:47",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: stream URLs in playback decision summary items leak raw ref until Slice 4",
-	},
-	"POST /api/v3/timers": {
-		Route:       "POST /api/v3/timers",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_timers.go:253",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: AddTimer response echoes created timer raw ref until Slice 4 outbound masking",
-	},
-	"POST /api/v3/household/profiles": {
-		Route:       "POST /api/v3/household/profiles",
-		SourceLoc:   "backend/internal/control/http/v3/handlers_household.go:344",
-		TargetSlice: "Slice 4",
-		Description: "Outbound: Profile create echoes stored raw refs until Slice 4 outbound masking",
 	},
 }
 
@@ -366,10 +281,11 @@ func TestIPTV_CanaryLeakAudit_RouteCoverage(t *testing.T) {
 		totalRoutes++
 
 		_, inExercised := exercisedRoutes[key]
+		_, inAuditedOutbound := auditedOutboundRoutes[key]
 		_, inRefFree := refFreeRoutes[key]
 		_, inAllowlist := allowlistRoutes[key]
 
-		if !inExercised && !inRefFree && !inAllowlist {
+		if !inExercised && !inAuditedOutbound && !inRefFree && !inAllowlist {
 			unclassified = append(unclassified, key)
 		}
 		return nil
@@ -411,24 +327,6 @@ func TestIPTV_CanaryLeakAudit_InboundEndpointsZeroLeak(t *testing.T) {
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac"]
 	}`
-
-	assertNoCanaryLeak := func(t *testing.T, endpointName string, w *httptest.ResponseRecorder) {
-		t.Helper()
-		bodyStr := strings.ToLower(w.Body.String())
-		for _, marker := range canaryMarkers {
-			mLower := strings.ToLower(marker)
-			if strings.Contains(bodyStr, mLower) {
-				t.Fatalf("[%s] Canary leak detected in response body! Marker: %q, Body: %s", endpointName, marker, w.Body.String())
-			}
-			for hKey, hVals := range w.Header() {
-				for _, val := range hVals {
-					if strings.Contains(strings.ToLower(val), mLower) {
-						t.Fatalf("[%s] Canary leak detected in response header %q! Marker: %q, Value: %s", endpointName, hKey, marker, val)
-					}
-				}
-			}
-		}
-	}
 
 	// 1. POST /api/v3/live/stream-info (Obtain decision token, and verify 404/400 zero leak)
 	var token string
@@ -643,6 +541,7 @@ func TestIPTV_CanaryLeakAudit_InboundEndpointsZeroLeak(t *testing.T) {
 func TestIPTV_CanaryLeakAudit_AllowlistNonStale(t *testing.T) {
 	// Assert each allowlist entry is documented with valid metadata
 	require.NotEmpty(t, allowlistRoutes, "Allowlist must not be empty until all slices are complete")
+	require.Len(t, allowlistRoutes, 1, "Allowlist must only contain GET /api/v3/logs in Slice 4")
 
 	for routeKey, entry := range allowlistRoutes {
 		assert.Equal(t, routeKey, entry.Route)
@@ -651,17 +550,163 @@ func TestIPTV_CanaryLeakAudit_AllowlistNonStale(t *testing.T) {
 		assert.NotEmpty(t, entry.Description, "Entry %s missing Description", routeKey)
 	}
 
-	// Verify non-staleness of POST /api/v3/live/stream-info (assert it DOES leak until Slice 4)
+	// Verify non-staleness of GET /api/v3/logs (assert it DOES leak unscrubbed logs until Slice 5)
+	srv := NewServer(config.AppConfig{}, nil, nil)
+	srv.logSource = stubLogSource{
+		entries: []ilog.LogEntry{
+			{Timestamp: time.Now().UTC(), Level: "info", Message: canaryRawRef},
+		},
+	}
+	wLogs := httptest.NewRecorder()
+	rLogs := httptest.NewRequest(http.MethodGet, "/api/v3/logs", nil)
+	srv.GetLogs(wLogs, rLogs, GetLogsParams{})
+	require.Equal(t, http.StatusOK, wLogs.Code)
+	assert.Contains(t, strings.ToLower(wLogs.Body.String()), "canary.invalid", "GET /api/v3/logs must leak raw refs until Slice 5 central log scrubbing")
+}
+
+// ----------------------------------------------------------------------------
+// Test 3b: Outbound Endpoints Zero Leak Audit (Slice 4)
+// ----------------------------------------------------------------------------
+
+type canaryAuditRecordingsService struct {
+	MockRecordingsService
+	recordings []recservice.RecordingItem
+	status     recservice.StatusResult
+}
+
+func (c *canaryAuditRecordingsService) List(ctx context.Context, in recservice.ListInput) (recservice.ListResult, error) {
+	return recservice.ListResult{
+		Recordings: c.recordings,
+	}, nil
+}
+
+func (c *canaryAuditRecordingsService) GetStatus(ctx context.Context, in recservice.StatusInput) (recservice.StatusResult, error) {
+	return c.status, nil
+}
+
+func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 	res, canaryID, _ := setupCanaryResolver(t)
+	opaqueID := string(canaryID)
+
 	s, st := newV3TestServer(t, t.TempDir())
 	s.SetJWTSecret(jwtTestSecret)
+	s.SetIPTVResolver(res)
+	s.cfg.APIToken = "test-token"
+	s.cfg.APITokenScopes = []string{string(ScopeAll)}
+	adminPrincipal := &controlauth.Principal{
+		ID:     "admin-1",
+		Scopes: []string{string(ScopeAll)},
+	}
+
+	// 1. Setup mock playlist in s.cfg.DataDir
+	playlistContent := fmt.Sprintf("#EXTM3U\n"+
+		"#EXTINF:-1 tvg-id=\"dvb-1\" tvg-name=\"DVB Das Erste\" tvg-logo=\"http://example.com/ard.png\" group-title=\"Favourites\",DVB Das Erste\n"+
+		"http://127.0.0.1:8001/1:0:19:283D:3FB:1:C00000:0:0:0:\n"+
+		"#EXTINF:-1 tvg-id=\"canary-1\" tvg-name=\"Canary Channel 1\" tvg-logo=\"http://canary.invalid/SECRET-CANARY-1/logo.png\" group-title=\"Favourites\",Canary Channel 1\n"+
+		"http://127.0.0.1:8001/%s\n", canaryRawRef)
+	err := os.WriteFile(filepath.Join(s.cfg.DataDir, "playlist.m3u"), []byte(playlistContent), 0600)
+	require.NoError(t, err)
+	s.snap.Runtime.PlaylistFilename = "playlist.m3u"
+
+	// 2. Setup OpenWebIF mock server
+	servicesJSON := fmt.Sprintf(`{
+		"services": [
+			{"servicename": "DVB Das Erste", "servicereference": "1:0:19:283D:3FB:1:C00000:0:0:0:"},
+			{"servicename": "Canary Channel 1", "servicereference": %q}
+		]
+	}`, canaryRawRef)
+	mockOWIServer := createCanaryReceiverServer(t, servicesJSON)
+	defer mockOWIServer.Close()
+
+	owiClient := openwebif.New(mockOWIServer.URL)
+	s.owiClient = owiClient
+	s.owiFactory = func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl {
+		return owiClient
+	}
+
+	// 3. Setup EPG Source
+	mockSource := new(MockEpgSource)
+	s.epgSource = mockSource
+	now := time.Now()
+	progs := []epg.Programme{
+		{
+			Channel: canaryRawRef,
+			Title:   epg.Title{Text: "Canary Program Live"},
+			Start:   now.Add(-10 * time.Minute).Format(xmltvTimeFormat),
+			Stop:    now.Add(35 * time.Minute).Format(xmltvTimeFormat),
+		},
+	}
+	mockSource.On("GetPrograms", mock.Anything).Return(progs, nil)
+
+	// 4. Setup Household Service & Profile
+	hhStore := householddomain.NewMemoryStore()
+	hhSvc := householddomain.NewService(hhStore)
+	testProfile := householddomain.Profile{
+		ID:                 "prof-canary",
+		Name:               "Canary Profile",
+		Kind:               householddomain.ProfileKindAdult,
+		AllowedServiceRefs: []string{canaryRawRef},
+	}
+	require.NoError(t, hhStore.Upsert(context.Background(), testProfile))
+
+	// 5. Setup Series Manager
+	seriesMgr := dvr.NewManager(t.TempDir())
+	ruleID, err := seriesMgr.AddRule(dvr.SeriesRule{
+		Enabled:    true,
+		Keyword:    "Canary Series",
+		ChannelRef: canaryRawRef,
+		Priority:   5,
+	})
+	require.NoError(t, err)
+
+	// 6. Setup Recordings Service
+	recID := "rec-canary-001"
+	recSvc := &canaryAuditRecordingsService{
+		recordings: []recservice.RecordingItem{
+			{
+				RecordingID: recID,
+				Title:       "Canary Recording",
+				ServiceRef:  canaryRawRef,
+			},
+		},
+		status: recservice.StatusResult{
+			State: "READY",
+		},
+	}
+	recSvc.On("GetMediaTruth", mock.Anything, recID).Return(controlplayback.MediaTruth{}, nil)
+
 	s.SetDependencies(Dependencies{
+		Bus:               v3bus.NewMemoryBus(),
 		Store:             st,
 		Scan:              verifiedLivePlaybackScanner(),
-		RecordingsService: new(MockRecordingsService),
-		Households:        householddomain.NewService(householddomain.NewMemoryStore()),
+		RecordingsService: recSvc,
+		Households:        hhSvc,
+		SeriesManager:     seriesMgr,
+		IPTVResolver:      res,
+		TimersSource:      owiClient,
+		DVRSource:         owiClient,
 	})
-	s.SetIPTVResolver(res)
+
+	// Seed identity profile
+	idSvc := withIdentityDeviceEnrollment(t, s, "admin-1")
+	require.NotNil(t, idSvc)
+	createdProf, _, err := idSvc.CreateProfile(context.Background(), "admin-1", "Canary Profile", "", false, nil, []string{canaryRawRef}, 18, "")
+	require.NoError(t, err)
+	profID := createdProf.ID
+
+	// Seed active session in store
+	sessionUUID := uuid.New()
+	sessionID := sessionUUID.String()
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         canaryRawRef,
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
+		ContextData: map[string]string{
+			model.CtxKeySource: canaryRawRef,
+		},
+	}))
 
 	caps := `{
 		"capabilitiesVersion":2,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},
@@ -669,58 +714,331 @@ func TestIPTV_CanaryLeakAudit_AllowlistNonStale(t *testing.T) {
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac"]
 	}`
-	body := fmt.Sprintf(`{"serviceRef":%q,"capabilities":%s}`, canaryID, caps)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
-	r.Header.Set("Content-Type", "application/json")
-	s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "canary.invalid", "POST /api/v3/live/stream-info must leak until Slice 4 outbound masking removes it")
 
-	// Verify non-staleness of POST /api/v3/live/playback-summary (assert it DOES leak until Slice 4)
-	sumBody := fmt.Sprintf(`{"serviceRefs":[%q],"capabilities":%s}`, canaryID, caps)
-	wSum := postPlaybackSummary(t, s, sumBody)
-	require.Equal(t, http.StatusOK, wSum.Code)
-	assert.Contains(t, strings.ToLower(wSum.Body.String()), "canary.invalid", "POST /api/v3/live/playback-summary must leak until Slice 4 outbound masking removes it")
+	// 1. GET /api/v3/services
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/services", nil)
+		s.GetServices(w, r, GetServicesParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /services", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+		assert.Contains(t, w.Body.String(), "1:0:19:283D:3FB:1:C00000:0:0:0")
+		assert.Contains(t, w.Body.String(), "/logos/"+opaqueID+".png")
+	}
 
-	// Verify non-staleness of POST /api/v3/timers (assert 201 response echoes raw ref until Slice 4)
-	var addedTimer *openwebif.Timer
-	s.owiFactory = func(cfg config.AppConfig, snap config.Snapshot) ReceiverControl {
-		return &mockOWI{
-			getTimersFunc: func(ctx context.Context) ([]openwebif.Timer, error) {
-				if addedTimer != nil {
-					return []openwebif.Timer{*addedTimer}, nil
+	// 2. GET /api/v3/services/bouquets
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/services/bouquets", nil)
+		s.GetServicesBouquets(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /services/bouquets", w)
+	}
+
+	// 3. GET /api/v3/epg
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/epg", nil)
+		s.GetEpg(w, r, GetEpgParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /epg", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 4. GET /api/v3/timers
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/timers", nil)
+		s.GetTimers(w, r, GetTimersParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /timers", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 5. POST /api/v3/timers
+	{
+		body := fmt.Sprintf(`{"serviceRef":%q,"name":"Canary Added","begin":1700010000,"end":1700013600}`, opaqueID)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/timers", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.AddTimer(w, r)
+		require.Equal(t, http.StatusCreated, w.Code)
+		assertNoCanaryLeak(t, "POST /timers", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 6. GET /api/v3/sessions
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/sessions", nil)
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.ListSessions(w, r, ListSessionsParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /sessions", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+
+		var sessionListResp struct {
+			Sessions []struct {
+				ServiceRef  string            `json:"serviceRef"`
+				ContextData map[string]string `json:"contextData"`
+			} `json:"sessions"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessionListResp))
+		require.NotEmpty(t, sessionListResp.Sessions)
+		assert.Equal(t, opaqueID, sessionListResp.Sessions[0].ServiceRef)
+		assert.Equal(t, opaqueID, sessionListResp.Sessions[0].ContextData[model.CtxKeySource])
+	}
+
+	// 7. GET /api/v3/sessions/{sessionID}
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/sessions/"+sessionID, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("sessionID", sessionID)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetSessionState(w, r, openapi_types.UUID(parseUUID(sessionID)))
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /sessions/{id}", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 8. GET /api/v3/sessions/{sessionID}/events (SSE)
+	{
+		ts := httptest.NewServer(NewRouter(s, RouterOptions{BaseURL: V3BaseURL}))
+		defer ts.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+V3BaseURL+"/sessions/"+sessionID+"/events", nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer test-token")
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		scanner := bufio.NewScanner(resp.Body)
+		var eventData string
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				eventData = strings.TrimPrefix(line, "data: ")
+				break
+			}
+		}
+		require.NotEmpty(t, eventData)
+		for _, m := range canaryMarkers {
+			assert.NotContains(t, strings.ToLower(eventData), strings.ToLower(m))
+		}
+		assert.Contains(t, eventData, "session.state_changed")
+	}
+
+	// 9. GET /api/v3/receiver/current
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/receiver/current", nil)
+		s.GetReceiverCurrent(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /receiver/current", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 10. GET /api/v3/household/profiles
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/household/profiles", nil)
+		s.GetHouseholdProfiles(w, r, GetHouseholdProfilesParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /household/profiles", w)
+
+		// Test household service fallback masking when identityService is nil
+		s.identityService = nil
+		wHH := httptest.NewRecorder()
+		rHH := httptest.NewRequest(http.MethodGet, "/api/v3/household/profiles", nil)
+		s.GetHouseholdProfiles(wHH, rHH, GetHouseholdProfilesParams{})
+		require.Equal(t, http.StatusOK, wHH.Code)
+		assertNoCanaryLeak(t, "GET /household/profiles (householdService)", wHH)
+		assert.Contains(t, wHH.Body.String(), opaqueID)
+		s.identityService = idSvc
+	}
+
+	// 11. GET /api/v3/household/profiles/{id}
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/household/profiles/"+profID, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", profID)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		s.GetProfile(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /household/profiles/{id}", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 12. GET /api/v3/profiles
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/profiles", nil)
+		s.ListProfiles(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /profiles", w)
+	}
+
+	// 13. GET /api/v3/profiles/{id}
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/profiles/"+profID, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", profID)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		s.GetProfile(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /profiles/{id}", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 14. GET /api/v3/recordings
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings", nil)
+		s.GetRecordings(w, r, GetRecordingsParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /recordings", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 15. GET /api/v3/recordings/{recordingId}/stream-info
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recID+"/stream-info", nil)
+		s.GetRecordingPlaybackInfo(w, r, recID, GetRecordingPlaybackInfoParams{})
+		assertNoCanaryLeak(t, "GET /recordings/{id}/stream-info", w)
+	}
+
+	// 16. POST /api/v3/recordings/{recordingId}/stream-info
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recID+"/stream-info", strings.NewReader(fmt.Sprintf(`{"capabilities":%s}`, caps)))
+		r.Header.Set("Content-Type", "application/json")
+		s.PostRecordingPlaybackInfo(w, r, recID, PostRecordingPlaybackInfoParams{})
+		assertNoCanaryLeak(t, "POST /recordings/{id}/stream-info", w)
+	}
+
+	// 17. GET /api/v3/recordings/{recordingId}/status
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/"+recID+"/status", nil)
+		s.GetRecordingsRecordingIdStatus(w, r, recID)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /recordings/{id}/status", w)
+	}
+
+	// 18. GET /api/v3/series-rules
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/series-rules", nil)
+		s.GetSeriesRules(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /series-rules", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 19. POST /api/v3/series-rules
+	{
+		body := fmt.Sprintf(`{"keyword":"Canary Create","channelRef":%q}`, opaqueID)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/series-rules", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.CreateSeriesRule(w, r)
+		require.Equal(t, http.StatusCreated, w.Code)
+		assertNoCanaryLeak(t, "POST /series-rules", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 20. PUT /api/v3/series-rules/{id}
+	{
+		body := fmt.Sprintf(`{"enabled":true,"keyword":"Canary Updated","channelRef":%q,"priority":5}`, opaqueID)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPut, "/api/v3/series-rules/"+ruleID, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.UpdateSeriesRule(w, r, ruleID)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "PUT /series-rules/{id}", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 21. POST /api/v3/live/stream-info
+	{
+		body := fmt.Sprintf(`{"serviceRef":%q,"capabilities":%s}`, opaqueID, caps)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "POST /live/stream-info", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+
+		var payload struct {
+			PlaybackDecisionToken string `json:"playbackDecisionToken"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+		claims, err := v3auth.VerifyStrict(payload.PlaybackDecisionToken, jwtTestSecret, "xg2g/v3/intents", "xg2g")
+		require.NoError(t, err)
+		assert.Equal(t, strings.ToUpper(opaqueID), claims.Sub)
+	}
+
+	// 22. POST /api/v3/live/playback-summary
+	{
+		body := fmt.Sprintf(`{"serviceRefs":[%q],"capabilities":%s}`, opaqueID, caps)
+		w := postPlaybackSummary(t, s, body)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "POST /live/playback-summary", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 23. GET /api/v3/streams
+	{
+		// Seed unlisted stream sessions (no playlist entry and no trailing channel name)
+		// to verify fallback to serviceRef is masked to opaque iptv_<id> and never leaks raw URL/tokens.
+		for _, rawUnlistedRef := range []string{
+			"4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts",
+			"4097:0:1:0:0:0:0:0:0:0:http://canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts",
+		} {
+			require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+				SessionID:          uuid.New().String(),
+				State:              model.SessionReady,
+				ServiceRef:         rawUnlistedRef,
+				HeartbeatInterval:  30,
+				LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
+				ContextData: map[string]string{
+					model.CtxKeySource: rawUnlistedRef,
+				},
+			}))
+		}
+
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/streams", nil)
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetStreams(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /streams", w)
+
+		var streamsResp []StreamSession
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &streamsResp))
+		require.NotEmpty(t, streamsResp)
+		// Ensure none of the streams have raw canary refs or unmasked tokens in channelName
+		for _, stream := range streamsResp {
+			if stream.ChannelName != nil {
+				for _, marker := range canaryMarkers {
+					assert.NotContains(t, strings.ToLower(*stream.ChannelName), strings.ToLower(marker))
 				}
-				return nil, nil
-			},
-			addTimerFunc: func(ctx context.Context, sRef string, begin, end int64, name, desc string) error {
-				addedTimer = &openwebif.Timer{ServiceRef: sRef, Begin: begin, End: end, Name: name}
-				return nil
-			},
+			}
 		}
 	}
-	timerBody := fmt.Sprintf(`{"serviceRef":%q,"name":"Canary","begin":1700000000,"end":1700003600}`, canaryID)
-	wTimer := httptest.NewRecorder()
-	rTimer := httptest.NewRequest(http.MethodPost, "/api/v3/timers", strings.NewReader(timerBody))
-	rTimer.Header.Set("Content-Type", "application/json")
-	s.AddTimer(wTimer, rTimer)
-	require.Equal(t, http.StatusCreated, wTimer.Code)
-	assert.Contains(t, strings.ToLower(wTimer.Body.String()), "canary.invalid", "POST /api/v3/timers must leak until Slice 4 outbound masking removes it")
-
-	// Verify non-staleness of POST /api/v3/household/profiles (assert 201 response echoes stored raw ref until Slice 4)
-	profBody := householddomain.Profile{
-		ID:                 "canary-profile",
-		Name:               "Canary Profile",
-		Kind:               householddomain.ProfileKindAdult,
-		AllowedServiceRefs: []string{string(canaryID)},
-	}
-	bodyBytes, _ := json.Marshal(profBody)
-	wProf := httptest.NewRecorder()
-	rProf := httptest.NewRequest(http.MethodPost, "/api/v3/household/profiles", bytes.NewReader(bodyBytes))
-	rProf.Header.Set("Content-Type", "application/json")
-	s.PostHouseholdProfiles(wProf, rProf, PostHouseholdProfilesParams{})
-	require.Equal(t, http.StatusCreated, wProf.Code)
-	assert.Contains(t, strings.ToLower(wProf.Body.String()), "canary.invalid", "POST /api/v3/household/profiles must leak until Slice 4 outbound masking removes it")
 }
 
 // ----------------------------------------------------------------------------
@@ -846,6 +1164,23 @@ func TestIPTV_CanaryLeakAudit_NegativeControls(t *testing.T) {
 		_, found := testTable[missingRoute]
 		assert.False(t, found, "Missing route from table is detected and fails (RED)")
 	})
+
+	// Control (g): Outbound response containing canary marker => assertNoCanaryLeak detects it (turns RED)
+	t.Run("NegativeControl_G_OutboundCanaryLeakSensitivity", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.WriteString(fmt.Sprintf(`{"serviceRef":%q}`, canaryRawRef))
+
+		detected := false
+		bodyStr := strings.ToLower(w.Body.String())
+		for _, marker := range canaryMarkers {
+			if strings.Contains(bodyStr, strings.ToLower(marker)) {
+				detected = true
+				break
+			}
+		}
+		assert.True(t, detected, "assertNoCanaryLeak must be sensitive to canary markers in responses (RED condition)")
+	})
 }
 
 // ----------------------------------------------------------------------------
@@ -920,11 +1255,62 @@ func TestIPTV_CanaryLeakAudit_ConcurrentReplaceRace(t *testing.T) {
 	wg.Wait()
 }
 
-// createCanaryReceiverServer spins up a fake OpenWebIF receiver server returning bouquets and services for canary tests.
+// createCanaryReceiverServer spins up a fake OpenWebIF receiver server returning bouquets, services, status, current channel, and timers for canary tests.
 func createCanaryReceiverServer(t *testing.T, servicesJSON string) *httptest.Server {
 	t.Helper()
+	var (
+		timerMu sync.Mutex
+		timers  = []openwebif.Timer{
+			{
+				ServiceRef: canaryRawRef,
+				Name:       "Canary Timer",
+				Begin:      1700000000,
+				End:        1700003600,
+			},
+		}
+	)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "statusinfo") {
+			_, _ = w.Write([]byte(`{"result": true, "inStandby": "false"}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "getcurrent") {
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"result": true, "info": {"serviceref": %q, "name": "Canary Channel 1"}, "now": {"title": "Canary Program Live", "begin_timestamp": 1700000000, "duration_sec": 3600}}`, canaryRawRef)))
+			return
+		}
+		if strings.Contains(r.URL.Path, "timerlist") {
+			timerMu.Lock()
+			copied := make([]openwebif.Timer, len(timers))
+			copy(copied, timers)
+			timerMu.Unlock()
+			resp := openwebif.TimerListResponse{
+				Result: true,
+				Timers: copied,
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		if strings.Contains(r.URL.Path, "timeradd") {
+			sRef := r.URL.Query().Get("sRef")
+			begin, _ := strconv.ParseInt(r.URL.Query().Get("begin"), 10, 64)
+			end, _ := strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
+			name := r.URL.Query().Get("name")
+			timerMu.Lock()
+			timers = append(timers, openwebif.Timer{
+				ServiceRef: sRef,
+				Name:       name,
+				Begin:      begin,
+				End:        end,
+			})
+			timerMu.Unlock()
+			_, _ = w.Write([]byte(`{"result": true}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "timerdelete") || strings.Contains(r.URL.Path, "timeredit") {
+			_, _ = w.Write([]byte(`{"result": true}`))
+			return
+		}
 		if strings.Contains(r.URL.Path, "bouquets") {
 			_, _ = w.Write([]byte(`{"bouquets":[["1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"userbouquet.favourites.tv\" ORDER BY bouquet","Favourites"]]}`))
 			return
