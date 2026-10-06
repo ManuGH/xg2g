@@ -117,6 +117,14 @@
   text-wrap: balance;
 }
 
+.heroProgramTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .heroDescription {
   margin: 0;
   color: var(--text-secondary);

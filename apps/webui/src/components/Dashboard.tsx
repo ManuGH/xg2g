@@ -218,7 +218,7 @@ export default function Dashboard() {
           <div className={styles.heroIdentity}>
             <div className={styles.heroEyebrowRow}>
               <span className={styles.heroChannelBadge}>
-                {receiverUnavailable ? t('common.receiverStandby') : currentChannel}
+                {receiverUnavailable ? t('common.receiverStandby') : t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im TV' })}
               </span>
               {!receiverUnavailable && (
                 <span className={styles.heroLiveBadge}>
@@ -227,11 +227,12 @@ export default function Dashboard() {
                 </span>
               )}
             </div>
-            <h1 className={styles.heroTitle}>
-              {now?.title || summaryTitle}
-            </h1>
+            <h1 className={styles.heroTitle}>{summaryTitle}</h1>
+            {now?.title && (
+              <p className={styles.heroProgramTitle}>{now.title}</p>
+            )}
             <p className={styles.heroDescription}>{summaryDescription}</p>
-            {next?.title && now?.title && (
+            {next?.title && (
               <p className={styles.heroNextHint}>
                 {t('dashboard.heroNextUp', { title: next.title })}
               </p>
