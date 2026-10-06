@@ -715,6 +715,7 @@
     "categorySport": "Sport",
     "seriesFolders": "Serien & Sendungen",
     "seriesFoldersDetail": "Gruppierte Serien mit mehreren Folgen",
+    "singleEpisodes": "Einzelne Sendungen",
     "episodesCount": "{{count}} Folgen",
     "episodesCountSingle": "1 Folge",
     "backToAllSeries": "Zurück zu allen Serien",

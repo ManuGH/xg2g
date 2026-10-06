@@ -156,8 +156,8 @@ describe('RecordingsList category filtering and series subfolder grouping', () =
   it('groups multiple episodes into a series folder and allows drill-down into series episodes', async () => {
     renderRecordings(['/recordings?category=series']);
 
-    // Should display the series folders section with Café PULS folder
-    expect(await screen.findByText('Series & Shows')).toBeInTheDocument();
+    // Should display the series section with Café PULS folder card
+    expect(await screen.findByRole('heading', { level: 2, name: 'Series' })).toBeInTheDocument();
     expect(screen.getByText('3 episodes')).toBeInTheDocument();
 
     // Find the series folder card for Café PULS and click it
@@ -184,9 +184,53 @@ describe('RecordingsList category filtering and series subfolder grouping', () =
     // Clicking "Back to all series" should return back to the series overview
     fireEvent.click(screen.getByText('Back to all series'));
     await waitFor(() => {
-      expect(screen.getByText('Series & Shows')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'Series' })).toBeInTheDocument();
       expect(screen.getByText('3 episodes')).toBeInTheDocument();
     });
+  });
+
+  it('displays single episode series as normal recording cards under Single Shows without folder badge', async () => {
+    const recordingsWithSingleShow = [
+      ...mockRecordings,
+      {
+        recordingId: 'charly-1',
+        title: 'Unser Charly - S01E01 - Heimkehr',
+        description: 'Tierarztserie mit Charly dem Schimpansen',
+        beginUnixSeconds: 1727700000,
+        durationSeconds: 2700,
+        status: 'completed' as const,
+      },
+    ];
+
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-1',
+        currentPath: '',
+        roots: [{ id: 'root-1', name: 'HDD' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: recordingsWithSingleShow,
+      },
+    });
+
+    renderRecordings(['/recordings?category=series']);
+
+    // Should display both Series (for multi-episode series) and Single Shows
+    expect(await screen.findByRole('heading', { level: 2, name: 'Series' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Single Shows' })).toBeInTheDocument();
+
+    // Café PULS should have folder card with "3 episodes"
+    expect(screen.getByText('3 episodes')).toBeInTheDocument();
+
+    // "Unser Charly" should NOT have a folder card with "1 episode"
+    expect(screen.queryByText('1 episode')).not.toBeInTheDocument();
+
+    // "Unser Charly" must be rendered directly as a recording card in the root view
+    expect(screen.getByText('Unser Charly - S01E01 - Heimkehr')).toBeInTheDocument();
+
+    // The individual episodes of Café PULS must NOT be rendered in this root view
+    expect(screen.queryByText('Café PULS mit PULS 4 Aktuell')).not.toBeInTheDocument();
+    expect(screen.queryByText('Café PULS - Das Magazin')).not.toBeInTheDocument();
   });
 
   it('displays multi-episode series rail in All category and allows direct drill-down', async () => {
