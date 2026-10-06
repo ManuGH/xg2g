@@ -220,3 +220,25 @@ func TestGetStreams_Provider_FiltersExpiredLeaseSessions(t *testing.T) {
 	require.Len(t, streams, 1)
 	assert.Equal(t, "live_ready", streams[0].ID)
 }
+
+func TestGetStreams_Provider_ExtractsTrailingChannelName(t *testing.T) {
+	refWithTrailingName := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET/live/token/ch.ts:Extracted Channel Name"
+	sessions := []*model.SessionRecord{
+		{
+			SessionID:          "s_trailing",
+			State:              model.SessionReady,
+			ServiceRef:         refWithTrailingName,
+			CreatedAtUnix:      time.Now().Unix(),
+			LeaseExpiresAtUnix: time.Now().Add(1 * time.Minute).Unix(),
+		},
+	}
+
+	store := &MockStore{Sessions: sessions}
+	cfg := config.AppConfig{DataDir: t.TempDir()}
+	snap := config.Snapshot{Runtime: config.RuntimeSnapshot{PlaylistFilename: "missing.m3u"}}
+
+	streams, err := GetStreams(context.Background(), cfg, snap, store, StreamsQuery{})
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	assert.Equal(t, "Extracted Channel Name", streams[0].ChannelName)
+}

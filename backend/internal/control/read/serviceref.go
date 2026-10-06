@@ -33,24 +33,17 @@ func isHexColonServiceRef(ref string) bool {
 }
 
 func extractIPTVFromURL(rawURL string) (string, bool) {
+	rawURL = strings.TrimSpace(rawURL)
 	prefixes := []string{"/4097:", "/5001:", "/5002:", "/iptv_", "/IPTV_"}
 	for _, pfx := range prefixes {
 		if idx := strings.Index(rawURL, pfx); idx != -1 {
-			ref := rawURL[idx+1:]
-			if qIdx := strings.Index(ref, "?"); qIdx != -1 {
-				ref = ref[:qIdx]
-			}
-			return ref, true
+			return rawURL[idx+1:], true
 		}
 	}
 	rawPrefixes := []string{"4097:", "5001:", "5002:", "iptv_", "IPTV_"}
 	for _, pfx := range rawPrefixes {
 		if strings.HasPrefix(rawURL, pfx) {
-			ref := rawURL
-			if qIdx := strings.Index(ref, "?"); qIdx != -1 {
-				ref = ref[:qIdx]
-			}
-			return ref, true
+			return rawURL, true
 		}
 	}
 	return "", false

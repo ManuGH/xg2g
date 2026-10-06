@@ -22,8 +22,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	controlauth "github.com/ManuGH/xg2g/internal/control/auth"
-	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	controlplayback "github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -87,7 +87,6 @@ func assertNoCanaryLeak(t *testing.T, endpointName string, w *httptest.ResponseR
 		}
 	}
 }
-
 
 // ----------------------------------------------------------------------------
 // Route Classification Tables for Chi Router Walking
@@ -177,7 +176,6 @@ var refFreeRoutes = map[string]string{
 	"HEAD /api/v3/sessions/{sessionID}/hls/{variant}/{filename}":         "Sessions: variant HLS segment HEAD",
 	"POST /api/v3/sessions/{sessionId}/playback-ticket":                  "Sessions: issue playback ticket",
 	"POST /api/v3/sessions/revoke-user-sessions":                         "Sessions: revoke user sessions",
-	"GET /api/v3/streams":                                                "Streams: list active streams",
 	"DELETE /api/v3/streams/{id}":                                        "Streams: stop active stream session",
 	"GET /api/v3/system/config":                                          "System: read config snapshot",
 	"PUT /api/v3/system/config":                                          "System: update config",
@@ -246,6 +244,7 @@ var auditedOutboundRoutes = map[string]string{
 	"POST /api/v3/series-rules":                         "Outbound: series rule create returns masked iptv_<id>",
 	"PUT /api/v3/series-rules/{id}":                     "Outbound: series rule update returns masked iptv_<id>",
 	"POST /api/v3/live/stream-info":                     "Outbound: live playback info returns masked iptv_<id> and opaque token",
+	"GET /api/v3/streams":                               "Outbound: active stream listings return masked iptv_<id> or channel name",
 }
 
 var allowlistRoutes = map[string]allowlistEntry{
@@ -704,6 +703,9 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 		ServiceRef:         canaryRawRef,
 		HeartbeatInterval:  30,
 		LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
+		ContextData: map[string]string{
+			model.CtxKeySource: canaryRawRef,
+		},
 	}))
 
 	caps := `{
@@ -775,6 +777,17 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 		assertNoCanaryLeak(t, "GET /sessions", w)
 		assert.Contains(t, w.Body.String(), opaqueID)
+
+		var sessionListResp struct {
+			Sessions []struct {
+				ServiceRef  string            `json:"serviceRef"`
+				ContextData map[string]string `json:"contextData"`
+			} `json:"sessions"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessionListResp))
+		require.NotEmpty(t, sessionListResp.Sessions)
+		assert.Equal(t, opaqueID, sessionListResp.Sessions[0].ServiceRef)
+		assert.Equal(t, opaqueID, sessionListResp.Sessions[0].ContextData[model.CtxKeySource])
 	}
 
 	// 7. GET /api/v3/sessions/{sessionID}
@@ -985,6 +998,43 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 		assertNoCanaryLeak(t, "POST /live/playback-summary", w)
 		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 23. GET /api/v3/streams
+	{
+		// Seed an additional unlisted stream session (no playlist entry and no trailing channel name)
+		// to verify fallback to serviceRef is masked to opaque iptv_<id> and never leaks raw URL/tokens.
+		unlistedUUID := uuid.New().String()
+		rawUnlistedRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/unlisted.ts"
+		require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+			SessionID:          unlistedUUID,
+			State:              model.SessionReady,
+			ServiceRef:         rawUnlistedRef,
+			HeartbeatInterval:  30,
+			LeaseExpiresAtUnix: time.Now().Add(30 * time.Second).Unix(),
+			ContextData: map[string]string{
+				model.CtxKeySource: rawUnlistedRef,
+			},
+		}))
+
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/streams", nil)
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetStreams(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /streams", w)
+
+		var streamsResp []StreamSession
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &streamsResp))
+		require.NotEmpty(t, streamsResp)
+		// Ensure none of the streams have raw canary refs or unmasked tokens in channelName
+		for _, stream := range streamsResp {
+			if stream.ChannelName != nil {
+				for _, marker := range canaryMarkers {
+					assert.NotContains(t, strings.ToLower(*stream.ChannelName), strings.ToLower(marker))
+				}
+			}
+		}
 	}
 }
 

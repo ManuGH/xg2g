@@ -5,9 +5,11 @@
 package v3
 
 import (
+	"encoding/json"
 	"net/http"
 
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
@@ -30,6 +32,29 @@ func mapSessionsDebugResponse(result v3sessions.ListSessionsDebugResult, maskFns
 			}
 			sCopy := *sess
 			sCopy.ServiceRef = maskFn(sCopy.ServiceRef)
+			if sCopy.ContextData != nil {
+				cdCopy := make(map[string]string, len(sCopy.ContextData))
+				for k, v := range sCopy.ContextData {
+					if k == model.CtxKeySource || isIPTVRef(v) {
+						cdCopy[k] = maskFn(v)
+					} else if k == model.CtxKeyRuntimePolicyReplay {
+						var replay runtimepolicy.RuntimePolicyReplay
+						if err := json.Unmarshal([]byte(v), &replay); err == nil {
+							if replay.Metadata.ServiceRef != "" {
+								replay.Metadata.ServiceRef = maskFn(replay.Metadata.ServiceRef)
+							}
+							if b, err := json.Marshal(replay); err == nil {
+								cdCopy[k] = string(b)
+								continue
+							}
+						}
+						cdCopy[k] = v
+					} else {
+						cdCopy[k] = v
+					}
+				}
+				sCopy.ContextData = cdCopy
+			}
 			masked[i] = &sCopy
 		}
 		sessions = masked
