@@ -223,4 +223,27 @@ describe('EPG shared primitives', () => {
     expect(page.className).toContain(styles.surfaceCompact);
     expect(page.className).toContain(styles.surfaceCompactLandscape);
   });
+
+  it('keeps the sidebar-toggle button strictly outside the role="tablist" container', async () => {
+    fetchTimers.mockResolvedValue([]);
+    fetchEpgEvents.mockResolvedValue([]);
+    useUiSurfaceMock.mockReturnValue(createUiSurface());
+
+    renderWithProviders(<EPG channels={[]} />);
+
+    const tablist = screen.getByRole('tablist');
+    expect(tablist).toBeInTheDocument();
+
+    // All children of tablist must have role="tab"
+    const tabsInTablist = tablist.querySelectorAll('[role="tab"]');
+    const allButtonsInTablist = tablist.querySelectorAll('button');
+    expect(tabsInTablist.length).toBe(allButtonsInTablist.length);
+    expect(allButtonsInTablist.length).toBeGreaterThan(0);
+
+    // Sidebar toggle button must be OUTSIDE tablist
+    const sidebarButton = screen.getByTitle(/(Seitenleiste einblenden|Show sidebar)/i);
+    expect(sidebarButton).toBeInTheDocument();
+    expect(tablist.contains(sidebarButton)).toBe(false);
+
+  });
 });

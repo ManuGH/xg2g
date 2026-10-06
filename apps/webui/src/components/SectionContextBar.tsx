@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Button } from './ui';
 import styles from './SectionContextBar.module.css';
 
@@ -17,9 +18,11 @@ export default function SectionContextBar({
   actionLabel,
   onAction,
 }: SectionContextBarProps) {
+  const { t } = useTranslation();
+
   return (
     <section className={styles.bar}>
-      <nav className={styles.path} aria-label="Section path">
+      <nav className={styles.path} aria-label={t('common.sectionPath', {})}>
         {segments.map((segment, index) => {
           const isCurrent = index === segments.length - 1;
 

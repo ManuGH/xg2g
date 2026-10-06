@@ -46,6 +46,11 @@ describe('locale parity', () => {
     expect(blank).toEqual([]);
   });
 
+  it('localizes the all-days series label in both languages', () => {
+    expect((en as Json).series && ((en as Json).series as Json).daysDailyAll).toBe('Daily (All days)');
+    expect((de as Json).series && ((de as Json).series as Json).daysDailyAll).toBe('Täglich (Alle Tage)');
+  });
+
   // The player decides which backend reason codes it translates from its own
   // TRANSLATED_REASONS set rather than from the API spec. A code listed there
   // without a string in every locale is exactly the raw-key failure above.

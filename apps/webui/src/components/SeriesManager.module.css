@@ -80,6 +80,21 @@
   white-space: nowrap;
 }
 
+.channelMetaValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.channelMetaLogo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .ruleStats {
   background: var(--bg-overlay);
   padding: 8px;

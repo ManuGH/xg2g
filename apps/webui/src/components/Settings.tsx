@@ -368,8 +368,8 @@ function Settings() {
       {configured ? (
         <div className={styles.sectionTabsShell}>
           <div className={styles.navGroup}>
-            <span className={styles.navGroupLabel}>Wiedergabe & Geräte</span>
-            <div className={styles.sectionTabs} role="tablist" aria-label="Wiedergabe und Geräte">
+            <span className={styles.navGroupLabel}>{t('settings.navGroup.playbackAndDevices', {})}</span>
+            <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.navGroup.playbackAndDevices', {})}>
               <Button
                 variant="secondary"
                 size="sm"
@@ -404,8 +404,8 @@ function Settings() {
           </div>
 
           <div className={styles.navGroup}>
-            <span className={styles.navGroupLabel}>Server & Verwaltung</span>
-            <div className={styles.sectionTabs} role="tablist" aria-label="Server und Verwaltung">
+            <span className={styles.navGroupLabel}>{t('settings.navGroup.serverAndAdmin', {})}</span>
+            <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.navGroup.serverAndAdmin', {})}>
               <Button
                 variant="secondary"
                 size="sm"

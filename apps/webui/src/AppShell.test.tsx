@@ -20,6 +20,8 @@ vi.mock('./hooks/useServerQueries', () => ({
   useErrorCatalog: vi.fn(),
 }));
 
+vi.mock('./lib/insecureContext', () => ({ detectInsecureContext: () => true }));
+
 vi.mock('./components/Navigation', () => ({
   default: () => <div data-testid="navigation-stub" />,
 }));
@@ -44,6 +46,7 @@ function renderShell(initialEntries: string[] = ['/epg'], routeElement: ReactNod
 
 describe('AppShell', () => {
   beforeEach(() => {
+    window.sessionStorage.removeItem('xg2g.insecureContextBannerDismissed');
     mockUseAppContext.mockReturnValue({
       auth: { token: 'stored-token', isAuthenticated: true },
       channels: { bouquets: [], channels: [], selectedBouquet: '', loading: false },
@@ -82,5 +85,10 @@ describe('AppShell', () => {
     await waitFor(() => {
       expect(document.title).toBe('Files · Settings · xg2g');
     });
+  });
+
+  it('renders the insecure context banner in the authenticated shell', () => {
+    renderShell(['/epg'], <div>EPG content</div>);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });

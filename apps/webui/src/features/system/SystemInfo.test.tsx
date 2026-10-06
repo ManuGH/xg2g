@@ -136,4 +136,31 @@ describe('SystemInfo', () => {
     expect(screen.getByText('xg2g')).toBeInTheDocument();
     expect(screen.getByText('xg2g aggregate')).toBeInTheDocument();
   });
+
+  it('cleanly separates tuner number from tuner model and localizes tuner label', async () => {
+    getSystemInfo.mockResolvedValue({
+      data: {
+        hardware: { brand: 'Vu+', model: 'Uno 4K' },
+        software: {},
+        tuners: [
+          { name: 'Tuner A', type: 'DVB-S NIM(45208 FBC)', status: 'live' },
+        ],
+        network: { interfaces: [] },
+        storage: { devices: [], locations: [] },
+        runtime: {},
+        resource: {},
+      },
+    });
+
+    renderWithQueryClient();
+
+    const tunerNumber = await screen.findByText('Tuner #1');
+    expect(tunerNumber).toBeInTheDocument();
+    expect(tunerNumber.className).toContain('tunerNumber');
+
+    const tunerType = screen.getByText('S NIM(45208 FBC)');
+    expect(tunerType).toBeInTheDocument();
+    expect(tunerType.className).toContain('tunerTypeLabel');
+
+  });
 });

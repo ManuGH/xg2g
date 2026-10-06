@@ -9,6 +9,16 @@
   padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
 }
 
+.contextBanner {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
+.contextBanner :global([role='alert']) {
+  width: 100%;
+}
+
 .modal {
   width: min(520px, 100%);
   background: var(--bg-elevated);

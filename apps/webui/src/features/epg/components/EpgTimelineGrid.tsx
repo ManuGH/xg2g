@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EpgChannel, EpgEvent } from '../types';
 import { EpgTimelineRow } from './EpgTimelineRow';
 import styles from '../EPG.module.css';
@@ -30,6 +31,7 @@ export function EpgTimelineGrid({
   onPlay,
   onEventClick,
 }: EpgTimelineGridProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   
   const timelineWidth = timeRangeHours * PIXELS_PER_HOUR;
@@ -47,7 +49,7 @@ export function EpgTimelineGrid({
   const nowLeftPx = ((currentTime * 1000 - startTimestampMs) / (60 * 60 * 1000)) * PIXELS_PER_HOUR;
 
   return (
-    <div className={styles.timelineContainer} ref={containerRef} role="grid" aria-label="EPG Timeline">
+    <div className={styles.timelineContainer} ref={containerRef} role="grid" aria-label={t('epg.timelineLabel', {})}>
       <div className={styles.timelineHeader} style={{ '--xg2g-timeline-header-width': `${timelineWidth + 250}px` } as CSSProperties}>
         <div className={styles.timelineCorner}></div>
         <div className={styles.timelineTimeAxis} style={{ '--xg2g-timeline-width': `${timelineWidth}px` } as CSSProperties}>

@@ -321,8 +321,12 @@ export function SystemInfo() {
             {info.tuners.map((tuner, idx) => (
               <div key={idx} className={styles.listItem}>
                 <span className={styles.listItemLabel}>
-                  Tuner #{idx + 1}
-                  <span className={styles.tunerTypeLabel}>{tuner.type.replace('DVB-', '')}</span>
+                  <span className={styles.tunerNumber}>
+                    {t('system.tunerNumber', { number: idx + 1})}
+                  </span>
+                  <span className={styles.tunerTypeLabel}>
+                    {tuner.type.replace('DVB-', '') || tuner.name}
+                  </span>
                 </span>
                 <span className={styles.listItemValue}>
                   <StatusChip {...getTunerStatusChip(tuner.status, t)} />

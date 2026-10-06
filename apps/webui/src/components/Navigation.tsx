@@ -459,8 +459,8 @@ export default function Navigation({ onLogout }: NavigationProps) {
               type="button"
               className={styles.headerToggleBtn}
               onClick={() => setIsCollapsed(!isCollapsed)}
-              title="Toggle Sidebar ⌘B"
-              aria-label="Toggle Sidebar ⌘B"
+              title={t('nav.toggleSidebar', {})}
+              aria-label={t('nav.toggleSidebar', {})}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={styles.toggleIcon}>
                 <rect x="3" y="3" width="18" height="18" rx="3" />

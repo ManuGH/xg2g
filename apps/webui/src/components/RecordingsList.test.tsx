@@ -128,6 +128,25 @@ describe('RecordingsList', () => {
     });
   });
 
+  it('renders recording descriptions without the leading internal rule marker', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a', currentPath: '', roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [], directories: [],
+        recordings: [{
+          recordingId: 'rec-rule-marker', title: 'Example Show', beginUnixSeconds: 1710000000,
+          length: '30m', description: '[xg2g-rule:123e4567-e89b-12d3-a456-426614174000] Episode description',
+        }],
+      },
+    });
+
+    renderWithQueryClient();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Example Show/ }));
+    expect(await screen.findByText('Episode description')).toBeInTheDocument();
+    expect(screen.queryByText(/xg2g-rule:/)).not.toBeInTheDocument();
+  });
+
   it('refetches recordings on explicit refresh', async () => {
     getRecordings.mockResolvedValue({
       data: {

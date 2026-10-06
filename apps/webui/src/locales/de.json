@@ -58,7 +58,8 @@
     "closeNavigationLabel": "Navigation schließen",
     "logoutProtectedTitle": "Logout geschützt",
     "logoutProtectedMessage": "Abmelden aus dem Kinderprofil erfordert den Haushalt-PIN.",
-    "logoutConfirmLabel": "Abmelden"
+    "logoutConfirmLabel": "Abmelden",
+    "toggleSidebar": "Seitenleiste ein-/ausklappen ⌘B"
   },
   "app": {
     "initializing": "Initialisierung...",
@@ -161,7 +162,40 @@
     "requestId": "Request-ID",
     "yes": "Ja",
     "no": "Nein",
-    "clear": "Löschen"
+    "clear": "Löschen",
+    "edit": "Bearbeiten",
+    "dismissNotification": "Benachrichtigung schließen",
+    "sectionPath": "Pfadnavigation",
+    "days": {
+      "mo": "Mo",
+      "di": "Di",
+      "mi": "Mi",
+      "do": "Do",
+      "fr": "Fr",
+      "sa": "Sa",
+      "so": "So"
+    }
+  },
+  "statusChip": {
+    "state": {
+      "idle": "Bereit",
+      "success": "Erfolgreich",
+      "warning": "Warnung",
+      "error": "Fehler",
+      "live": "Live",
+      "recording": "Aufnahme",
+      "pending": "Ausstehend",
+      "deleting": "Wird gelöscht"
+    }
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "empty": "Keine Benachrichtigungen",
+    "subtitle": "Benachrichtigungsübersicht",
+    "unreadCount_one": "Ungelesen ({{count}})",
+    "unreadCount_other": "Ungelesen ({{count}})",
+    "allCount_one": "Alle ({{count}})",
+    "allCount_other": "Alle ({{count}})"
   },
   "legacyRoute": {
     "eyebrow": "Expertenweg",
@@ -173,7 +207,12 @@
     "logsDescription": "Diagnose-Logs bleiben direkt erreichbar, gehören für die meisten Haushalte aber unter Einstellungen."
   },
   "logs": {
-    "empty": "Keine Logs verfügbar."
+    "empty": "Keine Logs verfügbar.",
+    "recentLogs": "Letzte Logs",
+    "time": "Zeit",
+    "level": "Stufe",
+    "component": "Komponente",
+    "message": "Nachricht"
   },
   "timers": {
     "empty": "Keine Timer geplant.",
@@ -188,7 +227,16 @@
       "serviceRequired": "Bitte einen Kanal auswählen.",
       "nameRequired": "Name ist erforderlich.",
       "timeRangeInvalid": "Endzeit muss nach der Startzeit liegen."
-    }
+    },
+    "channelLabel": "Sender",
+    "selectChannel": "Sender wählen",
+    "nameLabel": "Name",
+    "descriptionLabel": "Beschreibung",
+    "enabledLabel": "Aktiviert",
+    "startLabel": "Beginn",
+    "endLabel": "Ende",
+    "validating": "Prüfe auf Konflikte...",
+    "conflictFound": "Konflikt gefunden:"
   },
   "player": {
     "status": "Status",
@@ -242,6 +290,15 @@
     "pipLabel": "PiP",
     "statsLabel": "Statistiken",
     "switchChannel": "Sender wechseln",
+    "channelLabel": "Sender",
+    "audioTracks": "Tonspuren",
+    "audioTrackFallback": "Tonspur {{index}}",
+    "pictureMode": "Bildmodus",
+    "pictureModes": {
+      "natural": "Natürlich (Studio • Referenz)",
+      "vivid": "Brillant (TV • OLED-Punch)",
+      "cinema": "Kino (Warm • D65-Look)"
+    },
     "searchChannel": "Sender suchen…",
     "noChannelFound": "Kein Sender gefunden",
     "statusStates": {
@@ -473,6 +530,7 @@
     "online": "Online",
     "synced": "Synchronisiert",
     "recorderIdle": "Recorder inaktiv",
+    "recorderReady": "Bereit",
     "recordingActive": "Aufnahme aktiv",
     "recorderUnknown": "Recorder unbekannt",
     "systemHealthy": "System gesund",
@@ -525,15 +583,6 @@
     "timeJustNow": "Gerade eben",
     "timeMinutesAgo": "vor {{count}} Min.",
     "timeHoursAgo": "vor {{count}} Std.",
-    "heroAside": {
-      "eyebrow": "Nächster Schritt",
-      "standbyTitle": "Receiver im Standby",
-      "streamingTitle": "Streaming aktiv",
-      "streamingDetail": "{{count}} aktive(r) Stream(s)",
-      "readyTitle": "Bereit für Wiedergabe",
-      "readyDetail": "Alle Tuner verfügbar",
-      "standbyDetail": "Der Receiver befindet sich im Standby. Bitte zuerst Live-TV öffnen, damit EPG und Senderstatus sauber synchronisiert werden."
-    },
     "start": {
       "eyebrow": "Hier anfangen",
       "title": "Wähle die Aufgabe, nicht das Werkzeug",
@@ -592,6 +641,16 @@
   "epg": {
     "backToGuide": "Zurück zu Fernsehen",
     "sectionNavLabel": "Fernsehbereiche",
+    "sidebarToggleTitle": "Seitenleiste einblenden (⌘B)",
+    "sidebarToggleLabel": "Seitenleiste einblenden",
+    "timelineLabel": "EPG-Zeitleiste",
+    "toggleFavorite": "Favorit umschalten",
+    "uhdPaused": "UHD pausiert",
+    "unknownChannel": "Unbekannter Sender",
+    "viewMode": {
+      "list": "Liste",
+      "timeline": "Timeline"
+    },
     "pageTitle": "EPG Übersicht ({{count}})",
     "timeRange": "Zeitraum",
     "rangeNowTo6h": "jetzt bis +6h",
@@ -670,7 +729,9 @@
     "rangeNow": "Jetzt",
     "rangeDay": "24h",
     "rangeWeek": "7d",
-    "rangeAll": "Alle"
+    "rangeAll": "Alle",
+    "seriesKeywordPlaceholder": "z. B. Beispielsendung",
+    "seriesTimeWindowPlaceholder": "z. B. 0530-0930"
   },
   "recordings": {
     "seriesRulesAction": "Serienregeln",
@@ -780,6 +841,10 @@
     "regenerateErrorTitle": "Playlist-Dateien konnten nicht neu erzeugt werden"
   },
   "settings": {
+    "navGroup": {
+      "playbackAndDevices": "Wiedergabe & Geräte",
+      "serverAndAdmin": "Server & Verwaltung"
+    },
     "backToOverview": "Zurück zur Übersicht",
     "backToSection": "Zurück zu {{section}}",
     "sectionNavLabel": "Einstellungsbereiche",
@@ -1146,6 +1211,7 @@
     "webif": "WebIF",
     "tuners": "Tuner",
     "tunersDetected": "{{count}} erkannt",
+    "tunerNumber": "Tuner #{{number}}",
     "tunerStatus": {
       "live": "Live",
       "recording": "Aufnahme",
@@ -1245,13 +1311,92 @@
     "devDetails": "Entwickler-Details"
   },
   "series": {
+    "title": "Serienaufnahme-Regeln",
+    "newRule": "+ Neue Regel",
+    "clickToPause": "Klicken zum Pausieren",
+    "clickToActivate": "Klicken zum Aktivieren",
+    "pauseAction": "Pausieren",
+    "activateAction": "Aktivieren",
+    "active": "Aktiv",
+    "disabled": "Deaktiviert",
+    "channelLabel": "Sender:",
+    "allChannels": "Alle Sender",
+    "unknownChannel": "Unbekannter Sender",
+    "daysLabel": "Tage:",
+    "timeLabel": "Zeit:",
+    "anytime": "Jederzeit",
+    "retentionLabel": "Aufbewahrung:",
+    "retentionDaysAutoDelete": "{{count}} Tage (automatisches Löschen)",
+    "keepForever": "Dauerhaft behalten",
+    "validUntilLabel": "Gültig bis:",
+    "noExpiration": "Unbegrenzt (dauerhaft)",
+    "expiredBadge": "Abgelaufen ({{date}})",
+    "untilBadge": "Bis {{date}}",
+    "lastRunLabel": "Letzter Lauf:",
+    "runStatusSuccess": "Erfolgreich",
+    "runStatusFailed": "Fehlgeschlagen",
+    "unknownStatus": "Unbekannt",
+    "runSummaryWithPruned": "{{created}} erstellt, {{pruned}} bereinigt",
+    "runSummaryCreated": "{{count}} erstellt",
+    "neverRun": "Noch nie ausgeführt",
+    "pause": "Pausieren",
+    "activate": "Aktivieren",
+    "running": "Wird ausgeführt...",
+    "runNow": "Jetzt ausführen",
+    "deleteConfirmTitle": "Regel löschen",
+    "deleteConfirmMessage": "Soll diese Serienregel wirklich gelöscht werden?",
+    "deleteFailed": "Regel konnte nicht gelöscht werden",
+    "daysWeekdaysFilter": "Werktags (Mo-Fr)",
+    "daysWeekendFilter": "Wochenende (Sa-So)",
+    "daysAll": "Alle Tage (Kein Filter)",
+    "loadingRules": "Lade Serienregeln...",
+    "saveFailed": "Regel konnte nicht gespeichert werden",
+    "keywordRequired": "Suchbegriff ist erforderlich",
+    "runComplete": "Suchlauf abgeschlossen",
+    "runCompleteDetails": "Gefunden: {{matched}} | Erstellt: {{created}} | Fehler: {{errors}}",
+    "runFailed": "Suchlauf fehlgeschlagen",
+    "modal": {
+      "editRule": "Regel bearbeiten",
+      "newRule": "Neue Serienregel",
+      "ruleActive": "Regel aktiv",
+      "ruleActiveHint": "Wenn pausiert, ignoriert der automatische Scheduler diese Regel.",
+      "keywordLabel": "Suchbegriff (Sendungstitel)",
+      "keywordHint": "Teiltreffer im Sendungstitel (Groß-/Kleinschreibung egal).",
+      "channelLabel": "Sender",
+      "selectChannel": "-- Sender wählen --",
+      "channelHint": "Erforderlich. Der für diese Serie überwachte Sender.",
+      "dayFilterLabel": "Tage-Filter",
+      "dayFilterHint": "Bestimmte Tage aufnehmen. Keine Auswahl = Jeder Tag.",
+      "timeWindowLabel": "Zeitfenster (HHMM-HHMM)",
+      "timeWindowHint": "Nur Sendungen mit Startzeit in diesem Bereich aufnehmen.",
+      "retentionLabel": "Aufbewahrung (Tage)",
+      "retentionUnlimited": "Unbegrenzt",
+      "retention7Days": "7 Tage",
+      "retention14Days": "14 Tage",
+      "retention30Days": "30 Tage",
+      "retentionHint": "Aufnahmen, die älter als diese Anzahl an Tagen sind, werden automatisch gelöscht.",
+      "expiresLabel": "Gültig bis (Ablaufdatum / EOL)",
+      "expiresNever": "Dauerhaft (kein Ablauf)",
+      "expiresYearEnd": "Bis Jahresende ({{year}})",
+      "expires3Months": "+3 Monate",
+      "expiresHint": "Optional. Nach diesem Datum werden keine neuen Sendungen mehr programmiert.",
+      "priorityLabel": "Priorität",
+      "saveButton": "Speichern"
+    },
+    "placeholder": {
+      "keyword": "z. B. Beispielsendung",
+      "timeWindow": "z.B. 2015-2200",
+      "retention": "0 = dauerhaft behalten"
+    },
     "ruleActivated": "Regel aktiviert",
     "rulePaused": "Regel pausiert",
     "toggleFailed": "Status konnte nicht geändert werden",
     "daysDaily": "Täglich",
     "daysWeekdays": "Werktags (Mo-Fr)",
     "daysWeekend": "Wochenende (Sa-So)",
-    "retentionDays": "{{count}} Tage"
+    "retentionDays": "{{count}} Tage",
+    "daysDailyAll": "Täglich (Alle Tage)",
+    "unknownError": "Unbekannter Fehler"
   },
   "admin": {
     "header": {

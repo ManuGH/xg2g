@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EpgChannel, EpgEvent } from '../types';
 import { EpgTimelineEvent } from './EpgTimelineEvent';
 import styles from '../EPG.module.css';
@@ -32,9 +33,11 @@ export function EpgTimelineRow({
   isRecorded,
   onEventClick,
 }: EpgTimelineRowProps) {
+  const { t } = useTranslation();
+  const unknownChannelText = t('epg.unknownChannel', {});
   const displayName = channel
-    ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || 'Unknown'}`
-    : 'Unknown';
+    ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || unknownChannelText}`
+    : unknownChannelText;
 
   const ref = channel.serviceRef || channel.id || '';
   const isUhd = Boolean(channel?.name?.toUpperCase().includes('UHD') || channel?.name?.toUpperCase().includes('4K'));
@@ -56,7 +59,8 @@ export function EpgTimelineRow({
               e.stopPropagation();
               onToggleFavorite?.(ref);
             }}
-            title="Toggle Favorite"
+            title={t('epg.toggleFavorite', {})}
+            aria-label={t('epg.toggleFavorite', {})}
           >
             {isFavorite ? '★' : '☆'}
           </button>
@@ -66,7 +70,7 @@ export function EpgTimelineRow({
           <span className={styles.timelineChannelName}>{displayName}</span>
           {isUhd && (
             <span className={styles.timelineUhdBadge}>
-              4K Pausiert
+              {t('epg.uhdPaused', {})}
             </span>
           )}
         </div>

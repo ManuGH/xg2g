@@ -1,4 +1,5 @@
 import { useState, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -46,6 +47,7 @@ export function V3PlayerView({
   onOpenChannels,
   children,
 }: V3PlayerViewProps) {
+  const { t } = useTranslation();
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
   // were never wired up, so the player rendered letterboxed on phones.
@@ -363,24 +365,27 @@ export function V3PlayerView({
                   size="sm"
                   className={styles.channelsButton}
                   onClick={onOpenChannels}
-                  title="Sender wechseln"
-                  aria-label="Sender wechseln"
+                  title={t('player.switchChannel', {})}
+                  aria-label={t('player.switchChannel', {})}
                 >
                   <ChannelsGlyph />
-                  <span className="sr-only">Sender</span>
+                  <span className="sr-only">{t('player.channelLabel', {})}</span>
                 </Button>
               )}
 
               {viewState.audioTracks && viewState.audioTracks.length > 1 && (
                 <DropdownMenu
                   icon={<AudioTracksGlyph />}
-                  title="Tonspur"
+                  title={t('player.audioTracks', {})}
                   activeId={viewState.activeAudioTrack}
                   onSelect={(id) => actions.changeAudioTrack(id as number)}
-                  options={viewState.audioTracks.map((t) => ({
-                    id: t.engineIndex !== undefined ? t.engineIndex : t.id,
-                    label: t.label || t.name || t.language || `Track ${t.engineIndex !== undefined ? t.engineIndex : t.id}`,
-                  }))}
+                  options={viewState.audioTracks.map((tr) => {
+                    const trackIndex = tr.engineIndex !== undefined ? tr.engineIndex : tr.id;
+                    return {
+                      id: trackIndex,
+                      label: tr.label || tr.name || tr.language || t('player.audioTrackFallback', { index: trackIndex}),
+                    };
+                  })}
                 />
               )}
 
@@ -394,13 +399,13 @@ export function V3PlayerView({
 
               <DropdownMenu
                 icon={<PictureModeGlyph />}
-                title="Bildmodus"
+                title={t('player.pictureMode', {})}
                 activeId={pictureMode}
                 onSelect={(id) => handlePictureModeChange(id as PictureMode)}
                 options={[
-                  { id: 'natural', label: 'Natürlich (Studio • Referenz)' },
-                  { id: 'vivid', label: 'Brillant (TV • OLED-Punch)' },
-                  { id: 'cinema', label: 'Kino (Warm • D65-Look)' },
+                  { id: 'natural', label: t('player.pictureModes.natural', {}) },
+                  { id: 'vivid', label: t('player.pictureModes.vivid', {}) },
+                  { id: 'cinema', label: t('player.pictureModes.cinema', {}) },
                 ]}
               />
 

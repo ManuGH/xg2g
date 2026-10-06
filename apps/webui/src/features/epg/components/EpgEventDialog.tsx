@@ -206,7 +206,7 @@ export function EpgEventDialog({
                   className={styles.inputField}
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="z.B. Café PULS"
+                  placeholder={t('epg.seriesKeywordPlaceholder')}
                   data-testid="series-modal-keyword"
                 />
                 {cleanedTitle && cleanedTitle !== event.title && (
@@ -289,7 +289,7 @@ export function EpgEventDialog({
                   className={styles.inputField}
                   value={startWindow}
                   onChange={(e) => setStartWindow(e.target.value)}
-                  placeholder="z.B. 0530-0930"
+                  placeholder={t('epg.seriesTimeWindowPlaceholder')}
                 />
                 <span className={styles.helpText}>{t('epg.seriesTimeWindowHelp', { defaultValue: 'Optional. z.B. 0530-0930 für morgendliche Sendungen.' })}</span>
               </div>
