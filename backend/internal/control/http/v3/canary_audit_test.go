@@ -27,6 +27,8 @@ import (
 	controlplayback "github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	identitystore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -37,10 +39,12 @@ import (
 	ilog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 	v3bus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1054,7 +1058,7 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// Test 4: Six Negative Controls (a through f)
+// Test 4: Eleven Negative Controls (a through k)
 // ----------------------------------------------------------------------------
 
 func TestIPTV_CanaryLeakAudit_NegativeControls(t *testing.T) {
@@ -1192,6 +1196,73 @@ func TestIPTV_CanaryLeakAudit_NegativeControls(t *testing.T) {
 			}
 		}
 		assert.True(t, detected, "assertNoCanaryLeak must be sensitive to canary markers in responses (RED condition)")
+	})
+
+	// Control (h): Response header containing canary marker => assertNoCanaryLeak detects it (turns RED)
+	t.Run("NegativeControl_H_HeaderCanaryLeakSensitivity", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		w.Header().Set("Location", "http://canary.invalid/SECRET-CANARY-1/redirect.ts")
+		w.WriteHeader(http.StatusFound)
+
+		detected := false
+		for _, hVals := range w.Header() {
+			for _, val := range hVals {
+				for _, marker := range canaryMarkers {
+					if strings.Contains(strings.ToLower(val), strings.ToLower(marker)) {
+						detected = true
+						break
+					}
+				}
+			}
+		}
+		assert.True(t, detected, "assertNoCanaryLeak must be sensitive to canary markers in headers (RED condition)")
+	})
+
+	// Control (i): Injected canary marker into Prometheus metrics => detected (turns RED)
+	t.Run("NegativeControl_I_PrometheusMetricsCanaryLeakSensitivity", func(t *testing.T) {
+		metricsDump := `# HELP test_metric A test metric
+# TYPE test_metric counter
+test_metric{endpoint="SECRET-CANARY-1",host="canary.invalid"} 1
+`
+		detected := false
+		for _, marker := range canaryMarkers {
+			if strings.Contains(strings.ToLower(metricsDump), strings.ToLower(marker)) {
+				detected = true
+				break
+			}
+		}
+		assert.True(t, detected, "Prometheus scrape check must be sensitive to canary markers (RED condition)")
+	})
+
+	// Control (j): RFC 7807 problem detail containing canary marker => detected (turns RED)
+	t.Run("NegativeControl_J_ProblemDetailsErrorSensitivity", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.WriteString(fmt.Sprintf(`{"type":"about:blank","title":"Invalid Request","detail":"Failed to parse %s"}`, canaryRawRef))
+
+		detected := false
+		bodyStr := strings.ToLower(w.Body.String())
+		for _, marker := range canaryMarkers {
+			if strings.Contains(bodyStr, strings.ToLower(marker)) {
+				detected = true
+				break
+			}
+		}
+		assert.True(t, detected, "RFC 7807 error check must be sensitive to leaked raw refs (RED condition)")
+	})
+
+	// Control (k): SQLite database dump containing canary marker => detected (turns RED)
+	t.Run("NegativeControl_K_SQLiteDumpCanaryLeakSensitivity", func(t *testing.T) {
+		sqliteDump := fmt.Sprintf(`[{"id":"prof-1","allowed_channels":["%s"]}]`, canaryRawRef)
+		detected := false
+		for _, marker := range canaryMarkers {
+			if strings.Contains(strings.ToLower(sqliteDump), strings.ToLower(marker)) {
+				detected = true
+				break
+			}
+		}
+		assert.True(t, detected, "SQLite client-facing dump check must be sensitive to unmasked refs (RED condition)")
 	})
 }
 
@@ -1576,5 +1647,266 @@ func TestIPTV_CanaryLeakAudit_RealRefreshAndFileServer_InvalidIPTVReference(t *t
 		// DVB channel must remain intact and served
 		assert.Contains(t, body, "1:0:19:283D:3FB:1:C00000:0:0:0:")
 		assert.Contains(t, body, "DVB Das Erste")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Test 9: Multi-Sink Zero-Canary Leak Audits (Slice 6)
+// ----------------------------------------------------------------------------
+
+// TestIPTV_CanaryLeakAudit_PrometheusMetricsZeroLeak asserts that Prometheus metrics
+// never expose raw IPTV references, stream URLs, credentials, or tokens in metric names,
+// descriptors, or label values.
+func TestIPTV_CanaryLeakAudit_PrometheusMetricsZeroLeak(t *testing.T) {
+	res, canaryID, _ := setupCanaryResolver(t)
+	opaqueID := string(canaryID)
+
+	s, _ := newV3TestServer(t, t.TempDir())
+	s.SetIPTVResolver(res)
+
+	// Exercise legacy ingress increments
+	metrics.IncIPTVLegacyIngress(metrics.EndpointIntents)
+	metrics.IncIPTVLegacyIngress(metrics.EndpointPlaybackInfo)
+	metrics.IncIPTVLegacyIngress(metrics.EndpointNowNext)
+	metrics.IncIPTVLegacyIngress(metrics.EndpointTimers)
+	metrics.IncIPTVLegacyIngress(metrics.EndpointLogos)
+	metrics.IncIPTVLegacyIngress(metrics.EndpointHousehold)
+
+	// Scrape /metrics endpoint via promhttp handler
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	promhttp.Handler().ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	assertNoCanaryLeak(t, "GET /metrics", w)
+	body := w.Body.String()
+	assert.Contains(t, body, "v3_iptv_legacy_ingress_total")
+	assert.NotContains(t, body, opaqueID)
+}
+
+// TestIPTV_CanaryLeakAudit_SQLiteStorePersistenceZeroLeak verifies that when profiles
+// with IPTV references are persisted in a real SQLite database, client-visible API
+// responses return masked iptv_<id> and zero canary tokens.
+func TestIPTV_CanaryLeakAudit_SQLiteStorePersistenceZeroLeak(t *testing.T) {
+	res, canaryID, _ := setupCanaryResolver(t)
+	opaqueID := string(canaryID)
+
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "canary_identity.sqlite")
+	sStore, err := identitystore.OpenSQLite(dbPath, sqlite.DefaultConfig())
+	require.NoError(t, err)
+	defer sStore.Close()
+
+	idSvc := identity.NewService(identity.Config{
+		RPID:           "localhost",
+		RPName:         "xg2g Test Server",
+		ExpectedOrigin: "https://localhost",
+		SessionTTL:     24 * time.Hour,
+	}, sStore)
+
+	s, _ := newV3TestServer(t, t.TempDir())
+	s.SetIPTVResolver(res)
+	s.SetIdentityService(idSvc)
+	s.cfg.APIToken = "test-token"
+	s.cfg.APITokenScopes = []string{string(ScopeAll)}
+
+	adminPrincipal := &controlauth.Principal{
+		ID:     "admin-1",
+		Scopes: []string{string(ScopeAll)},
+	}
+
+	// 1. Persist profile with raw canary ref in SQLite
+	createdProf, _, err := idSvc.CreateProfile(context.Background(), "admin-1", "Canary Admin Profile", "", false, nil, []string{canaryRawRef}, 18, "")
+	require.NoError(t, err)
+	profID := createdProf.ID
+
+	// 2. Query GET /api/v3/profiles (reading from SQLite)
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/profiles", nil)
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.ListProfiles(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /api/v3/profiles (SQLite)", w)
+	}
+
+	// 3. Query GET /api/v3/profiles/{id} (reading single profile from SQLite)
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/profiles/"+profID, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", profID)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetProfile(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /api/v3/profiles/{id} (SQLite)", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+
+	// 4. Query GET /api/v3/household/profiles (reading from SQLite)
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/household/profiles", nil)
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetHouseholdProfiles(w, r, GetHouseholdProfilesParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /api/v3/household/profiles (SQLite)", w)
+	}
+
+	// 5. Query GET /api/v3/household/profiles/{id} (reading single profile from SQLite)
+	{
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/household/profiles/"+profID, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", profID)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		r = r.WithContext(controlauth.WithPrincipal(r.Context(), adminPrincipal))
+		s.GetProfile(w, r)
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /api/v3/household/profiles/{id} (SQLite)", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
+	}
+}
+
+// TestIPTV_CanaryLeakAudit_ProblemDetailsErrorResponsesZeroLeak asserts that when invalid
+// or malformed requests containing canary references are submitted, the resulting RFC 7807
+// problem details responses never echo raw references, provider URLs, credentials, or tokens.
+func TestIPTV_CanaryLeakAudit_ProblemDetailsErrorResponsesZeroLeak(t *testing.T) {
+	res, canaryID, _ := setupCanaryResolver(t)
+	opaqueID := string(canaryID)
+
+	s, st := newV3TestServer(t, t.TempDir())
+	s.SetJWTSecret(jwtTestSecret)
+	s.SetIPTVResolver(res)
+	svc := new(MockRecordingsService)
+	s.SetDependencies(Dependencies{
+		Bus:               v3bus.NewMemoryBus(),
+		Store:             st,
+		Scan:              verifiedLivePlaybackScanner(),
+		RecordingsService: svc,
+		IPTVResolver:      res,
+	})
+
+	// Case 1: POST /api/v3/intents with malformed JSON body
+	{
+		badBody := fmt.Sprintf(`{"action":"start","serviceRef":%q,"corrupted":}`, canaryRawRef)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/intents", strings.NewReader(badBody))
+		r.Header.Set("Content-Type", "application/json")
+		s.handleV3Intents(w, r)
+		assert.True(t, w.Code >= 400 && w.Code < 500, "expected 4xx, got %d", w.Code)
+		assertNoCanaryLeak(t, "POST /api/v3/intents (malformed)", w)
+	}
+
+	// Case 2: POST /api/v3/stream/prepare with non-existent opaque ID containing marker substring
+	{
+		badOpaque := "iptv_nonexistent_canary_invalid"
+		body := fmt.Sprintf(`{"serviceRef":%q}`, badOpaque)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/stream/prepare", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.StartStreamPrepare(w, r, StartStreamPrepareParams{})
+		assert.True(t, w.Code >= 400, "expected error status >= 400, got %d", w.Code)
+		assertNoCanaryLeak(t, "POST /api/v3/stream/prepare (invalid ID)", w)
+	}
+
+	// Case 3: POST /api/v3/live/stream-info with unknown opaque ID
+	{
+		badOpaque := "iptv_abcdefghijklmnopqrstuvwxyz"
+		caps := `{"capabilitiesVersion":2,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},"container":["mp4","ts"],"videoCodecs":["h264"],"audioCodecs":["aac"]}`
+		body := fmt.Sprintf(`{"serviceRef":%q,"capabilities":%s}`, badOpaque, caps)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assertNoCanaryLeak(t, "POST /api/v3/live/stream-info (not found)", w)
+	}
+
+	// Case 4: POST /api/v3/timers with invalid timer body
+	{
+		badBody := fmt.Sprintf(`{"serviceRef":%q,"begin":-1,"end":-5}`, opaqueID)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/v3/timers", strings.NewReader(badBody))
+		r.Header.Set("Content-Type", "application/json")
+		s.AddTimer(w, r)
+		assert.True(t, w.Code >= 400 && w.Code < 500, "expected 4xx, got %d", w.Code)
+		assertNoCanaryLeak(t, "POST /api/v3/timers (invalid body)", w)
+	}
+}
+
+// TestIPTV_CanaryLeakAudit_LiveLoggingBufferZeroLeak verifies that in-memory structured
+// log entries emitted during operations with canary references are scrubbed before storage.
+func TestIPTV_CanaryLeakAudit_LiveLoggingBufferZeroLeak(t *testing.T) {
+	res, canaryID, _ := setupCanaryResolver(t)
+	opaqueID := string(canaryID)
+
+	var logWriterBuf bytes.Buffer
+	ilog.Configure(ilog.Config{
+		Output: &logWriterBuf,
+		Level:  "info",
+	})
+	defer ilog.ClearRecentLogs()
+
+	s, st := newV3TestServer(t, t.TempDir())
+	s.SetJWTSecret(jwtTestSecret)
+	s.SetIPTVResolver(res)
+	svc := new(MockRecordingsService)
+	s.SetDependencies(Dependencies{
+		Bus:               v3bus.NewMemoryBus(),
+		Store:             st,
+		Scan:              verifiedLivePlaybackScanner(),
+		RecordingsService: svc,
+		IPTVResolver:      res,
+	})
+
+	ilog.ClearRecentLogs()
+
+	// Direct audit log entry with raw canary reference to verify scrubber in structured buffer
+	ilog.AuditInfo(context.Background(), "stream.connect", fmt.Sprintf("Stream connection established for %s", canaryRawRef), map[string]any{
+		"service_ref": canaryRawRef,
+		"url":         "http://canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts",
+	})
+
+	// Direct log entry with raw canary reference to verify scrubber in stdout writer
+	ilog.L().Info().
+		Str("service_ref", canaryRawRef).
+		Str("url", "http://canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts").
+		Msgf("Stream connection established for %s", canaryRawRef)
+
+	// Perform operations that generate handler log output via middleware
+	caps := `{"capabilitiesVersion":2,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},"container":["mp4","ts"],"videoCodecs":["h264"],"audioCodecs":["aac"]}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(fmt.Sprintf(`{"serviceRef":%q,"capabilities":%s}`, opaqueID, caps)))
+	r.Header.Set("Content-Type", "application/json")
+	ilog.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.PostLivePlaybackInfo(w, r, PostLivePlaybackInfoParams{})
+	})).ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	logs := ilog.GetRecentLogs()
+	require.NotEmpty(t, logs, "expected log entries to be recorded")
+
+	for _, entry := range logs {
+		msgLower := strings.ToLower(entry.Message)
+		for _, marker := range canaryMarkers {
+			assert.NotContains(t, msgLower, strings.ToLower(marker), "log message leaked canary marker: %s", entry.Message)
+		}
+		if entry.Fields != nil {
+			for k, v := range entry.Fields {
+				vStr := fmt.Sprintf("%v", v)
+				vLower := strings.ToLower(vStr)
+				for _, marker := range canaryMarkers {
+					assert.NotContains(t, vLower, strings.ToLower(marker), "log field %s leaked canary marker: %s", k, vStr)
+				}
+			}
+		}
+	}
+
+	// Also verify that the logWriterBuf (stdout output) contains zero canary markers
+	written := logWriterBuf.String()
+	for _, marker := range canaryMarkers {
+		assert.NotContains(t, strings.ToLower(written), strings.ToLower(marker), "stdout writer output leaked canary marker")
 	}
 }
