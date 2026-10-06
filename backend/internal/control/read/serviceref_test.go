@@ -63,6 +63,24 @@ func TestExtractServiceRef(t *testing.T) {
 			want:   "1:0:1:ABCD:1:1:0:0:0:0", // Trims colon, treats as raw path
 			desc:   "Opaque ref without scheme should be treated as raw string (not parsed as URL scheme)",
 		},
+		{
+			name:   "Enigma IPTV Stream URL With Slashes",
+			rawURL: "http://127.0.0.1:8001/4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1",
+			desc:   "IPTV reference in URL path with nested slashes must not be truncated to last path segment",
+		},
+		{
+			name:   "Proxy IPTV Stream URL",
+			rawURL: "http://xg2g:8088/stream/5001:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8:Ch 1",
+			want:   "5001:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8:Ch 1",
+			desc:   "Proxy IPTV URL preserves full 5001 reference",
+		},
+		{
+			name:   "Opaque IPTV Stream URL",
+			rawURL: "http://xg2g:8088/api/v3/stream/live/iptv_test123",
+			want:   "iptv_test123",
+			desc:   "Opaque IPTV URL extracts iptv_ ID cleanly",
+		},
 	}
 
 	for _, tt := range tests {

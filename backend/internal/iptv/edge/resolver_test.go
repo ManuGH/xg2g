@@ -336,3 +336,70 @@ func TestResolver_ConcurrentResolveAndReplace(t *testing.T) {
 	close(stop)
 	readersWg.Wait()
 }
+
+func TestResolver_EdgeTranslator(t *testing.T) {
+	resolver, reg, _, _ := setupTestResolver(t)
+
+	rawCanaryRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/live/token/stream.ts:Canary Channel"
+	dvbRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+
+	t.Run("DVB preservation invariant", func(t *testing.T) {
+		assert.Equal(t, dvbRef, resolver.MaskServiceRef(dvbRef))
+		ptr := &dvbRef
+		assert.Equal(t, dvbRef, *resolver.MaskServiceRefPtr(ptr))
+		assert.Equal(t, "/logos/1_0_19_283D.png", resolver.MaskLogoURL("/logos/1_0_19_283D.png", dvbRef))
+		assert.Equal(t, "", resolver.MaskPiconURL(dvbRef))
+	})
+
+	t.Run("IPTV masking and mask-on-emit dynamic registration", func(t *testing.T) {
+		// Registry initially empty
+		assert.Equal(t, 0, reg.Len())
+
+		maskedID := resolver.MaskServiceRef(rawCanaryRef)
+		assert.True(t, strings.HasPrefix(maskedID, "iptv_"))
+		assert.Equal(t, 1, reg.Len(), "MaskServiceRef must dynamically register IPTV source")
+
+		// Subsequent ResolveOpaqueID immediately succeeds
+		resolvedRaw, ok := resolver.ResolveOpaqueID(maskedID)
+		assert.True(t, ok)
+		assert.Equal(t, rawCanaryRef, resolvedRaw)
+
+		// Calling MaskServiceRef on already masked ID returns it as-is
+		assert.Equal(t, maskedID, resolver.MaskServiceRef(maskedID))
+
+		// MaskServiceRefPtr
+		rawPtr := &rawCanaryRef
+		maskedPtr := resolver.MaskServiceRefPtr(rawPtr)
+		require.NotNil(t, maskedPtr)
+		assert.Equal(t, maskedID, *maskedPtr)
+
+		// MaskLogoURL and MaskPiconURL
+		logo := resolver.MaskLogoURL("/logos/raw_canary.png?v=123", rawCanaryRef)
+		assert.Equal(t, fmt.Sprintf("/logos/%s.png?v=123", maskedID), logo)
+
+		picon := resolver.MaskPiconURL(rawCanaryRef)
+		assert.Equal(t, fmt.Sprintf("/logos/%s.png", maskedID), picon)
+	})
+
+	t.Run("Fail closed on malformed IPTV reference", func(t *testing.T) {
+		badIPTV := "4097:0:1:0:0:0:0:0:0:0:not-a-valid-url"
+		assert.Equal(t, "", resolver.MaskServiceRef(badIPTV))
+		assert.Nil(t, resolver.MaskServiceRefPtr(&badIPTV))
+		assert.Equal(t, "", resolver.MaskLogoURL("/logos/bad.png", badIPTV))
+	})
+
+	t.Run("Disabled or nil resolver fails closed for IPTV and preserves DVB", func(t *testing.T) {
+		var nilResolver *edge.Resolver
+		assert.Equal(t, dvbRef, nilResolver.MaskServiceRef(dvbRef))
+		assert.Equal(t, dvbRef, *nilResolver.MaskServiceRefPtr(&dvbRef))
+		assert.Equal(t, "/logos/dvb.png", nilResolver.MaskLogoURL("/logos/dvb.png", dvbRef))
+
+		assert.Equal(t, "", nilResolver.MaskServiceRef(rawCanaryRef))
+		assert.Nil(t, nilResolver.MaskServiceRefPtr(&rawCanaryRef))
+		assert.Equal(t, "", nilResolver.MaskLogoURL("/logos/raw.png", rawCanaryRef))
+
+		raw, ok := nilResolver.ResolveOpaqueID("iptv_abcdefghijklmnopqrstuvwxyz")
+		assert.False(t, ok)
+		assert.Empty(t, raw)
+	})
+}

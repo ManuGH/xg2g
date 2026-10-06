@@ -29,4 +29,5 @@ type Deps interface {
 	TokensService() *v3tokens.Service
 	JWTSecret() []byte
 	RuntimeContext() context.Context
+	MaskServiceRef(rawRef string) string
 }

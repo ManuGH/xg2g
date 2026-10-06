@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -27,7 +28,7 @@ func (s *Server) GetSeriesRules(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]SeriesRule, 0, len(rules))
 	for _, rule := range rules {
-		resp = append(resp, mapRuleToAPI(rule))
+		resp = append(resp, s.mapRuleToAPI(rule))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -54,6 +55,14 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.ChannelRef != nil && *req.ChannelRef != "" {
+		if resolved, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, *req.ChannelRef); ok {
+			req.ChannelRef = &resolved
+		} else {
+			return
+		}
+	}
+
 	dvrRule := mapAPIToRule(req)
 
 	// Persist
@@ -70,7 +79,7 @@ func (s *Server) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := mapRuleToAPI(created)
+	resp := s.mapRuleToAPI(created)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -97,6 +106,14 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
+	if req.ChannelRef != nil && *req.ChannelRef != "" {
+		if resolved, ok := s.resolveClientServiceRef(w, r, metrics.EndpointTimers, *req.ChannelRef); ok {
+			req.ChannelRef = &resolved
+		} else {
+			return
+		}
+	}
+
 	dvrRule := mapAPIUpdateToRule(req)
 
 	if err := deps.seriesManager.UpdateRule(id, dvrRule); err != nil {
@@ -115,7 +132,7 @@ func (s *Server) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	resp := mapRuleToAPI(updated)
+	resp := s.mapRuleToAPI(updated)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -140,18 +157,11 @@ func (s *Server) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id str
 }
 
 // Helpers
-func mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
-	// Create deep copies for slices if needed, but for json marshalling it's fine.
-	// We need to take address of local variables or fields.
-	// But taking address of field in loop var 'r' (if it was range var) is risky locally,
-	// but here 'r' is value argument. Address of fields is safe?
-	// Actually no, escaping reference to stack.
-	// Safe to create new variables.
-
+func (s *Server) mapRuleToAPI(r dvr.SeriesRule) SeriesRule {
 	id := r.ID
 	enabled := r.Enabled
 	keyword := r.Keyword
-	channelRef := r.ChannelRef
+	channelRef := s.maskServiceRef(r.ChannelRef)
 	days := r.Days
 	window := r.StartWindow
 	priority := r.Priority
@@ -279,7 +289,7 @@ func (s *Server) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, param
 
 	apiReports := make([]SeriesRuleRunReport, 0, len(reports))
 	for _, rep := range reports {
-		apiReports = append(apiReports, mapReportToAPI(rep))
+		apiReports = append(apiReports, s.mapReportToAPI(rep))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -314,13 +324,13 @@ func (s *Server) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 
-	apiReport := mapReportToAPI(reports[0])
+	apiReport := s.mapReportToAPI(reports[0])
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(apiReport)
 }
 
-func mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
+func (s *Server) mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
 	// Map Summary
 	summary := RunSummary{
 		EpgItemsScanned:             &r.Summary.EpgItemsScanned,
@@ -336,11 +346,12 @@ func mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
 	}
 
 	// Map Snapshot
+	channelRef := s.maskServiceRef(r.Snapshot.ChannelRef)
 	snap := RuleSnapshot{
 		Id:            &r.Snapshot.ID,
 		Enabled:       &r.Snapshot.Enabled,
 		Keyword:       &r.Snapshot.Keyword,
-		ChannelRef:    &r.Snapshot.ChannelRef,
+		ChannelRef:    &channelRef,
 		Days:          &r.Snapshot.Days,
 		StartWindow:   &r.Snapshot.StartWindow,
 		Priority:      &r.Snapshot.Priority,
@@ -351,8 +362,9 @@ func mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
 	// Map Decisions
 	decisions := make([]RunDecision, 0, len(r.Decisions))
 	for _, d := range r.Decisions {
+		sRef := s.maskServiceRef(d.ServiceRef)
 		decisions = append(decisions, RunDecision{
-			ServiceRef:  &d.ServiceRef,
+			ServiceRef:  &sRef,
 			Begin:       &d.Begin,
 			End:         &d.End,
 			Title:       &d.Title,
@@ -378,8 +390,9 @@ func mapReportToAPI(r dvr.SeriesRuleRunReport) SeriesRuleRunReport {
 	// Map Conflicts
 	conflicts := make([]RunConflict, 0, len(r.Conflicts))
 	for _, c := range r.Conflicts {
+		sRef := s.maskServiceRef(c.ServiceRef)
 		conflicts = append(conflicts, RunConflict{
-			ServiceRef:      &c.ServiceRef,
+			ServiceRef:      &sRef,
 			Begin:           &c.Begin,
 			End:             &c.End,
 			Title:           &c.Title,

@@ -125,7 +125,7 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 				return // omitted from the batch by design
 			}
 			itemsMu.Lock()
-			items[job.original] = dto
+			items[s.maskServiceRef(job.original)] = dto
 			itemsMu.Unlock()
 		}(job)
 	}

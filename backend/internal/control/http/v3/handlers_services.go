@@ -144,14 +144,17 @@ func (s *Server) GetServices(w http.ResponseWriter, r *http.Request, params GetS
 			}
 			// Scoping
 			item := item
+			maskedRef := s.maskServiceRef(item.ServiceRef)
+			maskedLogo := s.maskLogoURL(item.LogoURL, item.ServiceRef)
+			maskedID := s.maskServiceRef(item.ID)
 			svc := Service{
-				Id:         &item.ID,
+				Id:         &maskedID,
 				Name:       &item.Name,
 				Group:      &item.Group,
-				LogoUrl:    &item.LogoURL,
+				LogoUrl:    &maskedLogo,
 				Number:     &item.Number,
 				Enabled:    &item.Enabled,
-				ServiceRef: &item.ServiceRef,
+				ServiceRef: &maskedRef,
 			}
 
 			// Enhance with functionality data if scanner is available
