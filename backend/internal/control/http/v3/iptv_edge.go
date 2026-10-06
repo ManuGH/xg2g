@@ -12,7 +12,9 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/iptv/edge"
+	"github.com/ManuGH/xg2g/internal/iptv/scrubber"
 	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
+	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -66,8 +68,13 @@ func (s *Server) SetIPTVResolver(r *edge.Resolver) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.iptvResolver = r
+	s.mu.Unlock()
+	if r != nil {
+		log.SetGlobalScrubber(scrubber.New(r).Scrub)
+	} else {
+		log.SetGlobalScrubber(nil)
+	}
 }
 
 // isIPTVRef reports whether the normalized ref has an Enigma2 IPTV service type.

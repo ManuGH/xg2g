@@ -73,9 +73,9 @@ func Configure(cfg Config) {
 
 	version := cfg.Version
 
-	// We use a MultiWriter to feed both the output and our structured buffer.
+	// We use a MultiWriter to feed both the output (scrubbed) and our structured buffer.
 	bufferWriter := &structuredBufferWriter{}
-	multi := io.MultiWriter(writer, bufferWriter)
+	multi := io.MultiWriter(newScrubbingWriter(writer), bufferWriter)
 
 	base = zerolog.New(multi).With().
 		Timestamp().
@@ -385,16 +385,16 @@ func (w *structuredBufferWriter) processLine(line []byte) {
 	}
 
 	if msg, ok := raw["message"].(string); ok {
-		entry.Message = msg
+		entry.Message = ScrubString(msg)
 	}
 
-	// Capture all other fields
+	// Capture all other fields (scrubbed)
 	for k, v := range raw {
 		switch k {
 		case "time", "level", "message", "audit_severity":
 			continue
 		default:
-			entry.Fields[k] = v
+			entry.Fields[k] = scrubValue(v)
 		}
 	}
 

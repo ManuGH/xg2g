@@ -14,6 +14,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/health"
+	"github.com/ManuGH/xg2g/internal/iptv/scrubber"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -162,14 +163,21 @@ func (s *Server) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsP
 		}
 	}
 
+	sc := scrubber.New(s.IPTVResolver())
+
 	var resp []LogEntry
 	for i := range entries {
-		// Scoping for pointer safety in loop
+		scrubbedMsg := sc.Scrub(entries[i].Message)
+		var scrubbedFields *map[string]any
+		if entries[i].Fields != nil {
+			f := sc.ScrubFields(entries[i].Fields)
+			scrubbedFields = &f
+		}
 		resp = append(resp, LogEntry{
 			Level:   &entries[i].Level,
-			Message: &entries[i].Message,
+			Message: &scrubbedMsg,
 			Time:    &entries[i].Time,
-			Fields:  &entries[i].Fields,
+			Fields:  scrubbedFields,
 		})
 	}
 

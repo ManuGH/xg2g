@@ -245,16 +245,10 @@ var auditedOutboundRoutes = map[string]string{
 	"PUT /api/v3/series-rules/{id}":                     "Outbound: series rule update returns masked iptv_<id>",
 	"POST /api/v3/live/stream-info":                     "Outbound: live playback info returns masked iptv_<id> and opaque token",
 	"GET /api/v3/streams":                               "Outbound: active stream listings return masked iptv_<id> or channel name",
+	"GET /api/v3/logs":                                  "Outbound: internal log sink scrubbed of raw refs and provider credentials",
 }
 
-var allowlistRoutes = map[string]allowlistEntry{
-	"GET /api/v3/logs": {
-		Route:       "GET /api/v3/logs",
-		SourceLoc:   "backend/internal/control/http/v3/http.go:143",
-		TargetSlice: "Slice 5",
-		Description: "Outbound: internal log sink contains pre-existing raw ref leaks until central scrubber",
-	},
-}
+var allowlistRoutes = map[string]allowlistEntry{}
 
 // ----------------------------------------------------------------------------
 // Test 1: Route Coverage (Chi Router Walk)
@@ -539,18 +533,10 @@ func TestIPTV_CanaryLeakAudit_InboundEndpointsZeroLeak(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 func TestIPTV_CanaryLeakAudit_AllowlistNonStale(t *testing.T) {
-	// Assert each allowlist entry is documented with valid metadata
-	require.NotEmpty(t, allowlistRoutes, "Allowlist must not be empty until all slices are complete")
-	require.Len(t, allowlistRoutes, 1, "Allowlist must only contain GET /api/v3/logs in Slice 4")
+	// In Slice 5, allowlist is completely drained - 100% outbound surfaces are audited for zero leaks
+	assert.Empty(t, allowlistRoutes, "Allowlist must be completely empty in Slice 5 - 100% outbound zero-leak achieved")
 
-	for routeKey, entry := range allowlistRoutes {
-		assert.Equal(t, routeKey, entry.Route)
-		assert.NotEmpty(t, entry.SourceLoc, "Entry %s missing SourceLoc", routeKey)
-		assert.NotEmpty(t, entry.TargetSlice, "Entry %s missing TargetSlice", routeKey)
-		assert.NotEmpty(t, entry.Description, "Entry %s missing Description", routeKey)
-	}
-
-	// Verify non-staleness of GET /api/v3/logs (assert it DOES leak unscrubbed logs until Slice 5)
+	// Verify that GET /api/v3/logs without resolver fails closed and never leaks canary markers
 	srv := NewServer(config.AppConfig{}, nil, nil)
 	srv.logSource = stubLogSource{
 		entries: []ilog.LogEntry{
@@ -561,7 +547,8 @@ func TestIPTV_CanaryLeakAudit_AllowlistNonStale(t *testing.T) {
 	rLogs := httptest.NewRequest(http.MethodGet, "/api/v3/logs", nil)
 	srv.GetLogs(wLogs, rLogs, GetLogsParams{})
 	require.Equal(t, http.StatusOK, wLogs.Code)
-	assert.Contains(t, strings.ToLower(wLogs.Body.String()), "canary.invalid", "GET /api/v3/logs must leak raw refs until Slice 5 central log scrubbing")
+	assertNoCanaryLeak(t, "GET /api/v3/logs (unconfigured)", wLogs)
+	assert.Contains(t, wLogs.Body.String(), "[REDACTED_IPTV_REF]")
 }
 
 // ----------------------------------------------------------------------------
@@ -1038,6 +1025,31 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	// 24. GET /api/v3/logs
+	{
+		s.logSource = stubLogSource{
+			entries: []ilog.LogEntry{
+				{
+					Timestamp: time.Now().UTC(),
+					Level:     "info",
+					Message:   fmt.Sprintf("Stream connection established for %s", canaryRawRef),
+					Fields: map[string]any{
+						"service_ref": canaryRawRef,
+						"url":         "http://canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts",
+						"error":       "dial tcp: lookup canary.invalid: no such host",
+					},
+				},
+			},
+		}
+
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v3/logs", nil)
+		s.GetLogs(w, r, GetLogsParams{})
+		require.Equal(t, http.StatusOK, w.Code)
+		assertNoCanaryLeak(t, "GET /api/v3/logs", w)
+		assert.Contains(t, w.Body.String(), opaqueID)
 	}
 }
 

@@ -97,3 +97,55 @@ func TestStructuredBufferWriter_RelevanceFilter(t *testing.T) {
 		t.Error("expected DroppedIrrelevant metric to be incremented")
 	}
 }
+
+func TestStructuredBufferWriter_Scrubbing(t *testing.T) {
+	ClearRecentLogs()
+	w := &structuredBufferWriter{}
+
+	// Write an audit log containing a raw IPTV reference and external stream URL
+	rawRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1"
+	auditLine := `{"time":"2026-01-01T00:00:00Z","level":"info","component":"audit","event":"channel.tune","message":"tuning raw ref: ` + rawRef + `","service_ref":"` + rawRef + `"}` + "\n"
+
+	w.Write([]byte(auditLine))
+	logs := GetRecentLogs()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+
+	// Verify message and fields are scrubbed
+	if strings.Contains(logs[0].Message, "canary.invalid") || strings.Contains(logs[0].Message, "SECRET-CANARY-1") {
+		t.Errorf("expected Message to be scrubbed, got: %s", logs[0].Message)
+	}
+	if !strings.Contains(logs[0].Message, "[REDACTED_IPTV_REF]") {
+		t.Errorf("expected Message to contain [REDACTED_IPTV_REF], got: %s", logs[0].Message)
+	}
+
+	fieldRef, ok := logs[0].Fields["service_ref"].(string)
+	if !ok || strings.Contains(fieldRef, "canary.invalid") {
+		t.Errorf("expected service_ref field to be scrubbed, got: %v", logs[0].Fields["service_ref"])
+	}
+}
+
+func TestScrubbingWriter(t *testing.T) {
+	var buf strings.Builder
+	sw := newScrubbingWriter(&buf)
+
+	rawRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/channel_prime.ts:Canary Channel 1"
+	input := `{"level":"info","ref":"` + rawRef + `","msg":"hello"}` + "\n"
+
+	n, err := sw.Write([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != len(input) {
+		t.Errorf("expected n=%d, got %d", len(input), n)
+	}
+
+	written := buf.String()
+	if strings.Contains(written, "canary.invalid") || strings.Contains(written, "SECRET-CANARY-1") {
+		t.Errorf("expected written output to be scrubbed, got: %s", written)
+	}
+	if !strings.Contains(written, "[REDACTED_IPTV_REF]") {
+		t.Errorf("expected written output to contain [REDACTED_IPTV_REF], got: %s", written)
+	}
+}
