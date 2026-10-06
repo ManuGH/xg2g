@@ -41,6 +41,8 @@ var publicUIReservedPrefixes = []string{
 	"/apk",
 	"/download",
 	"/xg2g.apk",
+	"/playlist.m3u",
+	"/playlist_public.m3u",
 }
 
 func (s *Server) newRouter() chi.Router {
@@ -300,7 +302,23 @@ func (s *Server) registerPublicRoutesWithPolicies(adapter *policyRegistrarAdapte
 	if err := adapter.Register(http.MethodGet, "/download/apk", http.HandlerFunc(s.serveAndroidApk)); err != nil {
 		return err
 	}
+	for _, pattern := range []string{"/playlist.m3u", "/playlist_public.m3u"} {
+		if err := adapter.Register(http.MethodGet, pattern, http.HandlerFunc(s.servePlaylist)); err != nil {
+			return err
+		}
+		if err := adapter.Register(http.MethodHead, pattern, http.HandlerFunc(s.servePlaylist)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// servePlaylist serves allowlisted playlist files via SecureFileServer.
+func (s *Server) servePlaylist(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	dataDir := s.cfg.DataDir
+	s.mu.RUnlock()
+	controlhttp.SecureFileServer(dataDir, controlhttp.NewPromFileMetrics()).ServeHTTP(w, r)
 }
 
 // serveAndroidApk serves the Android APK binary for direct Fire TV / Android TV sideloading.
