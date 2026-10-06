@@ -23,16 +23,17 @@ func TestServer_PlaylistReachabilityAndLeakPrevention(t *testing.T) {
 	dataDir := t.TempDir()
 
 	canaryToken := "CANARY_TOKEN_SECRET_XYZ_98765"
-	canaryURL := "http://canary-provider.example.com/live/auth_user/stream.ts"
-	rawServiceRef := "4097:0:1:1:0:0:0:0:0:0:http%3a//canary-provider.example.com/live/auth_user/stream.ts"
+	canaryURL := "http://provider.invalid/live/auth_user/stream.ts"
+	rawServiceRef := "4097:0:1:DEAD:BEEF:CAFE:0:0:0:0:http%3a//provider.invalid/live/auth_user/stream.ts"
 	opaqueID := "iptv_01j7canaryopaqueid1234"
+	dvbServiceRef := "1:0:19:AAAA:BBBB:CCCC:0:0:0:0:"
 
 	// 1. Internal raw playlist.m3u with 0600 permissions
 	rawContent := "#EXTM3U\n" +
 		"#EXTINF:-1 tvg-id=\"" + rawServiceRef + "\" tvg-name=\"Canary Stream\"," + canaryToken + "\n" +
 		canaryURL + "\n" +
-		"#EXTINF:-1 tvg-id=\"1:0:19:283D:3FB:1:C00000:0:0:0:\" tvg-name=\"Das Erste HD\",Das Erste HD\n" +
-		"http://receiver.local:8001/1:0:19:283D:3FB:1:C00000:0:0:0:\n"
+		"#EXTINF:-1 tvg-id=\"" + dvbServiceRef + "\" tvg-name=\"Demo DVB\",Demo DVB\n" +
+		"http://receiver.invalid:8001/" + dvbServiceRef + "\n"
 
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "playlist.m3u"), []byte(rawContent), 0600))
 
@@ -40,8 +41,8 @@ func TestServer_PlaylistReachabilityAndLeakPrevention(t *testing.T) {
 	publicContent := "#EXTM3U\n" +
 		"#EXTINF:-1 tvg-id=\"" + opaqueID + "\" tvg-name=\"Canary Stream\" tvg-logo=\"/logos/" + opaqueID + ".png\",Canary Stream\n" +
 		"/api/v3/stream/live/" + opaqueID + "\n" +
-		"#EXTINF:-1 tvg-id=\"1:0:19:283D:3FB:1:C00000:0:0:0:\" tvg-name=\"Das Erste HD\",Das Erste HD\n" +
-		"http://receiver.local:8001/1:0:19:283D:3FB:1:C00000:0:0:0:\n"
+		"#EXTINF:-1 tvg-id=\"" + dvbServiceRef + "\" tvg-name=\"Demo DVB\",Demo DVB\n" +
+		"http://receiver.invalid:8001/" + dvbServiceRef + "\n"
 
 	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "playlist_public.m3u"), []byte(publicContent), 0644))
 
@@ -62,9 +63,9 @@ func TestServer_PlaylistReachabilityAndLeakPrevention(t *testing.T) {
 
 	canaryMarkers := []string{
 		canaryToken,
-		"canary-provider.example.com",
+		"provider.invalid",
 		"auth_user",
-		"4097:0:1:1",
+		rawServiceRef,
 	}
 
 	// 5. Test GET and HEAD for /playlist.m3u and /playlist_public.m3u via s.Handler()
@@ -84,7 +85,7 @@ func TestServer_PlaylistReachabilityAndLeakPrevention(t *testing.T) {
 			}
 			assert.Contains(t, body, opaqueID, "endpoint %s must contain masked opaque ID", reqPath)
 			assert.Contains(t, body, "/api/v3/stream/live/"+opaqueID)
-			assert.Contains(t, body, "Das Erste HD")
+			assert.Equal(t, publicContent, body, "endpoint %s must serve the complete masked export", reqPath)
 		})
 
 		t.Run("HEAD "+reqPath, func(t *testing.T) {
@@ -100,17 +101,19 @@ func TestServer_PlaylistReachabilityAndLeakPrevention(t *testing.T) {
 
 	// 6. Test XMLTV / EPG blocking on s.Handler() (Option B fail-closed)
 	for _, blockedPath := range []string{"/xmltv.xml", "/epg.xml"} {
-		t.Run("Blocked "+blockedPath, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, blockedPath, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method+" "+blockedPath, func(t *testing.T) {
+				req := httptest.NewRequest(method, blockedPath, nil)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
 
-			assert.NotEqual(t, http.StatusOK, rec.Code, "endpoint %s must NOT return 200 OK", blockedPath)
-			body := rec.Body.String()
-			for _, marker := range canaryMarkers {
-				assert.NotContains(t, body, marker, "blocked endpoint %s leaked canary marker %q", blockedPath, marker)
-			}
-		})
+				assert.Equal(t, http.StatusNotFound, rec.Code, "endpoint %s must return 404", blockedPath)
+				body := rec.Body.String()
+				for _, marker := range canaryMarkers {
+					assert.NotContains(t, body, marker, "blocked endpoint %s leaked canary marker %q", blockedPath, marker)
+				}
+			})
+		}
 	}
 }
 
