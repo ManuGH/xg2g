@@ -1,11 +1,15 @@
-// Characterization of the native-HLS (iOS) "unmute -> black veil" path.
+// Native-HLS (iOS) "unmute -> black veil" regression.
 // Live native playback, user unmutes, WebKit reports a short 'waiting' while
-// several seconds are still buffered, then 'playing' again.
+// several seconds are still buffered, then 'playing' again. Before the fix the
+// waiting masked the picture at once and the veil's temporary mute revoked the
+// user's unmute; if every unmute costs WebKit a waiting, the veil re-triggered
+// itself.
 import { useRef } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
 import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
+import { NATIVE_WAITING_GRACE_MS } from './usePlaybackEngine';
 
 vi.mock('./lib/hlsRuntime', () => {
   function HlsMock(this: any) {
@@ -44,7 +48,7 @@ function installMediaState(el: HTMLVideoElement) {
   });
 }
 
-describe('native HLS unmute veil (characterization)', () => {
+describe('native HLS unmute veil', () => {
   let latest!: ReturnType<typeof usePlaybackOrchestrator>;
   let video!: HTMLVideoElement;
 
@@ -150,7 +154,7 @@ describe('native HLS unmute veil (characterization)', () => {
     expect(latest.viewState.showNativeBufferingMask).toBe(false);
   });
 
-  it('today: a short waiting after unmute masks the picture and re-mutes the user until the veil drops', async () => {
+  it('keeps the picture and the unmute through a short waiting with healthy buffer', async () => {
     await startLivePlayback();
     video.muted = true;
     act(() => { latest.actions.toggleMute(); });
@@ -159,33 +163,45 @@ describe('native HLS unmute veil (characterization)', () => {
     // WebKit: readyState drops to HAVE_CURRENT_DATA while 3 s are still buffered.
     media.readyState = 2;
     emit('waiting');
-    expect(latest.playbackState.status).toBe('buffering');
-    expect(latest.viewState.showNativeBufferingMask).toBe(true);
-    expect(video.muted).toBe(true);
-
-    // Playback resumes 200 ms later.
-    await play(200, { advancing: false });
+    let maskedMs = 0;
+    for (let t = 0; t < 200; t += 50) {
+      if (latest.viewState.showNativeBufferingMask) maskedMs += 50;
+      await play(50, { advancing: false });
+    }
     media.readyState = 4;
     emit('playing');
+    await play(2000);
 
-    let maskedMs = 0;
-    let mutedWhileMaskedMs = 0;
-    for (let t = 0; t < 6000 && latest.viewState.showNativeBufferingMask; t += 50) {
-      if (video.muted) mutedWhileMaskedMs += 50;
-      maskedMs += 50;
-      await play(50);
-    }
-    // The reveal watchdog (not the 2300 ms rebuffer veil) ends the mask.
-    expect(maskedMs).toBeLessThan(1000);
-    expect(mutedWhileMaskedMs).toBe(maskedMs);
+    expect(maskedMs).toBe(0);
+    expect(latest.viewState.showNativeBufferingMask).toBe(false);
+    expect(latest.playbackState.status).toBe('playing');
     expect(video.muted).toBe(false);
-    console.info(`[characterization] mask after resume: ${maskedMs} ms`);
   });
 
-  it('today: if every unmute costs WebKit a short waiting, the veil re-mutes and re-triggers itself', async () => {
+  it('still veils a healthy-buffer waiting that outlasts the grace window', async () => {
+    await startLivePlayback();
+    media.readyState = 2;
+    emit('waiting');
+    await play(NATIVE_WAITING_GRACE_MS - 50, { advancing: false });
+    expect(latest.viewState.showNativeBufferingMask).toBe(false);
+    await play(100, { advancing: false });
+    expect(latest.playbackState.status).toBe('buffering');
+    expect(latest.viewState.showNativeBufferingMask).toBe(true);
+  });
+
+  it('veils at once when the buffer is starved', async () => {
+    await startLivePlayback();
+    media.bufferedAhead = 0.2;
+    media.readyState = 2;
+    emit('waiting');
+    expect(latest.playbackState.status).toBe('buffering');
+    expect(latest.viewState.showNativeBufferingMask).toBe(true);
+  });
+
+  it('does not loop when every unmute costs WebKit a short waiting', async () => {
     await startLivePlayback();
 
-    // Hypothesis model of iOS: each muted->unmuted transition causes a 200 ms waiting.
+    // Device-derived model of iOS: a muted->unmuted transition causes a 200 ms waiting.
     let mutedValue = false;
     let waitingCount = 0;
     Object.defineProperty(video, 'muted', {
@@ -215,8 +231,8 @@ describe('native HLS unmute veil (characterization)', () => {
       if (latest.viewState.showNativeBufferingMask) maskedMs += 50;
       await play(50);
     }
-    console.info(`[characterization] unmute-waiting model: ${waitingCount} waiting cycles, masked ${maskedMs} ms of 5000`);
-    // One user unmute turns into repeated veil cycles.
-    expect(waitingCount).toBeGreaterThanOrEqual(3);
+    expect(waitingCount).toBe(1);
+    expect(maskedMs).toBe(0);
+    expect(video.muted).toBe(false);
   });
 });
