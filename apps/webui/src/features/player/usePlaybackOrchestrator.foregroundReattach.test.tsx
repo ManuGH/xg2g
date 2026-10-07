@@ -127,7 +127,9 @@ describe('native HLS foreground reattach', () => {
     now = 1_000;
     visibility = 'visible';
     srcAssignments = [];
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    // Wall clock only: performance.now keeps ticking normally here, like an
+    // iOS device whose monotonic clock paused during the lock.
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
     media.currentTime = 100;
     media.readyState = 4;
@@ -187,11 +189,11 @@ describe('native HLS foreground reattach', () => {
     expect(srcAssignments[srcAssignments.length - 1]).toBe(srcAssignments[before - 1]);
   });
 
-  it('keeps the plain resume after a short background', async () => {
+  it('keeps the plain resume after a momentary hide', async () => {
     await startLivePlayback();
     const before = srcAssignments.length;
 
-    await background(5_000);
+    await background(1_000);
 
     expect(srcAssignments.length).toBe(before);
   });

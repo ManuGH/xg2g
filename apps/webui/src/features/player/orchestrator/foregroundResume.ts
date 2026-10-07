@@ -7,12 +7,14 @@
 
 export type ForegroundResumeAction = 'retry' | 'reattach' | 'play' | 'none';
 
-// iOS Safari pauses inline video when the screen locks (WebKit interruption
-// "SuspendedUnderLock") and freezes the page. Resuming a live native-HLS stream
-// at the minutes-old position afterwards seeks into a cold AVPlayer pipeline that
-// often fails (seek cancelled, video track restarting at segment 0 while audio
-// plays on). Past this long a gap a live stream rejoins the live edge instead.
-export const LIVE_FOREGROUND_REATTACH_MS = 20_000;
+// iOS Safari pauses inline video whenever the page goes to the background
+// (WebKit interruptions "EnteringBackground" / "SuspendedUnderLock") and releases
+// the video render resource. Resuming a live native-HLS stream with play() then
+// keeps the clock and audio running over a black video layer, or seeks into a
+// cold pipeline (seek cancelled, video restarting at segment 0). Past this short
+// a gap a live stream re-attaches its source and rejoins the live edge; only
+// momentary hides keep the play() nudge.
+export const LIVE_FOREGROUND_REATTACH_MS = 3_000;
 
 export interface ForegroundResumeInput {
   /** True only on a genuine hidden -> visible transition (not mount/initial). */
@@ -25,7 +27,7 @@ export interface ForegroundResumeInput {
   userPaused: boolean;
   /** Status is terminal (stopped/idle/error). */
   hasTerminal: boolean;
-  /** How long the page was hidden, in ms (0 when unknown). */
+  /** How long the page was hidden, in wall-clock ms (0 when unknown). */
   hiddenMs?: number;
   /** The stream is live (not VOD / recording). */
   isLive?: boolean;
