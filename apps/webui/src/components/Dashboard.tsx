@@ -56,14 +56,15 @@ export default function Dashboard() {
 
   const streamCount = streams.length;
   const receiverUnavailable = receiver?.status === 'unavailable';
-  const currentChannel = receiver?.channel?.name || (receiverUnavailable ? t('common.receiverStandby') : t('dashboard.receiverReady'));
+  const currentChannel = receiver?.channel?.name;
   const now = receiver?.now;
   const next = receiver?.next;
   const missingChannels = health.epg?.missingChannels || 0;
   const summaryTone: SummaryTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
 
-
-  const summaryTitle = currentChannel;
+  const summaryTitle = receiverUnavailable
+    ? t('dashboard.heroStandbyTitle', { defaultValue: 'Bereit für Wiedergabe' })
+    : (currentChannel || t('dashboard.receiverReady', { defaultValue: 'Live-TV' }));
 
   const summaryDescription = streamCount > 0
     ? (now?.description || t('dashboard.heroStreamingSummary', { count: streamCount }))
@@ -101,29 +102,35 @@ export default function Dashboard() {
   const systemFacts = [
     {
       label: t('dashboard.systemState', { defaultValue: 'Systemstatus' }),
-      value: undefined,
-      detail: health.version ? `v${health.version}` : undefined,
+      value: health.version ? `v${health.version}` : t('dashboard.systemHealthy', { defaultValue: 'Online' }),
+      detail: t('dashboard.systemHealthyDetail', { defaultValue: 'Alle Dienste betriebsbereit' }),
       chip: healthChip,
     },
     {
-      label: t('dashboard.receiverLabel'),
-      value: receiverUnavailable ? t('dashboard.standby') : t('dashboard.connected'),
-      detail: currentChannel,
+      label: t('dashboard.receiverLabel', { defaultValue: 'Receiver' }),
+      value: receiverUnavailable ? t('dashboard.standby', { defaultValue: 'Standby' }) : t('dashboard.connected', { defaultValue: 'Verbunden' }),
+      detail: receiverUnavailable
+        ? t('dashboard.receiverStandbyDetail', { defaultValue: 'Bereit für TV-Aktivierung' })
+        : (currentChannel || t('dashboard.receiverReady', { defaultValue: 'Bereit' })),
     },
     {
-      label: t('dashboard.lastSyncLabel'),
+      label: t('dashboard.lastSyncLabel', { defaultValue: 'Letzte Sync' }),
       value: formatTimeAgo(health.receiver?.lastCheck, t),
-      detail: t('dashboard.readOnlySummary'),
+      detail: t('dashboard.readOnlySummary', { defaultValue: 'Automatisch synchronisiert' }),
     },
     {
-      label: t('dashboard.guideHealth'),
+      label: t('dashboard.guideHealth', { defaultValue: 'Programmführer' }),
       value: guideHealthLabel,
-      detail: missingChannels === 0 ? t('dashboard.allChannelsHaveData') : t('dashboard.channelsMissingGuideData'),
+      detail: missingChannels === 0
+        ? t('dashboard.allChannelsHaveData', { defaultValue: 'Alle Kanäle versorgt' })
+        : t('dashboard.channelsMissingGuideData', { count: missingChannels, defaultValue: 'Kanäle unvollständig' }),
     },
     {
-      label: t('dashboard.recorder'),
+      label: t('dashboard.recorder', { defaultValue: 'Aufnahmen' }),
       value: recorderLabel,
-      detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle'),
+      detail: recording?.isRecording
+        ? t('dashboard.recordingActive', { defaultValue: 'Aufnahme aktiv' })
+        : t('dashboard.recorderIdle', { defaultValue: 'Keine laufende Aufnahme' }),
     },
   ];
 
@@ -175,7 +182,7 @@ export default function Dashboard() {
               {receiverUnavailable ? (
                 <span className={styles.heroStandbyBadge}>
                   <span className={styles.heroStandbyDot} aria-hidden="true" />
-                  {t('dashboard.receiverStandby', { defaultValue: 'Receiver im Standby' })}
+                  {t('dashboard.standby', { defaultValue: 'Standby' })}
                 </span>
               ) : (
                 <span className={styles.heroChannelBadge}>
@@ -240,9 +247,6 @@ export default function Dashboard() {
               {t('dashboard.noActiveStreams', { defaultValue: 'Keine aktiven Streams' })}
             </span>
           </div>
-          <span className={styles.idleSessionsHint}>
-            {t('dashboard.startPlaybackHint', { defaultValue: 'Starte Wiedergabe über TV oder Aufnahmen' })}
-          </span>
         </div>
       )}
 
@@ -273,8 +277,10 @@ export default function Dashboard() {
                   <StatusChip state={item.chip.state} label={item.chip.label} />
                 )}
               </div>
-              {item.value && <span className={styles.healthValue}>{item.value}</span>}
-              {item.detail && <span className={styles.healthDetail}>{item.detail}</span>}
+              <div className={styles.healthBody}>
+                {item.value && <span className={styles.healthValue}>{item.value}</span>}
+                {item.detail && <span className={styles.healthDetail}>{item.detail}</span>}
+              </div>
             </Card>
           ))}
         </div>
