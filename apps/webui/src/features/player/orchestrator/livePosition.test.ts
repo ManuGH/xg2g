@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markLivePosition, resolveLivePosition } from './livePosition';
+import { LIVE_POSITION_FOLLOW_TOLERANCE_MS, followLivePosition, markLivePosition, resolveLivePosition } from './livePosition';
 
 function media(opts: { currentTime: number; startDateMs?: number; seekable?: [number, number] }): HTMLMediaElement {
   const el = document.createElement('video');
@@ -42,3 +42,39 @@ describe('live DVR position across a re-attach', () => {
     expect(resolveLivePosition(mark, media({ currentTime: 0, seekable: [0, 300] }))).toBe(75);
   });
 });
+
+describe('following a live position while the page is hidden', () => {
+  const at = (currentTime: number, startDateMs: number | null = 1_000_000) => ({ currentTime, startDateMs });
+  const slack = LIVE_POSITION_FOLLOW_TOLERANCE_MS;
+
+  it('follows playback that advanced as long as it played', () => {
+    expect(followLivePosition(at(100), at(130), 30_000)).toEqual(at(130));
+  });
+
+  it('rejects a jump further ahead than the playing time allows', () => {
+    // Resumed for one second, then the cold player sits at the live edge.
+    expect(followLivePosition(at(100), at(400), 1_000)).toBeNull();
+    expect(followLivePosition(at(100), at(100 + (1_000 + slack + 1) / 1000), 1_000)).toBeNull();
+  });
+
+  it('rejects a jump back towards the window start', () => {
+    expect(followLivePosition(at(100), at(2), 5_000)).toBeNull();
+  });
+
+  it('tolerates small backward corrections', () => {
+    expect(followLivePosition(at(100), at(99.9), 0)).toEqual(at(99.9));
+  });
+
+  it('compares programme dates when both marks carry one', () => {
+    // Same programme moment, new timeline origin 20 s later.
+    expect(followLivePosition(at(100, 1_000_000), at(80, 1_020_000), 0)).toEqual(at(80, 1_020_000));
+    // Same media time but 300 s later in programme time: a jump.
+    expect(followLivePosition(at(100, 1_000_000), at(100, 1_300_000), 1_000)).toBeNull();
+  });
+
+  it('falls back to media time without a programme date', () => {
+    expect(followLivePosition(at(100, null), at(110, null), 10_000)).toEqual(at(110, null));
+    expect(followLivePosition(at(100, null), at(110, 1_000_000), 1_000)).toBeNull();
+  });
+});
+
