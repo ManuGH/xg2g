@@ -49,6 +49,12 @@ type WaitForSessionReadyFn = (sessionId: string, budgetMs?: number) => Promise<V
 type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void>;
 
 const NATIVE_STALL_RECOVERY_MS = 2500;
+// Native WebKit HLS reports 'waiting' for transient pipeline reconfigurations
+// (device-observed on iOS when the user unmutes) while seconds of media are
+// still buffered. Such a waiting only counts as a stall if playback has not
+// resumed within this window; until then the last frame stays visible instead
+// of the buffering veil, whose temporary mute would also revoke the unmute.
+export const NATIVE_WAITING_GRACE_MS = 700;
 const HLS_STALL_RECOVERY_MS = 2200;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED = 220;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
@@ -1477,6 +1483,21 @@ export function usePlaybackEngine({
       }
     };
 
+    let nativeWaitingGraceTimer: number | null = null;
+    const clearNativeWaitingGrace = () => {
+      if (nativeWaitingGraceTimer !== null) {
+        window.clearTimeout(nativeWaitingGraceTimer);
+        nativeWaitingGraceTimer = null;
+      }
+    };
+
+    const enterWaitingBuffering = () => {
+      cancelPendingReveal();
+      clearProbeConfirmation();
+      clearHlsRenderProbe(false);
+      setStatus('buffering');
+    };
+
     const onWaiting = () => {
       if (decodeRecoveryInFlightRef.current) {
         debugLog('[V3Player] Event: waiting ignored during decode recovery');
@@ -1503,11 +1524,39 @@ export function usePlaybackEngine({
         return;
       }
 
-      debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
-      cancelPendingReveal();
-      clearProbeConfirmation();
-      clearHlsRenderProbe(false);
-      setStatus('buffering');
+      // 'waiting' implies readyState <= HAVE_CURRENT_DATA, so the gate above
+      // rarely applies to live native playback. A healthy buffer still means
+      // this is not network starvation: hold the frame for the grace window.
+      const holdFrame =
+        lastHlsEngineRef.current === 'native' && !hlsRef.current && !videoEl.paused && bufferHealth > 0.5;
+      if (holdFrame) {
+        debugLog('[V3Player] Event: waiting (holding frame)', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
+        if (nativeWaitingGraceTimer === null) {
+          const waitingAt = videoEl.currentTime;
+          const waitingSrc = videoEl.currentSrc;
+          const waitingSessionId = sessionIdRef.current;
+          nativeWaitingGraceTimer = window.setTimeout(() => {
+            nativeWaitingGraceTimer = null;
+            if (
+              isTeardownRef.current ||
+              isUnmountedRef.current ||
+              decodeRecoveryInFlightRef.current ||
+              videoEl.paused ||
+              videoEl.currentSrc !== waitingSrc ||
+              sessionIdRef.current !== waitingSessionId ||
+              videoEl.currentTime - waitingAt > 0.1
+            ) {
+              return;
+            }
+            debugLog('[V3Player] Event: waiting persisted -> buffering');
+            enterWaitingBuffering();
+          }, NATIVE_WAITING_GRACE_MS);
+        }
+      } else {
+        debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
+        clearNativeWaitingGrace();
+        enterWaitingBuffering();
+      }
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting', 'decode');
       scheduleNativeStallRecovery(videoEl, 'waiting');
       scheduleHlsStallRecovery(videoEl, 'waiting');
@@ -1558,6 +1607,7 @@ export function usePlaybackEngine({
         return;
       }
 
+      clearNativeWaitingGrace();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
@@ -1582,6 +1632,7 @@ export function usePlaybackEngine({
     };
 
     const onPlaying = () => {
+      clearNativeWaitingGrace();
       onPlaybackMilestone?.('firstFrame');
       debugLog('[V3Player] Event: playing');
       clearNativeStallRecovery();
@@ -1655,6 +1706,7 @@ export function usePlaybackEngine({
       if (isTeardownRef.current) {
         return;
       }
+      clearNativeWaitingGrace();
       cancelPendingReveal();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
@@ -1673,6 +1725,7 @@ export function usePlaybackEngine({
     };
 
     const onError = () => {
+      clearNativeWaitingGrace();
       if (isTeardownRef.current) return;
       if (!videoEl.currentSrc || videoEl.currentSrc === 'about:blank') return;
 
@@ -1847,6 +1900,7 @@ export function usePlaybackEngine({
 
     return () => {
       cancelPendingReveal();
+      clearNativeWaitingGrace();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
