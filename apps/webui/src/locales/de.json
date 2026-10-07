@@ -505,6 +505,7 @@
     "heroStreamingSummary": "{{count}} aktive Sitzung(en) über die Receiver-Bridge.",
     "heroStandbyTitle": "Was läuft gerade?",
     "heroStandbySummary": "Live-TV ansehen und durch das aktuelle Programm stöbern.",
+    "heroReadyBadge": "Bereit",
     "heroNextUp": "Als Nächstes auf dem Receiver: {{title}}",
     "heroDefaultSummary": "Live-TV, Timer, Aufnahmen und Diagnose über eine einzige Steuerfläche starten.",
     "readOnlySummary": "Automatisch synchronisiert",

@@ -140,7 +140,7 @@ export default function Dashboard() {
               {receiverUnavailable ? (
                 <span className={styles.heroStandbyBadge}>
                   <span className={styles.heroStandbyDot} aria-hidden="true" />
-                  {t('dashboard.standby', { defaultValue: 'Standby' })}
+                  {t('dashboard.heroReadyBadge', { defaultValue: 'Bereit' })}
                 </span>
               ) : (
                 <span className={styles.heroChannelBadge}>

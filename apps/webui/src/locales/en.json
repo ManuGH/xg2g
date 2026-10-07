@@ -505,6 +505,7 @@
     "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
     "heroStandbyTitle": "What's on right now?",
     "heroStandbySummary": "Watch Live TV and browse the current program guide.",
+    "heroReadyBadge": "Ready",
     "heroNextUp": "Next on the receiver: {{title}}",
     "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
     "readOnlySummary": "Automatically synchronized",
