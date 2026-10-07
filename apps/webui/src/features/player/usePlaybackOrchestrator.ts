@@ -2048,7 +2048,10 @@ export function usePlaybackOrchestrator(
 
     if (!isDocumentVisible) {
       if (!wasHiddenRef.current) {
-        hiddenSinceRef.current = performance.now();
+        // Wall clock on purpose: iOS's monotonic clock (performance.now) stops
+        // while the device sleeps under lock, so a minutes-long lock measured as
+        // a few seconds.
+        hiddenSinceRef.current = Date.now();
       }
       wasHiddenRef.current = true;
       return;
@@ -2056,7 +2059,7 @@ export function usePlaybackOrchestrator(
 
     const wasHidden = wasHiddenRef.current;
     wasHiddenRef.current = false;
-    const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? performance.now() - hiddenSinceRef.current : 0;
+    const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? Date.now() - hiddenSinceRef.current : 0;
     hiddenSinceRef.current = null;
 
     // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
