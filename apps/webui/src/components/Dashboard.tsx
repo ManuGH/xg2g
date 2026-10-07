@@ -63,13 +63,13 @@ export default function Dashboard() {
   const summaryTone: SummaryTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
 
   const summaryTitle = receiverUnavailable
-    ? t('dashboard.heroStandbyTitle', { defaultValue: 'Was möchtest du ansehen?' })
+    ? t('dashboard.heroStandbyTitle', { defaultValue: 'Was läuft gerade?' })
     : (currentChannel || t('dashboard.receiverReady', { defaultValue: 'Live-TV' }));
 
   const summaryDescription = streamCount > 0
     ? (now?.description || t('dashboard.heroStreamingSummary', { count: streamCount }))
     : receiverUnavailable
-      ? t('dashboard.heroStandbySummary', { defaultValue: 'Live-TV starten oder dort weitermachen, wo du aufgehört hast.' })
+      ? t('dashboard.heroStandbySummary', { defaultValue: 'Live-TV ansehen und durch das aktuelle Programm stöbern.' })
       : next?.title
         ? t('dashboard.heroNextUp', { title: next.title })
         : t('dashboard.heroDefaultSummary');
@@ -194,40 +194,60 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 4. HEUTE / GEPLANT & ALLTAGSAKTIONEN */}
+      {/* 4. HEUTE / GEPLANT (INFO) & ALLTAGS-AKTIONEN (NAVIGATION) */}
       {(directActions.length > 0 || nextTimer) && (
         <div className={styles.actionsSection}>
-          <div className={styles.shortcutsRow}>
-            {nextTimer && (
-              <button
-                type="button"
-                className={styles.upcomingTimerPill}
-                onClick={() => navigate(buildEpgRoute('timers'))}
-                title={nextTimer.name}
-              >
+          {nextTimer && (
+            <button
+              type="button"
+              className={styles.upcomingTimerBanner}
+              onClick={() => navigate(buildEpgRoute('timers'))}
+              title={nextTimer.name}
+            >
+              <div className={styles.upcomingTimerInfo}>
                 <span className={styles.upcomingTimerDot} aria-hidden="true" />
-                <span className={styles.upcomingTimerText}>
-                  {t('dashboard.upcomingTimerSummary', {
-                    count: scheduledTimers.length,
-                    time: formatTimerTime(nextTimer.begin),
-                    name: nextTimer.name,
-                    defaultValue: `${scheduledTimers.length} geplante Aufnahmen · Nächste: ${formatTimerTime(nextTimer.begin)} (${nextTimer.name})`,
-                  })}
+                <span className={styles.upcomingTimerPrefix}>
+                  {t('dashboard.nextRecording', { defaultValue: 'Nächste Aufnahme' })}:
                 </span>
-              </button>
-            )}
-            {directActions.map((action) => (
-              <Button
-                key={action.id}
-                variant="secondary"
-                size="sm"
-                className={styles.shortcutButton}
-                onClick={action.onAction}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
+                <span className={styles.upcomingTimerContent}>
+                  <span className={styles.upcomingTimerTime}>
+                    {formatTimerTime(nextTimer.begin)}
+                  </span>
+                  <span className={styles.upcomingTimerDivider} aria-hidden="true">·</span>
+                  <span className={styles.upcomingTimerTitle}>
+                    {nextTimer.name}
+                  </span>
+                </span>
+                {scheduledTimers.length > 1 && (
+                  <span className={styles.upcomingTimerBadge}>
+                    {t('dashboard.moreTimersCount', {
+                      count: scheduledTimers.length - 1,
+                      defaultValue: `+${scheduledTimers.length - 1} weitere`,
+                    })}
+                  </span>
+                )}
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.upcomingTimerChevron} aria-hidden="true">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
+
+          {directActions.length > 0 && (
+            <div className={styles.shortcutsRow}>
+              {directActions.map((action) => (
+                <Button
+                  key={action.id}
+                  variant="secondary"
+                  size="sm"
+                  className={styles.shortcutButton}
+                  onClick={action.onAction}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -284,12 +304,7 @@ function capitalize(value: string): string {
 function formatTimerTime(ts: number | undefined): string {
   if (!ts) return '';
   const d = new Date(ts * 1000);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
+  const weekday = d.toLocaleDateString([], { weekday: 'short' });
   const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (isToday) {
-    return timeStr;
-  }
-  const dateStr = d.toLocaleDateString([], { weekday: 'short' });
-  return `${dateStr} ${timeStr}`;
+  return `${weekday} ${timeStr}`;
 }

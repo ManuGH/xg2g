@@ -202,4 +202,28 @@ describe('Dashboard', () => {
     fireEvent.click(timerButton);
     expect(mockNavigate).toHaveBeenCalledWith(buildEpgRoute('timers'));
   });
+
+  it('displays more timers badge when multiple scheduled timers exist', () => {
+    mockUseTimers.mockReturnValue({
+      data: [
+        {
+          timerId: 'timer-1',
+          name: 'Tatort',
+          begin: 1710000000,
+          end: 1710003600,
+          state: 'scheduled',
+        },
+        {
+          timerId: 'timer-2',
+          name: 'Tagesschau',
+          begin: 1710007200,
+          end: 1710008100,
+          state: 'scheduled',
+        },
+      ],
+    });
+
+    render(<Dashboard />);
+    expect(screen.getByText('+1 more')).toBeInTheDocument();
+  });
 });
