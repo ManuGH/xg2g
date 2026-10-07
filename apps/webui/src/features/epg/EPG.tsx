@@ -560,33 +560,51 @@ export default function EPG({
         useCompactLandscapeSurface ? styles.surfaceCompactLandscape : null,
       ].filter(Boolean).join(' ')}
     >
-      {canManageDvr ? (
-        <div className={styles.surfaceNavHeader}>
+      <div className={styles.surfaceNavHeader}>
+        <button
+          type="button"
+          className={[styles.surfaceTab, styles.sidebarToggle].join(' ')}
+          onClick={() => window.dispatchEvent(new Event('xg2g:toggle-sidebar'))}
+          title={t('epg.sidebarToggleTitle', {})}
+          aria-label={t('epg.sidebarToggleLabel', {})}
+        >
+          <svg className={styles.sidebarToggleIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <line x1="9" y1="3" x2="9" y2="21" />
+          </svg>
+        </button>
+        <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel')}>
           <button
             type="button"
-            className={[styles.surfaceTab, styles.sidebarToggle].join(' ')}
-            onClick={() => window.dispatchEvent(new Event('xg2g:toggle-sidebar'))}
-            title={t('epg.sidebarToggleTitle', {})}
-            aria-label={t('epg.sidebarToggleLabel', {})}
+            role="tab"
+            aria-selected={activeSection === 'guide' && viewMode === 'list'}
+            className={[
+              styles.surfaceTab,
+              activeSection === 'guide' && viewMode === 'list' ? styles.surfaceTabActive : null,
+            ].filter(Boolean).join(' ')}
+            onClick={() => {
+              handleSectionChange('guide');
+              setViewMode('list');
+            }}
           >
-            <svg className={styles.sidebarToggleIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="3" />
-              <line x1="9" y1="3" x2="9" y2="21" />
-            </svg>
+            {t('epg.viewMode.list', { defaultValue: 'Liste' })}
           </button>
-          <div className={styles.surfaceTabs} role="tablist" aria-label={t('epg.sectionNavLabel')}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSection === 'guide'}
-              className={[
-                styles.surfaceTab,
-                activeSection === 'guide' ? styles.surfaceTabActive : null,
-              ].filter(Boolean).join(' ')}
-              onClick={() => handleSectionChange('guide')}
-            >
-              {t('nav.epg')}
-            </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === 'guide' && viewMode === 'grid'}
+            className={[
+              styles.surfaceTab,
+              activeSection === 'guide' && viewMode === 'grid' ? styles.surfaceTabActive : null,
+            ].filter(Boolean).join(' ')}
+            onClick={() => {
+              handleSectionChange('guide');
+              setViewMode('grid');
+            }}
+          >
+            {t('epg.viewMode.timeline', { defaultValue: 'Timeline' })}
+          </button>
+          {canManageDvr && (
             <button
               type="button"
               role="tab"
@@ -597,11 +615,11 @@ export default function EPG({
               ].filter(Boolean).join(' ')}
               onClick={() => handleSectionChange('timers')}
             >
-              {t('nav.timers')}
+              {t('nav.timers', { defaultValue: 'Timer' })}
             </button>
-          </div>
+          )}
         </div>
-      ) : null}
+      </div>
 
       {activeSection === 'timers' ? (
         <SectionContextBar
@@ -635,20 +653,6 @@ export default function EPG({
             onRefresh={loadEpgEvents}
             onToggleFavorites={() => setShowFavoritesOnly((current) => !current)}
             onSearch={runSearch}
-            extraActions={
-              <>
-                <button type="button" onClick={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}>
-                  <span className={styles.actionIcon} aria-hidden="true">{viewMode === 'grid' ? '☰' : '▦'}</span>
-                  <span className={styles.actionLabel}>{viewMode === 'grid' ? t('epg.viewMode.list', {}) : t('epg.viewMode.timeline', {})}</span>
-                </button>
-                {canManageDvr ? (
-                  <button type="button" onClick={() => handleSectionChange('timers')}>
-                    <span className={styles.actionIcon} aria-hidden="true">⏱</span>
-                    <span className={styles.actionLabel}>{t('nav.timers')}</span>
-                  </button>
-                ) : null}
-              </>
-            }
           />
 
           {showFavoritesOnly && visibleChannels.length === 0 && (

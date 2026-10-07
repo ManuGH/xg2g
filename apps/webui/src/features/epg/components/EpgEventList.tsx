@@ -85,20 +85,23 @@ export function EpgEventRow({
           {formatRange(event.start, event.end)}
           {onRecord &&
             (isRecorded ? (
-              <span title={t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' })} className={styles.recordIndicator}>
-                <span className={styles.recordIndicatorDot} />
+              <span title={t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' })} className={styles.recordIndicator}>
+                <span className={styles.recordIndicatorDot} aria-hidden="true" />
                 <span className={styles.recordIndicatorLabel}>REC</span>
               </span>
             ) : (
               <button
+                type="button"
                 className={styles.recordButton}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRecord(event);
                 }}
-                title={t('epg.planRecording', { defaultValue: 'Schedule recording' })}
+                title={t('epg.planRecording', { defaultValue: 'Sendung aufnehmen' })}
+                aria-label={t('epg.planRecording', { defaultValue: 'Sendung aufnehmen' })}
               >
-                <span className={styles.recordButtonDot} />
+                <span className={styles.recordButtonIcon} aria-hidden="true">⏺</span>
+                <span className={styles.recordButtonLabel}>REC</span>
               </button>
             ))}
         </div>
@@ -112,11 +115,16 @@ export function EpgEventRow({
           {inProgress && (
             <div className={styles.progressContainer}>
               <div className={styles.progress}>
-                <div className={styles.progressBar} style={progressStyle} />
+                <div
+                  className={[
+                    styles.progressBar,
+                    pct >= 90 ? styles.progressBarEnding : null,
+                  ].filter(Boolean).join(' ')}
+                  style={progressStyle}
+                />
               </div>
               <div className={styles.progressMeta}>
                 <span>{formatTime(event.start)}</span>
-                <span>{pct}%</span>
                 <span>{formatTime(event.end)}</span>
               </div>
             </div>

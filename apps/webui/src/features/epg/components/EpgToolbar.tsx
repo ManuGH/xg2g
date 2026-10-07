@@ -34,7 +34,7 @@ export interface EpgToolbarProps {
 export function EpgToolbar({
   channelQuery,
   onChannelQueryChange,
-  channelCount,
+  channelCount: _channelCount,
   favoriteCount,
   showFavoritesOnly,
   filters,
@@ -63,20 +63,11 @@ export function EpgToolbar({
 
   return (
     <section className={styles.toolbarCompact}>
-      {/* Row 1: Studio Header & Primary Action Buttons */}
+      {/* Row 1: Clean Header & Primary Action Buttons */}
       <div className={styles.toolbarHeaderRow}>
         <div className={styles.toolbarTitleGroup}>
           <div className={styles.toolbarTitleText}>
-            <span className={styles.toolbarEyebrow}>{t('epg.pageTitleEyebrow', { defaultValue: 'LIVE GUIDE' })}</span>
-            <h3 className={styles.toolbarTitle}>{t('epg.pageTitle', { count: channelCount })}</h3>
-          </div>
-          <div className={styles.toolbarStatsStrip}>
-            <span className={styles.statBadge}>
-              <strong>{channelCount}</strong> {t('epg.allServices', { defaultValue: 'Sender' })}
-            </span>
-            <span className={styles.statBadge}>
-              ★ <strong>{favoriteCount}</strong> {t('epg.favorites', { defaultValue: 'Favoriten' })}
-            </span>
+            <h3 className={styles.toolbarTitle}>{t('nav.epg', { defaultValue: 'EPG' })}</h3>
             <span className={styles.statBadgeDate}>{dateLabel}</span>
           </div>
         </div>
@@ -92,12 +83,11 @@ export function EpgToolbar({
             onClick={onToggleFavorites}
             disabled={favoriteCount === 0}
             aria-pressed={showFavoritesOnly}
+            title={favoriteCount === 0 ? (t('epg.noFavorites') as string) : undefined}
           >
             <span className={styles.actionIcon} aria-hidden="true">{showFavoritesOnly ? '★' : '☆'}</span>
             <span className={styles.actionLabel}>
-              {showFavoritesOnly
-                ? t('epg.favoritesOn', { defaultValue: 'Favoriten aktiv' })
-                : t('epg.favoritesOff', { defaultValue: 'Favoritenfilter' })}
+              {t('epg.favorites', { defaultValue: 'Favoriten' })}
             </span>
           </button>
           <button

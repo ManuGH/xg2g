@@ -386,26 +386,31 @@ function ChannelHeader({
           <div className={styles.channelAux}>
             {channel?.group && <div className={styles.channelGroup}>{channel.group}</div>}
             {playbackBadge && (
-              <div className={styles.channelPlaybackMeta}>
-                <span
-                  className={[
-                    styles.channelPlaybackBadge,
-                    playbackBadge.mode === 'direct_play'
-                      ? styles.channelPlaybackBadgeDirect
-                      : playbackBadge.mode === 'direct_stream'
-                        ? styles.channelPlaybackBadgeRemux
-                        : playbackBadge.mode === 'transcode'
-                          ? styles.channelPlaybackBadgeEncode
-                          : styles.channelPlaybackBadgeBlocked,
-                  ].join(' ')}
-                  title={playbackBadge.title}
-                >
-                  {playbackBadge.label}
-                </span>
-                {playbackBadge.detail && (
-                  <span className={styles.channelPlaybackDetail}>{playbackBadge.detail}</span>
-                )}
-              </div>
+              <details className={styles.channelTechDetails} onClick={(e) => e.stopPropagation()}>
+                <summary className={styles.channelTechSummary} title={playbackBadge.title}>
+                  ⓘ {t('epg.details', { defaultValue: 'Details' })}
+                </summary>
+                <div className={styles.channelPlaybackMeta}>
+                  <span
+                    className={[
+                      styles.channelPlaybackBadge,
+                      playbackBadge.mode === 'direct_play'
+                        ? styles.channelPlaybackBadgeDirect
+                        : playbackBadge.mode === 'direct_stream'
+                          ? styles.channelPlaybackBadgeRemux
+                          : playbackBadge.mode === 'transcode'
+                            ? styles.channelPlaybackBadgeEncode
+                            : styles.channelPlaybackBadgeBlocked,
+                    ].join(' ')}
+                    title={playbackBadge.title}
+                  >
+                    {playbackBadge.label}
+                  </span>
+                  {playbackBadge.detail && (
+                    <span className={styles.channelPlaybackDetail}>{playbackBadge.detail}</span>
+                  )}
+                </div>
+              </details>
             )}
           </div>
         )}

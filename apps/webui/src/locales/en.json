@@ -667,6 +667,7 @@
     "sidebarToggleTitle": "Show sidebar (⌘B)",
     "sidebarToggleLabel": "Show sidebar",
     "timelineLabel": "EPG Timeline",
+    "details": "Details",
     "toggleFavorite": "Toggle favorite",
     "uhdPaused": "UHD paused",
     "unknownChannel": "Unknown channel",

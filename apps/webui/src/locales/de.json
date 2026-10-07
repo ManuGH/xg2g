@@ -667,6 +667,7 @@
     "sidebarToggleTitle": "Seitenleiste einblenden (⌘B)",
     "sidebarToggleLabel": "Seitenleiste einblenden",
     "timelineLabel": "EPG-Zeitleiste",
+    "details": "Details",
     "toggleFavorite": "Favorit umschalten",
     "uhdPaused": "UHD pausiert",
     "unknownChannel": "Unbekannter Sender",
