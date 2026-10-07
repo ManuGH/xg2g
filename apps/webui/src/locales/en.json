@@ -547,6 +547,7 @@
     "sessions": "{{count}} sessions",
     "noSessions": "No sessions",
     "noActiveStreams": "No active streams",
+    "receiverStandby": "Receiver on standby",
     "startPlaybackHint": "Start playback from TV/EPG or Recordings and the session diagnostics will appear here.",
     "signal": "Signal",
     "systemState": "System state",
@@ -630,7 +631,10 @@
     "continueWatching": {
       "title": "Continue watching",
       "remaining": "{{minutes}} min left",
-      "untitled": "Recording"
+      "untitled": "Recording",
+      "allRecordings": "All recordings",
+      "dismiss": "Remove from Continue watching",
+      "dismissed": "\"{{title}}\" removed from Continue watching"
     },
     "startLive": {
       "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."

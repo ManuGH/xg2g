@@ -543,10 +543,11 @@
     "guideHealth": "Programmführer",
     "diagnostics": "Diagnose",
     "activeStreams": "Aktive Streams",
-    "operatorSessions": "Operator-Sitzungen",
-    "sessions": "{{count}} Sitzungen",
+    "operatorSessions": "Aktive Wiedergaben",
+    "sessions": "{{count}} aktiv",
     "noSessions": "Keine Sitzungen",
-    "noActiveStreams": "Keine aktiven Streams",
+    "noActiveStreams": "Keine aktiven Wiedergaben",
+    "receiverStandby": "Receiver im Standby",
     "startPlaybackHint": "Starte Wiedergabe über TV/EPG oder Aufnahmen – die Sitzungsdiagnose erscheint dann hier.",
     "signal": "Signal",
     "systemState": "Systemstatus",
@@ -630,7 +631,10 @@
     "continueWatching": {
       "title": "Weiter schauen",
       "remaining": "noch {{minutes}} Min",
-      "untitled": "Aufnahme"
+      "untitled": "Aufnahme",
+      "allRecordings": "Alle Aufnahmen",
+      "dismiss": "Aus Weiter schauen entfernen",
+      "dismissed": "\"{{title}}\" aus Weiter schauen entfernt"
     },
     "startLive": {
       "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist."

@@ -172,9 +172,16 @@ export default function Dashboard() {
         <div className={styles.heroContent}>
           <div className={styles.heroIdentity}>
             <div className={styles.heroEyebrowRow}>
-              <span className={styles.heroChannelBadge}>
-                {receiverUnavailable ? t('common.receiverStandby') : t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im TV' })}
-              </span>
+              {receiverUnavailable ? (
+                <span className={styles.heroStandbyBadge}>
+                  <span className={styles.heroStandbyDot} aria-hidden="true" />
+                  {t('dashboard.receiverStandby', { defaultValue: 'Receiver im Standby' })}
+                </span>
+              ) : (
+                <span className={styles.heroChannelBadge}>
+                  {t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im TV' })}
+                </span>
+              )}
               {!receiverUnavailable && (
                 <span className={styles.heroLiveBadge}>
                   <span className={styles.heroLiveDot} aria-hidden="true" />
@@ -194,7 +201,10 @@ export default function Dashboard() {
             )}
           </div>
           <div className={styles.heroAction}>
-            <Button variant="primary" onClick={heroPrimaryAction.onAction}>
+            <Button variant="primary" onClick={heroPrimaryAction.onAction} className={styles.heroActionButton}>
+              <svg viewBox="0 0 24 24" fill="currentColor" className={styles.heroButtonIcon} aria-hidden="true">
+                <polygon points="6 3 20 12 6 21 6 3" />
+              </svg>
               {heroPrimaryAction.label}
             </Button>
           </div>
@@ -208,7 +218,7 @@ export default function Dashboard() {
         <div className={styles.mainSection}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
+              {t('dashboard.operatorSessions', { defaultValue: 'Aktive Wiedergaben' })}
             </h2>
             <StatusChip
               state="live"
@@ -216,14 +226,14 @@ export default function Dashboard() {
             />
           </div>
           <div className={styles.streamsGrid}>
-            <StreamsList />
+            <StreamsList compact />
           </div>
         </div>
       ) : (
         <div className={styles.idleSessionsRow}>
           <div className={styles.idleSessionsContent}>
             <span className={styles.idleSessionsTitle}>
-              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
+              {t('dashboard.operatorSessions', { defaultValue: 'Aktive Wiedergaben' })}
             </span>
             <span className={styles.idleSessionsDivider} aria-hidden="true">·</span>
             <span className={styles.idleSessionsText}>
