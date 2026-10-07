@@ -384,6 +384,10 @@ export function usePlaybackOrchestrator(
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
   const wasHiddenRef = useRef(false);
+  const hiddenSinceRef = useRef<number | null>(null);
+  // Read by the foreground recovery without re-running it on every change.
+  const isLiveModeRef = useRef(false);
+  const isNativeEngineRef = useRef(false);
   const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
@@ -829,6 +833,7 @@ export function usePlaybackOrchestrator(
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    reattachNativeSource,
     autoplayBlocked,
   } = usePlaybackEngine({
     videoRef,
@@ -1961,6 +1966,8 @@ export function usePlaybackOrchestrator(
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building' || isInitialStartupBuffering;
   const isNativeEngine = activeHlsEngine === 'native';
+  isNativeEngineRef.current = isNativeEngine;
+  isLiveModeRef.current = isLiveMode;
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2040,12 +2047,17 @@ export function usePlaybackOrchestrator(
     }
 
     if (!isDocumentVisible) {
+      if (!wasHiddenRef.current) {
+        hiddenSinceRef.current = performance.now();
+      }
       wasHiddenRef.current = true;
       return;
     }
 
     const wasHidden = wasHiddenRef.current;
     wasHiddenRef.current = false;
+    const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? performance.now() - hiddenSinceRef.current : 0;
+    hiddenSinceRef.current = null;
 
     // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
     // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
@@ -2067,9 +2079,16 @@ export function usePlaybackOrchestrator(
       status: recoveryStatusRef.current,
       userPaused: userPauseIntentRef.current,
       hasTerminal: hasTerminalStatus,
+      hiddenMs,
+      isLive: isLiveModeRef.current,
+      isNative: isNativeEngineRef.current,
     });
 
     if (action === 'none') {
+      return;
+    }
+
+    if (action === 'reattach' && reattachNativeSource()) {
       return;
     }
 
@@ -2110,7 +2129,7 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, reattachNativeSource, setStatus, videoRef]);
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online
