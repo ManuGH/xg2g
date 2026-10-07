@@ -12,6 +12,7 @@ import { useUiOverlay } from './context/UiOverlayContext';
 import AppShell from './AppShell';
 import BootstrapGate from './components/BootstrapGate';
 import {
+  filterBouquetsForProfile,
   filterServicesForProfile,
   isServiceAllowedForProfile,
   sortServicesForProfile,
@@ -81,6 +82,13 @@ function App() {
   ), [channels.channels, household.selectedProfile]);
 
   const memoizedBouquets = useMemo(() => {
+    const profileBouquets = filterBouquetsForProfile(household.selectedProfile, channels.bouquets)
+      .map((b) => ({ name: String(b.name || '').trim(), services: b.services ?? 0 }))
+      .filter((b) => b.name.length > 0);
+    if (profileBouquets.length > 0) {
+      return profileBouquets;
+    }
+
     const counts = new Map<string, number>();
 
     filteredChannels.forEach((channel) => {
@@ -94,7 +102,7 @@ function App() {
     return Array.from(counts.entries())
       .sort(([left], [right]) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
       .map(([name, services]) => ({ name, services }));
-  }, [filteredChannels]);
+  }, [channels.bouquets, filteredChannels, household.selectedProfile]);
 
   useEffect(() => {
     if (!playback.playingChannel) {
