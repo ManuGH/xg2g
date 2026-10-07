@@ -38,9 +38,7 @@ export function EpgTimelineRow({
   const displayName = channel
     ? `${channel.number ? `${channel.number} · ` : ''}${channel.name || channel.id || unknownChannelText}`
     : unknownChannelText;
-
   const ref = channel.serviceRef || channel.id || '';
-  const isUhd = Boolean(channel?.name?.toUpperCase().includes('UHD') || channel?.name?.toUpperCase().includes('4K'));
 
   return (
     <div className={styles.timelineRow} style={{ '--xg2g-timeline-row-width': `${timelineWidth + 320}px` } as CSSProperties}>
@@ -68,11 +66,6 @@ export function EpgTimelineRow({
             <img src={channel.logoUrl} alt="" className={styles.timelineChannelLogo} loading="lazy" />
           )}
           <span className={styles.timelineChannelName}>{displayName}</span>
-          {isUhd && (
-            <span className={styles.timelineUhdBadge}>
-              {t('epg.uhdPaused', {})}
-            </span>
-          )}
         </div>
       </div>
 
