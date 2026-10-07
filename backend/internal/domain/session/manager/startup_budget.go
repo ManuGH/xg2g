@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
 // How one live start is allowed to spend its budget.
@@ -70,6 +71,9 @@ type startupBudget struct {
 	// ReadyFloor is the media an attempt must produce before the ready gate can
 	// possibly pass: the required segment count times the segment duration.
 	ReadyFloor time.Duration
+	// RetryFloor is the media floor required by a recovery attempt (e.g. transcode floor
+	// when attempt 0 was copy mode).
+	RetryFloor time.Duration
 	// RetryLimit is the highest attempt index the startup loop may reach.
 	RetryLimit int
 }
@@ -84,6 +88,15 @@ func (b startupBudget) attemptCost() time.Duration {
 	return b.ReadyFloor + attemptOverhead
 }
 
+// retryCost is the minimum time needed for a second attempt (e.g., a transcode recovery).
+func (b startupBudget) retryCost() time.Duration {
+	floor := b.RetryFloor
+	if floor <= 0 {
+		floor = b.ReadyFloor
+	}
+	return floor + attemptOverhead
+}
+
 // fitsRetry reports whether the budget is large enough for two viable attempts.
 //
 // When it is not, the reserve is zero and attempt 0 gets everything. That is the
@@ -95,22 +108,26 @@ func (b startupBudget) fitsRetry() bool {
 	if !b.bounded() || b.RetryLimit < 1 {
 		return false
 	}
-	return b.Total >= 2*b.attemptCost()
+	return b.Total >= b.attemptCost()+b.retryCost()
 }
 
 // attempt derives the slice of the budget one attempt of the startup loop is
 // allowed to spend.
 func (b startupBudget) attempt(index int, recovery bool) startupAttempt {
 	reserve := time.Duration(0)
+	readyFloor := b.ReadyFloor
+	if recovery && b.RetryFloor > 0 {
+		readyFloor = b.RetryFloor
+	}
 	if index < b.RetryLimit && b.fitsRetry() {
-		reserve = b.attemptCost()
+		reserve = b.retryCost()
 	}
 	return startupAttempt{
 		Index:      index,
 		Recovery:   recovery,
 		Deadline:   b.Deadline,
 		Reserve:    reserve,
-		ReadyFloor: b.ReadyFloor,
+		ReadyFloor: readyFloor,
 	}
 }
 
@@ -201,15 +218,19 @@ func (a startupAttempt) prepareDeadline(now time.Time) (time.Time, bool) {
 
 // newStartupBudget builds the budget for one start. VOD is unbounded: recordings
 // legitimately take longer and no live player is waiting on them.
-func (o *Orchestrator) newStartupBudget(startTime time.Time, vodMode bool) startupBudget {
+func (o *Orchestrator) newStartupBudget(startTime time.Time, vodMode bool, profile ...model.ProfileSpec) startupBudget {
 	if vodMode {
 		return startupBudget{RetryLimit: defaultStartupProcessRetryLimit}
 	}
 	total := defaultIfZero(o.LiveStartupBudget, defaultLiveStartupBudget)
+	readyFloor := o.liveReadyFloor(profile...)
+	retryFloor := o.liveReadyFloor() // Retry ladder drops to transcoding, where segment geometry is controlled.
+
 	return startupBudget{
 		Deadline:   startTime.Add(total),
 		Total:      total,
-		ReadyFloor: o.liveReadyFloor(),
+		ReadyFloor: readyFloor,
+		RetryFloor: retryFloor,
 		RetryLimit: defaultStartupProcessRetryLimit,
 	}
 }
@@ -217,12 +238,17 @@ func (o *Orchestrator) newStartupBudget(startTime time.Time, vodMode bool) start
 // liveReadyFloor is the media an attempt must produce before the ready gate can
 // pass: the required segment count times the segment duration.
 //
-// It is built from the configured segment target. Video copy may exceed that
-// target when the upstream keyframe interval is long, so this is not a bound
-// on actual segment completion time. Copy attempts therefore do not reserve
-// this nominal cost for a second attempt; transcoding attempts still do.
-func (o *Orchestrator) liveReadyFloor() time.Duration {
-	return time.Duration(o.liveReadySegments()) * o.liveSegmentDuration()
+// In copy mode, segment cuts are dictated by source GOP boundaries (typically
+// 5-10s on broadcast DVB and IPTV). Therefore, copy mode floors ready media at 10s
+// to reflect source keyframe cadence.
+func (o *Orchestrator) liveReadyFloor(profile ...model.ProfileSpec) time.Duration {
+	baseFloor := time.Duration(o.liveReadySegments()) * o.liveSegmentDuration()
+	if len(profile) > 0 && profile[0].Name != "" && !profile[0].TranscodeVideo {
+		if baseFloor < 10*time.Second {
+			return 10 * time.Second
+		}
+	}
+	return baseFloor
 }
 
 func (o *Orchestrator) liveSegmentDuration() time.Duration {

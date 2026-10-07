@@ -336,11 +336,14 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		Str("startup_phase", "session_start").
 		Msg("session startup started")
 
+	origin, format := classifySessionSource(e.ServiceRef, false)
 	sessionCtx := &sessionContext{
-		SessionID:  e.SessionID,
-		Mode:       model.ModeLive,
-		ServiceRef: e.ServiceRef,
-		IsVOD:      false,
+		SessionID:    e.SessionID,
+		Mode:         model.ModeLive,
+		ServiceRef:   e.ServiceRef,
+		IsVOD:        false,
+		SourceOrigin: origin,
+		SourceFormat: format,
 	}
 
 	// Declared before the finalizeDeferred defer so the release path exists from before any

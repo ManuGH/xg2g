@@ -62,6 +62,16 @@ const (
 	SourceTuner SourceType = "tuner"
 	SourceFile  SourceType = "file"
 	SourceURL   SourceType = "url"
+	SourceIPTV  SourceType = "iptv"
+)
+
+// SourceFormat defines the underlying transport or container format of the media source.
+type SourceFormat string
+
+const (
+	SourceFormatMPEGTS SourceFormat = "mpegts"
+	SourceFormatHLS    SourceFormat = "hls"
+	SourceFormatFile   SourceFormat = "file"
 )
 
 // StreamSource represents the abstract source of the media.
