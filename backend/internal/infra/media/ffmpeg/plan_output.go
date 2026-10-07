@@ -47,6 +47,9 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 
 	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL, input.pmtAudio)
 
+	if spec.Profile.TranscodeVideo {
+		spec.Profile = a.capAV1VideoRate(spec, codec.resolvedCodec)
+	}
 	out := outputPlan{
 		effectiveProfile: spec.Profile,
 		primaryPlaylist:  "index.m3u8",
@@ -586,4 +589,28 @@ func (a *LocalAdapter) prepareLiveOutputPath(sessionID string, dvrWindowSec int,
 		Bool("is_multi_audio", multi).
 		Msg("output directory ready")
 	return outputPath
+}
+
+// capAV1VideoRate applies the operator AV1 ceiling (XG2G_AV1_MAXRATE_CAP_K).
+// Without verified QVBR the VAAPI path encodes at b:v == maxrate, so the
+// planner's 1080p50 ceiling becomes the actual bitrate; the cap bounds it.
+func (a *LocalAdapter) capAV1VideoRate(spec ports.StreamSpec, resolvedCodec string) ports.ProfileSpec {
+	prof := spec.Profile
+	limit := a.Config.AV1MaxRateCapK
+	if limit <= 0 || normalizeRequestedCodec(resolvedCodec) != "av1" || prof.VideoMaxRateK <= limit {
+		return prof
+	}
+	a.Logger.Info().
+		Str("sessionId", spec.SessionID).
+		Int("video_maxrate_k", prof.VideoMaxRateK).
+		Int("video_maxrate_cap_k", limit).
+		Msg("capping av1 video maxrate")
+	prof.VideoMaxRateK = limit
+	if prof.VideoTargetRateK > limit {
+		prof.VideoTargetRateK = limit
+	}
+	if prof.VideoBufSizeK <= 0 || prof.VideoBufSizeK > limit*2 {
+		prof.VideoBufSizeK = limit * 2
+	}
+	return prof
 }
