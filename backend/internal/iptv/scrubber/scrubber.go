@@ -146,16 +146,24 @@ func (s *Scrubber) Scrub(text string) string {
 	// 6. Scrub registered sources if resolver is available
 	if res != nil && res.Registry() != nil {
 		sources := res.Registry().Snapshot()
+		// Pass 6a: Scrub full raw references across all sources first
 		for _, src := range sources {
 			raw := src.RawRef()
 			if raw != "" && strings.Contains(out, raw) {
 				out = strings.ReplaceAll(out, raw, string(src.ID()))
 			}
+		}
+		// Pass 6b: Scrub full stream URLs across all sources
+		for _, src := range sources {
+			rawURL := src.RevealURL()
+			if rawURL != "" && strings.Contains(out, rawURL) {
+				out = strings.ReplaceAll(out, rawURL, RedactedURL)
+			}
+		}
+		// Pass 6c: Scrub leftover hostnames from registered sources
+		for _, src := range sources {
 			rawURL := src.RevealURL()
 			if rawURL != "" {
-				if strings.Contains(out, rawURL) {
-					out = strings.ReplaceAll(out, rawURL, RedactedURL)
-				}
 				if parsed, err := url.Parse(rawURL); err == nil && parsed.Host != "" {
 					if !isLocalHost(parsed.Host) && strings.Contains(out, parsed.Host) {
 						out = strings.ReplaceAll(out, parsed.Host, RedactedHost)
@@ -168,23 +176,26 @@ func (s *Scrubber) Scrub(text string) string {
 	// 7. Scrub external stream URLs and .invalid URLs
 	out = externalStreamURLRegex.ReplaceAllStringFunc(out, func(u string) string {
 		parsed, err := url.Parse(u)
-		if err != nil {
+		if err == nil {
+			if isLocalHost(parsed.Host) {
+				// Local receiver URL (e.g. 127.0.0.1:8001) - preserve DVB streams
+				return u
+			}
+			if strings.HasSuffix(parsed.Host, ".invalid") ||
+				strings.HasSuffix(parsed.Host, ".test") ||
+				strings.HasSuffix(parsed.Path, ".ts") ||
+				strings.HasSuffix(parsed.Path, ".m3u8") ||
+				strings.HasSuffix(parsed.Path, ".mp4") ||
+				strings.Contains(parsed.Path, "/live/") ||
+				strings.Contains(parsed.Path, "/stream/") ||
+				strings.Contains(parsed.Path, "/channels/") ||
+				strings.Contains(u, "SECRET-") {
+				return RedactedURL
+			}
 			return u
 		}
-		if isLocalHost(parsed.Host) {
-			// Local receiver URL (e.g. 127.0.0.1:8001) - preserve DVB streams
-			return u
-		}
-		// External URL with streaming path or .invalid host
-		if strings.HasSuffix(parsed.Host, ".invalid") ||
-			strings.HasSuffix(parsed.Host, ".test") ||
-			strings.HasSuffix(parsed.Path, ".ts") ||
-			strings.HasSuffix(parsed.Path, ".m3u8") ||
-			strings.HasSuffix(parsed.Path, ".mp4") ||
-			strings.Contains(parsed.Path, "/live/") ||
-			strings.Contains(parsed.Path, "/stream/") ||
-			strings.Contains(parsed.Path, "/channels/") ||
-			strings.Contains(u, "SECRET-") {
+		// If url.Parse fails (e.g. host already contained [REDACTED_HOST]):
+		if strings.Contains(u, RedactedHost) {
 			return RedactedURL
 		}
 		return u

@@ -75,7 +75,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Verify Java runtime
-        run: java -version
+        run: |
+          if [ -n "$JAVA_HOME_21_X64" ] && [ -d "$JAVA_HOME_21_X64" ]; then
+            echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+            echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+            export JAVA_HOME="$JAVA_HOME_21_X64"
+            export PATH="$JAVA_HOME_21_X64/bin:$PATH"
+          fi
+          java -version
 
       - name: Compile shared Android and Android TV application
         working-directory: android
