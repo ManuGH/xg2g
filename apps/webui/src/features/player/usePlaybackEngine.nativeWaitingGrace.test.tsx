@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TFunction } from 'i18next';
-import { NATIVE_WAITING_GRACE_MS, usePlaybackEngine } from './usePlaybackEngine';
+import { NATIVE_UNMUTE_WAITING_WINDOW_MS, NATIVE_WAITING_GRACE_MS, usePlaybackEngine } from './usePlaybackEngine';
 
 vi.mock('./lib/hlsRuntime', () => ({ default: { isSupported: () => false } }));
 
@@ -124,6 +124,47 @@ describe.each([false, true])('native waiting grace (StrictMode=%s)', (strict) =>
   it('enters buffering immediately when the buffer is starved', async () => {
     const { video, setStatus } = await startNative();
     media.bufferedAhead = 0.2;
+    stallWithHealthyBuffer(video);
+    expect(bufferingCalls(setStatus)).toBe(1);
+  });
+
+  it('holds the frame through a starved-looking waiting right after an unmute', async () => {
+    const { video, setStatus } = await startNative();
+    video.muted = true;
+    emit(video, 'volumechange');
+    await tick(1000);
+    video.muted = false;
+    emit(video, 'volumechange');
+    // Separate audio rendition re-enabled: the A/V intersection reads empty.
+    media.bufferedAhead = 0;
+    stallWithHealthyBuffer(video);
+    await tick(300);
+    media.readyState = 4;
+    emit(video, 'playing');
+    await tick(NATIVE_WAITING_GRACE_MS * 2);
+    expect(bufferingCalls(setStatus)).toBe(0);
+  });
+
+  it('still enters buffering when the post-unmute waiting outlasts the grace window', async () => {
+    const { video, setStatus } = await startNative();
+    video.muted = true;
+    emit(video, 'volumechange');
+    video.muted = false;
+    emit(video, 'volumechange');
+    media.bufferedAhead = 0;
+    stallWithHealthyBuffer(video);
+    await tick(NATIVE_WAITING_GRACE_MS);
+    expect(bufferingCalls(setStatus)).toBe(1);
+  });
+
+  it('treats an unmute outside the window like any starved waiting', async () => {
+    const { video, setStatus } = await startNative();
+    video.muted = true;
+    emit(video, 'volumechange');
+    video.muted = false;
+    emit(video, 'volumechange');
+    await tick(NATIVE_UNMUTE_WAITING_WINDOW_MS + 100);
+    media.bufferedAhead = 0;
     stallWithHealthyBuffer(video);
     expect(bufferingCalls(setStatus)).toBe(1);
   });

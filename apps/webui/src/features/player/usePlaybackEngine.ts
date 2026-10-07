@@ -54,6 +54,11 @@ const NATIVE_STALL_RECOVERY_MS = 2500;
 // resumed within this window; until then the last frame stays visible instead
 // of the buffering veil, whose temporary mute would also revoke the unmute.
 export const NATIVE_WAITING_GRACE_MS = 700;
+// With separate audio renditions (the live AV1 ladder) an unmute makes AVPlayer
+// re-enable the audio track; WebKit reports the A/V intersection as buffered, so
+// the buffer briefly reads empty although nothing is starving. A waiting this
+// soon after an unmute gets the same frame hold regardless of the buffer.
+export const NATIVE_UNMUTE_WAITING_WINDOW_MS = 1500;
 const HLS_STALL_RECOVERY_MS = 2200;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED = 220;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
@@ -1457,6 +1462,14 @@ export function usePlaybackEngine({
     };
 
     let nativeWaitingGraceTimer: number | null = null;
+    let lastUnmuteAt = Number.NEGATIVE_INFINITY;
+    let wasMuted = videoEl.muted;
+    const onVolumeChange = () => {
+      if (wasMuted && !videoEl.muted) {
+        lastUnmuteAt = performance.now();
+      }
+      wasMuted = videoEl.muted;
+    };
     const clearNativeWaitingGrace = () => {
       if (nativeWaitingGraceTimer !== null) {
         window.clearTimeout(nativeWaitingGraceTimer);
@@ -1500,8 +1513,12 @@ export function usePlaybackEngine({
       // 'waiting' implies readyState <= HAVE_CURRENT_DATA, so the gate above
       // rarely applies to live native playback. A healthy buffer still means
       // this is not network starvation: hold the frame for the grace window.
+      const recentUnmute = performance.now() - lastUnmuteAt < NATIVE_UNMUTE_WAITING_WINDOW_MS;
       const holdFrame =
-        lastHlsEngineRef.current === 'native' && !hlsRef.current && !videoEl.paused && bufferHealth > 0.5;
+        lastHlsEngineRef.current === 'native' &&
+        !hlsRef.current &&
+        !videoEl.paused &&
+        (bufferHealth > 0.5 || recentUnmute);
       if (holdFrame) {
         debugLog('[V3Player] Event: waiting (holding frame)', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
         if (nativeWaitingGraceTimer === null) {
@@ -1817,6 +1834,7 @@ export function usePlaybackEngine({
     };
 
     videoEl.addEventListener('waiting', onWaiting);
+    videoEl.addEventListener('volumechange', onVolumeChange);
     videoEl.addEventListener('stalled', onStalled);
     videoEl.addEventListener('seeking', onSeeking);
     videoEl.addEventListener('seeked', onSeeked);
@@ -1877,6 +1895,7 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
+      videoEl.removeEventListener('volumechange', onVolumeChange);
       videoEl.removeEventListener('stalled', onStalled);
       videoEl.removeEventListener('seeking', onSeeking);
       videoEl.removeEventListener('seeked', onSeeked);
