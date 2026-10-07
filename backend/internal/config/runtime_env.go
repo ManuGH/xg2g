@@ -109,6 +109,9 @@ var runtimeEnvKeys = []string{
 	"XG2G_AV1_QVBR",
 	"XG2G_AV1_QVBR_QUALITY",
 
+	// Operator AV1 live maxrate ceiling (plan_output.go).
+	"XG2G_AV1_MAXRATE_CAP_K",
+
 	// HW-encoder auto-ratio caps (encode_args.go / detector).
 	"XG2G_AV1_NVENC_AUTO_RATIO_MAX",
 	"XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
