@@ -82,7 +82,7 @@ export default function ContinueWatchingRail() {
   return (
     <section className={styles.rail} aria-label={t('dashboard.continueWatching.title')}>
       <div className={styles.header}>
-        <h3 className={styles.title}>{t('dashboard.continueWatching.title')}</h3>
+        <h2 className={styles.title}>{t('dashboard.continueWatching.title')}</h2>
         <button
           type="button"
           className={styles.allLink}
@@ -142,11 +142,6 @@ export default function ContinueWatchingRail() {
                   </svg>
                 </button>
 
-                {/* Remaining badge */}
-                {remainingText && (
-                  <span className={styles.remainingBadge}>{remainingText}</span>
-                )}
-
                 {/* Progress bar */}
                 {percent > 0 && (
                   <div className={styles.progressTrack} aria-hidden="true">
@@ -159,13 +154,11 @@ export default function ContinueWatchingRail() {
               </div>
 
               <div className={styles.cardContent}>
-                <h4 className={styles.itemTitle}>
+                <h3 className={styles.itemTitle}>
                   {item.title || t('dashboard.continueWatching.untitled')}
-                </h4>
+                </h3>
                 <div className={styles.itemMeta}>
-                  {item.channel && <span className={styles.channelBadge}>{item.channel}</span>}
-                  {item.channel && remainingText && <span aria-hidden="true">&middot;</span>}
-                  {remainingText && <span>{remainingText}</span>}
+                  {[item.channel, remainingText].filter(Boolean).join(' · ')}
                 </div>
               </div>
             </article>
