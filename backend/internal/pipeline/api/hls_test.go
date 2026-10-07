@@ -1221,3 +1221,42 @@ func TestExtractRequestTicketRejectsValuesTheServerNeverIssued(t *testing.T) {
 		}
 	})
 }
+
+func TestRewritePlaylist_LiveTranscodeMasterDeclaresPeakBandwidth(t *testing.T) {
+	masterContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_2",DEFAULT=YES,LANGUAGE="de",CHANNELS="2",URI="stream_2.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION=1280x720,CODECS="av01.0.13M.10.0.110.02.02.01.0,mp4a.40.2",AUDIO="group_audio"
+stream_0.m3u8
+
+#EXT-X-STREAM-INF:BANDWIDTH=35552000,RESOLUTION=1280x720,CODECS="av01.0.13M.10.0.110.02.02.01.0,mp4a.40.2",AUDIO="group_audio"
+stream_1.m3u8
+`
+	render := func(profile model.ProfileSpec, content string) string {
+		t.Helper()
+		rec := &model.SessionRecord{State: model.SessionReady, Profile: profile}
+		rdr, _, valid, err := rewritePlaylist(strings.NewReader(content), rec, "", "", zerolog.Logger{})
+		require.NoError(t, err)
+		require.True(t, valid)
+		out, _ := io.ReadAll(rdr)
+		return string(out)
+	}
+	live := model.ProfileSpec{DVRWindowSec: 60, Container: "fmp4", TranscodeVideo: true}
+
+	out := render(live, masterContent)
+	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=13728000,AVERAGE-BANDWIDTH=8320000,RESOLUTION=1280x720,")
+	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=53328000,AVERAGE-BANDWIDTH=32320000,RESOLUTION=1280x720,")
+	assert.Contains(t, out, `AUDIO="group_audio"`)
+
+	copied := live
+	copied.TranscodeVideo = false
+	assert.Contains(t, render(copied, masterContent), "#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION")
+
+	vod := live
+	vod.VOD = true
+	vod.DVRWindowSec = 0
+	assert.Contains(t, render(vod, masterContent), "#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION")
+
+	measured := strings.Replace(masterContent, "BANDWIDTH=9152000,", "BANDWIDTH=14914616,AVERAGE-BANDWIDTH=8552529,", 1)
+	assert.Contains(t, render(live, measured), "BANDWIDTH=14914616,AVERAGE-BANDWIDTH=8552529,RESOLUTION")
+}
