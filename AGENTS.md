@@ -425,6 +425,24 @@ successful release is not a successful release.
 - When live configuration differs from the repository, capture the live
   evidence first and document the delta before changing either side.
 
+### Engineering workflow
+
+- Before editing, inspect the relevant repository instructions, entry points,
+  data flow, existing contracts, and tests. Verify APIs against the actual
+  implementation or dependency version; do not invent them.
+- For non-trivial changes, describe the current behavior, root-cause evidence
+  or hypothesis, proposed change, affected files, and validation plan before
+  implementation. Use the Change contract below for scope, risks, and
+  acceptance criteria rather than creating a duplicate checklist.
+- If asked for analysis or a plan only, do not modify code. Otherwise, proceed
+  within the authorized scope without routine approval pauses; existing
+  deployment and release approval requirements still apply.
+- Reuse existing logic and abstractions where they fit. Introduce new ones
+  only when required by the task, and explain why. If a workaround is needed
+  instead of a root-cause fix, state its limitations.
+- Explain consequential architecture and validation decisions briefly so
+  Manuel can assess the reasoning; avoid narrating routine commands.
+
 ### Change contract
 
 Before implementing a refactor, fix, feature, migration, or architectural
@@ -481,6 +499,9 @@ At handoff, compare the result with the original contract and record:
 
 #### State machine and lifecycle test completeness (added 2026-09-19)
 
+- **React lifecycle matrix:** Before lifecycle changes, define the relevant
+  cases for mount, rerender, executor changes, unmount, StrictMode on/off,
+  and parent/child effects. Mark inapplicable cases with a reason.
 - **Matrix verification for stateful components:** Concurrent and stateful
   components (ring buffers, readers, workers, demuxers) must not be declared
   complete based on isolated unit guarantees alone. Acceptance requires an
@@ -503,6 +524,13 @@ At handoff, compare the result with the original contract and record:
   rather than discovering them incrementally during review.
 
 ### Validation and handoff
+
+Choose checks that can detect the reported failure or demonstrate the requested
+behavior. Prefer observable outcomes over assertions that merely mirror the
+implementation. Passing existing tests alone does not establish correctness.
+Review changed paths for races, cleanup, cancellation, duplicated state, error
+handling, and compatibility where relevant. Apply the Verification tiers above
+to determine the required depth.
 
 Run `make pre-push` before every push (or install the hook once via
 `make hooks-install`). A push that fails on gofmt, vet, or build wastes a
