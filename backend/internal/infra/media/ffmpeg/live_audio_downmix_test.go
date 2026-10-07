@@ -114,3 +114,46 @@ func TestPlanLiveAudio_SingleAudio_BroadcastDownmixFilter(t *testing.T) {
 	require.True(t, ok, "expected -af for single 6-channel input downmixed to stereo; args: %v", sel.AudioArgs)
 	assert.Equal(t, BroadcastDownmixFilter+",aresample=async=1", filter)
 }
+
+func TestPlanLiveAudio_AACPassthroughFMP4_AppliesBSF(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		return []liveAudioStream{
+			{Index: 1, ID: "0x101", CodecType: "audio", CodecName: "aac", Channels: 2, Tags: map[string]string{"language": "eng"}},
+		}, nil
+	}
+
+	pmt := []ports.LiveAudioTrack{
+		{PID: 0x101, Codec: "aac", Channels: 2, Language: "eng"},
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "test-aac-fmp4",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "safari",
+			Container:      "fmp4",
+			TranscodeVideo: false,
+			AudioMode:      "copy",
+			AudioCodec:     "aac",
+		},
+		Source: ports.StreamSource{
+			ID:   "iptv_test",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	sel := adapter.planLiveAudioSelection(context.Background(), spec, spec.Source.ID, pmt)
+	assert.False(t, sel.IsMultiAudio)
+	assert.Contains(t, sel.AudioArgs, "-c:a")
+	assert.Contains(t, sel.AudioArgs, "copy")
+	assert.Contains(t, sel.AudioArgs, "-bsf:a")
+	assert.Contains(t, sel.AudioArgs, "aac_adtstoasc")
+}
+

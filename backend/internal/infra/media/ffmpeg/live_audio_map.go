@@ -79,16 +79,57 @@ func parsedStreamPID(value uint64) uint16 {
 	return uint16(value)
 }
 
+func isPlanAAC(plan audiotopology.TrackPlan) bool {
+	if plan.InputCodec == audiotopology.CodecAAC || plan.HLSCodec == "mp4a.40.2" {
+		return true
+	}
+	raw := strings.ToLower(string(plan.InputCodec))
+	return strings.Contains(raw, "aac") || strings.Contains(raw, "mp4a")
+}
+
+func isPMTAAC(pmtAudio []ports.LiveAudioTrack) bool {
+	for _, t := range pmtAudio {
+		if t.StreamType == 0x0F || t.StreamType == 0x11 || strings.Contains(strings.ToLower(t.Codec), "aac") {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *LocalAdapter) buildDefaultLiveAudioArgs(spec ports.StreamSpec, channels int, pmtAudio []ports.LiveAudioTrack) []string {
+	args := appendLiveAudioArgs(nil, spec, channels)
+	if !spec.Profile.TranscodesAudio() && isFMP4Container(spec.Profile.Container) {
+		hasBSF := false
+		for _, arg := range args {
+			if arg == "aac_adtstoasc" {
+				hasBSF = true
+				break
+			}
+		}
+		if !hasBSF && isPMTAAC(pmtAudio) {
+			out := make([]string, 0, len(args)+2)
+			for _, arg := range args {
+				if arg == "-sn" {
+					out = append(out, "-bsf:a", "aac_adtstoasc")
+				}
+				out = append(out, arg)
+			}
+			return out
+		}
+	}
+	return args
+}
+
 func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.StreamSpec, inputURL string, pmtAudio []ports.LiveAudioTrack) liveAudioSelection {
 	defaultSel := liveAudioSelection{
 		Maps:      []string{defaultLiveAudioMap},
-		AudioArgs: appendLiveAudioArgs(nil, spec, 2),
+		AudioArgs: a.buildDefaultLiveAudioArgs(spec, 2, pmtAudio),
 	}
 
 	if spec.Mode != ports.ModeLive || spec.Format != ports.FormatHLS || strings.TrimSpace(inputURL) == "" {
 		return defaultSel
 	}
-	if !spec.Profile.TranscodeVideo || !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+	if !spec.Profile.TranscodeVideo || !isFMP4Container(spec.Profile.Container) {
 		return defaultSel
 	}
 	if isAndroidTVNativeSpec(spec) {
@@ -256,6 +297,9 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 			hasDownmixFilter := false
 			if tp.Strategy == audiotopology.CodecStrategyPassthrough && !spec.Profile.TranscodesAudio() {
 				audioArgs = append(audioArgs, fmt.Sprintf("-c:a:%d", i), "copy")
+				if isFMP4Container(spec.Profile.Container) && (isPlanAAC(tp) || isSpecAAC(spec)) {
+					audioArgs = append(audioArgs, fmt.Sprintf("-bsf:a:%d", i), "aac_adtstoasc")
+				}
 			} else {
 				encoderCodec := tp.EncoderCodec
 				if encoderCodec == "" || encoderCodec == "copy" {
@@ -379,7 +423,11 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 
 func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan, inChannels int) []string {
 	if (plan.Strategy == audiotopology.CodecStrategyPassthrough || plan.Strategy == "") && !spec.Profile.TranscodesAudio() {
-		return append(args, "-c:a", "copy", "-sn")
+		res := append(args, "-c:a", "copy")
+		if isFMP4Container(spec.Profile.Container) && (isPlanAAC(plan) || isSpecAAC(spec)) {
+			res = append(res, "-bsf:a", "aac_adtstoasc")
+		}
+		return append(res, "-sn")
 	}
 
 	encoderCodec := plan.EncoderCodec
