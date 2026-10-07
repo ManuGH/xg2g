@@ -218,9 +218,11 @@ export default function StreamsList({ compact = false }: StreamsListProps) {
                   ))}
                 </div>
 
-                <p className={styles.sessionMeta}>
-                  {t('common.session')} <span className="tabular">{s.sessionId}</span>
-                </p>
+                {!compact && (
+                  <p className={styles.sessionMeta}>
+                    {t('common.session')} <span className="tabular">{s.sessionId}</span>
+                  </p>
+                )}
               </div>
 
               <div className={styles.rowRuntime}>
