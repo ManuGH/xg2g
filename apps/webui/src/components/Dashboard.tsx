@@ -76,7 +76,7 @@ export default function Dashboard() {
 
   const healthChip = mapHealthChip(health.status, t);
   const guideHealthLabel = missingChannels === 0
-    ? t('dashboard.guideSynced')
+    ? t('dashboard.guideSynced', { defaultValue: 'Synchronisiert' })
     : t('dashboard.missing', { count: missingChannels });
   const recorderLabel = recording?.isRecording
     ? (recording.serviceName || t('dashboard.recordingActive'))
@@ -102,19 +102,21 @@ export default function Dashboard() {
   const systemFacts = [
     {
       label: t('dashboard.systemState', { defaultValue: 'Systemstatus' }),
-      value: health.version ? `v${health.version}` : t('dashboard.systemHealthy', { defaultValue: 'Online' }),
-      detail: t('dashboard.systemHealthyDetail', { defaultValue: 'Alle Dienste betriebsbereit' }),
+      value: health.status === 'ok'
+        ? t('dashboard.systemOperational', { defaultValue: 'Betriebsbereit' })
+        : t('dashboard.systemDegraded', { defaultValue: 'Beeinträchtigt' }),
+      detail: formatCleanVersion(health.version) || t('dashboard.systemHealthyDetail', { defaultValue: 'Alle Dienste betriebsbereit' }),
       chip: healthChip,
     },
     {
       label: t('dashboard.receiverLabel', { defaultValue: 'Receiver' }),
       value: receiverUnavailable ? t('dashboard.standby', { defaultValue: 'Standby' }) : t('dashboard.connected', { defaultValue: 'Verbunden' }),
       detail: receiverUnavailable
-        ? t('dashboard.receiverStandbyDetail', { defaultValue: 'Bereit für TV-Aktivierung' })
+        ? t('dashboard.receiverStandbyDetail', { defaultValue: 'Bereit für Fernsehen' })
         : (currentChannel || t('dashboard.receiverReady', { defaultValue: 'Bereit' })),
     },
     {
-      label: t('dashboard.lastSyncLabel', { defaultValue: 'Letzte Sync' }),
+      label: t('dashboard.lastSyncLabel', { defaultValue: 'Letzte Synchronisation' }),
       value: formatTimeAgo(health.receiver?.lastCheck, t),
       detail: t('dashboard.readOnlySummary', { defaultValue: 'Automatisch synchronisiert' }),
     },
@@ -130,7 +132,7 @@ export default function Dashboard() {
       value: recorderLabel,
       detail: recording?.isRecording
         ? t('dashboard.recordingActive', { defaultValue: 'Aufnahme aktiv' })
-        : t('dashboard.recorderIdle', { defaultValue: 'Keine laufende Aufnahme' }),
+        : t('dashboard.recorderIdle', { defaultValue: 'Keine aktive Aufnahme' }),
     },
   ];
 
@@ -186,7 +188,7 @@ export default function Dashboard() {
                 </span>
               ) : (
                 <span className={styles.heroChannelBadge}>
-                  {t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im TV' })}
+                  {t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im Fernsehen' })}
                 </span>
               )}
               {!receiverUnavailable && (
@@ -289,26 +291,46 @@ export default function Dashboard() {
   );
 }
 
-function mapHealthChip(status: string | undefined, t: (key: string) => string): { state: ChipState; label: string } {
-  if (status === 'ok') return { state: 'success', label: t('dashboard.systemHealthy') };
-  if (!status) return { state: 'warning', label: t('dashboard.healthUnknown') };
-  return { state: 'warning', label: t('dashboard.systemDegraded') };
+function mapHealthChip(status: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): { state: ChipState; label: string } {
+  if (status === 'ok') return { state: 'success', label: t('dashboard.systemHealthy', { defaultValue: 'System gesund' }) };
+  if (!status) return { state: 'warning', label: t('dashboard.healthUnknown', { defaultValue: 'Status unbekannt' }) };
+  return { state: 'warning', label: t('dashboard.systemDegraded', { defaultValue: 'Beeinträchtigt' }) };
 }
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatCleanVersion(version: string | undefined): string | undefined {
+  if (!version) return undefined;
+  let v = version.replace(/^v+/i, '');
+  const dashIndex = v.indexOf('-');
+  if (dashIndex !== -1) {
+    v = v.substring(0, dashIndex);
+  }
+  return v ? `Version ${v}` : undefined;
+}
+
 function formatTimeAgo(dateString: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (!dateString) return t('dashboard.timeNever');
+  if (!dateString) return t('dashboard.timeNever', { defaultValue: 'Nie' });
   const date = new Date(dateString);
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return t('dashboard.timeNever');
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return t('dashboard.timeNever', { defaultValue: 'Nie' });
 
   const now = new Date();
   const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-  if (diffSeconds < 60) return t('dashboard.timeJustNow');
-  if (diffSeconds < 3600) return t('dashboard.timeMinutesAgo', { count: Math.floor(diffSeconds / 60) });
-  if (diffSeconds < 86400) return t('dashboard.timeHoursAgo', { count: Math.floor(diffSeconds / 3600) });
+  if (diffSeconds < 60) return t('dashboard.timeJustNow', { defaultValue: 'Gerade eben' });
+  const minutes = Math.floor(diffSeconds / 60);
+  if (diffSeconds < 3600) {
+    return minutes === 1
+      ? t('dashboard.timeMinuteAgo', { defaultValue: 'vor 1 Minute' })
+      : t('dashboard.timeMinutesAgo', { count: minutes, defaultValue: `vor ${minutes} Minuten` });
+  }
+  const hours = Math.floor(diffSeconds / 3600);
+  if (diffSeconds < 86400) {
+    return hours === 1
+      ? t('dashboard.timeHourAgo', { defaultValue: 'vor 1 Stunde' })
+      : t('dashboard.timeHoursAgo', { count: hours, defaultValue: `vor ${hours} Stunden` });
+  }
   return date.toLocaleDateString();
 }

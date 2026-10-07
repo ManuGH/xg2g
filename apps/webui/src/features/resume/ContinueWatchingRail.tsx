@@ -18,7 +18,9 @@ function formatRemaining(item: ContinueWatchingItem, t: (key: string, opts?: Rec
   const d = item.durationSeconds ?? 0;
   if (d <= 0) return '';
   const remainingMin = Math.max(1, Math.round((d - item.posSeconds) / 60));
-  return t('dashboard.continueWatching.remaining', { minutes: remainingMin });
+  return remainingMin === 1
+    ? t('dashboard.continueWatching.remainingOne', { defaultValue: 'noch 1 Minute' })
+    : t('dashboard.continueWatching.remaining', { count: remainingMin, minutes: remainingMin, defaultValue: `noch ${remainingMin} Minuten` });
 }
 
 export default function ContinueWatchingRail() {
