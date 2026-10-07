@@ -97,6 +97,7 @@ import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
+import { markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -385,6 +386,7 @@ export function usePlaybackOrchestrator(
   const visibilityManagedPauseRef = useRef(false);
   const wasHiddenRef = useRef(false);
   const hiddenSinceRef = useRef<number | null>(null);
+  const hiddenPositionRef = useRef<LivePositionMark | null>(null);
   // Read by the foreground recovery without re-running it on every change.
   const isLiveModeRef = useRef(false);
   const isNativeEngineRef = useRef(false);
@@ -2052,6 +2054,7 @@ export function usePlaybackOrchestrator(
         // while the device sleeps under lock, so a minutes-long lock measured as
         // a few seconds.
         hiddenSinceRef.current = Date.now();
+        hiddenPositionRef.current = markLivePosition(video);
       }
       wasHiddenRef.current = true;
       return;
@@ -2061,6 +2064,8 @@ export function usePlaybackOrchestrator(
     wasHiddenRef.current = false;
     const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? Date.now() - hiddenSinceRef.current : 0;
     hiddenSinceRef.current = null;
+    const hiddenPosition = hiddenPositionRef.current;
+    hiddenPositionRef.current = null;
 
     // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
     // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
@@ -2091,7 +2096,8 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    if (action === 'reattach' && reattachNativeSource()) {
+    // The DVR window spans hours: continue where the viewer left, not at live.
+    if (action === 'reattach' && reattachNativeSource(hiddenPosition)) {
       return;
     }
 
