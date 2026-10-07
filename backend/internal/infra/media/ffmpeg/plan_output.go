@@ -379,9 +379,23 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 	return a.buildCPUVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 }
 
+func isFMP4Container(container string) bool {
+	c := strings.ToLower(strings.TrimSpace(container))
+	return c == "fmp4" || c == "mp4"
+}
+
+func isSpecAAC(spec ports.StreamSpec) bool {
+	codec := strings.ToLower(strings.TrimSpace(spec.Profile.AudioCodec))
+	return strings.Contains(codec, "aac") || strings.Contains(codec, "mp4a")
+}
+
 func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
 	if !spec.Profile.TranscodesAudio() {
-		return append(args, "-c:a", "copy", "-sn")
+		res := append(args, "-c:a", "copy")
+		if isFMP4Container(spec.Profile.Container) && isSpecAAC(spec) {
+			res = append(res, "-bsf:a", "aac_adtstoasc")
+		}
+		return append(res, "-sn")
 	}
 	audioCodec := spec.Profile.ResolvedAudioCodec()
 	audioBitrate := "320k"
@@ -426,11 +440,19 @@ func appendLiveCMAFStreamArgs(args []string) []string {
 }
 
 func appendLiveVideoContainerTags(args []string, spec ports.StreamSpec, outputCodec string) []string {
-	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
+	if !isFMP4Container(spec.Profile.Container) {
 		return args
 	}
-	if !strings.EqualFold(strings.TrimSpace(outputCodec), "hevc") {
+	isHEVC := strings.EqualFold(strings.TrimSpace(outputCodec), "hevc") ||
+		strings.EqualFold(strings.TrimSpace(spec.Profile.VideoSourceCodec), "hevc") ||
+		strings.EqualFold(strings.TrimSpace(spec.Profile.VideoCodec), "hevc")
+	if !isHEVC {
 		return args
+	}
+	for i := range args {
+		if args[i] == "-tag:v" && i+1 < len(args) && args[i+1] == "hvc1" {
+			return args
+		}
 	}
 	return append(args, "-tag:v", "hvc1")
 }

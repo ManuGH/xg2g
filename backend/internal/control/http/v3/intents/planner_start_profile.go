@@ -196,6 +196,9 @@ func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.Play
 		spec.AudioBitrateK = plan.Audio.BitrateKbps
 	}
 	if !spec.TranscodeVideo {
+		if spec.VideoSourceCodec == "" && plan.Video.Codec != "" {
+			spec.VideoSourceCodec = normalize.Token(plan.Video.Codec)
+		}
 		spec.VideoCodec = ""
 		spec.HWAccel = ""
 		spec.VideoCRF = 0
