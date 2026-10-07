@@ -12,8 +12,8 @@ export type ForegroundResumeAction = 'retry' | 'reattach' | 'play' | 'none';
 // the video render resource. Resuming a live native-HLS stream with play() then
 // keeps the clock and audio running over a black video layer, or seeks into a
 // cold pipeline (seek cancelled, video restarting at segment 0). Past this short
-// a gap a live stream re-attaches its source and rejoins the live edge; only
-// momentary hides keep the play() nudge.
+// a gap a live stream re-attaches its source (continuing at the viewer's DVR
+// position); only momentary hides keep the play() nudge.
 export const LIVE_FOREGROUND_REATTACH_MS = 3_000;
 
 export interface ForegroundResumeInput {

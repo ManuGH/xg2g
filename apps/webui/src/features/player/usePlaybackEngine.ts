@@ -34,6 +34,7 @@ import {
   HLS_STARTUP_POLICY,
 } from './playbackEnginePolicy';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
+import { resolveLivePosition, type LivePositionMark } from './orchestrator/livePosition';
 import type { PlaybackLinkProfile } from './utils/playbackLinkProfile';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
@@ -119,8 +120,11 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
-  /** Re-attach the current native HLS source on the same session; false if not applicable. */
-  reattachNativeSource: () => boolean;
+  /**
+   * Re-attach the current native HLS source on the same session; false if not
+   * applicable. With a mark the new source continues at that DVR position.
+   */
+  reattachNativeSource: (resumeAt?: LivePositionMark | null) => boolean;
   /** The browser rejected autoplay (even muted) for the current attempt; 'ready' is the resting state. */
   autoplayBlocked: boolean;
 }
@@ -149,6 +153,7 @@ export function usePlaybackEngine({
   onAudioTrackSwitched
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
+  const pendingNativeResumeRef = useRef<LivePositionMark | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
   const replayHlsRef = useRef<((url: string, engine?: PlaybackEngineName) => void) | null>(null);
   const decodeRecoveryInFlightRef = useRef(false);
@@ -206,6 +211,14 @@ export function usePlaybackEngine({
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
       onPlaybackMilestone?.('manifest');
+      const resumeAt = pendingNativeResumeRef.current;
+      pendingNativeResumeRef.current = null;
+      if (resumeAt) {
+        const target = resolveLivePosition(resumeAt, video);
+        if (target !== null) {
+          video.currentTime = target;
+        }
+      }
       video.play().catch((err) => {
         if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
           debugWarn('[V3Player] Unmuted native playback blocked, falling back to muted autoplay', err);
@@ -566,6 +579,7 @@ export function usePlaybackEngine({
 
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
+    pendingNativeResumeRef.current = null;
     setAutoplayBlocked(false);
     try {
       clearPendingNativeAutoplay();
@@ -874,6 +888,8 @@ export function usePlaybackEngine({
     const video = videoRef.current;
     if (!video) return;
 
+    // A resume position belongs to one re-attach only (set right after this).
+    pendingNativeResumeRef.current = null;
     setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
@@ -1938,13 +1954,16 @@ export function usePlaybackEngine({
   // Re-attaches the current native source on the same session: assigning src
   // reruns the media load algorithm, so AVPlayer starts over at the playlist's
   // EXT-X-START (behind the live edge) instead of a stale position.
-  const reattachNativeSource = useCallback((): boolean => {
+  const reattachNativeSource = useCallback((resumeAt?: LivePositionMark | null): boolean => {
     const url = lastHlsUrlRef.current;
     if (!url || lastHlsEngineRef.current !== 'native' || hlsRef.current || isTeardownRef.current || !videoRef.current) {
       return false;
     }
     setStatus('buffering');
     playHls(url, 'native');
+    // Set after playHls (which clears pending autoplay state) so the new
+    // source's first loadedmetadata restores the position before playing.
+    pendingNativeResumeRef.current = resumeAt ?? null;
     return true;
   }, [hlsRef, isTeardownRef, playHls, setStatus, videoRef]);
 

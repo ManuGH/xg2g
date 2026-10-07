@@ -209,4 +209,21 @@ describe('native HLS foreground reattach', () => {
 
     expect(srcAssignments.length).toBe(before);
   });
+
+  it('continues at the DVR position the viewer left instead of the live edge', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    const before = srcAssignments.length;
+
+    await background(25_000);
+    expect(srcAssignments.length).toBe(before + 1);
+
+    media.currentTime = 400; // the fresh attachment starts near the live edge
+    await act(async () => {
+      video.dispatchEvent(new Event('loadedmetadata'));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    expect(media.currentTime).toBe(321);
+  });
 });
