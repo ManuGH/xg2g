@@ -7,6 +7,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/tsfixture"
@@ -338,6 +340,39 @@ func TestConnector_IPTV_ErrorResponses_FailClosed(t *testing.T) {
 		assert.Nil(t, wrapper)
 		assert.Contains(t, err.Error(), "non-stream content-type")
 	})
+}
+
+func TestConnector_IPTV_HLSInputRejectedBeforeMPEGTSIngest(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		path        string
+		contentType string
+	}{
+		{name: "playlist MIME", path: "/live", contentType: "application/vnd.apple.mpegurl"},
+		{name: "playlist path with generic MIME", path: "/live.m3u8", contentType: "application/octet-stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-VERSION:3\n"))
+			}))
+			defer srv.Close()
+
+			iptvRef := fmt.Sprintf("4097:0:1:0:0:0:0:0:0:0:%s:Synthetic", encodeIPTVURL(srv.URL+tc.path))
+			cfg := DefaultTestConnectorConfig("127.0.0.1", 8001)
+			cfg.OutboundPolicy = testAllowPolicyForURL(t, srv.URL)
+			pipelineStarted := false
+			cfg.PipelineFn = func(context.Context, normalizer.Config, int, uint16) (*SessionPipeline, error) {
+				pipelineStarted = true
+				return nil, errors.New("unexpected MPEG-TS pipeline start")
+			}
+			wrapper, err := NewLivePipelineConnector(cfg).Connect(context.Background(), session.NewSessionKey("127.0.0.1", 8001, iptvRef))
+			require.ErrorIs(t, err, ErrIPTVHLSInput)
+			require.Nil(t, wrapper)
+			assert.False(t, pipelineStarted)
+			assert.NotContains(t, err.Error(), srv.URL)
+		})
+	}
 }
 
 // 3.f: Two subscribers sharing one upstream stream without a second dial

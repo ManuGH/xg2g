@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -32,6 +33,9 @@ func sessionInputKind(sessionCtx *sessionContext) string {
 	}
 	if _, ok := platformnet.ParseDirectHTTPURL(sessionCtx.ServiceRef); ok {
 		return string(ports.SourceURL)
+	}
+	if _, isIPTV, err := sourceref.ClassifyReference(nil, sessionCtx.ServiceRef); err == nil && isIPTV {
+		return "iptv"
 	}
 	return string(ports.SourceTuner)
 }

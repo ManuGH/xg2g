@@ -18,6 +18,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSessionInputKind_DistinguishesIPTVFromReceiver(t *testing.T) {
+	iptvRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.invalid/live.ts:Synthetic"
+	if got := sessionInputKind(&sessionContext{Mode: model.ModeLive, ServiceRef: iptvRef}); got != "iptv" {
+		t.Fatalf("IPTV reference reported as %q", got)
+	}
+	if got := sessionInputKind(&sessionContext{Mode: model.ModeLive, ServiceRef: "1:0:1:0:0:0:0:0:0:0:"}); got != "tuner" {
+		t.Fatalf("DVB reference reported as %q", got)
+	}
+}
+
 func TestTransitionReady_RecordsFirstFrameTimestamp(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
