@@ -8,7 +8,7 @@ import { StrictMode, useRef } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
-import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
+import { LOCK_PAUSE_SETTLE_MS, usePlaybackOrchestrator } from './usePlaybackOrchestrator';
 
 vi.mock('./lib/hlsRuntime', () => {
   function HlsMock(this: any) {
@@ -50,6 +50,7 @@ function installMediaState(el: HTMLVideoElement) {
 describe.each([false, true])('native HLS foreground reattach (StrictMode=%s)', (strict) => {
   let now = 1_000;
   let visibility: DocumentVisibilityState = 'visible';
+  let touchPoints = 0;
   let srcAssignments: string[] = [];
 
   let latest!: ReturnType<typeof usePlaybackOrchestrator>;
@@ -132,6 +133,9 @@ describe.each([false, true])('native HLS foreground reattach (StrictMode=%s)', (
     // iOS device whose monotonic clock paused during the lock.
     vi.spyOn(Date, 'now').mockImplementation(() => now);
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    touchPoints = 0;
+    Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, get: () => touchPoints });
+    Object.defineProperty(document, 'pictureInPictureElement', { configurable: true, value: null, writable: true });
     media.currentTime = 100;
     media.readyState = 4;
     media.paused = true;
@@ -493,5 +497,146 @@ describe.each([false, true])('native HLS foreground reattach (StrictMode=%s)', (
     });
 
     expect(srcAssignments.length).toBe(before);
+  });
+
+  // Touch WebKit with native HLS, i.e. an iPhone or iPad.
+  function asIPhone() {
+    touchPoints = 5;
+    Object.assign(video, { webkitEnterFullscreen: vi.fn() });
+  }
+
+  // WebKit skipped its lock pause: the page hides while the stream plays on.
+  async function hideWhilePlaying() {
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  }
+
+  async function wait(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  const pauseCalls = () => (video.pause as ReturnType<typeof vi.fn>).mock.calls.length;
+
+  it('pauses a stream WebKit left playing under the lock', async () => {
+    await startLivePlayback();
+    asIPhone();
+    media.currentTime = 321;
+    const before = pauseCalls();
+
+    await hideWhilePlaying();
+    await wait(LOCK_PAUSE_SETTLE_MS - 1);
+    expect(pauseCalls()).toBe(before);
+    await wait(1);
+    expect(pauseCalls()).toBe(before + 1);
+    expect(media.paused).toBe(true);
+
+    // Not the viewer's pause: the return re-attaches at the pause point.
+    const sources = srcAssignments.length;
+    sleep(30_000);
+    await unlock();
+    expect(srcAssignments.length).toBe(sources + 1);
+    await finishReattach();
+    expect(media.currentTime).toBe(321);
+  });
+
+  it('leaves a stream WebKit already paused alone', async () => {
+    await startLivePlayback();
+    asIPhone();
+    const before = pauseCalls();
+
+    await lock();
+    await wait(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
+  });
+
+  it.each([
+    ['picture-in-picture', () => { (document as { pictureInPictureElement: Element | null }).pictureInPictureElement = video; }],
+    ['webkit picture-in-picture', () => { Object.assign(video, { webkitPresentationMode: 'picture-in-picture' }); }],
+    ['AirPlay', () => { Object.assign(video, { webkitCurrentPlaybackTargetIsWireless: true }); }],
+  ])('keeps playing in %s', async (_name, enable) => {
+    await startLivePlayback();
+    asIPhone();
+    enable();
+    const before = pauseCalls();
+
+    await hideWhilePlaying();
+    await wait(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
+  });
+
+  it('does not pause when the page is visible again in time', async () => {
+    await startLivePlayback();
+    asIPhone();
+    const before = pauseCalls();
+
+    await hideWhilePlaying();
+    await wait(LOCK_PAUSE_SETTLE_MS / 2);
+    await unlock();
+    await wait(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
+  });
+
+  it('does not pause on a desktop without touch input', async () => {
+    await startLivePlayback();
+    Object.assign(video, { webkitEnterFullscreen: vi.fn() });
+    const before = pauseCalls();
+
+    await hideWhilePlaying();
+    await wait(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
+  });
+
+  it('lets a lock-screen play after the lock pause run on', async () => {
+    await startLivePlayback();
+    asIPhone();
+    await hideWhilePlaying();
+    await wait(LOCK_PAUSE_SETTLE_MS);
+    expect(media.paused).toBe(true);
+    const before = pauseCalls();
+
+    await resumeWhileLocked();
+    await playWhileLocked(10_000);
+
+    expect(pauseCalls()).toBe(before);
+    expect(media.paused).toBe(false);
+  });
+
+  it('does not pause a stream that was paused and resumed meanwhile', async () => {
+    await startLivePlayback();
+    asIPhone();
+    await hideWhilePlaying();
+    // Lock-screen pause, then play, both before the settle time is over.
+    await act(async () => {
+      media.paused = true;
+      video.dispatchEvent(new Event('pause'));
+      await vi.advanceTimersByTimeAsync(LOCK_PAUSE_SETTLE_MS / 4);
+    });
+    await resumeWhileLocked();
+    const before = pauseCalls();
+
+    await playWhileLocked(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
+    expect(media.paused).toBe(false);
+  });
+
+  it('does not pause after unmount', async () => {
+    await startLivePlayback();
+    asIPhone();
+    const before = pauseCalls();
+
+    await hideWhilePlaying();
+    cleanup();
+    await wait(LOCK_PAUSE_SETTLE_MS * 3);
+
+    expect(pauseCalls()).toBe(before);
   });
 });

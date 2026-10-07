@@ -99,6 +99,10 @@ import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { followLivePosition, markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
 import { LIVE_FOREGROUND_FRAME_GRACE_MS, watchForMovingPictures } from './orchestrator/presentedFrameWatch';
+
+// Time a hidden page gets to settle (picture-in-picture starting, WebKit's own
+// lock pause) before the lock pause decides.
+export const LOCK_PAUSE_SETTLE_MS = 1_000;
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -394,6 +398,8 @@ export function usePlaybackOrchestrator(
   // the foreground effect: that effect re-runs on most renders and its cleanup
   // would cancel the check within milliseconds.
   const foregroundPictureCheckRef = useRef<(() => void) | null>(null);
+  // Cancels the pending lock pause (see the foreground recovery effect).
+  const lockPauseRef = useRef<(() => void) | null>(null);
   // Read by the foreground recovery without re-running it on every change.
   const isLiveModeRef = useRef(false);
   const isNativeEngineRef = useRef(false);
@@ -2037,6 +2043,47 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
+  // iOS pauses inline video when the screen locks, so sound stops with the
+  // lock. WebKit skips that pause when an earlier interruption is still
+  // counted: after a lock-screen play and an unlock it never ends its
+  // "silent playback" interruption, and the next lock leaves the stream
+  // playing. Pause it ourselves once the page has stayed hidden for a moment,
+  // unless it plays on in picture-in-picture or over AirPlay. This is not the
+  // viewer's pause: the foreground return re-attaches as after any lock. A
+  // pause in between (WebKit's own, or the viewer's) cancels it, so a later
+  // lock-screen play keeps running.
+  const scheduleLockPause = (video: HTMLVideoElement): (() => void) | null => {
+    if (video.paused || !isNativeEngineRef.current || !shouldForceNativeMobileHls(video)) {
+      return null;
+    }
+    const el = video as HTMLVideoElement & {
+      webkitPresentationMode?: string;
+      webkitCurrentPlaybackTargetIsWireless?: boolean;
+    };
+    let pausedMeanwhile = false;
+    const onPause = () => { pausedMeanwhile = true; };
+    video.addEventListener('pause', onPause);
+    const timer = window.setTimeout(() => {
+      video.removeEventListener('pause', onPause);
+      lockPauseRef.current = null;
+      if (
+        pausedMeanwhile
+        || video.paused
+        || document.visibilityState !== 'hidden'
+        || document.pictureInPictureElement === video
+        || el.webkitPresentationMode === 'picture-in-picture'
+        || el.webkitCurrentPlaybackTargetIsWireless === true
+      ) {
+        return;
+      }
+      video.pause();
+    }, LOCK_PAUSE_SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      video.removeEventListener('pause', onPause);
+    };
+  };
+
   // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
   // suspend the decoder while backgrounded and do not auto-resume inline
   // <video> on return — the frame stays black/frozen. Repair only on the
@@ -2065,6 +2112,8 @@ export function usePlaybackOrchestrator(
         playedWhileHiddenRef.current = false;
         foregroundPictureCheckRef.current?.();
         foregroundPictureCheckRef.current = null;
+        lockPauseRef.current?.();
+        lockPauseRef.current = scheduleLockPause(video);
       }
       wasHiddenRef.current = true;
       return;
@@ -2072,6 +2121,8 @@ export function usePlaybackOrchestrator(
 
     const wasHidden = wasHiddenRef.current;
     wasHiddenRef.current = false;
+    lockPauseRef.current?.();
+    lockPauseRef.current = null;
     const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? Date.now() - hiddenSinceRef.current : 0;
     hiddenSinceRef.current = null;
     const hiddenPosition = hiddenPositionRef.current;
@@ -2176,6 +2227,8 @@ export function usePlaybackOrchestrator(
   useEffect(() => () => {
     foregroundPictureCheckRef.current?.();
     foregroundPictureCheckRef.current = null;
+    lockPauseRef.current?.();
+    lockPauseRef.current = null;
   }, []);
 
   // Playback can go on while the page is hidden: iOS pauses the video on lock,
