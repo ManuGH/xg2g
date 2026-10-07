@@ -85,6 +85,9 @@ type AdapterConfig struct {
 	// AV1MaxRateCapK, when > 0, lowers the live AV1 transcode maxrate (and the
 	// bufsize with it) to this ceiling. 0 keeps the planner's ceiling.
 	AV1MaxRateCapK int
+	// AV1LadderLowRateK, when > 0, adds a second live AV1 rung at this rate for
+	// native iOS clients (see av1Ladder). 0 keeps the single rendition.
+	AV1LadderLowRateK int
 	// LiveAudioLanguages is the operator's ordered ISO-639 preference for the
 	// live audio track (e.g. "deu,ger,de"). Empty keeps the broadcaster's first
 	// track, which is the primary language by DVB convention.
@@ -287,6 +290,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		AV1QVBR:                       envBool("XG2G_AV1_QVBR", true),
 		AV1QVBRQuality:                envIntBounded("XG2G_AV1_QVBR_QUALITY", 70, 1, 255),
 		AV1MaxRateCapK:                envOptionalIntBounded("XG2G_AV1_MAXRATE_CAP_K", 2000, 60000),
+		AV1LadderLowRateK:             envOptionalIntBounded("XG2G_LIVE_AV1_LADDER_LOW_K", 1000, 30000),
 		LiveAudioLanguages:            parseSnapshotList(config.ParseString("XG2G_LIVE_AUDIO_LANGUAGES", ""), true),
 		GPUVendor:                     string(hardware.DetectGPUVendor().Vendor),
 		ExperimentalInterlacedCodecs:  parseSnapshotList(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""), true),

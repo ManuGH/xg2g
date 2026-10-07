@@ -112,6 +112,9 @@ var runtimeEnvKeys = []string{
 	// Operator AV1 live maxrate ceiling (plan_output.go).
 	"XG2G_AV1_MAXRATE_CAP_K",
 
+	// Live AV1 low rung for native iOS clients (av1_ladder.go).
+	"XG2G_LIVE_AV1_LADDER_LOW_K",
+
 	// HW-encoder auto-ratio caps (encode_args.go / detector).
 	"XG2G_AV1_NVENC_AUTO_RATIO_MAX",
 	"XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
