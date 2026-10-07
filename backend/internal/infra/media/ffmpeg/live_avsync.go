@@ -116,7 +116,11 @@ func (s *boundedStartupSpool) run(maxBytes int) {
 		metrics.DecActiveAvsyncSpools()
 		if s.adapter != nil {
 			dc := s.adapter.GetDiagnosticContext(s.sessionID)
-			s.adapter.Logger.Info().
+			event := s.adapter.Logger.Info()
+			if s.err != nil && !errors.Is(s.err, io.EOF) {
+				event = s.adapter.Logger.Warn().Err(s.err)
+			}
+			event.
 				Str("session_id", dc.SessionID).
 				Str("generation_id", dc.GenerationID).
 				Str("reason", dc.Reason).

@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/stream/ingest/remotecore"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -119,6 +120,9 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 		})
 
 		err := p.norm.Run(ctx, upstream)
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+			log.Warn().Err(err).Msg("session pipeline upstream run finished with error")
+		}
 		p.runErrMu.Lock()
 		p.runErr = err
 		p.runErrMu.Unlock()

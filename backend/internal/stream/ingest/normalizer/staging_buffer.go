@@ -6,6 +6,7 @@ package normalizer
 
 import (
 	"sync"
+	"time"
 )
 
 // StagingBuffer is a bounded, thread-safe circular FIFO buffer for MPEG-TS packets.
@@ -19,6 +20,7 @@ type StagingBuffer struct {
 	tail     int // read index
 	count    int // valid unread bytes
 	isClosed bool
+	spaceCh  chan struct{}
 }
 
 // NewStagingBuffer creates a StagingBuffer with the specified byte capacity aligned to 188 bytes.
@@ -31,13 +33,22 @@ func NewStagingBuffer(capacityBytes int) *StagingBuffer {
 	sb := &StagingBuffer{
 		buf:      make([]byte, capacityBytes),
 		capacity: capacityBytes,
+		spaceCh:  make(chan struct{}, 1),
 	}
 	sb.notEmpty = sync.NewCond(&sb.mu)
 	return sb
 }
 
-// Write writes data into the staging buffer. Returns ErrStagingBufferOverflow if capacity is exceeded.
+const defaultStallTimeout = 5 * time.Second
+
+// Write writes data into the staging buffer. If the buffer is full, it waits up to 5s
+// for egress to drain space before declaring a stalled sink with ErrStagingBufferOverflow.
 func (sb *StagingBuffer) Write(p []byte) (int, error) {
+	return sb.WriteWithTimeout(p, defaultStallTimeout)
+}
+
+// WriteWithTimeout writes data into the staging buffer, waiting up to timeout for available space.
+func (sb *StagingBuffer) WriteWithTimeout(p []byte, timeout time.Duration) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -49,8 +60,33 @@ func (sb *StagingBuffer) Write(p []byte) (int, error) {
 		return 0, ErrNormalizerClosed
 	}
 
-	if sb.count+len(p) > sb.capacity {
+	if len(p) > sb.capacity {
 		return 0, ErrStagingBufferOverflow
+	}
+
+	if sb.count+len(p) > sb.capacity {
+		deadline := time.Now().Add(timeout)
+		for sb.count+len(p) > sb.capacity {
+			if sb.isClosed {
+				return 0, ErrNormalizerClosed
+			}
+			rem := time.Until(deadline)
+			if rem <= 0 {
+				return 0, ErrStagingBufferOverflow
+			}
+
+			spaceCh := sb.spaceCh
+			sb.mu.Unlock()
+
+			timer := time.NewTimer(rem)
+			select {
+			case <-spaceCh:
+				timer.Stop()
+			case <-timer.C:
+			}
+
+			sb.mu.Lock()
+		}
 	}
 
 	n := len(p)
@@ -101,6 +137,11 @@ func (sb *StagingBuffer) Read(p []byte) (int, error) {
 	sb.tail = (sb.tail + n) % sb.capacity
 	sb.count -= n
 
+	select {
+	case sb.spaceCh <- struct{}{}:
+	default:
+	}
+
 	return n, nil
 }
 
@@ -143,6 +184,11 @@ func (sb *StagingBuffer) ReadBlocking(p []byte, minBytes int) (int, error) {
 	sb.tail = (sb.tail + n) % sb.capacity
 	sb.count -= n
 
+	select {
+	case sb.spaceCh <- struct{}{}:
+	default:
+	}
+
 	return n, nil
 }
 
@@ -153,13 +199,22 @@ func (sb *StagingBuffer) BufferedBytes() int {
 	return sb.count
 }
 
-// Close closes the buffer, waking any waiting readers.
+// Capacity returns the total byte capacity of the buffer.
+func (sb *StagingBuffer) Capacity() int {
+	return sb.capacity
+}
+
+// Close closes the buffer, waking any waiting readers or writers.
 func (sb *StagingBuffer) Close() {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
 
 	sb.isClosed = true
 	sb.notEmpty.Broadcast()
+	select {
+	case sb.spaceCh <- struct{}{}:
+	default:
+	}
 }
 
 // Reset clears the buffer contents.
@@ -171,4 +226,8 @@ func (sb *StagingBuffer) Reset() {
 	sb.tail = 0
 	sb.count = 0
 	sb.isClosed = false
+	select {
+	case sb.spaceCh <- struct{}{}:
+	default:
+	}
 }
