@@ -69,6 +69,7 @@ describe('ContinueWatchingRail', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Tatort: Höllenfahrt')).toBeInTheDocument();
+      expect(screen.getByText(/70 minutes left/)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByText('Tatort: Höllenfahrt'));
