@@ -50,11 +50,22 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	if spec.Profile.TranscodeVideo {
 		spec.Profile = a.capAV1VideoRate(spec, codec.resolvedCodec)
 	}
+	ladder := a.planAV1Ladder(spec, codec)
+	if ladder.enabled() {
+		audioSelection = ladder.audioLayout(audioSelection)
+		a.Logger.Info().
+			Str("sessionId", spec.SessionID).
+			Str("client_family", spec.ClientFamily).
+			Int("video_maxrate_k", spec.Profile.VideoMaxRateK).
+			Int("video_low_rung_maxrate_k", ladder.lowRateK).
+			Str("var_stream_map", audioSelection.VarStreamMap).
+			Msg("live av1 ladder planned")
+	}
 	out := outputPlan{
 		effectiveProfile: spec.Profile,
 		primaryPlaylist:  "index.m3u8",
 	}
-	out.args = append(out.args, "-map", "0:v:0?")
+	out.args = append(out.args, ladder.videoMaps()...)
 	for _, m := range audioSelection.Maps {
 		out.args = append(out.args, "-map", m)
 	}
@@ -62,7 +73,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
 	}
 
-	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec)
+	out.args = a.buildLiveVideoOutputArgs(out.args, spec, input.inputURL, codec, gop, layout.segmentDurationSec, ladder)
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
 	out.args = append(out.args, audioSelection.AudioArgs...)
 	if a.useCMAFSegmenter(spec) {
@@ -364,7 +375,7 @@ func shouldUseShortFMP4StartupSegments(spec ports.StreamSpec) bool {
 	}
 }
 
-func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int) []string {
+func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.StreamSpec, inputURL string, codec codecPlan, gop, segmentDurationSec int, ladder av1Ladder) []string {
 	if !spec.Profile.TranscodeVideo && !usesLegacyCPUDefaults(spec, codec.resolvedCodec) {
 		return a.buildCopyVideoArgs(args, spec, inputURL)
 	}
@@ -372,9 +383,9 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 		switch codec.hwBackend {
 		case profiles.GPUBackendVAAPI:
 			if codec.fullVAAPI {
-				return a.buildVaapiVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+				return a.buildVaapiVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec, ladder)
 			}
-			return a.buildVaapiEncodeOnlyVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
+			return a.buildVaapiEncodeOnlyVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec, ladder)
 		case profiles.GPUBackendNVENC:
 			return a.buildNVENCVideoArgs(args, spec, codec.resolvedCodec, gop, segmentDurationSec)
 		}

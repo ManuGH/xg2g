@@ -51,6 +51,9 @@ type liveAudioSelection struct {
 	AudioArgs    []string
 	IsMultiAudio bool
 	VarStreamMap string
+	// Language of the single selected track; used when a video ladder turns
+	// that track into a one-entry audio group.
+	Language string
 }
 
 // syntheticStreamPID stands in for a PID ffprobe did not report.
@@ -374,6 +377,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	return liveAudioSelection{
 		Maps:      []string{mapArg},
 		AudioArgs: audioArgs,
+		Language:  selectedPlan.Language,
 	}
 }
 
