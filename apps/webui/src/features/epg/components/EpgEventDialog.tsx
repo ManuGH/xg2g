@@ -5,6 +5,8 @@ import type { EpgEvent, EpgChannel } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
 import { formatLocalDateOnly } from '../../../utils/date';
 import { Button } from '../../../components/ui';
+import { fetchEpgEvents } from '../epgApi';
+import { extractMetadata, findRerunsAndBroadcasts } from '../utils/rerunMatcher';
 import styles from './EpgEventDialog.module.css';
 
 export interface ScheduleSeriesConfig {
@@ -21,9 +23,10 @@ interface EpgEventDialogProps {
   onClose: () => void;
   onRecord?: (event: EpgEvent) => void;
   onScheduleSeries?: (event: EpgEvent, config: ScheduleSeriesConfig) => Promise<void> | void;
-  isRecorded?: boolean;
+  isRecorded?: boolean | ((event: EpgEvent) => boolean);
   onPlay?: (channel: EpgChannel) => void;
   channel?: EpgChannel;
+  channels?: EpgChannel[];
   currentTime?: number;
 }
 
@@ -37,6 +40,18 @@ function formatTime(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatRerunDate(ts: number): string {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
 }
 
 function extractCleanTitle(raw: string): string {
@@ -67,17 +82,24 @@ export function EpgEventDialog({
   isRecorded,
   onPlay,
   channel,
+  channels = [],
   currentTime,
 }: EpgEventDialogProps) {
   const { t } = useTranslation();
-  const [view, setView] = useState<'details' | 'series'>('details');
+  const [view, setView] = useState<'details' | 'series' | 'pick-broadcast'>('details');
+
+  // Metadata & Rerun matching
+  const meta = useMemo(() => extractMetadata(event), [event]);
+  const [candidateEvents, setCandidateEvents] = useState<EpgEvent[]>([]);
+  const [expandedSameReruns, setExpandedSameReruns] = useState<boolean>(false);
+  const [expandedOtherEpisodes, setExpandedOtherEpisodes] = useState<boolean>(false);
 
   // Series scheduling state
   const cleanedTitle = useMemo(() => extractCleanTitle(event.title || ''), [event.title]);
   const [keyword, setKeyword] = useState<string>(cleanedTitle || event.title || '');
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [startWindow, setStartWindow] = useState<string>('');
-  const [retentionDays, setRetentionDays] = useState<number>(7); // Default 7 days retention
+  const [retentionDays, setRetentionDays] = useState<number>(7);
   const [expiresAt, setExpiresAt] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -96,9 +118,58 @@ export function EpgEventDialog({
     };
   }, [onClose]);
 
-  const desc = event.desc ? normalizeEpgText(event.desc) : t('epg.noDescription', { defaultValue: 'No description available.' });
+  // Fetch cross-channel candidate events for reruns
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    if (meta.mainTitle && meta.mainTitle.trim().length >= 2) {
+      fetchEpgEvents({
+        query: meta.mainTitle.trim(),
+        signal: controller.signal,
+      })
+        .then((candidates) => {
+          if (!active) return;
+          setCandidateEvents(candidates);
+        })
+        .catch(() => {
+          // Gracefully ignore abort / network issues
+        });
+    }
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [meta.mainTitle]);
+
   const now = currentTime || Math.floor(Date.now() / 1000);
   const inProgress = now >= event.start && now < event.end;
+  const desc = event.desc ? normalizeEpgText(event.desc) : t('epg.noDescription', { defaultValue: 'No description available.' });
+
+  const channelPool = useMemo(() => {
+    const list = [...channels];
+    if (channel && !list.some((c) => (c.serviceRef && c.serviceRef === channel.serviceRef) || (c.id && c.id === channel.id))) {
+      list.push(channel);
+    }
+    return list;
+  }, [channels, channel]);
+
+  const rerunResult = useMemo(() => {
+    return findRerunsAndBroadcasts(event, candidateEvents, channelPool, now);
+  }, [event, candidateEvents, channelPool, now]);
+
+  const checkIsRecorded = (evt: EpgEvent): boolean => {
+    if (typeof isRecorded === 'function') {
+      return isRecorded(evt);
+    }
+    if (evt.start === event.start && evt.serviceRef === event.serviceRef) {
+      return Boolean(isRecorded);
+    }
+    return false;
+  };
+
+  const isCurrentRecorded = checkIsRecorded(event);
 
   const toggleDay = (day: number) => {
     setSelectedDays((prev) =>
@@ -145,17 +216,169 @@ export function EpgEventDialog({
           <h2 id="epg-event-title" className={styles.title}>
             {view === 'series'
               ? t('epg.seriesDialogTitle', { defaultValue: 'Serienaufnahme / Scheduler einrichten' })
-              : (event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' }))}
+              : view === 'pick-broadcast'
+                ? t('epg.whichBroadcast', { defaultValue: 'Welche Ausstrahlung aufnehmen?' })
+                : (event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' }))}
           </h2>
           <div className={styles.time}>
             {channel?.name ? `${channel.name} · ` : ''}{formatDateTime(event.start)} – {formatTime(event.end)}
           </div>
         </div>
 
-        {view === 'details' ? (
+        {view === 'details' && (
           <>
             <div className={styles.content}>
-              {desc}
+              <div>{desc}</div>
+
+              {/* Rerun Section: "Weitere Ausstrahlungen" (Movie) or "Diese Folge erneut" (Series) */}
+              {rerunResult.sameEpisodeReruns.length > 0 && (
+                <div className={styles.rerunSection} data-testid="rerun-section-same">
+                  <h3 className={styles.rerunSectionTitle}>
+                    {meta.classification === 'movie'
+                      ? t('epg.furtherBroadcasts', { defaultValue: 'Weitere Ausstrahlungen' })
+                      : t('epg.sameEpisodeReruns', { defaultValue: 'Diese Folge erneut' })}
+                    <span className={styles.rerunSectionBadge}>
+                      {rerunResult.sameEpisodeReruns.length}
+                    </span>
+                  </h3>
+
+                  <div className={styles.rerunList}>
+                    {(expandedSameReruns
+                      ? rerunResult.sameEpisodeReruns
+                      : rerunResult.sameEpisodeReruns.slice(0, 3)
+                    ).map((rerun) => {
+                      const isRec = checkIsRecorded(rerun.event);
+                      return (
+                        <div
+                          key={`${rerun.event.serviceRef}:${rerun.event.start}`}
+                          className={styles.rerunItem}
+                        >
+                          <div className={styles.rerunInfo}>
+                            <div className={styles.rerunDateTime}>
+                              <span>{formatRerunDate(rerun.event.start)}</span>
+                              <span>—</span>
+                              <strong className={styles.rerunChannelName}>{rerun.channelName}</strong>
+                            </div>
+                            {rerun.confidenceLabel && (
+                              <span className={styles.rerunMetaLabel}>
+                                {rerun.confidenceLabel}
+                              </span>
+                            )}
+                          </div>
+                          {onRecord && (
+                            <div className={styles.rerunActions}>
+                              {isRec ? (
+                                <span className={styles.rerunRecordedPill}>● REC</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={styles.rerunRecordBtn}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRecord(rerun.event);
+                                  }}
+                                  title={t('epg.record', { defaultValue: 'Aufnehmen' })}
+                                >
+                                  ⏺ {t('epg.record', { defaultValue: 'Aufnehmen' })}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {rerunResult.sameEpisodeReruns.length > 3 && (
+                    <button
+                      type="button"
+                      className={styles.rerunMoreBtn}
+                      onClick={() => setExpandedSameReruns((prev) => !prev)}
+                    >
+                      {expandedSameReruns
+                        ? t('epg.showLess', { defaultValue: 'Weniger anzeigen' })
+                        : t('epg.moreReruns', {
+                            count: rerunResult.sameEpisodeReruns.length - 3,
+                            defaultValue: `+${rerunResult.sameEpisodeReruns.length - 3} weitere`,
+                          })}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Other Episodes of the Series: "Weitere Folgen der Serie" */}
+              {meta.classification === 'series' && rerunResult.otherEpisodes.length > 0 && (
+                <div className={styles.rerunSection} data-testid="rerun-section-other">
+                  <h3 className={styles.rerunSectionTitle}>
+                    {t('epg.otherEpisodes', { defaultValue: 'Weitere Folgen der Serie' })}
+                    <span className={styles.rerunSectionBadge}>
+                      {rerunResult.otherEpisodes.length}
+                    </span>
+                  </h3>
+
+                  <div className={styles.rerunList}>
+                    {(expandedOtherEpisodes
+                      ? rerunResult.otherEpisodes
+                      : rerunResult.otherEpisodes.slice(0, 3)
+                    ).map((ep) => {
+                      const isRec = checkIsRecorded(ep.event);
+                      return (
+                        <div
+                          key={`${ep.event.serviceRef}:${ep.event.start}`}
+                          className={styles.rerunItem}
+                        >
+                          <div className={styles.rerunInfo}>
+                            <div className={styles.rerunDateTime}>
+                              <span>{formatRerunDate(ep.event.start)}</span>
+                              <span>—</span>
+                              <strong className={styles.rerunChannelName}>{ep.channelName}</strong>
+                            </div>
+                            {ep.confidenceLabel && (
+                              <span className={styles.rerunMetaLabel}>
+                                {ep.confidenceLabel}
+                              </span>
+                            )}
+                          </div>
+                          {onRecord && (
+                            <div className={styles.rerunActions}>
+                              {isRec ? (
+                                <span className={styles.rerunRecordedPill}>● REC</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={styles.rerunRecordBtn}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRecord(ep.event);
+                                  }}
+                                  title={t('epg.record', { defaultValue: 'Aufnehmen' })}
+                                >
+                                  ⏺ {t('epg.record', { defaultValue: 'Aufnehmen' })}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {rerunResult.otherEpisodes.length > 3 && (
+                    <button
+                      type="button"
+                      className={styles.rerunMoreBtn}
+                      onClick={() => setExpandedOtherEpisodes((prev) => !prev)}
+                    >
+                      {expandedOtherEpisodes
+                        ? t('epg.showLess', { defaultValue: 'Weniger anzeigen' })
+                        : t('epg.moreReruns', {
+                            count: rerunResult.otherEpisodes.length - 3,
+                            defaultValue: `+${rerunResult.otherEpisodes.length - 3} weitere`,
+                          })}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className={styles.footer}>
@@ -172,16 +395,24 @@ export function EpgEventDialog({
               )}
               {onRecord && (
                 <Button
-                  variant={inProgress && channel && onPlay ? 'secondary' : (isRecorded ? 'secondary' : 'primary')}
+                  variant={inProgress && channel && onPlay ? 'secondary' : (isCurrentRecorded ? 'secondary' : 'primary')}
                   onClick={() => {
-                    onRecord(event);
-                    onClose();
+                    if (rerunResult.sameEpisodeReruns.length > 0) {
+                      setView('pick-broadcast');
+                    } else {
+                      onRecord(event);
+                      onClose();
+                    }
                   }}
                 >
-                  {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' }) : t('epg.recordSingle', { defaultValue: 'Einmalig aufnehmen' })}
+                  {isCurrentRecorded
+                    ? t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' })
+                    : meta.classification === 'series'
+                      ? `● ${t('epg.recordThisEpisode', { defaultValue: 'Diese Folge aufnehmen' })}`
+                      : `● ${t('epg.recordSingle', { defaultValue: 'Aufnehmen' })}`}
                 </Button>
               )}
-              {onScheduleSeries && (
+              {meta.classification === 'series' && onScheduleSeries && (
                 <Button
                   variant="secondary"
                   onClick={() => setView('series')}
@@ -195,7 +426,81 @@ export function EpgEventDialog({
               </Button>
             </div>
           </>
-        ) : (
+        )}
+
+        {view === 'pick-broadcast' && (
+          <>
+            <div className={styles.content}>
+              <div className={styles.pickerDialogList}>
+                {/* Option 1: Current / Original Broadcast */}
+                <button
+                  type="button"
+                  className={styles.pickerDialogItem}
+                  onClick={() => {
+                    onRecord?.(event);
+                    onClose();
+                  }}
+                >
+                  <div className={styles.rerunInfo}>
+                    <span className={styles.rerunDateTime}>
+                      {formatDateTime(event.start)} – {formatTime(event.end)}
+                    </span>
+                    <span className={styles.rerunMetaLabel}>
+                      <strong>{channel?.name || ''}</strong> · {t('epg.currentBroadcast', { defaultValue: 'Aktuelle Ausstrahlung' })}
+                    </span>
+                  </div>
+                  {isCurrentRecorded ? (
+                    <span className={styles.rerunRecordedPill}>● REC</span>
+                  ) : (
+                    <span className={styles.rerunRecordBtn}>⏺ {t('epg.record', { defaultValue: 'Aufnehmen' })}</span>
+                  )}
+                </button>
+
+                {/* Option 2+: Future Reruns */}
+                {rerunResult.sameEpisodeReruns.map((rerun) => {
+                  const isRec = checkIsRecorded(rerun.event);
+                  return (
+                    <button
+                      key={`${rerun.event.serviceRef}:${rerun.event.start}`}
+                      type="button"
+                      className={styles.pickerDialogItem}
+                      onClick={() => {
+                        onRecord?.(rerun.event);
+                        onClose();
+                      }}
+                    >
+                      <div className={styles.rerunInfo}>
+                        <span className={styles.rerunDateTime}>
+                          {formatRerunDate(rerun.event.start)}
+                        </span>
+                        <span className={styles.rerunMetaLabel}>
+                          <strong className={styles.rerunChannelName}>{rerun.channelName}</strong>
+                          {rerun.confidenceLabel ? ` · ${rerun.confidenceLabel}` : ''}
+                        </span>
+                      </div>
+                      {isRec ? (
+                        <span className={styles.rerunRecordedPill}>● REC</span>
+                      ) : (
+                        <span className={styles.rerunRecordBtn}>⏺ {t('epg.record', { defaultValue: 'Aufnehmen' })}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={styles.footer}>
+              <Button variant="secondary" onClick={() => setView('details')}>
+                {t('epg.seriesBack')}
+              </Button>
+              <Button variant="secondary" onClick={onClose}>
+                {t('common.close', { defaultValue: 'Schließen' })}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {view === 'series' && (
           <>
             <div className={styles.seriesContent}>
               {/* Keyword / Title */}

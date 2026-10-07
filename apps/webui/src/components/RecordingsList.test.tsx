@@ -327,7 +327,7 @@ describe('RecordingsList', () => {
       'Older Recording',
     ]);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Oldest first' }));
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'oldest' } });
 
     expect(getTitles()).toEqual([
       'Older Recording',
@@ -335,7 +335,7 @@ describe('RecordingsList', () => {
       'Newest Recording',
     ]);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Active only' }));
+    fireEvent.change(screen.getByLabelText('View'), { target: { value: 'active' } });
 
     expect(getTitles()).toEqual(['Active Recording']);
   });
@@ -608,5 +608,141 @@ describe('RecordingsList', () => {
     expect(await screen.findByText('[WAIT] Legacy Token')).toBeInTheDocument();
     expect(screen.getByText('UNKNOWN')).toBeInTheDocument();
     expect(screen.queryByText('SCHEDULED')).not.toBeInTheDocument();
+  });
+
+  it('suppresses duration badge when length is 0m or unknown and formats valid duration cleanly', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-zero',
+            title: 'Zero Duration Show',
+            beginUnixSeconds: 1710000000,
+            length: '0m',
+            description: 'No valid duration',
+          },
+          {
+            recordingId: 'rec-valid',
+            title: 'Valid Duration Show',
+            beginUnixSeconds: 1710000000,
+            length: '45m',
+            description: '45 minutes show',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Zero Duration Show')).toBeInTheDocument();
+    expect(screen.getByText('Valid Duration Show')).toBeInTheDocument();
+
+    // Verify '0m' is never rendered anywhere in the document
+    expect(screen.queryByText('0m')).not.toBeInTheDocument();
+    expect(screen.queryByText(/0\s*Min/i)).not.toBeInTheDocument();
+
+    // Verify valid duration is rendered nicely
+    expect(screen.getByText('45 Min.')).toBeInTheDocument();
+  });
+
+  it('groups multi-episode series and allows drilling down into episodes', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-cafe-1',
+            title: 'Café PULS',
+            beginUnixSeconds: 1710000000,
+            length: '60m',
+            description: 'Episode 1',
+          },
+          {
+            recordingId: 'rec-cafe-2',
+            title: 'Café PULS',
+            beginUnixSeconds: 1710086400,
+            length: '60m',
+            description: 'Episode 2',
+          },
+          {
+            recordingId: 'rec-movie-1',
+            title: 'Standalone Movie',
+            beginUnixSeconds: 1710000000,
+            length: '90m',
+            description: 'A single movie',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    // Standalone movie is shown under standalone recordings
+    expect(await screen.findByText('Standalone Movie')).toBeInTheDocument();
+
+    // Multi-episode series is grouped
+    expect(screen.getByText('Café PULS')).toBeInTheDocument();
+    expect(screen.getByText('2 episodes')).toBeInTheDocument();
+
+    // Clicking the series card navigates into the series view
+    const seriesCard = screen.getByRole('button', { name: /Café PULS/i });
+    fireEvent.click(seriesCard);
+
+    // Check if back to recordings button is present
+    expect(await screen.findByText('Back to all recordings')).toBeInTheDocument();
+    expect(screen.getAllByTestId('recording-title')).toHaveLength(2);
+  });
+
+  it('filters recordings in real time using search input', async () => {
+    getRecordings.mockResolvedValue({
+      data: {
+        currentRoot: 'root-a',
+        currentPath: '',
+        roots: [{ id: 'root-a', name: 'Root A' }],
+        breadcrumbs: [],
+        directories: [],
+        recordings: [
+          {
+            recordingId: 'rec-monk',
+            title: 'Monk',
+            beginUnixSeconds: 1710000000,
+            length: '45m',
+            description: 'Mr. Monk and the Candidate',
+          },
+          {
+            recordingId: 'rec-charly',
+            title: 'Unser Charly',
+            beginUnixSeconds: 1710000000,
+            length: '45m',
+            description: 'Charly feiert Geburtstag',
+          },
+        ],
+      },
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Monk')).toBeInTheDocument();
+    expect(screen.getByText('Unser Charly')).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText(/search/i);
+    fireEvent.change(searchInput, { target: { value: 'Monk' } });
+
+    expect(screen.getByText('Monk')).toBeInTheDocument();
+    expect(screen.queryByText('Unser Charly')).not.toBeInTheDocument();
+
+    // Clear search
+    fireEvent.change(searchInput, { target: { value: '' } });
+    expect(screen.getByText('Monk')).toBeInTheDocument();
+    expect(screen.getByText('Unser Charly')).toBeInTheDocument();
   });
 });
