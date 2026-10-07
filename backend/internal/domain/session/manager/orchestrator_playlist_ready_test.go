@@ -1,8 +1,10 @@
 package manager
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,51 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
+
+func TestCheckPlaylistReadyAt_LiveUsesPublishedWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		target    int
+		durations []int
+		wantReady bool
+	}{
+		{name: "short insufficient", target: 2, durations: []int{2, 2, 2}},
+		{name: "short ready", target: 2, durations: []int{2, 2, 2, 2}, wantReady: true},
+		{name: "long insufficient", target: 10, durations: []int{10, 10}},
+		{name: "long ready", target: 10, durations: []int{10, 10, 10}, wantReady: true},
+		{name: "variable insufficient", target: 10, durations: []int{2, 10, 2}},
+		{name: "variable ready", target: 10, durations: []int{2, 10, 2, 8, 8}, wantReady: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var playlist strings.Builder
+			fmt.Fprintf(&playlist, "#EXTM3U\n#EXT-X-TARGETDURATION:%d\n", tc.target)
+			for i, duration := range tc.durations {
+				name := fmt.Sprintf("seg_%06d.ts", i)
+				fmt.Fprintf(&playlist, "#EXTINF:%d.000,\n%s\n", duration, name)
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("segment"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			playlistPath := filepath.Join(dir, "index.m3u8")
+			if err := os.WriteFile(playlistPath, []byte(playlist.String()), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, model.SessionFirstFrameMarkerFilename), []byte("ready"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			orch := &Orchestrator{LiveReadySegments: 4, LiveSegmentSeconds: 2}
+			ttfpRecorded := false
+			ready, reason, err := orch.checkPlaylistReadyAt(playlistPath, false, &ttfpRecorded, "copy", time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ready != tc.wantReady {
+				t.Fatalf("ready=%t, want %t (reason=%q)", ready, tc.wantReady, reason)
+			}
+		})
+	}
+}
 
 func TestCheckPlaylistReadyAt_LiveRequiresConfiguredSegmentCount(t *testing.T) {
 	dir := t.TempDir()

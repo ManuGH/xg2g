@@ -11,8 +11,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -251,11 +253,22 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		return false, "vod last segment missing or empty: " + lastSegment, nil
 	}
 
-	requiredSegments := o.liveReadySegments()
-	if len(segmentURIs) < requiredSegments {
-		return false, fmt.Sprintf("not enough segments: %d < %d required", len(segmentURIs), requiredSegments), nil
+	// A live player needs several independent segments, but long copied GOPs
+	// can make three published segments cover more media than four nominal ones.
+	// Use the advertised HLS window as well as the operator's target buffer.
+	minimumSegments := min(o.liveReadySegments(), 3)
+	if len(segmentURIs) < minimumSegments {
+		return false, fmt.Sprintf("not enough segments: %d < %d required", len(segmentURIs), minimumSegments), nil
 	}
-	for _, segmentURI := range segmentURIs[:requiredSegments] {
+	windowSeconds, targetSeconds, durationCount, validDurations := playlistLiveWindow(content)
+	if !validDurations || durationCount != len(segmentURIs) {
+		return false, "playlist segment durations missing or invalid", nil
+	}
+	requiredSeconds := max(o.liveReadyFloor().Seconds(), 3*targetSeconds)
+	if windowSeconds < requiredSeconds {
+		return false, fmt.Sprintf("playlist window too short: %.3fs < %.3fs required", windowSeconds, requiredSeconds), nil
+	}
+	for _, segmentURI := range segmentURIs {
 		segmentPath := filepath.Join(filepath.Dir(playlistPath), segmentURI)
 		segInfo, segErr := os.Stat(segmentPath)
 		if segErr != nil || segInfo.Size() == 0 {
@@ -272,6 +285,42 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		*ttfpRecorded = true
 	}
 	return true, "", nil
+}
+
+// playlistLiveWindow reads advertised durations only for complete media entries.
+// The file and first-frame checks above remain separate readiness requirements.
+func playlistLiveWindow(content []byte) (windowSeconds, targetSeconds float64, segmentCount int, valid bool) {
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	var pendingDuration float64
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if value, ok := strings.CutPrefix(line, "#EXT-X-TARGETDURATION:"); ok {
+			target, err := strconv.ParseFloat(value, 64)
+			if err != nil || target <= 0 || math.IsInf(target, 0) || math.IsNaN(target) {
+				return 0, 0, 0, false
+			}
+			targetSeconds = target
+			continue
+		}
+		if value, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
+			value, _, _ = strings.Cut(value, ",")
+			duration, err := strconv.ParseFloat(value, 64)
+			if err != nil || duration <= 0 || math.IsInf(duration, 0) || math.IsNaN(duration) {
+				return 0, 0, 0, false
+			}
+			pendingDuration = duration
+			continue
+		}
+		if line != "" && !strings.HasPrefix(line, "#") {
+			if pendingDuration <= 0 {
+				return 0, 0, 0, false
+			}
+			windowSeconds += pendingDuration
+			segmentCount++
+			pendingDuration = 0
+		}
+	}
+	return windowSeconds, targetSeconds, segmentCount, scanner.Err() == nil && targetSeconds > 0 && pendingDuration == 0
 }
 
 func (o *Orchestrator) liveReadySegments() int {
