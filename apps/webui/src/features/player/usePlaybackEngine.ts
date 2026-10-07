@@ -146,6 +146,7 @@ export function usePlaybackEngine({
   // orchestrator must not treat that 'ready' as transient startup buffering.
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const nativeStallRecoveryTimerRef = useRef<number | null>(null);
+  const nativeStartupDeadlineRef = useRef(0);
   const revealHoldRef = useRef(false);
   const revealTimerRef = useRef<number | null>(null);
   const hlsStallRecoveryTimerRef = useRef<number | null>(null);
@@ -262,6 +263,11 @@ export function usePlaybackEngine({
         return;
       }
 
+      // Native HLS must accumulate its initial media before it can play. A
+      // soft waiting event here is not yet a failed decoder. Anchor the same
+      // bounded startup budget as hls.js to this attachment, never to an event
+      // or render (otherwise repeated waiting events could defer it forever).
+      nativeStartupDeadlineRef.current = performance.now() + HLS_STARTUP_POLICY.liveTimeoutMs;
       video.src = url;
       scheduleNativeAutoplay(video, autoplayLabel);
     })();
@@ -676,16 +682,19 @@ export function usePlaybackEngine({
 
     const startingTime = videoEl.currentTime;
     const startingSrc = videoEl.currentSrc;
+    const startingSessionId = sessionIdRef.current;
+    const startingUrl = lastHlsUrlRef.current;
 
     nativeStallRecoveryTimerRef.current = window.setTimeout(() => {
       nativeStallRecoveryTimerRef.current = null;
 
       if (
         isTeardownRef.current ||
+        isUnmountedRef.current ||
         decodeRecoveryInFlightRef.current ||
         hlsRef.current ||
-        !sessionIdRef.current ||
-        !lastHlsUrlRef.current ||
+        sessionIdRef.current !== startingSessionId ||
+        lastHlsUrlRef.current !== startingUrl ||
         lastHlsEngineRef.current !== 'native' ||
         videoEl.paused
       ) {
@@ -727,7 +736,7 @@ export function usePlaybackEngine({
           terminal: false,
         });
       }
-    }, NATIVE_STALL_RECOVERY_MS);
+    }, Math.max(NATIVE_STALL_RECOVERY_MS, nativeStartupDeadlineRef.current - performance.now()));
   }, [
     beginSessionDecodeRecovery,
     bufferedAheadSeconds,
