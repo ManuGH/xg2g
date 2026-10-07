@@ -73,7 +73,7 @@ export default function ContinueWatchingRail() {
         kind: 'info',
         message: t('dashboard.continueWatching.dismissed', {
           title: item.title || t('dashboard.continueWatching.untitled'),
-          defaultValue: 'Aus Weiter schauen entfernt',
+          defaultValue: 'Aus „Weiter schauen“ entfernt (Aufnahme bleibt gespeichert)',
         }),
       });
     } catch {
@@ -135,8 +135,8 @@ export default function ContinueWatchingRail() {
                   type="button"
                   className={styles.dismissButton}
                   onClick={(e) => { void handleDismiss(e, item); }}
-                  title={t('dashboard.continueWatching.dismiss', { defaultValue: 'Aus Weiter schauen entfernen' })}
-                  aria-label={t('dashboard.continueWatching.dismiss', { defaultValue: 'Aus Weiter schauen entfernen' })}
+                  title={t('dashboard.continueWatching.dismissTooltip', { defaultValue: 'Aus „Weiter schauen“ entfernen (Aufnahme bleibt erhalten)' })}
+                  aria-label={t('dashboard.continueWatching.dismissTooltip', { defaultValue: 'Aus „Weiter schauen“ entfernen (Aufnahme bleibt erhalten)' })}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.dismissIcon}>
                     <line x1="18" y1="6" x2="6" y2="18" />
