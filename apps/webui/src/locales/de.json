@@ -503,11 +503,19 @@
     "heroStreamingMoment": "Streaming aktiv",
     "heroControlDeck": "Steuerzentrale",
     "heroStreamingSummary": "{{count}} aktive Sitzung(en) über die Receiver-Bridge.",
-    "heroStandbyTitle": "Bereit für Wiedergabe",
-    "heroStandbySummary": "Starte Live-Fernsehen oder rufe deine Aufnahmen ab.",
+    "heroStandbyTitle": "Was möchtest du ansehen?",
+    "heroStandbySummary": "Live-TV starten oder dort weitermachen, wo du aufgehört hast.",
     "heroNextUp": "Als Nächstes auf dem Receiver: {{title}}",
     "heroDefaultSummary": "Live-TV, Timer, Aufnahmen und Diagnose über eine einzige Steuerfläche starten.",
     "readOnlySummary": "Automatisch synchronisiert",
+    "statusOverview": "Systemstatus",
+    "statusSystemReady": "System bereit",
+    "statusReceiverStandby": "Receiver Standby",
+    "statusReceiverConnected": "Receiver verbunden",
+    "statusEpgReady": "EPG aktuell",
+    "upcomingTimerSummary": "{{count}} geplante Aufnahmen · Nächste: {{time}} ({{name}})",
+    "upcomingTimerSummary_one": "{{count}} geplante Aufnahme · Nächste: {{time}} ({{name}})",
+    "upcomingTimerSummary_other": "{{count}} geplante Aufnahmen · Nächste: {{time}} ({{name}})",
     "connectedDevices": "Verbundene Geräte",
     "liveViewerSessions": "Live-Zuschauer-Sitzungen",
     "readyForFirstSession": "bereit für die erste Sitzung",
@@ -641,7 +649,8 @@
       "untitled": "Aufnahme",
       "allRecordings": "Alle Aufnahmen",
       "dismiss": "Aus Weiter schauen entfernen",
-      "dismissed": "\"{{title}}\" aus Weiter schauen entfernt"
+      "dismissTooltip": "Aus „Weiter schauen“ entfernen (Aufnahme bleibt erhalten)",
+      "dismissed": "\"{{title}}\" aus „Weiter schauen“ entfernt (Aufnahme bleibt gespeichert)"
     },
     "startLive": {
       "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist."

@@ -10,6 +10,8 @@ const mockRefetch = vi.fn();
 const mockUseSystemHealth = vi.fn();
 const mockUseHouseholdProfiles = vi.fn();
 const mockUseDvrStatus = vi.fn();
+const mockUseTimers = vi.fn();
+const mockUseStreams = vi.fn();
 
 vi.mock('react-router', () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -24,13 +26,19 @@ vi.mock('../hooks/useServerQueries', () => ({
       channel: { name: 'Channel Two' }
     }
   }),
-  useStreams: () => ({ data: [] }),
+  useStreams: () => mockUseStreams(),
   useDvrStatus: () => mockUseDvrStatus(),
+  useTimers: () => mockUseTimers(),
 }));
 
 vi.mock('../features/resume/ContinueWatchingRail', () => ({
   __esModule: true,
   default: () => null,
+}));
+
+vi.mock('./StreamsList', () => ({
+  __esModule: true,
+  default: () => <div data-testid="streams-list">StreamsList</div>,
 }));
 
 vi.mock('../context/HouseholdProfilesContext', () => ({
@@ -42,6 +50,8 @@ describe('Dashboard', () => {
     mockNavigate.mockReset();
     mockRefetch.mockReset();
     mockUseDvrStatus.mockReturnValue({ data: null });
+    mockUseTimers.mockReturnValue({ data: [] });
+    mockUseStreams.mockReturnValue({ data: [] });
     mockUseHouseholdProfiles.mockReturnValue({
       canAccessDvrPlayback: true,
       canManageDvr: true,
@@ -67,10 +77,30 @@ describe('Dashboard', () => {
     screen.getByRole('button', { name: 'Open Live TV' });
     screen.getByRole('button', { name: 'Household profiles' });
     screen.getByRole('button', { name: 'Timers' });
-    expect(screen.getByRole('status', { name: 'System healthy – Success' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByText('System ready')).toBeInTheDocument();
+    expect(screen.getByText('Receiver connected')).toBeInTheDocument();
+    expect(screen.getByText('Guide up to date')).toBeInTheDocument();
     expect(screen.queryByText('Recent logs')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
-    screen.getByText('Operator sessions');
+    // Idle sessions row is completely hidden when no active streams exist
+    expect(screen.queryByText('Operator sessions')).toBeNull();
+  });
+
+  it('renders active operator sessions when streams exist', () => {
+    mockUseStreams.mockReturnValue({
+      data: [
+        {
+          id: 'stream-1',
+          clientIp: '192.168.1.100',
+          channelName: 'Channel Two',
+          deviceType: 'ios',
+        },
+      ],
+    });
+
+    render(<Dashboard />);
+    expect(screen.getByText('Operator sessions')).toBeInTheDocument();
   });
 
   it('navigates to guided and direct routes from the dashboard', () => {
@@ -129,8 +159,8 @@ describe('Dashboard', () => {
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the programme only while isRecording; otherwise shows ready state', () => {
-    // 1. Idle state: even with a stale serviceName, it must show Ready, not the programme
+  it('shows the recording in status strip only while isRecording is active', () => {
+    // 1. Idle state: no recording shown
     mockUseDvrStatus.mockReturnValue({
       data: {
         isRecording: false,
@@ -140,9 +170,8 @@ describe('Dashboard', () => {
 
     const { rerender } = render(<Dashboard />);
     expect(screen.queryByText('Channel One')).toBeNull();
-    expect(screen.getByText('Ready')).toBeInTheDocument();
 
-    // 2. Active recording: displays the programme name
+    // 2. Active recording: displays the service name in the status strip
     mockUseDvrStatus.mockReturnValue({
       data: {
         isRecording: true,
@@ -154,4 +183,23 @@ describe('Dashboard', () => {
     expect(screen.getByText('Channel One')).toBeInTheDocument();
   });
 
+  it('displays upcoming timer pill when scheduled timers exist and navigates on click', () => {
+    mockUseTimers.mockReturnValue({
+      data: [
+        {
+          timerId: 'timer-1',
+          name: 'Tatort',
+          begin: 1710000000,
+          end: 1710003600,
+          state: 'scheduled',
+        },
+      ],
+    });
+
+    render(<Dashboard />);
+    const timerButton = screen.getByRole('button', { name: /Tatort/i });
+    expect(timerButton).toBeInTheDocument();
+    fireEvent.click(timerButton);
+    expect(mockNavigate).toHaveBeenCalledWith(buildEpgRoute('timers'));
+  });
 });

@@ -503,11 +503,19 @@
     "heroStreamingMoment": "Streaming moment",
     "heroControlDeck": "Control deck",
     "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
-    "heroStandbyTitle": "Ready for Playback",
-    "heroStandbySummary": "Start Live TV or browse your recordings.",
+    "heroStandbyTitle": "What would you like to watch?",
+    "heroStandbySummary": "Start Live TV or continue where you left off.",
     "heroNextUp": "Next on the receiver: {{title}}",
     "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
     "readOnlySummary": "Automatically synchronized",
+    "statusOverview": "System status",
+    "statusSystemReady": "System ready",
+    "statusReceiverStandby": "Receiver Standby",
+    "statusReceiverConnected": "Receiver connected",
+    "statusEpgReady": "Guide up to date",
+    "upcomingTimerSummary": "{{count}} scheduled recordings · Next: {{time}} ({{name}})",
+    "upcomingTimerSummary_one": "{{count}} scheduled recording · Next: {{time}} ({{name}})",
+    "upcomingTimerSummary_other": "{{count}} scheduled recordings · Next: {{time}} ({{name}})",
     "connectedDevices": "Connected devices",
     "liveViewerSessions": "live viewer sessions",
     "readyForFirstSession": "ready for the first session",
@@ -641,7 +649,8 @@
       "untitled": "Recording",
       "allRecordings": "All recordings",
       "dismiss": "Remove from Continue watching",
-      "dismissed": "\"{{title}}\" removed from Continue watching"
+      "dismissTooltip": "Remove from Continue watching (recording will not be deleted)",
+      "dismissed": "\"{{title}}\" removed from Continue watching (recording will not be deleted)"
     },
     "startLive": {
       "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."
