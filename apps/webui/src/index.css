@@ -82,18 +82,21 @@
   /* Semantic States */
   --status-success: #34d399;
   --status-warning: #fbbf24;
+  --status-orange: #f97316;
   --status-error: #f87171;
   --status-info: #60a5fa;
 
   /* Semantic State Surfaces */
   --status-success-subtle: rgba(52, 211, 153, 0.12);
   --status-warning-subtle: rgba(251, 191, 36, 0.12);
+  --status-orange-subtle: rgba(249, 115, 22, 0.14);
   --status-error-subtle: rgba(248, 113, 113, 0.12);
   --status-info-subtle: rgba(96, 165, 250, 0.12);
   --status-neutral-subtle: rgba(107, 112, 128, 0.12);
 
   --status-success-border: rgba(52, 211, 153, 0.3);
   --status-warning-border: rgba(251, 191, 36, 0.3);
+  --status-orange-border: rgba(249, 115, 22, 0.3);
   --status-error-border: rgba(248, 113, 113, 0.3);
   --status-info-border: rgba(96, 165, 250, 0.3);
   --status-neutral-border: rgba(107, 112, 128, 0.2);

@@ -382,36 +382,33 @@ function ChannelHeader({
       </div>
       <div className={styles.channelMeta}>
         <div className={styles.channelName}>{displayName}</div>
-        {(channel?.group || playbackBadge) && (
+        {playbackBadge && (
           <div className={styles.channelAux}>
-            {channel?.group && <div className={styles.channelGroup}>{channel.group}</div>}
-            {playbackBadge && (
-              <details className={styles.channelTechDetails} onClick={(e) => e.stopPropagation()}>
-                <summary className={styles.channelTechSummary} title={playbackBadge.title}>
-                  ⓘ {t('epg.details', { defaultValue: 'Details' })}
-                </summary>
-                <div className={styles.channelPlaybackMeta}>
-                  <span
-                    className={[
-                      styles.channelPlaybackBadge,
-                      playbackBadge.mode === 'direct_play'
-                        ? styles.channelPlaybackBadgeDirect
-                        : playbackBadge.mode === 'direct_stream'
-                          ? styles.channelPlaybackBadgeRemux
-                          : playbackBadge.mode === 'transcode'
-                            ? styles.channelPlaybackBadgeEncode
-                            : styles.channelPlaybackBadgeBlocked,
-                    ].join(' ')}
-                    title={playbackBadge.title}
-                  >
-                    {playbackBadge.label}
-                  </span>
-                  {playbackBadge.detail && (
-                    <span className={styles.channelPlaybackDetail}>{playbackBadge.detail}</span>
-                  )}
-                </div>
-              </details>
-            )}
+            <details className={styles.channelTechDetails} onClick={(e) => e.stopPropagation()}>
+              <summary className={styles.channelTechSummary} title={playbackBadge.title}>
+                ⓘ {t('epg.details', { defaultValue: 'Details' })}
+              </summary>
+              <div className={styles.channelPlaybackMeta}>
+                <span
+                  className={[
+                    styles.channelPlaybackBadge,
+                    playbackBadge.mode === 'direct_play'
+                      ? styles.channelPlaybackBadgeDirect
+                      : playbackBadge.mode === 'direct_stream'
+                        ? styles.channelPlaybackBadgeRemux
+                        : playbackBadge.mode === 'transcode'
+                          ? styles.channelPlaybackBadgeEncode
+                          : styles.channelPlaybackBadgeBlocked,
+                  ].join(' ')}
+                  title={playbackBadge.title}
+                >
+                  {playbackBadge.label}
+                </span>
+                {playbackBadge.detail && (
+                  <span className={styles.channelPlaybackDetail}>{playbackBadge.detail}</span>
+                )}
+              </div>
+            </details>
           </div>
         )}
       </div>
@@ -427,13 +424,11 @@ function ChannelHeader({
           title={isFavorite
             ? t('epg.removeFavorite', { defaultValue: 'Favorit entfernen' })
             : t('epg.addFavorite', { defaultValue: 'Zu Favoriten' })}
+          aria-label={isFavorite
+            ? t('epg.removeFavorite', { defaultValue: 'Favorit entfernen' })
+            : t('epg.addFavorite', { defaultValue: 'Zu Favoriten' })}
         >
           <span aria-hidden="true">{isFavorite ? '★' : '☆'}</span>
-          <span className={styles.favoriteLabel}>
-            {isFavorite
-              ? t('epg.favoriteOn', { defaultValue: 'Favorit' })
-              : t('epg.favoriteOff', { defaultValue: 'Merken' })}
-          </span>
         </button>
       )}
       {onPlay && (
@@ -539,8 +534,8 @@ function ChannelCard({
           <div className={styles.dropdown}>
             <button className={styles.toggle} onClick={onToggleExpand}>
               {isExpanded
-                ? t('epg.hideOtherShows')
-                : t('epg.moreShows', { count: others.length })}
+                ? `${t('epg.hideOtherShows', { defaultValue: 'Weniger anzeigen' })} ↑`
+                : `${t('epg.moreShows', { count: others.length })} ↓`}
             </button>
             {isExpanded && (
               <div className={styles.programmesNoncurrent}>
@@ -669,7 +664,9 @@ function SearchGroup({
         {rest.length > 0 && (
           <div className={styles.dropdown}>
             <button className={styles.toggle} onClick={onToggleExpand}>
-              {isExpanded ? t('epg.showLess') : t('epg.moreShows', { count: rest.length })}
+              {isExpanded
+                ? `${t('epg.showLess', { defaultValue: 'Weniger anzeigen' })} ↑`
+                : `${t('epg.moreShows', { count: rest.length })} ↓`}
             </button>
             {isExpanded && (
               <div className={styles.programmesNoncurrent}>

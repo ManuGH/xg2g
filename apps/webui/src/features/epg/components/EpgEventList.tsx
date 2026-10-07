@@ -85,10 +85,23 @@ export function EpgEventRow({
           {formatRange(event.start, event.end)}
           {onRecord &&
             (isRecorded ? (
-              <span title={t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' })} className={styles.recordIndicator}>
-                <span className={styles.recordIndicatorDot} aria-hidden="true" />
-                <span className={styles.recordIndicatorLabel}>REC</span>
-              </span>
+              inProgress ? (
+                <span
+                  title={t('epg.recordingActive', { defaultValue: 'Wird gerade aufgenommen' })}
+                  className={[styles.recordIndicator, styles.recordIndicatorActive].join(' ')}
+                >
+                  <span className={[styles.recordIndicatorDot, styles.recordIndicatorDotActive].join(' ')} aria-hidden="true" />
+                  <span className={styles.recordIndicatorLabel}>REC</span>
+                </span>
+              ) : (
+                <span
+                  title={t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' })}
+                  className={[styles.recordIndicator, styles.recordIndicatorPlanned].join(' ')}
+                >
+                  <span className={[styles.recordIndicatorDot, styles.recordIndicatorDotPlanned].join(' ')} aria-hidden="true" />
+                  <span className={styles.recordIndicatorLabel}>{t('epg.scheduled', { defaultValue: 'Geplant' })}</span>
+                </span>
+              )
             ) : (
               <button
                 type="button"
@@ -108,7 +121,7 @@ export function EpgEventRow({
         <div className={styles.programmeBody}>
           <div className={styles.programmeTitle}>{event.title || '—'}</div>
           {event.desc && (
-            <div className={[styles.programmeDesc, expanded ? styles.programmeDescExpanded : null].filter(Boolean).join(' ')}>
+            <div className={styles.programmeDesc}>
               {normalizeEpgText(event.desc)}
             </div>
           )}
@@ -118,7 +131,11 @@ export function EpgEventRow({
                 <div
                   className={[
                     styles.progressBar,
-                    pct >= 90 ? styles.progressBarEnding : null,
+                    pct >= 90
+                      ? styles.progressBarEnding
+                      : pct >= 70
+                        ? styles.progressBarAmber
+                        : null,
                   ].filter(Boolean).join(' ')}
                   style={progressStyle}
                 />
