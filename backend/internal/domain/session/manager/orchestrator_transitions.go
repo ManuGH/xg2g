@@ -204,7 +204,7 @@ func (o *Orchestrator) runExecutionLoop(
 	recoveryAttempt := false
 
 	for attempt := 0; attempt <= budget.RetryLimit; attempt++ {
-		attemptCtx := budget.attempt(attempt, recoveryAttempt)
+		attemptCtx := budget.attemptForProfile(attempt, recoveryAttempt, currentProfileSpec.TranscodeVideo)
 		if remaining, bounded := attemptCtx.remaining(time.Now()); bounded && remaining <= 0 {
 			logger.Warn().
 				Str("session_id", e.SessionID).
