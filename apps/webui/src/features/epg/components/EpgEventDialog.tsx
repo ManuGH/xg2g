@@ -412,7 +412,7 @@ export function EpgEventDialog({
                       : `● ${t('epg.recordSingle', { defaultValue: 'Aufnehmen' })}`}
                 </Button>
               )}
-              {meta.classification === 'series' && onScheduleSeries && (
+              {meta.classification !== 'movie' && onScheduleSeries && (
                 <Button
                   variant="secondary"
                   onClick={() => setView('series')}

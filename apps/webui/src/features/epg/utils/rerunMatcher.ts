@@ -184,11 +184,7 @@ export function extractMetadata(event: EpgEvent): ExtractedMetadata {
   if (hasEpisodeMarker) {
     isSeries = true;
     classification = 'series';
-  } else if (!hasEpisodeMarker && durationMinutes >= 65 && durationMinutes <= 250 && (year !== undefined || hasMovieKeywords)) {
-    isMovie = true;
-    classification = 'movie';
-  } else if (!hasEpisodeMarker && durationMinutes >= 75 && durationMinutes <= 240) {
-    // Typical feature-length duration without episode markers
+  } else if (!hasEpisodeMarker && durationMinutes >= 60 && durationMinutes <= 270 && (year !== undefined || hasMovieKeywords)) {
     isMovie = true;
     classification = 'movie';
   } else {
