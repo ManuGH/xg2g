@@ -21,15 +21,34 @@ func Token(s string) string {
 	}))
 }
 
+func isHexColonServiceRef(ref string) bool {
+	if ref == "" || !strings.Contains(ref, ":") {
+		return false
+	}
+	for _, ch := range ref {
+		switch {
+		case ch == ':':
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // ServiceRef normalizes an Enigma2 Service Reference
 // It removes trailing colons, trims whitespace, and uppercases hexadecimal blocks
-// to ensure deterministic matching between client requests and JWT signed payloads.
+// for standard DVB service references. For IPTV references embedding URLs, case is preserved.
 func ServiceRef(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.ToUpper(s)
 	// Remove trailing colons frequently added by Enigma2 boxes
 	for strings.HasSuffix(s, ":") {
 		s = strings.TrimSuffix(s, ":")
+	}
+	if isHexColonServiceRef(s) {
+		return strings.ToUpper(s)
 	}
 	return s
 }

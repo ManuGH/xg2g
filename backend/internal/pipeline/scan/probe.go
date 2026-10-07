@@ -52,7 +52,15 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 	probeURL := channel.URL
 	resolved := false
 
-	if m.e2Client != nil {
+	if cleanURL, ok := extractCleanIPTVURL(serviceRef); ok {
+		probeURL = cleanURL
+		channel.URL = cleanURL
+		resolved = true
+	} else if cleanURL, ok := extractCleanIPTVURL(channel.TvgID); ok {
+		probeURL = cleanURL
+		channel.URL = cleanURL
+		resolved = true
+	} else if m.e2Client != nil && !isIPTVRef(serviceRef) {
 		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, serviceRef)
 		cancel()
@@ -139,9 +147,15 @@ func (m *Manager) ProbeCapability(ctx context.Context, serviceRef string) (Capab
 // resolveProbeURL resolves the best stream URL to probe for a channel: a fresh
 // Enigma2-resolved URL when available, else the (optionally resolved) M3U URL.
 func (m *Manager) resolveProbeURL(ctx context.Context, ch m3u.Channel, sRef string) string {
+	if cleanURL, ok := extractCleanIPTVURL(sRef); ok {
+		return cleanURL
+	}
+	if cleanURL, ok := extractCleanIPTVURL(ch.TvgID); ok {
+		return cleanURL
+	}
 	probeURL := ch.URL
 	resolved := false
-	if m.e2Client != nil && sRef != "" {
+	if m.e2Client != nil && sRef != "" && !isIPTVRef(sRef) {
 		resCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		freshURL, err := m.e2Client.ResolveStreamURL(resCtx, sRef)
 		cancel()
@@ -401,12 +415,19 @@ func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalUR
 	// serves its own streaming port -- the fallback resolves to a URL that was
 	// just attempted, so it is skipped. Logging the attempt unconditionally made
 	// those runs read as if the fallback had carried the probe when it never ran.
-	fallbackURL, buildErr := buildFallbackURL(initialProbeURL, serviceRef)
-	fallbackIsNewTarget := buildErr == nil && !hasAttemptedProbeURL(attemptedProbeURLs, fallbackURL)
+	var fallbackURL string
+	var buildErr error
+	fallbackIsNewTarget := false
+	if !isIPTVRef(serviceRef) {
+		fallbackURL, buildErr = buildFallbackURL(initialProbeURL, serviceRef)
+		fallbackIsNewTarget = buildErr == nil && !hasAttemptedProbeURL(attemptedProbeURLs, fallbackURL)
+	}
 
 	failedAttempt := log.L().Warn().Err(err).Str("sref", serviceRef)
 	if fallbackIsNewTarget {
 		failedAttempt.Msg("scan: initial probe failed, attempting port 8001 fallback")
+	} else if isIPTVRef(serviceRef) {
+		failedAttempt.Msg("scan: initial IPTV probe failed; skipping port 8001 fallback")
 	} else {
 		failedAttempt.Msg("scan: initial probe failed; port 8001 already attempted, skipping to original URL fallback")
 	}

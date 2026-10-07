@@ -979,7 +979,7 @@ func TestIPTV_CanaryLeakAudit_OutboundEndpointsZeroLeak(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
 		claims, err := v3auth.VerifyStrict(payload.PlaybackDecisionToken, jwtTestSecret, "xg2g/v3/intents", "xg2g")
 		require.NoError(t, err)
-		assert.Equal(t, strings.ToUpper(opaqueID), claims.Sub)
+		assert.Equal(t, opaqueID, claims.Sub)
 	}
 
 	// 22. POST /api/v3/live/playback-summary
