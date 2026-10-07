@@ -1309,6 +1309,17 @@
       "ro": "RO",
       "rw": "RW"
     },
+    "used": "used",
+    "freeOf": "{{free}} free of {{total}}",
+    "overlayError": "Receiver overlay: Error",
+    "summaryOnline": "Receiver online",
+    "summaryStorageConnected": "Recording storage connected",
+    "summaryStorageNotConnected": "No recording storage",
+    "networkConnected": "Connected",
+    "dhcp": "DHCP",
+    "hours": "h",
+    "minutes": "min",
+    "days": "days",
     "status": {
       "mounted": "Connected",
       "unmounted": "Not mounted",

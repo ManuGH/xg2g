@@ -11,7 +11,7 @@ vi.mock('../../client-ts', () => ({
 }));
 
 
-import { SystemInfo } from './SystemInfo';
+import { SystemInfo, formatHardwareModel, formatUptime, formatStorageCapacity } from './SystemInfo';
 
 function renderWithQueryClient() {
   const queryClient = new QueryClient({
@@ -161,6 +161,37 @@ describe('SystemInfo', () => {
     const tunerType = screen.getByText('S NIM(45208 FBC)');
     expect(tunerType).toBeInTheDocument();
     expect(tunerType.className).toContain('tunerTypeLabel');
+  });
 
+  it('normalizes hardware model strings cleanly', () => {
+    expect(formatHardwareModel('Vu+', 'Uno4K')).toBe('VU+ Uno 4K');
+    expect(formatHardwareModel('Vu+', 'Uno4Kse')).toBe('VU+ Uno 4K SE');
+    expect(formatHardwareModel('Vu+', 'Duo4Kse')).toBe('VU+ Duo 4K SE');
+    expect(formatHardwareModel('Dreambox', 'One')).toBe('Dreambox One');
+  });
+
+  it('formats short and long uptimes to human readable strings', () => {
+    const dummyT = ((key: string) => {
+      if (key === 'system.minutes') return 'Min.';
+      if (key === 'system.hours') return 'Std.';
+      if (key === 'system.days') return 'Tage';
+      return key;
+    }) as any;
+
+    expect(formatUptime('00:46', dummyT)).toBe('46 Min.');
+    expect(formatUptime('03:18', dummyT)).toBe('3 Std. 18 Min.');
+    expect(formatUptime('4d 07:12', dummyT)).toBe('4 Tage 7 Std.');
+    expect(formatUptime('1 day', dummyT)).toBe('1 day');
+  });
+
+  it('simplifies and localizes storage capacity strings', () => {
+    const dummyTDe = ((key: string, opts?: any) => {
+      if (key === 'system.freeOf') return `${opts.free} frei von ${opts.total}`;
+      return key;
+    }) as any;
+
+    expect(formatStorageCapacity('25.7 GB frei / 28.6 GB (31 GB) insgesamt', 'de', dummyTDe))
+      .toBe('25,7 GB frei von 28,6 GB');
   });
 });
+

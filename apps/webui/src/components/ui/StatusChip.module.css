@@ -48,11 +48,16 @@
   border: 1px solid var(--status-error-border);
 }
 
-.chip[data-state="live"],
-.chip[data-state="recording"] {
+.chip[data-state="live"] {
   background: var(--accent-live-subtle);
   color: var(--accent-live);
   border: 1px solid var(--accent-live);
+}
+
+.chip[data-state="recording"] {
+  background: var(--status-error-subtle);
+  color: var(--status-error);
+  border: 1px solid var(--status-error-border);
 }
 
 /* Status Pulse - CTO Stop Criterion #2: ONLY live/recording/error */

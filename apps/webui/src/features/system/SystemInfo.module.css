@@ -11,17 +11,44 @@
 
 .pageHeader {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.titleRow {
+  display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
 }
 
 .pageTitle {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   margin: 0;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+}
+
+.summaryBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface-default);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-base);
+  width: fit-content;
+}
+
+.summaryDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: var(--shadow-status-dot-success);
 }
 
 .loading,
@@ -43,28 +70,35 @@
   border-color: var(--status-error-subtle);
 }
 
-.gridContainer {
+.columnsContainer {
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
+  align-items: start;
 }
 
 @media (min-width: 1024px) {
-  .gridContainer {
+  .columnsContainer {
     grid-template-columns: 1fr 1fr;
   }
 }
 
-.card {
-  background: var(--surface-default);
-  border-radius: 20px;
-  border: 1px solid var(--border-base);
-  padding: 24px;
+.column {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+}
+
+.card {
+  background: var(--surface-default);
+  border-radius: 16px;
+  border: 1px solid var(--border-base);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .card:hover {
@@ -74,76 +108,163 @@
 .cardHeader {
   display: flex;
   align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  justify-content: space-between;
   padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cardHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .cardIcon {
-  font-size: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--surface-hover);
   color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.headerIcon {
+  width: 20px;
+  height: 20px;
 }
 
 .cardTitle {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   margin: 0;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.countBadge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-subtle);
+}
+
+.subHardwareTag {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .listGroup {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .listItem {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: var(--surface-sunken);
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border-subtle);
+  min-height: 38px;
 }
 
 .listItemLabel {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
-}
-
-.tunerNumber {
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-right: 8px;
-}
-
-.tunerTypeLabel {
-  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .listItemValue {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   text-align: right;
 }
 
-.listItemStorage {
+.tunerNumber {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tunerTypeLabel {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* RAM Card */
+.ramCardContent {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   background: var(--surface-sunken);
-  border-radius: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
+.ramTopRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.ramPercent {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ramSubtext {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.progressBarContainer {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  width: var(--xg2g-progress-width, 0%);
+  height: 100%;
+  background: var(--accent-action);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.ramFooterRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* Storage Card */
+.storageCardItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border-radius: 10px;
   border: 1px solid var(--border-subtle);
 }
 
@@ -157,11 +278,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .statusDot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -170,6 +292,29 @@
 .dotError { background: var(--status-error); box-shadow: var(--shadow-status-dot-error); }
 .dotTimeout { background: var(--status-warning); box-shadow: var(--shadow-status-dot-warning); }
 .dotUnknown { background: var(--text-muted); }
+
+.storageName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.storageCapacity {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.storageErrorNotice {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--status-error);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .storageTags {
   display: flex;
@@ -180,35 +325,83 @@
 .tag {
   font-size: 11px;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .tagIntern { background: var(--surface-hover); color: var(--text-secondary); }
-.tagNas { background: color-mix(in srgb, var(--brand-primary) 15%, transparent); color: var(--brand-primary); }
+.tagNas { background: color-mix(in srgb, var(--accent-action) 15%, transparent); color: var(--accent-action); }
 
-.progressBarContainer {
-  width: 100%;
-  height: 6px;
-  background: var(--surface-hover);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 4px;
+/* Network Card */
+.networkCardItem {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
 }
 
-.progressBarFill {
-  width: var(--xg2g-progress-width, 0%);
-  height: 100%;
-  background: var(--brand-primary);
-  border-radius: 3px;
-  transition: width 0.5s ease;
+.networkHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.networkName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.networkStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--status-success);
+  background: var(--status-success-subtle);
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--status-success-border);
+}
+
+.networkTable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.networkRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.networkLabel {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.networkValue {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
 }
 
 .textTruncate {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 200px;
+  max-width: 220px;
 }
