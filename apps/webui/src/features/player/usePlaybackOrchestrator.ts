@@ -97,7 +97,7 @@ import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
-import { markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
+import { followLivePosition, markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -2139,6 +2139,78 @@ export function usePlaybackOrchestrator(
       },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, reattachNativeSource, setStatus, videoRef]);
+
+  // Playback can go on while the page is hidden: iOS pauses the video on lock,
+  // but the lock-screen play button resumes it with sound. The re-attach on
+  // return must continue from where that playback got to, not from the lock.
+  // The mark only follows continuous progress (followLivePosition), so the jump
+  // a cold player makes when WebKit resumes it on unlock cannot move it; seeks
+  // from the lock-screen scrubber re-anchor it.
+  useEffect(() => {
+    if (hostEnvironment.isTv || isDocumentVisible) {
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    let playingSince: number | null = video.paused ? null : Date.now();
+    const stillHidden = () => typeof document === 'undefined' || document.visibilityState === 'hidden';
+
+    const follow = () => {
+      const mark = hiddenPositionRef.current;
+      const sample = markLivePosition(video);
+      if (!mark || !sample || playingSince === null) {
+        return;
+      }
+      const now = Date.now();
+      const next = followLivePosition(mark, sample, now - playingSince);
+      if (next) {
+        hiddenPositionRef.current = next;
+        playingSince = now;
+      }
+    };
+    const onPlaying = () => {
+      if (stillHidden() && playingSince === null) {
+        playingSince = Date.now();
+      }
+    };
+    const onTimeUpdate = () => {
+      if (stillHidden() && !video.paused) {
+        follow();
+      }
+    };
+    const onPause = () => {
+      if (stillHidden()) {
+        follow();
+      }
+      playingSince = null;
+    };
+    const onSeeked = () => {
+      if (!stillHidden()) {
+        return;
+      }
+      const sample = markLivePosition(video);
+      if (sample) {
+        hiddenPositionRef.current = sample;
+      }
+      playingSince = video.paused ? null : Date.now();
+    };
+
+    video.addEventListener('play', onPlaying);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('seeked', onSeeked);
+    return () => {
+      video.removeEventListener('play', onPlaying);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('seeked', onSeeked);
+    };
+  }, [hostEnvironment.isTv, isDocumentVisible, videoRef]);
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online

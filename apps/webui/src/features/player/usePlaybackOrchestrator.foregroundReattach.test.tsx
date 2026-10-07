@@ -4,7 +4,7 @@
 // waiting masked the picture at once and the veil's temporary mute revoked the
 // user's unmute; if every unmute costs WebKit a waiting, the veil re-triggered
 // itself.
-import { useRef } from 'react';
+import { StrictMode, useRef } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HlsInstanceRef, V3PlayerProps, VideoElementRef } from '../../types/v3-player';
@@ -47,7 +47,7 @@ function installMediaState(el: HTMLVideoElement) {
   });
 }
 
-describe('native HLS foreground reattach', () => {
+describe.each([false, true])('native HLS foreground reattach (StrictMode=%s)', (strict) => {
   let now = 1_000;
   let visibility: DocumentVisibilityState = 'visible';
   let srcAssignments: string[] = [];
@@ -109,6 +109,7 @@ describe('native HLS foreground reattach', () => {
   async function startLivePlayback() {
     render(
       <Harness props={{ autoStart: false, sRef: '1:0:1:UNMUTE', apiBase: 'http://test.local' } as unknown as V3PlayerProps} />,
+      { wrapper: strict ? StrictMode : undefined },
     );
     await act(async () => {
       await latest.actions.startStream('1:0:1:UNMUTE');
@@ -147,7 +148,7 @@ describe('native HLS foreground reattach', () => {
         return ok({ sessionId: 'sess-unmute' }, 202);
       }
       if (u.includes('/heartbeat')) {
-        return ok({ acknowledged: true, leaseExpiresAt: '2026-10-07T23:00:00Z' });
+        return ok({ acknowledged: true, sessionId: 'sess-unmute', leaseExpiresAt: '2026-10-07T23:00:00Z' });
       }
       if (u.includes('/sessions/')) {
         return ok({ state: 'READY', sessionId: 'sess-unmute', playbackUrl: 'http://test.local/live.m3u8', leaseExpiresAt: '2026-10-07T23:00:00Z', heartbeatIntervalSeconds: 15 });
@@ -223,6 +224,171 @@ describe('native HLS foreground reattach', () => {
       video.dispatchEvent(new Event('loadedmetadata'));
       await vi.advanceTimersByTimeAsync(50);
     });
+
+    expect(media.currentTime).toBe(321);
+  });
+
+  // Screen lock: WebKit pauses the video, then the page hides.
+  async function lock() {
+    await act(async () => {
+      media.paused = true;
+      video.dispatchEvent(new Event('pause'));
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+  }
+
+  async function unlock() {
+    await act(async () => {
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+  }
+
+  // The page sleeps: no events, only the wall clock moves.
+  function sleep(ms: number) {
+    now += ms;
+  }
+
+  // Lock-screen play button: playback resumes while the page stays hidden.
+  async function resumeWhileLocked() {
+    await act(async () => {
+      media.paused = false;
+      video.dispatchEvent(new Event('play'));
+      video.dispatchEvent(new Event('playing'));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+  }
+
+  async function playWhileLocked(ms: number) {
+    const step = 250;
+    for (let t = 0; t < ms; t += step) {
+      await act(async () => {
+        now += step;
+        media.currentTime += step / 1000;
+        video.dispatchEvent(new Event('timeupdate'));
+        await vi.advanceTimersByTimeAsync(step);
+      });
+    }
+  }
+
+  async function finishReattach() {
+    media.currentTime = 900; // the fresh attachment starts near the live edge
+    await act(async () => {
+      video.dispatchEvent(new Event('loadedmetadata'));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+  }
+
+  it('continues where lock-screen playback got to', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    sleep(20_000);
+    await resumeWhileLocked();
+    await playWhileLocked(30_000);
+    const before = srcAssignments.length;
+
+    await unlock();
+    expect(srcAssignments.length).toBe(before + 1);
+    await finishReattach();
+
+    expect(media.currentTime).toBeCloseTo(351, 1);
+  });
+
+  it('keeps the position of a lock-screen pause', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    await resumeWhileLocked();
+    await playWhileLocked(10_000);
+    await act(async () => {
+      media.paused = true;
+      video.dispatchEvent(new Event('pause'));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    sleep(60_000);
+
+    await unlock();
+    await finishReattach();
+
+    expect(media.currentTime).toBeCloseTo(331, 1);
+  });
+
+  it('ignores the live-edge jump of a player resumed on unlock', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    sleep(300_000);
+    // WebKit restores playback before the page reports visible; the cold
+    // player lands at the live edge.
+    await resumeWhileLocked();
+    await act(async () => {
+      now += 500;
+      media.currentTime = 640;
+      video.dispatchEvent(new Event('timeupdate'));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    await unlock();
+    await finishReattach();
+
+    expect(media.currentTime).toBe(321);
+  });
+
+  it('ignores a restart at the window start', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    await resumeWhileLocked();
+    await act(async () => {
+      now += 500;
+      media.currentTime = 2;
+      video.dispatchEvent(new Event('timeupdate'));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    sleep(10_000);
+
+    await unlock();
+    await finishReattach();
+
+    expect(media.currentTime).toBe(321);
+  });
+
+  it('re-anchors on a seek from the lock-screen scrubber', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    await act(async () => {
+      media.currentTime = 120;
+      video.dispatchEvent(new Event('seeked'));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    sleep(10_000);
+
+    await unlock();
+    await finishReattach();
+
+    expect(media.currentTime).toBe(120);
+  });
+
+  it('stops following once the page is visible again', async () => {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    sleep(10_000);
+    // Visible before React has re-rendered: progress after this point belongs
+    // to the foreground and must not move the mark.
+    visibility = 'visible';
+    await resumeWhileLocked();
+    await playWhileLocked(5_000);
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await finishReattach();
 
     expect(media.currentTime).toBe(321);
   });
