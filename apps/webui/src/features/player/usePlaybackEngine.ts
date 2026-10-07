@@ -120,6 +120,8 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
+  /** Re-attach the current native HLS source on the same session; false if not applicable. */
+  reattachNativeSource: () => boolean;
   /** The browser rejected autoplay (even muted) for the current attempt; 'ready' is the resting state. */
   autoplayBlocked: boolean;
 }
@@ -1960,10 +1962,24 @@ export function usePlaybackEngine({
     };
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, clearStartGateTimers]);
 
+  // Re-attaches the current native source on the same session: assigning src
+  // reruns the media load algorithm, so AVPlayer starts over at the playlist's
+  // EXT-X-START (behind the live edge) instead of a stale position.
+  const reattachNativeSource = useCallback((): boolean => {
+    const url = lastHlsUrlRef.current;
+    if (!url || lastHlsEngineRef.current !== 'native' || hlsRef.current || isTeardownRef.current || !videoRef.current) {
+      return false;
+    }
+    setStatus('buffering');
+    playHls(url, 'native');
+    return true;
+  }, [hlsRef, isTeardownRef, playHls, setStatus, videoRef]);
+
   return {
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    reattachNativeSource,
     autoplayBlocked,
   };
 }
