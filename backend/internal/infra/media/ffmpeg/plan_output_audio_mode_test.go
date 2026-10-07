@@ -68,4 +68,3 @@ func TestAppendLiveVideoContainerTags_HEVCInFMP4_TagsHVC1(t *testing.T) {
 		appendLiveVideoContainerTags(nil, spec, ""),
 	)
 }
-
