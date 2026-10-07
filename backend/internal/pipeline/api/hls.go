@@ -520,11 +520,28 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 	var b bytes.Buffer
 
 	var hasMap bool
+	mediaSequence := int64(0)
+	seenSegment := false
 
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") && (forcePlaylistType != "" || isLive) {
+			continue
+		}
+		if after, ok := strings.CutPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"); ok {
+			if n, err := strconv.ParseInt(strings.TrimSpace(after), 10, 64); err == nil {
+				mediaSequence = n
+			}
+		}
+		// ffmpeg opens every playlist with a discontinuity before the session's
+		// first segment, where it separates nothing. Together with
+		// EXT-X-PROGRAM-DATE-TIME it makes AVPlayer place a newly selected
+		// variant on its own timeline: on a rung switch the video restarts at
+		// segment 0 while the audio rendition plays on (frozen picture,
+		// reproduced with AVPlayer; gone without this tag). Later
+		// discontinuities, e.g. after an ffmpeg restart, are kept.
+		if !isMaster && !seenSegment && mediaSequence == 0 && strings.TrimSpace(line) == "#EXT-X-DISCONTINUITY" {
 			continue
 		}
 		if line == "#EXTM3U" && (forcePlaylistType != "" || insertStartTag != "") && !insertedHeader {
@@ -590,6 +607,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 			line = declarePeakVariantBandwidth(line)
 		}
 		if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
+			seenSegment = true
 			// Segment URI line
 			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
 				if strings.Contains(line, "?") {
