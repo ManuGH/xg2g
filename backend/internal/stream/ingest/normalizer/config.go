@@ -57,7 +57,7 @@ func DefaultConfig() Config {
 		MaxCorrectionTrim:     0.02,
 		Kp:                    0.04,
 		PacerIntervalMs:       20.0,
-		StagingBufferCapacity: 4 * 1024 * 1024, // 4 MiB (~6.5s of 4.8 Mbps)
+		StagingBufferCapacity: 4 * 1024 * 1024, // 4 MiB (~6.5s of 4.8 Mbps, paced via backpressure)
 		InitialBitrateKbps:    4500.0,
 	}
 }
