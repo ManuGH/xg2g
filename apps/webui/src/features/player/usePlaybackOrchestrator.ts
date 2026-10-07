@@ -98,6 +98,7 @@ import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { followLivePosition, markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
+import { LIVE_FOREGROUND_FRAME_GRACE_MS, watchForMovingPictures } from './orchestrator/presentedFrameWatch';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -387,6 +388,12 @@ export function usePlaybackOrchestrator(
   const wasHiddenRef = useRef(false);
   const hiddenSinceRef = useRef<number | null>(null);
   const hiddenPositionRef = useRef<LivePositionMark | null>(null);
+  // Playback progressed while the page was hidden (lock-screen play).
+  const playedWhileHiddenRef = useRef(false);
+  // Cancels the picture check after a foreground return. Owned by a ref, not by
+  // the foreground effect: that effect re-runs on most renders and its cleanup
+  // would cancel the check within milliseconds.
+  const foregroundPictureCheckRef = useRef<(() => void) | null>(null);
   // Read by the foreground recovery without re-running it on every change.
   const isLiveModeRef = useRef(false);
   const isNativeEngineRef = useRef(false);
@@ -2055,6 +2062,9 @@ export function usePlaybackOrchestrator(
         // a few seconds.
         hiddenSinceRef.current = Date.now();
         hiddenPositionRef.current = markLivePosition(video);
+        playedWhileHiddenRef.current = false;
+        foregroundPictureCheckRef.current?.();
+        foregroundPictureCheckRef.current = null;
       }
       wasHiddenRef.current = true;
       return;
@@ -2066,6 +2076,8 @@ export function usePlaybackOrchestrator(
     hiddenSinceRef.current = null;
     const hiddenPosition = hiddenPositionRef.current;
     hiddenPositionRef.current = null;
+    const playedWhileHidden = playedWhileHiddenRef.current;
+    playedWhileHiddenRef.current = false;
 
     // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
     // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
@@ -2093,6 +2105,27 @@ export function usePlaybackOrchestrator(
     });
 
     if (action === 'none') {
+      return;
+    }
+
+    if (action === 'reattach' && playedWhileHidden && !video.paused) {
+      // Lock-screen playback kept the stream running. Re-attaching now would
+      // cut the audio the viewer is listening to and overlap it with the
+      // restarted source; keep it unless the picture does not come back.
+      const source = video.currentSrc || video.src;
+      foregroundPictureCheckRef.current?.();
+      foregroundPictureCheckRef.current = watchForMovingPictures(video, LIVE_FOREGROUND_FRAME_GRACE_MS, () => {
+        foregroundPictureCheckRef.current = null;
+        if (
+          userPauseIntentRef.current
+          || video.paused
+          || (video.currentSrc || video.src) !== source
+          || (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+        ) {
+          return;
+        }
+        reattachNativeSource(markLivePosition(video) ?? hiddenPosition);
+      });
       return;
     }
 
@@ -2140,6 +2173,11 @@ export function usePlaybackOrchestrator(
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, reattachNativeSource, setStatus, videoRef]);
 
+  useEffect(() => () => {
+    foregroundPictureCheckRef.current?.();
+    foregroundPictureCheckRef.current = null;
+  }, []);
+
   // Playback can go on while the page is hidden: iOS pauses the video on lock,
   // but the lock-screen play button resumes it with sound. The re-attach on
   // return must continue from where that playback got to, not from the lock.
@@ -2169,6 +2207,7 @@ export function usePlaybackOrchestrator(
       if (next) {
         hiddenPositionRef.current = next;
         playingSince = now;
+        playedWhileHiddenRef.current = true;
       }
     };
     const onPlaying = () => {

@@ -392,4 +392,106 @@ describe.each([false, true])('native HLS foreground reattach (StrictMode=%s)', (
 
     expect(media.currentTime).toBe(321);
   });
+
+  type FrameCallback = (now: number, metadata: { mediaTime?: number }) => void;
+
+  // requestVideoFrameCallback on the fake element; present() delivers a frame.
+  function installFrameCallbacks() {
+    let pending: FrameCallback | null = null;
+    Object.assign(video, {
+      requestVideoFrameCallback: vi.fn((cb: FrameCallback) => {
+        pending = cb;
+        return 1;
+      }),
+      cancelVideoFrameCallback: vi.fn(() => {
+        pending = null;
+      }),
+    });
+    return (mediaTime: number) => {
+      const cb = pending;
+      pending = null;
+      act(() => { cb?.(0, { mediaTime }); });
+    };
+  }
+
+  async function listenOnLockScreen() {
+    await startLivePlayback();
+    media.currentTime = 321;
+    await lock();
+    await resumeWhileLocked();
+    await playWhileLocked(30_000);
+  }
+
+  it('keeps lock-screen playback running when its picture comes back', async () => {
+    await listenOnLockScreen();
+    const present = installFrameCallbacks();
+    const before = srcAssignments.length;
+
+    await unlock();
+    present(351);
+    present(351.04);
+    await play(5_000);
+
+    expect(srcAssignments.length).toBe(before);
+    expect(media.paused).toBe(false);
+  });
+
+  it('re-attaches where playback is when the picture does not come back', async () => {
+    await listenOnLockScreen();
+    installFrameCallbacks();
+    const before = srcAssignments.length;
+
+    await unlock();
+    await play(2_400);
+    expect(srcAssignments.length).toBe(before);
+    await play(200);
+    expect(srcAssignments.length).toBe(before + 1);
+    await finishReattach();
+
+    // 351 at unlock plus the 2.5 s the check waited while audio played on.
+    expect(media.currentTime).toBeCloseTo(353.5, 1);
+  });
+
+  it('does not re-attach after the viewer paused during the check', async () => {
+    await listenOnLockScreen();
+    installFrameCallbacks();
+    const before = srcAssignments.length;
+
+    await unlock();
+    act(() => { latest.actions.togglePlayPause(); });
+    await play(5_000);
+
+    expect(srcAssignments.length).toBe(before);
+  });
+
+  it('drops the check when the page hides again', async () => {
+    await listenOnLockScreen();
+    installFrameCallbacks();
+    const before = srcAssignments.length;
+
+    await unlock();
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(srcAssignments.length).toBe(before);
+  });
+
+  it('drops the check on unmount', async () => {
+    await listenOnLockScreen();
+    installFrameCallbacks();
+    const before = srcAssignments.length;
+
+    await unlock();
+    cleanup();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(srcAssignments.length).toBe(before);
+  });
 });
