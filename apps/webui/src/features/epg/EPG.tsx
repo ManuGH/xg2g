@@ -126,6 +126,7 @@ function writeStoredEpgViewMode(mode: 'list' | 'grid'): void {
 export default function EPG({
   channels,
   bouquets = [],
+  selectedBouquet = '',
   onSelectBouquet,
   onPlay,
 }: EpgProps) {
@@ -156,10 +157,18 @@ export default function EPG({
   const activeSection: EpgSection = requestedSection === 'timers' && canManageDvr
     ? 'timers'
     : 'guide';
-  const [state, dispatch] = useReducer(epgReducer, undefined, createInitialEpgState);
+  const [state, dispatch] = useReducer(epgReducer, undefined, () => createInitialEpgState({
+    filters: { bouquetId: selectedBouquet }
+  }));
   const [timers, setTimers] = React.useState<Timer[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
   const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (selectedBouquet !== undefined && selectedBouquet !== state.filters.bouquetId) {
+      dispatch({ type: 'SET_FILTER', payload: { bouquetId: selectedBouquet } });
+    }
+  }, [selectedBouquet, state.filters.bouquetId]);
 
   // ============================================================================
   // Timer Management (for recording feedback)

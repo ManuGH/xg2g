@@ -15,6 +15,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	infra "github.com/ManuGH/xg2g/internal/infra/ffmpeg"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -258,9 +259,54 @@ func (m *Manager) Stop() {
 	m.bgWG.Wait()
 }
 
+func extractIPTVFromURL(rawURL string) (string, bool) {
+	rawURL = strings.TrimSpace(rawURL)
+	prefixes := []string{"/4097:", "/5001:", "/5002:", "/iptv_", "/IPTV_"}
+	for _, pfx := range prefixes {
+		if idx := strings.Index(rawURL, pfx); idx != -1 {
+			return rawURL[idx+1:], true
+		}
+	}
+	rawPrefixes := []string{"4097:", "5001:", "5002:", "iptv_", "IPTV_"}
+	for _, pfx := range rawPrefixes {
+		if strings.HasPrefix(rawURL, pfx) {
+			return rawURL, true
+		}
+	}
+	return "", false
+}
+
+func isIPTVRef(ref string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(ref))
+	return strings.HasPrefix(upper, "4097:") || strings.HasPrefix(upper, "5001:") || strings.HasPrefix(upper, "5002:") || strings.HasPrefix(upper, "IPTV_")
+}
+
+func extractCleanIPTVURL(serviceRef string) (string, bool) {
+	serviceRef = strings.TrimSpace(serviceRef)
+	if src, isIPTV, err := sourceref.ClassifyReference(nil, serviceRef); isIPTV && err == nil {
+		rawURL := src.RevealURL()
+		if rawURL != "" {
+			return rawURL, true
+		}
+	}
+	if strings.HasPrefix(serviceRef, "http://") || strings.HasPrefix(serviceRef, "https://") {
+		if !strings.Contains(serviceRef, "/api/v3/") {
+			u, err := url.Parse(serviceRef)
+			if err == nil && u.Host != "" {
+				return serviceRef, true
+			}
+		}
+	}
+	return "", false
+}
+
 // ExtractServiceRef extracts the service reference from a stream URL
-// Robust implementation using net/url
+// Robust implementation supporting both DVB streams and nested IPTV references
 func ExtractServiceRef(rawURL string) string {
+	if iptvRef, ok := extractIPTVFromURL(rawURL); ok {
+		return normalize.ServiceRef(iptvRef)
+	}
+
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		// Fallback for extremely broken URLs

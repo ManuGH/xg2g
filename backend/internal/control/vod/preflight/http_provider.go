@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -89,6 +90,24 @@ func (p *HTTPPreflightProvider) Check(ctx context.Context, src SourceRef) (Prefl
 	}
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		result.Outcome = PreflightOK
+	case resp.StatusCode == http.StatusMovedPermanently ||
+		resp.StatusCode == http.StatusFound ||
+		resp.StatusCode == http.StatusSeeOther ||
+		resp.StatusCode == http.StatusTemporaryRedirect ||
+		resp.StatusCode == http.StatusPermanentRedirect:
+		if loc := strings.TrimSpace(resp.Header.Get("Location")); loc != "" {
+			locURL, err := url.Parse(loc)
+			if err != nil {
+				result.Outcome = PreflightBadGateway
+				return result, nil
+			}
+			resolvedLoc := req.URL.ResolveReference(locURL).String()
+			if _, err := platformnet.ParseValidatedOutboundURL(ctx, resolvedLoc, p.outboundPolicy); err != nil {
+				result.Outcome = PreflightForbidden
+				return result, nil
+			}
+		}
 		result.Outcome = PreflightOK
 	case resp.StatusCode == http.StatusUnauthorized:
 		result.Outcome = PreflightUnauthorized

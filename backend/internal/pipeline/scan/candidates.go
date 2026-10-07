@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/m3u"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 func (m *Manager) executeScan(ctx context.Context) error {
@@ -105,7 +107,7 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			return err
 		}
 
-		sRef := ExtractServiceRef(ch.URL)
+		sRef := extractChannelServiceRef(ch)
 		if sRef == "" {
 			continue
 		}
@@ -120,6 +122,9 @@ func (m *Manager) scanInternal(ctx context.Context, force bool) error {
 			existingCap, found := m.store.Get(sRef)
 
 			probeURL := m.resolveProbeURL(ctx, ch, sRef)
+			if isIPTVRef(sRef) {
+				ch.URL = probeURL
+			}
 
 			log.L().Debug().Str("sref", sRef).Msg("scan: probing channel")
 			res, err := m.probeChannelMediaTruth(ctx, ch, sRef, probeURL, existingCap, found)
@@ -228,6 +233,13 @@ func (m *Manager) waitForPlaybackIdle(ctx context.Context) error {
 	}
 }
 
+func extractChannelServiceRef(ch m3u.Channel) string {
+	if ch.TvgID != "" {
+		return normalize.ServiceRef(ch.TvgID)
+	}
+	return ExtractServiceRef(ch.URL)
+}
+
 func (m *Manager) hasPendingProbeCandidates(now time.Time) (bool, error) {
 	content, err := os.ReadFile(m.m3uPath)
 	if err != nil {
@@ -235,7 +247,7 @@ func (m *Manager) hasPendingProbeCandidates(now time.Time) (bool, error) {
 	}
 	channels := m3u.Parse(string(content))
 	for _, ch := range channels {
-		sRef := ExtractServiceRef(ch.URL)
+		sRef := extractChannelServiceRef(ch)
 		if sRef == "" {
 			continue
 		}
@@ -250,7 +262,7 @@ func (m *Manager) filterProbeCandidates(channels []m3u.Channel, now time.Time) [
 	filtered := make([]m3u.Channel, 0, len(channels))
 	seen := make(map[string]struct{}, len(channels))
 	for _, ch := range channels {
-		sRef := ExtractServiceRef(ch.URL)
+		sRef := extractChannelServiceRef(ch)
 		if sRef == "" {
 			continue
 		}
@@ -274,16 +286,39 @@ func (m *Manager) shouldProbeService(serviceRef string, now time.Time) bool {
 }
 
 func (m *Manager) lookupChannel(serviceRef string) (m3u.Channel, bool, error) {
+	normRef := normalize.ServiceRef(serviceRef)
 	content, err := os.ReadFile(m.m3uPath)
-	if err != nil {
+	if err == nil {
+		channels := m3u.Parse(string(content))
+		for _, ch := range channels {
+			if normalize.ServiceRef(ch.TvgID) == normRef || ExtractServiceRef(ch.URL) == normRef {
+				if cleanURL, ok := extractCleanIPTVURL(ch.TvgID); ok {
+					ch.URL = cleanURL
+				} else if cleanURL, ok := extractCleanIPTVURL(serviceRef); ok {
+					ch.URL = cleanURL
+				}
+				return ch, true, nil
+			}
+		}
+	} else if !os.IsNotExist(err) {
 		return m3u.Channel{}, false, err
 	}
-	channels := m3u.Parse(string(content))
-	for _, ch := range channels {
-		if ExtractServiceRef(ch.URL) == serviceRef {
-			return ch, true, nil
+
+	if cleanURL, ok := extractCleanIPTVURL(serviceRef); ok {
+		var name string
+		if src, _, err := sourceref.ClassifyReference(nil, serviceRef); err == nil {
+			name = src.ServiceName()
 		}
+		if name == "" {
+			name = serviceRef
+		}
+		return m3u.Channel{
+			Name:  name,
+			TvgID: serviceRef,
+			URL:   cleanURL,
+		}, true, nil
 	}
+
 	return m3u.Channel{}, false, nil
 }
 

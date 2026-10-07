@@ -134,7 +134,7 @@ func TestHTTPPreflightProvider_StatusMapping(t *testing.T) {
 	}
 }
 
-func TestHTTPPreflightProvider_NoRedirect(t *testing.T) {
+func TestHTTPPreflightProvider_RedirectAllowed(t *testing.T) {
 	redirected := false
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -153,13 +153,31 @@ func TestHTTPPreflightProvider_NoRedirect(t *testing.T) {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 	if redirected {
-		t.Fatal("expected no redirect follow")
+		t.Fatal("expected no wire redirect follow")
 	}
-	if res.Outcome != PreflightInternal {
-		t.Fatalf("expected outcome %q, got %q", PreflightInternal, res.Outcome)
+	if res.Outcome != PreflightOK {
+		t.Fatalf("expected outcome %q, got %q", PreflightOK, res.Outcome)
 	}
 	if res.HTTPStatus != http.StatusFound {
 		t.Fatalf("expected status %d, got %d", http.StatusFound, res.HTTPStatus)
+	}
+}
+
+func TestHTTPPreflightProvider_RedirectDisallowedTarget(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://192.168.1.1:80/secret", http.StatusFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	provider := NewHTTPPreflightProvider(srv.Client(), 0, testOutboundPolicy(t, srv.URL))
+	res, err := provider.Check(context.Background(), SourceRef{URL: srv.URL})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if res.Outcome != PreflightForbidden {
+		t.Fatalf("expected outcome %q, got %q", PreflightForbidden, res.Outcome)
 	}
 }
 

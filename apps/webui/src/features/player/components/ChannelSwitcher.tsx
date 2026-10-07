@@ -130,16 +130,13 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
           {filtered.map((c) => {
             const ref = refOf(c);
             const active = ref === currentRef;
-            const isUhd = Boolean(c.name?.toUpperCase().includes("UHD") || c.name?.toUpperCase().includes("4K"));
             const nowTitle = nowNextMap[ref];
             return (
               <button
                 key={ref}
                 data-ref={ref}
-                disabled={isUhd}
-                className={`${styles.row} ${active ? styles.active : ''} ${isUhd ? styles.rowUnavailable : ''}`}
+                className={`${styles.row} ${active ? styles.active : ''}`}
                 onClick={() => {
-                  if (isUhd) return;
                   if (!active) onSwitch(c);
                   onClose();
                 }}
@@ -153,7 +150,6 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
                 <div className={styles.channelMeta}>
                   <div className={styles.channelNameRow}>
                     <span className={styles.name}>{c.name ?? ref}</span>
-                    {isUhd ? <span className={styles.uhdBadge}>4K Pausiert</span> : null}
                   </div>
                   {nowTitle && (
                     <span className={styles.nowTitle}>{nowTitle}</span>
