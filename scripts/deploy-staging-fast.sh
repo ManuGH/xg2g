@@ -231,7 +231,7 @@ if [[ "${deploy_mode}" == "full-image" ]]; then
   cat >"${candidate_overlay}.next" <<EOF
 services:
   xg2g:
-    image: ${image_id}
+    image: xg2g:staging-${commit:0:8}
 EOF
 else
   cp "${binary}" "${next}"

@@ -85,38 +85,63 @@ export function EpgEventRow({
           {formatRange(event.start, event.end)}
           {onRecord &&
             (isRecorded ? (
-              <span title={t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' })} className={styles.recordIndicator}>
-                <span className={styles.recordIndicatorDot} />
-                <span className={styles.recordIndicatorLabel}>REC</span>
-              </span>
+              inProgress ? (
+                <span
+                  title={t('epg.recordingActive', { defaultValue: 'Wird gerade aufgenommen' })}
+                  className={[styles.recordIndicator, styles.recordIndicatorActive].join(' ')}
+                >
+                  <span className={[styles.recordIndicatorDot, styles.recordIndicatorDotActive].join(' ')} aria-hidden="true" />
+                  <span className={styles.recordIndicatorLabel}>REC</span>
+                </span>
+              ) : (
+                <span
+                  title={t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' })}
+                  className={[styles.recordIndicator, styles.recordIndicatorPlanned].join(' ')}
+                >
+                  <span className={[styles.recordIndicatorDot, styles.recordIndicatorDotPlanned].join(' ')} aria-hidden="true" />
+                  <span className={styles.recordIndicatorLabel}>{t('epg.scheduled', { defaultValue: 'Geplant' })}</span>
+                </span>
+              )
             ) : (
               <button
+                type="button"
                 className={styles.recordButton}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRecord(event);
                 }}
-                title={t('epg.planRecording', { defaultValue: 'Schedule recording' })}
+                title={t('epg.planRecording', { defaultValue: 'Sendung aufnehmen' })}
+                aria-label={t('epg.planRecording', { defaultValue: 'Sendung aufnehmen' })}
               >
-                <span className={styles.recordButtonDot} />
+                <span className={styles.recordButtonIcon} aria-hidden="true">⏺</span>
+                <span className={styles.recordButtonLabel}>REC</span>
               </button>
             ))}
         </div>
         <div className={styles.programmeBody}>
           <div className={styles.programmeTitle}>{event.title || '—'}</div>
           {event.desc && (
-            <div className={[styles.programmeDesc, expanded ? styles.programmeDescExpanded : null].filter(Boolean).join(' ')}>
+            <div className={styles.programmeDesc}>
               {normalizeEpgText(event.desc)}
             </div>
           )}
           {inProgress && (
             <div className={styles.progressContainer}>
               <div className={styles.progress}>
-                <div className={styles.progressBar} style={progressStyle} />
+                <div
+                  className={[
+                    styles.progressBar,
+                    pct >= 90
+                      ? styles.progressBarEnding
+                      : pct >= 70
+                        ? styles.progressBarAmber
+                        : null,
+                  ].filter(Boolean).join(' ')}
+                  style={progressStyle}
+                />
               </div>
               <div className={styles.progressMeta}>
                 <span>{formatTime(event.start)}</span>
-                <span>{pct}%</span>
                 <span>{formatTime(event.end)}</span>
               </div>
             </div>

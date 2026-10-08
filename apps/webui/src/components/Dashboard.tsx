@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { ChipState } from './ui/StatusChip';
 import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
 import {
   useSystemHealth,
   useReceiverCurrent,
   useStreams,
-  useDvrStatus
+  useDvrStatus,
+  useTimers,
 } from '../hooks/useServerQueries';
 import { toAppError } from '../lib/appErrors';
 import { buildEpgRoute, buildRecordingsRoute, buildSettingsRoute, ROUTE_MAP } from '../routes';
@@ -18,7 +18,6 @@ import ContinueWatchingRail from '../features/resume/ContinueWatchingRail';
 import styles from './Dashboard.module.css';
 
 type SummaryTone = 'streaming' | 'control' | 'standby';
-
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -32,6 +31,7 @@ export default function Dashboard() {
   const { data: receiver } = useReceiverCurrent();
   const { data: streams = [] } = useStreams();
   const { data: recording } = useDvrStatus();
+  const { data: timers = [] } = useTimers();
 
   if (error) {
     return (
@@ -56,30 +56,28 @@ export default function Dashboard() {
 
   const streamCount = streams.length;
   const receiverUnavailable = receiver?.status === 'unavailable';
-  const currentChannel = receiver?.channel?.name || (receiverUnavailable ? t('common.receiverStandby') : t('dashboard.receiverReady'));
+  const currentChannel = receiver?.channel?.name;
   const now = receiver?.now;
   const next = receiver?.next;
   const missingChannels = health.epg?.missingChannels || 0;
   const summaryTone: SummaryTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
 
-
-  const summaryTitle = currentChannel;
+  const summaryTitle = receiverUnavailable
+    ? t('dashboard.heroStandbyTitle', { defaultValue: 'Was läuft gerade?' })
+    : (currentChannel || t('dashboard.receiverReady', { defaultValue: 'Live-TV' }));
 
   const summaryDescription = streamCount > 0
     ? (now?.description || t('dashboard.heroStreamingSummary', { count: streamCount }))
     : receiverUnavailable
-      ? t('dashboard.heroStandbySummary')
+      ? t('dashboard.heroStandbySummary', { defaultValue: 'Live-TV ansehen und durch das aktuelle Programm stöbern.' })
       : next?.title
         ? t('dashboard.heroNextUp', { title: next.title })
         : t('dashboard.heroDefaultSummary');
 
-  const healthChip = mapHealthChip(health.status, t);
-  const guideHealthLabel = missingChannels === 0
-    ? t('dashboard.guideSynced')
-    : t('dashboard.missing', { count: missingChannels });
-  const recorderLabel = recording?.isRecording
-    ? (recording.serviceName || t('dashboard.recordingActive'))
-    : t('dashboard.recorderReady', {});
+  const scheduledTimers = timers
+    .filter((timer) => timer.state === 'scheduled')
+    .sort((a, b) => a.begin - b.begin);
+  const nextTimer = scheduledTimers[0];
 
   const liveAction = {
     label: t('dashboard.start.live.action', { defaultValue: 'Open Live TV' }),
@@ -97,35 +95,6 @@ export default function Dashboard() {
     : streamCount > 0
       ? (recordingsAction ?? liveAction)
       : liveAction;
-
-  const systemFacts = [
-    {
-      label: t('dashboard.systemState', { defaultValue: 'Systemstatus' }),
-      value: undefined,
-      detail: health.version ? `v${health.version}` : undefined,
-      chip: healthChip,
-    },
-    {
-      label: t('dashboard.receiverLabel'),
-      value: receiverUnavailable ? t('dashboard.standby') : t('dashboard.connected'),
-      detail: currentChannel,
-    },
-    {
-      label: t('dashboard.lastSyncLabel'),
-      value: formatTimeAgo(health.receiver?.lastCheck, t),
-      detail: t('dashboard.readOnlySummary'),
-    },
-    {
-      label: t('dashboard.guideHealth'),
-      value: guideHealthLabel,
-      detail: missingChannels === 0 ? t('dashboard.allChannelsHaveData') : t('dashboard.channelsMissingGuideData'),
-    },
-    {
-      label: t('dashboard.recorder'),
-      value: recorderLabel,
-      detail: recording?.isRecording ? t('dashboard.recordingActive') : t('dashboard.recorderIdle'),
-    },
-  ];
 
   const directActions = [
     canAccessSettings
@@ -156,25 +125,28 @@ export default function Dashboard() {
         onAction: () => navigate(buildSettingsRoute({ section: 'advanced', tool: 'files' })),
       }
       : null,
-    canAccessSettings
-      ? {
-        id: 'logs',
-        label: t('nav.logs', { defaultValue: 'Logs' }),
-        onAction: () => navigate(buildSettingsRoute({ section: 'advanced', tool: 'logs' })),
-      }
-      : null,
   ].filter((action): action is { id: string; label: string; onAction: () => void } => action !== null);
 
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
-      {/* 1. HERO BANNER */}
+      {/* 1. CONTINUATION: WEITER SCHAUEN */}
+      <ContinueWatchingRail />
+
+      {/* 2. HERO BANNER: LIVE FERNSEHEN / HAUPTAKTION */}
       <Card variant="action" className={[styles.heroBanner, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
         <div className={styles.heroContent}>
           <div className={styles.heroIdentity}>
             <div className={styles.heroEyebrowRow}>
-              <span className={styles.heroChannelBadge}>
-                {receiverUnavailable ? t('common.receiverStandby') : t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im TV' })}
-              </span>
+              {receiverUnavailable ? (
+                <span className={styles.heroStandbyBadge}>
+                  <span className={styles.heroStandbyDot} aria-hidden="true" />
+                  {t('dashboard.heroReadyBadge', { defaultValue: 'Bereit' })}
+                </span>
+              ) : (
+                <span className={styles.heroChannelBadge}>
+                  {t('dashboard.onReceiverNow', { defaultValue: 'Jetzt im Fernsehen' })}
+                </span>
+              )}
               {!receiverUnavailable && (
                 <span className={styles.heroLiveBadge}>
                   <span className={styles.heroLiveDot} aria-hidden="true" />
@@ -194,21 +166,22 @@ export default function Dashboard() {
             )}
           </div>
           <div className={styles.heroAction}>
-            <Button variant="primary" onClick={heroPrimaryAction.onAction}>
+            <Button variant="primary" onClick={heroPrimaryAction.onAction} className={styles.heroActionButton}>
+              <svg viewBox="0 0 24 24" fill="currentColor" className={styles.heroButtonIcon} aria-hidden="true">
+                <polygon points="6 3 20 12 6 21 6 3" />
+              </svg>
               {heroPrimaryAction.label}
             </Button>
           </div>
         </div>
       </Card>
 
-      <ContinueWatchingRail />
-
-      {/* 2. ACTIVE STREAMS (OPERATOR SESSIONS) */}
-      {streamCount > 0 ? (
+      {/* 3. ACTIVE STREAMS (OPERATOR SESSIONS) - ONLY IF ACTIVE */}
+      {streamCount > 0 && (
         <div className={styles.mainSection}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
+              {t('dashboard.operatorSessions', { defaultValue: 'Aktive Wiedergaben' })}
             </h2>
             <StatusChip
               state="live"
@@ -216,83 +189,122 @@ export default function Dashboard() {
             />
           </div>
           <div className={styles.streamsGrid}>
-            <StreamsList />
+            <StreamsList compact />
           </div>
-        </div>
-      ) : (
-        <div className={styles.idleSessionsRow}>
-          <div className={styles.idleSessionsContent}>
-            <span className={styles.idleSessionsTitle}>
-              {t('dashboard.operatorSessions', { defaultValue: 'Operator-Sitzungen' })}
-            </span>
-            <span className={styles.idleSessionsDivider} aria-hidden="true">·</span>
-            <span className={styles.idleSessionsText}>
-              {t('dashboard.noActiveStreams', { defaultValue: 'Keine aktiven Streams' })}
-            </span>
-          </div>
-          <span className={styles.idleSessionsHint}>
-            {t('dashboard.startPlaybackHint', { defaultValue: 'Starte Wiedergabe über TV oder Aufnahmen' })}
-          </span>
         </div>
       )}
 
-      {/* 3. FOOTER: SHORTCUTS & SYSTEM HEALTH */}
-      <div className={styles.footerSection}>
-        {directActions.length > 0 && (
-          <div className={styles.shortcutsRow}>
-            {directActions.map((action) => (
-              <Button
-                key={action.id}
-                variant="secondary"
-                size="sm"
-                className={styles.shortcutButton}
-                onClick={action.onAction}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        <div className={styles.healthGrid}>
-          {systemFacts.map((item) => (
-            <Card key={item.label} className={styles.healthWidget}>
-              <div className={styles.healthHeaderRow}>
-                <span className={styles.healthLabel}>{item.label}</span>
-                {item.chip && (
-                  <StatusChip state={item.chip.state} label={item.chip.label} />
+      {/* 4. HEUTE / GEPLANT (INFO) & ALLTAGS-AKTIONEN (NAVIGATION) */}
+      {(directActions.length > 0 || nextTimer) && (
+        <div className={styles.actionsSection}>
+          {nextTimer && (
+            <button
+              type="button"
+              className={styles.upcomingTimerBanner}
+              onClick={() => navigate(buildEpgRoute('timers'))}
+              title={nextTimer.name}
+            >
+              <div className={styles.upcomingTimerInfo}>
+                <span className={styles.upcomingTimerDot} aria-hidden="true" />
+                <span className={styles.upcomingTimerPrefix}>
+                  {t('dashboard.nextRecording', { defaultValue: 'Nächste Aufnahme' })}:
+                </span>
+                <span className={styles.upcomingTimerContent}>
+                  <span className={styles.upcomingTimerTime}>
+                    {formatTimerTime(nextTimer.begin)}
+                  </span>
+                  <span className={styles.upcomingTimerDivider} aria-hidden="true">·</span>
+                  <span className={styles.upcomingTimerTitle}>
+                    {nextTimer.name}
+                  </span>
+                </span>
+                {scheduledTimers.length > 1 && (
+                  <span className={styles.upcomingTimerBadge}>
+                    {t('dashboard.moreTimersCount', {
+                      count: scheduledTimers.length - 1,
+                      defaultValue: `+${scheduledTimers.length - 1} weitere`,
+                    })}
+                  </span>
                 )}
               </div>
-              {item.value && <span className={styles.healthValue}>{item.value}</span>}
-              {item.detail && <span className={styles.healthDetail}>{item.detail}</span>}
-            </Card>
-          ))}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.upcomingTimerChevron} aria-hidden="true">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
+
+          {directActions.length > 0 && (
+            <div className={styles.shortcutsRow}>
+              {directActions.map((action) => (
+                <Button
+                  key={action.id}
+                  variant="secondary"
+                  size="sm"
+                  className={styles.shortcutButton}
+                  onClick={action.onAction}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* 5. DISKRETE STATUSLEISTE AM SEITENENDE (RÜCKVERSICHERUNG) */}
+      <footer className={styles.statusFooter} aria-label={t('dashboard.statusOverview', { defaultValue: 'Systemstatus' })}>
+        <div className={styles.systemStatusStrip} role="status">
+          <span className={styles.statusPill}>
+            <span className={health.status === 'ok' ? styles.statusPillDotSuccess : styles.statusPillDotWarning} aria-hidden="true" />
+            <span className={styles.statusPillLabel}>
+              {health.status === 'ok'
+                ? t('dashboard.statusSystemReady', { defaultValue: 'System bereit' })
+                : t('dashboard.systemDegraded', { defaultValue: 'Beeinträchtigt' })}
+            </span>
+          </span>
+          <span className={styles.statusDivider} aria-hidden="true">·</span>
+          <span className={styles.statusPill}>
+            <span className={receiverUnavailable ? styles.statusPillDotWarning : styles.statusPillDotSuccess} aria-hidden="true" />
+            <span className={styles.statusPillLabel}>
+              {receiverUnavailable
+                ? t('dashboard.statusReceiverStandby', { defaultValue: 'Receiver Standby' })
+                : t('dashboard.statusReceiverConnected', { defaultValue: 'Receiver verbunden' })}
+            </span>
+          </span>
+          <span className={styles.statusDivider} aria-hidden="true">·</span>
+          <span className={styles.statusPill}>
+            <span className={missingChannels === 0 ? styles.statusPillDotSuccess : styles.statusPillDotWarning} aria-hidden="true" />
+            <span className={styles.statusPillLabel}>
+              {missingChannels === 0
+                ? t('dashboard.statusEpgReady', { defaultValue: 'EPG aktuell' })
+                : t('dashboard.missing', { count: missingChannels, defaultValue: `${missingChannels} unvollständig` })}
+            </span>
+          </span>
+          {recording?.isRecording && (
+            <>
+              <span className={styles.statusDivider} aria-hidden="true">·</span>
+              <span className={styles.statusPill}>
+                <span className={styles.statusPillDotRecording} aria-hidden="true" />
+                <span className={styles.statusPillLabel}>
+                  {recording.serviceName || t('dashboard.recordingActive', { defaultValue: 'Aufnahme aktiv' })}
+                </span>
+              </span>
+            </>
+          )}
+        </div>
+      </footer>
     </div>
   );
-}
-
-function mapHealthChip(status: string | undefined, t: (key: string) => string): { state: ChipState; label: string } {
-  if (status === 'ok') return { state: 'success', label: t('dashboard.systemHealthy') };
-  if (!status) return { state: 'warning', label: t('dashboard.healthUnknown') };
-  return { state: 'warning', label: t('dashboard.systemDegraded') };
 }
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function formatTimeAgo(dateString: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (!dateString) return t('dashboard.timeNever');
-  const date = new Date(dateString);
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return t('dashboard.timeNever');
-
-  const now = new Date();
-  const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-  if (diffSeconds < 60) return t('dashboard.timeJustNow');
-  if (diffSeconds < 3600) return t('dashboard.timeMinutesAgo', { count: Math.floor(diffSeconds / 60) });
-  if (diffSeconds < 86400) return t('dashboard.timeHoursAgo', { count: Math.floor(diffSeconds / 3600) });
-  return date.toLocaleDateString();
+function formatTimerTime(ts: number | undefined): string {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const weekday = d.toLocaleDateString([], { weekday: 'short' });
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${weekday} ${timeStr}`;
 }

@@ -518,7 +518,23 @@ func (s *Server) checkStorageItem(desc storageDescriptor) StorageItem {
 	}
 
 	var health StorageHealth
-	if s.storageMonitor != nil {
+	if desc.Origin == storageOriginReceiver {
+		// Receiver storage is physically attached to the receiver and
+		// reported directly via OpenWebIF HDD information.
+		// It is mounted and operational on the receiver.
+		health = StorageHealth{
+			MountStatus:  StorageItemMountStatusMounted,
+			HealthStatus: StorageItemHealthStatusOk,
+			Access:       StorageItemAccessRw,
+			CheckedAt:    time.Now(),
+		}
+		// If there is an active local mount check specifically for this path, use it.
+		if s.storageMonitor != nil {
+			if h := s.storageMonitor.GetHealth(mount); h.MountStatus == StorageItemMountStatusMounted && h.HealthStatus != StorageItemHealthStatusUnknown && h.HealthStatus != StorageItemHealthStatusError {
+				health = h
+			}
+		}
+	} else if s.storageMonitor != nil {
 		health = s.storageMonitor.GetHealth(mount)
 	} else {
 		health = StorageHealth{
@@ -532,7 +548,7 @@ func (s *Server) checkStorageItem(desc storageDescriptor) StorageItem {
 	item.HealthStatus = health.HealthStatus
 	item.Access = health.Access
 
-	if health.FsType != "" {
+	if health.FsType != "" && health.FsType != "overlay" {
 		item.FsType = &health.FsType
 	}
 
