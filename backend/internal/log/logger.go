@@ -75,7 +75,7 @@ func Configure(cfg Config) {
 
 	// We use a MultiWriter to feed both the output (scrubbed) and our structured buffer.
 	bufferWriter := &structuredBufferWriter{}
-	multi := io.MultiWriter(newScrubbingWriter(writer), bufferWriter)
+	multi := io.MultiWriter(newScrubbingWriter(zerolog.SyncWriter(writer)), bufferWriter)
 
 	base = zerolog.New(multi).With().
 		Timestamp().
