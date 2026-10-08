@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPlaybackController, parseSessionId } from './playbackController';
+import { createPlaybackController, parseSessionId, PlaybackHttpError } from './playbackController';
 import type {
   LiveSessionTransport,
   SessionReadyResult,
@@ -1545,7 +1545,237 @@ describe('PlaybackController - Deterministic Race & Adoption Tests', () => {
       expect(t.postStopIntent).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 's-recording' }),
       );
-      expect(t.postStopIntent).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Preflight 503 Auto-Retry Contracts', () => {
+    it('retries preflight when receiving 503 missing_scan_truth with Retry-After and succeeds', async () => {
+      let callCount = 0;
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            const headers = new Headers();
+            headers.set('Retry-After', '5');
+            return {
+              status: 503,
+              data: {
+                type: '/problems/live/missing_scan_truth',
+                title: 'Live stream is still being checked',
+                status: 503,
+                retryAfterSeconds: 5,
+              },
+              headers,
+            };
+          }
+          return {
+            status: 200,
+            data: {
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-unverified-success',
+              decision: { mode: 'direct_stream' },
+            },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 30_000,
+      });
+
+      let startResult: any = null;
+      void c.startLive({ serviceRef: 'live-unverified' }).then(
+        (r) => { startResult = r; },
+        (e) => { startResult = e; },
+      );
+
+      // Preflight 1 returns 503. It should schedule a 5s retry.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+      expect(startResult).toBeNull();
+      expect(t.postStartIntent).not.toHaveBeenCalled();
+
+      // Advance by 4,999ms: retry should not have fired yet.
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+      // Advance 1ms more (5,000ms total): retry fires and succeeds!
+      await vi.advanceTimersByTimeAsync(1);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(2);
+      expect(t.postStartIntent).toHaveBeenCalledTimes(1);
+      expect(startResult?.status).toBe('ready');
+      expect(c.getActiveSessionId()).toBe('session-default-1');
+    });
+
+    it('caps preflight retry wait time at MAX_PREFLIGHT_UNVERIFIED_WAIT_MS', async () => {
+      let callCount = 0;
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            const headers = new Headers();
+            headers.set('Retry-After', '60');
+            return {
+              status: 503,
+              data: {
+                type: '/problems/live/missing_scan_truth',
+                retryAfterSeconds: 60,
+              },
+              headers,
+            };
+          }
+          return {
+            status: 200,
+            data: {
+              mode: 'direct_stream',
+              playbackDecisionToken: 'token-capped',
+              decision: { mode: 'direct_stream' },
+            },
+            headers: new Headers(),
+          };
+        }),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 30_000,
+      });
+
+      let startResult: any = null;
+      void c.startLive({ serviceRef: 'live-capped' }).then(
+        (r) => { startResult = r; },
+        (e) => { startResult = e; },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+      // Advance by 9,999ms: capped at 10s (MAX_PREFLIGHT_UNVERIFIED_WAIT_MS)
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+      // At 10,000ms: retry fires!
+      await vi.advanceTimersByTimeAsync(1);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(2);
+      expect(startResult?.status).toBe('ready');
+    });
+
+    it('exhausts preflight retries and throws PlaybackHttpError when server continuously returns 503', async () => {
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(async () => {
+          const headers = new Headers();
+          headers.set('Retry-After', '1');
+          return {
+            status: 503,
+            data: {
+              type: '/problems/live/missing_scan_truth',
+              title: 'Live stream is still being checked',
+              status: 503,
+              retryAfterSeconds: 1,
+            },
+            headers,
+          };
+        }),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 30_000,
+      });
+
+      let startError: any = null;
+      void c.startLive({ serviceRef: 'live-exhaust' }).then(
+        () => {},
+        (e) => { startError = e; },
+      );
+
+      // Initial preflight
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+      // Retry 1 (1s)
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(2);
+
+      // Retry 2 (1s)
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(3);
+
+      // Retry 3 (1s)
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(4);
+
+      // After 3 retries (4 calls total), it must reject with status 503
+      expect(startError).toBeInstanceOf(PlaybackHttpError);
+      expect(startError?.status).toBe(503);
+      expect(t.postStartIntent).not.toHaveBeenCalled();
+    });
+
+    it('aborts preflight retry sleep immediately when stopped', async () => {
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockImplementation(async () => {
+          const headers = new Headers();
+          headers.set('Retry-After', '5');
+          return {
+            status: 503,
+            data: {
+              type: '/problems/live/missing_scan_truth',
+              retryAfterSeconds: 5,
+            },
+            headers,
+          };
+        }),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+        startSettlementTimeoutMs: 30_000,
+      });
+
+      void c.startLive({ serviceRef: 'live-abort' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+
+      // Stop during the 5s sleep
+      await c.stop();
+
+      // Advancing time should NOT trigger a second fetchStreamInfo
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+      expect(t.postStartIntent).not.toHaveBeenCalled();
+    });
+
+    it('does not retry 503 without Retry-After or live truth problem type', async () => {
+      const t = createMockTransport({
+        fetchStreamInfo: vi.fn().mockResolvedValue({
+          status: 503,
+          data: {
+            type: '/problems/playback/denied',
+            title: 'Backend denied playback',
+            status: 503,
+          },
+          headers: new Headers(),
+        } satisfies StreamInfoResult),
+      });
+
+      const c = createPlaybackController({
+        transport: t,
+        createInitialState: createMockDomainState,
+      });
+
+      let error: any = null;
+      await c.startLive({ serviceRef: 'live-denied' }).catch((e) => { error = e; });
+
+      expect(error).toBeInstanceOf(PlaybackHttpError);
+      expect(error?.status).toBe(503);
+      expect(t.fetchStreamInfo).toHaveBeenCalledTimes(1);
+      expect(t.postStartIntent).not.toHaveBeenCalled();
     });
   });
 

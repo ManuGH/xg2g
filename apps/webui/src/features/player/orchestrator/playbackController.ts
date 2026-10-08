@@ -122,6 +122,33 @@ export const MAX_LEASE_CONFLICT_RETRIES = 3;
 export const DEFAULT_LEASE_CONFLICT_WAIT_MS = 1_000;
 export const MAX_LEASE_CONFLICT_WAIT_MS = 5_000;
 
+export const MAX_PREFLIGHT_UNVERIFIED_RETRIES = 3;
+export const DEFAULT_PREFLIGHT_UNVERIFIED_WAIT_MS = 5_000;
+export const MAX_PREFLIGHT_UNVERIFIED_WAIT_MS = 10_000;
+
+export function isRetryablePreflight503(res: StreamInfoResult): boolean {
+  if (res.status !== 503) {
+    return false;
+  }
+  const retryAfterHeader = res.headers?.get ? res.headers.get('Retry-After') : null;
+  if (retryAfterHeader && Number.isFinite(parseInt(retryAfterHeader, 10)) && parseInt(retryAfterHeader, 10) > 0) {
+    return true;
+  }
+  const data = res.data as { retryAfterSeconds?: unknown; type?: unknown; truthReason?: unknown } | null | undefined;
+  if (data && typeof data === 'object') {
+    if (typeof data.retryAfterSeconds === 'number' && Number.isFinite(data.retryAfterSeconds) && data.retryAfterSeconds > 0) {
+      return true;
+    }
+    if (typeof data.type === 'string' && data.type.startsWith('/problems/live/')) {
+      return true;
+    }
+    if (typeof data.truthReason === 'string' && data.truthReason.length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function parseSessionId(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
     return null;
@@ -404,44 +431,87 @@ export function createPlaybackController(
 
     try {
       // 1. Preflight
-      const preflightController = new AbortController();
-      const preflightTimer = setTimeout(() => {
-        preflightController.abort();
-      }, httpRequestTimeoutMs);
-      const onPreflightAttemptAbort = () => preflightController.abort();
-      attempt.abortController.signal.addEventListener('abort', onPreflightAttemptAbort, { once: true });
-
       let preflightRes: StreamInfoResult;
-      try {
-        preflightRes = await raceWithSignal(
-          attempt.transport.fetchStreamInfo({
-            serviceRef,
-            capabilities,
-            profileHeaders,
-            signal: preflightController.signal,
-          }),
-          preflightController.signal,
-          'Preflight request timed out or aborted',
-        );
-      } finally {
-        clearTimeout(preflightTimer);
-        attempt.abortController.signal.removeEventListener('abort', onPreflightAttemptAbort);
-      }
+      let preflightRetryCount = 0;
 
-      if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
-        if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
-        inFlightStarts.delete(attempt.attemptId);
-        flushPendingAdoptionCandidates();
-        return;
-      }
+      while (true) {
+        const preflightController = new AbortController();
+        const preflightTimer = setTimeout(() => {
+          preflightController.abort();
+        }, httpRequestTimeoutMs);
+        const onPreflightAttemptAbort = () => preflightController.abort();
+        attempt.abortController.signal.addEventListener('abort', onPreflightAttemptAbort, { once: true });
 
-      if (!isOkStatus(preflightRes.status)) {
-        throw new PlaybackHttpError(
-          `Preflight failed with status ${preflightRes.status}`,
-          preflightRes.status,
-          preflightRes.data,
-          preflightRes.headers,
-        );
+        try {
+          preflightRes = await raceWithSignal(
+            attempt.transport.fetchStreamInfo({
+              serviceRef,
+              capabilities,
+              profileHeaders,
+              signal: preflightController.signal,
+            }),
+            preflightController.signal,
+            'Preflight request timed out or aborted',
+          );
+        } finally {
+          clearTimeout(preflightTimer);
+          attempt.abortController.signal.removeEventListener('abort', onPreflightAttemptAbort);
+        }
+
+        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
+          if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
+          inFlightStarts.delete(attempt.attemptId);
+          flushPendingAdoptionCandidates();
+          return;
+        }
+
+        if (isOkStatus(preflightRes.status)) {
+          break;
+        }
+
+        if (!isRetryablePreflight503(preflightRes) || preflightRetryCount >= MAX_PREFLIGHT_UNVERIFIED_RETRIES) {
+          throw new PlaybackHttpError(
+            `Preflight failed with status ${preflightRes.status}`,
+            preflightRes.status,
+            preflightRes.data,
+            preflightRes.headers,
+          );
+        }
+
+        preflightRetryCount += 1;
+
+        const retryAfterHeader = preflightRes.headers?.get ? preflightRes.headers.get('Retry-After') : null;
+        const retrySecFromHeader = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const retrySecFromBody = typeof (preflightRes.data as { retryAfterSeconds?: unknown })?.retryAfterSeconds === 'number'
+          ? (preflightRes.data as { retryAfterSeconds: number }).retryAfterSeconds
+          : NaN;
+        const retrySec = Number.isFinite(retrySecFromHeader) && retrySecFromHeader > 0
+          ? retrySecFromHeader
+          : (Number.isFinite(retrySecFromBody) && retrySecFromBody > 0 ? retrySecFromBody : NaN);
+
+        const waitMs = Number.isFinite(retrySec) && retrySec > 0
+          ? Math.min(retrySec * 1_000, MAX_PREFLIGHT_UNVERIFIED_WAIT_MS)
+          : DEFAULT_PREFLIGHT_UNVERIFIED_WAIT_MS;
+
+        await new Promise<void>((resolve) => {
+          if (attempt.abortController.signal.aborted) {
+            resolve();
+            return;
+          }
+          const timer = setTimeout(resolve, waitMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          attempt.abortController.signal.addEventListener('abort', onAbort, { once: true });
+        });
+
+        if (attempt.cancelled || attempt.ineligibleForAdoption || isDisposed) {
+          if (attempt.settlementTimer) clearTimeout(attempt.settlementTimer);
+          inFlightStarts.delete(attempt.attemptId);
+          flushPendingAdoptionCandidates();
+          return;
+        }
       }
 
       // 2. Normalize preflight contract & shape intent payload
