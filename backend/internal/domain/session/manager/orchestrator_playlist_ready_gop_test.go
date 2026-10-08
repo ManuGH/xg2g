@@ -170,7 +170,7 @@ func TestClassifySessionSource(t *testing.T) {
 		},
 		{
 			name:       "Direct HTTPS HLS URL with format parameter",
-			serviceRef: "https://example.com/iptv/live?format=hls&token=xyz",
+			serviceRef: "https://example.com/iptv/live?format=hls&feed=main",
 			isVOD:      false,
 			wantOrigin: ports.SourceIPTV,
 			wantFormat: ports.SourceFormatHLS,
