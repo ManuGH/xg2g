@@ -22,10 +22,10 @@ func TestCheckPlaylistReadyAt_LiveUsesPublishedWindow(t *testing.T) {
 	}{
 		{name: "short insufficient", target: 2, durations: []int{2, 2, 2}},
 		{name: "short ready", target: 2, durations: []int{2, 2, 2, 2}, wantReady: true},
-		{name: "long insufficient", target: 10, durations: []int{10, 10}},
-		{name: "long ready", target: 10, durations: []int{10, 10, 10}, wantReady: true},
-		{name: "variable insufficient", target: 10, durations: []int{2, 10, 2}},
-		{name: "variable ready", target: 10, durations: []int{2, 10, 2, 8, 8}, wantReady: true},
+		{name: "long insufficient", target: 10, durations: []int{10}},
+		{name: "long ready", target: 10, durations: []int{10, 10}, wantReady: true},
+		{name: "variable insufficient", target: 10, durations: []int{2, 3, 2}},
+		{name: "variable ready", target: 10, durations: []int{2, 10, 2}, wantReady: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

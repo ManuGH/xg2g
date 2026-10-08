@@ -29,6 +29,7 @@ const (
 	CtxKeyDurationSeconds       = "duration_seconds"
 	CtxKeyRecordingID           = "recording_id"
 	CtxKeySourceType            = "source_type"
+	CtxKeySourceFormat          = "source_format"
 	CtxKeySource                = "source"
 	CtxKeyClientPath            = "client_path"
 	CtxKeyPrincipalID           = "principal_id"

@@ -7,9 +7,12 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
+	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 type sessionContext struct {
@@ -18,6 +21,53 @@ type sessionContext struct {
 	ServiceRef   string
 	ClientFamily string
 	IsVOD        bool
+	SourceOrigin ports.SourceType
+	SourceFormat ports.SourceFormat
+}
+
+func classifySessionSource(serviceRef string, isVOD bool) (ports.SourceType, ports.SourceFormat) {
+	if isVOD {
+		return ports.SourceFile, ports.SourceFormatFile
+	}
+	trimmed := strings.TrimSpace(serviceRef)
+	if trimmed == "" {
+		return ports.SourceTuner, ports.SourceFormatMPEGTS
+	}
+
+	isHLS := func(u string) bool {
+		lower := strings.ToLower(u)
+		return strings.Contains(lower, ".m3u8") || strings.Contains(lower, "format=hls") || strings.Contains(lower, "output=hls")
+	}
+
+	// 1. Opaque IPTV IDs (iptv_<hash>)
+	if strings.HasPrefix(trimmed, sourceref.IDPrefix) {
+		format := ports.SourceFormatMPEGTS
+		if isHLS(trimmed) {
+			format = ports.SourceFormatHLS
+		}
+		return ports.SourceIPTV, format
+	}
+
+	// 2. Direct HTTP/HTTPS URLs
+	if u, ok := platformnet.ParseDirectHTTPURL(trimmed); ok {
+		format := ports.SourceFormatMPEGTS
+		if isHLS(u.String()) {
+			format = ports.SourceFormatHLS
+		}
+		return ports.SourceIPTV, format
+	}
+
+	// 3. Enigma2 IPTV Stream references (4097:*, 5001:*, 5002:*)
+	if src, isIPTV, _ := sourceref.ClassifyReference(nil, trimmed); isIPTV {
+		format := ports.SourceFormatMPEGTS
+		if isHLS(src.RevealURL()) || isHLS(trimmed) {
+			format = ports.SourceFormatHLS
+		}
+		return ports.SourceIPTV, format
+	}
+
+	// 4. Default: Receiver DVB Tuner (1:0:19:... etc.)
+	return ports.SourceTuner, ports.SourceFormatMPEGTS
 }
 
 type terminationCause struct {
@@ -101,11 +151,16 @@ func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model
 		}
 	}
 
+	isVOD := session.Profile.VOD || sessionMode == model.ModeRecording
+	origin, format := classifySessionSource(playbackSource, isVOD)
+
 	return &sessionContext{
 		Mode:         sessionMode,
 		ServiceRef:   playbackSource,
 		ClientFamily: strings.TrimSpace(session.ContextData[model.CtxKeyClientFamily]),
-		IsVOD:        session.Profile.VOD || sessionMode == model.ModeRecording,
+		IsVOD:        isVOD,
+		SourceOrigin: origin,
+		SourceFormat: format,
 	}, nil
 }
 

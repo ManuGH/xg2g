@@ -30,14 +30,15 @@ type PlaybackFallbackTrace struct {
 }
 
 type FFmpegPlanTrace struct {
-	InputKind  string `json:"inputKind,omitempty"`
-	Container  string `json:"container,omitempty"`
-	Packaging  string `json:"packaging,omitempty"`
-	HWAccel    string `json:"hwAccel,omitempty"`
-	VideoMode  string `json:"videoMode,omitempty"`
-	VideoCodec string `json:"videoCodec,omitempty"`
-	AudioMode  string `json:"audioMode,omitempty"`
-	AudioCodec string `json:"audioCodec,omitempty"`
+	InputKind   string `json:"inputKind,omitempty"`
+	InputFormat string `json:"inputFormat,omitempty"`
+	Container   string `json:"container,omitempty"`
+	Packaging   string `json:"packaging,omitempty"`
+	HWAccel     string `json:"hwAccel,omitempty"`
+	VideoMode   string `json:"videoMode,omitempty"`
+	VideoCodec  string `json:"videoCodec,omitempty"`
+	AudioMode   string `json:"audioMode,omitempty"`
+	AudioCodec  string `json:"audioCodec,omitempty"`
 }
 
 type PlaybackOperatorTrace struct {
@@ -126,6 +127,7 @@ type PlaybackTrace struct {
 	DegradedFrom         string                                 `json:"degradedFrom,omitempty"`
 	ClientPath           string                                 `json:"clientPath,omitempty"`
 	InputKind            string                                 `json:"inputKind,omitempty"`
+	InputFormat          string                                 `json:"inputFormat,omitempty"`
 	PreflightReason      string                                 `json:"preflightReason,omitempty"`
 	PreflightDetail      string                                 `json:"preflightDetail,omitempty"`
 	TargetProfileHash    string                                 `json:"targetProfileHash,omitempty"`

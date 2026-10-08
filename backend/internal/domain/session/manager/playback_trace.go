@@ -11,10 +11,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
-	"github.com/ManuGH/xg2g/internal/iptv/sourceref"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 )
 
 func ensurePlaybackTrace(rec *model.SessionRecord) *model.PlaybackTrace {
@@ -28,16 +26,25 @@ func sessionInputKind(sessionCtx *sessionContext) string {
 	if sessionCtx == nil {
 		return ""
 	}
-	if sessionCtx.Mode == model.ModeRecording {
+	if sessionCtx.Mode == model.ModeRecording || sessionCtx.IsVOD {
 		return string(ports.SourceFile)
 	}
-	if _, ok := platformnet.ParseDirectHTTPURL(sessionCtx.ServiceRef); ok {
-		return string(ports.SourceURL)
+	if sessionCtx.SourceOrigin != "" {
+		return string(sessionCtx.SourceOrigin)
 	}
-	if _, isIPTV, err := sourceref.ClassifyReference(nil, sessionCtx.ServiceRef); err == nil && isIPTV {
-		return "iptv"
+	origin, _ := classifySessionSource(sessionCtx.ServiceRef, sessionCtx.IsVOD)
+	return string(origin)
+}
+
+func sessionInputFormat(sessionCtx *sessionContext) string {
+	if sessionCtx == nil {
+		return ""
 	}
-	return string(ports.SourceTuner)
+	if sessionCtx.SourceFormat != "" {
+		return string(sessionCtx.SourceFormat)
+	}
+	_, format := classifySessionSource(sessionCtx.ServiceRef, sessionCtx.IsVOD)
+	return string(format)
 }
 
 func sessionInputKindFromRecord(rec *model.SessionRecord) string {
@@ -49,7 +56,21 @@ func sessionInputKindFromRecord(rec *model.SessionRecord) string {
 			return inputKind
 		}
 	}
-	return string(ports.SourceTuner)
+	origin, _ := classifySessionSource(rec.ServiceRef, rec.Profile.VOD)
+	return string(origin)
+}
+
+func sessionInputFormatFromRecord(rec *model.SessionRecord) string {
+	if rec == nil {
+		return ""
+	}
+	if rec.ContextData != nil {
+		if inputFormat := strings.TrimSpace(rec.ContextData[model.CtxKeySourceFormat]); inputFormat != "" {
+			return inputFormat
+		}
+	}
+	_, format := classifySessionSource(rec.ServiceRef, rec.Profile.VOD)
+	return string(format)
 }
 
 func (o *Orchestrator) updatePlaybackTraceBestEffort(ctx context.Context, sessionID string, fn func(*model.SessionRecord, *model.PlaybackTrace)) {
@@ -136,8 +157,16 @@ func applyTracePolicyProfile(trace *model.PlaybackTrace, profile model.ProfileSp
 }
 
 func applyTraceEffectiveProfile(trace *model.PlaybackTrace, profile model.ProfileSpec, inputKind string) {
+	applyTraceEffectiveProfileWithFormat(trace, profile, inputKind, "")
+}
+
+func applyTraceEffectiveProfileWithFormat(trace *model.PlaybackTrace, profile model.ProfileSpec, inputKind, inputFormat string) {
 	if trace == nil {
 		return
+	}
+	trace.InputKind = inputKind
+	if inputFormat != "" {
+		trace.InputFormat = inputFormat
 	}
 	trace.PolicyModeHint = tracePolicyModeHint(profile)
 	trace.EffectiveRuntimeMode = traceEffectiveRuntimeMode(profile)
@@ -149,6 +178,9 @@ func applyTraceEffectiveProfile(trace *model.PlaybackTrace, profile model.Profil
 		trace.TargetProfileHash = ""
 	}
 	trace.FFmpegPlan = model.TraceFFmpegPlanFromProfile(profile, inputKind, 0)
+	if trace.FFmpegPlan != nil && trace.InputFormat != "" {
+		trace.FFmpegPlan.InputFormat = trace.InputFormat
+	}
 }
 
 // applyTraceExecutedFFmpegPlan overwrites the profile-derived ffmpeg plan on the
@@ -161,15 +193,20 @@ func applyTraceExecutedFFmpegPlan(trace *model.PlaybackTrace, executed ports.Exe
 	if trace == nil {
 		return ""
 	}
+	inputFormat := trace.InputFormat
+	if inputFormat == "" && trace.FFmpegPlan != nil {
+		inputFormat = trace.FFmpegPlan.InputFormat
+	}
 	executedPlan := &model.FFmpegPlanTrace{
-		InputKind:  inputKind,
-		Container:  executed.Container,
-		Packaging:  executed.Packaging,
-		HWAccel:    executed.HWAccel,
-		VideoMode:  executed.VideoMode,
-		VideoCodec: executed.VideoCodec,
-		AudioMode:  executed.AudioMode,
-		AudioCodec: executed.AudioCodec,
+		InputKind:   inputKind,
+		InputFormat: inputFormat,
+		Container:   executed.Container,
+		Packaging:   executed.Packaging,
+		HWAccel:     executed.HWAccel,
+		VideoMode:   executed.VideoMode,
+		VideoCodec:  executed.VideoCodec,
+		AudioMode:   executed.AudioMode,
+		AudioCodec:  executed.AudioCodec,
 	}
 	mismatch := describeFFmpegPlanMismatch(trace.FFmpegPlan, executedPlan)
 	trace.FFmpegPlan = executedPlan

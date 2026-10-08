@@ -84,6 +84,10 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 		if inputKind != "" {
 			r.ContextData[model.CtxKeySourceType] = inputKind
 		}
+		inputFormat := sessionInputFormat(sessionCtx)
+		if inputFormat != "" {
+			r.ContextData[model.CtxKeySourceFormat] = inputFormat
+		}
 		if sessionCtx.ServiceRef != "" {
 			r.ContextData[model.CtxKeySource] = sessionCtx.ServiceRef
 		}
@@ -98,6 +102,7 @@ func (o *Orchestrator) transitionStarting(ctx context.Context, e model.StartSess
 			trace.ClientPath = strings.TrimSpace(r.ContextData[model.CtxKeyClientPath])
 		}
 		trace.InputKind = inputKind
+		trace.InputFormat = inputFormat
 		applyTracePolicyProfile(trace, r.Profile)
 		trace.TargetProfile = model.TraceTargetProfileFromProfile(r.Profile)
 		if trace.TargetProfile != nil {
@@ -165,6 +170,15 @@ func (o *Orchestrator) runExecutionLoop(
 		if r.State.IsTerminal() || r.State == model.SessionStopping {
 			return fmt.Errorf("session state %s, aborting priming: %w", r.State, ErrSessionCanceled)
 		}
+		if r.ContextData == nil {
+			r.ContextData = make(map[string]string)
+		}
+		if sessionCtx.SourceOrigin != "" {
+			r.ContextData[model.CtxKeySourceType] = string(sessionCtx.SourceOrigin)
+		}
+		if sessionCtx.SourceFormat != "" {
+			r.ContextData[model.CtxKeySourceFormat] = string(sessionCtx.SourceFormat)
+		}
 		_, err := lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvPrimingStarted}, nil, false, time.Now())
 		if err != nil {
 			return err
@@ -186,7 +200,7 @@ func (o *Orchestrator) runExecutionLoop(
 	// up and started reporting its own generic timeout instead of the real reason.
 	// VOD keeps its own long per-attempt ceiling and stays unbounded here.
 	// startup_budget.go divides it between the phases and attempts below.
-	budget := o.newStartupBudget(startTime, sessionCtx.IsVOD)
+	budget := o.newStartupBudget(startTime, sessionCtx.IsVOD, currentProfileSpec)
 	if budget.bounded() && budget.RetryLimit > 0 && !budget.fitsRetry() {
 		// Not silently degraded: with this segment geometry the budget only ever
 		// holds one attempt, so no retry and no profile hardening can run for any
@@ -264,7 +278,7 @@ func (o *Orchestrator) runExecutionLoop(
 		// counts as viable is the structural cost of reaching ready on this
 		// deployment, not a fixed constant that could sit either side of it.
 		budgetLeft, bounded := attemptCtx.remaining(time.Now())
-		budgetAllowsRetry := !bounded || budgetLeft >= budget.attemptCost()
+		budgetAllowsRetry := !bounded || budgetLeft >= budget.retryCost()
 		if attempt < budget.RetryLimit && budgetAllowsRetry && (shouldRetryStartupWaitFailure(failReason, failDetail, attempt) || promoteProfile) {
 			if promoteProfile {
 				if err := o.persistStartupRecoveryProfile(ctx, e.SessionID, currentProfileSpec, nextProfileSpec); err != nil {
@@ -308,7 +322,7 @@ func (o *Orchestrator) runExecutionLoop(
 				Str("session_id", e.SessionID).
 				Int("attempt", attempt).
 				Dur("budget_left", budgetLeft).
-				Dur("budget_needed", budget.attemptCost()).
+				Dur("budget_needed", budget.retryCost()).
 				Str("reason", string(failReason)).
 				Msg("startup budget too short for another attempt; reporting the original failure")
 		}
@@ -386,6 +400,9 @@ func (o *Orchestrator) finalizeDeferred(
 		if trace.InputKind == "" {
 			trace.InputKind = sessionInputKindFromRecord(r)
 		}
+		if trace.InputFormat == "" {
+			trace.InputFormat = sessionInputFormatFromRecord(r)
+		}
 		if trace.PolicyModeHint == "" || trace.PolicyModeHint == ports.RuntimeModeUnknown {
 			trace.PolicyModeHint = tracePolicyModeHint(r.Profile)
 		}
@@ -436,6 +453,9 @@ func (o *Orchestrator) finalizeDeferred(
 		}
 		if traceSnapshot.InputKind != "" {
 			logEvt = logEvt.Str("input_kind", traceSnapshot.InputKind)
+		}
+		if traceSnapshot.InputFormat != "" {
+			logEvt = logEvt.Str("input_format", traceSnapshot.InputFormat)
 		}
 		if traceSnapshot.TargetProfileHash != "" {
 			logEvt = logEvt.Str("target_profile_hash", traceSnapshot.TargetProfileHash)

@@ -97,20 +97,30 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 		}
 	}
 
-	if reason != model.RProcessEnded {
-		return model.ProfileSpec{}, false
-	}
-
-	if ports.ClassifyProcessFailure(lower) != ports.CauseCopyOutputMissingCodec {
-		return model.ProfileSpec{}, false
-	}
-
 	withDVR := func(next model.ProfileSpec) model.ProfileSpec {
 		if current.DVRWindowSec > 0 {
 			next.DVRWindowSec = current.DVRWindowSec
 		}
 		next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
 		return next
+	}
+
+	if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
+		if !current.TranscodeVideo {
+			targetProfile := profiles.ProfileRepair
+			if strings.EqualFold(strings.TrimSpace(current.Name), profiles.ProfileSafari) {
+				targetProfile = profiles.ProfileSafariDirty
+			}
+			return withDVR(resolveProfile(targetProfile, current.DVRWindowSec)), true
+		}
+	}
+
+	if reason != model.RProcessEnded {
+		return model.ProfileSpec{}, false
+	}
+
+	if ports.ClassifyProcessFailure(lower) != ports.CauseCopyOutputMissingCodec {
+		return model.ProfileSpec{}, false
 	}
 
 	switch strings.ToLower(strings.TrimSpace(current.Name)) {
