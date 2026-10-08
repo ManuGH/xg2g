@@ -354,3 +354,37 @@ func TestStartupBudget_FastFailureStillRetries(t *testing.T) {
 		t.Fatalf("a failure at 5s leaves %v, which must still fund a %v attempt", left, budget.attemptCost())
 	}
 }
+
+// A copied live stream can have keyframe intervals much longer than hls_time.
+// Waiting for four finished segments must not stop early to reserve time for a
+// retry that would restart the same source and discard the segments already made.
+func TestStartupBudget_CopyStreamKeepsTimeForLongSegments(t *testing.T) {
+	orch := &Orchestrator{LiveStartupBudget: 45 * time.Second, LiveReadySegments: 4, LiveSegmentSeconds: 2}
+	start := time.Now()
+	budget := orch.newStartupBudget(start, false)
+	copyAttempt := budget.attemptForProfile(0, false, false)
+	deadline, bounded := copyAttempt.deadline()
+	if !bounded {
+		t.Fatal("live startup must be bounded")
+	}
+	if got := deadline.Sub(start); got != 45*time.Second {
+		t.Fatalf("copy stream must have the full startup budget, got %v", got)
+	}
+	// A first segment at 10s and subsequent 10s segments can now reach the
+	// fourth completed segment before the player deadline.
+	if deadline.Before(start.Add(40 * time.Second)) {
+		t.Fatal("copy stream would be stopped before four long segments can finish")
+	}
+	// The playlist poller must use the same unreserved deadline as the adapter.
+	if got := orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileCopy}, false, copyAttempt); got < 37*time.Second {
+		t.Fatalf("playlist wait must cover long copied segments, got %v", got)
+	}
+	// A quickly failing copy attempt still leaves enough time for a retry.
+	if left, _ := copyAttempt.remaining(start.Add(5 * time.Second)); left < budget.attemptCost() {
+		t.Fatalf("early failure leaves only %v, below retry cost %v", left, budget.attemptCost())
+	}
+	transcodeAttempt := budget.attemptForProfile(0, false, true)
+	if transcodeAttempt.Reserve == 0 {
+		t.Fatal("transcoding recovery must retain its retry reserve")
+	}
+}

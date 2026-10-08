@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +32,8 @@ import (
 var (
 	// ErrAdmissionDenied indicates that the physical tuner topology rejected stream admission.
 	ErrAdmissionDenied = errors.New("tuner topology admission denied")
+	// ErrIPTVHLSInput indicates that the provider returned a playlist, not MPEG-TS bytes.
+	ErrIPTVHLSInput = errors.New("IPTV HLS playlist input is not supported by MPEG-TS ingest")
 )
 
 // defaultConnectTimeout bounds how long the upstream may take to accept the connection and
@@ -404,6 +408,24 @@ func (c *LivePipelineConnector) dialIPTV(ctx context.Context, providerURL string
 		streamCancel()
 		return nil, nil, fmt.Errorf("upstream iptv provider returned non-stream content-type %q", contentType)
 	}
+	if isIPTVHLSInput(contentType, resp.Request.URL.Path) {
+		_ = resp.Body.Close()
+		streamCancel()
+		return nil, nil, ErrIPTVHLSInput
+	}
 
 	return resp.Body, streamCancel, nil
+}
+
+func isIPTVHLSInput(contentType, requestPath string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil {
+		switch strings.ToLower(mediaType) {
+		case "application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl":
+			return true
+		case "video/mp2t":
+			return false
+		}
+	}
+	return strings.EqualFold(path.Ext(requestPath), ".m3u8")
 }

@@ -114,6 +114,19 @@ func (b startupBudget) attempt(index int, recovery bool) startupAttempt {
 	}
 }
 
+// attemptForProfile applies the same budget policy to the active video path.
+// Video copy cannot create additional keyframes, so HLS segment completion may
+// take much longer than the configured target duration. Holding back time for
+// a second full attempt would kill the first process while it is progressing.
+// An early failure can still retry if enough of the shared budget remains.
+func (b startupBudget) attemptForProfile(index int, recovery, transcodeVideo bool) startupAttempt {
+	attempt := b.attempt(index, recovery)
+	if !transcodeVideo {
+		attempt.Reserve = 0
+	}
+	return attempt
+}
+
 // startupAttempt carries the facts about one attempt inside the startup loop
 // that decide how long each of its phases may take.
 type startupAttempt struct {
@@ -204,12 +217,10 @@ func (o *Orchestrator) newStartupBudget(startTime time.Time, vodMode bool) start
 // liveReadyFloor is the media an attempt must produce before the ready gate can
 // pass: the required segment count times the segment duration.
 //
-// It is built from the CONFIGURED segment duration, which is an upper bound on
-// the real one — the LL-HLS and short-startup-segment paths only ever shorten it
-// (see planLiveSegmentLayout). A floor built from an upper bound errs toward
-// reserving slightly too much for a retry, never too little, which is the safe
-// direction: the cost of over-reserving is a shorter first attempt, the cost of
-// under-reserving is the dead ladder this file exists to fix.
+// It is built from the configured segment target. Video copy may exceed that
+// target when the upstream keyframe interval is long, so this is not a bound
+// on actual segment completion time. Copy attempts therefore do not reserve
+// this nominal cost for a second attempt; transcoding attempts still do.
 func (o *Orchestrator) liveReadyFloor() time.Duration {
 	return time.Duration(o.liveReadySegments()) * o.liveSegmentDuration()
 }
