@@ -39,6 +39,19 @@ export const HLS_STARTUP_POLICY = Object.freeze({
   slowBuildMaxMs: 150_000,
 });
 
+// Transport cadence controls buffer tuning only; codec/mode decisions stay on
+// the server. Bound the reserve so an unusual playlist cannot hold startup forever.
+export function hlsLiveCadencePolicy(targetDuration: number, link: PlaybackLinkProfile = 'stable') {
+  const cadence = Number.isFinite(targetDuration) && targetDuration > 0
+    ? Math.min(targetDuration, 20)
+    : 0;
+  return {
+    targetLatencySeconds: Math.max(hlsTuningForLink(link).liveSyncDuration, cadence * 3),
+    bufferTargetSeconds: Math.max(HLS_STARTUP_POLICY.liveBufferTargetSeconds, cadence * 2),
+    timeoutMs: Math.max(HLS_STARTUP_POLICY.liveTimeoutMs, cadence * 3_000),
+  };
+}
+
 export const HLS_NETWORK_RETRY_POLICY = Object.freeze({
   maxRetries: 6,
   initialBackoffMs: 1_000,

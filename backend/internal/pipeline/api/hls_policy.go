@@ -30,17 +30,25 @@ type hlsStartupPolicy struct {
 
 func deriveHLSStartupPolicy(rec *model.SessionRecord, content []byte) hlsStartupPolicy {
 	const (
-		defaultHeadroomSec = 8
-		minHeadroomSec     = 6
-		maxHeadroomSec     = 12
-		targetSafetyFactor = 2
-		segmentSafetyCount = 4
-		traceGuardedSec    = 10
-		traceConservative  = 12
+		defaultHeadroomSec    = 8
+		minHeadroomSec        = 6
+		defaultMaxHeadroomSec = 12
+		targetSafetyFactor    = 2
+		segmentSafetyCount    = 4
+		traceGuardedSec       = 10
+		traceConservative     = 12
 	)
 
 	metrics := parseHLSPlaylistMetrics(content)
 	clientFamily := sessionPlaybackClientFamily(rec)
+	maxHeadroomSec := defaultMaxHeadroomSec
+	longCadenceCopy := rec != nil && !rec.Profile.TranscodeVideo && metrics.TargetDurationSec > defaultMaxHeadroomSec/targetSafetyFactor
+	if longCadenceCopy {
+		// Copy segments follow provider GOPs. A fixed 12s ceiling discards the
+		// reserve for 10s segments, even though the cadence guard requested 40s.
+		// Keep that guard effective, with a finite ceiling for malformed input.
+		maxHeadroomSec = int(math.Min(60, float64(metrics.TargetDurationSec)*segmentSafetyCount))
+	}
 	headroom := defaultHeadroomSec
 	mode := "balanced"
 	reasons := make([]string, 0, 4)
@@ -107,13 +115,13 @@ func deriveHLSStartupPolicy(rec *model.SessionRecord, content []byte) hlsStartup
 	// (three target durations from the end) applies.
 	if metrics.TotalDurationSec > 0 {
 		available := int(math.Round(metrics.TotalDurationSec)) - metrics.TargetDurationSec
-		if isNativePlaybackClientFamily(clientFamily) && rec != nil && !rec.Profile.TranscodeVideo {
+		if rec != nil && !rec.Profile.TranscodeVideo && (isNativePlaybackClientFamily(clientFamily) || longCadenceCopy) {
 			// The native copy playlist is withheld until READY, so its startup GOP
 			// has already been verified and several segments are available. Start
 			// at that window head to retain the accumulated reserve; the generic
 			// one-target-from-head clamp would throw most of it away and place
 			// native players (Media3, AVPlayer) back on the irregular broadcaster edge.
-			available = int(math.Round(metrics.TotalDurationSec))
+			available = int(math.Floor(metrics.TotalDurationSec))
 		}
 		if available < 0 {
 			available = 0

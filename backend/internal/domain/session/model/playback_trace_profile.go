@@ -111,7 +111,9 @@ func TraceFFmpegPlanFromProfile(profile ProfileSpec, inputKind string, segmentSe
 	}
 
 	audioCodec := target.Audio.Codec
-	if audioCodec == "" {
+	if target.Audio.Mode == playbackprofile.MediaModeCopy {
+		audioCodec = "copy"
+	} else if audioCodec == "" {
 		audioCodec = "aac"
 	}
 	videoCodec := target.Video.Codec

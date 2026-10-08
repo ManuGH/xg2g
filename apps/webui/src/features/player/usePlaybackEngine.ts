@@ -31,6 +31,7 @@ import {
   createHlsRuntimeConfig,
   hlsNetworkRetryBackoffMs,
   hlsNetworkRetryPolicyForLink,
+  hlsLiveCadencePolicy,
   HLS_STARTUP_POLICY,
 } from './playbackEnginePolicy';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
@@ -924,13 +925,21 @@ export function usePlaybackEngine({
       let startGateOpen = false;
       let isLiveStream = true;
       let startGateWaitingReady = false;
+      let cadencePolicy = hlsLiveCadencePolicy(0, linkProfile);
+      let manifestParsedAt: number | null = null;
       const bufferedAheadSeconds = (): number => {
         const gateVideo = videoRef.current;
         if (!gateVideo || gateVideo.buffered.length === 0) {
           return 0;
         }
-        const from = Math.max(gateVideo.currentTime, gateVideo.buffered.start(0));
-        return gateVideo.buffered.end(gateVideo.buffered.length - 1) - from;
+        for (let i = 0; i < gateVideo.buffered.length; i++) {
+          const start = gateVideo.buffered.start(i);
+          const end = gateVideo.buffered.end(i);
+          if (gateVideo.currentTime <= end && (gateVideo.currentTime >= start || i === 0)) {
+            return end - Math.max(gateVideo.currentTime, start);
+          }
+        }
+        return 0;
       };
       const restorePlaybackRate = (reason: string) => {
         if (!slowBuildActive) {
@@ -992,6 +1001,16 @@ export function usePlaybackEngine({
           setStatus('ready');
         });
       };
+      const scheduleStartGateTimeout = () => {
+        if (isUnmountedRef.current || isTeardownRef.current || hlsRef.current !== hls || startGateOpen || manifestParsedAt === null) return;
+        if (startGateTimerRef.current !== null) {
+          window.clearTimeout(startGateTimerRef.current);
+        }
+        startGateTimerRef.current = window.setTimeout(
+          () => openStartGate('timeout'),
+          Math.max(0, cadencePolicy.timeoutMs - (performance.now() - manifestParsedAt)),
+        );
+      };
       const checkStartGateBufferTarget = () => {
         if (isUnmountedRef.current || isTeardownRef.current || hlsRef.current !== hls) {
           return;
@@ -999,7 +1018,7 @@ export function usePlaybackEngine({
         if (startGateOpen || startGateWaitingReady) {
           return;
         }
-        if (bufferedAheadSeconds() >= HLS_STARTUP_POLICY.liveBufferTargetSeconds) {
+        if (bufferedAheadSeconds() >= cadencePolicy.bufferTargetSeconds) {
           const gateVideo = videoRef.current;
           if (gateVideo && gateVideo.readyState < 2) {
             startGateWaitingReady = true;
@@ -1063,13 +1082,8 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        if (startGateTimerRef.current !== null) {
-          window.clearTimeout(startGateTimerRef.current);
-        }
-        startGateTimerRef.current = window.setTimeout(
-          () => openStartGate('timeout'),
-          HLS_STARTUP_POLICY.liveTimeoutMs,
-        );
+        manifestParsedAt ??= performance.now();
+        scheduleStartGateTimeout();
       });
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
@@ -1089,6 +1103,7 @@ export function usePlaybackEngine({
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
+        if (isUnmountedRef.current || isTeardownRef.current || hlsRef.current !== hls) return;
         isLiveStream = data.details.live !== false;
         if (!isLiveStream) {
           revealHoldRef.current = false;
@@ -1096,6 +1111,18 @@ export function usePlaybackEngine({
             openStartGate('vod');
           }
         } else {
+          const nextPolicy = hlsLiveCadencePolicy(data.details.targetduration, linkProfile);
+          // Keep a learned reserve through shorter subsequent playlist updates.
+          // Repeated polls must not restart the finite startup deadline.
+          cadencePolicy = {
+            targetLatencySeconds: Math.max(cadencePolicy.targetLatencySeconds, nextPolicy.targetLatencySeconds),
+            bufferTargetSeconds: Math.max(cadencePolicy.bufferTargetSeconds, nextPolicy.bufferTargetSeconds),
+            timeoutMs: Math.max(cadencePolicy.timeoutMs, nextPolicy.timeoutMs),
+          };
+          if ((hls.targetLatency ?? 0) < cadencePolicy.targetLatencySeconds) {
+            hls.targetLatency = cadencePolicy.targetLatencySeconds;
+          }
+          scheduleStartGateTimeout();
           checkStartGateBufferTarget();
         }
         const hasContent = data.details.totalduration > 0 || (data.details.fragments && data.details.fragments.length > 0);

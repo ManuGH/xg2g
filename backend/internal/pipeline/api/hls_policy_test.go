@@ -1,11 +1,44 @@
 package api
 
 import (
+	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestLongCadenceCopyPlaylistPreservesVerifiedReserve(t *testing.T) {
+	for _, family := range []string{"safari_native", "ios_safari", "android_tv_native", "android_native", "chromium_hlsjs"} {
+		for _, cadence := range []int{10, 20} {
+			for _, count := range []int{2, 6} {
+				t.Run(fmt.Sprintf("%s/%ds/%d_segments", family, cadence, count), func(t *testing.T) {
+					rec := &model.SessionRecord{
+						ContextData: map[string]string{model.CtxKeyClientFamily: family},
+						Profile:     model.ProfileSpec{Container: "fmp4", DVRWindowSec: 1800},
+					}
+					var playlist strings.Builder
+					fmt.Fprintf(&playlist, "#EXTM3U\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:40\n", cadence)
+					for i := 0; i < count; i++ {
+						fmt.Fprintf(&playlist, "#EXTINF:%d.0,\nseg_%d.m4s\n", cadence, 40+i)
+					}
+					want := min(count*cadence, cadence*4, 60)
+					policy := deriveHLSStartupPolicy(rec, []byte(playlist.String()))
+					assert.Equal(t, want, policy.StartupHeadroomSec)
+					out, _, _, err := rewritePlaylist(strings.NewReader(playlist.String()), rec, "", "", zerolog.Nop())
+					require.NoError(t, err)
+					body, err := io.ReadAll(out)
+					require.NoError(t, err)
+					assert.Contains(t, string(body), fmt.Sprintf("#EXT-X-START:TIME-OFFSET=-%d,PRECISE=NO", want))
+				})
+			}
+		}
+	}
+}
 
 func TestDeriveHLSStartupPolicy_UsesNativeClientFloor(t *testing.T) {
 	rec := &model.SessionRecord{

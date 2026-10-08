@@ -18,6 +18,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExplicitAudioCopyPredictionMatchesExecutedPlan(t *testing.T) {
+	for _, transcodeVideo := range []bool{false, true} {
+		profile := model.ProfileSpec{AudioMode: "copy", TranscodeVideo: transcodeVideo, VideoCodec: "h264"}
+		predicted := model.TraceFFmpegPlanFromProfile(profile, "iptv", 2)
+		trace := &model.PlaybackTrace{FFmpegPlan: predicted}
+		executed := ports.ExecutedFFmpegPlan{
+			Container: predicted.Container, Packaging: predicted.Packaging, HWAccel: predicted.HWAccel,
+			VideoMode: predicted.VideoMode, VideoCodec: predicted.VideoCodec,
+			AudioMode: "copy", AudioCodec: "copy",
+		}
+		require.Empty(t, applyTraceExecutedFFmpegPlan(trace, executed, "iptv"))
+		require.Equal(t, "copy", trace.FFmpegPlan.AudioCodec)
+	}
+}
+
 func TestSessionInputKind_DistinguishesIPTVFromReceiver(t *testing.T) {
 	iptvRef := "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.invalid/live.ts:Synthetic"
 	if got := sessionInputKind(&sessionContext{Mode: model.ModeLive, ServiceRef: iptvRef}); got != "iptv" {

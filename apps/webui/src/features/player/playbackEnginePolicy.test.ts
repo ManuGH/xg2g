@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createHlsRuntimeConfig,
+  hlsLiveCadencePolicy,
   hlsNetworkRetryBackoffMs,
   hlsNetworkRetryPolicyForLink,
   HLS_NETWORK_RETRY_POLICY,
@@ -8,6 +9,18 @@ import {
 } from './playbackEnginePolicy';
 
 describe('playbackEnginePolicy', () => {
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('keeps finite defaults for invalid cadence %s', (cadence) => {
+    expect(hlsLiveCadencePolicy(cadence)).toEqual({ targetLatencySeconds: 12, bufferTargetSeconds: 6, timeoutMs: 15_000 });
+  });
+
+  it.each([1, 2, 3])('keeps the normal startup cushion for %s second segments', (cadence) => {
+    expect(hlsLiveCadencePolicy(cadence)).toEqual({ targetLatencySeconds: 12, bufferTargetSeconds: 6, timeoutMs: 15_000 });
+  });
+
+  it('bounds exceptional cadence and preserves constrained-link reserve', () => {
+    expect(hlsLiveCadencePolicy(600)).toEqual({ targetLatencySeconds: 60, bufferTargetSeconds: 40, timeoutMs: 60_000 });
+    expect(hlsLiveCadencePolicy(2, 'constrained').targetLatencySeconds).toBe(30);
+  });
   it('preserves the production HLS runtime tuning contract', () => {
     expect(createHlsRuntimeConfig()).toEqual({
       debug: false,
