@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1847,7 +1848,10 @@ func TestIPTV_CanaryLeakAudit_LiveLoggingBufferZeroLeak(t *testing.T) {
 		Output: &logWriterBuf,
 		Level:  "info",
 	})
-	defer ilog.ClearRecentLogs()
+	t.Cleanup(func() {
+		ilog.Configure(ilog.Config{Level: "info", Output: io.Discard})
+		ilog.ClearRecentLogs()
+	})
 
 	s, st := newV3TestServer(t, t.TempDir())
 	s.SetJWTSecret(jwtTestSecret)
