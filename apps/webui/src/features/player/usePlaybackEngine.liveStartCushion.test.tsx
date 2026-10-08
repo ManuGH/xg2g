@@ -1,5 +1,5 @@
-import { StrictMode } from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { StrictMode, useEffect, useRef } from 'react';
+import { act, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   usePlaybackEngine,
@@ -125,6 +125,130 @@ describe('usePlaybackEngine live startup cushion and start gate', () => {
   });
 
   describe('live playback start cushion', () => {
+    it.each([false, true])('allows parent effects to start a child engine with cadence protection (StrictMode=%s)', (strict) => {
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+      setMockBuffered(video, [{ start: 0, end: 12 }]);
+      const props = makeEngineProps(video);
+      function Child({ start }: { start: { current: (() => void) | null } }) {
+        const engine = usePlaybackEngine(props);
+        useEffect(() => {
+          start.current = () => engine.playHls('/api/v3/hls/child/live.m3u8');
+          return () => { start.current = null; };
+        }, [engine.playHls, start]);
+        return null;
+      }
+      function Parent() {
+        const start = useRef<(() => void) | null>(null);
+        useEffect(() => { start.current?.(); }, []);
+        return <Child start={start} />;
+      }
+      const { unmount } = render(strict ? <StrictMode><Parent /></StrictMode> : <Parent />);
+      const hls = hlsInstances[hlsInstances.length - 1];
+      act(() => {
+        hls.emit(MockHls.Events.MANIFEST_PARSED, { levels: [], audioTracks: [] });
+        hls.emit(MockHls.Events.LEVEL_LOADED, { details: { live: true, targetduration: 10 } });
+        hls.emit(MockHls.Events.BUFFER_APPENDED);
+      });
+      expect(playSpy).not.toHaveBeenCalled();
+      setMockBuffered(video, [{ start: 0, end: 20 }]);
+      act(() => hls.emit(MockHls.Events.BUFFER_APPENDED));
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      unmount();
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+    it.each([false, true])('retains two long segments before playing (StrictMode=%s)', (strict) => {
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+      setMockBuffered(video, [{ start: 0, end: 12 }]);
+      const props = makeEngineProps(video);
+      const { result, rerender, unmount } = renderHook(() => usePlaybackEngine(props), {
+        wrapper: strict ? StrictMode : undefined,
+      });
+      act(() => result.current.playHls('/api/v3/hls/long/live.m3u8'));
+      const hls = hlsInstances[hlsInstances.length - 1];
+      act(() => {
+        hls.emit(MockHls.Events.MANIFEST_PARSED, { levels: [], audioTracks: [] });
+        hls.emit(MockHls.Events.LEVEL_LOADED, {
+          details: { live: true, targetduration: 10, totalduration: 60, fragments: [{}] },
+        });
+        hls.emit(MockHls.Events.BUFFER_APPENDED);
+      });
+      expect(hls.targetLatency).toBe(30);
+      expect(playSpy).not.toHaveBeenCalled();
+      rerender();
+      act(() => vi.advanceTimersByTime(HLS_STARTUP_POLICY.liveTimeoutMs));
+      expect(playSpy).not.toHaveBeenCalled();
+      setMockBuffered(video, [{ start: 0, end: 20 }]);
+      act(() => hls.emit(MockHls.Events.BUFFER_APPENDED));
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      unmount();
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not count disconnected future ranges as playable startup reserve', () => {
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+      setMockBuffered(video, [{ start: 0, end: 2 }, { start: 10, end: 30 }]);
+      const props = makeEngineProps(video);
+      const { result } = renderHook(() => usePlaybackEngine(props));
+      act(() => result.current.playHls('/api/v3/hls/gap/live.m3u8'));
+      const hls = hlsInstances[hlsInstances.length - 1];
+      act(() => hls.emit(MockHls.Events.BUFFER_APPENDED));
+      expect(playSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps the long-cadence deadline finite through repeated playlist polls', () => {
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+      setMockBuffered(video, [{ start: 0, end: 8 }]);
+      const props = makeEngineProps(video);
+      const { result } = renderHook(() => usePlaybackEngine(props));
+      act(() => result.current.playHls('/api/v3/hls/long/live.m3u8'));
+      const hls = hlsInstances[hlsInstances.length - 1];
+      act(() => hls.emit(MockHls.Events.MANIFEST_PARSED, { levels: [], audioTracks: [] }));
+      for (let i = 0; i < 4; i++) {
+        act(() => {
+          hls.emit(MockHls.Events.LEVEL_LOADED, { details: { live: true, targetduration: 10 } });
+          vi.advanceTimersByTime(7_000);
+        });
+        expect(playSpy).not.toHaveBeenCalled();
+      }
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([false, true])('ignores captured callbacks after executor replacement and unmount (StrictMode=%s)', (strict) => {
+      const video = document.createElement('video');
+      Object.defineProperty(video, 'readyState', { value: 4, configurable: true });
+      setMockBuffered(video, [{ start: 0, end: 2 }]);
+      const props = makeEngineProps(video);
+      const { result, unmount } = renderHook(() => usePlaybackEngine(props), { wrapper: strict ? StrictMode : undefined });
+      act(() => result.current.playHls('/api/v3/hls/first/live.m3u8'));
+      const old = hlsInstances[hlsInstances.length - 1];
+      const oldManifest = old.handlers.get(MockHls.Events.MANIFEST_PARSED)[0];
+      const oldLevel = old.handlers.get(MockHls.Events.LEVEL_LOADED)[0];
+      act(() => result.current.playHls('/api/v3/hls/second/live.m3u8'));
+      const active = hlsInstances[hlsInstances.length - 1];
+      act(() => {
+        active.emit(MockHls.Events.MANIFEST_PARSED, { levels: [], audioTracks: [] });
+        oldManifest('', { levels: [], audioTracks: [] });
+        oldLevel('', { details: { live: true, targetduration: 10 } });
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      const activeManifest = active.handlers.get(MockHls.Events.MANIFEST_PARSED)[0];
+      unmount();
+      act(() => {
+        activeManifest('', { levels: [], audioTracks: [] });
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('keeps live start gate closed at 1..5.9s buffered, and opens when buffered reaches >= 6s', () => {
       const video = document.createElement('video');
       Object.defineProperty(video, 'readyState', { value: 4, configurable: true, writable: true });
