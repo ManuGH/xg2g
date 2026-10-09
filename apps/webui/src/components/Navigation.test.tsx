@@ -168,7 +168,12 @@ describe('Navigation', () => {
       </>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'More', hidden: true }));
+    const moreBtn = screen.getByRole('button', { name: 'More', hidden: true });
+    const mobileShell = moreBtn.closest('[class*="mobileShell"]') as HTMLElement | null;
+    if (mobileShell) {
+      mobileShell.style.display = 'block';
+    }
+    fireEvent.click(moreBtn);
 
     const sheetTitle = screen.getByText('More sections', { selector: 'h2' });
     const dialog = sheetTitle.closest('[role="dialog"]');
@@ -202,6 +207,10 @@ describe('Navigation', () => {
     );
 
     const moreButton = screen.getByRole('button', { name: 'More', hidden: true });
+    const mobileShell = moreButton.closest('[class*="mobileShell"]') as HTMLElement | null;
+    if (mobileShell) {
+      mobileShell.style.display = 'block';
+    }
     fireEvent.click(moreButton);
 
     expect(document.body.style.overflow).toBe('hidden');
