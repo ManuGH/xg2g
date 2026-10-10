@@ -117,6 +117,23 @@ gepushten Remote-Branch entspricht. Es deployt ausschließlich den Teststand
 auf `:8089`; Produktion `:8088` bleibt unberührt. `--confirm-staging` bestätigt
 nur den Start dieses Testdeployments, nicht die Produktionsreife.
 
+Staging darf nie der einzige Ort sein, an dem ein Build existiert
+(`scripts/lib/staging-landing.sh`). Vor dem Build prüft `fast_deploy.sh` per
+`gh`:
+
+- Der zu deployende Commit liegt auf `main` oder ist der Head eines offenen
+  PRs (Draft genügt). Sonst bricht das Skript ab: erst PR öffnen.
+- Der gerade laufende Staging-Build (`xg2g --version` im Container) liegt auf
+  `main`, steckt in einem offenen oder gemergten PR oder ist im neuen Build
+  enthalten. Sonst bricht das Skript ab, weil der Deploy diese Arbeit still
+  verwerfen würde. Nur wenn das Verwerfen bewusst entschieden ist:
+  `--drop-unlanded <laufender-commit>`.
+
+Ist `gh` nicht verfügbar oder antwortet GitHub nicht, bricht das Skript ebenfalls
+ab. Die PR-Suche nach Commits ist mit kurzer Verzögerung indiziert; ein Commit,
+der erst Sekunden alt ist und nicht PR-Head ist, wird eventuell noch nicht
+gefunden.
+
 Ohne weitere Option wird nur das Go-Binary über das Staging-Basis-Image gelegt;
 dessen `xg2g-media-core` bleibt unverändert. Go-Daemon und Media-Core sprechen
 ein gemeinsames Wire-Protokoll, das erst beim Start der ersten Live-Pipeline
