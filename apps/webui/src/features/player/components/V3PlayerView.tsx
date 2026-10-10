@@ -10,7 +10,7 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
-import { AirPlayGlyph, ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph, PictureModeGlyph } from './playerControlGlyphs';
+import { AirPlayGlyph, ChannelsGlyph, CloseGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph, PictureModeGlyph } from './playerControlGlyphs';
 
 const PICTURE_MODE_STORAGE_KEY = 'xg2g.player.pictureMode';
 export type PictureMode = 'natural' | 'vivid' | 'cinema';
@@ -79,11 +79,13 @@ export function V3PlayerView({
     >
       {viewState.showCloseButton && (
         <button
+          type="button"
           onClick={() => void actions.stopStream()}
           className={styles.closeButton}
+          title={viewState.closeButtonLabel}
           aria-label={viewState.closeButtonLabel}
         >
-          ✕
+          <CloseGlyph />
         </button>
       )}
 
@@ -98,10 +100,10 @@ export function V3PlayerView({
             />
           )}
           <div className={styles.topHeaderMeta}>
+            <span className={styles.topHeaderProgramme}>{viewState.programmeTitle ?? viewState.channelName}</span>
             {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
               <span className={styles.topHeaderChannel}>{viewState.channelName}</span>
             )}
-            <span className={styles.topHeaderProgramme}>{viewState.programmeTitle ?? viewState.channelName}</span>
           </div>
         </div>
       )}
@@ -273,7 +275,9 @@ export function V3PlayerView({
                   windowStartUnix={viewState.dvrPreviewWindowStartUnix}
                   segmentSeconds={viewState.dvrPreviewSegmentSeconds}
                 />
-                <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                {!viewState.isLiveMode && (
+                  <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
+                )}
               </div>
             </div>
           )}
@@ -297,18 +301,26 @@ export function V3PlayerView({
                     {viewState.playPauseIcon === '⏸' ? <PauseGlyph /> : <PlayGlyph />}
                   </Button>
 
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
-                    <SeekForwardGlyph /> 60s
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => actions.seekBy(15)}
+                    disabled={viewState.isLiveMode && viewState.isAtLiveEdge}
+                    title={viewState.seekForward15sLabel}
+                    aria-label={viewState.seekForward15sLabel}
+                  >
+                    <SeekForwardGlyph /> 15s
                   </Button>
 
                   {viewState.isLiveMode && (
                     <button
+                      type="button"
                       className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
                       onClick={() => actions.seekToLiveEdge()}
                       title={viewState.liveButtonLabel}
                       aria-label={viewState.liveButtonLabel}
                     >
-                      LIVE
+                      {viewState.isAtLiveEdge ? 'LIVE' : '↷ LIVE'}
                     </button>
                   )}
                 </div>
@@ -346,18 +358,19 @@ export function V3PlayerView({
                   <PipGlyph /> DVR
                 </Button>
               )}
-
-              {/* Inlined Title */}
-              {(viewState.programmeTitle || viewState.channelName) && (
-                <div className={styles.inlineTitleGroup}>
-                  {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
-                    <span className={styles.inlineChannelEyebrow}>{viewState.channelName}</span>
-                  )}
-                  <span className={styles.inlineProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>
-                </div>
-              )}
             </div>
 
+            {/* Zone 2 (Center): Content Metadata — Programme Title primary, Channel secondary */}
+            {(viewState.programmeTitle || viewState.channelName) && (
+              <div className={styles.inlineTitleGroup}>
+                <span className={styles.inlineProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>
+                {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
+                  <span className={styles.inlineChannelEyebrow}>{viewState.channelName}</span>
+                )}
+              </div>
+            )}
+
+            {/* Zone 3 (Right): Player Functions + Subdued Diagnostics */}
             <div className={styles.utilityControls}>
               {onOpenChannels && (
                 <Button
@@ -408,31 +421,6 @@ export function V3PlayerView({
                   { id: 'cinema', label: t('player.pictureModes.cinema', {}) },
                 ]}
               />
-
-              {viewState.showNativeFullscreenButton && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={actions.enterNativeFullscreen}
-                  title={viewState.nativeFullscreenTitle}
-                >
-                  <FullscreenGlyph /> {viewState.nativeFullscreenLabel}
-                </Button>
-              )}
-
-              {viewState.showFullscreenButton && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  active={viewState.fullscreenActive}
-                  onClick={() => void actions.toggleFullscreen()}
-                  title={viewState.fullscreenLabel}
-                  aria-label={viewState.fullscreenLabel}
-                >
-                  <FullscreenGlyph />
-                  <span className="sr-only">Vollbild</span>
-                </Button>
-              )}
 
               {viewState.showVolumeControls && (() => {
                 const muteButton = (
@@ -503,6 +491,31 @@ export function V3PlayerView({
                 >
                   <PipGlyph />
                   <span className="sr-only">PiP</span>
+                </Button>
+              )}
+
+              {viewState.showNativeFullscreenButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={actions.enterNativeFullscreen}
+                  title={viewState.nativeFullscreenTitle}
+                >
+                  <FullscreenGlyph /> {viewState.nativeFullscreenLabel}
+                </Button>
+              )}
+
+              {viewState.showFullscreenButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  active={viewState.fullscreenActive}
+                  onClick={() => void actions.toggleFullscreen()}
+                  title={viewState.fullscreenLabel}
+                  aria-label={viewState.fullscreenLabel}
+                >
+                  <FullscreenGlyph />
+                  <span className="sr-only">Vollbild</span>
                 </Button>
               )}
 

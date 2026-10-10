@@ -25,26 +25,26 @@ describe('formatDvrPositionDisplay', () => {
       clock,
       fakeT,
     );
-    expect(out).toBe('14:23 · 7:00 behind live');
+    expect(out).toBe('−7:00 behind live');
   });
 
-  it('shows Live (no offset) at the live edge — negative control for the offset branch', () => {
+  it('shows ● LIVE (no offset) at the live edge — negative control for the offset branch', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: true, behindLiveSeconds: 0, currentTimeDisplay: '14:30' },
       clock,
       fakeT,
     );
-    expect(out).toBe('14:30 · Live');
+    expect(out).toBe('● LIVE');
     expect(out).not.toMatch(/behind live/);
   });
 
-  it('treats a tiny offset within the edge slack as Live', () => {
+  it('treats a tiny offset within the edge slack as ● LIVE', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 3, currentTimeDisplay: '14:30' },
       clock,
       fakeT,
     );
-    expect(out).toBe('14:30 · Live');
+    expect(out).toBe('● LIVE');
   });
 
   it('for VOD shows the elapsed position only (no live wording)', () => {
@@ -54,6 +54,6 @@ describe('formatDvrPositionDisplay', () => {
       fakeT,
     );
     expect(out).toBe('12:34');
-    expect(out).not.toMatch(/Live/);
+    expect(out).not.toMatch(/LIVE/i);
   });
 });

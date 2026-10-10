@@ -274,8 +274,8 @@
     "seekTimeline": "Zeitleiste",
     "goLive": "Live gehen",
     "dvrPosition": {
-      "live": "{{time}} · Live",
-      "behindLive": "{{time}} · {{offset}} hinter Live"
+      "live": "● LIVE",
+      "behindLive": "−{{offset}} hinter Live"
     },
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",
