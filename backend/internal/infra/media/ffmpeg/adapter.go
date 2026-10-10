@@ -85,6 +85,10 @@ type LocalAdapter struct {
 	Logger                     zerolog.Logger
 	E2                         *enigma2.Client // Dependency for Tuner operations
 
+	// shadowReadFile replaces os.ReadFile when the shadow store mirrors a
+	// finalized file. Tests use it to count reads; nil means os.ReadFile.
+	shadowReadFile func(path string) ([]byte, error)
+
 	// LiveSources is where a SourceTuner transcode gets its bytes. It is the only
 	// sanctioned live input: with it absent, Start refuses a tuner source rather
 	// than resolving a receiver URL, so a misconfigured deployment fails loudly
