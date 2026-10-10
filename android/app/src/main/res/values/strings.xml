@@ -254,4 +254,6 @@
     <string name="settings_scan_start_failed">Failed to start scan.</string>
     <string name="settings_token_saved">API token saved successfully.</string>
     <string name="settings_message_generic">Settings updated successfully.</string>
+    <string name="player_behind_live_format">%1$d s behind live</string>
+    <string name="player_close">Close</string>
 </resources>
