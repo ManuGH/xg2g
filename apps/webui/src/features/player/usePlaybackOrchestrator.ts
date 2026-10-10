@@ -774,10 +774,11 @@ export function usePlaybackOrchestrator(
     }
 
     const activeVideoCodec = sessionPlaybackTrace?.targetProfile?.video?.codec?.toLowerCase();
+    const activeAudioCodec = sessionPlaybackTrace?.targetProfile?.audio?.codec?.toLowerCase();
     const isAlreadyAirPlayCompatible =
       activeHlsEngine === 'native' &&
       hasTicketedUrlRef.current &&
-      (playbackTargetRef.current === 'airplay' || activeVideoCodec === 'h264');
+      (playbackTargetRef.current === 'airplay' || (activeVideoCodec === 'h264' && activeAudioCodec === 'aac'));
 
     playbackTargetRef.current = 'airplay';
     if (!isAlreadyAirPlayCompatible && (Boolean(sessionIdRef.current || activeRecordingRef.current) || startIntentInFlight.current)) {

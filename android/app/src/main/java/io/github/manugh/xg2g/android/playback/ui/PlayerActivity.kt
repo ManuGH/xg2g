@@ -234,6 +234,28 @@ class PlayerActivity : AppCompatActivity() {
                 resetOsdTimeout()
             }
         })
+
+        seekBar.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                resetOsdTimeout()
+                if (event.action == KeyEvent.ACTION_UP) {
+                    val player = session.player
+                    val duration = player.duration.takeIf { it > 0 } ?: 1000L
+                    val targetMs = ((seekBar.progress.toDouble() / 1000.0) * duration).toLong()
+                    player.seekTo(targetMs)
+                }
+                false
+            } else if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) && event.action == KeyEvent.ACTION_UP) {
+                val player = session.player
+                val duration = player.duration.takeIf { it > 0 } ?: 1000L
+                val targetMs = ((seekBar.progress.toDouble() / 1000.0) * duration).toLong()
+                player.seekTo(targetMs)
+                resetOsdTimeout()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     private fun installBackHandler() {
