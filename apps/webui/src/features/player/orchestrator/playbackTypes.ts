@@ -107,6 +107,8 @@ export type PlaybackNormativeEvent =
       serviceRef?: string;
       recordingId?: string;
       srcUrl?: string;
+      /** Absolute recording playhead, including the current segment anchor. */
+      startOffsetMs?: number;
       explicitProfile?: PlaybackRequestProfile | 'auto' | string;
     }
   | {
@@ -221,6 +223,8 @@ export type PlaybackCommand =
       serviceRef?: string;
       recordingId?: string;
       srcUrl?: string;
+      /** Absolute recording playhead, including the current segment anchor. */
+      startOffsetMs?: number;
       explicitProfile?: PlaybackRequestProfile | 'auto' | string;
     }
   | {

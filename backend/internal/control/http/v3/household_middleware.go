@@ -52,6 +52,13 @@ func (s *Server) householdMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) resolveHouseholdProfile(r *http.Request) (household.Profile, household.AccessState, error) {
+	if profile, ok := r.Context().Value(recordingTicketProfileKey{}).(household.Profile); ok {
+		// A verified recording media ticket already carries an authorized profile.
+		// Receiver requests cannot supply browser PIN cookies or profile headers.
+		return household.CloneProfile(profile), household.AccessState{
+			PinConfigured: s.GetConfig().Household.PinConfigured(),
+		}, nil
+	}
 	service := s.householdServiceSnapshot()
 	headerValue := strings.TrimSpace(r.Header.Get(household.ProfileHeader))
 	explicitHeader := headerValue != ""

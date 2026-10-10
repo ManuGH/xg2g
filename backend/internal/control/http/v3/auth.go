@@ -48,7 +48,8 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		// in this path. Checked before anything else because a ticket is not a
 		// token and must never be fed to the token pipeline.
 		if principal, ok := s.playbackTicketPrincipal(r); ok {
-			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+			ctx := s.recordingTicketContext(r)
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(ctx, principal)))
 			return
 		}
 

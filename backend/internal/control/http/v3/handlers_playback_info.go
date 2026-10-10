@@ -100,6 +100,13 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 		return
 	}
 
+	if schemaType != "live" && caps != nil && caps.PreferredHlsEngine != nil && *caps.PreferredHlsEngine == "native" {
+		if err := s.ticketRecordingPlaybackInfo(r, recordingId, &dto); err != nil {
+			writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Playback Ticket Unavailable", problemcode.CodeInternalError, "The recording playback ticket could not be issued", nil)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store, private")
+	}
 	w.Header().Set("Content-Type", "application/json")
 	openApiDto := mapPlaybackInfoToOpenAPI(dto)
 	_ = json.NewEncoder(w).Encode(openApiDto)

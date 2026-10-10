@@ -72,8 +72,27 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 		return
 	}
 
+	// Ticket rewriting changes representation length. Materialize file-backed
+	// playlists before writing headers, including for HEAD, so both methods agree.
+	if ticket := s.recordingMediaTicket(r, recordingId); ticket != "" {
+		data := artifact.Data
+		if data == nil && artifact.AbsPath != "" {
+			var err error
+			data, err = os.ReadFile(artifact.AbsPath)
+			if err != nil {
+				RespondError(w, r, http.StatusInternalServerError, ErrInternalServer, "read playlist failed")
+				return
+			}
+		}
+		artifact.Data = rewriteRecordingPlaylistTicket(data, recordingId, ticket)
+		artifact.AbsPath = ""
+	}
+
 	// Apply SSOT Headers
 	xg2ghttp.WriteHLSPlaylistHeaders(w, artifact.ModTime)
+	if s.recordingMediaTicket(r, recordingId) != "" {
+		w.Header().Set("Cache-Control", "no-store, private")
+	}
 
 	// Some TV/WebView clients send benign Range probes for playlists even though
 	// HLS manifests are not byte-range resources. Serve the full playlist and

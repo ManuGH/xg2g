@@ -10,7 +10,7 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph, PictureModeGlyph } from './playerControlGlyphs';
+import { AirPlayGlyph, ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph, PictureModeGlyph } from './playerControlGlyphs';
 
 const PICTURE_MODE_STORAGE_KEY = 'xg2g.player.pictureMode';
 export type PictureMode = 'natural' | 'vivid' | 'cinema';
@@ -477,6 +477,21 @@ export function V3PlayerView({
                   </div>
                 );
               })()}
+
+              {viewState.showAirPlayButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  active={viewState.airPlayActive}
+                  onClick={() => actions.toggleAirPlay()}
+                  title={viewState.airPlayTitle}
+                  aria-label={viewState.airPlayLabel}
+                  aria-pressed={viewState.airPlayActive}
+                >
+                  <AirPlayGlyph />
+                  <span className="sr-only">{viewState.airPlayLabel}</span>
+                </Button>
+              )}
 
               {viewState.showPipButton && (
                 <Button

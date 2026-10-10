@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -37,14 +38,14 @@ import (
 // So playback gets its own credential class, deliberately weaker and
 // deliberately narrower than the API credential:
 //
-//   - It names exactly one session. A ticket for session A is refused for
-//     session B, and it dies when that session does.
+//   - It names exactly one live session or recording. Live tickets die with
+//     their session; recording tickets authenticate only that recording media.
 //   - It carries read scope only, and it is accepted **solely** on media routes.
 //     Presenting it to any API endpoint authenticates nothing.
-//   - It travels as a cookie scoped to that one session's HLS path, so it is
-//     never attached to another request — and never appears in a URL.
+//   - Native clients can use a path-scoped cookie. AirPlay receivers use an
+//     opaque query credential, propagated only to the same resource media.
 //
-// This does not weaken the existing rule that media requires a cookie. It
+// Ordinary media authentication still requires a session cookie. It
 // extends who may mint one: previously only a browser login could, which is why
 // the Android client ended up borrowing its WebView's cookie, and why a native
 // client with no WebView could not play at all.
@@ -56,9 +57,11 @@ const playbackTicketCookieName = "xg2g_playback"
 const playbackTicketTTL = 4 * time.Hour
 
 type playbackTicket struct {
-	sessionID string
-	principal string
-	expiresAt time.Time
+	sessionID   string
+	recordingID string
+	profile     *household.Profile
+	principal   string
+	expiresAt   time.Time
 }
 
 // playbackTicketStore keeps tickets in process memory.
@@ -76,6 +79,10 @@ func newPlaybackTicketStore() *playbackTicketStore {
 }
 
 func (p *playbackTicketStore) issue(sessionID, principal string, now time.Time) (string, error) {
+	return p.issueResource(playbackTicket{sessionID: sessionID, principal: principal}, now)
+}
+
+func (p *playbackTicketStore) issueResource(resource playbackTicket, now time.Time) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -93,11 +100,8 @@ func (p *playbackTicketStore) issue(sessionID, principal string, now time.Time) 
 		}
 	}
 
-	p.tickets[id] = playbackTicket{
-		sessionID: sessionID,
-		principal: principal,
-		expiresAt: now.Add(playbackTicketTTL),
-	}
+	resource.expiresAt = now.Add(playbackTicketTTL)
+	p.tickets[id] = resource
 	return id, nil
 }
 
@@ -151,6 +155,13 @@ func (s *Server) playbackTicketStoreOrDefault() *playbackTicketStore {
 	return s.playbackTickets
 }
 
+// playbackTicketRequestAllowed shares the issuance transport policy across
+// live sessions and recording playback-info responses.
+func (s *Server) playbackTicketRequestAllowed(r *http.Request) bool {
+	cfg := s.GetConfig()
+	return s.requestIsHTTPS(r) || cfg.Connectivity.AllowLocalHTTP || cfg.Connectivity.Profile == "lan" || cfg.Connectivity.Profile == "development" || requestRemoteIsPrivateOrLoopback(r)
+}
+
 // IssuePlaybackTicket handles POST /api/v3/sessions/{sessionID}/playback-ticket
 //
 // Authenticated with the caller's ordinary API credential — for a native client
@@ -173,8 +184,7 @@ func (s *Server) IssuePlaybackTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	effectiveHTTPS := s.requestIsHTTPS(r)
-	allowLocalHTTP := s.GetConfig().Connectivity.AllowLocalHTTP || s.GetConfig().Connectivity.Profile == "lan" || s.GetConfig().Connectivity.Profile == "development" || requestRemoteIsPrivateOrLoopback(r)
-	if !effectiveHTTPS && !allowLocalHTTP {
+	if !s.playbackTicketRequestAllowed(r) {
 		// A media credential must not be handed out in clear text over public internet. Loopback, private LAN/VPN and local profiles are exempt.
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "HTTPS Required", problemcode.CodeInvalidInput, "A playback ticket is only issued over HTTPS", nil)
 		return
@@ -248,7 +258,7 @@ func extractPlaybackTicket(r *http.Request) string {
 // falls through to ordinary authentication, so a browser session keeps working
 // exactly as before.
 func (s *Server) playbackTicketPrincipal(r *http.Request) (*auth.Principal, bool) {
-	if r == nil || !isMediaRequest(r) {
+	if r == nil || (r.Method != http.MethodGet && r.Method != http.MethodHead) || !isMediaRequest(r) {
 		return nil, false
 	}
 
@@ -260,6 +270,14 @@ func (s *Server) playbackTicketPrincipal(r *http.Request) (*auth.Principal, bool
 	ticket, ok := s.playbackTicketStoreOrDefault().resolve(ticketVal, time.Now().UTC())
 	if !ok {
 		return nil, false
+	}
+
+	if ticket.recordingID != "" {
+		requested := recordingIDFromMediaPath(r.URL.Path)
+		if requested == "" || subtle.ConstantTimeCompare([]byte(requested), []byte(ticket.recordingID)) != 1 {
+			return nil, false
+		}
+		return auth.NewPrincipal(ticketVal, ticket.principal, []string{string(ScopeV3Read)}), true
 	}
 
 	// The session in the path is attacker-controlled, so this comparison is the
