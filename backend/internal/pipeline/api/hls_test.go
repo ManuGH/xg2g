@@ -1290,7 +1290,7 @@ stream_1.m3u8
 	out := render(live, masterContent)
 	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=13728000,AVERAGE-BANDWIDTH=8320000,RESOLUTION=1280x720,")
 	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=53328000,AVERAGE-BANDWIDTH=32320000,RESOLUTION=1280x720,")
-	assert.Contains(t, `AUDIO="group_audio"`, out)
+	assert.Contains(t, out, `AUDIO="group_audio"`)
 
 	copied := live
 	copied.TranscodeVideo = false
