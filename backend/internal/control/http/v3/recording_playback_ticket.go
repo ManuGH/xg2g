@@ -75,12 +75,17 @@ func (s *Server) ticketRecordingPlaybackInfo(r *http.Request, recordingID string
 	return nil
 }
 
+type recordingTicketProfileKey struct{}
+
 func (s *Server) recordingTicketContext(r *http.Request) context.Context {
 	ctx := r.Context()
 	ticket, ok := s.playbackTicketStoreOrDefault().resolve(extractPlaybackTicket(r), time.Now().UTC())
 	if ok && ticket.recordingID != "" && ticket.profile != nil {
 		profile := household.CloneProfile(*ticket.profile)
-		return household.WithProfile(ctx, &profile)
+		ctx = household.WithProfile(ctx, &profile)
+		// Authentication sets this marker only after media/resource validation.
+		// Household middleware must retain the profile authorized at issuance.
+		return context.WithValue(ctx, recordingTicketProfileKey{}, profile)
 	}
 	return ctx
 }

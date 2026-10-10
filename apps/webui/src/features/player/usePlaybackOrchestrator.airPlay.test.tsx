@@ -138,6 +138,22 @@ describe.each([false, true])('AirPlay orchestration (StrictMode=%s)', (strict) =
     await waitFor(() => expect(recordingInfo).toHaveBeenCalledTimes(2));
     expect(recordingInfo.mock.calls[1]![0].query).toEqual({ start_ms: 132000 });
   });
+  it('does not add the HLS anchor to the absolute direct MP4 playhead', async () => {
+    const data = recordingContract('ac3');
+    data.mode = 'direct_mp4';
+    data.url = `/api/v3/recordings/rec-test/stream.mp4?ticket=${ticket}`;
+    data.decision.selectedOutputUrl = data.url;
+    data.decision.selectedOutputKind = 'file';
+    data.decision.mode = 'direct_play';
+    recordingInfo.mockResolvedValueOnce({ data, response: { status: 200 } });
+    mount({ recordingId: 'rec-test' });
+    act(() => latest.actions.startStream());
+    await waitFor(() => expect(video.getAttribute('src')).toBeTruthy());
+    video.currentTime = 250;
+    act(() => route(true));
+    await waitFor(() => expect(recordingInfo).toHaveBeenCalledTimes(2));
+    expect(recordingInfo.mock.calls[1]![0].query).toEqual({ start_ms: 250000 });
+  });
   it('does not attach a ticket response arriving after unmount', async () => {
     let resolveTicket!: (value: unknown) => void;
     const pending = new Promise(resolve => { resolveTicket = resolve; });

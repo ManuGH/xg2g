@@ -776,7 +776,9 @@ export function usePlaybackOrchestrator(
         recordingId: recordingId || undefined,
         srcUrl: src || undefined,
         explicitProfile: 'compatible',
-        startOffsetMs: recordingId ? Math.round((anchorStartSec + (videoRef.current?.currentTime ?? 0)) * 1000) : undefined,
+        startOffsetMs: recordingId
+          ? Math.round(((vodStreamMode === 'direct_mp4' ? 0 : anchorStartSec) + (videoRef.current?.currentTime ?? 0)) * 1000)
+          : undefined,
       });
     }
   }, [anchorStartSec, videoRef, vodStreamMode, activeHlsEngine, allocatePlaybackEpoch, dispatchPlayback, recordingId, sRef, sessionIdRef, sessionPlaybackTrace, src]);

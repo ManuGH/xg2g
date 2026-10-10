@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
@@ -92,10 +93,13 @@ func TestRecordingPlaybackTicket_RewriteConfinesCredentials(t *testing.T) {
 }
 
 func TestRecordingPlaybackTicket_CookieFreePlaylistAndSegments(t *testing.T) {
+	pinHash, err := household.HashPIN("1234")
+	require.NoError(t, err)
 	for _, fileBacked := range []bool{false, true} {
 		t.Run(strconv.FormatBool(fileBacked), func(t *testing.T) {
 			resolver := new(MockArtifactResolver)
-			s := &Server{artifacts: resolver}
+			s := NewServer(config.AppConfig{Household: config.HouseholdConfig{PinHash: pinHash}}, nil, nil)
+			s.artifacts = resolver
 			id := "rec-a"
 			ticket := issueRecordingTicketForTest(t, s, id)
 			dir := t.TempDir()
@@ -107,7 +111,8 @@ func TestRecordingPlaybackTicket_CookieFreePlaylistAndSegments(t *testing.T) {
 				require.NoError(t, os.WriteFile(artifact.AbsPath, []byte(manifest), 0600))
 			}
 			resolver.On("ResolvePlaylist", mock.Anything, id, "", "", mock.Anything).Return(artifact, (*artifacts.ArtifactError)(nil))
-			handler := s.authMiddlewareImpl(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.GetRecordingHLSPlaylist(w, r, id) }))
+			handler, err := NewHandler(s, s.GetConfig())
+			require.NoError(t, err)
 			get := httptest.NewRecorder()
 			handler.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "https://media.invalid/api/v3/recordings/rec-a/playlist.m3u8?ticket="+ticket, nil))
 			require.Equal(t, http.StatusOK, get.Code, get.Body.String())
@@ -116,7 +121,7 @@ func TestRecordingPlaybackTicket_CookieFreePlaylistAndSegments(t *testing.T) {
 			require.Equal(t, strconv.Itoa(get.Body.Len()), get.Header().Get("Content-Length"))
 			require.Equal(t, "no-store, private", get.Header().Get("Cache-Control"))
 			head := httptest.NewRecorder()
-			s.authMiddlewareImpl(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.GetRecordingHLSPlaylistHead(w, r, id) })).ServeHTTP(head,
+			handler.ServeHTTP(head,
 				httptest.NewRequest(http.MethodHead, "https://media.invalid/api/v3/recordings/rec-a/playlist.m3u8?ticket="+ticket, nil))
 			require.Equal(t, http.StatusOK, head.Code)
 			require.Empty(t, head.Body.String())
@@ -126,7 +131,7 @@ func TestRecordingPlaybackTicket_CookieFreePlaylistAndSegments(t *testing.T) {
 				require.NoError(t, os.WriteFile(segmentPath, []byte("media bytes"), 0600))
 				resolver.On("ResolveSegment", mock.Anything, id, file, "").Return(artifacts.ArtifactOK{AbsPath: segmentPath, Kind: artifacts.ArtifactKindSegmentFMP4}, (*artifacts.ArtifactError)(nil))
 				w := httptest.NewRecorder()
-				s.authMiddlewareImpl(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.GetRecordingHLSCustomSegment(w, r, id, file) })).ServeHTTP(w,
+				handler.ServeHTTP(w,
 					httptest.NewRequest(http.MethodGet, "https://media.invalid/api/v3/recordings/rec-a/"+file+"?ticket="+ticket, nil))
 				require.Equal(t, http.StatusOK, w.Code)
 				require.Equal(t, "media bytes", w.Body.String())
@@ -140,3 +145,33 @@ func TestRecordingPlaybackTicket_CookieFreePlaylistAndSegments(t *testing.T) {
 	}
 }
 func ptrProfile(profile household.Profile) *household.Profile { return &profile }
+
+func TestRecordingPlaybackTicket_HouseholdProfileCannotEscalate(t *testing.T) {
+	pinHash, err := household.HashPIN("1234")
+	require.NoError(t, err)
+	s := NewServer(config.AppConfig{Household: config.HouseholdConfig{PinHash: pinHash}}, nil, nil)
+	handler, err := NewHandler(s, s.GetConfig())
+	require.NoError(t, err)
+	profile := household.CreateRestrictedProfile()
+	ticket, err := s.playbackTicketStoreOrDefault().issueResource(playbackTicket{
+		recordingID: "rec-a", principal: "usr_test", profile: &profile,
+	}, time.Now())
+	require.NoError(t, err)
+	r := httptest.NewRequest(http.MethodGet, "https://media.invalid/api/v3/recordings/rec-a/playlist.m3u8?ticket="+ticket, nil)
+	r.Header.Set(household.ProfileHeader, household.DefaultProfileID)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "household/dvr_playback_forbidden")
+
+	adultTicket := issueRecordingTicketForTest(t, s, "rec-a")
+	for _, endpoint := range []string{
+		"/api/v3/recordings/rec-a/playlist.m3u8", // no credential
+		"/api/v3/recordings/rec-b/playlist.m3u8?ticket=" + adultTicket,
+		"/api/v3/recordings/rec-a/resume?ticket=" + adultTicket,
+	} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "https://media.invalid"+endpoint, nil))
+		require.Equal(t, http.StatusUnauthorized, w.Code, endpoint)
+	}
+}

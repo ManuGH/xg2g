@@ -31,12 +31,14 @@ audio, playlist traffic and session identity. Test unavailable receivers and exp
 
 - Browser regression suite exercises StrictMode off/on, picker failure/cancel,
   native live and recording handoff, direct MP4 handoff, AAC conversion with
-  a nonzero recording anchor, missing tickets, and late answers after unmount.
+  a nonzero recording anchor, absolute direct MP4 restart position, missing
+  tickets, and late answers after unmount.
 - Re-running that suite with the original AirPlay orchestrator is a negative
   control; disabling recording ticket authentication fails the cookie-free
   playlist authentication case. Logs are kept outside the public repository.
 - Cookie-free recording handler tests fetch both in-memory and file-backed
-  playlists, init files and segments. GET/HEAD representation lengths agree.
+  playlists, init files and segments through the canonical middleware stack
+  with a household PIN enabled. GET/HEAD representation lengths agree.
   Credentials are never propagated to another recording or host. Recording
   API routes and non-read HTTP methods reject media tickets.
 - Existing controller executor and parent/child-effect lifecycle tests remain
