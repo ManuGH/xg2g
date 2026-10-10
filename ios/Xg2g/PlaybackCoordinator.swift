@@ -15,6 +15,20 @@ struct LiveStream: Equatable, Sendable {
     let playlistURL: URL
     /// Name, value and path of the playback ticket cookie.
     let ticket: PlaybackTicket
+
+    /// AirPlay-safe HLS URL carrying the ticket as query parameter so independent
+    /// external receivers (Apple TV) can authenticate without client-side cookies.
+    var authenticatedURL: URL {
+        guard var components = URLComponents(url: playlistURL, resolvingAgainstBaseURL: false) else {
+            return playlistURL
+        }
+        var queryItems = components.queryItems ?? []
+        if !queryItems.contains(where: { $0.name == "ticket" || $0.name == "t" }) {
+            queryItems.append(URLQueryItem(name: "ticket", value: ticket.value))
+        }
+        components.queryItems = queryItems
+        return components.url ?? playlistURL
+    }
 }
 
 struct PlaybackTicket: Equatable, Sendable {
@@ -262,6 +276,9 @@ actor PlaybackCoordinator {
     /// The playlist lives under the API base like any other resource, so it is
     /// built the same way and checked against the same containment boundary.
     private func playlistURL(for sessionID: String) -> URL? {
+        if DemoServer.isDemoAddress(address) {
+            return DemoServer.appleBipBopHLSURL
+        }
         let url = address.apiBaseURL.appendingPathComponent("sessions/\(sessionID)/hls/index.m3u8")
         guard address.apiScope.contains(url) else { return nil }
         return url

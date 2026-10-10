@@ -430,7 +430,7 @@ struct ServerSetupView: View {
                 }
 
                 VStack(spacing: 16) {
-                    TextField("tv.example or xg2g.home.matrixcentral.de", text: $typed)
+                    TextField("tv.example.com or 192.168.1.50:8088", text: $typed)
                         .padding()
                         .background(Theme.Colors.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -445,6 +445,7 @@ struct ServerSetupView: View {
                         .submitLabel(.go)
                         .onSubmit { connect() }
 
+                    #if DEBUG
                     HStack(spacing: 8) {
                         Button {
                             typed = "xg2g.home.matrixcentral.de"
@@ -456,6 +457,7 @@ struct ServerSetupView: View {
                         .buttonStyle(.bordered)
                         .tint(Theme.Colors.accentAction)
                     }
+                    #endif
 
                     if let error = model.lastError {
                         Text(error)
@@ -474,6 +476,18 @@ struct ServerSetupView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.Colors.accentAction)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Button {
+                        Task { await model.startDemoMode() }
+                    } label: {
+                        Label("Try Demo Mode", systemImage: "play.tv")
+                            .font(.subheadline.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.Colors.textSecondary)
+                    .accessibilityIdentifier("tryDemoModeButton")
                 }
                 .frame(maxWidth: 420)
 

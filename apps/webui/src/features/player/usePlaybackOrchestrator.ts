@@ -1493,9 +1493,32 @@ export function usePlaybackOrchestrator(
           setTraceId(readySession.requestId);
         }
 
-        const streamUrl = readySession.playbackUrl;
+        let streamUrl = readySession.playbackUrl;
         if (!streamUrl) {
           throw new Error(t('player.streamUrlMissing'));
+        }
+
+        // AirPlay & External Player Support: Mint a short-lived playback ticket and append to HLS URL
+        // so external AirPlay receivers (e.g. Apple TV) can authenticate without client browser cookies.
+        if (readySession.sessionId && authHeadersRef.current) {
+          try {
+            const ticketRes = await fetch(`${apiBase}/sessions/${readySession.sessionId}/playback-ticket`, {
+              method: 'POST',
+              headers: authHeadersRef.current(false),
+              credentials: 'same-origin',
+            });
+            if (ticketRes.ok) {
+              const ticketData = (await ticketRes.json()) as { ticket?: string };
+              if (ticketData?.ticket) {
+                const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+                const urlObj = new URL(streamUrl, origin);
+                urlObj.searchParams.set('ticket', ticketData.ticket);
+                streamUrl = urlObj.pathname + urlObj.search;
+              }
+            }
+          } catch {
+            // Best-effort ticket enhancement; falls back cleanly to session cookie auth
+          }
         }
 
         const normalizedMode = (readySession.mode as VodStreamMode) ?? 'LIVE';
