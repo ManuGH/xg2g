@@ -108,16 +108,9 @@
   max-height: 100%;
   display: block;
   object-fit: contain;
-  object-position: center top;
+  object-position: center center;
   background: var(--bg-video-stage);
   transition: opacity 220ms ease, filter 200ms ease;
-}
-
-@media (orientation: landscape) and (max-aspect-ratio: 16/9) {
-  .container.overlay:not(.surfaceCompact) .videoElement {
-    object-fit: cover;
-    object-position: center center;
-  }
 }
 
 .videoElementHidden {
