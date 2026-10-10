@@ -131,6 +131,8 @@ struct OfflinePlayerScreen: View {
             audioSession.activate(for: sessionToken)
             let localURL = offlineRecording.localFileURL()
             let player = AVPlayer(url: localURL)
+            player.allowsExternalPlayback = true
+            player.usesExternalPlaybackWhileExternalScreenIsActive = true
             self.player = player
             player.play()
             scheduleControlsHiding()

@@ -64,7 +64,7 @@ enum PlayerAssetLoader {
             ]
         }
 
-        let asset = AVURLAsset(url: stream.playlistURL, options: options)
+        let asset = AVURLAsset(url: stream.authenticatedURL, options: options)
         let item = AVPlayerItem(asset: asset)
         item.automaticallyPreservesTimeOffsetFromLive = true
         item.preferredForwardBufferDuration = 4.0

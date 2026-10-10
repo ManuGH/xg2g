@@ -202,8 +202,15 @@ final class AppModel {
     private var revokeCoordinator: RevokeCoordinator?
     private var api: (any APIClient)?
 
+    var isDemoMode: Bool {
+        DemoServer.isDemoAddress(address)
+    }
+
     var serverURLString: String {
-        address?.rootURL.absoluteString ?? "–"
+        if isDemoMode {
+            return DemoServer.displayAddress
+        }
+        return address?.rootURL.absoluteString ?? "–"
     }
 
     /// The configured deployment, for the views that hand it to the transport.
@@ -487,7 +494,10 @@ final class AppModel {
 
     /// The v3 Ingest Live Stream URL for a service reference.
     func liveStreamURL(for serviceRef: String) -> URL? {
-        media?.liveStream(serviceRef: serviceRef)
+        if isDemoMode {
+            return DemoServer.demoHLSStreamURL(forServiceRef: serviceRef)
+        }
+        return media?.liveStream(serviceRef: serviceRef)
     }
 
     /// A client identity for the preparation endpoints.
@@ -512,7 +522,7 @@ final class AppModel {
     /// `nil` without one: preparation runs against xg2g, so the direct receiver route
     /// has nothing to prepare and the player falls back to starting a channel outright.
     func makeZapPreparationClient() -> ZapPreparationClient? {
-        guard let api else { return nil }
+        guard let api, !isDemoMode else { return nil }
         return ZapPreparationClient(api: api, clientID: Self.zapClientID)
     }
 
@@ -521,7 +531,7 @@ final class AppModel {
     /// Same identity as the preparation client, so the server can put a client's
     /// telemetry next to the channel changes it made.
     func makePlaybackTelemetryClient() -> HTTPPlaybackTelemetrySink? {
-        guard let api else { return nil }
+        guard let api, !isDemoMode else { return nil }
         return HTTPPlaybackTelemetrySink(api: api, clientID: Self.zapClientID)
     }
 
@@ -971,6 +981,14 @@ final class AppModel {
             state = .needsServer
             return
         }
+
+        if DemoServer.isDemoAddress(stored) {
+            configureDemoMode()
+            state = .ready
+            await loadInitialData()
+            return
+        }
+
         configure(with: stored)
 
         guard let identity,
@@ -986,9 +1004,41 @@ final class AppModel {
 
     // MARK: - Setup
 
+    /// Enters built-in demonstration mode with official Apple HLS streams and synthetic EPG/DVR catalog.
+    func startDemoMode() async {
+        setError(nil)
+        let demoAddress = DemoServer.demoServerAddress
+        addressStore.save(demoAddress)
+        configureDemoMode()
+        await loadInitialData()
+        state = .ready
+    }
+
+    private func configureDemoMode() {
+        let demoAddress = DemoServer.demoServerAddress
+        let identity = ServerIdentity.address(demoAddress)
+        self.address = demoAddress
+        self.identity = identity
+        self.session = nil
+        self.enrollment = nil
+        self.revokeCoordinator = nil
+
+        let demoAPI = DemoAPIClient()
+        self.api = demoAPI
+        self.channelRepository = ChannelRepository(api: demoAPI, baseURL: demoAddress.rootURL)
+        self.recordingsRepository = RecordingsRepository(api: demoAPI)
+        self.timersRepository = TimersRepository(api: demoAPI)
+        self.playback = PlaybackCoordinator(address: demoAddress, api: demoAPI)
+    }
+
     /// Accepts what a human typed. This is the one place lenient parsing is
     /// allowed; everything downstream deals in a parsed address.
     func useServer(_ typed: String) async {
+        if DemoServer.isDemoInput(typed) {
+            await startDemoMode()
+            return
+        }
+
         guard let parsed = try? ServerAddressParser.parseUserEntered(typed) else {
             setError(UserFacingError(
                 title: LocalizedStringResource("Request Failed"),
@@ -1553,17 +1603,22 @@ final class AppModel {
     // MARK: - Revoke / Sign Out
 
     func disconnectServer() async {
-        guard let revokeCoordinator else { return }
-        do {
-            try await revokeCoordinator.revokeThisDevice(destroyingDeviceKey: true)
-        } catch {
-            // Even if remote revoke failed, clear local state on explicit sign out
-            if let identity {
-                try? await credentials.forgetServer(identity)
+        if let revokeCoordinator {
+            do {
+                try await revokeCoordinator.revokeThisDevice(destroyingDeviceKey: true)
+            } catch {
+                // Even if remote revoke failed, clear local state on explicit sign out
+                if let identity {
+                    try? await credentials.forgetServer(identity)
+                }
+                try? await keyStore.destroyKey()
             }
-            try? await keyStore.destroyKey()
         }
+        await playbackManager.stop()
         addressStore.clear()
+        address = nil
+        identity = nil
+        api = nil
         state = .needsServer
         channels = []
         bouquets = []

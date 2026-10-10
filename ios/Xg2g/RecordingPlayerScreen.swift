@@ -437,6 +437,8 @@ struct RecordingPlayerScreen: View {
 
             let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: serverAddress.rootURL, extraHeaders: extraHeaders)
             let p = AVPlayer(playerItem: item)
+            p.allowsExternalPlayback = true
+            p.usesExternalPlaybackWhileExternalScreenIsActive = true
 
             await MainActor.run {
                 guard self.activeManager?.activeRecordingSessionToken == token else {

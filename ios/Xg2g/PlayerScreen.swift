@@ -671,7 +671,7 @@ struct PlayerScreen: View {
             ]
         }
 
-        let asset = AVURLAsset(url: stream.playlistURL, options: options)
+        let asset = AVURLAsset(url: stream.authenticatedURL, options: options)
         let item = AVPlayerItem(asset: asset)
         // Maintain user's timeshift position when seeking, pausing, or transitioning to fullscreen
         item.automaticallyPreservesTimeOffsetFromLive = true

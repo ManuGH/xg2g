@@ -1,0 +1,112 @@
+name: Client Apps Release (iOS, tvOS, Android & Fire TV)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional GitHub Release tag (e.g. v3.12.0) to attach app packages to. Leave empty to only build artifacts."
+        required: false
+        type: string
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build-apple:
+    name: Build Apple Apps (iOS & tvOS)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+      - name: Select latest Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Resolve target release tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            echo "tag=${{ inputs.release_tag }}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tag=" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build iOS & tvOS IPA packages
+        run: |
+          chmod +x ios/scripts/build-ipa.sh
+          if [[ -n "${{ steps.tag.outputs.tag }}" ]]; then
+            ./ios/scripts/build-ipa.sh --platform all --publish-release "${{ steps.tag.outputs.tag }}"
+          else
+            ./ios/scripts/build-ipa.sh --platform all
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Apple Artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: xg2g-apple-apps
+          path: |
+            ios/build/ipa/*.ipa
+            ios/build/ipa/*.sha256
+            ios/build/ipa/altstore-source.json
+          if-no-files-found: error
+          retention-days: 30
+
+  build-android:
+    name: Build Android Apps (Phone, Tablet, Android TV & Fire TV)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@8df1039566374f2367bea3f364e694208a980755 # v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "gradle"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@4905cf6cd3d1b6a38f3223f6e1f061329a67a80a # v3
+
+      - name: Resolve target release tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            echo "tag=${{ inputs.release_tag }}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tag=" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build Android & Fire TV APK packages
+        run: |
+          chmod +x android/scripts/build-apk.sh
+          if [[ -n "${{ steps.tag.outputs.tag }}" ]]; then
+            ./android/scripts/build-apk.sh --publish-release "${{ steps.tag.outputs.tag }}"
+          else
+            ./android/scripts/build-apk.sh
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: xg2g-android-apps
+          path: |
+            android/build/apk/*.apk
+            android/build/apk/*.sha256
+          if-no-files-found: error
+          retention-days: 30

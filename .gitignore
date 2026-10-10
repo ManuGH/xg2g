@@ -178,6 +178,13 @@ red/
 # Rust build output. Cargo.lock is committed; target/ never is.
 /media-core/target/
 
+# iOS and Android local build/archive/package outputs
+/ios/build/
+/android/build/
+*.ipa
+*.apk
+*.xcarchive
+
 # Agent session artifacts (plans and walkthroughs belong in the PR, not the repo root)
 /walkthrough.md
 /implementation_plan.md

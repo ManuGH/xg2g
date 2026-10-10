@@ -381,6 +381,42 @@ struct SettingsView: View {
                                     .foregroundStyle(Theme.Colors.textSecondary)
                             }
                         }
+
+                        NavigationLink {
+                            PrivacyPolicyView()
+                        } label: {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "hand.raised.fill", backgroundColor: Color.blue)
+                                Text("Privacy Policy")
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                            }
+                        }
+
+                        #if !os(tvOS)
+                        if let supportURL = URL(string: "https://github.com/ManuGH/xg2g/issues") {
+                            Link(destination: supportURL) {
+                                HStack(spacing: 12) {
+                                    SettingsIconBadge(systemName: "questionmark.circle.fill", backgroundColor: Color.indigo)
+                                    Text("Support & Documentation")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.footnote)
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                }
+                            }
+                        }
+                        #else
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "questionmark.circle.fill", backgroundColor: Color.indigo)
+                            Text("Support & Documentation")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            Text("github.com/ManuGH/xg2g")
+                                .font(.subheadline.monospaced())
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        #endif
                     } header: {
                         Text("About xg2g")
                             .foregroundStyle(Theme.Colors.textTertiary)
@@ -394,7 +430,7 @@ struct SettingsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "rectangle.portrait.and.arrow.right", backgroundColor: Theme.Colors.statusError)
-                                Text("Disconnect & Sign Out Device")
+                                Text(model.isDemoMode ? "Exit Demo Mode" : "Disconnect & Sign Out Device")
                                     .foregroundStyle(Theme.Colors.statusError)
                                     .fontWeight(.medium)
                                 Spacer()
@@ -560,3 +596,81 @@ struct PlaybackEngineComparison: View {
         }
     }
 }
+
+/// Built-in privacy policy summary view accessible on iOS, iPadOS, and tvOS.
+struct PrivacyPolicyView: View {
+
+    var body: some View {
+        List {
+            Section {
+                Text("xg2g is a self-hosted personal TV client for your own Enigma2 receiver and xg2g gateway. It does not collect, track, or sell any personal data.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            } header: {
+                Text("Overview")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .listRowBackground(Theme.Colors.surfaceElevated)
+
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("No Analytics or Tracking")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text("The app contains zero third-party analytics SDKs, advertising frameworks, or crash-reporting trackers.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Direct Local & Self-Hosted Communication")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text("All network connections occur strictly between your Apple device and the xg2g server address you configure (or Apple's public sample HLS streams when using Demo Mode).")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("On-Device Credentials (Secure Enclave)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text("Device pairing uses RFC 9449 DPoP hardware-bound cryptographic keys stored in the Apple Keychain / Secure Enclave and local preferences in UserDefaults. You can revoke and erase them at any time via 'Disconnect & Sign Out Device'.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+            } header: {
+                Text("Data Handling")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .listRowBackground(Theme.Colors.surfaceElevated)
+
+            #if !os(tvOS)
+            if let policyURL = URL(string: "https://github.com/ManuGH/xg2g/blob/main/docs/PRIVACY_POLICY_IOS.md") {
+                Section {
+                    Link(destination: policyURL) {
+                        HStack {
+                            Text("View Full Privacy Policy Online")
+                                .foregroundStyle(Theme.Colors.accentAction)
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                    }
+                }
+                .listRowBackground(Theme.Colors.surfaceElevated)
+            }
+            #endif
+        }
+        #if !os(tvOS)
+        .scrollContentBackground(.hidden)
+        #endif
+        .background(Theme.Colors.bgBase.ignoresSafeArea())
+        .navigationTitle("Privacy Policy")
+        #if !os(tvOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+

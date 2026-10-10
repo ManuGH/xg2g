@@ -523,6 +523,28 @@ public struct TestTSPlayerScreen: View {
                 break
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
+            checkAirPlayRouteAndHandover()
+        }
+    }
+
+    private func checkAirPlayRouteAndHandover() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let hasAirPlay = outputs.contains(where: { $0.portType == .airPlay })
+        if hasAirPlay {
+            if model?.isDemoMode == true {
+                if engineMode != .timeshiftHLS {
+                    let serviceRef = URL(string: streamURLString)?.lastPathComponent ?? streamURLString
+                    startDemoHLSPlayback(for: serviceRef)
+                }
+            } else if engineMode == .nativeDirectLive {
+                displayZapToast(String(localized: "AirPlay aktiv: Video-Stream starten…"))
+                enterTimeshift(seekBackSeconds: 0, autoPlay: true)
+            }
+        } else if engineMode == .timeshiftHLS && timeshiftOffsetSeconds == 0 && !isTimeshiftLoading {
+            // When AirPlay route disconnects and we are at live edge, return to ultra-low latency direct live
+            jumpToLiveEdge()
+        }
     }
 
     // MARK: - Video Overlay Controls (Portrait & Landscape)
@@ -1357,9 +1379,30 @@ public struct TestTSPlayerScreen: View {
         }
     }
 
+    private func startDemoHLSPlayback(for serviceRef: String) {
+        teardownTimeshift()
+        engineMode = .timeshiftHLS
+        let hlsURL = DemoServer.demoHLSStreamURL(forServiceRef: serviceRef)
+        let player = AVPlayer(url: hlsURL)
+        player.automaticallyWaitsToMinimizeStalling = true
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        self.timeshiftPlayer = player
+        self.attachTimeshiftObserver(player: player)
+        player.play()
+        isStreaming = true
+        isPlaying = true
+        announceNowPlaying()
+    }
+
     private func startCurrentPreset() {
         let requestedAt = CACurrentMediaTime()
         let serviceRef = URL(string: streamURLString)?.lastPathComponent ?? streamURLString
+
+        if model?.isDemoMode == true {
+            startDemoHLSPlayback(for: serviceRef)
+            return
+        }
 
         // If the coordinator is already playing THIS EXACT channel (e.g. re-attaching from miniplayer),
         // we attach to the existing stream without re-tuning or interrupting audio.
@@ -1411,6 +1454,11 @@ public struct TestTSPlayerScreen: View {
         let requestedAt = CACurrentMediaTime()
         let serviceRef = preset.serviceRef
 
+        if model?.isDemoMode == true {
+            startDemoHLSPlayback(for: serviceRef)
+            return
+        }
+
         if streamRouteMode == .livePipeline, coordinator.canPrepare {
             Task { await coordinator.zap(to: serviceRef) }
             isStreaming = true
@@ -1450,7 +1498,7 @@ public struct TestTSPlayerScreen: View {
         }
     }
 
-    private func enterTimeshift(seekBackSeconds: Double = 0) {
+    private func enterTimeshift(seekBackSeconds: Double = 0, autoPlay: Bool = false) {
         guard let model, let ch = model.channels.first(where: { $0.serviceRef == activePresentedServiceRef || $0.name == currentChannelName }) else {
             displayZapToast(String(localized: "Timeshift unavailable"))
             return
@@ -1459,7 +1507,7 @@ public struct TestTSPlayerScreen: View {
         Haptics.shared.impact(.medium)
         isTimeshiftLoading = true
         engineMode = .timeshiftHLS
-        isPlaying = (seekBackSeconds > 0)
+        isPlaying = (seekBackSeconds > 0 || autoPlay)
 
         // Stop the live direct pipeline presentation gracefully
         let stopping = coordinator.playing
@@ -1477,12 +1525,19 @@ public struct TestTSPlayerScreen: View {
                         self.seekTimeshiftRelative(-seekBackSeconds)
                         player.play()
                         self.isPlaying = true
+                        self.isTimeshiftLoading = false
+                        displayZapToast("◀◀ Timeshift -\(Int(seekBackSeconds))s")
+                    } else if autoPlay {
+                        player.play()
+                        self.isPlaying = true
+                        self.isTimeshiftLoading = false
+                        displayZapToast(String(localized: "▶ AirPlay Video"))
                     } else {
                         player.pause()
                         self.isPlaying = false
+                        self.isTimeshiftLoading = false
+                        displayZapToast(String(localized: "❚❚ Timeshift paused"))
                     }
-                    self.isTimeshiftLoading = false
-                    displayZapToast(seekBackSeconds > 0 ? "◀◀ Timeshift -\(Int(seekBackSeconds))s" : String(localized: "❚❚ Timeshift paused"))
                 } else {
                     isTimeshiftLoading = false
                     displayZapToast(String(localized: "Timeshift could not be started"))
@@ -1498,6 +1553,20 @@ public struct TestTSPlayerScreen: View {
 
     private func jumpToLiveEdge() {
         Haptics.shared.notification(.success)
+        if model?.isDemoMode == true {
+            if let player = timeshiftPlayer,
+               let range = player.currentItem?.seekableTimeRanges.last?.timeRangeValue {
+                player.seek(to: range.end, toleranceBefore: .zero, toleranceAfter: .zero)
+                player.play()
+                isPlaying = true
+                timeshiftOffsetSeconds = 0
+            } else {
+                let serviceRef = URL(string: streamURLString)?.lastPathComponent ?? streamURLString
+                startDemoHLSPlayback(for: serviceRef)
+            }
+            displayZapToast(String(localized: "▶ Live edge (Native TS)"))
+            return
+        }
         teardownTimeshift()
         engineMode = .nativeDirectLive
         startCurrentPreset()
@@ -1542,7 +1611,7 @@ public struct TestTSPlayerScreen: View {
                     }
 
                     // Auto-return to Native Direct TS if caught up to live edge during playback
-                    if self.isPlaying && offset < 1.5 {
+                    if self.isPlaying && offset < 1.5 && self.model?.isDemoMode != true {
                         self.jumpToLiveEdge()
                     }
                 }

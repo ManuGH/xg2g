@@ -92,5 +92,11 @@
 	     rate; 120 Hz halves the per-field timing quantisation against 60 Hz. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.entertainment</string>
 </dict>
 </plist>
