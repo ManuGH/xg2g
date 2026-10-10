@@ -165,6 +165,8 @@ export function usePlayerChrome({
   const [isWebKitFullscreenActive, setIsWebKitFullscreenActive] = useState(false);
   const [isPip, setIsPip] = useState(false);
   const [canTogglePiP, setCanTogglePiP] = useState(false);
+  const airPlayWirelessChangeRef = useRef(onAirPlayWirelessChange);
+  airPlayWirelessChangeRef.current = onAirPlayWirelessChange;
   const [canShowAirPlay, setCanShowAirPlay] = useState(false);
   const [isAirPlayActive, setIsAirPlayActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1328,6 +1330,26 @@ export function usePlayerChrome({
   }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') return;
+    const onAvailability = () => setCanShowAirPlay(true);
+    const onWireless = () => {
+      const wireless = Boolean(video.webkitCurrentPlaybackTargetIsWireless);
+      setIsAirPlayActive(wireless);
+      airPlayWirelessChangeRef.current?.(wireless);
+    };
+    setCanShowAirPlay(true);
+    setIsAirPlayActive(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
+    if (video.webkitCurrentPlaybackTargetIsWireless) onWireless();
+    video.addEventListener('webkitplaybacktargetavailabilitychanged', onAvailability);
+    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWireless);
+    return () => {
+      video.removeEventListener('webkitplaybacktargetavailabilitychanged', onAvailability);
+      video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWireless);
+    };
+  }, [videoRef]);
+
+  useEffect(() => {
     const onFsChange = () => {
       const fullscreenElement = document.fullscreenElement;
       const container = containerRef.current;
@@ -1350,26 +1372,6 @@ export function usePlayerChrome({
     const supportsWebkitFullscreen =
       !!video?.webkitEnterFullscreen &&
       (allowNativeFullscreen || shouldUseTouchWebKitFullscreen(video));
-    const supportsWebkitAirPlay = typeof video?.webkitShowPlaybackTargetPicker === 'function';
-
-    const onAirPlayAvailabilityChanged = (event: Event) => {
-      const availability = (event as Event & { availability?: string }).availability;
-      if (availability === 'available') {
-        setCanShowAirPlay(true);
-      } else if (availability === 'not-available') {
-        // Keep the AirPlay button accessible on WebKit so the user can open the
-        // system picker or trigger a switch from MSE (disableRemotePlayback=true)
-        // to the AirPlay-compatible native HLS pipeline.
-        setCanShowAirPlay(supportsWebkitAirPlay);
-      }
-    };
-
-    const onAirPlayWirelessChanged = () => {
-      const wireless = Boolean(video?.webkitCurrentPlaybackTargetIsWireless);
-      setIsAirPlayActive(wireless);
-      onAirPlayWirelessChange?.(wireless);
-    };
-
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
       setIsWebKitFullscreenActive(true);
@@ -1401,11 +1403,6 @@ export function usePlayerChrome({
       video.addEventListener('leavepictureinpicture', onPipChange);
       video.addEventListener('webkitpresentationmodechanged', onPipChange);
 
-      if (supportsWebkitAirPlay) {
-        video.addEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
-        video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
-      }
-
       if (supportsWebkitFullscreen) {
         video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
         video.addEventListener('webkitendfullscreen', onWebkitEndFullscreen);
@@ -1419,18 +1416,13 @@ export function usePlayerChrome({
         video.removeEventListener('leavepictureinpicture', onPipChange);
         video.removeEventListener('webkitpresentationmodechanged', onPipChange);
 
-        if (supportsWebkitAirPlay) {
-          video.removeEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
-          video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
-        }
-
         if (supportsWebkitFullscreen) {
           video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
           video.removeEventListener('webkitendfullscreen', onWebkitEndFullscreen);
         }
       }
     };
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onAirPlayWirelessChange, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -22,6 +22,9 @@ func isMediaRequest(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
+	if recordingIDFromMediaPath(r.URL.Path) != "" {
+		return true
+	}
 	path := r.URL.Path
 	if strings.HasPrefix(path, "/api/v3/recordings/") &&
 		(strings.HasSuffix(path, "/stream.mp4") || strings.HasSuffix(path, "/playlist.m3u8")) {

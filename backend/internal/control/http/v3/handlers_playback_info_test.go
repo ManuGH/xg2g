@@ -15,6 +15,7 @@ import (
 
 	admissionmonitor "github.com/ManuGH/xg2g/internal/admission"
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/deadline"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
@@ -805,6 +806,8 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
+	r.RemoteAddr = "127.0.0.1:1234"
+	r = r.WithContext(auth.WithPrincipal(r.Context(), auth.NewPrincipal("test-token", "usr_test", []string{string(ScopeV3Read)})))
 
 	s.PostRecordingPlaybackInfo(w, r, recordingID, PostRecordingPlaybackInfoParams{})
 
@@ -866,6 +869,8 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStr
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/"+recordingID+"/stream-info", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
+	r.RemoteAddr = "127.0.0.1:1234"
+	r = r.WithContext(auth.WithPrincipal(r.Context(), auth.NewPrincipal("test-token", "usr_test", []string{string(ScopeV3Read)})))
 
 	s.PostRecordingPlaybackInfo(w, r, recordingID, PostRecordingPlaybackInfoParams{})
 
@@ -883,7 +888,10 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStr
 
 	selectedOutputURL, ok := dec["selectedOutputUrl"].(string)
 	require.True(t, ok)
-	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", selectedOutputURL)
+	parsed, err := url.Parse(selectedOutputURL)
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v3/recordings/"+recordingID+"/stream.mp4", parsed.Path)
+	assert.NotEmpty(t, parsed.Query().Get("ticket"))
 
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)

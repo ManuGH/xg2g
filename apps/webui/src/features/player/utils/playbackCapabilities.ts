@@ -311,7 +311,7 @@ export function buildAirPlayCapabilities(
     container: ["hls", "ts", "fmp4", "mp4"],
     videoCodecs: ["h264"],
     videoCodecSignals: [
-      { codec: "h264", supported: true, smooth: true, powerEfficient: true },
+      { codec: "h264", supported: true },
     ],
     audioCodecs: ["aac"],
     hlsEngines: ["native"],

@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import { describe, expect, it, vi } from 'vitest';
-import { createDefaultLiveSessionTransport } from './liveSessionTransport';
+import { appendPlaybackTicketToUrl, createDefaultLiveSessionTransport } from './liveSessionTransport';
 
 describe('createDefaultLiveSessionTransport', () => {
   const apiBase = 'http://test.local/api/v3';
@@ -320,3 +320,10 @@ describe('createDefaultLiveSessionTransport', () => {
     await expect(postPromise).rejects.toHaveProperty('name', 'AbortError');
   });
 });
+
+ describe('playback ticket URLs', () => {
+  it('replaces stale credentials, preserves queries and keeps the fragment last', () => {
+    expect(appendPlaybackTicketToUrl('/media.m3u8?variant=test&t=old&ticket=old#track', 'fresh'))
+      .toBe('/media.m3u8?variant=test&ticket=fresh#track');
+  });
+ });

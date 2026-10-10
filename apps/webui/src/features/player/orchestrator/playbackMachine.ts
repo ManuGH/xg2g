@@ -357,6 +357,7 @@ export function runPlaybackMachine(
           serviceRef: event.serviceRef,
           recordingId: event.recordingId,
           srcUrl: event.srcUrl,
+          ...(event.startOffsetMs !== undefined ? { startOffsetMs: event.startOffsetMs } : {}),
           explicitProfile: event.explicitProfile,
         },
       ],

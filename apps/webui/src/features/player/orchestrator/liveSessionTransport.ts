@@ -32,9 +32,15 @@ export interface PlaybackTicketResult {
 export function appendPlaybackTicketToUrl(url: string, ticket?: string | null): string {
   const trimmedTicket = typeof ticket === 'string' ? ticket.trim() : '';
   if (!url || !trimmedTicket) return url;
-  if (/[?&](ticket|t)=/.test(url)) return url;
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}ticket=${encodeURIComponent(trimmedTicket)}`;
+  const hashIndex = url.indexOf('#');
+  const fragment = hashIndex >= 0 ? url.slice(hashIndex) : '';
+  const resource = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const queryIndex = resource.indexOf('?');
+  const path = queryIndex >= 0 ? resource.slice(0, queryIndex) : resource;
+  const query = new URLSearchParams(queryIndex >= 0 ? resource.slice(queryIndex + 1) : '');
+  query.delete('t');
+  query.set('ticket', trimmedTicket);
+  return `${path}?${query.toString()}${fragment}`;
 }
 
 export interface LiveSessionTransport {
