@@ -47,6 +47,23 @@ func TestCapAV1VideoRate(t *testing.T) {
 	}
 }
 
+// The cap must reach the ffmpeg arguments through the live planner, not only
+// when capAV1VideoRate is called directly.
+func TestCapAV1VideoRate_AppliesInLivePlan(t *testing.T) {
+	spec := ladderSpec("chrome")
+
+	t.Setenv("XG2G_AV1_MAXRATE_CAP_K", "")
+	uncapped, _ := valueAfter(buildLadderArgs(t, ladderOneTrack, spec), "-maxrate")
+	assert.Equal(t, "32000k", uncapped, "without the cap the planner ceiling stays")
+
+	t.Setenv("XG2G_AV1_MAXRATE_CAP_K", "12000")
+	args := buildLadderArgs(t, ladderOneTrack, spec)
+	maxrate, _ := valueAfter(args, "-maxrate")
+	bufsize, _ := valueAfter(args, "-bufsize")
+	assert.Equal(t, "12000k", maxrate)
+	assert.Equal(t, "24000k", bufsize)
+}
+
 func TestCapAV1VideoRate_DrivesVaapiArgs(t *testing.T) {
 	t.Setenv("XG2G_AV1_MAXRATE_CAP_K", "12000")
 	cfg := withProbedQVBR(t, false)
