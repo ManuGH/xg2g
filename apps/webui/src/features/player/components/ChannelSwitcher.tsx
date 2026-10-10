@@ -195,12 +195,14 @@ export function ChannelSwitcher({
                   key={b.name}
                   type="button"
                   role="tab"
+                  disabled={Boolean(pendingBouquet)}
+                  aria-disabled={Boolean(pendingBouquet)}
                   aria-selected={isSelected}
                   aria-busy={isPending}
                   data-bouquet={b.name}
                   className={`${styles.bouquetPill} ${isSelected || isPending ? styles.bouquetPillActive : ''}`}
                   onClick={() => {
-                    if (!isSelected && !isPending) {
+                    if (!isSelected && !pendingBouquet) {
                       setPendingBouquet(b.name);
                       onSelectBouquet!(b.name);
                     }

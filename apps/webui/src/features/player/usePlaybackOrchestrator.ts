@@ -773,6 +773,12 @@ export function usePlaybackOrchestrator(
       return;
     }
 
+    if (activeRecordingRef.current || recordingId) {
+      // Recordings lack delegated media credentials on external AirPlay receivers (sessions have ticketed HLS, recordings do not).
+      // Keep recordings on the local route.
+      return;
+    }
+
     const activeVideoCodec = sessionPlaybackTrace?.targetProfile?.video?.codec?.toLowerCase();
     const activeAudioCodec = sessionPlaybackTrace?.targetProfile?.audio?.codec?.toLowerCase();
     const isAlreadyAirPlayCompatible =
@@ -781,13 +787,12 @@ export function usePlaybackOrchestrator(
       (playbackTargetRef.current === 'airplay' || (activeVideoCodec === 'h264' && activeAudioCodec === 'aac'));
 
     playbackTargetRef.current = 'airplay';
-    if (!isAlreadyAirPlayCompatible && (Boolean(sessionIdRef.current || activeRecordingRef.current) || startIntentInFlight.current)) {
+    if (!isAlreadyAirPlayCompatible && (Boolean(sessionIdRef.current) || startIntentInFlight.current)) {
       dispatchPlayback({
         type: 'intent.start.requested',
         epoch: allocatePlaybackEpoch(),
-        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        kind: src ? 'src' : 'live',
         serviceRef: (activeChannelRef.current || sRef || '').trim() || undefined,
-        recordingId: recordingId || undefined,
         srcUrl: src || undefined,
         explicitProfile: 'compatible',
       });
@@ -1063,8 +1068,8 @@ export function usePlaybackOrchestrator(
     const video = videoRef.current as (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void }) | null;
     const rawCaps = await gatherPlaybackCapabilities(scope, video);
     // Retain measured raw capabilities for local playback; restrict the AirPlay
-    // compatible profile override strictly to active wireless AirPlay targets.
-    if (playbackTargetRef.current === 'airplay') {
+    // compatible profile override strictly to active wireless AirPlay targets on live sessions.
+    if (playbackTargetRef.current === 'airplay' && scope !== 'recording') {
       return buildAirPlayCapabilities(rawCaps);
     }
     return rawCaps;
@@ -1078,7 +1083,7 @@ export function usePlaybackOrchestrator(
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
-    const effectiveOverride = playbackTargetRef.current === 'airplay' ? 'compatible' : profileOverride;
+    const effectiveOverride = profileOverride;
     const profileForAttempt = normalizePlaybackProfileSelection(effectiveOverride ?? explicitProfile);
     const playbackEpoch = typeof epochOverride === 'number' ? epochOverride : allocatePlaybackEpoch();
     await prepareForNextPlaybackAttempt();
