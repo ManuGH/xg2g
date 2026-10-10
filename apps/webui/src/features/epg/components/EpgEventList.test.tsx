@@ -1,6 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import epgCss from '../EPG.module.css?raw';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EpgEventRow } from './EpgEventList';
@@ -101,15 +99,12 @@ describe('EpgEventRow recording states and progress stages', () => {
   });
 
   it('enforces horizontal gradient styling for amber and ending progress stages instead of solid fills', () => {
-    const cssPath = path.resolve(fileURLToPath(import.meta.url), '../../EPG.module.css');
-    const cssContent = fs.readFileSync(cssPath, 'utf-8');
-
     // Negative control: reject old solid background fills
-    expect(cssContent).not.toMatch(/\.progressBarAmber\s*\{[^}]*background:\s*var\(--status-warning\);/);
-    expect(cssContent).not.toMatch(/\.progressBarEnding\s*\{[^}]*background:\s*var\(--status-orange\);/);
+    expect(epgCss).not.toMatch(/\.progressBarAmber\s*\{[^}]*background:\s*var\(--status-warning\);/);
+    expect(epgCss).not.toMatch(/\.progressBarEnding\s*\{[^}]*background:\s*var\(--status-orange\);/);
 
     // Positive assertion: require horizontal linear gradients with left-to-right progression
-    expect(cssContent).toMatch(/\.progressBarAmber\s*\{[^}]*background:\s*linear-gradient\(\s*90deg/);
-    expect(cssContent).toMatch(/\.progressBarEnding\s*\{[^}]*background:\s*linear-gradient\(\s*90deg/);
+    expect(epgCss).toMatch(/\.progressBarAmber\s*\{[^}]*background:\s*linear-gradient\(\s*90deg/);
+    expect(epgCss).toMatch(/\.progressBarEnding\s*\{[^}]*background:\s*linear-gradient\(\s*90deg/);
   });
 });
