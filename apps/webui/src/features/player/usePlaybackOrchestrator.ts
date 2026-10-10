@@ -97,6 +97,12 @@ import { useTelemetryEmitter } from './orchestrator/useTelemetryEmitter';
 import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
+import { followLivePosition, markLivePosition, type LivePositionMark } from './orchestrator/livePosition';
+import { LIVE_FOREGROUND_FRAME_GRACE_MS, watchForMovingPictures } from './orchestrator/presentedFrameWatch';
+
+// Time a hidden page gets to settle (picture-in-picture starting, WebKit's own
+// lock pause) before the lock pause decides.
+export const LOCK_PAUSE_SETTLE_MS = 1_000;
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import {
   shouldWatchForNetworkRecovery,
@@ -384,6 +390,19 @@ export function usePlaybackOrchestrator(
   const nativeVideoTempMutedRef = useRef(false);
   const visibilityManagedPauseRef = useRef(false);
   const wasHiddenRef = useRef(false);
+  const hiddenSinceRef = useRef<number | null>(null);
+  const hiddenPositionRef = useRef<LivePositionMark | null>(null);
+  // Playback progressed while the page was hidden (lock-screen play).
+  const playedWhileHiddenRef = useRef(false);
+  // Cancels the picture check after a foreground return. Owned by a ref, not by
+  // the foreground effect: that effect re-runs on most renders and its cleanup
+  // would cancel the check within milliseconds.
+  const foregroundPictureCheckRef = useRef<(() => void) | null>(null);
+  // Cancels the pending lock pause (see the foreground recovery effect).
+  const lockPauseRef = useRef<(() => void) | null>(null);
+  // Read by the foreground recovery without re-running it on every change.
+  const isLiveModeRef = useRef(false);
+  const isNativeEngineRef = useRef(false);
   const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
@@ -829,6 +848,7 @@ export function usePlaybackOrchestrator(
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    reattachNativeSource,
     autoplayBlocked,
   } = usePlaybackEngine({
     videoRef,
@@ -1961,6 +1981,8 @@ export function usePlaybackOrchestrator(
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building' || isInitialStartupBuffering;
   const isNativeEngine = activeHlsEngine === 'native';
+  isNativeEngineRef.current = isNativeEngine;
+  isLiveModeRef.current = isLiveMode;
   const hasTerminalStatus = status === 'idle' || status === 'error' || status === 'stopped';
   const shouldKeepHostAwake =
     hostEnvironment.supportsKeepScreenAwake &&
@@ -2021,6 +2043,47 @@ export function usePlaybackOrchestrator(
     });
   }, [hasTerminalStatus, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, status, videoRef]);
 
+  // iOS pauses inline video when the screen locks, so sound stops with the
+  // lock. WebKit skips that pause when an earlier interruption is still
+  // counted: after a lock-screen play and an unlock it never ends its
+  // "silent playback" interruption, and the next lock leaves the stream
+  // playing. Pause it ourselves once the page has stayed hidden for a moment,
+  // unless it plays on in picture-in-picture or over AirPlay. This is not the
+  // viewer's pause: the foreground return re-attaches as after any lock. A
+  // pause in between (WebKit's own, or the viewer's) cancels it, so a later
+  // lock-screen play keeps running.
+  const scheduleLockPause = (video: HTMLVideoElement): (() => void) | null => {
+    if (video.paused || !isNativeEngineRef.current || !shouldForceNativeMobileHls(video)) {
+      return null;
+    }
+    const el = video as HTMLVideoElement & {
+      webkitPresentationMode?: string;
+      webkitCurrentPlaybackTargetIsWireless?: boolean;
+    };
+    let pausedMeanwhile = false;
+    const onPause = () => { pausedMeanwhile = true; };
+    video.addEventListener('pause', onPause);
+    const timer = window.setTimeout(() => {
+      video.removeEventListener('pause', onPause);
+      lockPauseRef.current = null;
+      if (
+        pausedMeanwhile
+        || video.paused
+        || document.visibilityState !== 'hidden'
+        || document.pictureInPictureElement === video
+        || el.webkitPresentationMode === 'picture-in-picture'
+        || el.webkitCurrentPlaybackTargetIsWireless === true
+      ) {
+        return;
+      }
+      video.pause();
+    }, LOCK_PAUSE_SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      video.removeEventListener('pause', onPause);
+    };
+  };
+
   // Browser (non-TV) foreground recovery. iOS Safari and desktop browsers
   // suspend the decoder while backgrounded and do not auto-resume inline
   // <video> on return — the frame stays black/frozen. Repair only on the
@@ -2040,12 +2103,32 @@ export function usePlaybackOrchestrator(
     }
 
     if (!isDocumentVisible) {
+      if (!wasHiddenRef.current) {
+        // Wall clock on purpose: iOS's monotonic clock (performance.now) stops
+        // while the device sleeps under lock, so a minutes-long lock measured as
+        // a few seconds.
+        hiddenSinceRef.current = Date.now();
+        hiddenPositionRef.current = markLivePosition(video);
+        playedWhileHiddenRef.current = false;
+        foregroundPictureCheckRef.current?.();
+        foregroundPictureCheckRef.current = null;
+        lockPauseRef.current?.();
+        lockPauseRef.current = scheduleLockPause(video);
+      }
       wasHiddenRef.current = true;
       return;
     }
 
     const wasHidden = wasHiddenRef.current;
     wasHiddenRef.current = false;
+    lockPauseRef.current?.();
+    lockPauseRef.current = null;
+    const hiddenMs = wasHidden && hiddenSinceRef.current !== null ? Date.now() - hiddenSinceRef.current : 0;
+    hiddenSinceRef.current = null;
+    const hiddenPosition = hiddenPositionRef.current;
+    hiddenPositionRef.current = null;
+    const playedWhileHidden = playedWhileHiddenRef.current;
+    playedWhileHiddenRef.current = false;
 
     // hls.js + ManagedMediaSource hands the buffer back to the UA and the segment
     // loader is throttled/parked while backgrounded (MMS 'endstreaming'); on return
@@ -2067,9 +2150,38 @@ export function usePlaybackOrchestrator(
       status: recoveryStatusRef.current,
       userPaused: userPauseIntentRef.current,
       hasTerminal: hasTerminalStatus,
+      hiddenMs,
+      isLive: isLiveModeRef.current,
+      isNative: isNativeEngineRef.current,
     });
 
     if (action === 'none') {
+      return;
+    }
+
+    if (action === 'reattach' && playedWhileHidden && !video.paused) {
+      // Lock-screen playback kept the stream running. Re-attaching now would
+      // cut the audio the viewer is listening to and overlap it with the
+      // restarted source; keep it unless the picture does not come back.
+      const source = video.currentSrc || video.src;
+      foregroundPictureCheckRef.current?.();
+      foregroundPictureCheckRef.current = watchForMovingPictures(video, LIVE_FOREGROUND_FRAME_GRACE_MS, () => {
+        foregroundPictureCheckRef.current = null;
+        if (
+          userPauseIntentRef.current
+          || video.paused
+          || (video.currentSrc || video.src) !== source
+          || (typeof document !== 'undefined' && document.visibilityState === 'hidden')
+        ) {
+          return;
+        }
+        reattachNativeSource(markLivePosition(video) ?? hiddenPosition);
+      });
+      return;
+    }
+
+    // The DVR window spans hours: continue where the viewer left, not at live.
+    if (action === 'reattach' && reattachNativeSource(hiddenPosition)) {
       return;
     }
 
@@ -2110,7 +2222,87 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
+  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, reattachNativeSource, setStatus, videoRef]);
+
+  useEffect(() => () => {
+    foregroundPictureCheckRef.current?.();
+    foregroundPictureCheckRef.current = null;
+    lockPauseRef.current?.();
+    lockPauseRef.current = null;
+  }, []);
+
+  // Playback can go on while the page is hidden: iOS pauses the video on lock,
+  // but the lock-screen play button resumes it with sound. The re-attach on
+  // return must continue from where that playback got to, not from the lock.
+  // The mark only follows continuous progress (followLivePosition), so the jump
+  // a cold player makes when WebKit resumes it on unlock cannot move it; seeks
+  // from the lock-screen scrubber re-anchor it.
+  useEffect(() => {
+    if (hostEnvironment.isTv || isDocumentVisible) {
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    let playingSince: number | null = video.paused ? null : Date.now();
+    const stillHidden = () => typeof document === 'undefined' || document.visibilityState === 'hidden';
+
+    const follow = () => {
+      const mark = hiddenPositionRef.current;
+      const sample = markLivePosition(video);
+      if (!mark || !sample || playingSince === null) {
+        return;
+      }
+      const now = Date.now();
+      const next = followLivePosition(mark, sample, now - playingSince);
+      if (next) {
+        hiddenPositionRef.current = next;
+        playingSince = now;
+        playedWhileHiddenRef.current = true;
+      }
+    };
+    const onPlaying = () => {
+      if (stillHidden() && playingSince === null) {
+        playingSince = Date.now();
+      }
+    };
+    const onTimeUpdate = () => {
+      if (stillHidden() && !video.paused) {
+        follow();
+      }
+    };
+    const onPause = () => {
+      if (stillHidden()) {
+        follow();
+      }
+      playingSince = null;
+    };
+    const onSeeked = () => {
+      if (!stillHidden()) {
+        return;
+      }
+      const sample = markLivePosition(video);
+      if (sample) {
+        hiddenPositionRef.current = sample;
+      }
+      playingSince = video.paused ? null : Date.now();
+    };
+
+    video.addEventListener('play', onPlaying);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('seeked', onSeeked);
+    return () => {
+      video.removeEventListener('play', onPlaying);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('seeked', onSeeked);
+    };
+  }, [hostEnvironment.isTv, isDocumentVisible, videoRef]);
 
   // Browser (non-TV) network-reconnect recovery. Flaky web — mobile data, wifi
   // handoffs, laptop sleep/wake — drops connectivity; on the offline->online

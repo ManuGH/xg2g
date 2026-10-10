@@ -269,12 +269,14 @@
   letter-spacing: 0.05em;
 }
 
+/* Sits below the top header (channel logo + programme, z-index 200) and above
+   it, so the header can never cover the unmute action on a muted autoplay. */
 .unmuteBanner {
   position: absolute;
-  top: calc(16px + var(--sat, 0px));
+  top: calc(68px + var(--sat, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 45;
+  z-index: 210;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1141,6 +1143,10 @@
 
 .container.surfaceCompact .topHeaderProgramme {
   font-size: 0.95rem;
+}
+
+.container.surfaceCompact .unmuteBanner {
+  top: calc(60px + var(--sat, 0px));
 }
 
 /* The default scrim ramps to black only at the very bottom, which works under

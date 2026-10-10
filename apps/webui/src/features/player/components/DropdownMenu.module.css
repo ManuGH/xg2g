@@ -46,6 +46,9 @@
   position: absolute;
   bottom: calc(100% + 12px);
   right: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface-shell-safe);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -64,6 +67,7 @@
 }
 
 .popupTitle {
+  flex: 0 0 auto;
   padding: 4px 16px 8px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -77,8 +81,11 @@
 .optionsList {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 320px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .optionsList::-webkit-scrollbar {
