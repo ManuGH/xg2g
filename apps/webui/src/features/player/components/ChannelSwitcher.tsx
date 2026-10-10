@@ -42,11 +42,16 @@ export function ChannelSwitcher({
   onSelectBouquet,
 }: ChannelSwitcherProps) {
   const [query, setQuery] = useState('');
+  const [pendingBouquet, setPendingBouquet] = useState<string | null>(null);
   const [nowNextMap, setNowNextMap] = useState<Record<string, string>>({});
   const listRef = useRef<HTMLDivElement>(null);
   const bouquetBarRef = useRef<HTMLDivElement>(null);
   const currentRef = refOf(current);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    setPendingBouquet(null);
+  }, [selectedBouquet, channels]);
 
   useEffect(() => {
     if (!open || channels.length === 0) return;
@@ -103,6 +108,7 @@ export function ChannelSwitcher({
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setPendingBouquet(null);
       return;
     }
     if (filtered.length === 0) return;
@@ -183,16 +189,19 @@ export function ChannelSwitcher({
           >
             {bouquets!.map((b) => {
               const isSelected = b.name === selectedBouquet;
+              const isPending = pendingBouquet === b.name;
               return (
                 <button
                   key={b.name}
                   type="button"
                   role="tab"
                   aria-selected={isSelected}
+                  aria-busy={isPending}
                   data-bouquet={b.name}
-                  className={`${styles.bouquetPill} ${isSelected ? styles.bouquetPillActive : ''}`}
+                  className={`${styles.bouquetPill} ${isSelected || isPending ? styles.bouquetPillActive : ''}`}
                   onClick={() => {
-                    if (!isSelected) {
+                    if (!isSelected && !isPending) {
+                      setPendingBouquet(b.name);
                       onSelectBouquet!(b.name);
                     }
                   }}
@@ -203,8 +212,9 @@ export function ChannelSwitcher({
             })}
           </div>
         ) : null}
-        <div className={styles.list} ref={listRef}>
+        <div className={styles.list} ref={listRef} aria-busy={Boolean(pendingBouquet && pendingBouquet !== selectedBouquet)}>
           {filtered.map((c, idx) => {
+            const isBouquetLoading = Boolean(pendingBouquet && pendingBouquet !== selectedBouquet);
             const ref = refOf(c);
             const active = ref.length > 0 && ref === currentRef;
             const nowTitle = nowNextMap[ref];
@@ -212,8 +222,11 @@ export function ChannelSwitcher({
               <button
                 key={ref || `${c.name ?? 'ch'}-${c.number ?? idx}`}
                 data-ref={ref}
-                className={`${styles.row} ${active ? styles.active : ''}`}
+                disabled={isBouquetLoading}
+                aria-disabled={isBouquetLoading}
+                className={`${styles.row} ${active ? styles.active : ''} ${isBouquetLoading ? styles.rowUnavailable : ''}`}
                 onClick={() => {
+                  if (isBouquetLoading) return;
                   if (!active) onSwitch(c);
                   onClose();
                 }}

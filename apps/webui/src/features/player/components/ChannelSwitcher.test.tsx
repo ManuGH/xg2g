@@ -190,4 +190,67 @@ describe('ChannelSwitcher', () => {
     fireEvent.click(iptvTab);
     expect(onSelectBouquet).toHaveBeenCalledWith('IPTV - Top');
   });
+
+  it('disables channel rows and prevents switching while loading another bouquet until the new bouquet commits', async () => {
+    mockPostServicesNowNext.mockResolvedValueOnce({ data: { items: [] } });
+
+    const onSwitch = vi.fn();
+    const onSelectBouquet = vi.fn();
+    const { rerender } = render(
+      <ChannelSwitcher
+        channels={mockChannels}
+        current={mockChannels[0]}
+        onSwitch={onSwitch}
+        open={true}
+        onClose={vi.fn()}
+        bouquets={[
+          { name: 'Favourites (TV)', services: 50 },
+          { name: 'IPTV - Top', services: 112 },
+        ]}
+        selectedBouquet="Favourites (TV)"
+        onSelectBouquet={onSelectBouquet}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockPostServicesNowNext).toHaveBeenCalled();
+    });
+
+    const iptvTab = screen.getByRole('tab', { name: 'IPTV - Top' });
+    fireEvent.click(iptvTab);
+    expect(onSelectBouquet).toHaveBeenCalledWith('IPTV - Top');
+
+    // While waiting for the new bouquet response, existing channel rows must be disabled
+    const orf2Btn = screen.getByText('ORF 2 HD').closest('button')!;
+    expect(orf2Btn).toBeDisabled();
+
+    // Clicking a row during the pending transition must not invoke onSwitch
+    fireEvent.click(orf2Btn);
+    expect(onSwitch).not.toHaveBeenCalled();
+
+    // When the new bouquet commits with new channels, rows are re-enabled
+    const iptvChannels: Service[] = [
+      { id: 'iptv-1', serviceRef: '1:0:1:IPTV:1:0:0:0:0:0', name: 'IPTV News HD', number: '1' },
+    ];
+    rerender(
+      <ChannelSwitcher
+        channels={iptvChannels}
+        current={mockChannels[0]}
+        onSwitch={onSwitch}
+        open={true}
+        onClose={vi.fn()}
+        bouquets={[
+          { name: 'Favourites (TV)', services: 50 },
+          { name: 'IPTV - Top', services: 112 },
+        ]}
+        selectedBouquet="IPTV - Top"
+        onSelectBouquet={onSelectBouquet}
+      />
+    );
+
+    const newsBtn = screen.getByText('IPTV News HD').closest('button')!;
+    expect(newsBtn).not.toBeDisabled();
+    fireEvent.click(newsBtn);
+    expect(onSwitch).toHaveBeenCalledWith(iptvChannels[0]);
+  });
 });
