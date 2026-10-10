@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, ReactNode } from 'react';
 import styles from './DropdownMenu.module.css';
 
 export interface DropdownOption {
@@ -17,9 +17,48 @@ interface DropdownMenuProps {
   disabled?: boolean;
 }
 
+// Space kept free between the popup and the top of its clipping box.
+const POPUP_EDGE_MARGIN_PX = 8;
+// Distance between trigger and popup (.popup bottom offset in the CSS module).
+const POPUP_TRIGGER_GAP_PX = 12;
+
+// The nearest ancestor that clips overflow bounds how far the upward-opening
+// popup may extend; without one it is the viewport.
+function clippingTop(node: HTMLElement): number {
+  for (let el = node.parentElement; el; el = el.parentElement) {
+    const { overflow, overflowY } = window.getComputedStyle(el);
+    if (/(hidden|clip|auto|scroll)/.test(`${overflow} ${overflowY}`)) {
+      return Math.max(0, el.getBoundingClientRect().top);
+    }
+  }
+  return 0;
+}
+
 export function DropdownMenu({ icon, options, activeId, onSelect, title, disabled }: DropdownMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [popupMaxHeight, setPopupMaxHeight] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Landscape phones leave little height above the control bar; cap the popup to
+  // the space that is actually visible so the list scrolls instead of being cut.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!isOpen || !container) {
+      setPopupMaxHeight(null);
+      return;
+    }
+    const measure = () => {
+      const available = container.getBoundingClientRect().top - clippingTop(container) - POPUP_TRIGGER_GAP_PX - POPUP_EDGE_MARGIN_PX;
+      setPopupMaxHeight(Math.max(0, Math.floor(available)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -45,7 +84,10 @@ export function DropdownMenu({ icon, options, activeId, onSelect, title, disable
       </button>
 
       {isOpen && options.length > 0 && (
-        <div className={styles.popup}>
+        <div
+          className={styles.popup}
+          style={popupMaxHeight !== null ? { maxHeight: `${popupMaxHeight}px` } : undefined}
+        >
           {title && <div className={styles.popupTitle}>{title}</div>}
           <div className={styles.optionsList}>
             {options.map((option) => (

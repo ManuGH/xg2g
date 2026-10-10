@@ -40,7 +40,11 @@ func vaapiEncoderForCodec(outputCodec string) string {
 	}
 }
 
-func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
+func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int, ladder ...av1Ladder) []string {
+	var rungs av1Ladder
+	if len(ladder) > 0 {
+		rungs = ladder[0]
+	}
 	prof := spec.Profile
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
@@ -87,10 +91,11 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	if f := vaapiSharpnessFilter(a.Config.TranscodeSharpen, a.Config.GPUVendor); f != "" {
 		filters = append(filters, f)
 	}
-	args = append(args, "-vf", strings.Join(filters, ","))
+	args = rungs.appendVideoInput(args, strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = rungs.appendLowRungRateArgs(args, a.Config)
 	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
@@ -138,7 +143,11 @@ func av1LevelForMaxRateK(maxRateK int) string {
 	}
 }
 
-func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
+func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int, ladder ...av1Ladder) []string {
+	var rungs av1Ladder
+	if len(ladder) > 0 {
+		rungs = ladder[0]
+	}
 	prof := spec.Profile
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
@@ -152,10 +161,11 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 		Msg("pipeline video: vaapi encode only")
 
 	filter := a.vaapiEncodeOnlyFilter(spec, outputCodec)
-	args = append(args, "-vf", filter)
+	args = rungs.appendVideoInput(args, filter)
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = rungs.appendLowRungRateArgs(args, a.Config)
 	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 

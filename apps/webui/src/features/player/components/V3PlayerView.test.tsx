@@ -280,6 +280,25 @@ describe('V3PlayerView', () => {
     expect(screen.getAllByText('ORF 1 HD')).toHaveLength(1);
   });
 
+  it('renders the unmute banner outside the isolated video wrapper', () => {
+    const viewState = createViewState({ isMuted: true, showSpinnerCard: false, showCloseButton: true });
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={createActions()}
+      />
+    );
+
+    const banner = screen.getByRole('button', { name: viewState.audioToggleLabel });
+    expect(banner.className).toContain('unmuteBanner');
+    // .videoWrapper sets isolation: isolate; a banner inside it would always
+    // paint below the container-level top header and controls.
+    expect(banner.closest('[class*="videoWrapper"]')).toBeNull();
+  });
+
   it('allows switching picture mode and applies vivid filter class', () => {
     localStorage.clear();
     const actions = createActions();

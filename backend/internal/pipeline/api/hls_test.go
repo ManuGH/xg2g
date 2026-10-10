@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/rs/zerolog"
 	"io"
 	"net/http"
@@ -1263,4 +1264,85 @@ func TestLkgPlaylistCacheKey_IsolatesTicketAndFilename(t *testing.T) {
 		lkgPlaylistCacheKey("sess-1", "master.m3u8", ticket),
 		lkgPlaylistCacheKey("sess-1", "stream_0.m3u8", ticket),
 	)
+}
+
+func TestRewritePlaylist_LiveTranscodeMasterDeclaresPeakBandwidth(t *testing.T) {
+	masterContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_2",DEFAULT=YES,LANGUAGE="de",CHANNELS="2",URI="stream_2.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION=1280x720,CODECS="av01.0.13M.10.0.110.02.02.01.0,mp4a.40.2",AUDIO="group_audio"
+stream_0.m3u8
+
+#EXT-X-STREAM-INF:BANDWIDTH=35552000,RESOLUTION=1280x720,CODECS="av01.0.13M.10.0.110.02.02.01.0,mp4a.40.2",AUDIO="group_audio"
+stream_1.m3u8
+`
+	render := func(profile model.ProfileSpec, content string) string {
+		t.Helper()
+		rec := &model.SessionRecord{State: model.SessionReady, Profile: profile}
+		rdr, _, valid, err := rewritePlaylist(strings.NewReader(content), rec, "", "", zerolog.Logger{})
+		require.NoError(t, err)
+		require.True(t, valid)
+		out, _ := io.ReadAll(rdr)
+		return string(out)
+	}
+	live := model.ProfileSpec{DVRWindowSec: 60, Container: "fmp4", TranscodeVideo: true}
+
+	out := render(live, masterContent)
+	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=13728000,AVERAGE-BANDWIDTH=8320000,RESOLUTION=1280x720,")
+	assert.Contains(t, out, "#EXT-X-STREAM-INF:BANDWIDTH=53328000,AVERAGE-BANDWIDTH=32320000,RESOLUTION=1280x720,")
+	assert.Contains(t, `AUDIO="group_audio"`, out)
+
+	copied := live
+	copied.TranscodeVideo = false
+	assert.Contains(t, render(copied, masterContent), "#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION")
+
+	vod := live
+	vod.VOD = true
+	vod.DVRWindowSec = 0
+	assert.Contains(t, render(vod, masterContent), "#EXT-X-STREAM-INF:BANDWIDTH=9152000,RESOLUTION")
+
+	measured := strings.Replace(masterContent, "BANDWIDTH=9152000,", "BANDWIDTH=14914616,AVERAGE-BANDWIDTH=8552529,", 1)
+	assert.Contains(t, render(live, measured), "BANDWIDTH=14914616,AVERAGE-BANDWIDTH=8552529,RESOLUTION")
+}
+
+func TestRewritePlaylist_DropsLeadingDiscontinuityOfFirstSegment(t *testing.T) {
+	rec := &model.SessionRecord{
+		State:   model.SessionReady,
+		Profile: model.ProfileSpec{DVRWindowSec: 60, Container: "fmp4", TranscodeVideo: true},
+	}
+	render := func(content string) string {
+		t.Helper()
+		rdr, _, valid, err := rewritePlaylist(strings.NewReader(content), rec, "", "", zerolog.Logger{})
+		require.NoError(t, err)
+		require.True(t, valid)
+		out, _ := io.ReadAll(rdr)
+		return string(out)
+	}
+	playlist := func(mediaSequence int, extra string) string {
+		return fmt.Sprintf(`#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:%d
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init_1.mp4"
+#EXT-X-DISCONTINUITY
+#EXTINF:2.000000,
+#EXT-X-PROGRAM-DATE-TIME:2026-10-07T12:38:30.337+0200
+seg_1_000000.m4s
+#EXTINF:2.000000,
+#EXT-X-PROGRAM-DATE-TIME:2026-10-07T12:38:32.337+0200
+seg_1_000001.m4s
+%s`, mediaSequence, extra)
+	}
+
+	out := render(playlist(0, ""))
+	assert.NotContains(t, out, "#EXT-X-DISCONTINUITY", "nothing precedes the session's first segment")
+	assert.Contains(t, out, "seg_1_000000.m4s")
+	assert.Contains(t, out, "#EXT-X-PROGRAM-DATE-TIME:2026-10-07T12:38:30.337+02:00")
+
+	restart := playlist(0, "#EXT-X-DISCONTINUITY\n#EXTINF:2.000000,\nseg_1_000002.m4s\n")
+	assert.Equal(t, 1, strings.Count(render(restart), "#EXT-X-DISCONTINUITY"), "a later discontinuity is real")
+
+	slid := render(playlist(7, ""))
+	assert.Contains(t, slid, "#EXT-X-DISCONTINUITY", "only a playlist starting at sequence 0 is known to have nothing before it")
 }

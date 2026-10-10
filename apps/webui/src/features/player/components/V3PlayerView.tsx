@@ -123,6 +123,20 @@ export function V3PlayerView({
         </div>
       )}
 
+      {/* Container level on purpose: .videoWrapper isolates its own stacking
+          context, so inside it no z-index could lift the banner above the top
+          header or the controls. */}
+      {viewState.isMuted && !viewState.showSpinnerCard && (
+        <button
+          type="button"
+          className={styles.unmuteBanner}
+          onClick={() => void actions.toggleMute()}
+          aria-label={viewState.audioToggleLabel}
+        >
+          <span aria-hidden="true">🔊</span> {viewState.audioToggleLabel}
+        </button>
+      )}
+
       {viewState.showStatsOverlay && (
         <div className={styles.statsOverlay}>
           <Card variant="standard">
@@ -207,17 +221,6 @@ export function V3PlayerView({
               )}
             </div>
           </div>
-        )}
-
-        {viewState.isMuted && !viewState.showSpinnerCard && (
-          <button
-            type="button"
-            className={styles.unmuteBanner}
-            onClick={() => void actions.toggleMute()}
-            aria-label={viewState.audioToggleLabel}
-          >
-            <span aria-hidden="true">🔊</span> {viewState.audioToggleLabel}
-          </button>
         )}
 
         <video

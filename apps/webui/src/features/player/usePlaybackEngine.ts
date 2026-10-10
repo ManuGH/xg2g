@@ -35,6 +35,7 @@ import {
   HLS_STARTUP_POLICY,
 } from './playbackEnginePolicy';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
+import { resolveLivePosition, type LivePositionMark } from './orchestrator/livePosition';
 import type { PlaybackLinkProfile } from './utils/playbackLinkProfile';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
@@ -49,6 +50,17 @@ type WaitForSessionReadyFn = (sessionId: string, budgetMs?: number) => Promise<V
 type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void>;
 
 const NATIVE_STALL_RECOVERY_MS = 2500;
+// Native WebKit HLS reports 'waiting' for transient pipeline reconfigurations
+// (device-observed on iOS when the user unmutes) while seconds of media are
+// still buffered. Such a waiting only counts as a stall if playback has not
+// resumed within this window; until then the last frame stays visible instead
+// of the buffering veil, whose temporary mute would also revoke the unmute.
+export const NATIVE_WAITING_GRACE_MS = 700;
+// With separate audio renditions (the live AV1 ladder) an unmute makes AVPlayer
+// re-enable the audio track; WebKit reports the A/V intersection as buffered, so
+// the buffer briefly reads empty although nothing is starving. A waiting this
+// soon after an unmute gets the same frame hold regardless of the buffer.
+export const NATIVE_UNMUTE_WAITING_WINDOW_MS = 1500;
 const HLS_STALL_RECOVERY_MS = 2200;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED = 220;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
@@ -109,6 +121,11 @@ interface PlaybackEngineController {
   resetPlaybackEngine: () => void;
   playHls: (url: string, engine?: PlaybackEngineName) => void;
   playDirectMp4: (url: string) => void;
+  /**
+   * Re-attach the current native HLS source on the same session; false if not
+   * applicable. With a mark the new source continues at that DVR position.
+   */
+  reattachNativeSource: (resumeAt?: LivePositionMark | null) => boolean;
   /** The browser rejected autoplay (even muted) for the current attempt; 'ready' is the resting state. */
   autoplayBlocked: boolean;
 }
@@ -137,6 +154,7 @@ export function usePlaybackEngine({
   onAudioTrackSwitched
 }: UsePlaybackEngineProps): PlaybackEngineController {
   const lastHlsUrlRef = useRef<string | null>(null);
+  const pendingNativeResumeRef = useRef<LivePositionMark | null>(null);
   const lastHlsEngineRef = useRef<PlaybackEngineName>('auto');
   const replayHlsRef = useRef<((url: string, engine?: PlaybackEngineName) => void) | null>(null);
   const decodeRecoveryInFlightRef = useRef(false);
@@ -194,6 +212,14 @@ export function usePlaybackEngine({
     const onLoadedMetadata = () => {
       pendingNativeAutoplayRef.current = null;
       onPlaybackMilestone?.('manifest');
+      const resumeAt = pendingNativeResumeRef.current;
+      pendingNativeResumeRef.current = null;
+      if (resumeAt) {
+        const target = resolveLivePosition(resumeAt, video);
+        if (target !== null) {
+          video.currentTime = target;
+        }
+      }
       video.play().catch((err) => {
         if ((err as { name?: string } | null)?.name === 'NotAllowedError' && !video.muted) {
           debugWarn('[V3Player] Unmuted native playback blocked, falling back to muted autoplay', err);
@@ -560,6 +586,7 @@ export function usePlaybackEngine({
 
   const resetPlaybackEngine = useCallback(() => {
     isTeardownRef.current = true;
+    pendingNativeResumeRef.current = null;
     setAutoplayBlocked(false);
     try {
       clearPendingNativeAutoplay();
@@ -868,6 +895,8 @@ export function usePlaybackEngine({
     const video = videoRef.current;
     if (!video) return;
 
+    // A resume position belongs to one re-attach only (set right after this).
+    pendingNativeResumeRef.current = null;
     setAutoplayBlocked(false);
     clearPendingNativeAutoplay();
     clearNativeStallRecovery();
@@ -1485,6 +1514,29 @@ export function usePlaybackEngine({
       }
     };
 
+    let nativeWaitingGraceTimer: number | null = null;
+    let lastUnmuteAt = Number.NEGATIVE_INFINITY;
+    let wasMuted = videoEl.muted;
+    const onVolumeChange = () => {
+      if (wasMuted && !videoEl.muted) {
+        lastUnmuteAt = performance.now();
+      }
+      wasMuted = videoEl.muted;
+    };
+    const clearNativeWaitingGrace = () => {
+      if (nativeWaitingGraceTimer !== null) {
+        window.clearTimeout(nativeWaitingGraceTimer);
+        nativeWaitingGraceTimer = null;
+      }
+    };
+
+    const enterWaitingBuffering = () => {
+      cancelPendingReveal();
+      clearProbeConfirmation();
+      clearHlsRenderProbe(false);
+      setStatus('buffering');
+    };
+
     const onWaiting = () => {
       if (decodeRecoveryInFlightRef.current) {
         debugLog('[V3Player] Event: waiting ignored during decode recovery');
@@ -1511,11 +1563,43 @@ export function usePlaybackEngine({
         return;
       }
 
-      debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
-      cancelPendingReveal();
-      clearProbeConfirmation();
-      clearHlsRenderProbe(false);
-      setStatus('buffering');
+      // 'waiting' implies readyState <= HAVE_CURRENT_DATA, so the gate above
+      // rarely applies to live native playback. A healthy buffer still means
+      // this is not network starvation: hold the frame for the grace window.
+      const recentUnmute = performance.now() - lastUnmuteAt < NATIVE_UNMUTE_WAITING_WINDOW_MS;
+      const holdFrame =
+        lastHlsEngineRef.current === 'native' &&
+        !hlsRef.current &&
+        !videoEl.paused &&
+        (bufferHealth > 0.5 || recentUnmute);
+      if (holdFrame) {
+        debugLog('[V3Player] Event: waiting (holding frame)', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
+        if (nativeWaitingGraceTimer === null) {
+          const waitingAt = videoEl.currentTime;
+          const waitingSrc = videoEl.currentSrc;
+          const waitingSessionId = sessionIdRef.current;
+          nativeWaitingGraceTimer = window.setTimeout(() => {
+            nativeWaitingGraceTimer = null;
+            if (
+              isTeardownRef.current ||
+              isUnmountedRef.current ||
+              decodeRecoveryInFlightRef.current ||
+              videoEl.paused ||
+              videoEl.currentSrc !== waitingSrc ||
+              sessionIdRef.current !== waitingSessionId ||
+              videoEl.currentTime - waitingAt > 0.1
+            ) {
+              return;
+            }
+            debugLog('[V3Player] Event: waiting persisted -> buffering');
+            enterWaitingBuffering();
+          }, NATIVE_WAITING_GRACE_MS);
+        }
+      } else {
+        debugLog('[V3Player] Event: waiting -> buffering', { readyState: videoEl.readyState, buff: bufferHealth.toFixed(1) });
+        clearNativeWaitingGrace();
+        enterWaitingBuffering();
+      }
       reportPlaybackWarning(PLAYBACK_WARNING_CODE_WAITING, 'waiting', 'decode');
       scheduleNativeStallRecovery(videoEl, 'waiting');
       scheduleHlsStallRecovery(videoEl, 'waiting');
@@ -1566,6 +1650,7 @@ export function usePlaybackEngine({
         return;
       }
 
+      clearNativeWaitingGrace();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
@@ -1590,6 +1675,7 @@ export function usePlaybackEngine({
     };
 
     const onPlaying = () => {
+      clearNativeWaitingGrace();
       onPlaybackMilestone?.('firstFrame');
       debugLog('[V3Player] Event: playing');
       clearNativeStallRecovery();
@@ -1663,6 +1749,7 @@ export function usePlaybackEngine({
       if (isTeardownRef.current) {
         return;
       }
+      clearNativeWaitingGrace();
       cancelPendingReveal();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
@@ -1681,6 +1768,7 @@ export function usePlaybackEngine({
     };
 
     const onError = () => {
+      clearNativeWaitingGrace();
       if (isTeardownRef.current) return;
       if (!videoEl.currentSrc || videoEl.currentSrc === 'about:blank') return;
 
@@ -1799,6 +1887,7 @@ export function usePlaybackEngine({
     };
 
     videoEl.addEventListener('waiting', onWaiting);
+    videoEl.addEventListener('volumechange', onVolumeChange);
     videoEl.addEventListener('stalled', onStalled);
     videoEl.addEventListener('seeking', onSeeking);
     videoEl.addEventListener('seeked', onSeeked);
@@ -1855,9 +1944,11 @@ export function usePlaybackEngine({
 
     return () => {
       cancelPendingReveal();
+      clearNativeWaitingGrace();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
       videoEl.removeEventListener('waiting', onWaiting);
+      videoEl.removeEventListener('volumechange', onVolumeChange);
       videoEl.removeEventListener('stalled', onStalled);
       videoEl.removeEventListener('seeking', onSeeking);
       videoEl.removeEventListener('seeked', onSeeked);
@@ -1895,10 +1986,27 @@ export function usePlaybackEngine({
     };
   }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, clearStartGateTimers]);
 
+  // Re-attaches the current native source on the same session: assigning src
+  // reruns the media load algorithm, so AVPlayer starts over at the playlist's
+  // EXT-X-START (behind the live edge) instead of a stale position.
+  const reattachNativeSource = useCallback((resumeAt?: LivePositionMark | null): boolean => {
+    const url = lastHlsUrlRef.current;
+    if (!url || lastHlsEngineRef.current !== 'native' || hlsRef.current || isTeardownRef.current || !videoRef.current) {
+      return false;
+    }
+    setStatus('buffering');
+    playHls(url, 'native');
+    // Set after playHls (which clears pending autoplay state) so the new
+    // source's first loadedmetadata restores the position before playing.
+    pendingNativeResumeRef.current = resumeAt ?? null;
+    return true;
+  }, [hlsRef, isTeardownRef, playHls, setStatus, videoRef]);
+
   return {
     resetPlaybackEngine,
     playHls,
     playDirectMp4,
+    reattachNativeSource,
     autoplayBlocked,
   };
 }
