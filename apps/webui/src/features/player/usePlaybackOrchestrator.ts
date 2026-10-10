@@ -32,7 +32,11 @@ import {
   shouldForceNativeMobileHls,
   shouldPreferNativeWebKitHls
 } from './utils/playerHelpers';
-import { gatherPlaybackCapabilities, type CapabilitySnapshot } from './utils/playbackCapabilities';
+import {
+  buildAirPlayCapabilities,
+  gatherPlaybackCapabilities,
+  type CapabilitySnapshot,
+} from './utils/playbackCapabilities';
 import {
   buildPlaybackProfileHeaders,
   clearNetworkStarvationHold,
@@ -61,7 +65,11 @@ import {
 } from './orchestrator/playbackMachine';
 import { usePlaybackController } from './orchestrator/usePlaybackController';
 import { PlaybackHttpError, type PlaybackController } from './orchestrator/playbackController';
-import { createDefaultLiveSessionTransport, type SessionReadyResult } from './orchestrator/liveSessionTransport';
+import {
+  appendPlaybackTicketToUrl,
+  createDefaultLiveSessionTransport,
+  type SessionReadyResult,
+} from './orchestrator/liveSessionTransport';
 import type { PlaybackCommand, PlaybackDomainState, PlaybackStopReason } from './orchestrator/playbackTypes';
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
@@ -154,6 +162,7 @@ export interface PlaybackOrchestratorActions {
   toggleMute(): void;
   changeVolume(nextVolume: number): void;
   togglePiP(): Promise<void>;
+  toggleAirPlay(): void;
   toggleStats(): void;
   toggleErrorDetails(): void;
   resumeFrom(positionSeconds: number): void;
@@ -389,6 +398,8 @@ export function usePlaybackOrchestrator(
   const activeLiveSessionIdRef = useRef<string | null>(null);
   const automaticProfileMemoryRef = useRef(createAutomaticProfileMemory());
   const linkProfileRef = useRef<PlaybackLinkProfile>('stable');
+  const playbackTargetRef = useRef<'local' | 'airplay'>('local');
+  const hasTicketedUrlRef = useRef<boolean>(false);
 
   const isLifecycleActive = useCallback((generation: number): boolean => (
     !disposedRef.current && lifecycleGenerationRef.current === generation
@@ -737,6 +748,31 @@ export function usePlaybackOrchestrator(
     [canZapChannels, zapAdjacentChannel],
   );
 
+  const handleAirPlayWirelessChange = useCallback((isWireless: boolean) => {
+    if (!isWireless) {
+      playbackTargetRef.current = 'local';
+      return;
+    }
+
+    const activeVideoCodec = sessionPlaybackTrace?.targetProfile?.video?.codec?.toLowerCase();
+    const isAlreadyAirPlayCompatible =
+      activeHlsEngine === 'native' &&
+      hasTicketedUrlRef.current &&
+      (playbackTargetRef.current === 'airplay' || activeVideoCodec === 'h264');
+
+    playbackTargetRef.current = 'airplay';
+    if (!isAlreadyAirPlayCompatible && (Boolean(sessionIdRef.current || activeRecordingRef.current) || startIntentInFlight.current)) {
+      dispatchPlayback({
+        type: 'intent.start.requested',
+        epoch: allocatePlaybackEpoch(),
+        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        serviceRef: (activeChannelRef.current || sRef || '').trim() || undefined,
+        recordingId: recordingId || undefined,
+        srcUrl: src || undefined,
+        explicitProfile: 'compatible',
+      });
+    }
+  }, [activeHlsEngine, allocatePlaybackEpoch, dispatchPlayback, recordingId, sRef, sessionIdRef, sessionPlaybackTrace, src]);
 
   const {
     showStats,
@@ -749,6 +785,8 @@ export function usePlaybackOrchestrator(
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
+    canShowAirPlay,
+    isAirPlayActive,
     isFullscreen,
     canToggleFullscreen,
     isPlaying,
@@ -779,6 +817,7 @@ export function usePlaybackOrchestrator(
     enterNativeFullscreen,
     enterDVRMode,
     togglePiP,
+    showAirPlayPicker,
     toggleMute,
     handleVolumeChange,
     applyAutoplayMute,
@@ -810,7 +849,8 @@ export function usePlaybackOrchestrator(
     mediaSubtitle: mediaSessionModel.subtitle,
     mediaArtworkUrl: mediaSessionModel.artworkUrl,
     onNextChannel: mediaSessionNextChannel,
-    onPreviousChannel: mediaSessionPreviousChannel
+    onPreviousChannel: mediaSessionPreviousChannel,
+    onAirPlayWirelessChange: handleAirPlayWirelessChange,
   });
 
   // Resume Hook
@@ -891,6 +931,7 @@ export function usePlaybackOrchestrator(
 
   const clearPlaybackSelection = useCallback(() => {
     activeRecordingRef.current = null;
+    hasTicketedUrlRef.current = false;
     resetNativeVideoState();
     resetBridgeState();
     setActiveRecordingId(null);
@@ -999,7 +1040,11 @@ export function usePlaybackOrchestrator(
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
-    return gatherPlaybackCapabilities(scope, video);
+    const rawCaps = await gatherPlaybackCapabilities(scope, video);
+    if (playbackTargetRef.current === 'airplay') {
+      return buildAirPlayCapabilities(rawCaps);
+    }
+    return rawCaps;
   }, [videoRef]);
 
   const startRecordingPlayback = useCallback(async (
@@ -1010,7 +1055,8 @@ export function usePlaybackOrchestrator(
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
-    const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
+    const effectiveOverride = playbackTargetRef.current === 'airplay' ? 'compatible' : profileOverride;
+    const profileForAttempt = normalizePlaybackProfileSelection(effectiveOverride ?? explicitProfile);
     const playbackEpoch = typeof epochOverride === 'number' ? epochOverride : allocatePlaybackEpoch();
     await prepareForNextPlaybackAttempt();
     if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
@@ -1318,7 +1364,8 @@ export function usePlaybackOrchestrator(
     const attemptEpoch = allocatePlaybackEpoch();
     playbackEpochRef.current = attemptEpoch;
 
-    const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
+    const effectiveOverride = playbackTargetRef.current === 'airplay' ? 'compatible' : profileOverride;
+    const profileForAttempt = normalizePlaybackProfileSelection(effectiveOverride ?? explicitProfile);
     startIntentInFlight.current = true;
     userPauseIntentRef.current = false;
     applyAutoplayMute();
@@ -1360,7 +1407,7 @@ export function usePlaybackOrchestrator(
         await prepareForNextPlaybackAttempt();
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) return;
         beginPlaybackAttempt(attemptEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering', false, false);
-        const srcEngine = resolvePreferredHlsEngine();
+        const srcEngine = playbackTargetRef.current === 'airplay' ? 'native' : resolvePreferredHlsEngine();
         playHls(src, srcEngine);
         setActiveHlsEngine(srcEngine);
         return;
@@ -1512,8 +1559,28 @@ export function usePlaybackOrchestrator(
         }
         const liveEngine = engineDecision.engine;
 
+        let finalStreamUrl = streamUrl;
+        const supportsWebkitAirPlay = typeof videoRef.current?.webkitShowPlaybackTargetPicker === 'function';
+        const shouldAttachPlaybackTicket =
+          playbackTargetRef.current === 'airplay' ||
+          (liveEngine === 'native' && supportsWebkitAirPlay);
+        if (shouldAttachPlaybackTicket && readySession.sessionId && transport.issuePlaybackTicket) {
+          try {
+            const ticket = await transport.issuePlaybackTicket({ sessionId: readySession.sessionId });
+            if (ticket?.ticket) {
+              finalStreamUrl = appendPlaybackTicketToUrl(streamUrl, ticket.ticket);
+              hasTicketedUrlRef.current = true;
+            }
+          } catch (ticketErr) {
+            debugWarn('[V3Player] Failed to issue playback ticket for AirPlay/native HLS', ticketErr);
+          }
+        }
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) {
+          return;
+        }
+
         setStatus('ready');
-        playHls(streamUrl, liveEngine);
+        playHls(finalStreamUrl, liveEngine);
         setActiveHlsEngine(liveEngine);
       } catch (err) {
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(attemptEpoch)) {
@@ -1798,6 +1865,8 @@ export function usePlaybackOrchestrator(
     setTraceId,
     token,
     controller,
+    transport,
+    videoRef,
   ]);
 
   startStreamRef.current = startStream;
@@ -2537,6 +2606,8 @@ export function usePlaybackOrchestrator(
     volume,
     canTogglePiP,
     isPip,
+    canShowAirPlay,
+    isAirPlayActive,
     showResumeOverlay,
     resumeState,
     capabilitySnapshot,
@@ -2582,6 +2653,32 @@ export function usePlaybackOrchestrator(
     toggleMute,
     changeVolume: handleVolumeChange,
     togglePiP,
+    toggleAirPlay() {
+      // Must be invoked synchronously inside the user gesture so Safari opens
+      // the system AirPlay route picker sheet.
+      showAirPlayPicker();
+
+      // If the player is currently running MSE/hls.js (e.g. desktop Safari with
+      // ManagedMediaSource) or does not yet have a ticketed native HLS URL,
+      // switch the target to 'airplay' and create a fresh H.264/AAC native HLS
+      // playback decision.
+      const needsAirPlayTargetSwitch =
+        activeHlsEngine !== 'native' ||
+        !hasTicketedUrlRef.current;
+
+      if (needsAirPlayTargetSwitch && (hasActivePlayback() || startIntentInFlight.current)) {
+        playbackTargetRef.current = 'airplay';
+        dispatchPlayback({
+          type: 'intent.start.requested',
+          epoch: allocatePlaybackEpoch(),
+          kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+          serviceRef: (activeChannelRef.current || sRef || '').trim() || undefined,
+          recordingId: recordingId || undefined,
+          srcUrl: src || undefined,
+          explicitProfile: 'compatible',
+        });
+      }
+    },
     toggleStats,
     toggleErrorDetails() {
       setShowErrorDetails((current) => !current);

@@ -302,3 +302,22 @@ export async function gatherPlaybackCapabilities(
     runtimeProbeVersion: probe.version,
   };
 }
+
+export function buildAirPlayCapabilities(
+  base: CapabilitySnapshot,
+): CapabilitySnapshot {
+  return {
+    ...base,
+    container: ["hls", "ts", "fmp4", "mp4"],
+    videoCodecs: ["h264"],
+    videoCodecSignals: [
+      { codec: "h264", supported: true, smooth: true, powerEfficient: true },
+    ],
+    audioCodecs: ["aac"],
+    hlsEngines: ["native"],
+    preferredHlsEngine: "native",
+    supportsHls: true,
+    allowTranscode: true,
+  };
+}
+

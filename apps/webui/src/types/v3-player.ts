@@ -129,6 +129,8 @@ export interface SafariVideoElement extends HTMLVideoElement {
   webkitExitFullscreen?: () => void;
   webkitSupportsFullscreen?: boolean;
   webkitDisplayingFullscreen?: boolean;
+  webkitShowPlaybackTargetPicker?: () => void;
+  webkitCurrentPlaybackTargetIsWireless?: boolean;
 }
 
 export type VideoElementRef = SafariVideoElement | null;
