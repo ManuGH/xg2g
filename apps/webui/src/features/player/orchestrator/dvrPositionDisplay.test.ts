@@ -19,32 +19,41 @@ const clock = (s: number): string => {
 };
 
 describe('formatDvrPositionDisplay', () => {
-  it('shows the offset behind live when scrubbed back', () => {
+  it('shows seconds behind live when scrubbed back less than a minute', () => {
+    const out = formatDvrPositionDisplay(
+      { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 5, currentTimeDisplay: '14:29' },
+      clock,
+      fakeT,
+    );
+    expect(out).toBe('5 s behind live');
+  });
+
+  it('shows the clock offset behind live when scrubbed back a minute or more', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 420, currentTimeDisplay: '14:23' },
       clock,
       fakeT,
     );
-    expect(out).toBe('14:23 · 7:00 behind live');
+    expect(out).toBe('7:00 behind live');
   });
 
-  it('shows Live (no offset) at the live edge — negative control for the offset branch', () => {
+  it('shows ● LIVE (no offset) at the live edge — negative control for the offset branch', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: true, behindLiveSeconds: 0, currentTimeDisplay: '14:30' },
       clock,
       fakeT,
     );
-    expect(out).toBe('14:30 · Live');
+    expect(out).toBe('● LIVE');
     expect(out).not.toMatch(/behind live/);
   });
 
-  it('treats a tiny offset within the edge slack as Live', () => {
+  it('treats a tiny offset within the edge slack as ● LIVE', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 3, currentTimeDisplay: '14:30' },
       clock,
       fakeT,
     );
-    expect(out).toBe('14:30 · Live');
+    expect(out).toBe('● LIVE');
   });
 
   it('for VOD shows the elapsed position only (no live wording)', () => {
@@ -54,6 +63,6 @@ describe('formatDvrPositionDisplay', () => {
       fakeT,
     );
     expect(out).toBe('12:34');
-    expect(out).not.toMatch(/Live/);
+    expect(out).not.toMatch(/LIVE/i);
   });
 });

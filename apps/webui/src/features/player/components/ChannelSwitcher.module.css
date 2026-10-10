@@ -68,6 +68,42 @@
   color: var(--text-primary);
 }
 
+.bouquetBar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--channel-switcher-border-subtle);
+  flex-shrink: 0;
+}
+.bouquetBar::-webkit-scrollbar {
+  display: none;
+}
+.bouquetPill {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--channel-switcher-input-border);
+  background: var(--channel-switcher-input);
+  color: var(--channel-switcher-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.bouquetPill:hover {
+  background: var(--channel-switcher-input-strong);
+  color: var(--text-primary);
+}
+.bouquetPillActive {
+  background: var(--channel-switcher-row-active);
+  border-color: var(--channel-switcher-focus-border);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .list {
   flex: 1;
   overflow-y: auto;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { postServicesNowNext, type Service } from '../../../client-ts';
 import { getStoredToken } from '../../../utils/tokenStorage';
@@ -12,9 +12,12 @@ interface ChannelSwitcherProps {
   open: boolean;
   onClose: () => void;
   token?: string | null;
+  bouquets?: { name: string; services?: number }[];
+  selectedBouquet?: string;
+  onSelectBouquet?: (bouquet: string) => Promise<unknown> | void;
 }
 
-const refOf = (c?: Service): string => c?.serviceRef ?? c?.id ?? '';
+const refOf = (c?: Service): string => c?.serviceRef?.trim() || c?.id?.trim() || '';
 const initials = (name?: string) => (name ?? '?').replace(/\s+/g, '').slice(0, 3).toUpperCase();
 
 /**
@@ -27,12 +30,40 @@ const initials = (name?: string) => (name ?? '?').replace(/\s+/g, '').slice(0, 3
  * Controlled (open/onClose) and positioned `absolute` WITHIN the player container —
  * never `fixed` — so it lands on the player whether windowed or fullscreen.
  */
-export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, token }: ChannelSwitcherProps) {
+export function ChannelSwitcher({
+  channels,
+  current,
+  onSwitch,
+  open,
+  onClose,
+  token,
+  bouquets,
+  selectedBouquet,
+  onSelectBouquet,
+}: ChannelSwitcherProps) {
   const [query, setQuery] = useState('');
+  const [pendingBouquet, setPendingBouquet] = useState<string | null>(null);
   const [nowNextMap, setNowNextMap] = useState<Record<string, string>>({});
   const listRef = useRef<HTMLDivElement>(null);
+  const bouquetBarRef = useRef<HTMLDivElement>(null);
   const currentRef = refOf(current);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    setPendingBouquet(null);
+  }, [selectedBouquet, channels]);
+
+  const handleSelectBouquet = useCallback(async (name: string) => {
+    if (!onSelectBouquet) return;
+    setPendingBouquet(name);
+    try {
+      await onSelectBouquet(name);
+    } catch (err) {
+      debugWarn('ChannelSwitcher bouquet selection failed', err);
+    } finally {
+      setPendingBouquet(null);
+    }
+  }, [onSelectBouquet]);
 
   useEffect(() => {
     if (!open || channels.length === 0) return;
@@ -89,28 +120,64 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setPendingBouquet(null);
       return;
     }
     if (filtered.length === 0) return;
     const raf = requestAnimationFrame(() => {
-      listRef.current
-        ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
-        ?.scrollIntoView?.({ block: 'center' });
+      const activeRow = currentRef
+        ? listRef.current?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
+        : null;
+      const targetRow = activeRow ?? listRef.current?.querySelector<HTMLElement>('button[data-ref]');
+      targetRow?.scrollIntoView?.({ block: 'center' });
+      targetRow?.focus?.({ preventScroll: true });
     });
     return () => cancelAnimationFrame(raf);
   }, [open, currentRef, filtered.length]);
 
-  // Esc closes (only while open).
+  useEffect(() => {
+    if (!open || !selectedBouquet) return;
+    const raf = requestAnimationFrame(() => {
+      bouquetBarRef.current
+        ?.querySelector<HTMLElement>(`[data-bouquet="${CSS.escape(selectedBouquet)}"]`)
+        ?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, selectedBouquet]);
+
+  // Esc closes (only while open) and ArrowUp/ArrowDown navigate channel rows.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const rows = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button[data-ref]') ?? []);
+        if (rows.length === 0) return;
+        const active = document.activeElement as HTMLButtonElement | null;
+        const idx = active ? rows.indexOf(active) : -1;
+        e.preventDefault();
+        e.stopPropagation();
+        const nextIdx =
+          idx === -1
+            ? 0
+            : e.key === 'ArrowDown'
+              ? Math.min(rows.length - 1, idx + 1)
+              : Math.max(0, idx - 1);
+        rows[nextIdx]?.focus();
+        rows[nextIdx]?.scrollIntoView?.({ block: 'nearest' });
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const showBouquets = Boolean(bouquets && bouquets.length > 1 && onSelectBouquet);
 
   return (
     <div className={styles.scrim} onClick={onClose}>
@@ -121,22 +188,58 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
             placeholder={t('player.searchChannel', { defaultValue: 'Sender suchen…' })}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            autoFocus
             aria-label={t('player.searchChannel', { defaultValue: 'Sender suchen' })}
           />
           <button className={styles.close} onClick={onClose} aria-label={t('common.close', { defaultValue: 'Schließen' })}>✕</button>
         </div>
-        <div className={styles.list} ref={listRef}>
-          {filtered.map((c) => {
+        {showBouquets ? (
+          <div
+            ref={bouquetBarRef}
+            className={styles.bouquetBar}
+            role="tablist"
+            aria-label={t('player.selectBouquet', { defaultValue: 'Bouquet wählen' })}
+          >
+            {bouquets!.map((b) => {
+              const isSelected = b.name === selectedBouquet;
+              const isPending = pendingBouquet === b.name;
+              return (
+                <button
+                  key={b.name}
+                  type="button"
+                  role="tab"
+                  disabled={Boolean(pendingBouquet)}
+                  aria-disabled={Boolean(pendingBouquet)}
+                  aria-selected={isSelected}
+                  aria-busy={isPending}
+                  data-bouquet={b.name}
+                  className={`${styles.bouquetPill} ${isSelected || isPending ? styles.bouquetPillActive : ''}`}
+                  onClick={() => {
+                    if (!isSelected && !pendingBouquet) {
+                      void handleSelectBouquet(b.name);
+                    }
+                  }}
+                >
+                  {b.name}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className={styles.list} ref={listRef} aria-busy={Boolean(pendingBouquet && pendingBouquet !== selectedBouquet)}>
+          {filtered.map((c, idx) => {
+            const isBouquetLoading = Boolean(pendingBouquet && pendingBouquet !== selectedBouquet);
             const ref = refOf(c);
-            const active = ref === currentRef;
+            const active = ref.length > 0 && ref === currentRef;
             const nowTitle = nowNextMap[ref];
             return (
               <button
-                key={ref}
+                key={ref || `${c.name ?? 'ch'}-${c.number ?? idx}`}
                 data-ref={ref}
-                className={`${styles.row} ${active ? styles.active : ''}`}
+                disabled={isBouquetLoading}
+                aria-disabled={isBouquetLoading}
+                className={`${styles.row} ${active ? styles.active : ''} ${isBouquetLoading ? styles.rowUnavailable : ''}`}
                 onClick={() => {
+                  if (isBouquetLoading) return;
                   if (!active) onSwitch(c);
                   onClose();
                 }}

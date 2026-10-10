@@ -274,8 +274,8 @@
     "seekTimeline": "Zeitleiste",
     "goLive": "Live gehen",
     "dvrPosition": {
-      "live": "{{time}} · Live",
-      "behindLive": "{{time}} · {{offset}} hinter Live"
+      "live": "● LIVE",
+      "behindLive": "{{offset}} hinter Live"
     },
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",
@@ -285,9 +285,11 @@
     "mute": "Stumm",
     "deviceVolumeHint": "Lautstärke mit Seitentasten",
     "pipTitle": "Bild-in-Bild (p)",
+    "airPlayTitle": "AirPlay",
     "statsTitle": "Statistiken (i)",
     "hotkeysHint": "Leertaste (Play/Pause) • F (Vollbild) • M (Stumm) • P (PiP) • I (Statistiken)",
     "pipLabel": "PiP",
+    "airPlayLabel": "AirPlay",
     "statsLabel": "Statistiken",
     "switchChannel": "Sender wechseln",
     "channelLabel": "Sender",
@@ -300,6 +302,7 @@
       "cinema": "Kino (Warm • D65-Look)"
     },
     "searchChannel": "Sender suchen…",
+    "selectBouquet": "Bouquet wählen",
     "noChannelFound": "Kein Sender gefunden",
     "statusStates": {
       "idle": "Leerlauf",

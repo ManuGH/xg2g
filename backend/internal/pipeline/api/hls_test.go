@@ -1223,6 +1223,98 @@ func TestExtractRequestTicketRejectsValuesTheServerNeverIssued(t *testing.T) {
 	})
 }
 
+func TestTouchPlaylistAccessTime_ExtendsLeaseExpiryForActiveReceiver(t *testing.T) {
+	now := time.Now()
+	nearExpiry := now.Add(5 * time.Second).Unix()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-airplay-lease",
+			State:                model.SessionReady,
+			LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+			LastPlaylistAccessAt: now.Add(-2 * time.Second),
+			LeaseExpiresAtUnix:   nearExpiry,
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-airplay-lease",
+		State:                model.SessionReady,
+		LastAccessUnix:       now.Add(-2 * time.Second).Unix(),
+		LastPlaylistAccessAt: now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   nearExpiry,
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-airplay-lease",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	assert.Greater(t, store.Session.LeaseExpiresAtUnix, nearExpiry)
+}
+
+func TestTouchPlaylistAccessTime_DoesNotExtendExpiredLease(t *testing.T) {
+	now := time.Now()
+	expiredAt := now.Add(-5 * time.Second).Unix()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:            "sid-expired-lease",
+			State:                model.SessionReady,
+			LastAccessUnix:       now.Add(-10 * time.Second).Unix(),
+			LastPlaylistAccessAt: now.Add(-10 * time.Second),
+			LeaseExpiresAtUnix:   expiredAt,
+		},
+	}
+	rec := &model.SessionRecord{
+		SessionID:            "sid-expired-lease",
+		State:                model.SessionReady,
+		LastAccessUnix:       now.Add(-10 * time.Second).Unix(),
+		LastPlaylistAccessAt: now.Add(-10 * time.Second),
+		LeaseExpiresAtUnix:   expiredAt,
+	}
+
+	touchPlaylistAccessTime(context.Background(), store, hlsRequest{
+		sessionID:  "sid-expired-lease",
+		filename:   "index.m3u8",
+		isPlaylist: true,
+	}, rec)
+
+	assert.Equal(t, expiredAt, store.Session.LeaseExpiresAtUnix, "expired lease must not be extended")
+}
+
+func TestServeHLS_RejectsExpiredLease(t *testing.T) {
+	now := time.Now()
+	expiredAt := now.Add(-5 * time.Second).Unix()
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID:          "sid-expired-serve",
+			State:              model.SessionReady,
+			LeaseExpiresAtUnix: expiredAt,
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/hls/sid-expired-serve/index.m3u8", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, nil, t.TempDir(), "sid-expired-serve", "index.m3u8")
+
+	assert.Equal(t, http.StatusGone, w.Code)
+	assert.Contains(t, w.Body.String(), "session expired")
+}
+
+func TestLkgPlaylistCacheKey_IsolatesTicketAndFilename(t *testing.T) {
+	const ticket = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	assert.NotEqual(
+		t,
+		lkgPlaylistCacheKey("sess-1", "index.m3u8", ""),
+		lkgPlaylistCacheKey("sess-1", "index.m3u8", ticket),
+	)
+	assert.NotEqual(
+		t,
+		lkgPlaylistCacheKey("sess-1", "master.m3u8", ticket),
+		lkgPlaylistCacheKey("sess-1", "stream_0.m3u8", ticket),
+	)
+}
+
 func TestRewritePlaylist_LiveTranscodeMasterDeclaresPeakBandwidth(t *testing.T) {
 	masterContent := `#EXTM3U
 #EXT-X-VERSION:7

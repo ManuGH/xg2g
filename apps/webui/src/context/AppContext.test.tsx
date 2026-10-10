@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -176,5 +176,70 @@ describe('AppProvider', () => {
     await waitFor(() => {
       expect(setClientAuthToken).toHaveBeenCalledWith('');
     });
+  });
+
+  it('discards stale out-of-order loadChannels responses when a newer bouquet is requested', async () => {
+    let resolveFirst: ((val: any) => void) | null = null;
+    let resolveSecond: ((val: any) => void) | null = null;
+
+    (getServices as any).mockImplementation((params: any) => {
+      const bouquet = params?.query?.bouquet;
+      if (bouquet === 'BouquetA') {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      if (bouquet === 'BouquetB') {
+        return new Promise((resolve) => {
+          resolveSecond = resolve;
+        });
+      }
+      return Promise.resolve({ data: [], error: undefined, response: { status: 200 } });
+    });
+
+    function ConcurrentSwitchProbe() {
+      const { channels: channelState, loadChannels } = useAppContext();
+      return (
+        <div>
+          <span data-testid="selected-bouquet">{channelState.selectedBouquet}</span>
+          <span data-testid="channels-count">{channelState.channels.length}</span>
+          <button data-testid="load-a" onClick={() => void loadChannels('BouquetA')}>A</button>
+          <button data-testid="load-b" onClick={() => void loadChannels('BouquetB')}>B</button>
+        </div>
+      );
+    }
+
+    renderWithRouter(<ConcurrentSwitchProbe />);
+
+    // Trigger A then B
+    fireEvent.click(screen.getByTestId('load-a'));
+    fireEvent.click(screen.getByTestId('load-b'));
+
+    // Second request (B) resolves first
+    resolveSecond!({
+      data: [{ servicereference: '1:0:1:B', name: 'Channel B' }],
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-bouquet')).toHaveTextContent('BouquetB');
+      expect(screen.getByTestId('channels-count')).toHaveTextContent('1');
+    });
+
+    // First request (A) resolves late
+    resolveFirst!({
+      data: [
+        { servicereference: '1:0:1:A1', name: 'Channel A1' },
+        { servicereference: '1:0:1:A2', name: 'Channel A2' },
+      ],
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    // Stale response from A must NOT overwrite B
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByTestId('selected-bouquet')).toHaveTextContent('BouquetB');
+    expect(screen.getByTestId('channels-count')).toHaveTextContent('1');
   });
 });

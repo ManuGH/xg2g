@@ -145,6 +145,10 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 	}
 
 	now := time.Now()
+	nowUnix := now.Unix()
+	if rec.LeaseExpiresAtUnix > 0 && nowUnix > rec.LeaseExpiresAtUnix {
+		return
+	}
 	// The first successful playlist GET after READY must always win, even if the
 	// session just transitioned to READY and LastAccessUnix was set during startup.
 	if !rec.LastPlaylistAccessAt.IsZero() &&
@@ -160,6 +164,9 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 		if r == nil {
 			return nil
 		}
+		if r.LeaseExpiresAtUnix > 0 && nowUnix > r.LeaseExpiresAtUnix {
+			return nil
+		}
 		if !r.LastPlaylistAccessAt.IsZero() &&
 			now.Sub(r.LastPlaylistAccessAt) < minPlaylistAccessUpdateInterval {
 			return nil
@@ -168,10 +175,16 @@ func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest
 		if !r.LastPlaylistAccessAt.IsZero() {
 			trace.LastPlaylistIntervalMs = durationToMilliseconds(now.Sub(r.LastPlaylistAccessAt))
 		}
-		r.LastAccessUnix = now.Unix()
+		r.LastAccessUnix = nowUnix
 		r.LastPlaylistAccessAt = now // PR-P3-2: Deterministic idle truth
+		if r.LeaseExpiresAtUnix > 0 && nowUnix <= r.LeaseExpiresAtUnix {
+			leaseWindow := model.SessionInactivityTTL(model.IdleThreshold, r.Profile.DVRWindowSec)
+			if candidateExpiry := now.Add(leaseWindow).Unix(); candidateExpiry > r.LeaseExpiresAtUnix {
+				r.LeaseExpiresAtUnix = candidateExpiry
+			}
+		}
 		trace.PlaylistRequestCount++
-		trace.LastPlaylistAtUnix = now.Unix()
+		trace.LastPlaylistAtUnix = nowUnix
 		updateHLSStallRisk(r, trace, now)
 		return nil
 	})
@@ -183,6 +196,10 @@ func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest,
 	}
 
 	now := time.Now()
+	nowUnix := now.Unix()
+	if rec.LeaseExpiresAtUnix > 0 && nowUnix > rec.LeaseExpiresAtUnix {
+		return
+	}
 	if rec.PlaybackTrace != nil && rec.PlaybackTrace.HLS != nil {
 		trace := rec.PlaybackTrace.HLS
 		if trace.LastSegmentName == req.cleanName && trace.LastSegmentAtUnix > 0 {
@@ -200,6 +217,9 @@ func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest,
 
 	_, _ = updater.UpdateSession(ctx, req.sessionID, func(r *model.SessionRecord) error {
 		if r == nil {
+			return nil
+		}
+		if r.LeaseExpiresAtUnix > 0 && nowUnix > r.LeaseExpiresAtUnix {
 			return nil
 		}
 		trace := ensureHLSAccessTrace(r)
@@ -781,6 +801,10 @@ func extractRequestTicket(r *http.Request) string {
 	return ""
 }
 
+func lkgPlaylistCacheKey(sessionID, filename, ticket string) string {
+	return sessionID + "|" + filename + "|" + ticket
+}
+
 func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, sessionDir string, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
@@ -805,6 +829,7 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 
 	if req.isPlaylist {
 		ticket := extractRequestTicket(r)
+		lkgKey := lkgPlaylistCacheKey(req.sessionID, req.filename, ticket)
 		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, ticket, logger)
 		if rewriteErr != nil || !valid {
 			if errors.Is(rewriteErr, hls.ErrNoSafeSegmentAvailable) {
@@ -812,7 +837,7 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 				http.Error(w, "stream starting: waiting for first decodable RAP segment", http.StatusServiceUnavailable)
 				return
 			}
-			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
+			if lkgRaw, ok := lkgPlaylists.Load(lkgKey); ok {
 				lkgBytes := lkgRaw.([]byte)
 				// This path writes the body directly instead of going through
 				// http.ServeContent, so nothing else would state the type and
@@ -834,7 +859,7 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 		}
 
 		payload, _ := io.ReadAll(playlist)
-		lkgPlaylists.Store(req.sessionID, payload)
+		lkgPlaylists.Store(lkgKey, payload)
 
 		if startupPolicy != nil {
 			persistHLSStartupPolicy(r.Context(), store, req.sessionID, *startupPolicy)
@@ -903,7 +928,9 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		return
 	}
 
-	if rec.ExpiresAtUnix > 0 && time.Now().Unix() > rec.ExpiresAtUnix {
+	nowUnix := time.Now().Unix()
+	if (rec.ExpiresAtUnix > 0 && nowUnix > rec.ExpiresAtUnix) ||
+		(rec.LeaseExpiresAtUnix > 0 && nowUnix > rec.LeaseExpiresAtUnix) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "session expired", http.StatusGone)
 		return

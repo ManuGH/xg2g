@@ -37,6 +37,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const [channels, setChannels] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const selectedBouquetRef = useRef<string>('');
+  const loadChannelsRequestSeq = useRef<number>(0);
 
   // Playback State
   const [playingChannel, setPlayingChannel] = useState<Service | null>(null);
@@ -100,26 +101,33 @@ export function AppProvider({ children }: AppProviderProps) {
   }, []);
 
   const loadChannels = useCallback(async (bouquetName: string): Promise<void> => {
+    const seq = ++loadChannelsRequestSeq.current;
     setLoading(true);
     try {
       const data = await fetchChannels(bouquetName);
+      if (seq !== loadChannelsRequestSeq.current) return;
       setChannels(data);
       setSelectedBouquet(bouquetName);
       debugLog('[AppContext] Channels loaded. Count:', data.length);
     } catch (err) {
+      if (seq !== loadChannelsRequestSeq.current) return;
       debugError('[AppContext] Failed to load channels:', formatError(err));
     } finally {
-      setLoading(false);
+      if (seq === loadChannelsRequestSeq.current) {
+        setLoading(false);
+      }
     }
   }, [fetchChannels]);
 
   const loadBouquetsAndChannels = useCallback(async (): Promise<void> => {
+    const seq = ++loadChannelsRequestSeq.current;
     setLoading(true);
     try {
       debugLog('[AppContext] Fetching bouquets...');
       const response = await getServicesBouquets();
       throwOnClientResultError(response, { source: 'AppContext.loadBouquetsAndChannels' });
       const bouquetData = response.data || [];
+      if (seq !== loadChannelsRequestSeq.current) return;
       setBouquets(bouquetData);
       debugLog('[AppContext] Bouquets loaded. Count:', bouquetData.length);
 
@@ -128,17 +136,21 @@ export function AppProvider({ children }: AppProviderProps) {
         ? currentSelectedBouquet
         : (bouquetData[0]?.name || '');
       const channelData = await fetchChannels(nextSelectedBouquet);
+      if (seq !== loadChannelsRequestSeq.current) return;
       setChannels(channelData);
       selectedBouquetRef.current = nextSelectedBouquet;
       setSelectedBouquet(nextSelectedBouquet);
       debugLog('[AppContext] Channels loaded. Count:', channelData.length);
       setDataLoaded(true);
     } catch (err) {
+      if (seq !== loadChannelsRequestSeq.current) return;
       debugError('[AppContext] Failed to load initial data:', formatError(err));
       const apiErr = err as { status?: number };
       debugLog('[AppContext] Error status:', apiErr.status ?? 'unknown');
     } finally {
-      setLoading(false);
+      if (seq === loadChannelsRequestSeq.current) {
+        setLoading(false);
+      }
     }
   }, [fetchChannels]);
 

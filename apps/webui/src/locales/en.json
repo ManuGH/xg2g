@@ -274,8 +274,8 @@
     "seekTimeline": "Seek timeline",
     "goLive": "Go live",
     "dvrPosition": {
-      "live": "{{time}} · Live",
-      "behindLive": "{{time}} · {{offset}} behind live"
+      "live": "● LIVE",
+      "behindLive": "{{offset}} behind live"
     },
     "fullscreenLabel": "Fullscreen",
     "exitFullscreenLabel": "Exit fullscreen",
@@ -285,9 +285,11 @@
     "mute": "Mute",
     "deviceVolumeHint": "Use device buttons",
     "pipTitle": "Picture-in-Picture (p)",
+    "airPlayTitle": "AirPlay",
     "statsTitle": "Stats for Nerds (i)",
     "hotkeysHint": "Space (Play/Pause) • F (Full) • M (Mute) • P (PiP) • I (Stats)",
     "pipLabel": "PiP",
+    "airPlayLabel": "AirPlay",
     "statsLabel": "Stats",
     "switchChannel": "Switch Channel",
     "channelLabel": "Channel",
@@ -300,6 +302,7 @@
       "cinema": "Cinema (Warm • D65-Look)"
     },
     "searchChannel": "Search channels…",
+    "selectBouquet": "Select bouquet",
     "noChannelFound": "No channel found",
     "statusStates": {
       "idle": "Idle",

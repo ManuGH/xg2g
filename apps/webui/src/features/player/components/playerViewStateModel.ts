@@ -114,6 +114,10 @@ export interface V3PlayerViewState {
   pipTitle: string;
   pipLabel: string;
   pipActive: boolean;
+  showAirPlayButton: boolean;
+  airPlayTitle: string;
+  airPlayLabel: string;
+  airPlayActive: boolean;
   statsLabel: string;
   statsActive: boolean;
   showStopButton: boolean;
@@ -233,6 +237,8 @@ export interface BuildViewStateInput {
   volume: number;
   canTogglePiP: boolean;
   isPip: boolean;
+  canShowAirPlay?: boolean;
+  isAirPlayActive?: boolean;
   showResumeOverlay: boolean;
   resumeState: { posSeconds: number } | null;
   capabilitySnapshot?: CapabilitySnapshot | null;
@@ -461,7 +467,7 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     seekForward15mLabel: t('player.seekForward15m'),
     playPauseLabel: input.isPlaying ? t('player.pause') : t('player.play'),
     playPauseIcon: input.isPlaying ? '⏸' : '▶',
-    ttffBadgeLabel: input.ttffMetrics ? `${(input.ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
+    ttffBadgeLabel: input.ttffMetrics ? `${(input.ttffMetrics.ttffMs / 1000).toFixed(1)} s` : null,
     ttffTitle: input.ttffMetrics
       ? `TTFF: ${input.ttffMetrics.ttffMs}ms (${input.ttffMetrics.manifestMs}ms manifest + ${input.ttffMetrics.bufferMs}ms decode)`
       : null,
@@ -505,6 +511,10 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     pipTitle: t('player.pipTitle'),
     pipLabel: t('player.pipLabel'),
     pipActive: input.isPip,
+    showAirPlayButton: Boolean(input.canShowAirPlay),
+    airPlayTitle: t('player.airPlayTitle', { defaultValue: 'AirPlay' }),
+    airPlayLabel: t('player.airPlayLabel', { defaultValue: 'AirPlay' }),
+    airPlayActive: Boolean(input.isAirPlayActive),
     statsLabel: t('player.statsLabel'),
     statsActive: input.showStats,
     showStopButton: !input.onClose,

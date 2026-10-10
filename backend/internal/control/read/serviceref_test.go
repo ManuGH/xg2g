@@ -93,6 +93,18 @@ func TestExtractServiceRef(t *testing.T) {
 			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//provider.com/live/ch1.m3u8" + "?" + "token=secret_abc:Ch 1",
 			desc:   "Raw IPTV reference starting with 4097: must preserve query string parameters",
 		},
+		{
+			name:   "Outer URL Escaped IPTV Stream URL From StreamURL Builder",
+			rawURL: "http://receiver.invalid:8001/4097:0:1:0:0:0:0:0:0:0:http%253a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/2171.ts:DE:%20RTL%20HD",
+			want:   "4097:0:1:0:0:0:0:0:0:0:http%3a//canary.invalid/SECRET-CANARY-1/live/token-xyz-987/2171.ts:DE: RTL HD",
+			desc:   "Outer URL path escaping (%253a and %20 from url.URL.String) must be unescaped once to match raw Enigma2 IPTV serviceRef",
+		},
+		{
+			name:   "Outer URL Escaped IPTV Stream URL With Encoded Query",
+			rawURL: "http://receiver.invalid:8001/5002:0:1:0:0:0:0:0:0:0:https%253a//canary.invalid/live/stream.m3u8%3Ftoken=xyz123&exp=456:Canary%20Channel",
+			want:   "5002:0:1:0:0:0:0:0:0:0:https%3a//canary.invalid/live/stream.m3u8" + "?" + "token=xyz123&exp=456:Canary Channel",
+			desc:   "Outer URL path escaping with %253a and %3F must unescape to single-encoded IPTV reference",
+		},
 	}
 
 	for _, tt := range tests {

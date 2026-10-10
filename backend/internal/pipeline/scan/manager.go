@@ -259,18 +259,29 @@ func (m *Manager) Stop() {
 	m.bgWG.Wait()
 }
 
+func normalizeExtractedIPTVRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	lower := strings.ToLower(ref)
+	if strings.Contains(lower, "%25") || (strings.Contains(ref, "%") && !strings.Contains(lower, "%3a")) {
+		if unescaped, err := url.PathUnescape(ref); err == nil && unescaped != "" {
+			return unescaped
+		}
+	}
+	return ref
+}
+
 func extractIPTVFromURL(rawURL string) (string, bool) {
 	rawURL = strings.TrimSpace(rawURL)
 	prefixes := []string{"/4097:", "/5001:", "/5002:", "/iptv_", "/IPTV_"}
 	for _, pfx := range prefixes {
 		if idx := strings.Index(rawURL, pfx); idx != -1 {
-			return rawURL[idx+1:], true
+			return normalizeExtractedIPTVRef(rawURL[idx+1:]), true
 		}
 	}
 	rawPrefixes := []string{"4097:", "5001:", "5002:", "iptv_", "IPTV_"}
 	for _, pfx := range rawPrefixes {
 		if strings.HasPrefix(rawURL, pfx) {
-			return rawURL, true
+			return normalizeExtractedIPTVRef(rawURL), true
 		}
 	}
 	return "", false

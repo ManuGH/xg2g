@@ -62,8 +62,7 @@ class GuideActivity : AppCompatActivity() {
                 serviceRef = channel.serviceRef,
                 title = channel.displayName,
                 logoUrl = channel.logoUrl,
-                authToken = authToken,
-                profile = "direct"
+                authToken = authToken
             )
         )
     }

@@ -212,7 +212,7 @@ internal fun WebUiChannelCard(
                 }
             }
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp && event.key.isGuidePlayKey()) {
+                if (isFocused && event.type == KeyEventType.KeyUp && event.key.isGuidePlayKey()) {
                     onPlay()
                     true
                 } else {

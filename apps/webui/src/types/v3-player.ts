@@ -71,6 +71,9 @@ export interface V3PlayerBaseProps {
   /** Live-only: full channel list + switch callback for the in-player zapper. */
   channels?: Service[];
   onSwitchChannel?: (channel: Service) => void;
+  bouquets?: { name: string; services?: number }[];
+  selectedBouquet?: string;
+  onSelectBouquet?: (bouquet: string) => void;
 }
 
 export interface V3PlayerLiveProps extends V3PlayerBaseProps {
@@ -129,6 +132,8 @@ export interface SafariVideoElement extends HTMLVideoElement {
   webkitExitFullscreen?: () => void;
   webkitSupportsFullscreen?: boolean;
   webkitDisplayingFullscreen?: boolean;
+  webkitShowPlaybackTargetPicker?: () => void;
+  webkitCurrentPlaybackTargetIsWireless?: boolean;
 }
 
 export type VideoElementRef = SafariVideoElement | null;

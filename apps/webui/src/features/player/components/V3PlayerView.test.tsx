@@ -24,6 +24,7 @@ function createActions(): PlaybackOrchestratorActions {
     toggleMute: vi.fn(),
     changeVolume: vi.fn(),
     togglePiP: vi.fn().mockResolvedValue(undefined),
+    toggleAirPlay: vi.fn(),
     toggleStats: vi.fn(),
     toggleErrorDetails: vi.fn(),
     resumeFrom: vi.fn(),
@@ -138,6 +139,10 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     pipTitle: 'Picture in picture',
     pipLabel: 'PiP',
     pipActive: false,
+    showAirPlayButton: false,
+    airPlayTitle: 'AirPlay',
+    airPlayLabel: 'AirPlay',
+    airPlayActive: false,
     statsLabel: 'Stats',
     statsActive: false,
     showStopButton: false,
@@ -213,12 +218,14 @@ describe('V3PlayerView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Back 15s' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forward 15s' }));
     fireEvent.change(screen.getByRole('slider'), { target: { value: '15' } });
     fireEvent.click(screen.getByRole('button', { name: 'Go live' }));
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
 
-    expect(actions.seekBy).toHaveBeenCalledWith(-15);
+    expect(actions.seekBy).toHaveBeenNthCalledWith(1, -15);
+    expect(actions.seekBy).toHaveBeenNthCalledWith(2, 15);
     expect(actions.seekTo).toHaveBeenNthCalledWith(1, 115);
     // The LIVE button now goes through seekToLiveEdge (lands behind the edge),
     // not a raw seekTo(seekableEnd) which stalled on the un-decodable boundary.
@@ -356,5 +363,31 @@ describe('V3PlayerView', () => {
     fireEvent.click(av1Option);
 
     expect(actions.changeProfile).toHaveBeenCalledWith('cinema');
+  });
+
+  it('renders AirPlay button when showAirPlayButton is true and invokes toggleAirPlay on click', () => {
+    const actions = createActions();
+    const viewState = createViewState({
+      showPlaybackChrome: true,
+      showAirPlayButton: true,
+      airPlayActive: true,
+      airPlayLabel: 'AirPlay',
+      airPlayTitle: 'AirPlay',
+    });
+
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={viewState}
+        actions={actions}
+      />
+    );
+
+    const airPlayBtn = screen.getByRole('button', { name: 'AirPlay' });
+    expect(airPlayBtn).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(airPlayBtn);
+    expect(actions.toggleAirPlay).toHaveBeenCalledTimes(1);
   });
 });

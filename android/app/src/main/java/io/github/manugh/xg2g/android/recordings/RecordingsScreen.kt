@@ -81,6 +81,10 @@ internal fun RecordingsScreen(
     var lastFocusedId by rememberSaveable { mutableStateOf<String?>(null) }
     val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
 
+    androidx.activity.compose.BackHandler(enabled = state.breadcrumbs.isNotEmpty()) {
+        viewModel.navigateUp()
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = colorResource(R.color.color_bg_base)

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
@@ -60,7 +61,7 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Persistent info overlay (shown briefly after playback starts) -->
+    <!-- Error/Warning banner (shown when playback degrades or encounters error) -->
     <LinearLayout
         android:id="@+id/player_overlay"
         android:layout_width="match_parent"
@@ -91,5 +92,257 @@
             android:text="@string/native_playback_status_loading"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="@color/color_text_secondary" />
+    </LinearLayout>
+
+    <!-- Top OSD Bar: Close button & Top Info -->
+    <FrameLayout
+        android:id="@+id/player_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@drawable/bg_player_top_scrim"
+        android:paddingHorizontal="28dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <ImageButton
+            android:id="@+id/player_btn_close"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="end|top"
+            android:background="@drawable/bg_player_control_button"
+            android:contentDescription="@string/player_close"
+            android:focusable="true"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_player_close" />
+    </FrameLayout>
+
+    <!-- Center HUD / Quick Action Toast -->
+    <TextView
+        android:id="@+id/player_feedback_hud"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_player_control_button"
+        android:fontFamily="@font/space_grotesk"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="14dp"
+        android:textColor="#00E5FF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:text="↶ 15s"
+        tools:visibility="visible" />
+
+    <!-- Bottom OSD Bar: Timeline, Live Status, Transport Controls, EPG Info -->
+    <LinearLayout
+        android:id="@+id/player_osd_bottom"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_player_osd_scrim"
+        android:orientation="vertical"
+        android:paddingHorizontal="32dp"
+        android:paddingTop="36dp"
+        android:paddingBottom="28dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <!-- Row 1: Live Badge, Time Offset & Seekbar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/player_live_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_player_badge_live"
+                android:fontFamily="@font/ibm_plex_sans"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="3dp"
+                android:text="● LIVE"
+                android:textColor="@color/color_live"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/player_time_offset"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:fontFamily="@font/ibm_plex_sans"
+                android:textColor="@color/color_text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                tools:text="5 s hinter Live" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/player_time_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/ibm_plex_sans"
+                android:textColor="@color/color_text_secondary"
+                android:textSize="13sp"
+                tools:text="00:15 / 01:30" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/player_seekbar"
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:layout_marginTop="6dp"
+            android:focusable="true"
+            android:max="1000"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:progressDrawable="@drawable/progress_player_seekbar"
+            android:splitTrack="false"
+            android:thumb="@drawable/thumb_player_seekbar" />
+
+        <!-- Row 2: Transport Controls + EPG Metadata + Stats -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Transport Buttons -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/player_btn_rewind"
+                    android:layout_width="54dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_player_control_button"
+                    android:focusable="true"
+                    android:fontFamily="@font/ibm_plex_sans"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
+                    android:text="↶15"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/player_btn_play_pause"
+                    android:layout_width="54dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_player_control_button"
+                    android:contentDescription="Play/Pause"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_player_pause" />
+
+                <Button
+                    android:id="@+id/player_btn_forward"
+                    android:layout_width="54dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_player_control_button"
+                    android:focusable="true"
+                    android:fontFamily="@font/ibm_plex_sans"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
+                    android:text="↷15"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/player_btn_live"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_player_live_button"
+                    android:focusable="true"
+                    android:fontFamily="@font/ibm_plex_sans"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="76dp"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="0dp"
+                    android:text="→ LIVE"
+                    android:textColor="@color/color_live"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Metadata Info -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:layout_marginEnd="16dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/player_program_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="@font/space_grotesk"
+                    android:maxLines="1"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="Live F1: Qualifying - GP Singapur" />
+
+                <TextView
+                    android:id="@+id/player_channel_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:fontFamily="@font/ibm_plex_sans"
+                    android:maxLines="1"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="13sp"
+                    tools:text="Sky Sport F1" />
+            </LinearLayout>
+
+            <!-- Right Telemetry Badge -->
+            <LinearLayout
+                android:id="@+id/player_stats_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_player_control_button"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="6dp">
+
+                <TextView
+                    android:id="@+id/player_stats_pill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/ibm_plex_sans"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="12sp"
+                    tools:text="⚡ 12.0 s" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 </FrameLayout>

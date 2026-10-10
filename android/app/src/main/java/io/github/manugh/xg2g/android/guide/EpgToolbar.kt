@@ -69,7 +69,6 @@ internal fun GuideHeader(
             }
             OutlinedButton(
                 onClick = onRefresh,
-                modifier = Modifier.focusProperties { canFocus = false },
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 colors = ButtonDefaults.outlinedButtonColors(

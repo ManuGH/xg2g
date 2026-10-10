@@ -24,7 +24,10 @@ function V3Player(props: V3PlayerProps) {
   // `durationSeconds` remains the normative duration truth at the composition seam.
   void viewState.playback.durationSeconds;
 
-  const hasChannels = !!(props.channels && props.channels.length > 0 && props.onSwitchChannel);
+  const hasChannels = Boolean(
+    props.onSwitchChannel &&
+      ((props.channels && props.channels.length > 0) || (props.bouquets && props.bouquets.length > 0)),
+  );
   const handleCloseChannels = useCallback(() => setChannelsOpen(false), []);
 
   return (
@@ -38,12 +41,15 @@ function V3Player(props: V3PlayerProps) {
     >
       {hasChannels ? (
         <ChannelSwitcher
-          channels={props.channels!}
+          channels={props.channels ?? []}
           current={'channel' in props ? props.channel : undefined}
           onSwitch={props.onSwitchChannel!}
           open={channelsOpen}
           onClose={handleCloseChannels}
           token={props.token}
+          bouquets={props.bouquets}
+          selectedBouquet={props.selectedBouquet}
+          onSelectBouquet={props.onSelectBouquet}
         />
       ) : null}
     </V3PlayerView>

@@ -23,6 +23,20 @@ export interface SessionReadyResult {
   [key: string]: unknown;
 }
 
+export interface PlaybackTicketResult {
+  sessionId?: string;
+  ticket: string;
+  expiresIn?: number;
+}
+
+export function appendPlaybackTicketToUrl(url: string, ticket?: string | null): string {
+  const trimmedTicket = typeof ticket === 'string' ? ticket.trim() : '';
+  if (!url || !trimmedTicket) return url;
+  if (/[?&](ticket|t)=/.test(url)) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}ticket=${encodeURIComponent(trimmedTicket)}`;
+}
+
 export interface LiveSessionTransport {
   fetchStreamInfo(params: {
     serviceRef: string;
@@ -47,6 +61,11 @@ export interface LiveSessionTransport {
     signal?: AbortSignal;
     keepalive?: boolean;
   }): Promise<void>;
+
+  issuePlaybackTicket?(params: {
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<PlaybackTicketResult | null>;
 }
 
 export class PlaybackHttpError extends Error {
@@ -343,6 +362,33 @@ export function createDefaultLiveSessionTransport({
       });
       if (!res.ok) {
         throw new Error(`Stop intent failed with HTTP ${res.status}`);
+      }
+    },
+
+    async issuePlaybackTicket({ sessionId, signal }) {
+      const trimmedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+      if (!trimmedSessionId) return null;
+      try {
+        const res = await fetchFn(`${apiBase}/sessions/${encodeURIComponent(trimmedSessionId)}/playback-ticket`, {
+          method: 'POST',
+          headers: authHeaders(false),
+          signal,
+        });
+        if (!res.ok) {
+          return null;
+        }
+        const data = (await parseResponseBody(res, signal)) as Record<string, unknown> | null;
+        const ticket = typeof data?.ticket === 'string' ? data.ticket.trim() : '';
+        if (!ticket) {
+          return null;
+        }
+        return {
+          sessionId: typeof data?.sessionId === 'string' ? data.sessionId : trimmedSessionId,
+          ticket,
+          expiresIn: typeof data?.expiresIn === 'number' ? data.expiresIn : undefined,
+        };
+      } catch {
+        return null;
       }
     },
   };

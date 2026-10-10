@@ -47,6 +47,22 @@ export function PipGlyph() {
   );
 }
 
+export function AirPlayGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 15l5 6H7l5-6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function StatsGlyph() {
   return (
     <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -116,3 +132,10 @@ export function PictureModeGlyph() {
   );
 }
 
+export function CloseGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}

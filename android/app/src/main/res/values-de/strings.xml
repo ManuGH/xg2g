@@ -254,4 +254,6 @@
     <string name="settings_scan_start_failed">Sendersuchlauf konnte nicht gestartet werden.</string>
     <string name="settings_token_saved">API-Token erfolgreich gespeichert.</string>
     <string name="settings_message_generic">Einstellungen wurden aktualisiert.</string>
+    <string name="player_behind_live_format">%1$d s hinter Live</string>
+    <string name="player_close">Schließen</string>
 </resources>

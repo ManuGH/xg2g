@@ -54,6 +54,7 @@ interface UsePlayerChromeProps {
   /** Live channel zapping via media-session nexttrack/previoustrack (lock screen, headset). */
   onNextChannel?: (() => void) | null;
   onPreviousChannel?: (() => void) | null;
+  onAirPlayWirelessChange?: (isWireless: boolean) => void;
 }
 
 interface PlayerChromeController {
@@ -68,6 +69,8 @@ interface PlayerChromeController {
   isWebKitFullscreenActive: boolean;
   isPip: boolean;
   canTogglePiP: boolean;
+  canShowAirPlay: boolean;
+  isAirPlayActive: boolean;
   isFullscreen: boolean;
   canToggleFullscreen: boolean;
   isPlaying: boolean;
@@ -100,6 +103,7 @@ interface PlayerChromeController {
   primeNativeFullscreen: () => boolean;
   enterDVRMode: () => void;
   togglePiP: () => Promise<void>;
+  showAirPlayPicker: () => boolean;
   toggleMute: () => void;
   handleVolumeChange: (newVolume: number) => void;
   applyAutoplayMute: () => void;
@@ -152,6 +156,7 @@ export function usePlayerChrome({
   mediaArtworkUrl,
   onNextChannel,
   onPreviousChannel,
+  onAirPlayWirelessChange,
 }: UsePlayerChromeProps): PlayerChromeController {
   const [showStats, setShowStats] = useState(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
@@ -160,6 +165,8 @@ export function usePlayerChrome({
   const [isWebKitFullscreenActive, setIsWebKitFullscreenActive] = useState(false);
   const [isPip, setIsPip] = useState(false);
   const [canTogglePiP, setCanTogglePiP] = useState(false);
+  const [canShowAirPlay, setCanShowAirPlay] = useState(false);
+  const [isAirPlayActive, setIsAirPlayActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [canToggleFullscreen, setCanToggleFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -730,6 +737,25 @@ export function usePlayerChrome({
     }
   }, [videoRef]);
 
+  const showAirPlayPicker = useCallback((): boolean => {
+    const video = videoRef.current;
+    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') {
+      return false;
+    }
+    try {
+      if ('disableRemotePlayback' in video && video.disableRemotePlayback) {
+        video.disableRemotePlayback = false;
+      }
+      video.removeAttribute?.('disableRemotePlayback');
+      video.setAttribute?.('x-webkit-airplay', 'allow');
+      video.webkitShowPlaybackTargetPicker();
+      return true;
+    } catch (err) {
+      debugWarn('WebKit AirPlay target picker failed', err);
+      return false;
+    }
+  }, [videoRef]);
+
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -821,9 +847,30 @@ export function usePlayerChrome({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+      const target = e.target as HTMLElement | null;
+      const isInput = Boolean(target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable));
       if (isInput) return;
+
+      setIsIdle(false);
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), idleDelayMs);
+
+      const moveFocusBetweenButtons = (delta: -1 | 1): boolean => {
+        const container = containerRef.current;
+        if (!container || !target || target.tagName !== 'BUTTON' || !container.contains(target)) {
+          return false;
+        }
+        const buttons = Array.from(
+          container.querySelectorAll<HTMLButtonElement>('button:not([disabled])'),
+        ).filter((btn) => btn.offsetParent !== null || btn === target);
+        const idx = buttons.indexOf(target as HTMLButtonElement);
+        if (idx === -1 || buttons.length <= 1) return false;
+        const nextIdx = Math.min(buttons.length - 1, Math.max(0, idx + delta));
+        if (nextIdx !== idx) {
+          buttons[nextIdx]?.focus();
+        }
+        return true;
+      };
 
       switch (e.key.toLowerCase()) {
         case 'f':
@@ -836,6 +883,7 @@ export function usePlayerChrome({
           break;
         case ' ':
         case 'k':
+          if (target?.tagName === 'BUTTON') return;
           e.preventDefault();
           togglePlayPause();
           break;
@@ -846,9 +894,17 @@ export function usePlayerChrome({
           void togglePiP();
           break;
         case 'arrowleft':
+          if (moveFocusBetweenButtons(-1)) {
+            e.preventDefault();
+            break;
+          }
           seekBy(-15);
           break;
         case 'arrowright':
+          if (moveFocusBetweenButtons(1)) {
+            e.preventDefault();
+            break;
+          }
           seekBy(15);
           break;
       }
@@ -856,7 +912,7 @@ export function usePlayerChrome({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [seekBy, toggleFullscreen, toggleMute, togglePiP, togglePlayPause, toggleStats]);
+  }, [containerRef, idleDelayMs, seekBy, toggleFullscreen, toggleMute, togglePiP, togglePlayPause, toggleStats]);
 
   useEffect(() => onHostMediaKey((action) => {
     switch (action) {
@@ -1278,7 +1334,6 @@ export function usePlayerChrome({
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
-    const nativeMobileHls = allowNativeFullscreen && shouldForceNativeMobileHls(video);
     const pipAvailable =
       typeof document !== 'undefined' &&
       !!video &&
@@ -1289,14 +1344,17 @@ export function usePlayerChrome({
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
       !!container?.requestFullscreen ||
       (typeof document !== 'undefined' && document.fullscreenEnabled === true);
-    // Native mobile WebKit uses the device buttons for loudness; keep mute
-    // available but hide the ineffective browser volume slider there.
-    const volumeAvailable = !nativeMobileHls;
+    // Mobile WebKit (iOS/iPadOS) uses hardware device buttons for loudness and
+    // ignores programmatic video.volume changes on both HLS and direct MP4;
+    // keep mute available but hide the ineffective browser volume slider there.
+    const volumeAvailable = !shouldForceNativeMobileHls(video);
 
     setCanTogglePiP(pipAvailable);
     setCanToggleFullscreen(fullscreenAvailable);
     setCanToggleMute(!!video);
     setCanAdjustVolume(volumeAvailable);
+    setCanShowAirPlay(typeof video?.webkitShowPlaybackTargetPicker === 'function');
+    setIsAirPlayActive(Boolean(video?.webkitCurrentPlaybackTargetIsWireless));
   }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
@@ -1322,6 +1380,25 @@ export function usePlayerChrome({
     const supportsWebkitFullscreen =
       !!video?.webkitEnterFullscreen &&
       (allowNativeFullscreen || shouldUseTouchWebKitFullscreen(video));
+    const supportsWebkitAirPlay = typeof video?.webkitShowPlaybackTargetPicker === 'function';
+
+    const onAirPlayAvailabilityChanged = (event: Event) => {
+      const availability = (event as Event & { availability?: string }).availability;
+      if (availability === 'available') {
+        setCanShowAirPlay(true);
+      } else if (availability === 'not-available') {
+        // Keep the AirPlay button accessible on WebKit so the user can open the
+        // system picker or trigger a switch from MSE (disableRemotePlayback=true)
+        // to the AirPlay-compatible native HLS pipeline.
+        setCanShowAirPlay(supportsWebkitAirPlay);
+      }
+    };
+
+    const onAirPlayWirelessChanged = () => {
+      const wireless = Boolean(video?.webkitCurrentPlaybackTargetIsWireless);
+      setIsAirPlayActive(wireless);
+      onAirPlayWirelessChange?.(wireless);
+    };
 
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
@@ -1354,6 +1431,11 @@ export function usePlayerChrome({
       video.addEventListener('leavepictureinpicture', onPipChange);
       video.addEventListener('webkitpresentationmodechanged', onPipChange);
 
+      if (supportsWebkitAirPlay) {
+        video.addEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
+        video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
+      }
+
       if (supportsWebkitFullscreen) {
         video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
         video.addEventListener('webkitendfullscreen', onWebkitEndFullscreen);
@@ -1367,13 +1449,18 @@ export function usePlayerChrome({
         video.removeEventListener('leavepictureinpicture', onPipChange);
         video.removeEventListener('webkitpresentationmodechanged', onPipChange);
 
+        if (supportsWebkitAirPlay) {
+          video.removeEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
+          video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
+        }
+
         if (supportsWebkitFullscreen) {
           video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
           video.removeEventListener('webkitendfullscreen', onWebkitEndFullscreen);
         }
       }
     };
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onAirPlayWirelessChange, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1426,7 +1513,7 @@ export function usePlayerChrome({
   const hasSeekWindow = seekEnabled && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const liveEdgePosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
-  const isAtLiveEdge = hasLiveDvrWindow && Math.abs(liveEdgePosition - currentPlaybackTime) < 2;
+  const isAtLiveEdge = hasLiveDvrWindow && Math.abs(liveEdgePosition - currentPlaybackTime) <= liveEdgeSeekSafetyGapSeconds;
   const showDvrModeButton = hasLiveDvrWindow && allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
   const supportsNativeFullscreen = allowNativeFullscreen && typeof videoRef.current?.webkitEnterFullscreen === 'function';
   const canEnterNativeFullscreen = supportsNativeFullscreen && !isTouchDevice;
@@ -1523,6 +1610,8 @@ export function usePlayerChrome({
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
+    canShowAirPlay,
+    isAirPlayActive,
     isFullscreen,
     canToggleFullscreen,
     isPlaying,
@@ -1555,6 +1644,7 @@ export function usePlayerChrome({
     primeNativeFullscreen,
     enterDVRMode,
     togglePiP,
+    showAirPlayPicker,
     toggleMute,
     handleVolumeChange,
     applyAutoplayMute,
