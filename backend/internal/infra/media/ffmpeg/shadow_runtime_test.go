@@ -3,8 +3,10 @@ package ffmpeg
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +34,12 @@ func makeValidSegment(size int) []byte {
 }
 
 func setupTestEnvironment(t *testing.T) (string, *LocalAdapter, *ShadowRuntime) {
+	return setupTestEnvironmentWith(t, nil)
+}
+
+// setupTestEnvironmentWith lets a test adjust the adapter before the shadow
+// store attaches, because the monitoring goroutine captures it at start.
+func setupTestEnvironmentWith(t *testing.T, configure func(*LocalAdapter)) (string, *LocalAdapter, *ShadowRuntime) {
 	tempDir := t.TempDir()
 
 	registry := store.NewMemoryStoreRegistry()
@@ -45,6 +53,9 @@ func setupTestEnvironment(t *testing.T) (string, *LocalAdapter, *ShadowRuntime) 
 			ShadowStoreMaxObjects:    32,
 		},
 		Logger: zerolog.Nop(),
+	}
+	if configure != nil {
+		configure(adapter)
 	}
 
 	plan := ports.ExecutedFFmpegPlan{Container: "fmp4"}
@@ -178,5 +189,69 @@ func TestShadowRuntime_FallbackScanRepairsDroppedEvent(t *testing.T) {
 	}
 	if len(obj2.Data) != 300 {
 		t.Fatalf("Expected updated size 300, got %d", len(obj2.Data))
+	}
+}
+
+// The fallback ticker revisits every file in the session directory every
+// 500 ms. A file that is already mirrored with an unchanged size and mtime must
+// be skipped before it is read; otherwise a long DVR window is read from disk
+// in full, twice a second, for as long as the session runs.
+func TestShadowRuntime_FallbackScanSkipsUnchangedFiles(t *testing.T) {
+	var reads atomic.Int64
+	tempDir, _, sr := setupTestEnvironmentWith(t, func(a *LocalAdapter) {
+		a.shadowReadFile = func(path string) ([]byte, error) {
+			reads.Add(1)
+			return os.ReadFile(path)
+		}
+	})
+	defer sr.Close()
+
+	const segments = 20
+	names := make([]string, 0, segments)
+	for i := 0; i < segments; i++ {
+		name := fmt.Sprintf("seg_0_%06d.m4s", i)
+		names = append(names, name)
+		if err := os.WriteFile(filepath.Join(tempDir, name), makeValidSegment(4096), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	waitForShadowObject := func(name string, size int) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			obj, err := sr.Store.Get(context.Background(), "test-session", name)
+			if err == nil && len(obj.Data) == size {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s (%d bytes) was not mirrored in time, last error: %v", name, size, err)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	for _, name := range names {
+		waitForShadowObject(name, 4096)
+	}
+
+	// Let debounced Create events drain, then stay idle across several
+	// fallback ticks. Nothing on disk changes, so nothing may be read.
+	time.Sleep(200 * time.Millisecond)
+	settled := reads.Load()
+	if settled < segments {
+		t.Fatalf("expected at least %d initial reads, got %d", segments, settled)
+	}
+	time.Sleep(1300 * time.Millisecond)
+	if got := reads.Load(); got != settled {
+		t.Fatalf("idle fallback scan re-read unchanged files: %d extra reads over %d files", got-settled, segments)
+	}
+
+	// A changed file must still be picked up and read again.
+	if err := os.WriteFile(filepath.Join(tempDir, names[3]), makeValidSegment(8192), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitForShadowObject(names[3], 8192)
+	if got := reads.Load(); got <= settled {
+		t.Fatalf("changed file was not re-read: reads %d, before change %d", got, settled)
 	}
 }

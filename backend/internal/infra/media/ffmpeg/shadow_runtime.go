@@ -116,6 +116,11 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		}
 	}
 
+	readFile := os.ReadFile
+	if sr.adapter != nil && sr.adapter.shadowReadFile != nil {
+		readFile = sr.adapter.shadowReadFile
+	}
+
 	go func() {
 		defer close(sr.done)
 		var watcherEvents <-chan fsnotify.Event
@@ -170,8 +175,17 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 				return
 			}
 
+			// The fallback ticker revisits every file in the session directory
+			// every tick, and a DVR window holds thousands of multi-megabyte
+			// segments. Decide from the stat fingerprint alone whether a file was
+			// already mirrored, before reading any of its content.
+			fp := fileFingerprint{Size: before.Size(), ModTime: before.ModTime().UnixNano()}
+			if oldFp, ok := seen[name]; ok && oldFp == fp {
+				return
+			}
+
 			// #nosec G304 -- name is restricted to a base name and accepted init/segment patterns above.
-			data, err := os.ReadFile(filePath)
+			data, err := readFile(filePath)
 			if err != nil || len(data) == 0 || int64(len(data)) != before.Size() {
 				return
 			}
@@ -185,11 +199,7 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 				return // incomplete fMP4
 			}
 
-			fp := fileFingerprint{Size: after.Size(), ModTime: after.ModTime().UnixNano()}
-			if oldFp, ok := seen[name]; ok && oldFp == fp {
-				return
-			}
-
+			// before and after agree on size and mtime, so fp describes the bytes read.
 			seen[name] = fp
 			err = sr.Pub.Publish(sr.ctx, store.StreamID(sr.sessionID), store.Object{
 				Name:        name,
