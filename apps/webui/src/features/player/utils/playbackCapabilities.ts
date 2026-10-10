@@ -320,4 +320,3 @@ export function buildAirPlayCapabilities(
     allowTranscode: true,
   };
 }
-
