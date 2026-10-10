@@ -54,6 +54,7 @@ interface UsePlayerChromeProps {
   /** Live channel zapping via media-session nexttrack/previoustrack (lock screen, headset). */
   onNextChannel?: (() => void) | null;
   onPreviousChannel?: (() => void) | null;
+  onAirPlayWirelessChange?: (isWireless: boolean) => void;
 }
 
 interface PlayerChromeController {
@@ -68,6 +69,8 @@ interface PlayerChromeController {
   isWebKitFullscreenActive: boolean;
   isPip: boolean;
   canTogglePiP: boolean;
+  canShowAirPlay: boolean;
+  isAirPlayActive: boolean;
   isFullscreen: boolean;
   canToggleFullscreen: boolean;
   isPlaying: boolean;
@@ -100,6 +103,7 @@ interface PlayerChromeController {
   primeNativeFullscreen: () => boolean;
   enterDVRMode: () => void;
   togglePiP: () => Promise<void>;
+  showAirPlayPicker: () => boolean;
   toggleMute: () => void;
   handleVolumeChange: (newVolume: number) => void;
   applyAutoplayMute: () => void;
@@ -152,6 +156,7 @@ export function usePlayerChrome({
   mediaArtworkUrl,
   onNextChannel,
   onPreviousChannel,
+  onAirPlayWirelessChange,
 }: UsePlayerChromeProps): PlayerChromeController {
   const [showStats, setShowStats] = useState(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
@@ -160,6 +165,8 @@ export function usePlayerChrome({
   const [isWebKitFullscreenActive, setIsWebKitFullscreenActive] = useState(false);
   const [isPip, setIsPip] = useState(false);
   const [canTogglePiP, setCanTogglePiP] = useState(false);
+  const [canShowAirPlay, setCanShowAirPlay] = useState(false);
+  const [isAirPlayActive, setIsAirPlayActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [canToggleFullscreen, setCanToggleFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -730,6 +737,25 @@ export function usePlayerChrome({
     }
   }, [videoRef]);
 
+  const showAirPlayPicker = useCallback((): boolean => {
+    const video = videoRef.current;
+    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') {
+      return false;
+    }
+    try {
+      if ('disableRemotePlayback' in video && video.disableRemotePlayback) {
+        video.disableRemotePlayback = false;
+      }
+      video.removeAttribute?.('disableRemotePlayback');
+      video.setAttribute?.('x-webkit-airplay', 'allow');
+      video.webkitShowPlaybackTargetPicker();
+      return true;
+    } catch (err) {
+      debugWarn('WebKit AirPlay target picker failed', err);
+      return false;
+    }
+  }, [videoRef]);
+
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -1297,6 +1323,8 @@ export function usePlayerChrome({
     setCanToggleFullscreen(fullscreenAvailable);
     setCanToggleMute(!!video);
     setCanAdjustVolume(volumeAvailable);
+    setCanShowAirPlay(typeof video?.webkitShowPlaybackTargetPicker === 'function');
+    setIsAirPlayActive(Boolean(video?.webkitCurrentPlaybackTargetIsWireless));
   }, [allowNativeFullscreen, containerRef, shouldForceNativeMobileHls, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
@@ -1322,6 +1350,25 @@ export function usePlayerChrome({
     const supportsWebkitFullscreen =
       !!video?.webkitEnterFullscreen &&
       (allowNativeFullscreen || shouldUseTouchWebKitFullscreen(video));
+    const supportsWebkitAirPlay = typeof video?.webkitShowPlaybackTargetPicker === 'function';
+
+    const onAirPlayAvailabilityChanged = (event: Event) => {
+      const availability = (event as Event & { availability?: string }).availability;
+      if (availability === 'available') {
+        setCanShowAirPlay(true);
+      } else if (availability === 'not-available') {
+        // Keep the AirPlay button accessible on WebKit so the user can open the
+        // system picker or trigger a switch from MSE (disableRemotePlayback=true)
+        // to the AirPlay-compatible native HLS pipeline.
+        setCanShowAirPlay(supportsWebkitAirPlay);
+      }
+    };
+
+    const onAirPlayWirelessChanged = () => {
+      const wireless = Boolean(video?.webkitCurrentPlaybackTargetIsWireless);
+      setIsAirPlayActive(wireless);
+      onAirPlayWirelessChange?.(wireless);
+    };
 
     const onWebkitBeginFullscreen = () => {
       setIsFullscreen(true);
@@ -1354,6 +1401,11 @@ export function usePlayerChrome({
       video.addEventListener('leavepictureinpicture', onPipChange);
       video.addEventListener('webkitpresentationmodechanged', onPipChange);
 
+      if (supportsWebkitAirPlay) {
+        video.addEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
+        video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
+      }
+
       if (supportsWebkitFullscreen) {
         video.addEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
         video.addEventListener('webkitendfullscreen', onWebkitEndFullscreen);
@@ -1367,13 +1419,18 @@ export function usePlayerChrome({
         video.removeEventListener('leavepictureinpicture', onPipChange);
         video.removeEventListener('webkitpresentationmodechanged', onPipChange);
 
+        if (supportsWebkitAirPlay) {
+          video.removeEventListener('webkitplaybacktargetavailabilitychanged', onAirPlayAvailabilityChanged);
+          video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onAirPlayWirelessChanged);
+        }
+
         if (supportsWebkitFullscreen) {
           video.removeEventListener('webkitbeginfullscreen', onWebkitBeginFullscreen);
           video.removeEventListener('webkitendfullscreen', onWebkitEndFullscreen);
         }
       }
     };
-  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
+  }, [allowNativeFullscreen, containerRef, logNativeFullscreenProbe, onAirPlayWirelessChange, onNativeFullscreenExit, refreshSeekableState, shouldUseTouchWebKitFullscreen, videoRef]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1523,6 +1580,8 @@ export function usePlayerChrome({
     isWebKitFullscreenActive,
     isPip,
     canTogglePiP,
+    canShowAirPlay,
+    isAirPlayActive,
     isFullscreen,
     canToggleFullscreen,
     isPlaying,
@@ -1555,6 +1614,7 @@ export function usePlayerChrome({
     primeNativeFullscreen,
     enterDVRMode,
     togglePiP,
+    showAirPlayPicker,
     toggleMute,
     handleVolumeChange,
     applyAutoplayMute,
