@@ -321,6 +321,14 @@ export function usePlaybackEngine({
     }
   }, []);
 
+  const clearRevealHold = useCallback(() => {
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+    revealHoldRef.current = false;
+  }, []);
+
   const clearHlsRenderProbe = useCallback((resetCompleted: boolean = false) => {
     if (hlsRenderProbeTimerRef.current !== null) {
       window.clearTimeout(hlsRenderProbeTimerRef.current);
@@ -561,6 +569,7 @@ export function usePlaybackEngine({
       clearHlsStallRecovery();
       clearNetworkRetry();
       clearStartGateTimers();
+      clearRevealHold();
       hlsStallRecoveryAttemptsRef.current = 0;
       lastHlsUrlRef.current = null;
       lastHlsEngineRef.current = 'auto';
@@ -587,7 +596,7 @@ export function usePlaybackEngine({
         isTeardownRef.current = false;
       }, 50);
     }
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, clearStartGateTimers, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearPendingNativeAutoplay, clearProbeConfirmation, clearRevealHold, clearStartGateTimers, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, videoRef]);
 
   const beginSessionDecodeRecovery = useCallback((
     code: number,
@@ -868,11 +877,7 @@ export function usePlaybackEngine({
     clearHlsStallRecovery();
     clearHlsRenderProbe(true);
     clearStartGateTimers();
-    revealHoldRef.current = false;
-    if (revealTimerRef.current !== null) {
-      window.clearTimeout(revealTimerRef.current);
-      revealTimerRef.current = null;
-    }
+    clearRevealHold();
     video.playbackRate = 1;
     hlsStallRecoveryAttemptsRef.current = 0;
     lastDecodedRef.current = 0;
@@ -991,12 +996,14 @@ export function usePlaybackEngine({
             videoEl.muted = true;
             void videoEl.play().catch((fallbackErr) => {
               debugWarn('[V3Player] Fallback muted autoplay failed', fallbackErr);
+              clearRevealHold();
               setAutoplayBlocked(true);
               setStatus('ready');
             });
             return;
           }
           debugWarn('[V3Player] Autoplay failed', err);
+          clearRevealHold();
           setAutoplayBlocked(true);
           setStatus('ready');
         });
@@ -1415,7 +1422,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearStartGateTimers, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearRevealHold, clearStartGateTimers, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 
@@ -1433,11 +1440,7 @@ export function usePlaybackEngine({
     }
     const video = videoRef.current;
     if (!video) return;
-    revealHoldRef.current = false;
-    if (revealTimerRef.current !== null) {
-      window.clearTimeout(revealTimerRef.current);
-      revealTimerRef.current = null;
-    }
+    clearRevealHold();
     video.playbackRate = 1;
 
     lastHlsUrlRef.current = null;
@@ -1453,6 +1456,7 @@ export function usePlaybackEngine({
         video.muted = true;
         void video.play().catch((fallbackErr) => {
           debugWarn('Autoplay fallback failed', fallbackErr);
+          clearRevealHold();
           setAutoplayBlocked(true);
           setStatus((prev) => (prev === 'error' ? prev : 'ready'));
         });
@@ -1461,20 +1465,18 @@ export function usePlaybackEngine({
       debugWarn('Autoplay failed', err);
       // Autoplay rejected: clear the startup overlay and show the play control rather
       // than staying stuck on 'buffering' (mirrors the hls.js and native-HLS paths).
+      clearRevealHold();
       setAutoplayBlocked(true);
       setStatus((prev) => (prev === 'error' ? prev : 'ready'));
     });
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearStartGateTimers, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, clearRevealHold, clearStartGateTimers, hlsRef, lastDecodedRef, setStats, setStatus, videoRef]);
 
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     const cancelPendingReveal = () => {
-      if (revealTimerRef.current !== null) {
-        window.clearTimeout(revealTimerRef.current);
-        revealTimerRef.current = null;
-      }
+      clearRevealHold();
     };
 
     const onWaiting = () => {
@@ -1631,11 +1633,12 @@ export function usePlaybackEngine({
       }
       pendingWarningRecoveryRef.current = null;
       reportedWarningKeysRef.current.clear();
+      setAutoplayBlocked(false);
       if (revealHoldRef.current) {
         if (revealTimerRef.current === null) {
           const holdMs = revealHoldMs ?? 1800;
           if (holdMs <= 0) {
-            revealHoldRef.current = false;
+            clearRevealHold();
             setStatus('playing');
           } else {
             revealTimerRef.current = window.setTimeout(() => {
@@ -1655,12 +1658,15 @@ export function usePlaybackEngine({
       if (isTeardownRef.current) {
         return;
       }
+      if (revealHoldRef.current) {
+        setAutoplayBlocked(true);
+      }
       cancelPendingReveal();
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       clearProbeConfirmation();
       clearHlsRenderProbe(false);
-      setStatus((prev) => (prev === 'error' ? prev : (revealHoldRef.current ? 'buffering' : 'paused')));
+      setStatus((prev) => (prev === 'error' ? prev : 'paused'));
     };
 
     const onSeeked = () => {
@@ -1868,7 +1874,7 @@ export function usePlaybackEngine({
         }
       }
     };
-  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPlaybackFailure, clearProbeConfirmation, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
+  }, [beginSessionDecodeRecovery, bufferedAheadSeconds, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPlaybackFailure, clearProbeConfirmation, clearRevealHold, hlsRef, isTeardownRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackWarning, revealHoldMs, runtimeProbeActive, scheduleHlsRenderProbe, scheduleHlsStallRecovery, scheduleNativeStallRecovery, sessionIdRef, setStatus, t, videoRef]);
 
   // Unmount-only cleanup: clear all recovery/retry timers so stale callbacks
   // can't fire after the component unmounts. Do NOT put these in the main
@@ -1884,8 +1890,9 @@ export function usePlaybackEngine({
       clearProbeConfirmation();
       clearHlsRenderProbe(true);
       clearStartGateTimers();
+      clearRevealHold();
     };
-  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, clearStartGateTimers]);
+  }, [clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearNetworkRetry, clearProbeConfirmation, clearRevealHold, clearStartGateTimers]);
 
   return {
     resetPlaybackEngine,
