@@ -19,6 +19,7 @@ coverage.*
 
 # Dependencies (Local)
 node_modules/
+**/node_modules/
 
 # Runtime Data
 data/
