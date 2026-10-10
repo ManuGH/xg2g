@@ -269,6 +269,12 @@ export function usePlaybackEngine({
       // bounded startup budget as hls.js to this attachment, never to an event
       // or render (otherwise repeated waiting events could defer it forever).
       nativeStartupDeadlineRef.current = performance.now() + HLS_STARTUP_POLICY.liveTimeoutMs;
+      try {
+        (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false;
+        video.removeAttribute('disableremoteplayback');
+      } catch {
+        // Ignore
+      }
       video.src = url;
       scheduleNativeAutoplay(video, autoplayLabel);
     })();
@@ -887,6 +893,11 @@ export function usePlaybackEngine({
     const canUseHlsJs = (engine === 'hlsjs' || engine === 'auto') && !preferNativeHls;
     const usingHlsJs = !preferNative && canUseHlsJs && hlsJsSupported;
 
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
     try {
       if (engine === 'hlsjs' || usingHlsJs) {
         (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
@@ -906,9 +917,6 @@ export function usePlaybackEngine({
     if (usingHlsJs) {
       lastHlsUrlRef.current = url;
       lastHlsEngineRef.current = 'hlsjs';
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
       clearStartGateTimers();
       const linkProfile = linkProfileRef?.current ?? 'stable';
       const hls = new Hls(createHlsRuntimeConfig(linkProfile));

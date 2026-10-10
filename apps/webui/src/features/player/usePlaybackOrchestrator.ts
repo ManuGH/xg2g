@@ -2654,17 +2654,27 @@ export function usePlaybackOrchestrator(
     changeVolume: handleVolumeChange,
     togglePiP,
     toggleAirPlay() {
-      // Must be invoked synchronously inside the user gesture so Safari opens
-      // the system AirPlay route picker sheet.
-      showAirPlayPicker();
-
       // If the player is currently running MSE/hls.js (e.g. desktop Safari with
       // ManagedMediaSource) or does not yet have a ticketed native HLS URL,
-      // switch the target to 'airplay' and create a fresh H.264/AAC native HLS
-      // playback decision.
+      // detach hls.js synchronously before opening the route picker so WebKit
+      // does not treat the <video> as an MSE-only audio source and hide Video
+      // AirPlay targets (TVs).
       const needsAirPlayTargetSwitch =
         activeHlsEngine !== 'native' ||
         !hasTicketedUrlRef.current;
+
+      if (needsAirPlayTargetSwitch && hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        } catch {
+          // Ignore teardown errors during picker gesture
+        }
+      }
+
+      // Must be invoked synchronously inside the user gesture so Safari opens
+      // the system AirPlay route picker sheet.
+      showAirPlayPicker();
 
       if (needsAirPlayTargetSwitch && (hasActivePlayback() || startIntentInFlight.current)) {
         playbackTargetRef.current = 'airplay';

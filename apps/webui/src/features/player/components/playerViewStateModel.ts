@@ -467,7 +467,7 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     seekForward15mLabel: t('player.seekForward15m'),
     playPauseLabel: input.isPlaying ? t('player.pause') : t('player.play'),
     playPauseIcon: input.isPlaying ? '⏸' : '▶',
-    ttffBadgeLabel: input.ttffMetrics ? `${(input.ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
+    ttffBadgeLabel: input.ttffMetrics ? `${(input.ttffMetrics.ttffMs / 1000).toFixed(1)} s` : null,
     ttffTitle: input.ttffMetrics
       ? `TTFF: ${input.ttffMetrics.ttffMs}ms (${input.ttffMetrics.manifestMs}ms manifest + ${input.ttffMetrics.bufferMs}ms decode)`
       : null,

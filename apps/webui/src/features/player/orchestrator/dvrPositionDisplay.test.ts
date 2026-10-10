@@ -19,13 +19,22 @@ const clock = (s: number): string => {
 };
 
 describe('formatDvrPositionDisplay', () => {
-  it('shows the offset behind live when scrubbed back', () => {
+  it('shows seconds behind live when scrubbed back less than a minute', () => {
+    const out = formatDvrPositionDisplay(
+      { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 5, currentTimeDisplay: '14:29' },
+      clock,
+      fakeT,
+    );
+    expect(out).toBe('5 s behind live');
+  });
+
+  it('shows the clock offset behind live when scrubbed back a minute or more', () => {
     const out = formatDvrPositionDisplay(
       { isLiveMode: true, isAtLiveEdge: false, behindLiveSeconds: 420, currentTimeDisplay: '14:23' },
       clock,
       fakeT,
     );
-    expect(out).toBe('−7:00 behind live');
+    expect(out).toBe('7:00 behind live');
   });
 
   it('shows ● LIVE (no offset) at the live edge — negative control for the offset branch', () => {

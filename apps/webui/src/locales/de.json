@@ -275,7 +275,7 @@
     "goLive": "Live gehen",
     "dvrPosition": {
       "live": "● LIVE",
-      "behindLive": "−{{offset}} hinter Live"
+      "behindLive": "{{offset}} hinter Live"
     },
     "fullscreenLabel": "Vollbild",
     "exitFullscreenLabel": "Vollbild beenden",

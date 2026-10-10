@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
@@ -57,6 +57,18 @@ export function V3PlayerView({
   const { surface, heightClass } = useUiSurface();
   const isCompactSurface = surface === 'small' || heightClass === 'compact';
   const [pictureMode, setPictureMode] = useState<PictureMode>(getStoredPictureMode);
+  const [showTopBanner, setShowTopBanner] = useState(true);
+
+  useEffect(() => {
+    if (!viewState.channelName && !viewState.programmeTitle) {
+      return;
+    }
+    setShowTopBanner(true);
+    const timer = window.setTimeout(() => {
+      setShowTopBanner(false);
+    }, 4500);
+    return () => window.clearTimeout(timer);
+  }, [viewState.channelName, viewState.programmeTitle]);
 
   const handlePictureModeChange = (mode: PictureMode) => {
     setPictureMode(mode);
@@ -90,7 +102,10 @@ export function V3PlayerView({
       )}
 
       {viewState.showCloseButton && !viewState.showSpinnerCard && (viewState.channelName || viewState.programmeTitle) && (
-        <div className={styles.topHeader}>
+        <div
+          className={styles.topHeader}
+          data-banner-visible={showTopBanner ? 'true' : 'false'}
+        >
           {viewState.channelLogoUrl && (
             <img
               className={styles.topHeaderLogo}
@@ -320,7 +335,7 @@ export function V3PlayerView({
                       title={viewState.liveButtonLabel}
                       aria-label={viewState.liveButtonLabel}
                     >
-                      {viewState.isAtLiveEdge ? 'LIVE' : '↷ LIVE'}
+                      {viewState.isAtLiveEdge ? 'LIVE' : '→ LIVE'}
                     </button>
                   )}
                 </div>
@@ -522,6 +537,7 @@ export function V3PlayerView({
               <Button
                 variant="ghost"
                 size="sm"
+                data-status-pill="true"
                 active={viewState.statsActive}
                 onClick={actions.toggleStats}
                 title={viewState.statsTitle}
