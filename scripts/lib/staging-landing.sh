@@ -21,9 +21,11 @@ staging_pr_states_for_commit() {
 }
 
 # staging_open_pr_heads prints the head commit of every open pull request, one
-# per line. Unlike search it has no indexing delay. The verifier overrides it.
+# per line. Unlike search it has no indexing delay. It paginates instead of
+# using a list limit, so no open pull request is left out. The verifier
+# overrides it.
 staging_open_pr_heads() {
-  gh pr list --state open --limit 200 --json headRefOid --jq '.[].headRefOid'
+  gh api --paginate 'repos/{owner}/{repo}/pulls?state=open&per_page=100' --jq '.[].head.sha'
 }
 
 # classify_staging_replacement <repo> <running_commit> <new_commit> <main_ref>
