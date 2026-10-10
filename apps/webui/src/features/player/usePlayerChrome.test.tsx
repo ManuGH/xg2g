@@ -362,12 +362,15 @@ describe('usePlayerChrome', () => {
     expect(video.muted).toBe(true);
   });
 
-  it('unmutes autoplay on hardware volume change for native mobile HLS', () => {
+  it('unmutes autoplay on hardware volume change for native mobile HLS', async () => {
     render(<HookHarness shouldForceNativeMobileHls={() => true} />);
 
     const video = screen.getByTestId('player-video') as HTMLVideoElement;
     fireEvent.click(screen.getByRole('button', { name: 'mute' })); // applyAutoplayMute
     expect(video.muted).toBe(true);
+
+    // Allow jsdom's async volumechange task (from setting video.muted) to settle
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     // Hardware volume key pressed -> WebKit dispatches volumechange
     fireEvent(video, new Event('volumechange'));
