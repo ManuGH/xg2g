@@ -797,16 +797,27 @@
   box-shadow: 0 0 8px color-mix(in srgb, var(--accent-action) 35%, transparent);
   border-radius: 999px;
   width: var(--xg2g-progress, 0%);
-  transition: width 0.3s ease, background-color 0.3s ease;
+  transition: width 0.3s ease, background 0.3s ease;
 }
 
 .progressBarAmber {
-  background: var(--status-warning);
+  background: linear-gradient(
+    90deg,
+    var(--accent-action) 0%,
+    color-mix(in srgb, var(--accent-action) 45%, var(--status-warning) 55%) 60%,
+    var(--status-warning) 100%
+  );
   box-shadow: 0 0 8px color-mix(in srgb, var(--status-warning) 35%, transparent);
 }
 
 .progressBarEnding {
-  background: var(--status-orange);
+  background: linear-gradient(
+    90deg,
+    var(--accent-action) 0%,
+    color-mix(in srgb, var(--accent-action) 35%, var(--accent-live) 65%) 45%,
+    var(--status-warning) 75%,
+    var(--status-orange) 100%
+  );
   box-shadow: 0 0 8px color-mix(in srgb, var(--status-orange) 40%, transparent);
 }
 
