@@ -300,6 +300,7 @@
       "cinema": "Kino (Warm • D65-Look)"
     },
     "searchChannel": "Sender suchen…",
+    "selectBouquet": "Bouquet wählen",
     "noChannelFound": "Kein Sender gefunden",
     "statusStates": {
       "idle": "Leerlauf",

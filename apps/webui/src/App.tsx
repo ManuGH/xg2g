@@ -127,6 +127,9 @@ function App() {
             onClose={handlePlayerClose}
             channels={filteredChannels}
             onSwitchChannel={ctx.handlePlay}
+            bouquets={memoizedBouquets}
+            selectedBouquet={channels.selectedBouquet}
+            onSelectBouquet={ctx.loadChannels}
           />
         </Suspense>
       )}

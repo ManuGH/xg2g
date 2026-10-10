@@ -300,6 +300,7 @@
       "cinema": "Cinema (Warm • D65-Look)"
     },
     "searchChannel": "Search channels…",
+    "selectBouquet": "Select bouquet",
     "noChannelFound": "No channel found",
     "statusStates": {
       "idle": "Idle",

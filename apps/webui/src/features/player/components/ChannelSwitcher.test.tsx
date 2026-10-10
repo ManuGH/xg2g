@@ -117,4 +117,77 @@ describe('ChannelSwitcher', () => {
     expect(screen.queryByText('ORF 2 HD')).not.toBeInTheDocument();
     expect(screen.queryByText('Das Erste HD')).not.toBeInTheDocument();
   });
+
+  it('switches IPTV channels cleanly even when serviceRef is empty string and id holds the opaque ref', async () => {
+    mockPostServicesNowNext.mockResolvedValueOnce({ data: { items: [] } });
+
+    const iptvChannels: Service[] = [
+      {
+        id: 'iptv_rtl_hd_111',
+        serviceRef: '',
+        name: 'DE: RTL HD',
+        number: '101',
+      },
+      {
+        id: 'iptv_pro7_hd_222',
+        serviceRef: '',
+        name: 'DE: ProSieben HD',
+        number: '102',
+      },
+    ];
+
+    const onSwitch = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <ChannelSwitcher
+        channels={iptvChannels}
+        current={iptvChannels[0]}
+        onSwitch={onSwitch}
+        open={true}
+        onClose={onClose}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockPostServicesNowNext).toHaveBeenCalled();
+    });
+
+    // Only the current IPTV channel should be marked live, not all IPTV channels
+    expect(screen.getAllByText('● live')).toHaveLength(1);
+
+    // Clicking the second IPTV channel must call onSwitch
+    fireEvent.click(screen.getByText('DE: ProSieben HD'));
+    expect(onSwitch).toHaveBeenCalledWith(iptvChannels[1]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('renders bouquet tabs when multiple bouquets are provided and invokes onSelectBouquet', async () => {
+    mockPostServicesNowNext.mockResolvedValueOnce({ data: { items: [] } });
+
+    const onSelectBouquet = vi.fn();
+    render(
+      <ChannelSwitcher
+        channels={mockChannels}
+        current={mockChannels[0]}
+        onSwitch={vi.fn()}
+        open={true}
+        onClose={vi.fn()}
+        bouquets={[
+          { name: 'Favourites (TV)', services: 50 },
+          { name: 'IPTV - Top', services: 112 },
+        ]}
+        selectedBouquet="Favourites (TV)"
+        onSelectBouquet={onSelectBouquet}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockPostServicesNowNext).toHaveBeenCalled();
+    });
+
+    const iptvTab = screen.getByRole('tab', { name: 'IPTV - Top' });
+    fireEvent.click(iptvTab);
+    expect(onSelectBouquet).toHaveBeenCalledWith('IPTV - Top');
+  });
 });

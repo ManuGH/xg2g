@@ -12,9 +12,12 @@ interface ChannelSwitcherProps {
   open: boolean;
   onClose: () => void;
   token?: string | null;
+  bouquets?: { name: string; services?: number }[];
+  selectedBouquet?: string;
+  onSelectBouquet?: (bouquet: string) => void;
 }
 
-const refOf = (c?: Service): string => c?.serviceRef ?? c?.id ?? '';
+const refOf = (c?: Service): string => c?.serviceRef?.trim() || c?.id?.trim() || '';
 const initials = (name?: string) => (name ?? '?').replace(/\s+/g, '').slice(0, 3).toUpperCase();
 
 /**
@@ -27,10 +30,21 @@ const initials = (name?: string) => (name ?? '?').replace(/\s+/g, '').slice(0, 3
  * Controlled (open/onClose) and positioned `absolute` WITHIN the player container —
  * never `fixed` — so it lands on the player whether windowed or fullscreen.
  */
-export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, token }: ChannelSwitcherProps) {
+export function ChannelSwitcher({
+  channels,
+  current,
+  onSwitch,
+  open,
+  onClose,
+  token,
+  bouquets,
+  selectedBouquet,
+  onSelectBouquet,
+}: ChannelSwitcherProps) {
   const [query, setQuery] = useState('');
   const [nowNextMap, setNowNextMap] = useState<Record<string, string>>({});
   const listRef = useRef<HTMLDivElement>(null);
+  const bouquetBarRef = useRef<HTMLDivElement>(null);
   const currentRef = refOf(current);
   const { t } = useTranslation();
 
@@ -91,7 +105,7 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
       setQuery('');
       return;
     }
-    if (filtered.length === 0) return;
+    if (filtered.length === 0 || !currentRef) return;
     const raf = requestAnimationFrame(() => {
       listRef.current
         ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
@@ -99,6 +113,16 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
     });
     return () => cancelAnimationFrame(raf);
   }, [open, currentRef, filtered.length]);
+
+  useEffect(() => {
+    if (!open || !selectedBouquet) return;
+    const raf = requestAnimationFrame(() => {
+      bouquetBarRef.current
+        ?.querySelector<HTMLElement>(`[data-bouquet="${CSS.escape(selectedBouquet)}"]`)
+        ?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, selectedBouquet]);
 
   // Esc closes (only while open).
   useEffect(() => {
@@ -111,6 +135,8 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const showBouquets = Boolean(bouquets && bouquets.length > 1 && onSelectBouquet);
 
   return (
     <div className={styles.scrim} onClick={onClose}>
@@ -126,14 +152,43 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose, to
           />
           <button className={styles.close} onClick={onClose} aria-label={t('common.close', { defaultValue: 'Schließen' })}>✕</button>
         </div>
+        {showBouquets ? (
+          <div
+            ref={bouquetBarRef}
+            className={styles.bouquetBar}
+            role="tablist"
+            aria-label={t('player.selectBouquet', { defaultValue: 'Bouquet wählen' })}
+          >
+            {bouquets!.map((b) => {
+              const isSelected = b.name === selectedBouquet;
+              return (
+                <button
+                  key={b.name}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  data-bouquet={b.name}
+                  className={`${styles.bouquetPill} ${isSelected ? styles.bouquetPillActive : ''}`}
+                  onClick={() => {
+                    if (!isSelected) {
+                      onSelectBouquet!(b.name);
+                    }
+                  }}
+                >
+                  {b.name}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <div className={styles.list} ref={listRef}>
-          {filtered.map((c) => {
+          {filtered.map((c, idx) => {
             const ref = refOf(c);
-            const active = ref === currentRef;
+            const active = ref.length > 0 && ref === currentRef;
             const nowTitle = nowNextMap[ref];
             return (
               <button
-                key={ref}
+                key={ref || `${c.name ?? 'ch'}-${c.number ?? idx}`}
                 data-ref={ref}
                 className={`${styles.row} ${active ? styles.active : ''}`}
                 onClick={() => {
