@@ -253,4 +253,49 @@ describe('ChannelSwitcher', () => {
     fireEvent.click(newsBtn);
     expect(onSwitch).toHaveBeenCalledWith(iptvChannels[0]);
   });
+
+  it('clears pending state and re-enables buttons when onSelectBouquet fails', async () => {
+    let rejectPromise: ((err: any) => void) | null = null;
+    const onSelectBouquet = vi.fn().mockImplementation(() => {
+      return new Promise((_, reject) => {
+        rejectPromise = reject;
+      });
+    });
+
+    render(
+      <ChannelSwitcher
+        channels={mockChannels}
+        current={mockChannels[0]}
+        onSwitch={vi.fn()}
+        open={true}
+        onClose={vi.fn()}
+        bouquets={[
+          { name: 'Favourites (TV)', services: 50 },
+          { name: 'IPTV - Top', services: 112 },
+        ]}
+        selectedBouquet="Favourites (TV)"
+        onSelectBouquet={onSelectBouquet}
+      />
+    );
+
+    const iptvTab = screen.getByRole('tab', { name: 'IPTV - Top' });
+    const favTab = screen.getByRole('tab', { name: 'Favourites (TV)' });
+    fireEvent.click(iptvTab);
+
+    // While pending, all tabs are disabled
+    expect(iptvTab).toBeDisabled();
+    expect(favTab).toBeDisabled();
+    const orf2Btn = screen.getByText('ORF 2 HD').closest('button')!;
+    expect(orf2Btn).toBeDisabled();
+
+    // Rejection occurs
+    rejectPromise!(new Error('Network error'));
+
+    // Upon rejection settling, pending state must be cleared and buttons re-enabled
+    await waitFor(() => {
+      expect(iptvTab).not.toBeDisabled();
+      expect(favTab).not.toBeDisabled();
+      expect(orf2Btn).not.toBeDisabled();
+    });
+  });
 });

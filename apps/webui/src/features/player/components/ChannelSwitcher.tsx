@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { postServicesNowNext, type Service } from '../../../client-ts';
 import { getStoredToken } from '../../../utils/tokenStorage';
@@ -14,7 +14,7 @@ interface ChannelSwitcherProps {
   token?: string | null;
   bouquets?: { name: string; services?: number }[];
   selectedBouquet?: string;
-  onSelectBouquet?: (bouquet: string) => void;
+  onSelectBouquet?: (bouquet: string) => Promise<unknown> | void;
 }
 
 const refOf = (c?: Service): string => c?.serviceRef?.trim() || c?.id?.trim() || '';
@@ -52,6 +52,18 @@ export function ChannelSwitcher({
   useEffect(() => {
     setPendingBouquet(null);
   }, [selectedBouquet, channels]);
+
+  const handleSelectBouquet = useCallback(async (name: string) => {
+    if (!onSelectBouquet) return;
+    setPendingBouquet(name);
+    try {
+      await onSelectBouquet(name);
+    } catch (err) {
+      debugWarn('ChannelSwitcher bouquet selection failed', err);
+    } finally {
+      setPendingBouquet(null);
+    }
+  }, [onSelectBouquet]);
 
   useEffect(() => {
     if (!open || channels.length === 0) return;
@@ -203,8 +215,7 @@ export function ChannelSwitcher({
                   className={`${styles.bouquetPill} ${isSelected || isPending ? styles.bouquetPillActive : ''}`}
                   onClick={() => {
                     if (!isSelected && !pendingBouquet) {
-                      setPendingBouquet(b.name);
-                      onSelectBouquet!(b.name);
+                      void handleSelectBouquet(b.name);
                     }
                   }}
                 >
