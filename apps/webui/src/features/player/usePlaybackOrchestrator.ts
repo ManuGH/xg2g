@@ -1041,10 +1041,9 @@ export function usePlaybackOrchestrator(
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void }) | null;
     const rawCaps = await gatherPlaybackCapabilities(scope, video);
-    // Negotiate native HLS before opening the AirPlay picker so WebKit exposes
-    // Video AirPlay targets (TVs) without needing to interrupt local playback
-    // when the route picker is opened or cancelled.
-    if (playbackTargetRef.current === 'airplay' || typeof video?.webkitShowPlaybackTargetPicker === 'function') {
+    // Retain measured raw capabilities for local playback; restrict the AirPlay
+    // compatible profile override strictly to active wireless AirPlay targets.
+    if (playbackTargetRef.current === 'airplay') {
       return buildAirPlayCapabilities(rawCaps);
     }
     return rawCaps;
