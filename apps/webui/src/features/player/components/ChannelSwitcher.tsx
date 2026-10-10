@@ -105,11 +105,14 @@ export function ChannelSwitcher({
       setQuery('');
       return;
     }
-    if (filtered.length === 0 || !currentRef) return;
+    if (filtered.length === 0) return;
     const raf = requestAnimationFrame(() => {
-      listRef.current
-        ?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
-        ?.scrollIntoView?.({ block: 'center' });
+      const activeRow = currentRef
+        ? listRef.current?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(currentRef)}"]`)
+        : null;
+      const targetRow = activeRow ?? listRef.current?.querySelector<HTMLElement>('button[data-ref]');
+      targetRow?.scrollIntoView?.({ block: 'center' });
+      targetRow?.focus?.({ preventScroll: true });
     });
     return () => cancelAnimationFrame(raf);
   }, [open, currentRef, filtered.length]);
@@ -124,14 +127,34 @@ export function ChannelSwitcher({
     return () => cancelAnimationFrame(raf);
   }, [open, selectedBouquet]);
 
-  // Esc closes (only while open).
+  // Esc closes (only while open) and ArrowUp/ArrowDown navigate channel rows.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const rows = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button[data-ref]') ?? []);
+        if (rows.length === 0) return;
+        const active = document.activeElement as HTMLButtonElement | null;
+        const idx = active ? rows.indexOf(active) : -1;
+        e.preventDefault();
+        e.stopPropagation();
+        const nextIdx =
+          idx === -1
+            ? 0
+            : e.key === 'ArrowDown'
+              ? Math.min(rows.length - 1, idx + 1)
+              : Math.max(0, idx - 1);
+        rows[nextIdx]?.focus();
+        rows[nextIdx]?.scrollIntoView?.({ block: 'nearest' });
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose]);
 
   if (!open) return null;
@@ -147,7 +170,6 @@ export function ChannelSwitcher({
             placeholder={t('player.searchChannel', { defaultValue: 'Sender suchen…' })}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            autoFocus
             aria-label={t('player.searchChannel', { defaultValue: 'Sender suchen' })}
           />
           <button className={styles.close} onClick={onClose} aria-label={t('common.close', { defaultValue: 'Schließen' })}>✕</button>

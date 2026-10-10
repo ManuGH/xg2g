@@ -847,9 +847,30 @@ export function usePlayerChrome({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+      const target = e.target as HTMLElement | null;
+      const isInput = Boolean(target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable));
       if (isInput) return;
+
+      setIsIdle(false);
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => setIsIdle(true), idleDelayMs);
+
+      const moveFocusBetweenButtons = (delta: -1 | 1): boolean => {
+        const container = containerRef.current;
+        if (!container || !target || target.tagName !== 'BUTTON' || !container.contains(target)) {
+          return false;
+        }
+        const buttons = Array.from(
+          container.querySelectorAll<HTMLButtonElement>('button:not([disabled])'),
+        ).filter((btn) => btn.offsetParent !== null || btn === target);
+        const idx = buttons.indexOf(target as HTMLButtonElement);
+        if (idx === -1 || buttons.length <= 1) return false;
+        const nextIdx = Math.min(buttons.length - 1, Math.max(0, idx + delta));
+        if (nextIdx !== idx) {
+          buttons[nextIdx]?.focus();
+        }
+        return true;
+      };
 
       switch (e.key.toLowerCase()) {
         case 'f':
@@ -862,6 +883,7 @@ export function usePlayerChrome({
           break;
         case ' ':
         case 'k':
+          if (target?.tagName === 'BUTTON') return;
           e.preventDefault();
           togglePlayPause();
           break;
@@ -872,9 +894,17 @@ export function usePlayerChrome({
           void togglePiP();
           break;
         case 'arrowleft':
+          if (moveFocusBetweenButtons(-1)) {
+            e.preventDefault();
+            break;
+          }
           seekBy(-15);
           break;
         case 'arrowright':
+          if (moveFocusBetweenButtons(1)) {
+            e.preventDefault();
+            break;
+          }
           seekBy(15);
           break;
       }
@@ -882,7 +912,7 @@ export function usePlayerChrome({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [seekBy, toggleFullscreen, toggleMute, togglePiP, togglePlayPause, toggleStats]);
+  }, [containerRef, idleDelayMs, seekBy, toggleFullscreen, toggleMute, togglePiP, togglePlayPause, toggleStats]);
 
   useEffect(() => onHostMediaKey((action) => {
     switch (action) {
@@ -1304,7 +1334,6 @@ export function usePlayerChrome({
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
-    const nativeMobileHls = allowNativeFullscreen && shouldForceNativeMobileHls(video);
     const pipAvailable =
       typeof document !== 'undefined' &&
       !!video &&
@@ -1315,9 +1344,10 @@ export function usePlayerChrome({
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
       !!container?.requestFullscreen ||
       (typeof document !== 'undefined' && document.fullscreenEnabled === true);
-    // Native mobile WebKit uses the device buttons for loudness; keep mute
-    // available but hide the ineffective browser volume slider there.
-    const volumeAvailable = !nativeMobileHls;
+    // Mobile WebKit (iOS/iPadOS) uses hardware device buttons for loudness and
+    // ignores programmatic video.volume changes on both HLS and direct MP4;
+    // keep mute available but hide the ineffective browser volume slider there.
+    const volumeAvailable = !shouldForceNativeMobileHls(video);
 
     setCanTogglePiP(pipAvailable);
     setCanToggleFullscreen(fullscreenAvailable);
@@ -1483,7 +1513,7 @@ export function usePlayerChrome({
   const hasSeekWindow = seekEnabled && windowDuration > 0;
   const isLiveMode = playbackMode === 'LIVE';
   const liveEdgePosition = normalizedLiveSeekWindow?.liveEdge ?? seekableEnd;
-  const isAtLiveEdge = hasLiveDvrWindow && Math.abs(liveEdgePosition - currentPlaybackTime) < 2;
+  const isAtLiveEdge = hasLiveDvrWindow && Math.abs(liveEdgePosition - currentPlaybackTime) <= liveEdgeSeekSafetyGapSeconds;
   const showDvrModeButton = hasLiveDvrWindow && allowNativeFullscreen && shouldForceNativeMobileHls(videoRef.current);
   const supportsNativeFullscreen = allowNativeFullscreen && typeof videoRef.current?.webkitEnterFullscreen === 'function';
   const canEnterNativeFullscreen = supportsNativeFullscreen && !isTouchDevice;

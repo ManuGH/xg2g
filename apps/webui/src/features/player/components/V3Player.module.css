@@ -63,7 +63,7 @@
   z-index: 1;
 }
 
-.container:hover:not(.userIdle) .controlsHeader,
+.container:not(.userIdle) .controlsHeader,
 .controlsHeader:focus-within {
   opacity: 1;
   transform: translateY(0);
@@ -113,7 +113,7 @@
   transition: opacity 220ms ease, filter 200ms ease;
 }
 
-@media (orientation: landscape) {
+@media (orientation: landscape) and (max-aspect-ratio: 16/9) {
   .container.overlay:not(.surfaceCompact) .videoElement {
     object-fit: cover;
     object-position: center center;
@@ -1121,7 +1121,7 @@
 }
 
 .container.surfaceCompact .controlsHeader {
-  padding: 14px 16px calc(14px + var(--sab));
+  padding: 14px calc(16px + var(--sar, 0px)) calc(14px + var(--sab, 0px)) calc(16px + var(--sal, 0px));
   opacity: 1;
   transform: none;
   gap: 10px;
@@ -1138,7 +1138,7 @@
 
 .container.surfaceCompact .topHeader {
   top: calc(12px + var(--sat, 0px));
-  left: 14px;
+  left: calc(14px + var(--sal, 0px));
   max-width: calc(100% - 76px);
   gap: 8px;
 }
@@ -1172,14 +1172,14 @@
 }
 
 .container.surfaceCompact .statsOverlay {
-  right: 16px;
+  right: calc(16px + var(--sar, 0px));
   top: 88px;
   width: calc(100% - 32px);
 }
 
 .container.surfaceCompact .closeButton {
-  top: calc(16px + var(--sat));
-  right: 16px;
+  top: calc(16px + var(--sat, 0px));
+  right: calc(16px + var(--sar, 0px));
 }
 
 .container.surfaceCompact.overlay {

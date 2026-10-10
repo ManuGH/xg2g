@@ -1039,9 +1039,12 @@ export function usePlaybackOrchestrator(
   }, [clearPlaybackState, finalizeTimelineForReplacement, hasActivePlayback, teardownActivePlayback]);
 
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
-    const video = videoRef.current as HTMLVideoElement | null;
+    const video = videoRef.current as (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void }) | null;
     const rawCaps = await gatherPlaybackCapabilities(scope, video);
-    if (playbackTargetRef.current === 'airplay') {
+    // Negotiate native HLS before opening the AirPlay picker so WebKit exposes
+    // Video AirPlay targets (TVs) without needing to interrupt local playback
+    // when the route picker is opened or cancelled.
+    if (playbackTargetRef.current === 'airplay' || typeof video?.webkitShowPlaybackTargetPicker === 'function') {
       return buildAirPlayCapabilities(rawCaps);
     }
     return rawCaps;
@@ -2654,40 +2657,10 @@ export function usePlaybackOrchestrator(
     changeVolume: handleVolumeChange,
     togglePiP,
     toggleAirPlay() {
-      // If the player is currently running MSE/hls.js (e.g. desktop Safari with
-      // ManagedMediaSource) or does not yet have a ticketed native HLS URL,
-      // detach hls.js synchronously before opening the route picker so WebKit
-      // does not treat the <video> as an MSE-only audio source and hide Video
-      // AirPlay targets (TVs).
-      const needsAirPlayTargetSwitch =
-        activeHlsEngine !== 'native' ||
-        !hasTicketedUrlRef.current;
-
-      if (needsAirPlayTargetSwitch && hlsRef.current) {
-        try {
-          hlsRef.current.destroy();
-          hlsRef.current = null;
-        } catch {
-          // Ignore teardown errors during picker gesture
-        }
-      }
-
       // Must be invoked synchronously inside the user gesture so Safari opens
-      // the system AirPlay route picker sheet.
+      // the system AirPlay route picker sheet. Actual stream replacement (if
+      // needed) is deferred to handleAirPlayWirelessChange when a target is selected.
       showAirPlayPicker();
-
-      if (needsAirPlayTargetSwitch && (hasActivePlayback() || startIntentInFlight.current)) {
-        playbackTargetRef.current = 'airplay';
-        dispatchPlayback({
-          type: 'intent.start.requested',
-          epoch: allocatePlaybackEpoch(),
-          kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
-          serviceRef: (activeChannelRef.current || sRef || '').trim() || undefined,
-          recordingId: recordingId || undefined,
-          srcUrl: src || undefined,
-          explicitProfile: 'compatible',
-        });
-      }
     },
     toggleStats,
     toggleErrorDetails() {
