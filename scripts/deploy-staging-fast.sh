@@ -11,18 +11,32 @@ die() {
 }
 
 if [[ "${1:-}" != "--confirm-staging" ]]; then
-  die "staging deployment requires explicit confirmation: ./scripts/fast_deploy.sh --confirm-staging [--full-image]"
+  die "staging deployment requires explicit confirmation: ./scripts/fast_deploy.sh --confirm-staging [--full-image] [--drop-unlanded <running-commit>]"
 fi
 shift
 # binary: the Go binary is bind-mounted over the staging base image, whose
 # xg2g-media-core stays as it is. full-image: the whole runtime image - Go,
 # media-core and WebUI - is built from the same commit and run as the candidate.
 deploy_mode="binary"
-if [[ "${1:-}" == "--full-image" ]]; then
-  deploy_mode="full-image"
-  shift
-fi
-[[ "$#" -eq 0 ]] || die "unknown arguments: $*"
+# --drop-unlanded names the running staging commit that may be replaced although
+# its work is not on main and not in a pull request. It must match that commit.
+drop_unlanded=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --full-image)
+      deploy_mode="full-image"
+      shift
+      ;;
+    --drop-unlanded)
+      [[ "$#" -ge 2 ]] || die "--drop-unlanded needs the running staging commit"
+      drop_unlanded="$2"
+      shift 2
+      ;;
+    *)
+      die "unknown arguments: $*"
+      ;;
+  esac
+done
 
 if [[ "${XG2G_PROMOTE_PRODUCTION:-0}" =~ ^(1|true|yes|on)$ ]]; then
   die "fast_deploy.sh is staging-only; use scripts/promote_production.sh --confirm-production"
@@ -40,6 +54,45 @@ origin_commit="$(git rev-parse "origin/${branch}")"
 origin_url="$(git remote get-url origin)"
 [[ "${commit}" == "${origin_commit}" ]] || die "HEAD must exactly match pushed origin/${branch} before deployment"
 [[ -n "${origin_url}" ]] || die "origin URL could not be resolved"
+
+# Landing guard: staging must never be the only place a build exists. The build
+# deployed now has to be on main or be the head of an open pull request, and the
+# build it replaces has to be on main, in a pull request, or contained in the new
+# build - otherwise the next deploy silently drops tested work.
+# shellcheck source=scripts/lib/staging-landing.sh
+source "${ROOT}/scripts/lib/staging-landing.sh"
+command -v gh >/dev/null 2>&1 || die "the staging landing guard needs the GitHub CLI (gh)"
+git fetch origin main --quiet
+candidate_state="$(classify_staging_candidate "${ROOT}" "${commit}" origin/main)" ||
+  die "refusing to deploy ${commit:0:12} (${candidate_state}): it is neither on main nor the head of an open pull request. Open a pull request for ${branch} (a draft is fine) so the next deploy cannot drop this build."
+
+# Only a staging container that is not running has nothing to lose; any other
+# failure to name the running commit refuses the deploy.
+running_version_line="$(
+  ssh "${REMOTE_HOST}" bash -s <<'REMOTE'
+set -euo pipefail
+if [[ "$(docker inspect --format '{{.State.Running}}' xg2g-staging 2>/dev/null || true)" != "true" ]]; then
+  echo "not-running"
+  exit 0
+fi
+docker exec xg2g-staging /usr/local/bin/xg2g --version
+REMOTE
+)" || die "could not read the running staging version from ${REMOTE_HOST}"
+running_commit=""
+if [[ "${running_version_line}" != "not-running" ]]; then
+  running_commit="$(sed -n 's/.*(commit: \([0-9a-fA-F]\{7,40\}\), built:.*/\1/p' <<<"${running_version_line}")"
+  [[ -n "${running_commit}" ]] || die "could not identify the running staging commit from: ${running_version_line}"
+fi
+if [[ -n "${running_commit}" ]] && ! git cat-file -e "${running_commit}^{commit}" 2>/dev/null; then
+  git fetch origin --quiet || true
+fi
+if replacement_state="$(classify_staging_replacement "${ROOT}" "${running_commit}" "${commit}" origin/main)"; then
+  echo "Staging landing guard: candidate ${commit:0:12} ${candidate_state}; running ${running_commit:-nothing} ${replacement_state}"
+elif [[ "${drop_unlanded}" =~ ^[0-9a-fA-F]{8,40}$ && "${running_commit}" == "${drop_unlanded}"* ]]; then
+  echo "WARNING: replacing staging build ${running_commit} (${replacement_state}) as requested by --drop-unlanded" >&2
+else
+  die "refusing to replace the running staging build ${running_commit} (${replacement_state}): it is not on main, not in an open or merged pull request and not contained in ${commit:0:12}, so this deploy would silently drop it. Open a pull request for it first, or rerun with --drop-unlanded ${running_commit:0:12} if dropping it is intended."
+fi
 
 # The Go daemon and xg2g-media-core speak one wire protocol, checked at the
 # handshake and fatal when it differs - but the handshake happens when the first

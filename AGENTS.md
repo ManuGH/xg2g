@@ -374,10 +374,19 @@ successful release is not a successful release.
   approval. A branch may contain work in progress.
 - A push to a feature branch is a review handoff, not a deployment or release.
   Never push or open a PR for unfinished work unless the task explicitly calls
-  for that handoff.
+  for that handoff. A staging deploy is such a handoff: what runs on staging
+  gets a (draft) PR the same day.
 - Staging on LXC 110 requires an explicit operator action to start a test run.
   It is intentionally allowed before final review/merge and is never an
   approval of production readiness.
+- Staging must never be the only place a build exists (added 2026-10-10 after a
+  receiver transcoder and a set of iOS fixes were lost that way). The fast
+  deploy refuses a commit that is neither on `main` nor the head of an open
+  PR, and refuses to replace a running staging build that is not on `main`,
+  not in an open or merged PR and not contained in the new build.
+  `--drop-unlanded <running-commit>` overrides the second check for exactly
+  that commit; use it only when dropping that build is the decision, never to
+  get a deploy through.
 - Production promotion is a separate action and always requires Manuel's
   explicit approval after staging evidence is reviewed.
 - The default deployment target is staging on `:8089`.
